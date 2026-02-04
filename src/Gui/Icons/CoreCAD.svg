@@ -2,9 +2,9 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   width="132.29166mm"
+   width="132.03928mm"
    height="152.46581mm"
-   viewBox="0 0 132.29165 152.46582"
+   viewBox="0 0 132.03927 152.46582"
    version="1.1"
    id="svg1"
    inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
@@ -27,47 +27,47 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="px"
      showguides="false"
-     inkscape:zoom="1.5583549"
-     inkscape:cx="250.26392"
-     inkscape:cy="185.45198"
+     inkscape:zoom="1.3969662"
+     inkscape:cx="249.82708"
+     inkscape:cy="288.12436"
      inkscape:window-width="1920"
-     inkscape:window-height="1149"
-     inkscape:window-x="0"
-     inkscape:window-y="27"
+     inkscape:window-height="1056"
+     inkscape:window-x="1920"
+     inkscape:window-y="518"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer4"
+     inkscape:current-layer="layer1"
      showgrid="true">
     <sodipodi:guide
-       position="66.145833,76.232905"
+       position="66.019636,76.232902"
        orientation="1,0"
        id="guide1"
        inkscape:locked="false" />
     <sodipodi:guide
-       position="66.145833,76.256165"
+       position="66.019636,76.256162"
        orientation="0.5,0.8660254"
        id="guide4"
        inkscape:locked="false"
        inkscape:label=""
        inkscape:color="rgb(0,134,229)" />
     <sodipodi:guide
-       position="66.145833,76.256175"
+       position="66.019636,76.256172"
        orientation="-0.5,0.8660254"
        id="guide6"
        inkscape:locked="false"
        inkscape:label=""
        inkscape:color="rgb(0,134,229)" />
     <sodipodi:guide
-       position="132.29167,2.9582453e-06"
+       position="132.03928,0"
        orientation="1,0"
        id="guide23"
        inkscape:locked="false" />
     <sodipodi:guide
-       position="132.16546,76.451499"
+       position="132.03926,76.451496"
        orientation="0,-1"
        id="guide24"
        inkscape:locked="false" />
     <sodipodi:guide
-       position="145.52083,76.451504"
+       position="145.39463,76.451501"
        orientation="-1,0"
        id="guide25"
        inkscape:locked="false"
@@ -87,7 +87,7 @@
      inkscape:label="Logo"
      inkscape:groupmode="layer"
      id="layer1"
-     transform="translate(66.145832,76.232903)">
+     transform="translate(66.019635,76.232906)">
     <path
        sodipodi:type="star"
        style="fill:#b3b3b3;stroke:none;stroke-width:3.175;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1"
@@ -96,13 +96,13 @@
        sodipodi:sides="6"
        sodipodi:cx="-0.22724213"
        sodipodi:cy="0.10792914"
-       sodipodi:r1="68.633469"
+       sodipodi:r1="68.633095"
        sodipodi:r2="59.438328"
-       sodipodi:arg1="1.5674854"
-       sodipodi:arg2="2.0910841"
+       sodipodi:arg1="1.5707964"
+       sodipodi:arg2="2.0943951"
        inkscape:rounded="0"
        inkscape:randomized="0"
-       d="M -2.1519309e-6,68.741022 -59.551624,34.621271 l -0.22724,-68.633092 59.3243819,-34.513342 59.5516211,34.11975 0.22724,68.633093 z"
+       d="M -0.22724715,68.741024 -59.665248,34.424472 l 5e-6,-68.633095 59.4380059,-34.316543 59.4380011,34.316552 -5e-6,68.633095 z"
        transform="matrix(1.110731,0,0,1.110731,0.25240541,-0.11988002)" />
     <path
        style="fill:#999999;stroke:none;stroke-width:3.175;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1"
@@ -121,7 +121,7 @@
        sodipodi:nodetypes="ccccc" />
     <path
        id="path3"
-       style="fill:#ff3c00;fill-opacity:1;stroke-width:0.264583"
+       style="fill:#ff6600;fill-opacity:1;stroke-width:0.264583"
        inkscape:transform-center-x="-0.48094252"
        inkscape:transform-center-y="-2.6266291"
        d="m 0,-38.1894 -33.072917,19.094958 13.229167,7.637777 L 0,-22.91333 19.84375,-11.456665 v 22.91333 L 0,22.91333 -19.84375,11.456665 -33.072917,19.094442 0,38.1894 33.072917,19.094442 v -38.188884 z" />
@@ -134,5 +134,6 @@
   <g
      inkscape:groupmode="layer"
      id="layer4"
-     inkscape:label="Name" />
+     inkscape:label="Name"
+     transform="translate(-0.12619654)" />
 </svg>
