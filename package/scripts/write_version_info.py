@@ -41,11 +41,21 @@ with open(os.sys.argv[1], "w") as f:
 	f.write(f"commit_hash: {gitInfo.hash}\n")
 	f.write(f"remote_url: {gitInfo.url}\n")
 
-p = subprocess.Popen(["git", "-c", "user.name='github-actions[bot]'", "-c",
-	"user.email='41898282+github-actions[bot]@users.noreply.github.com'", "commit", "-a", "-m",
-	"add git version information"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+# p = subprocess.Popen(["git", "-c", "user.name='github-actions[bot]'", "-c",
+# 	"user.email='41898282+github-actions[bot]@users.noreply.github.com'", "commit", "-a", "-m",
+# 	"add git version information"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-out, err = p.communicate()
+# out, err = p.communicate()
 
-print(out.decode())
-print(err.decode())
+# print(out.decode())
+# print(err.decode())
+
+# call the separate manifest generator module (keeps write_version_info minimal)
+try:
+    script_dir = os.path.dirname(__file__)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    import generate_corecad_manifest
+    generate_corecad_manifest.generate_manifest(os.getcwd())
+except Exception as e:
+    print('Failed to generate manifest via module: ' + str(e))
