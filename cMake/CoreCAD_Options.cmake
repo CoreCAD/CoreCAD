@@ -4,6 +4,21 @@
 # take precedence over upstream defaults. Add/remove workbenches here to control
 # what is compiled into CoreCAD.
 
+# ── Version ───────────────────────────────────────────────────────────────────
+# CoreCAD uses its own SemVer series, independent of the upstream FreeCAD version.
+# Bump MAJOR for breaking changes, MINOR for new features, PATCH for bug fixes.
+# The upstream FreeCAD base version is recorded in git tags and release notes.
+# Override version as normal variables (CACHE FORCE only updates the cache entry,
+# not the normal variables already set in CMakeLists.txt scope).
+set(PACKAGE_VERSION_MAJOR  "0")
+set(PACKAGE_VERSION_MINOR  "1")
+set(PACKAGE_VERSION_PATCH  "0")
+set(PACKAGE_VERSION_SUFFIX "dev")
+set(PACKAGE_VERSION "${PACKAGE_VERSION_MAJOR}.${PACKAGE_VERSION_MINOR}.${PACKAGE_VERSION_PATCH}")
+set(PACKAGE_STRING "${PROJECT_NAME} ${PACKAGE_VERSION}")
+# Regenerate config.h — upstream wrote it before this file was included.
+configure_file(${CMAKE_SOURCE_DIR}/src/config.h.cmake ${CMAKE_BINARY_DIR}/config.h)
+
 # ── Disabled modules ──────────────────────────────────────────────────────────
 # Addon Manager: users cannot install or remove workbenches at runtime.
 set(BUILD_ADDONMGR          OFF CACHE BOOL "CoreCAD: Addon Manager disabled" FORCE)
