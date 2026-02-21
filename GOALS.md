@@ -55,6 +55,7 @@ by the developer at build time via `cMake/CoreCAD_Options.cmake`.
 - `BUILD_IDF` — PCB board file import (too niche)
 - `BUILD_POINTS` — point cloud tools (scan-to-CAD excluded for now)
 - `BUILD_REVERSEENGINEERING` — depends on Points; excluded with it
+- `BUILD_INSPECTION` — mesh/point cloud inspection; depends on Points, excluded with it
 - `BUILD_PLOT` — legacy matplotlib plotter (maintained externally as addon)
 
 **Already OFF upstream** (no action needed): `BUILD_CLOUD`, `BUILD_SANDBOX`
