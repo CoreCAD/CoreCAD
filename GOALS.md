@@ -83,6 +83,13 @@ Ensure the project is reproducible and easy to work with.
 | Set up pre-commit hooks (clang-format, black) | ✅ Done |
 | Create `CLAUDE.md` for AI-assisted development | ✅ Done |
 | Set up branching strategy (`main` mirrors upstream, `develop` holds customisations) | ✅ Done |
+| Define CoreCAD versioning strategy | ⬜ Todo |
+
+> **Versioning note:** CoreCAD currently tracks the upstream FreeCAD version number.
+> Independent versioning was attempted but reverted — the FreeCAD version is deeply
+> embedded in workbench compatibility checks, path versioning, and addon metadata.
+> A future strategy should consider a display-only CoreCAD version (e.g. in branding.xml
+> or About dialog) that is separate from the internal build version used for compatibility.
 
 ---
 
