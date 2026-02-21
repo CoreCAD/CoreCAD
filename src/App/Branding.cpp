@@ -65,6 +65,7 @@ Branding::Branding()
     filter.push_back("ExeName");
     filter.push_back("ExeVendor");
     filter.push_back("ExeVersion");
+    filter.push_back("AppDisplayName");
     filter.push_back("AppDataSkipVendor");
     filter.push_back("NavigationStyle");
     filter.push_back("UserParameterTemplate");

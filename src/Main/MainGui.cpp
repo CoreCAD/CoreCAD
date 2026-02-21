@@ -189,7 +189,7 @@ int main(int argc, char** argv)
 
     // Name and Version of the Application
     App::Application::Config()["ExeName"] = "FreeCAD";
-    App::Application::Config()["ExeVendor"] = "FreeCAD";
+    App::Application::Config()["ExeVendor"] = "CoreCAD";
     App::Application::Config()["AppDataSkipVendor"] = "true";
     App::Application::Config()["MaintainerUrl"] = "https://freecad.org";
 
