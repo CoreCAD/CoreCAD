@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Branding version="1.0">
+    <!-- Application display name shown in the UI -->
+    <Application>CoreCAD</Application>
+
+    <!-- Main window title bar text -->
+    <WindowTitle>CoreCAD</WindowTitle>
+
+    <!-- Copyright and attribution info -->
+    <CopyrightInfo>(C) 2001-2026 CoreCAD Contributors</CopyrightInfo>
+
+    <!-- URL shown in Help/About and About dialog -->
+    <MaintainerUrl>https://corecad.example.com</MaintainerUrl>
+
+    <!-- Icon filenames (without .svg extension, looked up in resources) -->
+    <!-- Update these to match your CoreCAD icon resources -->
+    <WindowIcon>corecad</WindowIcon>
+    <ProgramLogo>corecad</ProgramLogo>
+
+    <!-- Splash screen image (without extension) -->
+    <SplashScreen>corecadsplash</SplashScreen>
+
+    <!-- About dialog image (without extension) -->
+    <AboutImage>corecadabout</AboutImage>
+
+    <!-- Desktop integration filename (Linux .desktop file) -->
+    <!-- This is used for menu entries and file associations on Linux -->
+    <DesktopFileName>org.corecad.CoreCAD</DesktopFileName>
+
+    <!-- ExeName controls the user config/data directory (~/.local/share/CoreCAD/) -->
+    <ExeName>CoreCAD</ExeName>
+
+    <!-- Display name for UI elements (e.g., in RibbonUI menu bar) -->
+    <!-- This allows showing "CoreCAD" in the menu while keeping internal name as "FreeCAD" -->
+    <AppDisplayName>CoreCAD</AppDisplayName>
+
+    <!-- Vendor name used in some paths and file associations -->
+    <ExeVendor>CoreCAD</ExeVendor>
+
+    <!-- Optional: Set a custom application version (overrides build version) -->
+    <!-- <ExeVersion>1.0.0</ExeVersion> -->
+
+    <!-- Optional: Initial workbench on startup -->
+    <!-- <StartWorkbench>Part</StartWorkbench> -->
+</Branding>
