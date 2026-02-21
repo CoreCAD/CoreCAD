@@ -17,4 +17,5 @@ set(BUILD_BIM               OFF CACHE BOOL "CoreCAD: Architecture/BIM excluded" 
 set(BUILD_IDF               OFF CACHE BOOL "CoreCAD: PCB board file import excluded" FORCE)
 set(BUILD_POINTS            OFF CACHE BOOL "CoreCAD: Point cloud tools excluded" FORCE)
 set(BUILD_REVERSEENGINEERING OFF CACHE BOOL "CoreCAD: Reverse engineering excluded" FORCE)
+set(BUILD_INSPECTION        OFF CACHE BOOL "CoreCAD: Point cloud inspection excluded (requires POINTS)" FORCE)
 set(BUILD_PLOT              OFF CACHE BOOL "CoreCAD: Legacy matplotlib plotter excluded" FORCE)
