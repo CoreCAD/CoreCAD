@@ -19,6 +19,11 @@ set(PACKAGE_STRING "${PROJECT_NAME} ${PACKAGE_VERSION}")
 # Regenerate config.h — upstream wrote it before this file was included.
 configure_file(${CMAKE_SOURCE_DIR}/src/config.h.cmake ${CMAKE_BINARY_DIR}/config.h)
 
+# ── Branding assets ───────────────────────────────────────────────────────────
+# Copy branding.xml from the tracked source location into the build bin/ directory.
+# The application reads this file at startup from alongside the executable.
+file(COPY ${CMAKE_SOURCE_DIR}/corecad/branding.xml DESTINATION ${CMAKE_BINARY_DIR}/bin)
+
 # ── Disabled modules ──────────────────────────────────────────────────────────
 # Addon Manager: users cannot install or remove workbenches at runtime.
 set(BUILD_ADDONMGR          OFF CACHE BOOL "CoreCAD: Addon Manager disabled" FORCE)

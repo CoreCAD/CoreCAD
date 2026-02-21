@@ -67,8 +67,8 @@ int main(int argc, char** argv)
 #endif
 
     // Name and Version of the Application
-    App::Application::Config()["ExeName"] = "FreeCAD";
-    App::Application::Config()["ExeVendor"] = "FreeCAD";
+    App::Application::Config()["ExeName"] = "CoreCAD";
+    App::Application::Config()["ExeVendor"] = "CoreCAD";
     App::Application::Config()["AppDataSkipVendor"] = "true";
 
     // set the banner (for logging and console)
