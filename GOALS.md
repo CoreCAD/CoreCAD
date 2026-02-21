@@ -26,7 +26,7 @@ community and keeping internal compatibility intact.
 | Add CoreCAD logo/SVG icon | ✅ Done |
 | Create `bin/branding.xml` (window title, app name, vendor) | ✅ Done |
 | Add CoreCAD Windows installer icons | ✅ Done |
-| Fix CLI banner in `src/Main/MainGui.cpp` (still says "FreeCAD contributors") | ⬜ Todo |
+| Fix CLI banner in `src/Main/MainGui.cpp` (still says "FreeCAD contributors") | ✅ Done |
 | Update desktop integration files (`src/XDGData/`) | ⬜ Todo |
 | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ⬜ Todo |
 | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) | ⬜ Todo |
