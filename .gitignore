@@ -47,6 +47,7 @@ ui_*.h
 /Mod/
 /ZERO_CHECK.dir/
 /bin/
+/.local/
 /build-*/
 /build/
 /cmake-build*/
