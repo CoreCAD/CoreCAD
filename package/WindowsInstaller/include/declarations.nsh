@@ -12,7 +12,7 @@ Configuration and variables of FreeCAD installer
 #--------------------------------
 # Names and version
 
-!define APP_NAME "FreeCAD"
+!define APP_NAME "CoreCAD"
 !define APP_VERSION_NUMBER "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD}"
 # For the proposed install folder we use the scheme "FreeCAD 0.18" 
 # however for the Registry, we need the scheme "FreeCAD 0.18.x" in order
@@ -25,16 +25,16 @@ Configuration and variables of FreeCAD installer
 # Fixme: FC should use different preferences folder for every release
 !define APP_DIR_USERDATA ${APP_NAME}
 #!define APP_DIR_USERDATA "${APP_NAME}${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}"
-!define APP_SHORTCUT_INFO "${APP_NAME} - Your Own 3D Parametric Modeler"
+!define APP_SHORTCUT_INFO "${APP_NAME} - Focused Parametric Mechanical CAD Modeler"
 !define APP_INFO "Install/Uninstall ${APP_NAME}"
-!define APP_WEBPAGE "https://www.freecad.org/"
+!define APP_WEBPAGE "https://www.corecad.org/"
 !define APP_WEBPAGE_INFO "${APP_NAME} Website"
 !define APP_WIKI "https://wiki.freecad.org/Main_Page"
 !define APP_WIKI_INFO "${APP_NAME} Wiki"
 !define APP_COPYRIGHT "${APP_NAME} is Copyright © 2001-${COPYRIGHT_YEAR} by the ${APP_NAME} Team"
 
-!define APP_RUN "bin\${APP_NAME}.exe"
-!define BIN_FREECAD "${APP_NAME}.exe"
+!define APP_RUN "bin\FreeCAD.exe"
+!define BIN_FREECAD "FreeCAD.exe"
 
 !define APP_REGKEY "SOFTWARE\${APP_NAME}${APP_SERIES_KEY}" # like "FreeCAD0180"
 !define APP_REGKEY_SETUP "${APP_REGKEY}\Setup"
@@ -58,10 +58,10 @@ Configuration and variables of FreeCAD installer
 
 !define SETUP_EXE ${ExeFile}
 
-!define SETUP_ICON "icons\FreeCAD.ico"
+!define SETUP_ICON "icons\CoreCAD.ico"
 !define SETUP_HEADERIMAGE "graphics\header.bmp"
 !define SETUP_WIZARDIMAGE "graphics\banner.bmp"
-!define SETUP_UNINSTALLER "Uninstall-${APP_NAME}.exe"
+!define SETUP_UNINSTALLER "Uninstall-CoreCAD.exe"
 !define SETUP_UNINSTALLER_KEY "${APP_NAME}${APP_SERIES_KEY}"
 
 #--------------------------------
