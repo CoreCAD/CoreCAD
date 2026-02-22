@@ -154,13 +154,26 @@ if(BUILD_GUI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/InitGui.py")
         PATTERN ".gitignore" EXCLUDE
         PATTERN ".pre-commit*" EXCLUDE
     )
-    # Copy to build tree so the module is available without installing
-    file(
-        COPY "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/"
-        DESTINATION "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon"
-        PATTERN ".git" EXCLUDE
-        PATTERN ".github" EXCLUDE
-        PATTERN ".gitignore" EXCLUDE
-        PATTERN ".pre-commit*" EXCLUDE
+    # Copy to build tree so the module is available without installing.
+    # Use add_custom_command so the copy re-runs on build when source files change,
+    # not only at cmake configure time.
+    file(GLOB_RECURSE _ribbon_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.json"
+        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.qss"
+        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.ui"
+    )
+    set(_ribbon_stamp "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon/.copy_stamp")
+    add_custom_command(
+        OUTPUT "${_ribbon_stamp}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon"
+            "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon"
+        COMMAND ${CMAKE_COMMAND} -E touch "${_ribbon_stamp}"
+        DEPENDS ${_ribbon_sources}
+        COMMENT "Syncing FreeCAD-Ribbon to build directory"
+    )
+    add_custom_target(FreeCAD_Ribbon_sync ALL
+        DEPENDS "${_ribbon_stamp}"
     )
 endif()
