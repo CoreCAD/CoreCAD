@@ -24,7 +24,7 @@ community and keeping internal compatibility intact.
 |------|--------|
 | Replace README with CoreCAD content | ✅ Done |
 | Add CoreCAD logo/SVG icon | ✅ Done |
-| Create `bin/branding.xml` (window title, app name, vendor) | ✅ Done |
+| Create `corecad/branding.xml` (window title, app name, vendor) | ✅ Done |
 | Add CoreCAD Windows installer icons | ✅ Done |
 | Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` | ✅ Done |
 | Fix CLI startup banner in `src/Main/MainCmd.cpp` | ✅ Done |
@@ -95,13 +95,18 @@ Ensure the project is reproducible and easy to work with.
 | Set up pre-commit hooks (clang-format, black) | ✅ Done |
 | Create `CLAUDE.md` for AI-assisted development | ✅ Done |
 | Set up branching strategy (`main` mirrors upstream, `develop` holds customisations) | ✅ Done |
-| Define CoreCAD versioning strategy | ⬜ Todo |
+| Display CoreCAD version in title bar, separate from internal FreeCAD build version | ✅ Done |
+| Define CoreCAD versioning strategy (CI injection, About dialog) | ⬜ Todo |
 
-> **Versioning note:** CoreCAD currently tracks the upstream FreeCAD version number.
-> Independent versioning was attempted but reverted — the FreeCAD version is deeply
-> embedded in workbench compatibility checks, path versioning, and addon metadata.
-> A future strategy should consider a display-only CoreCAD version (e.g. in branding.xml
-> or About dialog) that is separate from the internal build version used for compatibility.
+> **Versioning note:** CoreCAD uses a display-only version (`CoreCADVersionMajor/Minor/Patch/Suffix`
+> in `corecad/branding.xml`) that is shown in the title bar. The internal FreeCAD build version
+> (`BuildVersionMajor/Minor/Point`) is left untouched so workbenches and addons continue to pass
+> their compatibility checks (e.g. `FreeCAD.Version()[1]`). This avoids the addon-breakage problem
+> seen in Ondsel ES, which overwrote the FreeCAD version with CalVer and broke third-party addons.
+> Current CoreCAD version: **0.1.0-dev**.
+>
+> Remaining work: inject the version from `corecad_manifest.yml` at CI build time, and surface the
+> CoreCAD version in the About dialog alongside the underlying FreeCAD version.
 
 ---
 
