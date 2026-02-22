@@ -341,8 +341,8 @@ PyMOD_INIT_FUNC(FreeCADGui)
         App::Application::Config()["AppIcon"] = "freecad";
         App::Application::Config()["SplashScreen"] = "freecadsplash";
         App::Application::Config()["CopyrightInfo"] = fmt::format("\xc2\xa9 Juergen Riegel, Werner Mayer, Yorik van Havre and others 2001-{}\n", FCCopyrightYear);
-        App::Application::Config()["LicenseInfo"] = "FreeCAD is free and open-source software licensed under the terms of LGPL2+ license.\n";
-        App::Application::Config()["CreditsInfo"] = "FreeCAD would not be possible without the FreeCAD community.\n";
+        App::Application::Config()["LicenseInfo"] = "CoreCAD is free and open-source software licensed under the terms of LGPL2+ license.\n";
+        App::Application::Config()["CreditsInfo"] = "CoreCAD is built on FreeCAD and would not be possible without the FreeCAD community.\n";
         // clang-format on
 
         // it's possible that the GUI is already initialized when the Gui version of the executable

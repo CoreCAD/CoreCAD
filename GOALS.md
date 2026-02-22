@@ -28,7 +28,7 @@ community and keeping internal compatibility intact.
 | Add CoreCAD Windows installer icons | ✅ Done |
 | Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` | ✅ Done |
 | Fix CLI startup banner in `src/Main/MainCmd.cpp` | ✅ Done |
-| Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` | ⬜ Todo |
+| Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` | ✅ Done |
 | Update desktop integration files (`src/XDGData/`) | ⬜ Todo |
 | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ⬜ Todo |
 | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) | ⬜ Todo |
