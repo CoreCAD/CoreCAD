@@ -682,6 +682,35 @@ void StdCmdFreeCADWebsite::activated(int iMsg)
 }
 
 //===========================================================================
+// Std_CoreCADWebsite
+//===========================================================================
+
+DEF_STD_CMD(StdCmdCoreCADWebsite)
+
+StdCmdCoreCADWebsite::StdCmdCoreCADWebsite()
+    : Command("Std_CoreCADWebsite")
+{
+    sGroup = "Help";
+    sMenuText = QT_TR_NOOP("CoreCAD W&ebsite");
+    sToolTipText = QT_TR_NOOP("Navigates to the CoreCAD website");
+    sWhatsThis = "Std_CoreCADWebsite";
+    sStatusTip = sToolTipText;
+    sPixmap = "internet-web-browser";
+    eType = 0;
+}
+
+void StdCmdCoreCADWebsite::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ParameterGrp::handle hURLGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Websites"
+    );
+    std::string url = hURLGrp->GetASCII("CoreCADWebPage", "https://www.corecad.org");
+    hURLGrp->SetASCII("CoreCADWebPage", url.c_str());
+    OpenURLInBrowser(url.c_str());
+}
+
+//===========================================================================
 // Std_FreeCADUserHub
 //===========================================================================
 
@@ -723,7 +752,7 @@ StdCmdFreeCADForum::StdCmdFreeCADForum()
     : Command("Std_FreeCADForum")
 {
     sGroup = "Help";
-    sMenuText = QT_TR_NOOP("FreeCAD &Forum");
+    sMenuText = QT_TR_NOOP("FreeCAD Community &Forum");
     sToolTipText = QT_TR_NOOP("The FreeCAD forum, where you can find help from other users");
     sWhatsThis = "Std_FreeCADForum";
     sStatusTip = sToolTipText;
@@ -768,7 +797,7 @@ void StdCmdReportBug::activated(int iMsg)
     ParameterGrp::handle hURLGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Websites"
     );
-    std::string url = hURLGrp->GetASCII("IssuesPage", "https://github.com/FreeCAD/FreeCAD/issues");
+    std::string url = hURLGrp->GetASCII("IssuesPage", "https://github.com/CoreCAD/CoreCAD/issues");
     hURLGrp->SetASCII("IssuesPage", url.c_str());
     OpenURLInBrowser(url.c_str());
 }
@@ -1068,6 +1097,7 @@ void CreateStdCommands()
     rcCmdMgr.addCommand(new StdCmdPythonHelp());
     rcCmdMgr.addCommand(new StdCmdOnlineHelp());
     rcCmdMgr.addCommand(new StdCmdOnlineHelpWebsite());
+    rcCmdMgr.addCommand(new StdCmdCoreCADWebsite());
     rcCmdMgr.addCommand(new StdCmdFreeCADWebsite());
     rcCmdMgr.addCommand(new StdCmdFreeCADDonation());
     rcCmdMgr.addCommand(new StdCmdFreeCADUserHub());
