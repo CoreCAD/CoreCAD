@@ -33,7 +33,7 @@ community and keeping internal compatibility intact.
 | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ✅ Done |
 | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) | ✅ Done |
 | Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) | ⬜ Todo |
-| Update GitHub repository files (issue templates, PR template, FUNDING.yml) | ⬜ Todo |
+| Update GitHub repository files (issue templates, PR template, FUNDING.yml) | ✅ Done |
 | Add FreeCAD original authors to an Acknowledgements section in the About dialog | 🔮 Future |
 | Investigate renaming `FreeCAD`/`FreeCADCmd` binaries to `CoreCAD`/`CoreCADCmd` | 🔮 Future |
 
