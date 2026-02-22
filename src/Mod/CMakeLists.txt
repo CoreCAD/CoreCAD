@@ -139,3 +139,24 @@ endif(BUILD_TUX)
 if(BUILD_WEB)
     add_subdirectory(Web)
 endif(BUILD_WEB)
+
+# FreeCAD-Ribbon: Pure-Python ribbon UI addon (git submodule, no CMakeLists.txt of its own)
+if(BUILD_GUI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/InitGui.py")
+    install(
+        DIRECTORY FreeCAD-Ribbon/
+        DESTINATION Mod/FreeCAD-Ribbon
+        PATTERN ".git" EXCLUDE
+        PATTERN ".github" EXCLUDE
+        PATTERN ".gitignore" EXCLUDE
+        PATTERN ".pre-commit*" EXCLUDE
+    )
+    # Copy to build tree so the module is available without installing
+    file(
+        COPY "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/"
+        DESTINATION "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon"
+        PATTERN ".git" EXCLUDE
+        PATTERN ".github" EXCLUDE
+        PATTERN ".gitignore" EXCLUDE
+        PATTERN ".pre-commit*" EXCLUDE
+    )
+endif()
