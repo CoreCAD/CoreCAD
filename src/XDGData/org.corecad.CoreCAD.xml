@@ -2,7 +2,7 @@
 <mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
   <mime-type type="application/x-extension-fcstd">
     <!-- <sub-class-of type="application/zip"/> -->
-    <comment>FreeCAD document files</comment>
+    <comment>CoreCAD document files</comment>
     <glob pattern="*.fcstd"/>
     <generic-icon name="application-x-extension-fcstd"/>
   </mime-type>

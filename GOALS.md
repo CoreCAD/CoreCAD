@@ -33,10 +33,17 @@ community and keeping internal compatibility intact.
 | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ⬜ Todo |
 | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) | ⬜ Todo |
 | Update GitHub repository files (issue templates, PR template, FUNDING.yml) | ⬜ Todo |
+| Add FreeCAD original authors to an Acknowledgements section in the About dialog | 🔮 Future |
+| Investigate renaming `FreeCAD`/`FreeCADCmd` binaries to `CoreCAD`/`CoreCADCmd` | 🔮 Future |
 
 > Internal Python module names (`FreeCADGuiInit.py`, etc.) are intentionally left unchanged
 > — renaming them would break the module import system.
 > See `.local/BRANDING_CHECKLIST.md` for file-level detail on all items above.
+>
+> 🔮 **Future** items are deferred due to complexity or dependency on other work. Binary renaming
+> would affect CI, packaging, addon compatibility, and all desktop integration files.
+> Acknowledgements should credit Juergen Riegel, Werner Mayer, Yorik van Havre, and the broader
+> FreeCAD community — important for LGPL2+ good practice.
 
 ---
 

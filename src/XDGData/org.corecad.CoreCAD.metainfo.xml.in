@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.corecad.CoreCAD</id>
+  <project_license>LGPL-2.1</project_license>
+  <metadata_license>CC0-1.0</metadata_license>
+  <developer_name>The CoreCAD Team</developer_name>
+  <launchable type="desktop-id">org.corecad.CoreCAD.desktop</launchable>
+  <name>CoreCAD</name>
+  <summary>A focused, stable parametric mechanical CAD modeler</summary>
+  <description>
+    <p>
+      CoreCAD is an open-source parametric 3D mechanical CAD modeler built on FreeCAD's foundation.
+      It provides a curated, stable set of mechanical design workbenches for engineers and makers
+      who want a focused environment without experimental or domain-specific tools outside core
+      mechanical CAD.
+    </p>
+    <p>
+      With parametric modeling, you can easily modify designs by adjusting parameters in the model
+      history. CoreCAD supports constrained 2D sketching as the basis for complex 3D models, and
+      includes tools for technical drawing generation, finite element analysis, CAM/CNC toolpaths,
+      and assembly modeling.
+    </p>
+    <p>
+      CoreCAD supports various file formats including STEP, IGES, STL, SVG, DXF, OBJ, and more,
+      making it straightforward to integrate into existing mechanical engineering workflows.
+    </p>
+  </description>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Part Design</caption>
+      <image>https://raw.githubusercontent.com/FreeCAD/FreeCAD/main/.github/images/partdesign.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Assembly</caption>
+      <image>https://raw.githubusercontent.com/FreeCAD/FreeCAD/main/.github/images/assembly.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>FEM</caption>
+      <image>https://raw.githubusercontent.com/FreeCAD/FreeCAD/main/.github/images/fem.png</image>
+    </screenshot>
+  </screenshots>
+  <keywords>
+    <keyword>engineering</keyword>
+    <keyword translate="no">cad</keyword>
+    <keyword translate="no">mechanical</keyword>
+    <keyword translate="no">fea</keyword>
+    <keyword translate="no">fem</keyword>
+    <keyword translate="no">cam</keyword>
+    <keyword translate="no">cnc</keyword>
+    <keyword translate="no">design</keyword>
+    <keyword translate="no">3d</keyword>
+    <keyword translate="no">3d-printing</keyword>
+    <keyword translate="no">opencascade</keyword>
+    <keyword translate="no">parametric-modeler</keyword>
+    <keyword>assembly</keyword>
+    <keyword>part</keyword>
+  </keywords>
+  <url type="homepage">https://corecad.example.com</url>
+  <url type="bugtracker">https://github.com/CoreCAD/CoreCAD/issues</url>
+  <url type="vcs-browser">https://github.com/CoreCAD/CoreCAD</url>
+  <url type="contribute">https://github.com/CoreCAD/CoreCAD/blob/main/CONTRIBUTING.md</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@PACKAGE_VERSION@" date="@APPDATA_RELEASE_DATE@"/>
+  </releases>
+</component>
