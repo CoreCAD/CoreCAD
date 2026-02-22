@@ -409,8 +409,10 @@ void StartupPostProcess::setBranding()
     std::map<std::string, std::string>::const_iterator it;
     it = cfg.find("WindowTitle");
     if (it != cfg.end()) {
-        QString title = QString::fromUtf8(it->second.c_str());
-        mainWindow->setWindowTitle(title);
+        // Refresh the title using the version-formatted path (getNameWithVersion).
+        // Passing the WindowTitle string directly would treat it as a document-name
+        // prefix, producing "CoreCAD - CoreCAD 0.1.0-dev" instead of "CoreCAD 0.1.0-dev".
+        mainWindow->setWindowTitle(QString());
     }
     it = cfg.find("WindowIcon");
     if (it != cfg.end()) {
