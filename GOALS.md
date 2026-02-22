@@ -79,9 +79,9 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 
 | Task | Status |
 |------|--------|
-| Evaluate RibbonUI addon (HakanSeven12/FreeCAD_RibbonUI) | ⬜ Todo |
-| Add as git submodule | ⬜ Todo |
-| Auto-load at startup (modify `src/Gui/FreeCADGuiInit.py` or startup hook) | ⬜ Todo |
+| Evaluate RibbonUI addon ([APEbbers/FreeCAD-Ribbon](https://github.com/APEbbers/FreeCAD-Ribbon)) | ✅ Done |
+| Add as git submodule (`src/Mod/FreeCAD-Ribbon`, tracking `develop` branch) | ✅ Done |
+| Auto-load at startup (automatic via `DirModScanner` — no code changes needed) | ✅ Done |
 | Test with each upstream rebase | ⬜ Ongoing |
 
 ---
