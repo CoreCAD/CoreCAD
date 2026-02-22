@@ -40,6 +40,15 @@
     <!-- Optional: Set a custom application version (overrides build version) -->
     <!-- <ExeVersion>1.0.0</ExeVersion> -->
 
+    <!-- CoreCAD display version shown in the title bar and About dialog.
+         These are separate from the internal FreeCAD build version (BuildVersionMajor/Minor/Point)
+         which is left untouched so workbenches and addons see the correct FreeCAD version
+         for compatibility checks. In CI, these values are written from corecad_manifest.yml. -->
+    <CoreCADVersionMajor>0</CoreCADVersionMajor>
+    <CoreCADVersionMinor>1</CoreCADVersionMinor>
+    <CoreCADVersionPatch>0</CoreCADVersionPatch>
+    <CoreCADVersionSuffix>-dev</CoreCADVersionSuffix>
+
     <!-- Optional: Initial workbench on startup -->
     <!-- <StartWorkbench>Part</StartWorkbench> -->
 </Branding>
