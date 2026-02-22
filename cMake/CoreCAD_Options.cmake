@@ -5,9 +5,19 @@
 # what is compiled into CoreCAD.
 
 # ── Branding assets ───────────────────────────────────────────────────────────
-# Copy branding.xml from the tracked source location into the build bin/ directory.
-# The application reads this file at startup from alongside the executable.
-file(COPY ${CMAKE_SOURCE_DIR}/corecad/branding.xml DESTINATION ${CMAKE_BINARY_DIR}/bin)
+# Copy branding.xml into the build bin/ directory whenever the source changes.
+# Uses a custom command so the copy is re-run on build, not just at configure time.
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/bin/branding.xml
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/corecad/branding.xml
+        ${CMAKE_BINARY_DIR}/bin/branding.xml
+    DEPENDS ${CMAKE_SOURCE_DIR}/corecad/branding.xml
+    COMMENT "Copying branding.xml to build directory"
+)
+add_custom_target(CoreCAD_branding ALL
+    DEPENDS ${CMAKE_BINARY_DIR}/bin/branding.xml
+)
 
 # ── Disabled modules ──────────────────────────────────────────────────────────
 # Addon Manager: users cannot install or remove workbenches at runtime.
