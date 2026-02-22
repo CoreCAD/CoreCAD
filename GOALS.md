@@ -84,7 +84,14 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | Auto-load at startup (automatic via `DirModScanner` — no code changes needed) | ✅ Done |
 | Remove "FreeCAD X.Y.Z" version string from ribbon bar title (`FCBinding.py`) | ✅ Done |
 | Re-sync submodule to build dir on build, not just cmake configure (`src/Mod/CMakeLists.txt`) | ✅ Done |
+| Define and enforce a canonical workbench order in the RibbonUI workbench list | ⬜ Todo |
 | Test with each upstream rebase | ⬜ Ongoing |
+
+> **Workbench order note:** The RibbonUI workbench list is currently unsorted. Because the Workbenches
+> preferences tab has been removed (`src/Gui/resource.cpp`), users have no way to reorder it manually.
+> The workbench order is a CoreCAD concern — RibbonUI simply reflects whatever order FreeCAD exposes.
+> The canonical order must be defined and enforced by CoreCAD, likely via a startup hook or shipped
+> user-config that writes the expected order to the FreeCAD preference store.
 
 ---
 
