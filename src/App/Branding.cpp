@@ -66,6 +66,10 @@ Branding::Branding()
     filter.push_back("ExeVendor");
     filter.push_back("ExeVersion");
     filter.push_back("AppDisplayName");
+    filter.push_back("CoreCADVersionMajor");
+    filter.push_back("CoreCADVersionMinor");
+    filter.push_back("CoreCADVersionPatch");
+    filter.push_back("CoreCADVersionSuffix");
     filter.push_back("AppDataSkipVendor");
     filter.push_back("NavigationStyle");
     filter.push_back("UserParameterTemplate");

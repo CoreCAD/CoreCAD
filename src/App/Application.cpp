@@ -1152,6 +1152,19 @@ std::string Application::getNameWithVersion()
 {
     auto appname = QCoreApplication::applicationName().toStdString();
     auto config = Application::Config();
+
+    // Prefer CoreCAD display version (set via branding.xml) over the internal FreeCAD
+    // build version, so workbenches and addons continue to see the real FreeCAD version
+    // for compatibility checks (e.g. FreeCAD.Version()[1]).
+    auto coreIt = config.find("CoreCADVersionMajor");
+    if (coreIt != config.end() && !coreIt->second.empty()) {
+        auto coreMajor = coreIt->second;
+        auto coreMinor = config["CoreCADVersionMinor"];
+        auto corePatch = config["CoreCADVersionPatch"];
+        auto coreSuffix = config["CoreCADVersionSuffix"];
+        return fmt::format("{} {}.{}.{}{}", appname, coreMajor, coreMinor, corePatch, coreSuffix);
+    }
+
     auto major = config["BuildVersionMajor"];
     auto minor = config["BuildVersionMinor"];
     auto point = config["BuildVersionPoint"];
