@@ -27,7 +27,7 @@ community and keeping internal compatibility intact.
 | Create `bin/branding.xml` (window title, app name, vendor) | ✅ Done |
 | Add CoreCAD Windows installer icons | ✅ Done |
 | Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` | ✅ Done |
-| Fix CLI startup banner in `src/Main/MainCmd.cpp` | ⬜ Todo |
+| Fix CLI startup banner in `src/Main/MainCmd.cpp` | ✅ Done |
 | Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` | ⬜ Todo |
 | Update desktop integration files (`src/XDGData/`) | ⬜ Todo |
 | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ⬜ Todo |
