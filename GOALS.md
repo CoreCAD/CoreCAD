@@ -30,7 +30,7 @@ community and keeping internal compatibility intact.
 | Fix CLI startup banner in `src/Main/MainCmd.cpp` | ✅ Done |
 | Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` | ✅ Done |
 | Update desktop integration files (`src/XDGData/`) | ✅ Done |
-| Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ⬜ Todo |
+| Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ✅ Done |
 | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) | ⬜ Todo |
 | Update GitHub repository files (issue templates, PR template, FUNDING.yml) | ⬜ Todo |
 | Add FreeCAD original authors to an Acknowledgements section in the About dialog | 🔮 Future |
