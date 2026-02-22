@@ -26,13 +26,17 @@ community and keeping internal compatibility intact.
 | Add CoreCAD logo/SVG icon | ✅ Done |
 | Create `bin/branding.xml` (window title, app name, vendor) | ✅ Done |
 | Add CoreCAD Windows installer icons | ✅ Done |
-| Fix CLI banner in `src/Main/MainGui.cpp` (still says "FreeCAD contributors") | ✅ Done |
+| Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` | ✅ Done |
+| Fix CLI startup banner in `src/Main/MainCmd.cpp` | ⬜ Todo |
+| Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` | ⬜ Todo |
 | Update desktop integration files (`src/XDGData/`) | ⬜ Todo |
 | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ⬜ Todo |
 | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) | ⬜ Todo |
+| Update GitHub repository files (issue templates, PR template, FUNDING.yml) | ⬜ Todo |
 
 > Internal Python module names (`FreeCADGuiInit.py`, etc.) are intentionally left unchanged
 > — renaming them would break the module import system.
+> See `.local/BRANDING_CHECKLIST.md` for file-level detail on all items above.
 
 ---
 
