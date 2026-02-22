@@ -1,16 +1,16 @@
 
 SET(Stylesheets_Files
-    "FreeCAD.qss"
+    "CoreCAD.qss"
     "defaults.qss"
 )
 
 SET(Parameters_Files
-    "parameters/FreeCAD Dark.yaml"
-    "parameters/FreeCAD Light.yaml"
+    "parameters/CoreCAD Dark.yaml"
+    "parameters/CoreCAD Light.yaml"
 )
 
 SET(Overlay_Stylesheets_Files
-    "overlay/Freecad Overlay.qss"
+    "overlay/CoreCAD Overlay.qss"
 )
 
 # Find all the image files

@@ -349,10 +349,10 @@ void StartupPostProcess::migrateOldTheme(const std::string& style)
     auto prefPackManager = Application::Instance->prefPackManager();
 
     if (style == "FreeCAD Light.qss") {
-        prefPackManager->apply("FreeCAD Light");
+        prefPackManager->apply("CoreCAD Light");
     }
     else if (style == "FreeCAD Dark.qss") {
-        prefPackManager->apply("FreeCAD Dark");
+        prefPackManager->apply("CoreCAD Dark");
     }
 }
 
