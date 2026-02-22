@@ -47,8 +47,8 @@ using App::Application;
 using Base::Console;
 
 const auto sBanner = fmt::format(
-    "(C) 2001-{} FreeCAD contributors\n"
-    "FreeCAD is free and open-source software licensed under the terms of LGPL2+ license.\n\n",
+    "(C) 2001-{} CoreCAD Contributors, based on FreeCAD\n"
+    "CoreCAD is free and open-source software licensed under the terms of LGPL2+ license.\n\n",
     FCCopyrightYear
 );
 
