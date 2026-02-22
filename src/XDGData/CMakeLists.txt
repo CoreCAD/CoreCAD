@@ -12,30 +12,30 @@ if(NOT DEFINED APPDATA_RELEASE_DATE)
 endif()
 
 configure_file(
-    org.freecad.FreeCAD.metainfo.xml.in
-    ${CMAKE_BINARY_DIR}/org.freecad.FreeCAD.metainfo.xml
+    org.corecad.CoreCAD.metainfo.xml.in
+    ${CMAKE_BINARY_DIR}/org.corecad.CoreCAD.metainfo.xml
 )
 install(
-    FILES ${CMAKE_BINARY_DIR}/org.freecad.FreeCAD.metainfo.xml
+    FILES ${CMAKE_BINARY_DIR}/org.corecad.CoreCAD.metainfo.xml
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/metainfo
 )
 
 install(
-    FILES org.freecad.FreeCAD.desktop
+    FILES org.corecad.CoreCAD.desktop
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
 )
 
 install(
-    FILES org.freecad.FreeCAD.xml
+    FILES org.corecad.CoreCAD.xml
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/mime/packages
 )
 
 configure_file(
-    FreeCAD.thumbnailer.in
-    ${CMAKE_BINARY_DIR}/FreeCAD.thumbnailer
+    CoreCAD.thumbnailer.in
+    ${CMAKE_BINARY_DIR}/CoreCAD.thumbnailer
 )
 install(
-    FILES ${CMAKE_BINARY_DIR}/FreeCAD.thumbnailer
+    FILES ${CMAKE_BINARY_DIR}/CoreCAD.thumbnailer
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/thumbnailers
 )
 
