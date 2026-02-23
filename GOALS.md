@@ -85,14 +85,19 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | Remove "FreeCAD X.Y.Z" version string from ribbon bar title (`FCBinding.py`) | ✅ Done |
 | Re-sync submodule to build dir on build, not just cmake configure (`src/Mod/CMakeLists.txt`) | ✅ Done |
 | Move Global ribbon panels (Tools, Views) to Quick Access Toolbar with separators | ✅ Done |
-| Define and enforce a canonical workbench order in the RibbonUI workbench list | ⬜ Todo |
+| Define and enforce a canonical workbench order in the RibbonUI workbench list | ✅ Done |
 | Test with each upstream rebase | ⬜ Ongoing |
 
-> **Workbench order note:** The RibbonUI workbench list is currently unsorted. Because the Workbenches
-> preferences tab has been removed (`src/Gui/resource.cpp`), users have no way to reorder it manually.
-> The workbench order is a CoreCAD concern — RibbonUI simply reflects whatever order FreeCAD exposes.
-> The canonical order must be defined and enforced by CoreCAD, likely via a startup hook or shipped
-> user-config that writes the expected order to the FreeCAD preference store.
+> **Workbench order & visibility:** Two layers control fresh-install defaults:
+> 1. FreeCAD preferences (`DlgSettingsWorkbenchesImp.cpp`): `"Ordered"` default sets canonical order
+>    (PartDesign → Sketcher → Part → Assembly → TechDraw → Surface → Mesh → Spreadsheet → Material);
+>    `"Disabled"` default hides Draft, FEM, CAM (plus NoneWorkbench, Test, etc.).
+> 2. RibbonUI (`CreateDefaultRibbonStructure.py`, `CreateStructure.txt`): `ignoredWorkbenches` list
+>    hides the same workbenches from the ribbon tab bar.
+>
+> Draft, FEM, and CAM are still compiled — only hidden from the UI. Existing installs may need
+> `user.cfg` updated (`Workbenches/Ordered`, `Workbenches/Disabled`) and stale `TabOrder` cleared
+> from the FreeCAD-Ribbon preference group.
 
 ---
 

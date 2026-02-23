@@ -475,7 +475,12 @@ QStringList DlgSettingsWorkbenchesImp::getEnabledWorkbenches()
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Workbenches"
     );
-    wbs_ordered = QString::fromStdString(hGrp->GetASCII("Ordered", ""));
+    wbs_ordered = QString::fromStdString(hGrp->GetASCII(
+        "Ordered",
+        "PartDesignWorkbench,SketcherWorkbench,PartWorkbench,AssemblyWorkbench,"
+        "TechDrawWorkbench,SurfaceWorkbench,MeshWorkbench,SpreadsheetWorkbench,"
+        "MaterialWorkbench"
+    ));
 
     wbs_ordered_list = wbs_ordered.split(QLatin1String(","), Qt::SkipEmptyParts);
 
@@ -518,7 +523,8 @@ QStringList DlgSettingsWorkbenchesImp::getDisabledWorkbenches()
     );
     disabled_wbs = QString::fromStdString(hGrp->GetASCII(
         "Disabled",
-        "NoneWorkbench,TestWorkbench,InspectionWorkbench,RobotWorkbench,OpenSCADWorkbench"
+        "NoneWorkbench,TestWorkbench,InspectionWorkbench,RobotWorkbench,OpenSCADWorkbench,"
+        "DraftWorkbench,FemWorkbench,CAMWorkbench"
     ));
 
     unfiltered_disabled_wbs_list = disabled_wbs.split(QLatin1String(","), Qt::SkipEmptyParts);
