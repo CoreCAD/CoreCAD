@@ -85,7 +85,9 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | Remove "FreeCAD X.Y.Z" version string from ribbon bar title (`FCBinding.py`) | ✅ Done |
 | Re-sync submodule to build dir on build, not just cmake configure (`src/Mod/CMakeLists.txt`) | ✅ Done |
 | Move Global ribbon panels (Tools, Views) to Quick Access Toolbar with separators | ✅ Done |
+| Fix QAT regressions: restore separators/ordering and hide Individual views globally | ✅ Done |
 | Define and enforce a canonical workbench order in the RibbonUI workbench list | ✅ Done |
+| Limit Structure group to PartDesign, Part, and Assembly only | ⬜ Todo |
 | Test with each upstream rebase | ⬜ Ongoing |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
