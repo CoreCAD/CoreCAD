@@ -92,6 +92,8 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | ✅ Done | Stamp `RibbonStructure.json` from `CreateStructure.txt` on every build so the build dir never drifts from the committed template |
 | ✅ Done | Remove unnecessary vertical separators from PartDesign Modelling and Spreadsheet ribbon groups |
 | ✅ Done | Fix TechDraw Dimensions ribbon group rendering empty (invalid command key, missing button definitions, unreliable `_custom` toolbar mechanism) |
+| ✅ Done | Split PartDesign Helpers into a "Part" panel (New Body + New Sketch) and a reduced "Helpers" panel moved just before Structure |
+| ✅ Done | Fix `CreateStructure.txt` not triggering stamp rebuild (add `.txt` to CMake `DEPENDS` list) |
 | ⬜ Ongoing | Test with each upstream rebase |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
