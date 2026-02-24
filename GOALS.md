@@ -87,7 +87,7 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | ✅ Done | Move Global ribbon panels (Tools, Views) to Quick Access Toolbar with separators |
 | ✅ Done | Fix QAT regressions: restore separators/ordering and hide Individual views globally |
 | ✅ Done | Define and enforce a canonical workbench order in the RibbonUI workbench list |
-| ⬜ Todo | Investigate and fix QAT separators being stripped from `RibbonStructure.json` on restart |
+| ✅ Done | Investigate and fix QAT separators being stripped from `RibbonStructure.json` on restart |
 | ⬜ Todo | Limit Structure group to PartDesign, Part, and Assembly only (update `CreateDefaultRibbonStructure.py` then patch live JSON) |
 | ⬜ Ongoing | Test with each upstream rebase |
 
