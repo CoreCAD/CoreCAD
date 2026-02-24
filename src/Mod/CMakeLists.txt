@@ -176,6 +176,7 @@ if(BUILD_GUI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/InitGui.py")
             "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon/RibbonStructure_default.json"
         COMMAND ${CMAKE_COMMAND} -E touch "${_ribbon_stamp}"
         DEPENDS ${_ribbon_sources}
+            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/CreateStructure.txt"
         COMMENT "Syncing FreeCAD-Ribbon to build directory"
     )
     add_custom_target(FreeCAD_Ribbon_sync ALL
