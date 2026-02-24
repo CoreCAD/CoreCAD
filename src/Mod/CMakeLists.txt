@@ -169,6 +169,15 @@ if(BUILD_GUI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/InitGui.py")
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon"
             "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon"
+        # Stamp RibbonStructure.json from CreateStructure.txt on every build so
+        # the build directory never drifts from the committed template. CoreCAD
+        # locks the ribbon layout at build time; user-written JSON is unwanted.
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/CreateStructure.txt"
+            "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon/RibbonStructure.json"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/CreateStructure.txt"
+            "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon/RibbonStructure_default.json"
         COMMAND ${CMAKE_COMMAND} -E touch "${_ribbon_stamp}"
         DEPENDS ${_ribbon_sources}
         COMMENT "Syncing FreeCAD-Ribbon to build directory"
