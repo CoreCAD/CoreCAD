@@ -89,6 +89,7 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | ✅ Done | Define and enforce a canonical workbench order in the RibbonUI workbench list |
 | ✅ Done | Investigate and fix QAT separators being stripped from `RibbonStructure.json` on restart |
 | ✅ Done | Limit Structure group to PartDesign, Part, and Assembly only (update `CreateDefaultRibbonStructure.py` then patch live JSON) |
+| ✅ Done | Stamp `RibbonStructure.json` from `CreateStructure.txt` on every build so the build dir never drifts from the committed template |
 | ⬜ Ongoing | Test with each upstream rebase |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
@@ -101,6 +102,11 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 > Draft, FEM, and CAM are still compiled — only hidden from the UI. Existing installs may need
 > `user.cfg` updated (`Workbenches/Ordered`, `Workbenches/Disabled`) and stale `TabOrder` cleared
 > from the FreeCAD-Ribbon preference group.
+>
+> `CreateStructure.txt` is the single source of truth for the ribbon layout. The build system
+> stamps `RibbonStructure.json` and `RibbonStructure_default.json` from it on every build, so
+> the mutable runtime JSON never persists between builds. For functional testing, reset
+> `~/.FreeCAD/user.cfg` (FreeCAD preferences layer) — the ribbon JSON is handled by the build.
 
 ---
 
