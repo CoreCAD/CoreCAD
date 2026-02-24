@@ -90,6 +90,8 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | ✅ Done | Investigate and fix QAT separators being stripped from `RibbonStructure.json` on restart |
 | ✅ Done | Limit Structure group to PartDesign, Part, and Assembly only (update `CreateDefaultRibbonStructure.py` then patch live JSON) |
 | ✅ Done | Stamp `RibbonStructure.json` from `CreateStructure.txt` on every build so the build dir never drifts from the committed template |
+| ✅ Done | Remove unnecessary vertical separators from PartDesign Modelling and Spreadsheet ribbon groups |
+| ✅ Done | Fix TechDraw Dimensions ribbon group rendering empty (invalid command key, missing button definitions, unreliable `_custom` toolbar mechanism) |
 | ⬜ Ongoing | Test with each upstream rebase |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
