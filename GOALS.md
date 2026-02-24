@@ -20,22 +20,22 @@ that fall outside core mechanical CAD.
 Distinguish CoreCAD from FreeCAD visually and in metadata, while respecting the FreeCAD
 community and keeping internal compatibility intact.
 
-| Task | Status |
-|------|--------|
-| Replace README with CoreCAD content | ✅ Done |
-| Add CoreCAD logo/SVG icon | ✅ Done |
-| Create `corecad/branding.xml` (window title, app name, vendor) | ✅ Done |
-| Add CoreCAD Windows installer icons | ✅ Done |
-| Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` | ✅ Done |
-| Fix CLI startup banner in `src/Main/MainCmd.cpp` | ✅ Done |
-| Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` | ✅ Done |
-| Update desktop integration files (`src/XDGData/`) | ✅ Done |
-| Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) | ✅ Done |
-| Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) | ✅ Done |
-| Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) | ⬜ Todo |
-| Update GitHub repository files (issue templates, PR template, FUNDING.yml) | ✅ Done |
-| Add FreeCAD original authors to an Acknowledgements section in the About dialog | 🔮 Future |
-| Investigate renaming `FreeCAD`/`FreeCADCmd` binaries to `CoreCAD`/`CoreCADCmd` | 🔮 Future |
+| Status | Task |
+|--------|------|
+| ✅ Done | Replace README with CoreCAD content |
+| ✅ Done | Add CoreCAD logo/SVG icon |
+| ✅ Done | Create `corecad/branding.xml` (window title, app name, vendor) |
+| ✅ Done | Add CoreCAD Windows installer icons |
+| ✅ Done | Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` |
+| ✅ Done | Fix CLI startup banner in `src/Main/MainCmd.cpp` |
+| ✅ Done | Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` |
+| ✅ Done | Update desktop integration files (`src/XDGData/`) |
+| ✅ Done | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) |
+| ✅ Done | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) |
+| ⬜ Todo | Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) |
+| ✅ Done | Update GitHub repository files (issue templates, PR template, FUNDING.yml) |
+| 🔮 Future | Add FreeCAD original authors to an Acknowledgements section in the About dialog |
+| 🔮 Future | Investigate renaming `FreeCAD`/`FreeCADCmd` binaries to `CoreCAD`/`CoreCADCmd` |
 
 > Internal Python module names (`FreeCADGuiInit.py`, etc.) are intentionally left unchanged
 > — renaming them would break the module import system.
@@ -52,11 +52,11 @@ community and keeping internal compatibility intact.
 Users cannot add or remove workbenches at runtime. The included workbench set is controlled
 by the developer at build time via `cMake/CoreCAD_Options.cmake`.
 
-| Task | Status |
-|------|--------|
-| Disable Addon Manager (`BUILD_ADDONMGR=OFF` in `CoreCAD_Options.cmake`) | ✅ Done |
-| Remove Workbenches preferences tab (`src/Gui/resource.cpp`) | ✅ Done |
-| Decide which upstream workbenches to exclude from CoreCAD | ✅ Done |
+| Status | Task |
+|--------|------|
+| ✅ Done | Disable Addon Manager (`BUILD_ADDONMGR=OFF` in `CoreCAD_Options.cmake`) |
+| ✅ Done | Remove Workbenches preferences tab (`src/Gui/resource.cpp`) |
+| ✅ Done | Decide which upstream workbenches to exclude from CoreCAD |
 
 **Excluded workbenches** (set OFF in `cMake/CoreCAD_Options.cmake`):
 - `BUILD_ROBOT` — robotics simulation
@@ -77,19 +77,19 @@ by the developer at build time via `cMake/CoreCAD_Options.cmake`.
 ### 3. RibbonUI as Default Interface
 Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default toolbar/menu system.
 
-| Task | Status |
-|------|--------|
-| Evaluate RibbonUI addon ([APEbbers/FreeCAD-Ribbon](https://github.com/APEbbers/FreeCAD-Ribbon)) | ✅ Done |
-| Add as git submodule (`src/Mod/FreeCAD-Ribbon`, tracking `develop` branch) | ✅ Done |
-| Auto-load at startup (automatic via `DirModScanner` — no code changes needed) | ✅ Done |
-| Remove "FreeCAD X.Y.Z" version string from ribbon bar title (`FCBinding.py`) | ✅ Done |
-| Re-sync submodule to build dir on build, not just cmake configure (`src/Mod/CMakeLists.txt`) | ✅ Done |
-| Move Global ribbon panels (Tools, Views) to Quick Access Toolbar with separators | ✅ Done |
-| Fix QAT regressions: restore separators/ordering and hide Individual views globally | ✅ Done |
-| Define and enforce a canonical workbench order in the RibbonUI workbench list | ✅ Done |
-| Investigate and fix QAT separators being stripped from `RibbonStructure.json` on restart | ⬜ Todo |
-| Limit Structure group to PartDesign, Part, and Assembly only (update `CreateDefaultRibbonStructure.py` then patch live JSON) | ⬜ Todo |
-| Test with each upstream rebase | ⬜ Ongoing |
+| Status | Task |
+|--------|------|
+| ✅ Done | Evaluate RibbonUI addon ([APEbbers/FreeCAD-Ribbon](https://github.com/APEbbers/FreeCAD-Ribbon)) |
+| ✅ Done | Add as git submodule (`src/Mod/FreeCAD-Ribbon`, tracking `develop` branch) |
+| ✅ Done | Auto-load at startup (automatic via `DirModScanner` — no code changes needed) |
+| ✅ Done | Remove "FreeCAD X.Y.Z" version string from ribbon bar title (`FCBinding.py`) |
+| ✅ Done | Re-sync submodule to build dir on build, not just cmake configure (`src/Mod/CMakeLists.txt`) |
+| ✅ Done | Move Global ribbon panels (Tools, Views) to Quick Access Toolbar with separators |
+| ✅ Done | Fix QAT regressions: restore separators/ordering and hide Individual views globally |
+| ✅ Done | Define and enforce a canonical workbench order in the RibbonUI workbench list |
+| ⬜ Todo | Investigate and fix QAT separators being stripped from `RibbonStructure.json` on restart |
+| ⬜ Todo | Limit Structure group to PartDesign, Part, and Assembly only (update `CreateDefaultRibbonStructure.py` then patch live JSON) |
+| ⬜ Ongoing | Test with each upstream rebase |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
 > 1. FreeCAD preferences (`DlgSettingsWorkbenchesImp.cpp`): `"Ordered"` default sets canonical order
@@ -107,14 +107,14 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 ### 4. Build & Developer Infrastructure
 Ensure the project is reproducible and easy to work with.
 
-| Task | Status |
-|------|--------|
-| Set up `cMake/CoreCAD_Options.cmake` as home for all build overrides | ✅ Done |
-| Set up pre-commit hooks (clang-format, black) | ✅ Done |
-| Create `CLAUDE.md` for AI-assisted development | ✅ Done |
-| Set up branching strategy (`main` mirrors upstream, `develop` holds customisations) | ✅ Done |
-| Display CoreCAD version in title bar, separate from internal FreeCAD build version | ✅ Done |
-| Define CoreCAD versioning strategy (CI injection, About dialog) | ⬜ Todo |
+| Status | Task |
+|--------|------|
+| ✅ Done | Set up `cMake/CoreCAD_Options.cmake` as home for all build overrides |
+| ✅ Done | Set up pre-commit hooks (clang-format, black) |
+| ✅ Done | Create `CLAUDE.md` for AI-assisted development |
+| ✅ Done | Set up branching strategy (`main` mirrors upstream, `develop` holds customisations) |
+| ✅ Done | Display CoreCAD version in title bar, separate from internal FreeCAD build version |
+| ⬜ Todo | Define CoreCAD versioning strategy (CI injection, About dialog) |
 
 > **Versioning note:** CoreCAD uses a display-only version (`CoreCADVersionMajor/Minor/Patch/Suffix`
 > in `corecad/branding.xml`) that is shown in the title bar. The internal FreeCAD build version
