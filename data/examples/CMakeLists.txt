@@ -1,13 +1,9 @@
 
 SET(Examples_Files
-    Schenkel.stp
-    draft_test_objects.FCStd
     EngineBlock.FCStd
     PartDesignExample.FCStd
-    BIMExample.FCStd
     FEMExample.FCStd
     AssemblyExample.FCStd
-    ArchDetail.FCStd
     FCPAT.pat
     osifont.license
     osifont-lgpl3fe.ttf

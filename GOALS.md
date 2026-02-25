@@ -141,6 +141,25 @@ Ensure the project is reproducible and easy to work with.
 
 ---
 
+### 5. Start Page & Examples
+
+Curate the Examples section on the start page to reflect CoreCAD's mechanical CAD focus.
+
+| Status | Task |
+|--------|------|
+| ✅ Done | Remove BIM/Arch examples (`BIMExample.FCStd`, `ArchDetail.FCStd`) — `BUILD_BIM=OFF`, workbench disabled |
+| ✅ Done | Remove `draft_test_objects.FCStd` — developer test artifact, not a polished user example |
+| ✅ Done | Remove `Schenkel.stp` — obscure German name, raw STEP file with no description |
+| ⬜ Todo | Add a replacement STEP import example: English name (e.g. `BracketImport.stp`), simple mechanical part, demonstrates STEP round-trip capability |
+
+> The replacement STEP example should: use a recognisable mechanical part (bracket, flange, etc.),
+> have a descriptive English filename, and ideally include a matching `.FCStd` alongside it to
+> show the imported result. The four remaining examples (`EngineBlock.FCStd`,
+> `PartDesignExample.FCStd`, `FEMExample.FCStd`, `AssemblyExample.FCStd`) cover the core
+> mechanical CAD workflows and are the right set to keep.
+
+---
+
 ## Branch & Workflow Notes
 
 - `main` — strictly mirrors upstream FreeCAD. No custom changes.
