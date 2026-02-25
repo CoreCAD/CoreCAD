@@ -77,6 +77,9 @@ CmdPartCylinder::CmdPartCylinder()
 void CmdPartCylinder::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (!ensureActiveDocument()) {
+        return;
+    }
     QString cmd;
     cmd = qApp->translate("CmdPartCylinder", "Cylinder");
     openCommand((const char*)cmd.toUtf8());
@@ -93,12 +96,7 @@ void CmdPartCylinder::activated(int iMsg)
 
 bool CmdPartCylinder::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return true;
 }
 
 //===========================================================================
@@ -121,6 +119,9 @@ CmdPartBox::CmdPartBox()
 void CmdPartBox::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (!ensureActiveDocument()) {
+        return;
+    }
     QString cmd;
     cmd = qApp->translate("CmdPartBox", "Cube");
     openCommand((const char*)cmd.toUtf8());
@@ -137,12 +138,7 @@ void CmdPartBox::activated(int iMsg)
 
 bool CmdPartBox::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return true;
 }
 
 //===========================================================================
@@ -165,6 +161,9 @@ CmdPartSphere::CmdPartSphere()
 void CmdPartSphere::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (!ensureActiveDocument()) {
+        return;
+    }
     QString cmd;
     cmd = qApp->translate("CmdPartSphere", "Sphere");
     openCommand((const char*)cmd.toUtf8());
@@ -181,12 +180,7 @@ void CmdPartSphere::activated(int iMsg)
 
 bool CmdPartSphere::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return true;
 }
 
 //===========================================================================
@@ -209,6 +203,9 @@ CmdPartCone::CmdPartCone()
 void CmdPartCone::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (!ensureActiveDocument()) {
+        return;
+    }
     QString cmd;
     cmd = qApp->translate("CmdPartCone", "Cone");
     openCommand((const char*)cmd.toUtf8());
@@ -225,12 +222,7 @@ void CmdPartCone::activated(int iMsg)
 
 bool CmdPartCone::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return true;
 }
 
 //===========================================================================
@@ -253,6 +245,9 @@ CmdPartTorus::CmdPartTorus()
 void CmdPartTorus::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (!ensureActiveDocument()) {
+        return;
+    }
     QString cmd;
     cmd = qApp->translate("CmdPartTorus", "Torus");
     openCommand((const char*)cmd.toUtf8());
@@ -269,12 +264,7 @@ void CmdPartTorus::activated(int iMsg)
 
 bool CmdPartTorus::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return true;
 }
 
 
