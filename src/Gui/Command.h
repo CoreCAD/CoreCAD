@@ -654,6 +654,9 @@ public:
     //@{
     /// true when there is a document
     bool hasActiveDocument() const;
+    /// Ensures an active document exists, creating one if necessary.
+    /// Returns true if a document is available after the call, false on failure.
+    bool ensureActiveDocument() const;
     /// true when there is a document and a Feature with Name
     bool hasObject(const char* Name);
     //@}

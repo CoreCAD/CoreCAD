@@ -101,6 +101,10 @@ void CmdPartDesignBody::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
+    if (!ensureActiveDocument()) {
+        return;
+    }
+
     App::Part* actPart = PartDesignGui::getActivePart();
     App::Part* partOfBaseFeature = nullptr;
 
@@ -376,7 +380,7 @@ void CmdPartDesignBody::activated(int iMsg)
 
 bool CmdPartDesignBody::isActive()
 {
-    return hasActiveDocument();
+    return true;
 }
 
 //===========================================================================
