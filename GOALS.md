@@ -160,6 +160,24 @@ Curate the Examples section on the start page to reflect CoreCAD's mechanical CA
 
 ---
 
+### 6. New-User Experience
+Remove friction for first-time users — commands that create top-level objects should work
+immediately without requiring a manual "File → New" step first.
+
+| Status | Task |
+|--------|------|
+| ✅ Done | Add `Command::ensureActiveDocument()` helper to `Command` base class |
+| ✅ Done | `Std_Part`, `Std_Group`, `PartDesign_Body` auto-create a document if none is open |
+| ✅ Done | `Assembly_CreateAssembly` always creates a new document for root assemblies |
+| ⬜ Todo | Audit remaining top-level commands for similar friction (e.g. Spreadsheet, TechDraw page) |
+
+> Root assemblies always land in a fresh document (`App.newDocument()` in `Activated()`).
+> Sub-assemblies nested inside an already-active assembly stay in that assembly's document.
+> The helper `ensureActiveDocument()` is in `src/Gui/Command.cpp`; see
+> `src/Gui/AUTO_DOCUMENT_CREATION.md` for criteria and revert instructions.
+
+---
+
 ## Branch & Workflow Notes
 
 - `main` — strictly mirrors upstream FreeCAD. No custom changes.
