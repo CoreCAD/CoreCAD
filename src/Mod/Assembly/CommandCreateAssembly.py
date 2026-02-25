@@ -68,19 +68,19 @@ class CommandCreateAssembly:
         return True
 
     def Activated(self):
-        if not App.ActiveDocument:
-            App.newDocument()
-
-        Gui.ActiveDocument.openCommand("New assembly")
-
         activeAssembly = UtilsAssembly.activeAssembly()
         Gui.addModule("UtilsAssembly")
         if activeAssembly:
+            # Sub-assembly nested inside an existing open assembly — stay in current document.
+            Gui.ActiveDocument.openCommand("New assembly")
             commands = (
                 "activeAssembly = UtilsAssembly.activeAssembly()\n"
                 'assembly = activeAssembly.newObject("Assembly::AssemblyObject", "Assembly")\n'
             )
         else:
+            # Root assembly — always lives in its own document.
+            App.newDocument()
+            Gui.ActiveDocument.openCommand("New assembly")
             commands = (
                 'assembly = App.ActiveDocument.addObject("Assembly::AssemblyObject", "Assembly")\n'
             )
