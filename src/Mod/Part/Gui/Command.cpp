@@ -228,13 +228,16 @@ CmdPartPrimitives::CmdPartPrimitives()
 void CmdPartPrimitives::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (!ensureActiveDocument()) {
+        return;
+    }
     PartGui::TaskPrimitives* dlg = new PartGui::TaskPrimitives();
     Gui::Control().showDialog(dlg);
 }
 
 bool CmdPartPrimitives::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return !Gui::Control().activeDialog();
 }
 
 namespace PartGui
