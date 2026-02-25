@@ -94,9 +94,9 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | ✅ Done | Fix TechDraw Dimensions ribbon group rendering empty (invalid command key, missing button definitions, unreliable `_custom` toolbar mechanism) |
 | ✅ Done | Split PartDesign Helpers into a "Part" panel (New Body + New Sketch) and a reduced "Helpers" panel moved just before Structure |
 | ✅ Done | Fix `CreateStructure.txt` not triggering stamp rebuild (add `.txt` to CMake `DEPENDS` list) |
-| ⬜ Todo | Move TechDraw Dimensions panel to between Views and Attributes in the TechDraw ribbon |
-| ⬜ Todo | Move Mesh Structure panel to the end of the Mesh workbench ribbon |
-| ⬜ Todo | Make the single Material workbench button large size |
+| ✅ Done | Move TechDraw Dimensions panel to between Views and Attributes in the TechDraw ribbon |
+| ✅ Done | Move Mesh Structure panel to the end of the Mesh workbench ribbon |
+| ✅ Done | Make the single Material workbench button large size |
 | ⬜ Ongoing | Test with each upstream rebase |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
