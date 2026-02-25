@@ -61,6 +61,10 @@ void StdCmdPart::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
+    if (!ensureActiveDocument()) {
+        return;
+    }
+
     openCommand(QT_TRANSLATE_NOOP("Command", "Add a part"));
     std::string FeatName = getUniqueObjectName("Part");
 
@@ -108,7 +112,7 @@ void StdCmdPart::activated(int iMsg)
 
 bool StdCmdPart::isActive()
 {
-    return hasActiveDocument();
+    return true;
 }
 
 //===========================================================================
@@ -134,6 +138,10 @@ StdCmdGroup::StdCmdGroup()
 void StdCmdGroup::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+
+    if (!ensureActiveDocument()) {
+        return;
+    }
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Add a group"));
 
@@ -180,7 +188,7 @@ void StdCmdGroup::activated(int iMsg)
 
 bool StdCmdGroup::isActive()
 {
-    return hasActiveDocument();
+    return true;
 }
 
 //===========================================================================

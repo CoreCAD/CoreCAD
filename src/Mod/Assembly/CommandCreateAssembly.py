@@ -65,9 +65,12 @@ class CommandCreateAssembly:
             if UtilsAssembly.isThereOneRootAssembly() and not activeAssembly:
                 return False
 
-        return App.ActiveDocument is not None
+        return True
 
     def Activated(self):
+        if not App.ActiveDocument:
+            App.newDocument()
+
         Gui.ActiveDocument.openCommand("New assembly")
 
         activeAssembly = UtilsAssembly.activeAssembly()
