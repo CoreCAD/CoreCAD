@@ -169,12 +169,17 @@ immediately without requiring a manual "File → New" step first.
 | ✅ Done | Add `Command::ensureActiveDocument()` helper to `Command` base class |
 | ✅ Done | `Std_Part`, `Std_Group`, `PartDesign_Body` auto-create a document if none is open |
 | ✅ Done | `Assembly_CreateAssembly` always creates a new document for root assemblies |
-| ⬜ Todo | Audit remaining top-level commands for similar friction (e.g. Spreadsheet, TechDraw page) |
+| ✅ Done | Audit remaining top-level commands — extend to Part primitives, Spreadsheet, FEM_Analysis |
 
 > Root assemblies always land in a fresh document (`App.newDocument()` in `Activated()`).
 > Sub-assemblies nested inside an already-active assembly stay in that assembly's document.
 > The helper `ensureActiveDocument()` is in `src/Gui/Command.cpp`; see
 > `src/Gui/AUTO_DOCUMENT_CREATION.md` for criteria and revert instructions.
+>
+> **TechDraw intentionally excluded:** a drawing page only makes sense alongside existing geometry,
+> so `TechDraw_PageDefault` and `TechDraw_PageTemplate` remain gated on `hasActiveDocument()`.
+> **Sketcher intentionally excluded:** users should create a Body first; the PartDesign workflow
+> then prompts for a sketch automatically.
 
 ---
 
