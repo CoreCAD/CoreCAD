@@ -208,11 +208,6 @@ StartView::StartView(QWidget* parent)
 
 void StartView::configureNewFileButtons(QLayout* layout) const
 {
-    auto newEmptyFile = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Empty File"),
-         tr("Creates a new empty FreeCAD file"),
-         QLatin1String(":/icons/document-new.svg")}
-    ));
     auto openFile = gsl::owner<NewFileButton*>(new NewFileButton(
         {tr("Open File"),
          tr("Opens an existing CAD file or 3D model"),
@@ -231,10 +226,8 @@ void StartView::configureNewFileButtons(QLayout* layout) const
     // TODO: Ensure all of the required WBs are actually available
     layout->addWidget(partDesign);
     layout->addWidget(assembly);
-    layout->addWidget(newEmptyFile);
     layout->addWidget(openFile);
 
-    connect(newEmptyFile, &QPushButton::clicked, this, &StartView::newEmptyFile);
     connect(openFile, &QPushButton::clicked, this, &StartView::openExistingFile);
     connect(partDesign, &QPushButton::clicked, this, &StartView::newPartDesignFile);
     connect(assembly, &QPushButton::clicked, this, &StartView::newAssemblyFile);
