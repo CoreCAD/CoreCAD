@@ -170,6 +170,8 @@ immediately without requiring a manual "File → New" step first.
 | ✅ Done | `Std_Part`, `Std_Group`, `PartDesign_Body` auto-create a document if none is open |
 | ✅ Done | `Assembly_CreateAssembly` always creates a new document for root assemblies |
 | ✅ Done | Audit remaining top-level commands — extend to Part primitives, Spreadsheet, FEM_Analysis |
+| ✅ Done | Fix `isThereOneRootAssembly()` crash on cold start — `Gui.activeDocument()` was None |
+| ✅ Done | Fix `Part_Tube` cold-start — Python command in `BasicShapes/CommandShapes.py` missed the pattern |
 
 > Root assemblies always land in a fresh document (`App.newDocument()` in `Activated()`).
 > Sub-assemblies nested inside an already-active assembly stay in that assembly's document.
@@ -180,6 +182,8 @@ immediately without requiring a manual "File → New" step first.
 > so `TechDraw_PageDefault` and `TechDraw_PageTemplate` remain gated on `hasActiveDocument()`.
 > **Sketcher intentionally excluded:** users should create a Body first; the PartDesign workflow
 > then prompts for a sketch automatically.
+> **Part_Tube note:** implemented as a Python command in `src/Mod/Part/BasicShapes/CommandShapes.py`,
+> not alongside the other C++ parametric primitives in `CommandParametric.cpp`.
 
 ---
 
