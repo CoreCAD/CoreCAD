@@ -7,6 +7,8 @@ SET(Examples_Files
     FCPAT.pat
     osifont.license
     osifont-lgpl3fe.ttf
+    utah-teapot.stl
+    utah-teapot.obj
 )
 
 ADD_CUSTOM_TARGET(Example_data ALL
