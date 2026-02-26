@@ -41,6 +41,9 @@ CoreCAD deliberately narrows its scope to strengthen mechanical fundamentals rat
 
 ---
 
+© 2026 CoreCAD. All rights reserved.
+The CoreCAD name, logo, and branding assets are proprietary and may not be used without permission.
+
 <!-- ### Relationship to FreeCAD ###
 CoreCAD is built on FreeCAD and remains deeply aligned with its upstream development.
 * The core engine and data formats remain compatible
