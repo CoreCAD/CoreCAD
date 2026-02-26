@@ -150,6 +150,7 @@ Curate the Examples section on the start page to reflect CoreCAD's mechanical CA
 | ✅ Done | Remove BIM/Arch examples (`BIMExample.FCStd`, `ArchDetail.FCStd`) — `BUILD_BIM=OFF`, workbench disabled |
 | ✅ Done | Remove `draft_test_objects.FCStd` — developer test artifact, not a polished user example |
 | ✅ Done | Remove `Schenkel.stp` — obscure German name, raw STEP file with no description |
+| ✅ Done | Add Utah Teapot mesh examples (`utah-teapot.stl`, `utah-teapot.obj`) — public domain / CC0, good Mesh workbench test assets |
 | ⬜ Todo | Add a replacement STEP import example: English name (e.g. `BracketImport.stp`), simple mechanical part, demonstrates STEP round-trip capability |
 
 > The replacement STEP example should: use a recognisable mechanical part (bracket, flange, etc.),
@@ -172,6 +173,7 @@ immediately without requiring a manual "File → New" step first.
 | ✅ Done | Audit remaining top-level commands — extend to Part primitives, Spreadsheet, FEM_Analysis |
 | ✅ Done | Fix `isThereOneRootAssembly()` crash on cold start — `Gui.activeDocument()` was None |
 | ✅ Done | Fix `Part_Tube` cold-start — Python command in `BasicShapes/CommandShapes.py` missed the pattern |
+| ✅ Done | `Mesh_Import` auto-creates a document if none is open (file dialog cancel does not create a document) |
 
 > Root assemblies always land in a fresh document (`App.newDocument()` in `Activated()`).
 > Sub-assemblies nested inside an already-active assembly stay in that assembly's document.
