@@ -52,6 +52,8 @@ class CommandTube:
         }
 
     def Activated(self):
+        if not FreeCAD.ActiveDocument:
+            FreeCAD.newDocument()
         text = FreeCAD.Qt.translate("QObject", "Create tube")
         FreeCAD.ActiveDocument.openTransaction(text)
         tube = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", "Tube")
@@ -64,7 +66,7 @@ class CommandTube:
         vp.startDefaultEditMode(tube.ViewObject)
 
     def IsActive(self):
-        return not FreeCAD.ActiveDocument is None
+        return True
 
 
 FreeCADGui.addCommand("Part_Tube", CommandTube())
