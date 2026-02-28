@@ -222,7 +222,7 @@ Development file for OndselSolver
     fi
 %endif
 
-    desktop-file-validate %{buildroot}%{_datadir}/applications/org.freecad.FreeCAD.desktop
+    desktop-file-validate %{buildroot}%{_datadir}/applications/org.corecad.CoreCAD.desktop
     %{?fedora:appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/*.metainfo.xml}
 
     # Bug maintainers to keep %%{plugins} macro up to date.
