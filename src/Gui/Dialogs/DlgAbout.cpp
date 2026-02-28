@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: Copyright (C) 2026 CoreCAD Contributors
 
 /***************************************************************************
  *   Copyright (c) 2004 Werner Mayer <wmayer[at]users.sourceforge.net>     *
@@ -207,10 +208,21 @@ void AboutDialog::setupLabels()
     std::map<std::string, std::string>::iterator it;
     QString banner = QString::fromStdString(config["CopyrightInfo"]);
     banner = banner.left(banner.indexOf(QLatin1Char('\n')));
-    QString major = QString::fromStdString(config["BuildVersionMajor"]);
-    QString minor = QString::fromStdString(config["BuildVersionMinor"]);
-    QString point = QString::fromStdString(config["BuildVersionPoint"]);
-    QString suffix = QString::fromStdString(config["BuildVersionSuffix"]);
+    // Prefer CoreCAD display version from branding.xml; fall back to FreeCAD build version
+    QString major, minor, point, suffix;
+    auto ccMajor = config.find("CoreCADVersionMajor");
+    if (ccMajor != config.end() && !ccMajor->second.empty()) {
+        major = QString::fromStdString(config["CoreCADVersionMajor"]);
+        minor = QString::fromStdString(config["CoreCADVersionMinor"]);
+        point = QString::fromStdString(config["CoreCADVersionPatch"]);
+        suffix = QString::fromStdString(config["CoreCADVersionSuffix"]);
+    }
+    else {
+        major = QString::fromStdString(config["BuildVersionMajor"]);
+        minor = QString::fromStdString(config["BuildVersionMinor"]);
+        point = QString::fromStdString(config["BuildVersionPoint"]);
+        suffix = QString::fromStdString(config["BuildVersionSuffix"]);
+    }
     QString build = QString::fromStdString(config["BuildRevision"]);
     QString disda = QString::fromStdString(config["BuildRevisionDate"]);
     QString mturl = QString::fromStdString(config["MaintainerUrl"]);
