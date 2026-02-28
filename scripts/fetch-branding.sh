@@ -34,5 +34,6 @@ if [ "$HTTP_STATUS" != "200" ]; then
     exit 0
 fi
 
-tar -xzf "$TMPFILE" --strip-components=1 -C "$REPO_ROOT"
+tar -xzf "$TMPFILE" --strip-components=1 -C "$REPO_ROOT" \
+    --exclude='README.md' --exclude='README*' --exclude='LICENSE*' --exclude='.git*'
 echo "CoreCAD branding assets applied."
