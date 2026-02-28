@@ -70,9 +70,9 @@ by the developer at build time via `cMake/CoreCAD_Options.cmake`.
 - `BUILD_TUX` — mascot/novelty module
 - `BUILD_BIM` — architecture/BIM (out of mechanical CAD scope)
 - `BUILD_IDF` — PCB board file import (too niche)
-- `BUILD_POINTS` — point cloud tools (scan-to-CAD excluded for now)
-- `BUILD_REVERSEENGINEERING` — depends on Points; excluded with it
-- `BUILD_INSPECTION` — mesh/point cloud inspection; depends on Points, excluded with it
+- `BUILD_POINTS` — point cloud tools (scan-to-CAD is a specialty workflow, not core mechanical CAD)
+- `BUILD_REVERSEENGINEERING` — scan-to-CAD reverse engineering; depends on Points
+- `BUILD_INSPECTION` — mesh/point cloud inspection; depends on Points
 - `BUILD_PLOT` — legacy matplotlib plotter (maintained externally as addon)
 
 **Already OFF upstream** (no action needed): `BUILD_CLOUD`, `BUILD_SANDBOX`
