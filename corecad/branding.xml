@@ -12,16 +12,16 @@
     <!-- URL shown in Help/About and About dialog -->
     <MaintainerUrl>https://corecad.example.com</MaintainerUrl>
 
-    <!-- Icon filenames (without .svg extension, looked up in resources) -->
-    <!-- Update these to match your CoreCAD icon resources -->
-    <WindowIcon>corecad</WindowIcon>
-    <ProgramLogo>corecad</ProgramLogo>
+    <!-- WindowIcon and ProgramLogo are intentionally omitted here.
+         The AppIcon config key (set to "CoreCAD" in MainGui.cpp) handles the window icon
+         via BitmapFactory, which correctly resolves Qt resource names.
+         StartupProcess.cpp treats WindowIcon/ProgramLogo as file paths, not resource names,
+         so setting them here would override the working AppIcon with a broken path. -->
 
-    <!-- Splash screen image (without extension) -->
-    <SplashScreen>corecadsplash</SplashScreen>
-
-    <!-- About dialog image (without extension) -->
-    <AboutImage>corecadabout</AboutImage>
+    <!-- Splash and About images use the FreeCAD filenames; the private asset overlay
+         (corecad-assets) replaces freecadsplash.png and freecadabout.png at build time. -->
+    <SplashScreen>freecadsplash</SplashScreen>
+    <AboutImage>freecadabout</AboutImage>
 
     <!-- Desktop integration filename (Linux .desktop file) -->
     <!-- This is used for menu entries and file associations on Linux -->
