@@ -208,7 +208,7 @@ immediately without requiring a manual "File → New" step first.
 
 ## Branch & Workflow Notes
 
-- `main` — strictly mirrors upstream FreeCAD. No custom changes.
-- `develop` — all CoreCAD customisations. Rebased onto `main` after each upstream sync.
+- `main` — stable CoreCAD fork. Merged from `develop` when stable. Rebased onto `upstream/main` when pulling in upstream changes.
+- `develop` — active CoreCAD development. Rebased onto `main` after each upstream sync. Merged into `main` when stable.
 - Feature branches (e.g. `CCI-6`) — individual work items, branched from `develop`.
-- Upstream sync: `git fetch upstream` → merge `main` → rebase `develop`.
+- Upstream sync: `git fetch upstream` → `git rebase upstream/main` on `main` → rebase `develop` onto `main`.
