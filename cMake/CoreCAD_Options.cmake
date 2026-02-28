@@ -19,6 +19,14 @@ add_custom_target(CoreCAD_branding ALL
     DEPENDS ${CMAKE_BINARY_DIR}/bin/branding.xml
 )
 
+# ── UI defaults ───────────────────────────────────────────────────────────────
+# Show the splash screen by default on a fresh install (no saved preference).
+# OFF for dev builds to avoid the startup blip; set ON for production releases.
+option(CORECAD_SHOW_SPLASH "Show splash screen on startup by default" OFF)
+if(CORECAD_SHOW_SPLASH)
+    add_compile_definitions(CORECAD_SHOW_SPLASH)
+endif()
+
 # ── Disabled modules ──────────────────────────────────────────────────────────
 # Addon Manager: users cannot install or remove workbenches at runtime.
 set(BUILD_ADDONMGR          OFF CACHE BOOL "CoreCAD: Addon Manager disabled" FORCE)

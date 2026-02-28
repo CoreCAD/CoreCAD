@@ -56,6 +56,12 @@
 #include <QPushButton>
 #include <string>
 
+// CoreCAD build option: controlled via CORECAD_SHOW_SPLASH in cMake/CoreCAD_Options.cmake
+#ifdef CORECAD_SHOW_SPLASH
+static constexpr bool defaultShowSplash = true;
+#else
+static constexpr bool defaultShowSplash = false;
+#endif
 
 #if defined(Q_OS_WIN)
 # if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
@@ -2177,7 +2183,7 @@ void MainWindow::startSplasher()
                                         ->GetGroup("Preferences")
                                         ->GetGroup("General");
         // first search for an external image file
-        if (hGrp->GetBool("ShowSplasher", false)) {
+        if (hGrp->GetBool("ShowSplasher", defaultShowSplash)) {
             d->splashscreen = new SplashScreen(SplashScreen::splashImage());
 
             if (!hGrp->GetBool("ShowSplasherMessages", false)) {
