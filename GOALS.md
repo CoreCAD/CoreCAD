@@ -31,7 +31,7 @@ community and keeping internal compatibility intact.
 | ✅ Done | Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` |
 | ✅ Done | Update desktop integration files (`src/XDGData/`) and all downstream `org.freecad.FreeCAD` references |
 | ✅ Done | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) |
-| ⚠️ Partial | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) — see note below |
+| ✅ Done | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) |
 | ⬜ Todo | Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) |
 | ⚠️ Partial | Update GitHub repository files (issue templates, PR template, FUNDING.yml) — see note below |
 | 🔮 Future | Add FreeCAD original authors to an Acknowledgements section in the About dialog |
@@ -41,11 +41,6 @@ community and keeping internal compatibility intact.
 > — renaming them would break the module import system.
 > See `.local/BRANDING_CHECKLIST.md` for file-level detail on all items above.
 > See `.local/BRANDING_RIPPLE_ANALYSIS.md` for the full impact analysis of remaining work.
->
-> ⚠️ **Stylesheet names:** All files/directories renamed and CMake/UI code is correct, but
-> `src/Mod/FreeCAD-Ribbon/StyleMapping_Ribbon.py` still has dictionary keys referencing
-> `"FreeCAD Dark.qss"` / `"FreeCAD Light.qss"` — the Ribbon UI won't find style mappings
-> for the current CoreCAD stylesheets.
 >
 > ⚠️ **GitHub repository files:** Issue templates, PR template, and FUNDING.yml are done.
 > `CONTRIBUTING.md` (repo root) still has ~15 FreeCAD references that should be CoreCAD
