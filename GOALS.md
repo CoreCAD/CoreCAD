@@ -29,17 +29,34 @@ community and keeping internal compatibility intact.
 | ✅ Done | Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` |
 | ✅ Done | Fix CLI startup banner in `src/Main/MainCmd.cpp` |
 | ✅ Done | Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` |
-| ✅ Done | Update desktop integration files (`src/XDGData/`) |
+| ⚠️ Partial | Update desktop integration files (`src/XDGData/`) — see note below |
 | ✅ Done | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) |
-| ✅ Done | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) |
+| ⚠️ Partial | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) — see note below |
 | ⬜ Todo | Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) |
-| ✅ Done | Update GitHub repository files (issue templates, PR template, FUNDING.yml) |
+| ⚠️ Partial | Update GitHub repository files (issue templates, PR template, FUNDING.yml) — see note below |
 | 🔮 Future | Add FreeCAD original authors to an Acknowledgements section in the About dialog |
 | 🔮 Future | Investigate renaming `FreeCAD`/`FreeCADCmd` binaries to `CoreCAD`/`CoreCADCmd` |
 
 > Internal Python module names (`FreeCADGuiInit.py`, etc.) are intentionally left unchanged
 > — renaming them would break the module import system.
 > See `.local/BRANDING_CHECKLIST.md` for file-level detail on all items above.
+> See `.local/BRANDING_RIPPLE_ANALYSIS.md` for the full impact analysis of remaining work.
+>
+> ⚠️ **Desktop integration:** The 4 XDG files in `src/XDGData/` are renamed, but 9 downstream
+> files still reference `org.freecad.FreeCAD` — icon install rules in `src/Gui/CMakeLists.txt`,
+> macOS QuickLook IDs in `MainWindow.cpp`, packaging scripts (`create_bundle.sh`,
+> `freecad.spec`, `Info.plist.template`), and the thumbnailer script. Without updating these,
+> Linux icons won't associate with the desktop entry and macOS QuickLook won't register.
+> These must be updated in a single coordinated change.
+>
+> ⚠️ **Stylesheet names:** All files/directories renamed and CMake/UI code is correct, but
+> `src/Mod/FreeCAD-Ribbon/StyleMapping_Ribbon.py` still has dictionary keys referencing
+> `"FreeCAD Dark.qss"` / `"FreeCAD Light.qss"` — the Ribbon UI won't find style mappings
+> for the current CoreCAD stylesheets.
+>
+> ⚠️ **GitHub repository files:** Issue templates, PR template, and FUNDING.yml are done.
+> `CONTRIBUTING.md` (repo root) still has ~15 FreeCAD references that should be CoreCAD
+> (exception: "FreeCAD project association" refers to the upstream legal entity and should stay).
 >
 > 🔮 **Future** items are deferred due to complexity or dependency on other work. Binary renaming
 > would affect CI, packaging, addon compatibility, and all desktop integration files.
