@@ -29,7 +29,7 @@ community and keeping internal compatibility intact.
 | ✅ Done | Fix CLI/GUI startup banner in `src/Main/MainGui.cpp` |
 | ✅ Done | Fix CLI startup banner in `src/Main/MainCmd.cpp` |
 | ✅ Done | Update LicenseInfo/CreditsInfo strings in `src/Main/FreeCADGuiPy.cpp` |
-| ⚠️ Partial | Update desktop integration files (`src/XDGData/`) — see note below |
+| ✅ Done | Update desktop integration files (`src/XDGData/`) and all downstream `org.freecad.FreeCAD` references |
 | ✅ Done | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) |
 | ⚠️ Partial | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) — see note below |
 | ⬜ Todo | Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) |
@@ -41,13 +41,6 @@ community and keeping internal compatibility intact.
 > — renaming them would break the module import system.
 > See `.local/BRANDING_CHECKLIST.md` for file-level detail on all items above.
 > See `.local/BRANDING_RIPPLE_ANALYSIS.md` for the full impact analysis of remaining work.
->
-> ⚠️ **Desktop integration:** The 4 XDG files in `src/XDGData/` are renamed, but 9 downstream
-> files still reference `org.freecad.FreeCAD` — icon install rules in `src/Gui/CMakeLists.txt`,
-> macOS QuickLook IDs in `MainWindow.cpp`, packaging scripts (`create_bundle.sh`,
-> `freecad.spec`, `Info.plist.template`), and the thumbnailer script. Without updating these,
-> Linux icons won't associate with the desktop entry and macOS QuickLook won't register.
-> These must be updated in a single coordinated change.
 >
 > ⚠️ **Stylesheet names:** All files/directories renamed and CMake/UI code is correct, but
 > `src/Mod/FreeCAD-Ribbon/StyleMapping_Ribbon.py` still has dictionary keys referencing

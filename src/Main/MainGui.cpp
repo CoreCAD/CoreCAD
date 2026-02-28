@@ -215,7 +215,7 @@ int main(int argc, char** argv)
     App::Application::Config()["SplashWarningColor"] = "#CA333B";
     App::Application::Config()["SplashInfoColor"] = "#000000";
     App::Application::Config()["SplashInfoPosition"] = "6,75";
-    App::Application::Config()["DesktopFileName"] = "org.freecad.FreeCAD";
+    App::Application::Config()["DesktopFileName"] = "org.corecad.CoreCAD";
 
     try {
         // Init phase ===========================================================
