@@ -33,6 +33,7 @@ community and keeping internal compatibility intact.
 | ✅ Done | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) |
 | ✅ Done | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) |
 | ✅ Done | Stage branding assets in build tree only (source tree never modified, no accidental commits) |
+| ✅ Done | Stage Windows installer icons (`*.ico`, `*.bmp`) in build tree via `corecad_stage_assets()` |
 | ⬜ Todo | Fix Assembly/Material icon paths in `corecad-assets` to match their QRC layout |
 | ⬜ Todo | Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) |
 | ⚠️ Partial | Update GitHub repository files (issue templates, PR template, FUNDING.yml) — see note below |
