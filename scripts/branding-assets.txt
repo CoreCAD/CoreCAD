@@ -1,0 +1,11 @@
+# CoreCAD branding asset allowlist
+# Each line is a glob pattern (relative to the assets repo root) for files
+# that cmake is allowed to overlay onto the build tree. Files not matching
+# any pattern are ignored. Lines starting with # are comments.
+#
+# cmake reads this file at configure time via cMake/CoreCAD_Branding.cmake.
+# The source tree is never modified — overrides only exist in the build tree.
+
+# Core application icons, splash screen and about images
+src/Gui/Icons/*.svg
+src/Gui/Icons/*.png

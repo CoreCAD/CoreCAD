@@ -4,6 +4,9 @@
 # take precedence over upstream defaults. Add/remove workbenches here to control
 # what is compiled into CoreCAD.
 
+# ── Branding icon overlay (build-tree only) ───────────────────────────────────
+include(cMake/CoreCAD_Branding.cmake)
+
 # ── Branding assets ───────────────────────────────────────────────────────────
 # Copy branding.xml into the build bin/ directory whenever the source changes.
 # Uses a custom command so the copy is re-run on build, not just at configure time.
