@@ -514,8 +514,18 @@ set (FreeCAD_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Language/FreeCAD_translation.qrc
 qt_find_and_add_translation(QM_SRCS "Language/FreeCAD_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Language)
 qt_create_resource_file_prefix(${FreeCAD_TR_QRC} ${QM_SRCS})
+# Stage branding icon overrides into the build tree (source tree is untouched).
+# When CORECAD_ASSETS_DIR is set, matching assets replace the placeholder icons
+# in a staging copy; otherwise the original QRC is used as-is.
+corecad_stage_resources(
+    SOURCE_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/Icons"
+    ASSETS_SUBDIR "src/Gui/Icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Icons/resource.qrc"
+    OUTPUT_QRC    _CoreCAD_Icons_QRC
+)
+
 set(Gui_RES_SRCS
-    Icons/resource.qrc
+    ${_CoreCAD_Icons_QRC}
     Language/translation.qrc
     ${FreeCAD_TR_QRC}
 )
