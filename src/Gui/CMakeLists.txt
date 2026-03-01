@@ -518,7 +518,7 @@ qt_create_resource_file_prefix(${FreeCAD_TR_QRC} ${QM_SRCS})
 # When CORECAD_ASSETS_DIR is set, matching assets replace the placeholder icons
 # in a staging copy; otherwise the original QRC is used as-is.
 corecad_stage_resources(
-    SOURCE_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/Icons"
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Icons"
     ASSETS_SUBDIR "src/Gui/Icons"
     QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Icons/resource.qrc"
     OUTPUT_QRC    _CoreCAD_Icons_QRC

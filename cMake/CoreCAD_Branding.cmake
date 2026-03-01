@@ -2,19 +2,28 @@
 #
 # When CORECAD_ASSETS_DIR points to a local corecad-assets checkout (or a
 # directory prepared by scripts/fetch-branding.sh), icon and image files
-# listed in scripts/branding-assets.txt are staged into the build tree and
-# compiled into the binary via Qt resources.  The source tree is never
-# modified.
+# listed in scripts/branding-assets.txt are staged into the build tree.
+# The source tree is never modified.
 #
-# Usage in a module CMakeLists.txt:
+# Two functions are provided:
+#
+#   corecad_stage_resources(...)  — for QRC-compiled assets (icons, splash)
+#   corecad_stage_assets(...)     — for plain file assets (installer icons)
+#
+# Usage:
 #
 #   corecad_stage_resources(
-#       SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/Icons"
+#       SRC_DIR      "${CMAKE_CURRENT_SOURCE_DIR}/Icons"
 #       ASSETS_SUBDIR "src/Gui/Icons"
 #       QRC_FILE     "${CMAKE_CURRENT_SOURCE_DIR}/Icons/resource.qrc"
 #       OUTPUT_QRC   my_qrc_var
 #   )
-#   # my_qrc_var now holds the path to either the original or staged QRC.
+#
+#   corecad_stage_assets(
+#       SRC_DIR       "${CMAKE_SOURCE_DIR}/package/WindowsInstaller/icons"
+#       ASSETS_SUBDIR "package/WindowsInstaller/icons"
+#       OUTPUT_DIR    my_dir_var
+#   )
 
 # ── Option ────────────────────────────────────────────────────────────────────
 set(CORECAD_ASSETS_DIR "" CACHE PATH
@@ -54,7 +63,7 @@ endif()
 
 # ── Function ──────────────────────────────────────────────────────────────────
 function(corecad_stage_resources)
-    cmake_parse_arguments(CSR "" "SOURCE_DIR;ASSETS_SUBDIR;QRC_FILE;OUTPUT_QRC" "" ${ARGN})
+    cmake_parse_arguments(CSR "" "SRC_DIR;ASSETS_SUBDIR;QRC_FILE;OUTPUT_QRC" "" ${ARGN})
 
     if(NOT CORECAD_BRANDING_AVAILABLE)
         # No assets available — use the original QRC unchanged
@@ -86,9 +95,9 @@ function(corecad_stage_resources)
     set(_staging "${CMAKE_BINARY_DIR}/branding-staging/${_staging_name}")
 
     # Copy the entire source directory tree into staging (preserving subdirs)
-    file(GLOB_RECURSE _src_files RELATIVE "${CSR_SOURCE_DIR}" "${CSR_SOURCE_DIR}/*")
+    file(GLOB_RECURSE _src_files RELATIVE "${CSR_SRC_DIR}" "${CSR_SRC_DIR}/*")
     foreach(_rel IN LISTS _src_files)
-        configure_file("${CSR_SOURCE_DIR}/${_rel}" "${_staging}/${_rel}" COPYONLY)
+        configure_file("${CSR_SRC_DIR}/${_rel}" "${_staging}/${_rel}" COPYONLY)
     endforeach()
 
     # Overlay branding assets — only files that match the allowlist globs
@@ -128,4 +137,59 @@ function(corecad_stage_resources)
 
     file(WRITE "${_staging}/${_qrc_name}" "${_qrc_content}")
     set(${CSR_OUTPUT_QRC} "${_staging}/${_qrc_name}" PARENT_SCOPE)
+endfunction()
+
+# ── Plain file staging (non-QRC) ──────────────────────────────────────────────
+# Copies a source directory to the build tree and overlays branding assets.
+# Use for files that aren't compiled via Qt resources (e.g. installer icons).
+function(corecad_stage_assets)
+    cmake_parse_arguments(CSA "" "SRC_DIR;ASSETS_SUBDIR;OUTPUT_DIR" "" ${ARGN})
+
+    # Create staging directory
+    string(REPLACE "/" "_" _staging_name "${CSA_ASSETS_SUBDIR}")
+    set(_staging "${CMAKE_BINARY_DIR}/branding-staging/${_staging_name}")
+
+    # Copy source files to staging
+    file(GLOB _src_files "${CSA_SRC_DIR}/*")
+    foreach(_f IN LISTS _src_files)
+        if(NOT IS_DIRECTORY "${_f}")
+            get_filename_component(_name "${_f}" NAME)
+            configure_file("${_f}" "${_staging}/${_name}" COPYONLY)
+        endif()
+    endforeach()
+
+    if(NOT CORECAD_BRANDING_AVAILABLE)
+        set(${CSA_OUTPUT_DIR} "${_staging}" PARENT_SCOPE)
+        return()
+    endif()
+
+    # Determine applicable allowlist globs
+    set(_applicable_globs "")
+    foreach(_pat IN LISTS _CORECAD_BRANDING_PATTERNS)
+        string(FIND "${_pat}" "${CSA_ASSETS_SUBDIR}/" _pos)
+        if(_pos EQUAL 0)
+            string(LENGTH "${CSA_ASSETS_SUBDIR}/" _prefix_len)
+            string(SUBSTRING "${_pat}" ${_prefix_len} -1 _file_glob)
+            list(APPEND _applicable_globs "${_file_glob}")
+        endif()
+    endforeach()
+
+    # Overlay matching assets
+    set(_assets_dir "${CORECAD_ASSETS_DIR}/${CSA_ASSETS_SUBDIR}")
+    set(_applied 0)
+    if(_applicable_globs AND EXISTS "${_assets_dir}")
+        foreach(_glob IN LISTS _applicable_globs)
+            file(GLOB _matches "${_assets_dir}/${_glob}")
+            foreach(_src IN LISTS _matches)
+                get_filename_component(_name "${_src}" NAME)
+                if(EXISTS "${_staging}/${_name}")
+                    configure_file("${_src}" "${_staging}/${_name}" COPYONLY)
+                    math(EXPR _applied "${_applied} + 1")
+                endif()
+            endforeach()
+        endforeach()
+    endif()
+    message(STATUS "CoreCAD branding: staged ${_applied} override(s) for ${CSA_ASSETS_SUBDIR}")
+
+    set(${CSA_OUTPUT_DIR} "${_staging}" PARENT_SCOPE)
 endfunction()

@@ -5,7 +5,15 @@
 #
 # cmake reads this file at configure time via cMake/CoreCAD_Branding.cmake.
 # The source tree is never modified — overrides only exist in the build tree.
+#
+# Note: patterns without a matching corecad_stage_resources() call in cmake
+# are treated as documentation only (e.g. installer icons that already live
+# in the source tree and don't need build-tree staging).
 
-# Core application icons, splash screen and about images
+# Core application icons, splash screen and about images (QRC-compiled)
 src/Gui/Icons/*.svg
 src/Gui/Icons/*.png
+
+# Windows installer icons (referenced directly from source tree by NSIS)
+package/WindowsInstaller/icons/*.ico
+package/WindowsInstaller/icons/*.bmp

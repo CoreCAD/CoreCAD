@@ -7,6 +7,14 @@
 # ── Branding icon overlay (build-tree only) ───────────────────────────────────
 include(cMake/CoreCAD_Branding.cmake)
 
+# Stage Windows installer icons into the build tree.
+# The real icons come from corecad-assets; source tree keeps defaults.
+corecad_stage_assets(
+    SRC_DIR       "${CMAKE_SOURCE_DIR}/package/WindowsInstaller/icons"
+    ASSETS_SUBDIR "package/WindowsInstaller/icons"
+    OUTPUT_DIR    CORECAD_INSTALLER_ICONS_DIR
+)
+
 # ── Branding assets ───────────────────────────────────────────────────────────
 # Copy branding.xml into the build bin/ directory whenever the source changes.
 # Uses a custom command so the copy is re-run on build, not just at configure time.
