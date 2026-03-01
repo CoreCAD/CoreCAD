@@ -32,6 +32,8 @@ community and keeping internal compatibility intact.
 | ✅ Done | Update desktop integration files (`src/XDGData/`) and all downstream `org.freecad.FreeCAD` references |
 | ✅ Done | Update Windows installer script (`package/WindowsInstaller/FreeCAD-installer.nsi`) |
 | ✅ Done | Update stylesheet names (`src/Gui/Stylesheets/FreeCAD.qss`, preference packs) |
+| ✅ Done | Stage branding assets in build tree only (source tree never modified, no accidental commits) |
+| ⬜ Todo | Fix Assembly/Material icon paths in `corecad-assets` to match their QRC layout |
 | ⬜ Todo | Customise CoreCAD default color scheme (preference pack `.cfg` files, set default theme at startup) |
 | ⚠️ Partial | Update GitHub repository files (issue templates, PR template, FUNDING.yml) — see note below |
 | 🔮 Future | Add FreeCAD original authors to an Acknowledgements section in the About dialog |
@@ -128,6 +130,7 @@ Ensure the project is reproducible and easy to work with.
 | Status | Task |
 |--------|------|
 | ✅ Done | Set up `cMake/CoreCAD_Options.cmake` as home for all build overrides |
+| ✅ Done | Build-tree branding asset staging (`cMake/CoreCAD_Branding.cmake`, `scripts/branding-assets.txt` allowlist) |
 | ✅ Done | Set up pre-commit hooks (clang-format, black) |
 | ✅ Done | Create `CLAUDE.md` for AI-assisted development |
 | ✅ Done | Set up branching strategy (`main` mirrors upstream, `develop` holds customisations) |
