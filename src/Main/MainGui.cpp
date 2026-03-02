@@ -208,7 +208,7 @@ int main(int argc, char** argv)
     App::Application::Config()["AboutImage"] = App::Application::isDevelopmentVersion()
         ? "freecadaboutdev"
         : "freecadabout";
-    App::Application::Config()["StartWorkbench"] = "PartDesignWorkbench";
+    App::Application::Config()["StartWorkbench"] = "CorePartWorkbench";
     // App::Application::Config()["HiddenDockWindow"] = "Property editor";
     App::Application::Config()["SplashAlignment"] = "Bottom|Left";
     App::Application::Config()["SplashTextColor"] = "#418FDE";

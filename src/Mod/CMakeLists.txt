@@ -10,6 +10,9 @@ if(BUILD_BIM)
   add_subdirectory(BIM)
 endif(BUILD_BIM)
 
+# CorePart: pure-Python combined Part + PartDesign workbench (always built with GUI)
+add_subdirectory(CorePart)
+
 if(BUILD_ASSEMBLY)
   add_subdirectory(Assembly)
 endif(BUILD_ASSEMBLY)

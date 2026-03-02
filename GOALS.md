@@ -105,14 +105,16 @@ Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default tool
 | ✅ Done | Move TechDraw Dimensions panel to between Views and Attributes in the TechDraw ribbon |
 | ✅ Done | Move Mesh Structure panel to the end of the Mesh workbench ribbon |
 | ✅ Done | Make the single Material workbench button large size |
+| ✅ Done | Consolidate Part + PartDesign into a single "Part" ribbon tab (`src/Mod/CorePart/InitGui.py`) |
 | ⬜ Ongoing | Test with each upstream rebase |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
 > 1. FreeCAD preferences (`DlgSettingsWorkbenchesImp.cpp`): `"Ordered"` default sets canonical order
->    (PartDesign → Sketcher → Part → Assembly → TechDraw → Surface → Mesh → Spreadsheet → Material);
->    `"Disabled"` default hides Draft, FEM, CAM (plus NoneWorkbench, Test, etc.).
-> 2. RibbonUI (`CreateDefaultRibbonStructure.py`, `CreateStructure.txt`): `ignoredWorkbenches` list
->    hides the same workbenches from the ribbon tab bar.
+>    (CorePart → Sketcher → Assembly → TechDraw → Surface → Mesh → Spreadsheet → Material);
+>    `"Disabled"` default hides Draft, FEM, CAM, PartDesignWorkbench, PartWorkbench (plus NoneWorkbench, Test, etc.).
+> 2. RibbonUI (`CreateStructure.txt`): `ignoredWorkbenchClassNames` list excludes `PartWorkbench` and
+>    `PartDesignWorkbench` by class name (prevents duplicate "Part" tab); `ignoredWorkbenches` hides
+>    "Part Design" by display name; `CorePartWorkbench` entry provides the merged panel config.
 >
 > Draft, FEM, and CAM are still compiled — only hidden from the UI. Existing installs may need
 > `user.cfg` updated (`Workbenches/Ordered`, `Workbenches/Disabled`) and stale `TabOrder` cleared
