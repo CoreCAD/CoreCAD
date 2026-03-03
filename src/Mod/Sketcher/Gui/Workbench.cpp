@@ -37,7 +37,7 @@ using namespace SketcherGui;
     qApp->translate("CommandGroup", "Sketcher");
     qApp->translate("Workbench","P&rofiles");
     qApp->translate("Workbench","S&ketch");
-    qApp->translate("Workbench", "Sketcher");
+    qApp->translate("Workbench", "Sketch");
     qApp->translate("Workbench", "Edit Mode");
 
     qApp->translate("Workbench", "Geometries");
@@ -83,7 +83,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     addSketcherWorkbenchConstraints(*cons);
 
     Gui::MenuItem* consaccel = new Gui::MenuItem();
-    consaccel->setCommand("Sketcher Tools");
+    consaccel->setCommand("Tools");
     addSketcherWorkbenchTools(*consaccel);
 
     Gui::MenuItem* bsplines = new Gui::MenuItem();
@@ -109,7 +109,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     Gui::ToolBarItem* root = StdWorkbench::setupToolBars();
 
     Gui::ToolBarItem* sketcher = new Gui::ToolBarItem(root);
-    sketcher->setCommand("Sketcher");
+    sketcher->setCommand("Sketch");
     addSketcherWorkbenchSketchActions(*sketcher);
 
     Gui::ToolBarItem* sketcherEditMode
@@ -129,7 +129,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
 
     Gui::ToolBarItem* consaccel
         = new Gui::ToolBarItem(root, Gui::ToolBarItem::DefaultVisibility::Unavailable);
-    consaccel->setCommand("Sketcher Tools");
+    consaccel->setCommand("Tools");
     addSketcherWorkbenchTools(*consaccel);
 
     Gui::ToolBarItem* bspline
@@ -161,7 +161,7 @@ inline const QStringList editModeToolbarNames()
         QStringLiteral("Edit Mode"),
         QStringLiteral("Geometries"),
         QStringLiteral("Constraints"),
-        QStringLiteral("Sketcher Tools"),
+        QStringLiteral("Tools"),
         QStringLiteral("B-Spline Tools"),
         QStringLiteral("Visual Helpers"),
         QStringLiteral("Sketcher Edit Tools")
@@ -170,7 +170,7 @@ inline const QStringList editModeToolbarNames()
 
 inline const QStringList nonEditModeToolbarNames()
 {
-    return QStringList {QStringLiteral("Structure"), QStringLiteral("Sketcher")};
+    return QStringList {QStringLiteral("Structure"), QStringLiteral("Sketch")};
 }
 }  // namespace
 
