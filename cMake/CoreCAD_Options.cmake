@@ -38,6 +38,23 @@ if(CORECAD_SHOW_SPLASH)
     add_compile_definitions(CORECAD_SHOW_SPLASH)
 endif()
 
+# ── CoreRibbon ────────────────────────────────────────────────────
+# Clean ribbon Mod for CoreCAD.  Source lives in a separate private repo.
+# Auto-detected from ~/Repos/corecad-ribbon, or set CORECAD_CORERIBBON_DIR
+# explicitly.  BUILD_CORERIBBON is forced ON; the subdirectory is a no-op
+# when CORECAD_CORERIBBON_DIR is absent (falls back to standard toolbar UI).
+set(BUILD_CORERIBBON ON CACHE BOOL "CoreCAD: Build CoreRibbon Mod" FORCE)
+
+set(CORECAD_CORERIBBON_DIR "" CACHE PATH
+    "Path to corecad-ribbon checkout (auto-detected if empty)")
+
+if(NOT CORECAD_CORERIBBON_DIR OR NOT EXISTS "${CORECAD_CORERIBBON_DIR}/InitGui.py")
+    if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/Repos/corecad-ribbon/InitGui.py")
+        set(CORECAD_CORERIBBON_DIR "$ENV{HOME}/Repos/corecad-ribbon"
+            CACHE PATH "" FORCE)
+    endif()
+endif()
+
 # ── Disabled modules ──────────────────────────────────────────────────────────
 # Addon Manager: users cannot install or remove workbenches at runtime.
 set(BUILD_ADDONMGR          OFF CACHE BOOL "CoreCAD: Addon Manager disabled" FORCE)

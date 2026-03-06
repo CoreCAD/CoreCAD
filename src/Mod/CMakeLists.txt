@@ -13,6 +13,11 @@ endif(BUILD_BIM)
 # CorePart: pure-Python combined Part + PartDesign workbench (always built with GUI)
 add_subdirectory(CorePart)
 
+# CoreRibbon: clean ribbon UI (replaces FreeCAD-Ribbon when present)
+if(BUILD_CORERIBBON)
+    add_subdirectory(CoreRibbon)
+endif(BUILD_CORERIBBON)
+
 if(BUILD_ASSEMBLY)
   add_subdirectory(Assembly)
 endif(BUILD_ASSEMBLY)
@@ -143,8 +148,9 @@ if(BUILD_WEB)
     add_subdirectory(Web)
 endif(BUILD_WEB)
 
-# FreeCAD-Ribbon: Pure-Python ribbon UI addon (git submodule, no CMakeLists.txt of its own)
-if(BUILD_GUI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/InitGui.py")
+# FreeCAD-Ribbon: Pure-Python ribbon UI addon (git submodule, no CMakeLists.txt of its own).
+# Skipped when CoreRibbon is being built — both ribbons must not coexist.
+if(BUILD_GUI AND NOT BUILD_CORERIBBON AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/InitGui.py")
     install(
         DIRECTORY FreeCAD-Ribbon/
         DESTINATION Mod/FreeCAD-Ribbon
