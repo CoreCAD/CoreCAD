@@ -93,26 +93,23 @@ CoreRibbon (`src/Mod/CoreRibbon/`) is the clean, native implementation replacing
 | ✅ Done | Consolidate Part + PartDesign into a single "Part" ribbon tab (`src/Mod/CorePart/InitGui.py`) |
 | ✅ Done | Implement CoreRibbon v1 (`src/Mod/CoreRibbon/`) — ~600 LOC, 5 focused files, no JSON config |
 | ✅ Done | Suppress FreeCAD-Ribbon when `BUILD_CORERIBBON=ON` (default) |
-| ⬜ Todo | Build and test CoreRibbon; tune button sizes and panel layout |
-| ⬜ Todo | Apply `styles/ribbon.qss` stylesheet via controller (load file, call `setStyleSheet`) |
-| ⬜ Todo | Remove FreeCAD-Ribbon submodule once CoreRibbon is stable |
+| ✅ Done | Build and test CoreRibbon; fix height clipping, tab order, workbench filtering |
+| ✅ Done | Apply `styles/ribbon.qss` stylesheet via controller (`_load_stylesheet()` in `ribbon_controller.py`) |
+| ✅ Done | Move Individual Views to title row; suppress Individual Views + Structure from workbench panels |
+| ⬜ Todo | Remove FreeCAD-Ribbon submodule once CoreRibbon is confirmed stable |
 
-> **Workbench order & visibility:** Two layers control fresh-install defaults:
-> 1. FreeCAD preferences (`DlgSettingsWorkbenchesImp.cpp`): `"Ordered"` default sets canonical order
->    (CorePart → Sketcher → Assembly → TechDraw → Surface → Mesh → Spreadsheet → Material);
->    `"Disabled"` default hides Draft, FEM, CAM, PartDesignWorkbench, PartWorkbench (plus NoneWorkbench, Test, etc.).
-> 2. RibbonUI (`CreateStructure.txt`): `ignoredWorkbenchClassNames` list excludes `PartWorkbench` and
->    `PartDesignWorkbench` by class name (prevents duplicate "Part" tab); `ignoredWorkbenches` hides
->    "Part Design" by display name; `CorePartWorkbench` entry provides the merged panel config.
+> **CoreRibbon configuration** lives entirely in FreeCAD parameters at
+> `User parameter:BaseApp/Preferences/Mod/CoreRibbon`. Key defaults (in `config.py`):
+> - `IgnoredWorkbenches` — excludes Part, PartDesign, None, Test, Draft, FEM, CAM
+> - `IgnoredToolbars` — excludes Clipboard, Edit, File, Help, Macro, View, Workbench,
+>   Individual Views, Structure
+> - `TabOrder` — CorePart → Sketch → Assembly → Drawing → Surface → Mesh → Spreadsheet → Material
+> - `DefaultWorkbench` — CorePartWorkbench
 >
-> Draft, FEM, and CAM are still compiled — only hidden from the UI. Existing installs may need
-> `user.cfg` updated (`Workbenches/Ordered`, `Workbenches/Disabled`) and stale `TabOrder` cleared
-> from the FreeCAD-Ribbon preference group.
+> No JSON config files. All settings are readable/writable from the FreeCAD Preferences dialog
+> (parameter editor) or `App.ParamGet(...)` from the Python console.
 >
-> `CreateStructure.txt` is the single source of truth for the ribbon layout. The build system
-> stamps `RibbonStructure.json` and `RibbonStructure_default.json` from it on every build, so
-> the mutable runtime JSON never persists between builds. For functional testing, reset
-> `~/.FreeCAD/user.cfg` (FreeCAD preferences layer) — the ribbon JSON is handled by the build.
+> For functional testing, reset `~/.FreeCAD/user.cfg` to clear any cached workbench state.
 
 ---
 
