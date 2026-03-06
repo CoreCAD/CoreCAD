@@ -83,30 +83,19 @@ by the developer at build time via `cMake/CoreCAD_Options.cmake`.
 ---
 
 ### 3. RibbonUI as Default Interface
-Bundle the RibbonUI addon as the standard CoreCAD UI, replacing the default toolbar/menu system.
+Bundle a ribbon UI as the standard CoreCAD UI, replacing the default toolbar/menu system.
+CoreRibbon (`src/Mod/CoreRibbon/`) is the clean, native implementation replacing FreeCAD-Ribbon.
 
 | Status | Task |
 |--------|------|
 | ✅ Done | Evaluate RibbonUI addon ([APEbbers/FreeCAD-Ribbon](https://github.com/APEbbers/FreeCAD-Ribbon)) |
 | ✅ Done | Add as git submodule (`src/Mod/FreeCAD-Ribbon`, tracking `develop` branch) |
-| ✅ Done | Auto-load at startup (automatic via `DirModScanner` — no code changes needed) |
-| ✅ Done | Remove "FreeCAD X.Y.Z" version string from ribbon bar title (`FCBinding.py`) |
-| ✅ Done | Re-sync submodule to build dir on build, not just cmake configure (`src/Mod/CMakeLists.txt`) |
-| ✅ Done | Move Global ribbon panels (Tools, Views) to Quick Access Toolbar with separators |
-| ✅ Done | Fix QAT regressions: restore separators/ordering and hide Individual views globally |
-| ✅ Done | Define and enforce a canonical workbench order in the RibbonUI workbench list |
-| ✅ Done | Investigate and fix QAT separators being stripped from `RibbonStructure.json` on restart |
-| ✅ Done | Limit Structure group to PartDesign, Part, and Assembly only (update `CreateDefaultRibbonStructure.py` then patch live JSON) |
-| ✅ Done | Stamp `RibbonStructure.json` from `CreateStructure.txt` on every build so the build dir never drifts from the committed template |
-| ✅ Done | Remove unnecessary vertical separators from PartDesign Modelling and Spreadsheet ribbon groups |
-| ✅ Done | Fix TechDraw Dimensions ribbon group rendering empty (invalid command key, missing button definitions, unreliable `_custom` toolbar mechanism) |
-| ✅ Done | Split PartDesign Helpers into a "Part" panel (New Body + New Sketch) and a reduced "Helpers" panel moved just before Structure |
-| ✅ Done | Fix `CreateStructure.txt` not triggering stamp rebuild (add `.txt` to CMake `DEPENDS` list) |
-| ✅ Done | Move TechDraw Dimensions panel to between Views and Attributes in the TechDraw ribbon |
-| ✅ Done | Move Mesh Structure panel to the end of the Mesh workbench ribbon |
-| ✅ Done | Make the single Material workbench button large size |
 | ✅ Done | Consolidate Part + PartDesign into a single "Part" ribbon tab (`src/Mod/CorePart/InitGui.py`) |
-| ⬜ Ongoing | Test with each upstream rebase |
+| ✅ Done | Implement CoreRibbon v1 (`src/Mod/CoreRibbon/`) — ~600 LOC, 5 focused files, no JSON config |
+| ✅ Done | Suppress FreeCAD-Ribbon when `BUILD_CORERIBBON=ON` (default) |
+| ⬜ Todo | Build and test CoreRibbon; tune button sizes and panel layout |
+| ⬜ Todo | Apply `styles/ribbon.qss` stylesheet via controller (load file, call `setStyleSheet`) |
+| ⬜ Todo | Remove FreeCAD-Ribbon submodule once CoreRibbon is stable |
 
 > **Workbench order & visibility:** Two layers control fresh-install defaults:
 > 1. FreeCAD preferences (`DlgSettingsWorkbenchesImp.cpp`): `"Ordered"` default sets canonical order
