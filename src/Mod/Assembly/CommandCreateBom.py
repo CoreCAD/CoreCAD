@@ -78,7 +78,7 @@ class CommandCreateBom:
         }
 
     def IsActive(self):
-        return True
+        return UtilsAssembly.isAssemblyCommandActive()
 
     def Activated(self):
         self.panel = TaskAssemblyCreateBom()
