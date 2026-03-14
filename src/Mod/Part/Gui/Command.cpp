@@ -1322,8 +1322,7 @@ void CmdPartMakeSolid::activated(int iMsg)
 
 bool CmdPartMakeSolid::isActive()
 {
-    return Gui::Selection().countObjectsOfType<App::DocumentObject>(nullptr, Gui::ResolveMode::FollowLink)
-        > 0;
+    return true;
 }
 
 //===========================================================================
@@ -2487,7 +2486,7 @@ void CmdPartSectionCut::activated(int iMsg)
 
 bool CmdPartSectionCut::isActive()
 {
-    return hasActiveDocument();
+    return true;
 }
 
 

@@ -108,11 +108,7 @@ class CommandEditAttachment:
             mb.exec_()
 
     def IsActive(self):
-        sel = Gui.Selection.getSelectionEx()
-        if len(sel) == 1:
-            if hasattr(sel[0].Object, "Placement"):
-                return True
-        return False
+        return True
 
 
 if App.GuiUp:
