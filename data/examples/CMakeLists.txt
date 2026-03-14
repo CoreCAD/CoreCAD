@@ -9,6 +9,8 @@ SET(Examples_Files
     osifont-lgpl3fe.ttf
     utah-teapot.stl
     utah-teapot.obj
+    Schenkel.stp
+    as1-oc-214.stp
 )
 
 ADD_CUSTOM_TARGET(Example_data ALL
