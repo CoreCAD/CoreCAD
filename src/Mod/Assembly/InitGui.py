@@ -77,7 +77,9 @@ class AssemblyWorkbench(Workbench):
         # build commands list
         cmdList = [
             "Assembly_CreateAssembly",
+            "Assembly_ActivateAssembly",
             "Assembly_Insert",
+            "Assembly_InsertNewPart",
             "Assembly_SolveAssembly",
             "Assembly_CreateView",
             "Assembly_CreateSimulation",
@@ -106,7 +108,8 @@ class AssemblyWorkbench(Workbench):
             "Separator",
             "Assembly_CreateJointRackPinion",
             "Assembly_CreateJointScrew",
-            "Assembly_CreateJointGearBelt",
+            "Assembly_CreateJointGears",
+            "Assembly_CreateJointBelt",
         ]
 
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench", "Assembly"), cmdList)
