@@ -128,7 +128,7 @@ void CmdPartShapeFromMesh::activated(int iMsg)
 
 bool CmdPartShapeFromMesh::isActive()
 {
-    return Gui::Selection().countObjectsOfType("Mesh::Feature") > 0;
+    return true;
 }
 //===========================================================================
 // Part_PointsFromMesh
@@ -446,7 +446,7 @@ void CmdPartRefineShape::activated(int iMsg)
 
 bool CmdPartRefineShape::isActive()
 {
-    return Gui::Selection().hasSelection();
+    return true;
 }
 
 //===========================================================================

@@ -92,6 +92,7 @@ class CorePartWorkbench(Gui.Workbench):
             [
                 "Sketcher_ValidateSketch",
                 "Part_CheckGeometry",
+                "Part_EditAttachment",
                 "PartDesign_SubShapeBinder",
                 "PartDesign_Clone",
             ],
@@ -178,6 +179,10 @@ class CorePartWorkbench(Gui.Workbench):
                 "Part_Thickness",
                 "Part_ProjectionOnSurface",
                 "Part_ColorPerFace",
+                "Part_ShapeFromMesh",
+                "Part_MakeSolid",
+                "Part_RefineShape",
+                "Part_SectionCut",
             ],
         )
         self.appendToolbar(
