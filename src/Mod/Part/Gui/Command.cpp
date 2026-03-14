@@ -1092,8 +1092,12 @@ void CmdPartImport::activated(int iMsg)
     if (!fn.isEmpty()) {
         Gui::WaitCursor wc;
         App::Document* pDoc = getDocument();
-        if (!pDoc) {  // no document
-            return;
+        if (!pDoc) {
+            doCommand(Doc, "App.newDocument()");
+            pDoc = getDocument();
+            if (!pDoc) {
+                return;
+            }
         }
 
         const std::string fnEscapedUtf8 = Base::Tools::escapeEncodeFilename(fn.toUtf8().constData());
@@ -1119,12 +1123,7 @@ void CmdPartImport::activated(int iMsg)
 
 bool CmdPartImport::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return true;
 }
 
 //===========================================================================
