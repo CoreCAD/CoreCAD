@@ -642,7 +642,10 @@ inline void SketcherAddWorkbenchVisual(T& visual);
 template<>
 inline void SketcherAddWorkbenchVisual<Gui::MenuItem>(Gui::MenuItem& visual)
 {
-    visual << "Sketcher_SelectElementsWithDoFs"
+    visual << "Sketcher_Grid"
+           << "Sketcher_Snap"
+           << "Separator"
+           << "Sketcher_SelectElementsWithDoFs"
            << "Sketcher_SelectConstraints"
            << "Sketcher_SelectElementsAssociatedWithConstraints"
            << "Sketcher_SelectRedundantConstraints"
