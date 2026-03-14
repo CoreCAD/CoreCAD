@@ -657,7 +657,10 @@ inline void SketcherAddWorkbenchVisual<Gui::MenuItem>(Gui::MenuItem& visual)
 template<>
 inline void SketcherAddWorkbenchVisual<Gui::ToolBarItem>(Gui::ToolBarItem& visual)
 {
-    visual << "Sketcher_SelectConstraints"
+    visual << "Sketcher_Grid"
+           << "Sketcher_Snap"
+           << "Separator"
+           << "Sketcher_SelectConstraints"
            << "Sketcher_SelectElementsAssociatedWithConstraints"
            << "Separator"
            << "Sketcher_ArcOverlay"
