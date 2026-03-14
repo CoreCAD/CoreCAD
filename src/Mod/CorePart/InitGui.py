@@ -81,10 +81,15 @@ class CorePartWorkbench(Gui.Workbench):
 
         # ---- PartDesign toolbars (shown first in ribbon) ----
         self.appendToolbar(
-            "Part Design Helper Features",
+            "Part",
             [
                 "PartDesign_Body",
                 "PartDesign_CompSketches",
+            ],
+        )
+        self.appendToolbar(
+            "Part Helper",
+            [
                 "Sketcher_ValidateSketch",
                 "Part_CheckGeometry",
                 "PartDesign_SubShapeBinder",
@@ -92,7 +97,7 @@ class CorePartWorkbench(Gui.Workbench):
             ],
         )
         self.appendToolbar(
-            "Part Design Modeling Features",
+            "Part Modeling",
             [
                 "PartDesign_Pad",
                 "PartDesign_Revolution",
@@ -113,7 +118,7 @@ class CorePartWorkbench(Gui.Workbench):
             ],
         )
         self.appendToolbar(
-            "Part Design Dress-Up Features",
+            "Part Dress-Up",
             [
                 "PartDesign_Fillet",
                 "PartDesign_Chamfer",
@@ -122,12 +127,21 @@ class CorePartWorkbench(Gui.Workbench):
             ],
         )
         self.appendToolbar(
-            "Part Design Transformation Features",
+            "Part Transform",
             [
                 "PartDesign_Mirrored",
                 "PartDesign_LinearPattern",
                 "PartDesign_PolarPattern",
                 "PartDesign_MultiTransform",
+            ],
+        )
+
+        # ---- Part import/export toolbar ----
+        self.appendToolbar(
+            "Part Import/Export",
+            [
+                "Part_Import",
+                "Part_Export",
             ],
         )
 
@@ -146,7 +160,7 @@ class CorePartWorkbench(Gui.Workbench):
             ],
         )
         self.appendToolbar(
-            "Part tools",
+            "Solids Tools",
             [
                 "Part_Extrude",
                 "Part_Revolve",
@@ -167,7 +181,7 @@ class CorePartWorkbench(Gui.Workbench):
             ],
         )
         self.appendToolbar(
-            "Boolean",
+            "Solids Boolean",
             [
                 "Part_CompCompoundTools",
                 "Part_Boolean",
@@ -272,6 +286,9 @@ class CorePartWorkbench(Gui.Workbench):
         self.appendMenu(
             ["&Part"],
             [
+                "Part_Import",
+                "Part_Export",
+                "Separator",
                 "Part_BoxSelection",
                 "Separator",
                 "Part_Box",
