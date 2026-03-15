@@ -14,7 +14,7 @@ class CommandNewPart:
 
     def GetResources(self):
         return {
-            "Pixmap": "PartDesign_Body",
+            "Pixmap": "Geofeaturegroup",
             "MenuText": "New Part",
             "ToolTip": (
                 "Create a new part document containing an App::Part and a Body, "
@@ -28,9 +28,7 @@ class CommandNewPart:
     def Activated(self):
         doc = App.newDocument("Part")
         part = doc.addObject("App::Part", "Part")
-        body = part.newObject("PartDesign::Body", "Body")
         doc.recompute()
-        Gui.ActiveDocument.ActiveView.setActiveObject("pdbody", body)
         Gui.ActiveDocument.ActiveView.setActiveObject("part", part)
 
 
