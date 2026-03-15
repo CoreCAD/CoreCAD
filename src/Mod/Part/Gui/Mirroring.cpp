@@ -63,7 +63,7 @@
 #include <App/Datums.h>
 
 #include "Mirroring.h"
-
+#include "PartGuiUtils.h"
 #include "ui_Mirroring.h"
 
 
@@ -365,9 +365,20 @@ bool Mirroring::accept()
         }
         label.append(QStringLiteral(" (Mirror #%1)").arg(++count));
 
+        Gui::Command::runCommand(
+            Gui::Command::App,
+            QStringLiteral(
+                "__doc__=FreeCAD.getDocument(\"%1\")\n"
+                "__doc__.addObject(\"Part::Mirroring\")\n"
+                "del __doc__"
+            )
+                .arg(this->document)
+                .toLatin1()
+        );
+        PartGui::addToActivePart(activeDoc->getActiveObject());
+
         QString code = QStringLiteral(
                            "__doc__=FreeCAD.getDocument(\"%1\")\n"
-                           "__doc__.addObject(\"Part::Mirroring\")\n"
                            "__doc__.ActiveObject.Source=__doc__.getObject(\"%2\")\n"
                            "__doc__.ActiveObject.Label=u\"%3\"\n"
                            "__doc__.ActiveObject.Normal=(%4,%5,%6)\n"
