@@ -66,7 +66,8 @@ class CommandTube:
         vp.startDefaultEditMode(tube.ViewObject)
 
     def IsActive(self):
-        return True
+        view = FreeCADGui.ActiveDocument and FreeCADGui.ActiveDocument.ActiveView
+        return bool(view and view.getActiveObject("part"))
 
 
 FreeCADGui.addCommand("Part_Tube", CommandTube())

@@ -75,6 +75,12 @@ FC_LOG_LEVEL_INIT("PartDesign", true, true)
 using namespace std;
 using namespace Attacher;
 
+// Gate all PartDesign feature commands on an active Body. Without a Body there
+// is nothing to add features to, so the commands should not be available.
+static bool hasActiveBody()
+{
+    return PartDesignGui::getBody(/*messageIfNot=*/false) != nullptr;
+}
 
 //===========================================================================
 // PartDesign_Datum
@@ -370,7 +376,7 @@ void CmdPartDesignShapeBinder::activated(int iMsg)
 
 bool CmdPartDesignShapeBinder::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -476,7 +482,7 @@ void CmdPartDesignSubShapeBinder::activated(int iMsg)
 
 bool CmdPartDesignSubShapeBinder::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -592,12 +598,7 @@ void CmdPartDesignNewSketch::activated(int iMsg)
 
 bool CmdPartDesignNewSketch::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1244,7 +1245,7 @@ void CmdPartDesignPad::activated(int iMsg)
 
 bool CmdPartDesignPad::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1273,7 +1274,7 @@ void CmdPartDesignPocket::activated(int iMsg)
 
 bool CmdPartDesignPocket::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1318,7 +1319,7 @@ void CmdPartDesignHole::activated(int iMsg)
 
 bool CmdPartDesignHole::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1380,7 +1381,7 @@ void CmdPartDesignRevolution::activated(int iMsg)
 
 bool CmdPartDesignRevolution::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1450,7 +1451,7 @@ void CmdPartDesignGroove::activated(int iMsg)
 
 bool CmdPartDesignGroove::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1499,7 +1500,7 @@ void CmdPartDesignAdditivePipe::activated(int iMsg)
 
 bool CmdPartDesignAdditivePipe::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 
@@ -1549,7 +1550,7 @@ void CmdPartDesignSubtractivePipe::activated(int iMsg)
 
 bool CmdPartDesignSubtractivePipe::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 
@@ -1599,7 +1600,7 @@ void CmdPartDesignAdditiveLoft::activated(int iMsg)
 
 bool CmdPartDesignAdditiveLoft::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 
@@ -1649,7 +1650,7 @@ void CmdPartDesignSubtractiveLoft::activated(int iMsg)
 
 bool CmdPartDesignSubtractiveLoft::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1732,7 +1733,7 @@ void CmdPartDesignAdditiveHelix::activated(int iMsg)
 
 bool CmdPartDesignAdditiveHelix::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 
@@ -1792,7 +1793,7 @@ void CmdPartDesignSubtractiveHelix::activated(int iMsg)
 
 bool CmdPartDesignSubtractiveHelix::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -1976,7 +1977,7 @@ void CmdPartDesignFillet::activated(int iMsg)
 
 bool CmdPartDesignFillet::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2005,7 +2006,7 @@ void CmdPartDesignChamfer::activated(int iMsg)
 
 bool CmdPartDesignChamfer::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2074,7 +2075,7 @@ void CmdPartDesignDraft::activated(int iMsg)
 
 bool CmdPartDesignDraft::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 
@@ -2133,7 +2134,7 @@ void CmdPartDesignThickness::activated(int iMsg)
 
 bool CmdPartDesignThickness::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2260,7 +2261,7 @@ void CmdPartDesignMirrored::activated(int iMsg)
 
 bool CmdPartDesignMirrored::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2329,7 +2330,7 @@ void CmdPartDesignLinearPattern::activated(int iMsg)
 
 bool CmdPartDesignLinearPattern::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2391,7 +2392,7 @@ void CmdPartDesignPolarPattern::activated(int iMsg)
 
 bool CmdPartDesignPolarPattern::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2434,7 +2435,7 @@ void CmdPartDesignScaled::activated(int iMsg)
 
 bool CmdPartDesignScaled::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2563,7 +2564,7 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
 
 bool CmdPartDesignMultiTransform::isActive()
 {
-    return hasActiveDocument();
+    return hasActiveBody();
 }
 
 //===========================================================================
@@ -2627,12 +2628,7 @@ void CmdPartDesignBoolean::activated(int iMsg)
 
 bool CmdPartDesignBoolean::isActive()
 {
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return hasActiveBody();
 }
 
 // Command group for datums =============================================
