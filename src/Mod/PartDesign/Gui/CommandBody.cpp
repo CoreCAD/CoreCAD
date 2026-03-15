@@ -380,7 +380,9 @@ void CmdPartDesignBody::activated(int iMsg)
 
 bool CmdPartDesignBody::isActive()
 {
-    return true;
+    // A Body must live inside an App::Part — require the user to have
+    // entered a Part context (double-clicked it) before creating a Body.
+    return PartDesignGui::getActivePart() != nullptr;
 }
 
 //===========================================================================
