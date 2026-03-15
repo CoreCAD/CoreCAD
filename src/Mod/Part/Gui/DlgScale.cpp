@@ -51,6 +51,7 @@
 
 #include "ui_DlgScale.h"
 #include "DlgScale.h"
+#include "PartGuiUtils.h"
 
 
 FC_LOG_LEVEL_INIT("Part", true, true)
@@ -252,6 +253,7 @@ void DlgScale::apply()
 
             FCMD_OBJ_DOC_CMD(sourceObj, "addObject('Part::Scale','" << name << "')");
             auto newObj = sourceObj->getDocument()->getObject(name.c_str());
+            PartGui::addToActivePart(newObj);
 
             this->writeParametersToFeature(*newObj, sourceObj);
 

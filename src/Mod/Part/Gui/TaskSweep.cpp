@@ -55,6 +55,7 @@
 
 #include "TaskSweep.h"
 #include "ui_TaskSweep.h"
+#include "PartGuiUtils.h"
 
 
 using namespace PartGui;
@@ -429,6 +430,7 @@ bool SweepWidget::accept()
             doc->abortCommand();
             throw Base::RuntimeError(msg);
         }
+        PartGui::addToActivePart(obj);
         doc->commitCommand();
     }
     catch (const Base::Exception& e) {
