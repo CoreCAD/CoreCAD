@@ -1128,41 +1128,119 @@ void CmdPartImport::activated(int iMsg)
         = Gui::FileDialog::getOpenFileName(Gui::getMainWindow(), QString(), QString(), filter, &select);
     if (!fn.isEmpty()) {
         Gui::WaitCursor wc;
+        fn = Base::Tools::escapeEncodeFilename(fn);
+
         Gui::MDIView* view = Gui::Application::Instance->activeView();
         App::Part* activePart = view ? view->getActiveObject<App::Part*>("part") : nullptr;
         App::Document* pDoc = getDocument();
 
-        // No active Part — create a new document and Part to receive the import.
-        std::string partName;
-        if (!pDoc || !activePart) {
+        // Ensure we have a document to import into.
+        if (!pDoc) {
             doCommand(Doc, "App.newDocument('Part')");
-            doCommand(Doc, "App.ActiveDocument.addObject('App::Part', 'Part')");
-            doCommand(Gui, "Gui.ActiveDocument.ActiveView.setActiveObject('part', App.ActiveDocument.ActiveObject)");
             pDoc = getDocument();
             if (!pDoc) {
                 return;
             }
-            partName = "Part";
-        }
-        else {
-            partName = activePart->getNameInDocument();
+            activePart = nullptr;
         }
 
-        const std::string fnEscapedUtf8 = Base::Tools::escapeEncodeFilename(fn.toUtf8().constData());
+        // Run the format-appropriate import command into pDoc.
+        auto runImport = [&]() {
+            if (select == 4) {  // BREP
+                doCommand(Doc, "import Part");
+                doCommand(Doc, "Part.insert(\"%s\",\"%s\")", (const char*)fn.toUtf8(), pDoc->getName());
+            }
+            else {
+                doCommand(Doc, "import ImportGui");
+                doCommand(
+                    Doc,
+                    "ImportGui.insert(\"%s\",\"%s\")",
+                    (const char*)fn.toUtf8(),
+                    pDoc->getName()
+                );
+            }
+        };
+
+        // Collect new root-level objects relative to a pre-import snapshot.
+        auto collectNew =
+            [&](const std::set<std::string>& before) -> std::vector<App::DocumentObject*> {
+            std::vector<App::DocumentObject*> result;
+            for (auto* obj : pDoc->getObjects()) {
+                if (!before.count(obj->getNameInDocument())
+                    && !App::GeoFeatureGroupExtension::getGroupOfObject(obj)) {
+                    result.push_back(obj);
+                }
+            }
+            return result;
+        };
+
         openCommand(QT_TRANSLATE_NOOP("Command", "Import Part"));
-        if (select == 1 || select == 3) {
-            doCommand(Doc, "import ImportGui");
-            doCommand(Doc, "ImportGui.insert(\"%s\",\"%s\")", fnEscapedUtf8.c_str(), pDoc->getName());
+
+        std::set<std::string> before;
+        for (auto* obj : pDoc->getObjects()) {
+            before.insert(obj->getNameInDocument());
+        }
+        runImport();
+        auto newObjs = collectNew(before);
+
+        // Check whether the import produced an App::Part.
+        bool importedPart = false;
+        for (auto* obj : newObjs) {
+            if (obj->isDerivedFrom<App::Part>()) {
+                importedPart = true;
+                break;
+            }
+        }
+
+        // Case: existing Part + import also created an App::Part → Part-in-Part conflict.
+        // Abort and re-import into a fresh document.
+        if (activePart && importedPart) {
+            abortCommand();
+            doCommand(Doc, "App.newDocument('Part')");
+            pDoc = getDocument();
+            if (!pDoc) {
+                return;
+            }
+            activePart = nullptr;
+
+            openCommand(QT_TRANSLATE_NOOP("Command", "Import Part"));
+            before.clear();
+            for (auto* obj : pDoc->getObjects()) {
+                before.insert(obj->getNameInDocument());
+            }
+            runImport();
+            newObjs = collectNew(before);
+        }
+
+        if (activePart) {
+            // Existing Part — add loose imported objects into it.
+            for (auto* obj : newObjs) {
+                if (!obj->isDerivedFrom<App::Part>()) {
+                    activePart->addObject(obj);
+                }
+            }
+        }
+        else if (newObjs.size() == 1 && newObjs[0]->isDerivedFrom<App::Part>()) {
+            // Import created its own Part structure — activate it directly.
+            doCommand(
+                Gui,
+                "Gui.ActiveDocument.ActiveView.setActiveObject('part', "
+                "App.ActiveDocument.getObject('%s'))",
+                newObjs[0]->getNameInDocument()
+            );
         }
         else {
-            doCommand(Doc, "import Part");
-            doCommand(Doc, "Part.insert(\"%s\",\"%s\")", fnEscapedUtf8.c_str(), pDoc->getName());
+            // Loose objects with no existing Part — wrap them in a new App::Part.
+            doCommand(Doc, "App.ActiveDocument.addObject('App::Part','Part')");
+            doCommand(Gui, "Gui.ActiveDocument.ActiveView.setActiveObject('part', App.ActiveDocument.ActiveObject)");
+            auto* partObj = dynamic_cast<App::Part*>(pDoc->getActiveObject());
+            if (partObj) {
+                for (auto* obj : newObjs) {
+                    partObj->addObject(obj);
+                }
+            }
         }
-        doCommand(
-            Doc,
-            "App.ActiveDocument.getObject('%s').addObject(App.ActiveDocument.ActiveObject)",
-            partName.c_str()
-        );
+
         commitCommand();
 
         std::list<Gui::MDIView*> views = getActiveGuiDocument()->getMDIViewsOfType(
