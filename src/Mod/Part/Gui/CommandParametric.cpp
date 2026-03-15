@@ -38,22 +38,22 @@
 //===========================================================================
 namespace
 {
+App::Part* getActivePart()
+{
+    Gui::MDIView* view = Gui::Application::Instance->activeView();
+    return view ? view->getActiveObject<App::Part*>("part") : nullptr;
+}
+
 QString getAutoGroupCommandStr()
 // Helper function to get the python code to add the newly created object to the active Part object
-// if present
+// if present.  Uses Gui.ActiveDocument.ActiveView (document-based, not MDI-focus-based) so that
+// this works reliably even when a ribbon or toolbar click momentarily shifts MDI focus away from
+// the 3D view.
 {
-    App::Part* activePart = Gui::Application::Instance->activeView()->getActiveObject<App::Part*>(
-        "part"
+    return QStringLiteral(
+        "_part = Gui.ActiveDocument and Gui.ActiveDocument.ActiveView.getActiveObject('part')\n"
+        "if _part: _part.addObject(App.ActiveDocument.ActiveObject)"
     );
-    if (activePart) {
-        QString activePartName = QString::fromLatin1(activePart->getNameInDocument());
-        return QStringLiteral(
-                   "App.ActiveDocument.getObject('%1\')."
-                   "addObject(App.ActiveDocument.ActiveObject)\n"
-        )
-            .arg(activePartName);
-    }
-    return QStringLiteral("# Object created at document root.");
 }
 }  // namespace
 
@@ -96,7 +96,7 @@ void CmdPartCylinder::activated(int iMsg)
 
 bool CmdPartCylinder::isActive()
 {
-    return true;
+    return getActivePart() != nullptr;
 }
 
 //===========================================================================
@@ -138,7 +138,7 @@ void CmdPartBox::activated(int iMsg)
 
 bool CmdPartBox::isActive()
 {
-    return true;
+    return getActivePart() != nullptr;
 }
 
 //===========================================================================
@@ -180,7 +180,7 @@ void CmdPartSphere::activated(int iMsg)
 
 bool CmdPartSphere::isActive()
 {
-    return true;
+    return getActivePart() != nullptr;
 }
 
 //===========================================================================
@@ -222,7 +222,7 @@ void CmdPartCone::activated(int iMsg)
 
 bool CmdPartCone::isActive()
 {
-    return true;
+    return getActivePart() != nullptr;
 }
 
 //===========================================================================
@@ -264,7 +264,7 @@ void CmdPartTorus::activated(int iMsg)
 
 bool CmdPartTorus::isActive()
 {
-    return true;
+    return getActivePart() != nullptr;
 }
 
 

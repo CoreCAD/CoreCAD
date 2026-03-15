@@ -33,6 +33,9 @@
 
 #include <App/Document.h>
 #include <App/GeoFeature.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <App/Part.h>
+#include <Gui/MDIView.h>
 #include <App/DocumentObjectGroup.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -72,6 +75,39 @@
 #include "TaskSweep.h"
 #include "ViewProvider.h"
 
+// Returns true when the active App::Part contains at least one object other
+// than its coordinate origin — i.e. there is real geometry to operate on.
+static bool activePartHasShapes()
+{
+    Gui::MDIView* view = Gui::Application::Instance->activeView();
+    if (!view) {
+        return false;
+    }
+    App::Part* part = view->getActiveObject<App::Part*>("part");
+    if (!part) {
+        return false;
+    }
+    for (auto* obj : part->Group.getValues()) {
+        if (strcmp(obj->getTypeId().getName(), "App::Origin") != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool documentHasVisibleShapes()
+{
+    auto* doc = App::GetApplication().getActiveDocument();
+    if (!doc) {
+        return false;
+    }
+    for (auto* obj : doc->getObjectsOfType(Part::Feature::getClassTypeId())) {
+        if (obj->Visibility.getValue()) {
+            return true;
+        }
+    }
+    return false;
+}
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -1091,13 +1127,24 @@ void CmdPartImport::activated(int iMsg)
         = Gui::FileDialog::getOpenFileName(Gui::getMainWindow(), QString(), QString(), filter, &select);
     if (!fn.isEmpty()) {
         Gui::WaitCursor wc;
+        Gui::MDIView* view = Gui::Application::Instance->activeView();
+        App::Part* activePart = view ? view->getActiveObject<App::Part*>("part") : nullptr;
         App::Document* pDoc = getDocument();
-        if (!pDoc) {
-            doCommand(Doc, "App.newDocument()");
+
+        // No active Part — create a new document and Part to receive the import.
+        std::string partName;
+        if (!pDoc || !activePart) {
+            doCommand(Doc, "App.newDocument('Part')");
+            doCommand(Doc, "App.ActiveDocument.addObject('App::Part', 'Part')");
+            doCommand(Gui, "Gui.ActiveDocument.ActiveView.setActiveObject('part', App.ActiveDocument.ActiveObject)");
             pDoc = getDocument();
             if (!pDoc) {
                 return;
             }
+            partName = "Part";
+        }
+        else {
+            partName = activePart->getNameInDocument();
         }
 
         const std::string fnEscapedUtf8 = Base::Tools::escapeEncodeFilename(fn.toUtf8().constData());
@@ -1110,6 +1157,11 @@ void CmdPartImport::activated(int iMsg)
             doCommand(Doc, "import Part");
             doCommand(Doc, "Part.insert(\"%s\",\"%s\")", fnEscapedUtf8.c_str(), pDoc->getName());
         }
+        doCommand(
+            Doc,
+            "App.ActiveDocument.getObject('%s').addObject(App.ActiveDocument.ActiveObject)",
+            partName.c_str()
+        );
         commitCommand();
 
         std::list<Gui::MDIView*> views = getActiveGuiDocument()->getMDIViewsOfType(
@@ -1421,7 +1473,7 @@ void CmdPartBoolean::activated(int iMsg)
 
 bool CmdPartBoolean::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1449,7 +1501,7 @@ void CmdPartExtrude::activated(int iMsg)
 
 bool CmdPartExtrude::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1478,7 +1530,7 @@ void CmdPartScale::activated(int iMsg)
 
 bool CmdPartScale::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1565,7 +1617,7 @@ void CmdPartRevolve::activated(int iMsg)
 
 bool CmdPartRevolve::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1593,7 +1645,7 @@ void CmdPartFillet::activated(int iMsg)
 
 bool CmdPartFillet::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1621,7 +1673,7 @@ void CmdPartChamfer::activated(int iMsg)
 
 bool CmdPartChamfer::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1649,7 +1701,7 @@ void CmdPartMirror::activated(int iMsg)
 
 bool CmdPartMirror::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1717,7 +1769,11 @@ void CmdPartBuilder::activated(int iMsg)
 
 bool CmdPartBuilder::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    if (Gui::Control().activeDialog()) {
+        return false;
+    }
+    Gui::MDIView* view = Gui::Application::Instance->activeView();
+    return view && view->getActiveObject<App::Part*>("part") != nullptr;
 }
 
 //===========================================================================
@@ -1746,7 +1802,7 @@ void CmdPartLoft::activated(int iMsg)
 
 bool CmdPartLoft::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1775,7 +1831,7 @@ void CmdPartSweep::activated(int iMsg)
 
 bool CmdPartSweep::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -2301,7 +2357,7 @@ void CmdPartRuledSurface::activated(int iMsg)
 
 bool CmdPartRuledSurface::isActive()
 {
-    return getActiveGuiDocument();
+    return activePartHasShapes();
 }
 
 //===========================================================================
@@ -2444,7 +2500,7 @@ void CmdPartProjectionOnSurface::activated(int iMsg)
 
 bool CmdPartProjectionOnSurface::isActive()
 {
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()));
+    return (activePartHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -2486,7 +2542,7 @@ void CmdPartSectionCut::activated(int iMsg)
 
 bool CmdPartSectionCut::isActive()
 {
-    return true;
+    return documentHasVisibleShapes();
 }
 
 
