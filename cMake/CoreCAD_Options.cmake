@@ -55,6 +55,20 @@ if(NOT CORECAD_CORERIBBON_DIR OR NOT EXISTS "${CORECAD_CORERIBBON_DIR}/InitGui.p
     endif()
 endif()
 
+# ── corecad-part ──────────────────────────────────────────────────────────────
+# Proprietary CorePart extensions.  Source lives in a separate private repo.
+# Auto-detected from ~/Repos/corecad-part, or set CORECAD_COREPART_DIR explicitly.
+# When absent, CorePart loads without proprietary features (open-source only).
+set(CORECAD_COREPART_DIR "" CACHE PATH
+    "Path to corecad-part checkout (auto-detected if empty)")
+
+if(NOT CORECAD_COREPART_DIR OR NOT EXISTS "${CORECAD_COREPART_DIR}/_pro_init.py")
+    if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/Repos/corecad-part/_pro_init.py")
+        set(CORECAD_COREPART_DIR "$ENV{HOME}/Repos/corecad-part"
+            CACHE PATH "" FORCE)
+    endif()
+endif()
+
 # ── Disabled modules ──────────────────────────────────────────────────────────
 # Addon Manager: users cannot install or remove workbenches at runtime.
 set(BUILD_ADDONMGR          OFF CACHE BOOL "CoreCAD: Addon Manager disabled" FORCE)

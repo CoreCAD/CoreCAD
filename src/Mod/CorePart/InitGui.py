@@ -797,3 +797,11 @@ class CorePartWorkbench(Gui.Workbench):
 
 
 Gui.addWorkbench(CorePartWorkbench())
+
+# Optionally load proprietary extensions (present only in proprietary builds).
+# The _pro_init module registers additional commands and injects them into the
+# workbench.  Its absence is not an error.
+try:
+    import _pro_init  # noqa: F401  # pylint: disable=import-error
+except ImportError:
+    pass
