@@ -36,6 +36,8 @@ class CoinBackend:
         self._overlays: Dict[OverlayId, object] = {}
         # SoAnnotation injected into the active view's scene graph for overlays
         self._overlay_root = None
+        # SoSeparator inserted BEFORE SoClipPlane for cap geometry
+        self._cap_root = None
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -149,7 +151,14 @@ class CoinBackend:
         if view is None:
             return
         try:
-            view.toggleClippingPlane(1 if enabled else 0, pla=placement)
+            if not enabled:
+                view.toggleClippingPlane(0)
+                return
+            # toggleClippingPlane returns early without updating the plane if one
+            # is already active.  Remove it first, then re-add at the new placement.
+            if view.hasClippingPlane():
+                view.toggleClippingPlane(0)
+            view.toggleClippingPlane(1, pla=placement)
         except Exception as exc:
             App.Console.PrintWarning(
                 "CorePart.render: set_clipping_plane failed: {}\n".format(exc)
@@ -250,6 +259,133 @@ class CoinBackend:
                 "CorePart.render: draw_annotation failed: {}\n".format(exc)
             )
             return ""
+
+    def _build_mesh_sep(self, points, triangles, colour, normal=None):
+        """Build a Coin3D SoSeparator containing a shaded filled triangle mesh."""
+        from pivy import coin
+
+        r, g, b, a = colour
+        sep = coin.SoSeparator()
+
+        # Two-sided lighting — cap visible regardless of view direction
+        hints = coin.SoShapeHints()
+        hints.shapeType = coin.SoShapeHints.UNKNOWN_SHAPE_TYPE
+        hints.vertexOrdering = coin.SoShapeHints.UNKNOWN_ORDERING
+        sep.addChild(hints)
+
+        mat = coin.SoMaterial()
+        mat.diffuseColor.setValue(r, g, b)
+        mat.transparency.setValue(1.0 - a)
+        sep.addChild(mat)
+
+        if normal is not None:
+            nb = coin.SoNormalBinding()
+            nb.value = coin.SoNormalBinding.OVERALL
+            sep.addChild(nb)
+            nrm = coin.SoNormal()
+            nrm.vector.set1Value(0, normal[0], normal[1], normal[2])
+            sep.addChild(nrm)
+
+        coords = coin.SoCoordinate3()
+        for i, (x, y, z) in enumerate(points):
+            coords.point.set1Value(i, x, y, z)
+        sep.addChild(coords)
+
+        ifs = coin.SoIndexedFaceSet()
+        flat = []
+        for tri in triangles:
+            flat += [int(tri[0]), int(tri[1]), int(tri[2]), -1]
+        ifs.coordIndex.setValues(0, len(flat), flat)
+        sep.addChild(ifs)
+
+        return sep
+
+    def draw_mesh(
+        self,
+        points,
+        triangles,
+        colour,
+        normal=None,
+    ):
+        """Draw a filled triangle mesh as a scene overlay."""
+        if not self._ensure_overlay_root():
+            return ""
+        try:
+            from pivy import coin
+
+            sep = self._build_mesh_sep(points, triangles, colour, normal)
+            overlay_id = str(uuid.uuid4())
+            self._overlay_root.addChild(sep)
+            self._overlays[overlay_id] = sep
+            return overlay_id
+        except Exception as exc:
+            App.Console.PrintWarning(
+                "CorePart.render: draw_mesh failed: {}\n".format(exc)
+            )
+            return ""
+
+    def update_cap_meshes(self, meshes) -> None:
+        """Replace all cap geometry, inserted before the active SoClipPlane."""
+        view = self._active_view()
+        if view is None:
+            return
+        try:
+            from pivy import coin
+
+            sg = view.getSceneGraph()
+
+            # Remove old cap root from the scene graph
+            if self._cap_root is not None:
+                idx = sg.findChild(self._cap_root)
+                if idx >= 0:
+                    sg.removeChild(self._cap_root)
+                self._cap_root = None
+
+            if not meshes:
+                return
+
+            cap_root = coin.SoSeparator()
+            for (points, triangles, colour, normal) in meshes:
+                cap_root.addChild(self._build_mesh_sep(points, triangles, colour, normal))
+
+            # Insert before the SoClipPlane so the cap is not clipped
+            clip_idx = -1
+            for i in range(sg.getNumChildren()):
+                try:
+                    if isinstance(sg.getChild(i), coin.SoClipPlane):
+                        clip_idx = i
+                        break
+                except Exception:
+                    pass
+
+            if clip_idx >= 0:
+                sg.insertChild(cap_root, clip_idx)
+            else:
+                sg.addChild(cap_root)
+
+            self._cap_root = cap_root
+        except Exception as exc:
+            App.Console.PrintWarning(
+                "CorePart.render: update_cap_meshes failed: {}\n".format(exc)
+            )
+
+    def clear_cap_meshes(self) -> None:
+        """Remove all cap geometry from the scene graph."""
+        if self._cap_root is None:
+            return
+        view = self._active_view()
+        if view is None:
+            return
+        try:
+            sg = view.getSceneGraph()
+            idx = sg.findChild(self._cap_root)
+            if idx >= 0:
+                sg.removeChild(self._cap_root)
+            self._cap_root = None
+        except Exception as exc:
+            App.Console.PrintWarning(
+                "CorePart.render: clear_cap_meshes failed: {}\n".format(exc)
+            )
 
     def draw_bounding_box(
         self,

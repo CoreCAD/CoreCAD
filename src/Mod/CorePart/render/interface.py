@@ -115,6 +115,47 @@ class RenderInterface(Protocol):
         Returns an overlay ID."""
         ...
 
+    def draw_mesh(
+        self,
+        points: List[Tuple[float, float, float]],
+        triangles: List[Tuple[int, int, int]],
+        colour: Colour,
+        normal: Optional[Tuple[float, float, float]] = None,
+    ) -> OverlayId:
+        """Draw a filled triangle mesh as a scene overlay.
+
+        *points* is a flat list of (x, y, z) world-space coordinates.
+        *triangles* is a list of (i, j, k) index triples into *points*.
+        *normal* is an optional overall face normal (nx, ny, nz) for lighting.
+        Returns an overlay ID.
+        """
+        ...
+
+    def update_cap_meshes(
+        self,
+        meshes: List[
+            Tuple[
+                List[Tuple[float, float, float]],   # points
+                List[Tuple[int, int, int]],          # triangles
+                "Colour",                            # colour
+                Optional[Tuple[float, float, float]],# normal
+            ]
+        ],
+    ) -> None:
+        """Replace all section-view cap geometry with *meshes*.
+
+        Cap meshes are inserted into the scene graph **before** the active
+        clip plane so they are never clipped away.  The cap is displayed at
+        the exact cut boundary to make clipped solids appear solid.
+
+        Pass an empty list to remove all cap geometry.
+        """
+        ...
+
+    def clear_cap_meshes(self) -> None:
+        """Remove all section-view cap geometry from the scene graph."""
+        ...
+
     def draw_bounding_box(
         self,
         bbox: "App.BoundBox",
