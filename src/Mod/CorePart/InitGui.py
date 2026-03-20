@@ -389,6 +389,18 @@ class CorePartWorkbench(Gui.Workbench):
             ],
         )
 
+        # ---- Proprietary Inspect toolbar (present only with corecad-part) ----
+        # _pro_init is imported at module level below; by the time Initialize
+        # is called the module is already cached, so this just reads the list.
+        try:
+            from _pro_init import INSPECT_COMMANDS  # pylint: disable=import-error
+
+            if INSPECT_COMMANDS:
+                self.appendToolbar("Inspect", INSPECT_COMMANDS)
+                self.appendMenu(["&Part", "Inspect"], INSPECT_COMMANDS)
+        except ImportError:
+            pass
+
     def Activated(self):
         # Trigger PartDesign initialization (WorkflowManager etc.)
         try:
