@@ -270,6 +270,32 @@ in the background, users never need to think about which mode they are in.
 
 ---
 
+### 8. Sketcher UX
+
+| Status | Task |
+|--------|------|
+| ⬜ Todo | Simplify `Sketcher_ToggleDrivingConstraint` — see note below |
+
+> **`Sketcher_ToggleDrivingConstraint` does two unrelated things:**
+>
+> - **No selection** — changes a global `constraintCreationMode` flag; all dimension
+>   toolbar icons swap between driving and driven variants as a side effect.
+> - **With selection** — one-shot toggle of the selected constraint; ignores the flag.
+>
+> The global mode shift is unexpected. Users clicking the button to convert one constraint
+> end up in a persistent "reference dimension mode" with no obvious indication.
+>
+> **Proposed fix:** remove the global mode flag entirely. Dimensions are always created as
+> driving; the toggle button acts only on selected constraints. This eliminates hidden state
+> and the icon-swap side effect across the toolbar. A second T1 icon
+> (`Sketcher_ToggleConstraint_Driven`) will also be needed once the command is split — flag
+> this to the icon team when the time comes.
+>
+> **Files to change:** `CommandConstraints.cpp` — `CmdSketcherToggleDrivingConstraint::activated()`
+> and `updateAction()`, plus all `addCommandMode("ToggleDrivingConstraint", ...)` registrations.
+
+---
+
 ## Research Areas
 
 Unsolved problems across the CAD industry worth investigating — not committed goals,
