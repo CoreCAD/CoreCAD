@@ -14,7 +14,7 @@ class CommandNewPart:
 
     def GetResources(self):
         return {
-            "Pixmap": "Geofeaturegroup",
+            "Pixmap": "CorePart_NewPart",
             "MenuText": "New Part",
             "ToolTip": (
                 "Create a new part document containing an App::Part and a Body, "

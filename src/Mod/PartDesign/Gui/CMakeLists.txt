@@ -20,7 +20,18 @@ set (PartDesign_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/PartDesign_translat
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${PartDesign_TR_QRC} ${QM_SRCS})
-qt_add_resources(PartDesignGui_SRCS Resources/PartDesign.qrc ${PartDesign_TR_QRC})
+# Stage branding icon overrides (private corecad-assets) into the build tree.
+# SRC_DIR is the Resources/ directory so the icons/ subdirectory structure is
+# preserved in staging and matches the QRC's "icons/filename.svg" references.
+# ICONS_SUBDIR tells the overlay to place asset files into staging/icons/.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/PartDesign"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/PartDesign.qrc"
+    OUTPUT_QRC    _PartDesign_Icons_QRC
+)
+qt_add_resources(PartDesignGui_SRCS ${_PartDesign_Icons_QRC} ${PartDesign_TR_QRC})
 
 set(PartDesignGui_UIC_SRCS
     TaskFeaturePick.ui

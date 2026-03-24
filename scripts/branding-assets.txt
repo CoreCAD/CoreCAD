@@ -14,6 +14,19 @@
 src/Gui/Icons/*.svg
 src/Gui/Icons/*.png
 
+# CorePart workbench icons — deployed directly to Mod/CorePart/Resources/icons/ at configure time
+# (filesystem search via addIconSearchPath in InitGui.py; no QRC needed)
+src/Mod/CorePart/*.svg
+
+# PartDesign workbench icons (QRC-compiled via corecad_stage_resources in PartDesign/Gui/CMakeLists.txt)
+src/Mod/PartDesign/*.svg
+
+# Part workbench icons — includes nested subdirs (booleans/, create/, parametric/, tools/)
+src/Mod/Part/*.svg
+
+# Sketcher workbench icons — includes nested subdirs (constraints/, geometry/, etc.)
+src/Mod/Sketcher/*.svg
+
 # Windows installer icons (referenced directly from source tree by NSIS)
 package/WindowsInstaller/icons/*.ico
 package/WindowsInstaller/icons/*.bmp

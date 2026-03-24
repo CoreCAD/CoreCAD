@@ -9,6 +9,9 @@ if(NOT BUILD_GUI)
     return()
 endif()
 
+# CorePart icons are compiled into FreeCADGui via src/Gui/CMakeLists.txt.
+# No separate library or import needed here.
+
 set(_src "${CMAKE_CURRENT_SOURCE_DIR}")
 set(_dst "${CMAKE_BINARY_DIR}/Mod/CorePart")
 
