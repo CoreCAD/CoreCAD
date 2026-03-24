@@ -524,8 +524,19 @@ corecad_stage_resources(
     OUTPUT_QRC    _CoreCAD_Icons_QRC
 )
 
+# CorePart workbench icons — compiled into FreeCADGui so they are globally
+# available by name without requiring a separate Python import.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_SOURCE_DIR}/src/Mod/CorePart/Resources"
+    ASSETS_SUBDIR "src/Mod/CorePart"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_SOURCE_DIR}/src/Mod/CorePart/Resources/CorePart.qrc"
+    OUTPUT_QRC    _CorePart_Icons_QRC
+)
+
 set(Gui_RES_SRCS
     ${_CoreCAD_Icons_QRC}
+    ${_CorePart_Icons_QRC}
     Language/translation.qrc
     ${FreeCAD_TR_QRC}
 )

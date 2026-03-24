@@ -63,7 +63,7 @@ endif()
 
 # ── Function ──────────────────────────────────────────────────────────────────
 function(corecad_stage_resources)
-    cmake_parse_arguments(CSR "" "SRC_DIR;ASSETS_SUBDIR;QRC_FILE;OUTPUT_QRC" "" ${ARGN})
+    cmake_parse_arguments(CSR "" "SRC_DIR;ASSETS_SUBDIR;QRC_FILE;OUTPUT_QRC;ICONS_SUBDIR" "" ${ARGN})
 
     if(NOT CORECAD_BRANDING_AVAILABLE)
         # No assets available — use the original QRC unchanged
@@ -103,19 +103,47 @@ function(corecad_stage_resources)
     # Overlay branding assets — only files that match the allowlist globs
     # AND already exist in the source tree (we never add files the QRC
     # doesn't reference).
+    #
+    # Two modes depending on whether ICONS_SUBDIR is set:
+    #
+    # Flat mode (no ICONS_SUBDIR): overlays files from the assets dir
+    # directly into the staging root. Used for src/Gui/Icons where the QRC
+    # references filenames with no subdirectory prefix.
+    #
+    # Subdir mode (ICONS_SUBDIR set): the assets dir mirrors the icons/
+    # subdirectory tree. Files are matched with GLOB_RECURSE so nested
+    # subdirectories (e.g. booleans/, constraints/) are traversed, and
+    # each file is overlaid into staging/ICONS_SUBDIR/ preserving its
+    # relative path. Used for Part, PartDesign, Sketcher, etc. where the
+    # QRC references files as "icons/subdir/filename.svg".
     set(_assets_dir "${CORECAD_ASSETS_DIR}/${CSR_ASSETS_SUBDIR}")
     set(_applied 0)
     if(EXISTS "${_assets_dir}")
-        foreach(_glob IN LISTS _applicable_globs)
-            file(GLOB _matches "${_assets_dir}/${_glob}")
-            foreach(_src IN LISTS _matches)
-                get_filename_component(_name "${_src}" NAME)
-                if(EXISTS "${_staging}/${_name}")
-                    configure_file("${_src}" "${_staging}/${_name}" COPYONLY)
-                    math(EXPR _applied "${_applied} + 1")
-                endif()
+        if(CSR_ICONS_SUBDIR)
+            set(_overlay_base "${_staging}/${CSR_ICONS_SUBDIR}")
+            foreach(_glob IN LISTS _applicable_globs)
+                file(GLOB_RECURSE _matches RELATIVE "${_assets_dir}"
+                    "${_assets_dir}/${_glob}")
+                foreach(_rel IN LISTS _matches)
+                    if(EXISTS "${_overlay_base}/${_rel}")
+                        configure_file("${_assets_dir}/${_rel}"
+                            "${_overlay_base}/${_rel}" COPYONLY)
+                        math(EXPR _applied "${_applied} + 1")
+                    endif()
+                endforeach()
             endforeach()
-        endforeach()
+        else()
+            foreach(_glob IN LISTS _applicable_globs)
+                file(GLOB _matches "${_assets_dir}/${_glob}")
+                foreach(_src IN LISTS _matches)
+                    get_filename_component(_name "${_src}" NAME)
+                    if(EXISTS "${_staging}/${_name}")
+                        configure_file("${_src}" "${_staging}/${_name}" COPYONLY)
+                        math(EXPR _applied "${_applied} + 1")
+                    endif()
+                endforeach()
+            endforeach()
+        endif()
     endif()
     message(STATUS "CoreCAD branding: staged ${_applied} override(s) for ${CSR_ASSETS_SUBDIR}")
 
@@ -137,6 +165,52 @@ function(corecad_stage_resources)
 
     file(WRITE "${_staging}/${_qrc_name}" "${_qrc_content}")
     set(${CSR_OUTPUT_QRC} "${_staging}/${_qrc_name}" PARENT_SCOPE)
+endfunction()
+
+# ── Direct filesystem icon deployment (non-QRC) ───────────────────────────────
+# Copies icons from corecad-assets directly into a build-tree directory that is
+# registered as an icon search path at runtime (via Gui.addIconSearchPath).
+# Use for new icons that have no upstream QRC entry (e.g. CorePart-specific icons
+# and cross-module overrides like Part_DatumPlane).  Icons are flattened — any
+# subdirectory structure inside ASSETS_SUBDIR is ignored; only the filename matters.
+function(corecad_deploy_icons)
+    cmake_parse_arguments(CDI "" "ASSETS_SUBDIR;OUTPUT_DIR" "" ${ARGN})
+
+    if(NOT CORECAD_BRANDING_AVAILABLE)
+        return()
+    endif()
+
+    # Find applicable glob patterns from the allowlist
+    set(_applicable_globs "")
+    foreach(_pat IN LISTS _CORECAD_BRANDING_PATTERNS)
+        string(FIND "${_pat}" "${CDI_ASSETS_SUBDIR}/" _pos)
+        if(_pos EQUAL 0)
+            string(LENGTH "${CDI_ASSETS_SUBDIR}/" _prefix_len)
+            string(SUBSTRING "${_pat}" ${_prefix_len} -1 _file_glob)
+            list(APPEND _applicable_globs "${_file_glob}")
+        endif()
+    endforeach()
+
+    if(NOT _applicable_globs)
+        return()
+    endif()
+
+    set(_assets_dir "${CORECAD_ASSETS_DIR}/${CDI_ASSETS_SUBDIR}")
+    set(_applied 0)
+    if(EXISTS "${_assets_dir}")
+        file(MAKE_DIRECTORY "${CDI_OUTPUT_DIR}")
+        foreach(_glob IN LISTS _applicable_globs)
+            file(GLOB_RECURSE _matches RELATIVE "${_assets_dir}"
+                "${_assets_dir}/${_glob}")
+            foreach(_rel IN LISTS _matches)
+                get_filename_component(_name "${_rel}" NAME)
+                configure_file("${_assets_dir}/${_rel}"
+                    "${CDI_OUTPUT_DIR}/${_name}" COPYONLY)
+                math(EXPR _applied "${_applied} + 1")
+            endforeach()
+        endforeach()
+    endif()
+    message(STATUS "CoreCAD branding: deployed ${_applied} icon(s) to ${CDI_OUTPUT_DIR}")
 endfunction()
 
 # ── Plain file staging (non-QRC) ──────────────────────────────────────────────

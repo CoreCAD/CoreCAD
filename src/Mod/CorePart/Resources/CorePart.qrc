@@ -1,0 +1,6 @@
+<RCC>
+    <qresource>
+        <file>icons/CorePart_NewPart.svg</file>
+        <file>icons/CorePart_GeometryMetrics.svg</file>
+    </qresource>
+</RCC>
