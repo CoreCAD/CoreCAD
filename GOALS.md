@@ -127,6 +127,7 @@ Ensure the project is reproducible and easy to work with.
 | ✅ Done | Set up branching strategy (`main` mirrors upstream, `develop` holds customisations) |
 | ✅ Done | Display CoreCAD version in title bar, separate from internal FreeCAD build version |
 | ⬜ Todo | Define CoreCAD versioning strategy (CI injection, About dialog) |
+| ⬜ Todo | Unify branding pipeline into a single `corecad_brand_module()` CMake macro — currently each module must be wired up by hand, and Python-first workbenches (those with `PYSIDE_WRAP_RC`) require an extra step that C++-first ones don't. The macro should accept a flag for whether a Python `_rc.py` is needed and handle both `qt_add_resources` and `PYSIDE_WRAP_RC` from the staged QRC automatically. Also audit all modules using `PYSIDE_WRAP_RC` that don't yet have `corecad_stage_resources` wired up. |
 
 > **Versioning note:** CoreCAD uses a display-only version (`CoreCADVersionMajor/Minor/Patch/Suffix`
 > in `corecad/branding.xml`) that is shown in the title bar. The internal FreeCAD build version
