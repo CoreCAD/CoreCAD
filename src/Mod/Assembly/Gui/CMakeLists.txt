@@ -10,13 +10,20 @@ set(AssemblyGui_LIBS
     FreeCADGui
 )
 
-PYSIDE_WRAP_RC(Assembly_QRC_SRCS Resources/Assembly.qrc)
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/Assembly"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Assembly.qrc"
+    OUTPUT_QRC    _Assembly_Icons_QRC
+)
+PYSIDE_WRAP_RC(Assembly_QRC_SRCS ${_Assembly_Icons_QRC})
 
 set (Assembly_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/Assembly_translation.qrc)
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${Assembly_TR_QRC} ${QM_SRCS})
-qt_add_resources(AssemblyResource_SRCS Resources/Assembly.qrc ${Assembly_TR_QRC})
+qt_add_resources(AssemblyResource_SRCS ${_Assembly_Icons_QRC} ${Assembly_TR_QRC})
 
 SOURCE_GROUP("Resources" FILES ${AssemblyResource_SRCS})
 

@@ -18,6 +18,9 @@ src/Gui/Icons/*.png
 # (filesystem search via addIconSearchPath in InitGui.py; no QRC needed)
 src/Mod/CorePart/*.svg
 
+# Assembly workbench icons (QRC-compiled via corecad_stage_resources in Assembly/Gui/CMakeLists.txt)
+src/Mod/Assembly/*.svg
+
 # PartDesign workbench icons (QRC-compiled via corecad_stage_resources in PartDesign/Gui/CMakeLists.txt)
 src/Mod/PartDesign/*.svg
 
