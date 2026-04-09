@@ -21,6 +21,11 @@ set(_open_root_sources
     "${_src}/InitGui.py"
 )
 
+set(_open_commands_sources
+    "${_src}/commands/__init__.py"
+    "${_src}/commands/body_boolean.py"
+)
+
 set(_open_render_sources
     "${_src}/render/__init__.py"
     "${_src}/render/interface.py"
@@ -33,23 +38,27 @@ set(_open_stamp "${_dst}/.copy_stamp")
 add_custom_command(
     OUTPUT "${_open_stamp}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_dst}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_dst}/commands"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_dst}/render"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${_open_root_sources} "${_dst}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${_open_commands_sources} "${_dst}/commands"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${_open_render_sources} "${_dst}/render"
     COMMAND ${CMAKE_COMMAND} -E touch "${_open_stamp}"
-    DEPENDS ${_open_root_sources} ${_open_render_sources}
+    DEPENDS ${_open_root_sources} ${_open_commands_sources} ${_open_render_sources}
     COMMENT "Syncing CorePart open-source files to build directory"
 )
 
 add_custom_target(CorePartScripts ALL
     DEPENDS "${_open_stamp}"
-    SOURCES ${_open_root_sources} ${_open_render_sources}
+    SOURCES ${_open_root_sources} ${_open_commands_sources} ${_open_render_sources}
 )
 
-install(FILES ${_open_root_sources}   DESTINATION Mod/CorePart)
-install(FILES ${_open_render_sources} DESTINATION Mod/CorePart/render)
+install(FILES ${_open_root_sources}      DESTINATION Mod/CorePart)
+install(FILES ${_open_commands_sources}  DESTINATION Mod/CorePart/commands)
+install(FILES ${_open_render_sources}    DESTINATION Mod/CorePart/render)
 
 # ── Proprietary extensions (optional — requires corecad-part repo) ────────────
 

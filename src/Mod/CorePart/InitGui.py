@@ -77,6 +77,13 @@ class CorePartWorkbench(Gui.Workbench):
 
         Gui.addCommand("PartDesign_Sprocket", CommandSprocket())
 
+        # CorePart body-aware boolean commands
+        from CorePart.commands.body_boolean import BodyUnion, BodyCut, BodyIntersect
+
+        Gui.addCommand("CorePart_BodyUnion", BodyUnion())
+        Gui.addCommand("CorePart_BodyCut", BodyCut())
+        Gui.addCommand("CorePart_BodyIntersect", BodyIntersect())
+
         # ---- Part modules ----
         import PartGui  # noqa: F401 — registers C++ commands
 
@@ -143,6 +150,14 @@ class CorePartWorkbench(Gui.Workbench):
                 "PartDesign_CompPrimitiveSubtractive",
                 "Separator",
                 "PartDesign_Boolean",
+            ],
+        )
+        self.appendToolbar(
+            "Body Boolean",
+            [
+                "CorePart_BodyUnion",
+                "CorePart_BodyCut",
+                "CorePart_BodyIntersect",
             ],
         )
         self.appendToolbar(
@@ -305,6 +320,9 @@ class CorePartWorkbench(Gui.Workbench):
             [
                 "Separator",
                 "PartDesign_Boolean",
+                "CorePart_BodyUnion",
+                "CorePart_BodyCut",
+                "CorePart_BodyIntersect",
                 "Separator",
                 "Materials_InspectAppearance",
                 "Materials_InspectMaterial",
@@ -621,7 +639,12 @@ class CorePartWorkbench(Gui.Workbench):
             ),
             FilterWatcher(
                 "SELECT PartDesign::Body COUNT 1..",
-                ["PartDesign_Boolean"],
+                [
+                    "PartDesign_Boolean",
+                    "CorePart_BodyUnion",
+                    "CorePart_BodyCut",
+                    "CorePart_BodyIntersect",
+                ],
                 "Boolean Tools",
                 "PartDesign_Body",
             ),
