@@ -90,7 +90,17 @@ set (Mesh_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/Mesh_translation.qrc)
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${Mesh_TR_QRC} ${QM_SRCS})
-qt_add_resources(resource_SRCS Resources/Mesh.qrc ${Mesh_TR_QRC})
+# Stage branding icon overrides (private corecad-assets) into the build tree.
+# SRC_DIR is Resources/ so the icons/ subdirectory structure is preserved in
+# staging and matches the QRC's "icons/Mesh_..." references.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/Mesh"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Mesh.qrc"
+    OUTPUT_QRC    _Mesh_Icons_QRC
+)
+qt_add_resources(resource_SRCS ${_Mesh_Icons_QRC} ${Mesh_TR_QRC})
 
 SET(resource_SRCS
     ${QM_SRCS}
