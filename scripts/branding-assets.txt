@@ -30,6 +30,15 @@ src/Mod/Part/*.svg
 # Sketcher workbench icons — includes nested subdirs (constraints/, geometry/, etc.)
 src/Mod/Sketcher/*.svg
 
+# TechDraw workbench icons (QRC-compiled via corecad_stage_resources in TechDraw/Gui/CMakeLists.txt)
+src/Mod/TechDraw/*.svg
+
+# Mesh workbench icons (QRC-compiled via corecad_stage_resources in Mesh/Gui/CMakeLists.txt)
+src/Mod/Mesh/*.svg
+
+# Surface workbench icons (QRC-compiled via corecad_stage_resources in Surface/Gui/CMakeLists.txt)
+src/Mod/Surface/*.svg
+
 # Windows installer icons (referenced directly from source tree by NSIS)
 package/WindowsInstaller/icons/*.ico
 package/WindowsInstaller/icons/*.bmp
