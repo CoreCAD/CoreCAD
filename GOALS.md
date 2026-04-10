@@ -98,7 +98,7 @@ CoreRibbon (`src/Mod/CoreRibbon/`) is the clean, native implementation replacing
 | ✅ Done | Move Individual Views to title row; suppress Individual Views + Structure from workbench panels |
 | ⬜ Todo | Tune button sizes — promote primary actions to large icons, keep secondary small |
 | ⬜ Todo | Edit panel names and panel contents (names currently come from FreeCAD toolbar names) |
-| ⬜ Todo | Remove FreeCAD-Ribbon submodule once CoreRibbon is confirmed stable |
+| ✅ Done | Remove FreeCAD-Ribbon submodule once CoreRibbon is confirmed stable |
 
 > **CoreRibbon configuration** lives entirely in FreeCAD parameters at
 > `User parameter:BaseApp/Preferences/Mod/CoreRibbon`. Key defaults (in `config.py`):
