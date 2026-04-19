@@ -31,8 +31,6 @@
 
 #include <ranges>
 
-#include <fmt/format.h>
-
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <App/Datums.h>
@@ -43,12 +41,6 @@
 #include <Gui/Control.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/ShapeBinder.h>
-#include <Mod/PartDesign/App/DatumLine.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
-#include <Mod/PartDesign/App/DatumPoint.h>
-#include <Mod/PartDesign/App/FeaturePrimitive.h>
-#include <Mod/Sketcher/App/SketchObject.h>
 
 #include "ui_TaskFeaturePick.h"
 #include "TaskFeaturePick.h"
@@ -58,7 +50,6 @@
 
 
 using namespace PartDesignGui;
-using namespace Attacher;
 
 // TODO Do ve should snap here to App:Part or GeoFeatureGroup/DocumentObjectGroup ? (2015-09-04,
 // Fat-Zer)
@@ -101,6 +92,9 @@ TaskFeaturePick::TaskFeaturePick(
 
     proxy = new QWidget(this);
     ui->setupUi(proxy);
+
+    // Phase 2: external features are always valid; hide the copy/xref controls
+    ui->checkExternal->setVisible(false);
 
     // clang-format off
     connect(ui->checkUsed, &QCheckBox::toggled, this, &TaskFeaturePick::onUpdate);
@@ -207,14 +201,10 @@ void TaskFeaturePick::updateList()
             case noWire:
                 item->setHidden(true);
                 break;
-            case otherBody:
-                item->setHidden(!ui->checkOtherBody->isChecked());
-                break;
-            case otherPart:
-                item->setHidden(!ui->checkOtherPart->isChecked());
-                break;
-            case notInBody:
-                item->setHidden(!ui->checkOtherPart->isChecked());
+            case otherBody:  // Phase 2: cross-body always visible
+            case otherPart:  // Phase 2: cross-part always visible
+            case notInBody:  // Phase 2: free features always visible
+                item->setHidden(false);
                 break;
             case basePlane:
                 item->setHidden(false);
@@ -278,9 +268,8 @@ std::vector<App::DocumentObject*> TaskFeaturePick::buildFeatures()
             return result;
         }
 
-        auto activePart = PartDesignGui::getPartFor(activeBody, false);
-
         for (auto status : statuses) {
+            Q_UNUSED(status)
             QListWidgetItem* item = ui->listWidget->item(index);
 
             if (item->isSelected() && !item->isHidden()) {
@@ -289,42 +278,8 @@ std::vector<App::DocumentObject*> TaskFeaturePick::buildFeatures()
                                .getDocument(documentName.c_str())
                                ->getObject(t.toLatin1().data());
 
-                // build the dependent copy or reference if wanted by the user
-                if (status == otherBody || status == otherPart || status == notInBody) {
-                    if (!ui->radioXRef->isChecked()) {
-                        auto copy = makeCopy(obj, "", ui->radioIndependent->isChecked());
-
-                        if (status == otherBody) {
-                            activeBody->addObject(copy);
-                        }
-                        else if (status == otherPart) {
-                            auto oBody = PartDesignGui::getBodyFor(obj, false);
-                            if (!oBody) {
-                                activePart->addObject(copy);
-                            }
-                            else {
-                                activeBody->addObject(copy);
-                            }
-                        }
-                        else if (status == notInBody) {
-                            activeBody->addObject(copy);
-                            // doesn't supposed to get here anything but sketch but to be on the
-                            // safe side better to check
-                            if (copy->isDerivedFrom<Sketcher::SketchObject>()) {
-                                Sketcher::SketchObject* sketch
-                                    = static_cast<Sketcher::SketchObject*>(copy);
-                                PartDesignGui::fixSketchSupport(sketch);
-                            }
-                        }
-                        result.push_back(copy);
-                    }
-                    else {
-                        result.push_back(obj);
-                    }
-                }
-                else {
-                    result.push_back(obj);
-                }
+                // CoreCAD Phase 2: cross-Body references are valid. Use obj directly.
+                result.push_back(obj);
             }
 
             index++;
@@ -344,149 +299,6 @@ std::vector<App::DocumentObject*> TaskFeaturePick::buildFeatures()
     }
 
     return result;
-}
-
-App::DocumentObject* TaskFeaturePick::makeCopy(App::DocumentObject* obj, std::string sub, bool independent)
-{
-
-    App::DocumentObject* copy = nullptr;
-    // Check for null to avoid segfault
-    if (!obj) {
-        return copy;
-    }
-    if (independent
-        && (obj->isDerivedFrom<Sketcher::SketchObject>()
-            || obj->isDerivedFrom<PartDesign::FeaturePrimitive>())) {
-
-        // we do know that the created instance is a document object, as obj is one. But we do not
-        // know which exact type
-        auto* doc = App::GetApplication().getActiveDocument();
-        const auto name = fmt::format("Copy{}", obj->getNameInDocument());
-        copy = doc->addObject(obj->getTypeId().getName(), name.c_str());
-
-        // copy over all properties
-        std::vector<App::Property*> props;
-        std::vector<App::Property*> cprops;
-        obj->getPropertyList(props);
-        copy->getPropertyList(cprops);
-
-        auto it = cprops.begin();
-        for (App::Property* prop : props) {
-
-            // independent copies don't have links and are not attached
-            if (independent
-                && (prop->isDerivedFrom<App::PropertyLink>()
-                    || prop->isDerivedFrom<App::PropertyLinkList>()
-                    || prop->isDerivedFrom<App::PropertyLinkSub>()
-                    || prop->isDerivedFrom<App::PropertyLinkSubList>()
-                    || (prop->getGroup() && strcmp(prop->getGroup(), "Attachment") == 0))) {
-
-                ++it;
-                continue;
-            }
-
-            App::Property* cprop = *it++;
-
-            if (prop->getName() && strcmp(prop->getName(), "Label") == 0) {
-                static_cast<App::PropertyString*>(cprop)->setValue(name.c_str());
-                continue;
-            }
-
-            cprop->Paste(*prop);
-
-            // we are a independent copy, therefore no external geometry was copied. WE therefore
-            // can delete all constraints
-            if (auto* sketchObj = freecad_cast<Sketcher::SketchObject*>(obj)) {
-                sketchObj->delConstraintsToExternal();
-            }
-        }
-    }
-    else {
-
-        const std::string name = (!independent ? std::string("Reference") : std::string("Copy"))
-            + obj->getNameInDocument();
-        const std::string entity = sub;
-
-        Part::PropertyPartShape* shapeProp = nullptr;
-
-        // TODO Replace it with commands (2015-09-11, Fat-Zer)
-        if (obj->isDerivedFrom<Part::Datum>()) {
-            auto* doc = App::GetApplication().getActiveDocument();
-            copy = doc->addObject<Part::Datum>(name.c_str());
-
-            // we need to reference the individual datums and make again datums. This is important
-            // as datum adjust their size dependent on the part size, hence simply copying the shape
-            // is not enough
-            long int mode = mmDeactivated;
-            Part::Datum* datumCopy = static_cast<Part::Datum*>(copy);
-
-            if (obj->is<PartDesign::Point>()) {
-                mode = mm0Vertex;
-            }
-            else if (obj->is<PartDesign::Line>()) {
-                mode = mm1TwoPoints;
-            }
-            else if (obj->is<PartDesign::Plane>()) {
-                mode = mmFlatFace;
-            }
-            else {
-                return copy;
-            }
-
-            // TODO Recheck this. This looks strange in case of independent copy (2015-10-31,
-            // Fat-Zer)
-            if (!independent) {
-                datumCopy->AttachmentSupport.setValue(obj, entity.c_str());
-                datumCopy->MapMode.setValue(mode);
-            }
-            else if (!entity.empty()) {
-                datumCopy->Shape.setValue(
-                    static_cast<Part::Datum*>(obj)->Shape.getShape().getSubShape(entity.c_str())
-                );
-            }
-            else {
-                datumCopy->Shape.setValue(static_cast<Part::Datum*>(obj)->Shape.getValue());
-            }
-        }
-        else if (obj->is<PartDesign::ShapeBinder>() || obj->isDerivedFrom<Part::Feature>()) {
-
-            auto* doc = App::GetApplication().getActiveDocument();
-            auto* shapeBinderObj = doc->addObject<PartDesign::ShapeBinder>(name.c_str());
-            if (!independent) {
-                shapeBinderObj->Support.setValue(obj, entity.c_str());
-            }
-            else {
-                shapeProp = &shapeBinderObj->Shape;
-            }
-            copy = shapeBinderObj;
-        }
-        else if (obj->isDerivedFrom<App::Plane>() || obj->isDerivedFrom<App::Line>()) {
-
-            auto* doc = App::GetApplication().getActiveDocument();
-            auto* shapeBinderObj = doc->addObject<PartDesign::ShapeBinder>(name.c_str());
-            if (!independent) {
-                shapeBinderObj->Support.setValue(obj, entity.c_str());
-            }
-            else {
-                std::vector<std::string> subvalues;
-                subvalues.push_back(entity);
-                Part::TopoShape shape
-                    = PartDesign::ShapeBinder::buildShapeFromReferences(shapeBinderObj, subvalues);
-                shapeBinderObj->Shape.setValue(shape);
-            }
-            copy = shapeBinderObj;
-        }
-
-        if (independent && shapeProp) {
-            auto* featureObj = static_cast<Part::Feature*>(obj);
-            shapeProp->setValue(
-                entity.empty() ? featureObj->Shape.getValue()
-                               : featureObj->Shape.getShape().getSubShape(entity.c_str())
-            );
-        }
-    }
-
-    return copy;
 }
 
 bool TaskFeaturePick::isSingleSelectionEnabled() const

@@ -4,6 +4,10 @@
 # take precedence over upstream defaults. Add/remove workbenches here to control
 # what is compiled into CoreCAD.
 
+# Coin3D's cmake config uses cmake_minimum_required < 3.5 which CMake 4.x rejects.
+# This policy allows it to configure anyway.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 # ── Branding icon overlay (build-tree only) ───────────────────────────────────
 include(cMake/CoreCAD_Branding.cmake)
 
@@ -84,3 +88,10 @@ set(BUILD_POINTS            OFF CACHE BOOL "CoreCAD: Point cloud tools excluded"
 set(BUILD_REVERSEENGINEERING OFF CACHE BOOL "CoreCAD: Reverse engineering excluded" FORCE)
 set(BUILD_INSPECTION        OFF CACHE BOOL "CoreCAD: Point cloud inspection excluded (requires POINTS)" FORCE)
 set(BUILD_PLOT              OFF CACHE BOOL "CoreCAD: Legacy matplotlib plotter excluded" FORCE)
+set(BUILD_FEM               OFF CACHE BOOL "CoreCAD: FEM workbench excluded (not in MVP scope)" FORCE)
+set(BUILD_MESH_PART         OFF CACHE BOOL "CoreCAD: MeshPart excluded (requires SMESH)" FORCE)
+set(BUILD_FLAT_MESH         OFF CACHE BOOL "CoreCAD: FlatMesh excluded (requires MESH_PART)" FORCE)
+# FREECAD_USE_SMESH is set as a normal variable inside InitializeFreeCADBuildOptions,
+# so we must override it as a normal variable here (CACHE FORCE alone is not sufficient).
+set(FREECAD_USE_SMESH OFF)
+set(BUILD_SMESH       OFF)

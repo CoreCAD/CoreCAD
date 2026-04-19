@@ -2,6 +2,7 @@
 
 /**************************************************************************
  *   Copyright (c) 2022 Werner Mayer <wmayer[at]users.sourceforge.net>     *
+ *   Copyright (c) 2026 CoreCAD contributors                               *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -38,7 +39,6 @@
 #include "Utils.h"
 #include "ViewProviderBody.h"
 #include "WorkflowManager.h"
-#include "ui_DlgReference.h"
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
@@ -229,31 +229,23 @@ public:
     {
         createBodyOrThrow();
 
-        // get the selected object
-        App::DocumentObject* selectedObject {};
-
         if (faceFilter.match()) {
             Gui::SelectionObject faceSelObject = faceFilter.Result[0][0];
             SupportFaceValidator validator {faceSelObject};
             validator.handleSelectedBody(activeBody);
             validator.throwIfInvalid();
-
-            selectedObject = validator.getObject();
             supportString = validator.getSupport();
         }
         else if (planeFilter.match()) {
             SupportPlaneValidator validator(planeFilter.Result[0][0]);
-            selectedObject = validator.getObject();
             supportString = validator.getSupport();
         }
         else {
             // For a sketch, the support is the object itself with no sub-element.
             Gui::SelectionObject sketchSelObject = sketchFilter.Result[0][0];
-            selectedObject = sketchSelObject.getObject();
             supportString = sketchSelObject.getAsPropertyLinkSubString();
         }
-
-        handleIfSupportOutOfBody(selectedObject);
+        // CoreCAD Phase 2: cross-Body face references are valid. No ShapeBinder copy needed.
     }
 
     void createSketchOnSupport(const std::string& supportString)
@@ -301,72 +293,6 @@ private:
         App::Part* activePart = PartDesignGui::getActivePart();
         if (activePart) {
             activePart->addObject(activeBody);
-        }
-    }
-
-    void handleIfSupportOutOfBody(App::DocumentObject* selectedObject)
-    {
-        if (!activeBody->hasObject(selectedObject)) {
-            if (!selectedObject->isDerivedFrom(App::Plane::getClassTypeId())) {
-                // TODO check here if the plane associated with right part/body (2015-09-01, Fat-Zer)
-
-                // check the prerequisites for the selected objects
-                // the user has to decide which option we should take if external references are used
-                //  TODO share this with UnifiedDatumCommand() (2015-10-20, Fat-Zer)
-                QDialog dia(Gui::getMainWindow());
-                PartDesignGui::Ui_DlgReference dlg;
-                dlg.setupUi(&dia);
-                dia.setModal(true);
-                int result = dia.exec();
-                if (result == QDialog::Rejected) {
-                    throw RejectException();
-                }
-
-                if (!dlg.radioXRef->isChecked()) {
-                    guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Make copy"));
-                    auto copy = makeCopy(selectedObject, dlg.radioIndependent->isChecked());
-                    supportString = supportFromCopy(copy);
-                    guidocument->commitCommand();
-                }
-            }
-        }
-    }
-
-    App::DocumentObject* makeCopy(App::DocumentObject* selectedObject, bool independent)
-    {
-        std::string sub;
-        if (faceFilter.match()) {
-            sub = faceFilter.Result[0][0].getSubNames()[0];
-        }
-        auto copy = PartDesignGui::TaskFeaturePick::makeCopy(selectedObject, sub, independent);
-
-        addToBodyOrPart(copy);
-
-        return copy;
-    }
-
-    std::string supportFromCopy(App::DocumentObject* copy)
-    {
-        std::string supportString;
-        if (planeFilter.match()) {
-            supportString = Gui::Command::getObjectCmd(copy, "(", ",'')");
-        }
-        else {
-            // it is ensured that only a single face is selected, hence it must always be Face1 of
-            // the shapebinder
-            supportString = Gui::Command::getObjectCmd(copy, "(", ",'Face1')");
-        }
-        return supportString;
-    }
-
-    void addToBodyOrPart(App::DocumentObject* object)
-    {
-        auto activePart = PartDesignGui::getPartFor(activeBody, false);
-        if (activeBody) {
-            activeBody->addObject(object);
-        }
-        else if (activePart) {
-            activePart->addObject(object);
         }
     }
 

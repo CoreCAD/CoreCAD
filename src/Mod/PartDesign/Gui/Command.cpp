@@ -68,7 +68,6 @@
 
 
 // TODO Remove this header after fixing code so it won;t be needed here (2015-10-20, Fat-Zer)
-#include "ui_DlgReference.h"
 
 FC_LOG_LEVEL_INIT("PartDesign", true, true)
 
@@ -684,47 +683,49 @@ unsigned validateSketches(
                 continue;
             }
         }
-        else if (!pcActiveBody->hasObject(*s)) {
-            // Check whether this plane belongs to a body of the same part
+        bool isCrossBody = false;
+        if (pcActiveBody && !pcActiveBody->hasObject(*s)) {
+            // Check whether this sketch belongs to a body of the same part
             PartDesign::Body* b = PartDesign::Body::findBodyOf(*s);
             if (!b) {
                 status.push_back(PartDesignGui::TaskFeaturePick::notInBody);
+                continue;
             }
-            else if (pcActivePart && pcActivePart->hasObject(b, true)) {
-                status.push_back(PartDesignGui::TaskFeaturePick::otherBody);
-            }
-            else {
+            else if (!pcActivePart || !pcActivePart->hasObject(b, true)) {
                 status.push_back(PartDesignGui::TaskFeaturePick::otherPart);
+                continue;
             }
-
-            continue;
+            // CoreCAD Phase 2: sketch from a different body in the same part — treat as directly
+            // valid (cross-body reference). Skip isUsed/afterTip checks; those apply to the active
+            // body's feature tree only. Fall through to shape/wire validity checks below.
+            isCrossBody = true;
         }
 
-        // Base::Console().error("Checking sketch %s\n", (*s)->getNameInDocument());
-        //  Check whether this sketch is already being used by another feature
-        //  Body features don't count...
-        std::vector<App::DocumentObject*> inList = (*s)->getInList();
-        std::vector<App::DocumentObject*>::iterator o = inList.begin();
-        while (o != inList.end()) {
-            // Base::Console().error("Inlist: %s\n", (*o)->getNameInDocument());
-            if ((*o)->isDerivedFrom<PartDesign::Body>()) {
-                o = inList.erase(o);  // ignore bodies
+        if (!isCrossBody) {
+            // Check whether this sketch is already being used by another feature
+            // Body features don't count...
+            std::vector<App::DocumentObject*> inList = (*s)->getInList();
+            std::vector<App::DocumentObject*>::iterator o = inList.begin();
+            while (o != inList.end()) {
+                if ((*o)->isDerivedFrom<PartDesign::Body>()) {
+                    o = inList.erase(o);  // ignore bodies
+                }
+                else if (!((*o)->isDerivedFrom<PartDesign::Feature>())) {
+                    o = inList.erase(o);  // ignore non-partDesign
+                }
+                else {
+                    ++o;
+                }
             }
-            else if (!((*o)->isDerivedFrom<PartDesign::Feature>())) {
-                o = inList.erase(o);  // ignore non-partDesign
+            if (!inList.empty()) {
+                status.push_back(PartDesignGui::TaskFeaturePick::isUsed);
+                continue;
             }
-            else {
-                ++o;
-            }
-        }
-        if (!inList.empty()) {
-            status.push_back(PartDesignGui::TaskFeaturePick::isUsed);
-            continue;
-        }
 
-        if (pcActiveBody && pcActiveBody->isAfterInsertPoint(*s)) {
-            status.push_back(PartDesignGui::TaskFeaturePick::afterTip);
-            continue;
+            if (pcActiveBody->isAfterInsertPoint(*s)) {
+                status.push_back(PartDesignGui::TaskFeaturePick::afterTip);
+                continue;
+            }
         }
 
         // Check whether the sketch shape is valid
@@ -888,8 +889,13 @@ void prepareProfileBased(
 
         std::vector<std::string>& cmdSubs = const_cast<vector<std::string>&>(subs);
         if (subs.size() == 0) {
-            importExternalElements(ProfileFeature->Profile, {feature});
-            cmdSubs = ProfileFeature->Profile.getSubValues();
+            // CoreCAD Phase 2: skip importExternalElements for cross-body profiles —
+            // it returns false for them anyway, and the cycle check inside it incorrectly
+            // fires because the new feature is already in the body's InList at this point.
+            if (PartDesign::Body::findBodyOf(feature) == pcActiveBody) {
+                importExternalElements(ProfileFeature->Profile, {feature});
+                cmdSubs = ProfileFeature->Profile.getSubValues();
+            }
         }
         // run the command in console to set the profile (without selected subelements)
         auto runProfileCmd = [=]() {
@@ -1010,30 +1016,17 @@ void prepareProfileBased(
     // if a profile is selected we can make our life easy and fast
     std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
     if (!selection.empty()) {
-        bool onlyAllowed = true;
-        for (const auto& it : selection) {
-            if (PartDesign::Body::findBodyOf(it.getObject())
-                != pcActiveBody) {  // the selected objects must belong to the body
-                onlyAllowed = false;
-                break;
-            }
+        auto* selObj = selection.front().getObject();
+        const auto& subNames = selection.front().getSubNames();
+        bool isSketch = selObj->isDerivedFrom(Part::Part2DObject::getClassTypeId());
+        bool hasFaceSub = !subNames.empty();
+        if (isSketch || hasFaceSub) {
+            // CoreCAD Phase 2: cross-body profiles are valid.
+            base_worker(selObj, subNames);
+            return;
         }
-        if (!onlyAllowed) {
-            QMessageBox msgBox(Gui::getMainWindow());
-            msgBox.setText(
-                QObject::tr("Cannot use selected object. Selected object must belong to the active body")
-            );
-            msgBox.setInformativeText(
-                QObject::tr("Consider using a shape binder or a base feature to reference external geometry in a body")
-            );
-            msgBox.setStandardButtons(QMessageBox::Ok);
-            msgBox.setDefaultButton(QMessageBox::Ok);
-            msgBox.exec();
-        }
-        else {
-            base_worker(selection.front().getObject(), selection.front().getSubNames());
-        }
-        return;
+        // Selection is not a usable profile (e.g. a Body was selected in the tree)
+        // — fall through to the sketch picker.
     }
 
     // no face profile was selected, do the extended sketch logic
@@ -1075,61 +1068,7 @@ void prepareProfileBased(
         base_worker(features.front(), {});
     };
 
-    // if there is a sketch selected which is from another body or part we need to bring up the
-    // pick task dialog to decide how those are handled
-    bool extReference = std::find_if(
-                            status.begin(),
-                            status.end(),
-                            [](const PartDesignGui::TaskFeaturePick::featureStatus& s) {
-                                return s == PartDesignGui::TaskFeaturePick::otherBody
-                                    || s == PartDesignGui::TaskFeaturePick::otherPart
-                                    || s == PartDesignGui::TaskFeaturePick::notInBody;
-                            }
-                        )
-        != status.end();
-
-    // TODO Clean this up (2015-10-20, Fat-Zer)
-    if (pcActiveBody && !bNoSketchWasSelected && extReference) {
-
-        // Hint: In an older version the function expected the body to be inside
-        // a Part container and if not an error was raised and the function aborted.
-        // First of all, for the user this wasn't obvious because the error message
-        // was quite confusing (and thus the user may have done the wrong thing since
-        // they may have assumed the that the sketch was meant) and
-        // Second, there is no need that the body must be inside a Part container.
-        // For more details see: https://forum.freecad.org/viewtopic.php?f=19&t=32164
-        // The function has been modified not to expect the body to be in the Part
-        // and it now directly invokes the 'makeCopy' dialog.
-        auto* pcActivePart = PartDesignGui::getPartFor(pcActiveBody, false);
-
-        QDialog dia(Gui::getMainWindow());
-        PartDesignGui::Ui_DlgReference dlg;
-        dlg.setupUi(&dia);
-        dia.setModal(true);
-        int result = dia.exec();
-        if (result == QDialog::DialogCode::Rejected) {
-            return;
-        }
-
-        if (!dlg.radioXRef->isChecked()) {
-            cmd->openCommand(QT_TRANSLATE_NOOP("Command", "Make Copy"));
-            auto copy = PartDesignGui::TaskFeaturePick::makeCopy(
-                sketches[0],
-                "",
-                dlg.radioIndependent->isChecked()
-            );
-            auto oBody = PartDesignGui::getBodyFor(sketches[0], false);
-            if (oBody) {
-                pcActiveBody->addObject(copy);
-            }
-            else if (pcActivePart) {
-                pcActivePart->addObject(copy);
-            }
-
-            sketches[0] = copy;
-            firstFreeSketch = sketches.begin();
-        }
-    }
+    // CoreCAD Phase 2: cross-Body sketch references are valid. No ShapeBinder copy needed.
 
     // Show sketch choose dialog and let user pick sketch if no sketch was selected and no free one
     // available or multiple free ones are available
@@ -1159,10 +1098,6 @@ void prepareProfileBased(
 
         Gui::Selection().clearSelection();
         pickDlg = new PartDesignGui::TaskDlgFeaturePick(sketches, status, accepter, sketch_worker, true);
-        // Logically dead code because 'bNoSketchWasSelected' must be true
-        // if (!bNoSketchWasSelected && extReference)
-        //    pickDlg->showExternal(true);
-
         Gui::Control().showDialog(pickDlg, cmd->getDocument());
     }
     else {
@@ -2619,7 +2554,7 @@ void CmdPartDesignBoolean::activated(int iMsg)
         if (!bodies.empty()) {
             updateDocument = true;
             std::string bodyString = PartDesignGui::buildLinkListPythonStr(bodies);
-            FCMD_OBJ_CMD(Feat, "addObjects(" << bodyString << ")");
+            FCMD_OBJ_CMD(Feat, "Tools = " << bodyString);
         }
     }
 
