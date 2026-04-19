@@ -536,10 +536,6 @@ Gui::MenuItem* Workbench::setupMenuBar() const
               << "PartDesign_Thickness";
 
     *part << "PartDesign_Body"
-          << "Separator"
-          << "PartDesign_ShapeBinder"
-          << "PartDesign_SubShapeBinder"
-          << "PartDesign_Clone"
           << "Separator" << additives << "PartDesign_CompPrimitiveAdditive"
           << "Separator" << subtractives << "PartDesign_CompPrimitiveSubtractive"
           << "Separator" << dressups << "Separator" << transformations << "Separator"
@@ -586,9 +582,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     *part << "PartDesign_Body"
           << "PartDesign_CompSketches"
           << "Sketcher_ValidateSketch"
-          << "Part_CheckGeometry"
-          << "PartDesign_SubShapeBinder"
-          << "PartDesign_Clone";
+          << "Part_CheckGeometry";
 
     part = new Gui::ToolBarItem(root);
     part->setCommand("Part Design Modeling Features");
