@@ -68,6 +68,7 @@ Pad::Pad()
         "Pad direction vector"
     );
     ADD_PROPERTY_TYPE(ReferenceAxis, (nullptr), "Pad", App::Prop_None, "Reference axis of direction");
+    ReferenceAxis.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body axis refs
     ADD_PROPERTY_TYPE(
         AlongSketchNormal,
         (true),

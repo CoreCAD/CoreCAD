@@ -48,9 +48,7 @@
 #include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/DatumPoint.h>
 
-#include "ui_DlgReference.h"
 #include "ReferenceSelection.h"
-#include "TaskFeaturePick.h"
 #include "Utils.h"
 
 
@@ -321,40 +319,7 @@ bool getReferencedSelection(
 
     std::string subname = msg.pSubName;
 
-    // check if the selection is an external reference and ask the user what to do
-    // of course only if thisObj is in a body, as otherwise the old workflow would not
-    // be supported
-    PartDesign::Body* body = PartDesignGui::getBodyFor(thisObj, false);
-    bool originfeature = selObj->isDerivedFrom<App::DatumElement>();
-    if (!originfeature && body) {
-        PartDesign::Body* selBody = PartDesignGui::getBodyFor(selObj, false);
-        if (!selBody || body != selBody) {
-            QDialog dia(Gui::getMainWindow());
-            Ui_DlgReference dlg;
-            dlg.setupUi(&dia);
-            dia.setModal(true);
-            int result = dia.exec();
-            if (result == QDialog::DialogCode::Rejected) {
-                selObj = nullptr;
-                return false;
-            }
-
-            if (!dlg.radioXRef->isChecked()) {
-                App::Document* document = thisObj->getDocument();
-                document->openTransaction("Make copy");
-                auto copy = PartDesignGui::TaskFeaturePick::makeCopy(
-                    selObj,
-                    subname,
-                    dlg.radioIndependent->isChecked()
-                );
-                body->addObject(copy);
-
-                selObj = copy;
-                subname.erase(std::remove_if(subname.begin(), subname.end(), &isdigit), subname.end());
-                subname.append("1");
-            }
-        }
-    }
+    // CoreCAD Phase 2: cross-Body references are valid. No ShapeBinder copy needed.
 
     // Remove subname for planes and datum features
     if (PartDesign::Feature::isDatum(selObj)) {

@@ -1128,7 +1128,7 @@ void CmdPartImport::activated(int iMsg)
         = Gui::FileDialog::getOpenFileName(Gui::getMainWindow(), QString(), QString(), filter, &select);
     if (!fn.isEmpty()) {
         Gui::WaitCursor wc;
-        fn = Base::Tools::escapeEncodeFilename(fn);
+        fn = QString::fromStdString(Base::Tools::escapeEncodeFilename(fn.toStdString()));
 
         Gui::MDIView* view = Gui::Application::Instance->activeView();
         App::Part* activePart = view ? view->getActiveObject<App::Part*>("part") : nullptr;

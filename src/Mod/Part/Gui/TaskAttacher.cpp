@@ -518,16 +518,9 @@ void TaskAttacher::findCorrectObjAndSubInThisContext(App::DocumentObject*& rootO
     for (size_t i = 0; i < names.size(); ++i) {
         App::DocumentObject* obj = doc->getObject(names[i].c_str());
         if (!obj) {
-            Base::Console().translatedUserError(
-                "TaskAttacher",
-                "Unsuitable selection: '%s' cannot be attached to '%s' from within it's group "
-                "'%s'.\n",
-                attachingObj->getFullLabel(),
-                subObj->getFullLabel(),
-                group->getFullLabel()
-            );
-            rootObj = nullptr;
-            return;
+            // Names past this point are sub-element identifiers (e.g. "Face1"), not document
+            // objects. Stop the traversal here and let the sibling-group check below decide.
+            break;
         }
 
         if (groupPassed) {
@@ -565,6 +558,41 @@ void TaskAttacher::findCorrectObjAndSubInThisContext(App::DocumentObject*& rootO
     // - - Part3
     // - - - Sketch
     // In this case the selection is not acceptable.
+
+    // CoreCAD Phase 2: allow sibling-group references (e.g. two Bodies inside the same Part).
+    // Walk the names path to find the sibling body — the first element whose direct parent group
+    // equals the attaching object's group's parent (groupParent). Strip it and everything before
+    // it, leaving the feature inside the sibling body as the new rootObj. This converts:
+    //   (Body,  "Pad.Face1")     → (Pad, "Face1")  — Body is the selection root
+    //   (Part, "Body.Pad.Face1") → (Pad, "Face1")  — Part is the selection root
+    auto* groupParent = App::GeoFeatureGroupExtension::getGroupOfObject(group);
+    if (groupParent) {
+        for (size_t i = 0; i < names.size(); ++i) {
+            App::DocumentObject* obj = doc->getObject(names[i].c_str());
+            if (!obj) {
+                break;
+            }
+            auto* objGroup = App::GeoFeatureGroupExtension::getGroupOfObject(obj);
+            if (objGroup == groupParent && obj != group) {
+                // obj is a sibling of our attaching group — strip it and everything before it.
+                if (i + 1 < names.size()) {
+                    App::DocumentObject* newRoot = doc->getObject(names[i + 1].c_str());
+                    if (newRoot) {
+                        rootObj = newRoot;
+                        sub = "";
+                        for (size_t j = i + 2; j < names.size(); ++j) {
+                            sub += names[j];
+                            if (j != names.size() - 1) {
+                                sub += ".";
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+        }
+    }
+
     rootObj = nullptr;
 }
 

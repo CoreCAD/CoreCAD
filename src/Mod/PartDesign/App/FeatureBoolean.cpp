@@ -44,7 +44,7 @@ namespace PartDesign
 {
 extern bool getPDRefineModelParameter();
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::Boolean, PartDesign::FeatureRefine)
+PROPERTY_SOURCE(PartDesign::Boolean, PartDesign::FeatureRefine)
 
 const char* Boolean::TypeEnums[] = {"Fuse", "Cut", "Common", nullptr};
 
@@ -53,12 +53,19 @@ Boolean::Boolean()
     ADD_PROPERTY(Type, ((long)0));
     Type.setEnums(TypeEnums);
 
-    App::GeoFeatureGroupExtension::initExtension(this);
+    ADD_PROPERTY_TYPE(
+        Tools,
+        (nullptr),
+        "Boolean",
+        App::Prop_None,
+        "Tool bodies combined with this feature's base. References only — not owned."
+    );
+    Tools.setScope(App::LinkScope::Global);
 }
 
 short Boolean::mustExecute() const
 {
-    if (Group.isTouched()) {
+    if (Tools.isTouched()) {
         return 1;
     }
     return PartDesign::Feature::mustExecute();
@@ -78,7 +85,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
         );
     }
 
-    std::vector<App::DocumentObject*> tools = Group.getValues();
+    std::vector<App::DocumentObject*> tools = Tools.getValues();
     if (tools.empty()) {
         return App::DocumentObject::StdReturn;
     }
@@ -191,14 +198,14 @@ void Boolean::updatePreviewShape()
 
     if (strcmp(Type.getValueAsString(), "Fuse") == 0) {
         // if there are no other shapes to fuse just return itself
-        if (Group.getValues().empty()) {
+        if (Tools.getValues().empty()) {
             PreviewShape.setValue(Shape.getShape());
             return;
         }
 
         std::vector<TopoShape> shapes;
 
-        for (auto& obj : Group.getValues()) {
+        for (auto& obj : Tools.getValues()) {
             shapes.push_back(
                 getTopoShape(obj, Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform)
             );
@@ -217,7 +224,7 @@ void Boolean::updatePreviewShape()
 void Boolean::onChanged(const App::Property* prop)
 {
 
-    if (strcmp(prop->getName(), "Group") == 0) {
+    if (prop == &Tools) {
         touch();
     }
 
@@ -226,11 +233,13 @@ void Boolean::onChanged(const App::Property* prop)
 
 void Boolean::handleChangedPropertyName(Base::XMLReader& reader, const char* TypeName, const char* PropName)
 {
-    // The App::PropertyLinkList property was Bodies in the past
+    // The tool list has been named `Bodies` and later `Group` in previous versions;
+    // migrate both to the current `Tools` PropertyLinkList.
     Base::Type type = Base::Type::fromName(TypeName);
 
-    if (Group.getClassTypeId() == type && strcmp(PropName, "Bodies") == 0) {
-        Group.Restore(reader);
+    if (Tools.getClassTypeId() == type
+        && (strcmp(PropName, "Bodies") == 0 || strcmp(PropName, "Group") == 0)) {
+        Tools.Restore(reader);
     }
 }
 

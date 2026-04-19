@@ -46,7 +46,7 @@
 
 using namespace PartDesignGui;
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesignGui::ViewProviderBoolean, PartDesignGui::ViewProvider)
+PROPERTY_SOURCE(PartDesignGui::ViewProviderBoolean, PartDesignGui::ViewProvider)
 
 const char* PartDesignGui::ViewProviderBoolean::DisplayEnum[] = {"Result", "Tools", nullptr};
 
@@ -56,8 +56,6 @@ ViewProviderBoolean::ViewProviderBoolean()
     , pcBasePreviewToggle(new SoToggleSwitch)
 {
     sPixmap = "PartDesign_Boolean.svg";
-
-    ViewProviderGeoFeatureGroupExtension::initExtension(this);
 
     ADD_PROPERTY(Display, ((long)0));
     Display.setEnums(DisplayEnum);
@@ -77,7 +75,7 @@ bool ViewProviderBoolean::onDelete(const std::vector<std::string>& s)
     auto* feature = getObject<PartDesign::Boolean>();
 
     // if abort command deleted the object the bodies are visible again
-    for (auto body : feature->Group.getValues()) {
+    for (auto body : feature->Tools.getValues()) {
         if (auto vp = Gui::Application::Instance->getViewProvider(body)) {
             vp->show();
         }
@@ -208,7 +206,7 @@ void ViewProviderBoolean::updatePreview()
     };
 
     try {
-        const auto& tools = boolean->Group.getValues();
+        const auto& tools = boolean->Tools.getValues();
 
         if (tools.empty()) {
             return;

@@ -52,11 +52,7 @@ class TestBoolean(unittest.TestCase):
         self.BooleanFuse = self.Doc.addObject("PartDesign::Boolean", "BooleanFuse")
         self.Body001.addObject(self.BooleanFuse)
         self.Doc.recompute()
-        self.BooleanFuse.setObjects(
-            [
-                self.Body,
-            ]
-        )
+        self.BooleanFuse.Tools = [self.Body]
         self.BooleanFuse.Type = 0
         self.Doc.recompute()
         self.assertAlmostEqual(self.BooleanFuse.Shape.Volume, 1500)
@@ -80,11 +76,7 @@ class TestBoolean(unittest.TestCase):
         self.BooleanCut = self.Doc.addObject("PartDesign::Boolean", "BooleanCut")
         self.Body001.addObject(self.BooleanCut)
         self.Doc.recompute()
-        self.BooleanCut.setObjects(
-            [
-                self.Body,
-            ]
-        )
+        self.BooleanCut.Tools = [self.Body]
         self.BooleanCut.Type = 1
         self.Doc.recompute()
         self.assertAlmostEqual(self.BooleanCut.Shape.Volume, 500)
@@ -108,11 +100,7 @@ class TestBoolean(unittest.TestCase):
         self.BooleanCommon = self.Doc.addObject("PartDesign::Boolean", "BooleanCommon")
         self.Body001.addObject(self.BooleanCommon)
         self.Doc.recompute()
-        self.BooleanCommon.setObjects(
-            [
-                self.Body,
-            ]
-        )
+        self.BooleanCommon.Tools = [self.Body]
         self.BooleanCommon.Type = 2
         self.Doc.recompute()
         self.assertAlmostEqual(self.BooleanCommon.Shape.Volume, 500)
@@ -137,7 +125,7 @@ class TestBoolean(unittest.TestCase):
         self.Body001.addObject(self.Box001)
         self.Body002 = self.Doc.addObject("PartDesign::Body", "Body002")
         self.BooleanFuse = self.Doc.addObject("PartDesign::Boolean", "BooleanFuse")
-        self.BooleanFuse.Group = [self.Body, self.Body001]
+        self.BooleanFuse.Tools = [self.Body, self.Body001]
         self.BooleanFuse.ViewObject.Display = (
             "Result"  # TODO:  This is a required redundancy or it doesn't init right
         )
