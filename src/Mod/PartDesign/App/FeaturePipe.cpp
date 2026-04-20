@@ -70,9 +70,12 @@ Pipe::Pipe()
 {
     ADD_PROPERTY_TYPE(Sections, (nullptr), "Sweep", App::Prop_None, "List of sections");
     Sections.setValue(nullptr);
+    Sections.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body section refs
     ADD_PROPERTY_TYPE(Spine, (nullptr), "Sweep", App::Prop_None, "Path to sweep along");
+    Spine.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body spine refs
     ADD_PROPERTY_TYPE(SpineTangent, (false), "Sweep", App::Prop_None, "Include tangent edges into path");
     ADD_PROPERTY_TYPE(AuxiliarySpine, (nullptr), "Sweep", App::Prop_None, "Secondary path to orient sweep");
+    AuxiliarySpine.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body aux spine refs
     ADD_PROPERTY_TYPE(
         AuxiliarySpineTangent,
         (false),
