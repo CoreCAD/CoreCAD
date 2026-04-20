@@ -127,8 +127,6 @@ class CorePartWorkbench(Gui.Workbench):
                 "Sketcher_ValidateSketch",
                 "Part_CheckGeometry",
                 "Part_EditAttachment",
-                "PartDesign_SubShapeBinder",
-                "PartDesign_Clone",
             ],
         )
         self.appendToolbar(
@@ -261,10 +259,6 @@ class CorePartWorkbench(Gui.Workbench):
             [
                 "CorePart_NewPart",
                 "PartDesign_Body",
-                "Separator",
-                "PartDesign_ShapeBinder",
-                "PartDesign_SubShapeBinder",
-                "PartDesign_Clone",
                 "Separator",
             ],
         )
