@@ -462,7 +462,6 @@ bool TaskPipeParameters::accept()
     // CoreCAD Phase 2: cross-Body references are valid. No ShapeBinder copy needed.
 
     App::DocumentObject* spine = pipe->Spine.getValue();
-    App::DocumentObject* auxSpine = pipe->AuxiliarySpine.getValue();
 
     // If a spine isn't set but user entered a label then search for the appropriate document object
     QString label = ui->spineBaseEdit->text();
