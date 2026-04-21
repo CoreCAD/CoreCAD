@@ -235,6 +235,21 @@ public:
             validator.handleSelectedBody(activeBody);
             validator.throwIfInvalid();
             supportString = validator.getSupport();
+
+            // Guard: if activeBody is a transitive dependency of the support object,
+            // placing the sketch here creates a DAG cycle. Auto-create a new Body.
+            App::DocumentObject* supportObj = validator.getObject();
+            if (activeBody && activeBody->getInListEx(true).count(supportObj)) {
+                App::Document* appdoc = guidocument->getDocument();
+                activeBody = PartDesignGui::makeBody(appdoc);
+                if (!activeBody) {
+                    throw RejectException();
+                }
+                tryAddNewBodyToActivePart();
+                Base::Console().message(
+                    "New Body created: the active Body is a dependency of the selected face.\n"
+                );
+            }
         }
         else if (planeFilter.match()) {
             SupportPlaneValidator validator(planeFilter.Result[0][0]);
