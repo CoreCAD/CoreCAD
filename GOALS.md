@@ -222,6 +222,7 @@ Everything else (primitives, sketch-based features) is covered by PartDesign wit
 | ✅ Done | Smart CAD import — adapt placement to file structure (four structural cases) |
 | ✅ Done | Gate Part and PartDesign commands on active Part or Body context |
 | ⬜ Todo | Suppress raw Part and PartDesign workbenches from the UI (hidden, not removed) |
+| ⬜ Todo | **Harmonise boolean tool-body contract:** `Part::Cut` shows input bodies as dependency tree children; `PartDesign::Boolean` leaves them as independent objects but makes them invisible. Both preserve §5.3 tools-persist but the UX contracts differ — users cannot predict what happens to inputs without knowing which workbench they used. Standardise on one convention (see `.local/compact-phase3.md` Deferred §2). |
 | ⬜ Todo | Surface essential Part-only operations (multi-body Boolean, Defeaturing, Compounds) in CorePart ribbon |
 | ⬜ Todo | Improve Part primitive dialogs to match PartDesign quality |
 
@@ -235,7 +236,7 @@ in the background, users never need to think about which mode they are in.
 
 | Status | Task |
 |--------|------|
-| ⬜ Todo | **Face-click-to-sketch:** clicking a planar face immediately activates sketch tools on that plane — no separate "create sketch" dialog (Shapr3D model) |
+| ⬜ Todo | **Face-click-to-sketch:** clicking a planar face immediately activates sketch tools on that plane — no separate "create sketch" dialog (Shapr3D model). **Known blocker:** `SketchWorkflow::findAndSelectPlane()` silently swallows face clicks when no face is pre-selected; only planes (origin/datum) appear in its list. Fix: default `NewSketchUseAttachmentDialog` to `true`, or route face-hover clicks to the attachment dialog. See `.local/compact-phase3.md` Deferred Items §1. |
 | ⬜ Todo | **Press/Pull with graceful fallback:** drag any face → creates Pad/Pocket if sketch origin exists, Move Face feature otherwise — never refuses to act (Fusion/Shapr3D model) |
 | ⬜ Todo | **Unified Add/Remove dialogs:** consolidate opposite-pair commands into single dialogs with an Add/Remove material toggle — Extrude (Pad↔Pocket), Revolve (Revolution↔Groove), Loft (AdditiveLoft↔SubtractiveLoft), Sweep (AdditivePipe↔SubtractivePipe), Helix (AdditiveHelix↔SubtractiveHelix). Matches Inventor/Fusion UX; eliminates the need to choose the "right" command upfront. 100% Python task panels in the proprietary layer; dispatch to the appropriate PartDesign command on confirm. **Prerequisite:** CorePart ribbon surfacing these commands and raw Part/PartDesign workbenches suppressed, so the unified dialog is the sole entry point. |
 | ⬜ Todo | **Inline constraint status coloring:** black = fully defined, blue = under-constrained, red = over-constrained as persistent geometry overlays (SolidWorks model) |
