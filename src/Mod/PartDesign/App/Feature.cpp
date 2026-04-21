@@ -73,6 +73,7 @@ PROPERTY_SOURCE(PartDesign::Feature, Part::Feature)
 Feature::Feature()
 {
     ADD_PROPERTY(BaseFeature, (nullptr));
+    BaseFeature.setScope(App::LinkScope::Global);  // CoreCAD Phase 3: allow Part::Feature as base
     ADD_PROPERTY_TYPE(
         _Body,
         (nullptr),
