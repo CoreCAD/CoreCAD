@@ -18,6 +18,11 @@ if(BUILD_CORERIBBON)
     add_subdirectory(CoreRibbon)
 endif(BUILD_CORERIBBON)
 
+# CoreMcp: MCP bridge addon (build coordinator for corecad-mcp fork)
+if(BUILD_COREMCP)
+    add_subdirectory(CoreMcp)
+endif(BUILD_COREMCP)
+
 if(BUILD_ASSEMBLY)
   add_subdirectory(Assembly)
 endif(BUILD_ASSEMBLY)

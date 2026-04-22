@@ -59,6 +59,24 @@ if(NOT CORECAD_CORERIBBON_DIR OR NOT EXISTS "${CORECAD_CORERIBBON_DIR}/InitGui.p
     endif()
 endif()
 
+# ── CoreMcp ───────────────────────────────────────────────────────────────────
+# MCP (Model Context Protocol) bridge addon for CoreCAD.  Source lives in
+# a separate repo (corecad-mcp, fork of neka-nat/freecad-mcp).  Auto-detected
+# from ~/Repos/corecad-mcp/addon/FreeCADMCP, or set CORECAD_COREMCP_DIR
+# explicitly.  BUILD_COREMCP is forced ON; the subdirectory is a no-op when
+# CORECAD_COREMCP_DIR is absent (MCP bridge simply unavailable).
+set(BUILD_COREMCP ON CACHE BOOL "CoreCAD: Build CoreMcp Mod" FORCE)
+
+set(CORECAD_COREMCP_DIR "" CACHE PATH
+    "Path to corecad-mcp addon checkout (auto-detected if empty)")
+
+if(NOT CORECAD_COREMCP_DIR OR NOT EXISTS "${CORECAD_COREMCP_DIR}/InitGui.py")
+    if(DEFINED ENV{HOME} AND EXISTS "$ENV{HOME}/Repos/corecad-mcp/addon/FreeCADMCP/InitGui.py")
+        set(CORECAD_COREMCP_DIR "$ENV{HOME}/Repos/corecad-mcp/addon/FreeCADMCP"
+            CACHE PATH "" FORCE)
+    endif()
+endif()
+
 # ── corecad-part ──────────────────────────────────────────────────────────────
 # Proprietary CorePart extensions.  Source lives in a separate private repo.
 # Auto-detected from ~/Repos/corecad-part, or set CORECAD_COREPART_DIR explicitly.
