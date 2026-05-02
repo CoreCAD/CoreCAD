@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <App/PropertyStandard.h>
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
 
@@ -44,6 +45,9 @@ class PartDesignExport Body: public Part::BodyBase
 
 public:
     App::PropertyBool AllowCompound;
+
+    /// CoreCAD §4.6 visual identity — auto-assigned from a deterministic palette at spawn.
+    App::PropertyColor Color;
 
     /// True if this body feature is active or was active when the document was last closed
     // App::PropertyBool IsActive;

@@ -42,6 +42,7 @@
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/MDIView.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Mod/Sketcher/App/SketchObject.h>
@@ -79,6 +80,25 @@ using namespace Attacher;
 static bool hasActiveBody()
 {
     return PartDesignGui::getBody(/*messageIfNot=*/false) != nullptr;
+}
+
+// CoreCAD §4.6: spawn a Body and place it inside the active App::Part.
+// Falls back to doc root if no Part is active.
+static PartDesign::Body* autoSpawnBodyInActivePart(App::Document* doc)
+{
+    auto* activeView = Gui::Application::Instance->activeView();
+    auto* activePart = activeView ? activeView->getActiveObject<App::Part*>(PARTKEY) : nullptr;
+
+    auto* body = PartDesignGui::makeBody(doc);
+    if (body && activePart) {
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+            activePart->getNameInDocument(),
+            body->getNameInDocument()
+        );
+    }
+    return body;
 }
 
 //===========================================================================
@@ -597,7 +617,9 @@ void CmdPartDesignNewSketch::activated(int iMsg)
 
 bool CmdPartDesignNewSketch::isActive()
 {
-    return hasActiveBody();
+    // CoreCAD §4.6: sketch creation is available whenever a document is open;
+    // a Body is no longer a precondition.
+    return getActiveGuiDocument() != nullptr;
 }
 
 //===========================================================================
@@ -1123,10 +1145,35 @@ void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, Ap
 
 void prepareProfileBased(Gui::Command* cmd, const std::string& which, double length)
 {
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    auto* doc = cmd->getDocument();
+    if (!doc) {
+        return;
+    }
+
+    // CoreCAD §4.6: validate sketch availability before spawning a Body.
+    // The "No sketch" warning is shown by the inner overload; we just bail here
+    // to avoid creating an orphan Body when there is nothing to extrude.
+    if (doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty()) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No sketch to work on"),
+            QObject::tr("No sketch is available in the document")
+        );
+        return;
+    }
+
+    // CoreCAD §4.6: auto-spawn a Body when the document has none. If the doc
+    // has Bodies but none is active, the command bails — there is no active-body
+    // dialog in the POC flow.
+    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/*messageIfNot=*/false);
 
     if (!pcActiveBody) {
-        return;
+        if (doc->countObjectsOfType<PartDesign::Body>() == 0) {
+            pcActiveBody = autoSpawnBodyInActivePart(doc);
+        }
+        else {
+            return;
+        }
     }
 
     auto worker = [cmd, length](Part::Feature* profile, App::DocumentObject* Feat) {
@@ -1180,7 +1227,10 @@ void CmdPartDesignPad::activated(int iMsg)
 
 bool CmdPartDesignPad::isActive()
 {
-    return hasActiveBody();
+    // CoreCAD §4.6: Pad is enabled when the document holds at least one sketch.
+    // The Body is auto-spawned by prepareProfileBased() when the user clicks Pad.
+    auto* doc = getDocument();
+    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
 }
 
 //===========================================================================

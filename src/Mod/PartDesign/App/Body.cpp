@@ -23,9 +23,12 @@
  ***************************************************************************/
 
 
+#include <array>
+
 #include <App/Document.h>
 #include <App/VarSet.h>
 #include <App/Origin.h>
+#include <Base/Color.h>
 #include <Base/Placement.h>
 
 #include "Body.h"
@@ -41,9 +44,38 @@ using namespace PartDesign;
 
 PROPERTY_SOURCE(PartDesign::Body, Part::BodyBase)
 
+namespace
+{
+// CoreCAD §4.6 palette — 8 distinguishable Body identity colours.
+// Order: blue, orange, green, purple, teal, magenta, gold, slate.
+constexpr std::array<std::array<float, 3>, 8> bodyPalette = {{
+    {0.30F, 0.55F, 0.90F},
+    {0.95F, 0.60F, 0.20F},
+    {0.40F, 0.75F, 0.40F},
+    {0.65F, 0.45F, 0.85F},
+    {0.25F, 0.70F, 0.70F},
+    {0.90F, 0.40F, 0.70F},
+    {0.85F, 0.75F, 0.25F},
+    {0.50F, 0.55F, 0.65F},
+}};
+
+Base::Color paletteColorFor(std::size_t index)
+{
+    const auto& rgb = bodyPalette[index % bodyPalette.size()];
+    return Base::Color(rgb[0], rgb[1], rgb[2], 1.0F);
+}
+}  // namespace
+
 Body::Body()
 {
     ADD_PROPERTY_TYPE(AllowCompound, (true), "Base", App::Prop_None, "Allow multiple solids in Body");
+    ADD_PROPERTY_TYPE(
+        Color,
+        (paletteColorFor(0)),
+        "Base",
+        App::Prop_None,
+        "Body identity colour, auto-assigned at spawn from a deterministic palette"
+    );
 
     _GroupTouched.setStatus(App::Property::Output, true);
 }
@@ -502,6 +534,14 @@ void Body::onChanged(const App::Property* prop)
 void Body::setupObject()
 {
     Part::BodyBase::setupObject();
+
+    // CoreCAD §4.6: assign a deterministic identity colour at spawn time.
+    // Per-document index — count Bodies already in the doc (excluding this one,
+    // which is in the doc but not yet visible to countObjectsOfType).
+    if (auto* doc = getDocument()) {
+        const std::size_t index = doc->countObjectsOfType<PartDesign::Body>();
+        Color.setValue(paletteColorFor(index ? index - 1 : 0));
+    }
 }
 
 void Body::unsetupObject()
