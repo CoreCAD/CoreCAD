@@ -12,20 +12,21 @@ The recommended build method is **Pixi** (conda-based). CMake presets are also s
 
 ```bash
 # Recommended: Pixi tasks
-pixi task configure        # Configure debug build
-pixi task build            # Build debug
-pixi task install          # Install to build/debug
-pixi task freecad          # Run the application
-pixi task configure-release
-pixi task build-release
+pixi run configure-debug   # Configure debug build (output: build/debug/)
+pixi run build-debug       # Build debug
+pixi run install-debug     # Install to build/debug/
+pixi run freecad-debug     # Run the application (alias: pixi run freecad)
+pixi run configure-release
+pixi run build-release
 
 # Direct CMake (alternative)
-cmake --preset debug
+cmake --preset conda-linux-debug
 cmake --build build/debug
 cmake --install build/debug
 ```
 
-Build output goes to `build/debug/` or `build/release/`. Key build config files: `pixi.toml`, `CMakePresets.json`, `CMakeLists.txt`.
+Build output goes to `build/debug/` or `build/release/`. Binary at `build/debug/bin/FreeCAD`.
+Key build config files: `pixi.toml`, `CMakePresets.json`, `CMakeLists.txt`.
 
 ## Testing
 
@@ -33,7 +34,7 @@ Tests use **Google Test** (GTest + GMock). Test sources live in `tests/src/`.
 
 ```bash
 # All tests via pixi
-pixi task test
+pixi run test
 
 # All tests via ctest
 ctest --test-dir build/debug
