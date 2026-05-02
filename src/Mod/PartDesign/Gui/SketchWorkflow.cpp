@@ -815,11 +815,14 @@ void SketchWorkflow::tryCreateSketch()
         return;
     }
 
+    // CoreCAD POC: route every PartDesign sketch creation through the attachment
+    // dialog by default. The Phase 4 attempt at this default was reverted because
+    // of a "body disappears" UX glitch — re-evaluate under the auto-spawn flow.
     bool useAttachment = App::GetApplication()
                              .GetParameterGroupByPath(
                                  "User parameter:BaseApp/Preferences/Mod/PartDesign"
                              )
-                             ->GetBool("NewSketchUseAttachmentDialog", false);
+                             ->GetBool("NewSketchUseAttachmentDialog", true);
 
     bool shiftHeld = QApplication::queryKeyboardModifiers() & Qt::ShiftModifier;
 
