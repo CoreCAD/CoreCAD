@@ -33,6 +33,7 @@
 #include <TopoDS_Face.hxx>
 
 
+#include <App/Datums.h>
 #include <App/Origin.h>
 #include <App/Part.h>
 #include <Base/Tools.h>
@@ -45,6 +46,7 @@
 #include <Gui/MDIView.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/Selection/SelectionObject.h>
+#include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureBoolean.h>
@@ -99,6 +101,133 @@ static PartDesign::Body* autoSpawnBodyInActivePart(App::Document* doc)
         );
     }
     return body;
+}
+
+// Cap on §8.5 anchor-chain recursion depth. Realistic chains are
+// sketch → datum → datum → body face (3 hops); 4 gives safety margin
+// against pathological user-created datum cycles.
+static constexpr int MaxAnchorWalkDepth = 4;
+
+// CoreCAD §8.5 anchor walk.
+//
+// Recurses through a feature's attachment chain, collecting any Bodies
+// the chain terminates on. Returns true if at least one branch ends at
+// a global plane, free datum, or otherwise unanchored geometry — the
+// signal to spawn a new Body when no Body is found.
+//
+// Order of checks matters: a Part::Datum has AttachExtension and is also
+// a Part::Feature, so the AttachExtension branch must come first to
+// avoid treating it as a solid feature.
+static bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodies, int depth)
+{
+    if (!obj || depth > MaxAnchorWalkDepth) {
+        return true;
+    }
+
+    auto* attach = obj->getExtensionByType<Part::AttachExtension>(true);
+    if (attach) {
+        const auto& support = attach->AttachmentSupport.getValues();
+        if (support.empty()) {
+            return true;
+        }
+        bool reachedGlobal = false;
+        for (auto* link : support) {
+            if (walkAnchorChain(link, bodies, depth + 1)) {
+                reachedGlobal = true;
+            }
+        }
+        return reachedGlobal;
+    }
+
+    if (obj->isDerivedFrom(App::DatumElement::getClassTypeId())) {
+        return true;
+    }
+
+    if (obj->isDerivedFrom(Part::Feature::getClassTypeId())) {
+        if (auto* body = PartDesign::Body::findBodyOf(obj)) {
+            bodies.insert(body);
+            return false;
+        }
+        return true;
+    }
+
+    return true;
+}
+
+// CoreCAD §8.5 spawn-vs-extend decision.
+//
+// Returns:
+// - a freshly auto-spawned Body, when the sketch's anchor chain ends at
+//   a global plane or independent reference geometry,
+// - the existing Body, when the chain terminates on exactly one Body,
+// - nullptr (after warning the user), when the chain reaches more than
+//   one Body.
+//
+// POC Path A pragma: when the chain points at one existing Body, we
+// silently extend. The visible Merge Result selector in the Pad task
+// pane is deferred to the follow-up session.
+static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, App::Document* doc)
+{
+    std::set<PartDesign::Body*> bodies;
+    auto* attach = sketch->getExtensionByType<Part::AttachExtension>(true);
+    if (attach) {
+        for (auto* link : attach->AttachmentSupport.getValues()) {
+            walkAnchorChain(link, bodies, 1);
+        }
+    }
+
+    if (bodies.empty()) {
+        return autoSpawnBodyInActivePart(doc);
+    }
+    if (bodies.size() == 1) {
+        return *bodies.begin();
+    }
+
+    QMessageBox::warning(
+        Gui::getMainWindow(),
+        QObject::tr("Ambiguous anchor"),
+        QObject::tr(
+            "This sketch's attachment chain reaches more than one Body. "
+            "Pick a single Body explicitly before continuing."
+        )
+    );
+    return nullptr;
+}
+
+// CoreCAD §8.5: pick the sketch the user means to operate on.
+//
+// Rules:
+// - exactly one Part2DObject in the current selection → use it,
+// - nothing selected, exactly one sketch in the document → use it,
+// - anything else → warn and return nullptr.
+static Part::Part2DObject* resolveSketchFromSelection(Gui::Command* cmd, App::Document* doc)
+{
+    auto selected = cmd->getSelection().getObjectsOfType(Part::Part2DObject::getClassTypeId());
+    if (selected.size() == 1) {
+        return static_cast<Part::Part2DObject*>(selected.front());
+    }
+    if (selected.size() > 1) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("Multiple sketches selected"),
+            QObject::tr("Select exactly one sketch to extrude.")
+        );
+        return nullptr;
+    }
+
+    auto inDoc = doc->getObjectsOfType(Part::Part2DObject::getClassTypeId());
+    if (inDoc.size() == 1) {
+        return static_cast<Part::Part2DObject*>(inDoc.front());
+    }
+    QMessageBox::warning(
+        Gui::getMainWindow(),
+        QObject::tr("No sketch selected"),
+        QObject::tr(
+            "Multiple sketches exist in the document. "
+            "Select the one you want to extrude."
+        )
+    );
+    return nullptr;
 }
 
 //===========================================================================
@@ -1151,8 +1280,6 @@ void prepareProfileBased(Gui::Command* cmd, const std::string& which, double len
     }
 
     // CoreCAD §4.6: validate sketch availability before spawning a Body.
-    // The "No sketch" warning is shown by the inner overload; we just bail here
-    // to avoid creating an orphan Body when there is nothing to extrude.
     if (doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty()) {
         QMessageBox::warning(
             Gui::getMainWindow(),
@@ -1162,18 +1289,16 @@ void prepareProfileBased(Gui::Command* cmd, const std::string& which, double len
         return;
     }
 
-    // CoreCAD §4.6: auto-spawn a Body when the document has none. If the doc
-    // has Bodies but none is active, the command bails — there is no active-body
-    // dialog in the POC flow.
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/*messageIfNot=*/false);
+    // CoreCAD §8.5: the sketch's anchor chain decides spawn-vs-extend.
+    // Active-body session state is no longer consulted.
+    auto* sketch = resolveSketchFromSelection(cmd, doc);
+    if (!sketch) {
+        return;
+    }
 
+    PartDesign::Body* pcActiveBody = decideBaseBody(sketch, doc);
     if (!pcActiveBody) {
-        if (doc->countObjectsOfType<PartDesign::Body>() == 0) {
-            pcActiveBody = autoSpawnBodyInActivePart(doc);
-        }
-        else {
-            return;
-        }
+        return;
     }
 
     auto worker = [cmd, length](Part::Feature* profile, App::DocumentObject* Feat) {
