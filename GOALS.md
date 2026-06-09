@@ -27,7 +27,7 @@ that fall outside core mechanical CAD.
 | Status | Day | Task |
 |--------|-----|------|
 | ⬜ | 0 | Freeze ARCHITECTURE.md (no edits this week); open `phase5/poc-step1` build as daily driver |
-| ⬜ | 1 | POC Step 2 — smoke-test to reproduce the auto-spawn blocker |
+| ✅ | 1 | POC Step 2 — smoke-test to reproduce the auto-spawn blocker — **located**: the WIP's Pad-path anchor walk already spawns Body B correctly (verified via MCP: free sketch on global plane + existing Body A → Body B with valid 1000mm³ solid). Real remaining gap is the *sketch-creation* path (`shouldCreateBody`), not Pad. |
 | ⬜ | 1 | POC Step 2 — broaden spawn rule: anchor chain ending at a global plane spawns a new Body regardless of existing Body count |
 | ⬜ | 1 | POC Step 2 — build + tests + manual (two independent Bodies in one doc) + commit |
 | ⬜ | 2 | POC Step 3 — make boolean Cut reference its tool Body via `PropertyLinkList`, **not** GeoFeatureGroup ownership *(the real reference-model bite)* |
