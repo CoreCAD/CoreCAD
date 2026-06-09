@@ -14,6 +14,36 @@ that fall outside core mechanical CAD.
 
 ---
 
+## Current Sprint — Week of 2026-06-06 (POC Steps 2–6)
+
+**Focus:** make real ownership→reference-model progress on a small, usable slice — *not* a full migration. Build the smallest real thing, use it, then correct. Each step: build → test (App/Part/PartDesign) → manual check → commit, in small tested increments.
+
+**Branch:** `phase5/poc-step1` (already includes 11 tested upstream kernel fixes).
+
+**Guardrails:** ARCHITECTURE.md is **frozen at v1.0.0 this week** — no edits. Deferred: POC Steps 7–8 (variants, STEP import), the rename (rides with the Phase 5 fork-break), branding, ribbon, icons.
+
+**Escape hatch:** Day 2 (reference-based boolean) is the risk. If it balloons past a day, fall back to the veneer, log the debt in `POC_LOG.md`, and keep moving. Hitting Day 3 by Friday is a win, not a miss.
+
+| Status | Day | Task |
+|--------|-----|------|
+| ⬜ | 0 | Freeze ARCHITECTURE.md (no edits this week); open `phase5/poc-step1` build as daily driver |
+| ⬜ | 1 | POC Step 2 — smoke-test to reproduce the auto-spawn blocker |
+| ⬜ | 1 | POC Step 2 — broaden spawn rule: anchor chain ending at a global plane spawns a new Body regardless of existing Body count |
+| ⬜ | 1 | POC Step 2 — build + tests + manual (two independent Bodies in one doc) + commit |
+| ⬜ | 2 | POC Step 3 — make boolean Cut reference its tool Body via `PropertyLinkList`, **not** GeoFeatureGroup ownership *(the real reference-model bite)* |
+| ⬜ | 2 | POC Step 3 — build + tests + manual (Cut result is itself a modelable Body) + commit |
+| ⬜ | 3 | POC Step 4 — sketch on the Cut-result face → Pad extends Body A; verify cross-body lineage resolves |
+| ⬜ | 3 | POC Step 4 — build + tests + manual + commit |
+| ⬜ | 4 | POC Step 5 — save / close / reopen the multi-body doc; verify clean round-trip |
+| ⬜ | 4 | POC Step 6 — edit Pad_A length; verify DAG propagation through the reference chain; commit |
+| ⬜ | 5 | Model something small *yourself* in the build (daily-driver test) |
+| ⬜ | 5 | Write a `POC_LOG.md` entry: what works, what's still veneer, what the reference model still needs |
+| ⬜ | 5 | Decide next week from real friction, not from the doc |
+
+> Note: the project is being renamed **CoreCAD → Cruth**; this doc still uses "CoreCAD" pending the deferred rename pass.
+
+---
+
 ## Goals
 
 ### 1. Branding
