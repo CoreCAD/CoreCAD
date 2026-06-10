@@ -30,8 +30,8 @@ that fall outside core mechanical CAD.
 | ✅ | 1 | POC Step 2 — smoke-test to reproduce the auto-spawn blocker — **located**: the WIP's Pad-path anchor walk already spawns Body B correctly (verified via MCP: free sketch on global plane + existing Body A → Body B with valid 1000mm³ solid). Real remaining gap is the *sketch-creation* path (`shouldCreateBody`), not Pad. |
 | ✅ | 1 | POC Step 2 — sketch-creation rework: sketches are now born **free** (no Body, no DlgActiveBody modal); `getBody` autoActivate turned OFF so the lone Body isn't silently activated. Pad anchor walk is the sole spawn decider. Commit `89ffeb709c`. |
 | ✅ | 1 | POC Step 2 — build + tests + manual + commit — verified live via MCP: free sketch on a global plane (no modal) → Pad spawns a 2nd Body (1000 mm³ solid) beside BodyA; 122/122 App/Part tests pass |
-| ⬜ | 2 | POC Step 3 — make boolean Cut reference its tool Body via `PropertyLinkList`, **not** GeoFeatureGroup ownership *(the real reference-model bite)* |
-| ⬜ | 2 | POC Step 3 — build + tests + manual (Cut result is itself a modelable Body) + commit |
+| ✅ | 2 | POC Step 3 — boolean Cut already references its tool Body via `Boolean::Tools` (`PropertyLinkList`, global scope, "not owned"); the GUI command sets `Feat.Tools = [...]` with no group-move. **The Day-2 risk was pre-paid by Phase 2** (`924077753f`). No new code needed. |
+| ✅ | 2 | POC Step 3 — manual verify (live MCP): Cut of BodyA by referenced BodyB → `BodyA.Tip = CutFeat` (modelable Body, vol 840), `BodyB` independent (not in BodyA.Group, parent group None) & intact (vol 320), Up-to-date, no errors |
 | ⬜ | 3 | POC Step 4 — sketch on the Cut-result face → Pad extends Body A; verify cross-body lineage resolves |
 | ⬜ | 3 | POC Step 4 — build + tests + manual + commit |
 | ⬜ | 4 | POC Step 5 — save / close / reopen the multi-body doc; verify clean round-trip |
