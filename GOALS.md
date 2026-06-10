@@ -37,10 +37,53 @@ that fall outside core mechanical CAD.
 | ✅ | 4 | POC Step 5 — verified live (MCP): saved multi-body doc, closed, reopened → `CutFeat.Tools=['BodyB']`, BaseFeature chain, sketch attachment to boolean-derived face `CutFeat:Face5`, and BodyB independence all survived; **0 dirty objects on open** (reopened already up-to-date). Clean round-trip, no code needed. |
 | ✅ | 4 | POC Step 6 — verified live (MCP): edited `BodyB_pad.Length` 20→6 (through-hole→blind pocket). Propagated across the reference boundary: `CutFeat` 840→904, `BodyA` 860→924; tip/BaseFeature preserved, no errors. **Toponaming held the boss's `CutFeat:Face5` attachment through the topology change.** Cleanly reversible (→20 restores 860/840). No code needed. |
 | ⬜ | 5 | Model something small *yourself* in the build (daily-driver test) |
-| ⬜ | 5 | Write a `POC_LOG.md` entry: what works, what's still veneer, what the reference model still needs |
-| ⬜ | 5 | Decide next week from real friction, not from the doc |
+| ✅ | 5 | Write `POC_LOG.md` entries (Steps 3–6 + sprint-close): what works, what's still veneer, what the reference model still needs |
+| ⬜ | 5 | Model something small *yourself* in the build (daily-driver test) — **carried into next sprint** |
+| ⬜ | 5 | Decide next week from real friction → **decided: intra-body de-ownership (below)** |
 
 > Note: the project is being renamed **CoreCAD → Cruth**; this doc still uses "CoreCAD" pending the deferred rename pass.
+
+---
+
+## Next Sprint — Week of 2026-06-15 (Intra-body de-ownership spike)
+
+**Focus:** the unvalidated core. Last sprint proved the **cross-body** reference
+model (booleans reference tool bodies, round-trips, DAG propagates). This sprint
+attacks **intra-body ownership**: today features are still exclusive members of
+`PartDesign::Body`'s `GeoFeatureGroupExtension`. Target (ARCHITECTURE §3.2/§3.3):
+the Body's pipeline is **derived** by walking the `BaseFeature` chain back from
+the Tip — no `GeoFeatureGroup`, containers are "derived views, not prisons".
+
+**Thesis (why incremental works):** ownership is a *runtime interpretation layer*
+over data that is already reference-based (`BaseFeature` is an explicit
+`PropertyLink`; `LinkScope::Child`/`isAllowed()` are runtime checks, not
+serialized semantics). De-ownership = removing runtime checks, phase by phase.
+Phases 1–2 (Child→Global, direct cross-body refs) are done. See POC_LOG
+"incremental de-ownership" design note.
+
+**Guardrails:** ARCHITECTURE.md still frozen at v1.0.0. The end state is reached
+via a **source-of-truth flip** (tree view + delete stop trusting `Group`, start
+deriving from the chain) — sequence it, but each is a real flip. The Body's
+**Origin/coordinate context** is the one role `BaseFeature` does NOT carry —
+needs a deliberate design answer before the group is pulled.
+
+**Escape hatch:** if a step balloons, keep ownership working as a backstop, log
+the debt in POC_LOG, and move to the next concern. Reaching the delete-semantics
+flip by Friday is a win.
+
+| Status | Day | Task |
+|--------|-----|------|
+| ⬜ | 0 | Decide upstream sync vs cherry-pick: we are 557 commits behind `upstream/main`. Evaluate `26c895c30d` (PartDesign: relink base profile — relevant to reorder/delete), `aa0eb1716c` (toponaming Python API), `99422b51cc` (AllowCompound warning). Prefer a periodic sync into `main` over ad-hoc picks. |
+| ⬜ | 1 | **Feasibility probe** (mirror last sprint's Step 1): can a feature live at document level (NOT in `Body.Group`) while being the Body's Tip and still recompute + propagate its shape? Probe via MCP; record how load-bearing `Group` membership actually is for recompute/shape. |
+| ⬜ | 1 | Probe → write findings to POC_LOG (the "is the group load-bearing?" answer drives the whole sprint) |
+| ⬜ | 2 | **Tree derives from chain:** make `ViewProviderBody::claimChildren` build the tree by walking the `BaseFeature` chain from Tip, not from `Group` membership. build → tests → manual → commit |
+| ⬜ | 3 | **New-feature placement:** feature-creation path wires `BaseFeature`+`Tip` without requiring `Group` membership (behind a flag if needed). build → tests → manual → commit |
+| ⬜ | 4 | **Delete semantics by reference:** deleting a feature/body respects references, not ownership — no recursive delete of referenced features; rewire the chain. Fix the body-eviction regression here. build → tests → manual → commit |
+| ⬜ | 5 | **Origin/coordinate-context design:** decide where Origin/datum planes live when features aren't body-owned. Design note first; spike if time. |
+| ⬜ | 5 | **Validation:** round-trip + cross/intra-body DAG propagation + eviction-regression tests on a de-owned body. Model something small myself as a daily-driver check. |
+
+> Carry-over from last sprint: live test doc at `/tmp/poc_step5_roundtrip.FCStd`
+> (BodyA cut by referenced BodyB, extended by a sketch-on-boolean-face Pad).
 
 ---
 
