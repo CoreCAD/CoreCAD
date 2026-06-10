@@ -35,7 +35,7 @@ that fall outside core mechanical CAD.
 | ✅ | 3 | POC Step 4 — verified live (MCP): real `PartDesign_NewSketch` on a boolean-derived face (`CutFeat:Face5`) attaches `FlatFace` + nests in Body A; Pad extends Body A (`Pad_A2.BaseFeature = CutFeat`, `BodyA.Tip = Pad_A2`, vol 860). Cross-body lineage resolves: BodyA tip transitively depends on BodyB via `CutFeat.Tools`; full DAG recomputes clean (0 dirty). No CoreCAD code needed. |
 | ✅ | 3 | POC Step 4 — manual verify done (above); also no code change → nothing to build/commit beyond docs |
 | ✅ | 4 | POC Step 5 — verified live (MCP): saved multi-body doc, closed, reopened → `CutFeat.Tools=['BodyB']`, BaseFeature chain, sketch attachment to boolean-derived face `CutFeat:Face5`, and BodyB independence all survived; **0 dirty objects on open** (reopened already up-to-date). Clean round-trip, no code needed. |
-| ⬜ | 4 | POC Step 6 — edit Pad_A length; verify DAG propagation through the reference chain; commit |
+| ✅ | 4 | POC Step 6 — verified live (MCP): edited `BodyB_pad.Length` 20→6 (through-hole→blind pocket). Propagated across the reference boundary: `CutFeat` 840→904, `BodyA` 860→924; tip/BaseFeature preserved, no errors. **Toponaming held the boss's `CutFeat:Face5` attachment through the topology change.** Cleanly reversible (→20 restores 860/840). No code needed. |
 | ⬜ | 5 | Model something small *yourself* in the build (daily-driver test) |
 | ⬜ | 5 | Write a `POC_LOG.md` entry: what works, what's still veneer, what the reference model still needs |
 | ⬜ | 5 | Decide next week from real friction, not from the doc |
