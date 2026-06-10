@@ -489,7 +489,29 @@ std::vector<App::DocumentObject*> Body::removeObjectDeowned(App::DocumentObject*
         Group.setValues(model);
     }
 
-    return {feature};
+    std::vector<App::DocumentObject*> result = {feature};
+
+    // Auto-retire (Cruth intra-body de-ownership, Day 4 — option 2). A Body is a
+    // derived view over its Tip, never an owner of features (ARCHITECTURE §3.3). When
+    // the last solid feature is deleted the Tip retreats to null, so the Body no
+    // longer propagates any component and retires itself (§4.7). This handles only
+    // the degenerate empty-chain case of retirement — split/merge topology events are
+    // out of scope. Per §4.6 we retire even if something still references the Body;
+    // the dangling reference is left to fail loudly (P7), not silently suppressed.
+    //
+    // Document::removeObject() destroys `this` when no undo transaction is active, so
+    // this MUST be the last action: copy what we need into locals and touch no member
+    // of `this` afterward.
+    if (Tip.getValue() == nullptr) {
+        App::Document* doc = getDocument();
+        const char* name = getNameInDocument();
+        if (doc && name) {
+            const std::string bodyName = name;
+            doc->removeObject(bodyName.c_str());
+        }
+    }
+
+    return result;
 }
 
 std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
