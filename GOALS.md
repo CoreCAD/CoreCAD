@@ -34,7 +34,7 @@ that fall outside core mechanical CAD.
 | ✅ | 2 | POC Step 3 — manual verify (live MCP): Cut of BodyA by referenced BodyB → `BodyA.Tip = CutFeat` (modelable Body, vol 840), `BodyB` independent (not in BodyA.Group, parent group None) & intact (vol 320), Up-to-date, no errors |
 | ✅ | 3 | POC Step 4 — verified live (MCP): real `PartDesign_NewSketch` on a boolean-derived face (`CutFeat:Face5`) attaches `FlatFace` + nests in Body A; Pad extends Body A (`Pad_A2.BaseFeature = CutFeat`, `BodyA.Tip = Pad_A2`, vol 860). Cross-body lineage resolves: BodyA tip transitively depends on BodyB via `CutFeat.Tools`; full DAG recomputes clean (0 dirty). No CoreCAD code needed. |
 | ✅ | 3 | POC Step 4 — manual verify done (above); also no code change → nothing to build/commit beyond docs |
-| ⬜ | 4 | POC Step 5 — save / close / reopen the multi-body doc; verify clean round-trip |
+| ✅ | 4 | POC Step 5 — verified live (MCP): saved multi-body doc, closed, reopened → `CutFeat.Tools=['BodyB']`, BaseFeature chain, sketch attachment to boolean-derived face `CutFeat:Face5`, and BodyB independence all survived; **0 dirty objects on open** (reopened already up-to-date). Clean round-trip, no code needed. |
 | ⬜ | 4 | POC Step 6 — edit Pad_A length; verify DAG propagation through the reference chain; commit |
 | ⬜ | 5 | Model something small *yourself* in the build (daily-driver test) |
 | ⬜ | 5 | Write a `POC_LOG.md` entry: what works, what's still veneer, what the reference model still needs |
