@@ -75,6 +75,14 @@ public:
     std::vector<DocumentObject*> addObjects(std::vector<DocumentObject*> obj) override;
 
     /**
+     * CoreCAD intra-body de-ownership: wire a new feature into the pipeline by
+     * reference (BaseFeature chain + Tip) without adding it to Body.Group.
+     * Used by addObject() when the DeownedFeatureCreation flag is set. Covers
+     * the tip-append gesture; see ARCHITECTURE §3.2/§3.3.
+     */
+    std::vector<App::DocumentObject*> addObjectDeowned(App::DocumentObject* feature);
+
+    /**
      * Insert the feature into the body after the given feature.
      *
      * @param feature  The feature to insert into the body

@@ -25,10 +25,12 @@
 
 #include <array>
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/VarSet.h>
 #include <App/Origin.h>
 #include <Base/Color.h>
+#include <Base/Parameter.h>
 #include <Base/Placement.h>
 
 #include "Body.h"
@@ -63,6 +65,20 @@ Base::Color paletteColorFor(std::size_t index)
 {
     const auto& rgb = bodyPalette[index % bodyPalette.size()];
     return Base::Color(rgb[0], rgb[1], rgb[2], 1.0F);
+}
+
+// CoreCAD intra-body de-ownership (Day 3). When enabled, new features are wired
+// into the Body's pipeline by reference (BaseFeature chain + Tip) instead of by
+// exclusive Body.Group membership (ARCHITECTURE §3.2/§3.3). Off by default so the
+// legacy ownership path remains the backstop during the migration.
+bool deownedFeatureCreation()
+{
+    Base::Reference<ParameterGrp> hGrp = App::GetApplication()
+                                             .GetUserParameter()
+                                             .GetGroup("BaseApp")
+                                             ->GetGroup("Preferences")
+                                             ->GetGroup("Mod/PartDesign");
+    return hGrp->GetBool("DeownedFeatureCreation", false);
 }
 }  // namespace
 
@@ -265,6 +281,10 @@ std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
         throw Base::ValueError("Body: object is not allowed");
     }
 
+    if (deownedFeatureCreation()) {
+        return addObjectDeowned(feature);
+    }
+
     // TODO: features should not add all links
 
     // only one group per object. If it is in a body the single feature will be removed
@@ -301,6 +321,49 @@ std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObje
     }
 
     return objs;
+}
+
+// CoreCAD intra-body de-ownership (Day 3): wire a new feature into the Body's
+// pipeline by reference — BaseFeature chain + Tip — WITHOUT adding it to
+// Body.Group. The pipeline is derived from the chain back from the Tip
+// (ARCHITECTURE §3.2/§3.3), so group membership is no longer the source of
+// truth for feature ordering. This covers the dominant tip-append gesture:
+// a new solid extends the body from the current Tip. Mid-pipeline insert and
+// reorder still rely on the group-ordered legacy path (Day 4 scope).
+std::vector<App::DocumentObject*> Body::addObjectDeowned(App::DocumentObject* feature)
+{
+    // Detach from any prior owning group, mirroring the legacy path. A freshly
+    // created feature is normally group-less, but a moved feature may not be.
+    auto* group = App::GroupExtension::getGroupOfObject(feature);
+    if (group) {
+        group->getExtensionByType<GroupExtension>()->removeObject(feature);
+    }
+
+    // Keep origin/datum links resolving against this Body's Origin frame.
+    relinkToOrigin(feature);
+
+    // Associate the feature with this Body by reference (used by findBodyOf and
+    // active-body tooling) without imprisoning it in the group.
+    if (feature->isDerivedFrom<PartDesign::Feature>()) {
+        static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
+    }
+
+    if (isSolidFeature(feature)) {
+        // Extend the chain at the Tip: the new solid's base is the old Tip, and
+        // the Body now propagates the new feature.
+        App::DocumentObject* prevTip = Tip.getValue();
+        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(prevTip);
+        Tip.setValue(feature);
+
+        // Tip visibility bookkeeping: only the current Tip shows by default.
+        if (prevTip && prevTip->isDerivedFrom<PartDesign::Feature>()
+            && prevTip->Visibility.getValue()) {
+            prevTip->Visibility.setValue(false);
+        }
+    }
+
+    std::vector<App::DocumentObject*> result = {feature};
+    return result;
 }
 
 
