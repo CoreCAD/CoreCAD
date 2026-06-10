@@ -26,8 +26,13 @@
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <QMenu>
 
+#include <algorithm>
+#include <set>
+#include <vector>
+
 #include <App/Document.h>
 #include <App/Origin.h>
+#include <App/OriginGroupExtension.h>
 #include <App/Part.h>
 #include <App/VarSet.h>
 #include <Base/Console.h>
@@ -436,6 +441,97 @@ std::map<std::string, Base::Color> ViewProviderBody::getElementColors(const char
         return vp->getElementColors(element);
     }
     return ViewProviderPart::getElementColors(element);
+}
+
+
+std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
+{
+    auto* body = getObject<PartDesign::Body>();
+    if (!body) {
+        // Degenerate case: fall back to the group-based extension behaviour.
+        return ViewProviderOriginGroupExtension::extensionClaimChildren();
+    }
+
+    // 1. Derive the ordered solid pipeline by walking the BaseFeature chain
+    //    backward from the Tip (tip-first), guarding against cycles. This is the
+    //    source-of-truth flip: the chain *is* the pipeline (ARCHITECTURE.md
+    //    §3.3), independent of Group membership.
+    std::vector<App::DocumentObject*> chain;  // tip -> base
+    std::set<App::DocumentObject*> onChain;
+    for (App::DocumentObject* feat = body->Tip.getValue(); feat;) {
+        if (!onChain.insert(feat).second) {
+            break;  // cycle guard
+        }
+        chain.push_back(feat);
+        auto* pdFeat = freecad_cast<PartDesign::Feature*>(feat);
+        feat = pdFeat ? pdFeat->BaseFeature.getValue() : nullptr;
+    }
+    std::reverse(chain.begin(), chain.end());  // base -> tip (pipeline order)
+
+    // 2. Collect objects claimed by features (so profiles/sketches nest under
+    //    their feature instead of appearing at body level). Both the chain
+    //    features and any remaining Group members are potential claimers.
+    const std::vector<App::DocumentObject*> groupMembers = body->Group.getValues();
+    std::set<App::DocumentObject*> claimed;
+    auto collectClaimed = [&](App::DocumentObject* obj) {
+        if (!obj) {
+            return;
+        }
+        Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj);
+        if (!vp || vp == this) {
+            return;
+        }
+        for (auto* child : vp->claimChildren()) {
+            if (child) {
+                claimed.insert(child);
+            }
+        }
+    };
+    for (auto* obj : chain) {
+        collectClaimed(obj);
+    }
+    for (auto* obj : groupMembers) {
+        collectClaimed(obj);
+    }
+
+    // 3. Assemble the result: pipeline first in chain order, then auxiliary
+    //    Group members that are not on the chain (Origin is handled separately,
+    //    below; datums and unconsumed sketches land here). Skip anything nested
+    //    under a feature.
+    std::vector<App::DocumentObject*> result;
+    std::set<App::DocumentObject*> emitted;
+    auto emit = [&](App::DocumentObject* obj) {
+        if (!obj || !obj->isAttachedToDocument() || claimed.contains(obj)) {
+            return;
+        }
+        if (emitted.insert(obj).second) {
+            result.push_back(obj);
+        }
+    };
+    for (auto* obj : chain) {
+        emit(obj);
+    }
+    for (auto* obj : groupMembers) {
+        if (!onChain.contains(obj)) {
+            emit(obj);
+        }
+    }
+
+    // 4. Keep the GeoExcluded status of Group members consistent with what we
+    //    nested, so sub-object resolution (extensionGetSubObjects) stays correct.
+    for (auto* obj : groupMembers) {
+        if (obj && obj->isAttachedToDocument()) {
+            obj->setStatus(App::ObjectStatus::GeoExcluded, claimed.contains(obj));
+        }
+    }
+
+    // 5. Origin must come first (matching the OriginGroup extension convention).
+    if (auto* originExt = body->getExtensionByType<App::OriginGroupExtension>()) {
+        if (App::DocumentObject* origin = originExt->Origin.getValue()) {
+            result.insert(result.begin(), origin);
+        }
+    }
+    return result;
 }
 
 
