@@ -2,6 +2,7 @@
 
 /***************************************************************************
  *   Copyright (c) 2010 Juergen Riegel <FreeCAD@juergen-riegel.net>        *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -432,9 +433,72 @@ void Body::setBaseProperty(App::DocumentObject* feature)
     }
 }
 
+// Cruth intra-body de-ownership: find the chain successor of a feature — the
+// solid feature whose BaseFeature links back to it — by scanning the document
+// rather than reading Group order. BaseFeature is an intra-body link, so the
+// successor is unique. ARCHITECTURE §3.2/§3.3.
+App::DocumentObject* Body::getNextSolidFeatureByChain(App::DocumentObject* feature) const
+{
+    if (!feature) {
+        return nullptr;
+    }
+    App::Document* doc = feature->getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+    for (auto* obj : doc->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
+        if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == feature) {
+            return obj;
+        }
+    }
+    return nullptr;
+}
+
+// Cruth intra-body de-ownership (Day 4): delete a feature by rewiring the
+// BaseFeature chain rather than by editing Group order. The chain successor
+// (the solid whose BaseFeature points at this feature) is relinked to this
+// feature's own base, and the Tip retreats along the chain. Group is never
+// consulted for ordering, so this works on a fully de-owned body (empty Group);
+// any stale legacy Group entry is still dropped. ARCHITECTURE §3.2/§3.3.
+std::vector<App::DocumentObject*> Body::removeObjectDeowned(App::DocumentObject* feature)
+{
+    App::DocumentObject* prevSolidFeature = nullptr;
+    if (feature->isDerivedFrom<PartDesign::Feature>()) {
+        prevSolidFeature = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
+    }
+    App::DocumentObject* nextSolidFeature = getNextSolidFeatureByChain(feature);
+
+    // Reroute the chain successor's base past the feature being removed.
+    if (nextSolidFeature && nextSolidFeature->isDerivedFrom<PartDesign::Feature>()) {
+        auto* nextPD = static_cast<PartDesign::Feature*>(nextSolidFeature);
+        if (nextPD->BaseFeature.getValue() == feature) {
+            nextPD->BaseFeature.setValue(prevSolidFeature);
+        }
+    }
+
+    // Retreat the Tip if it pointed at the removed feature.
+    if (Tip.getValue() == feature) {
+        Tip.setValue(prevSolidFeature ? prevSolidFeature : nextSolidFeature);
+    }
+
+    // Drop any stale legacy Group membership (no-op on a born-de-owned body).
+    std::vector<App::DocumentObject*> model = Group.getValues();
+    const auto it = std::ranges::find(model, feature);
+    if (it != model.end()) {
+        model.erase(it);
+        Group.setValues(model);
+    }
+
+    return {feature};
+}
+
 std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
 {
     // This method must be called BEFORE the feature is removed from the Document!
+
+    if (deownedFeatureCreation()) {
+        return removeObjectDeowned(feature);
+    }
 
     App::DocumentObject* nextSolidFeature = getNextSolidFeature(feature);
     App::DocumentObject* prevSolidFeature = getPrevSolidFeature(feature);
