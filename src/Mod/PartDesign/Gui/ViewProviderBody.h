@@ -103,6 +103,16 @@ public:
     /// Override to return the color of the tip instead of the body, which doesn't really have color
     std::map<std::string, Base::Color> getElementColors(const char* element) const override;
 
+    /**
+     * Derive the body's tree children from the BaseFeature chain (walked backward
+     * from the Tip) rather than from exclusive Group membership. This makes the
+     * pipeline the source of truth for the tree (ARCHITECTURE.md §3.2/§3.3): a
+     * feature that is on the chain still appears even if it is no longer a Group
+     * member, while non-pipeline objects (Origin, datums, unconsumed sketches)
+     * are still surfaced so nothing disappears during the ownership migration.
+     */
+    std::vector<App::DocumentObject*> claimChildren() const override;
+
     void show() override;
 
 protected:
