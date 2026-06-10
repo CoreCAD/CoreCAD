@@ -2,6 +2,7 @@
 
 /***************************************************************************
  *   Copyright (c) 2010 Juergen Riegel <FreeCAD@juergen-riegel.net>        *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -99,6 +100,17 @@ public:
 
     /// Remove the feature from the body
     std::vector<DocumentObject*> removeObject(DocumentObject* obj) override;
+
+    /**
+     * Cruth intra-body de-ownership: remove a feature by rewiring the
+     * BaseFeature chain (and retreating the Tip) without consulting Group order.
+     * Used by removeObject() when the DeownedFeatureCreation flag is set.
+     * See ARCHITECTURE §3.2/§3.3.
+     */
+    std::vector<App::DocumentObject*> removeObjectDeowned(App::DocumentObject* feature);
+
+    /// Cruth: chain successor of a feature (the solid whose BaseFeature links to it).
+    App::DocumentObject* getNextSolidFeatureByChain(App::DocumentObject* feature) const;
 
     /**
      * Checks if the given document object lays after the current insert point
