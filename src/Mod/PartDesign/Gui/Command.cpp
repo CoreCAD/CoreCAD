@@ -84,114 +84,29 @@ static bool hasActiveBody()
     return PartDesignGui::getBody(/*messageIfNot=*/false) != nullptr;
 }
 
-// CoreCAD §4.6: spawn a Body and place it inside the active App::Part.
-// Falls back to doc root if no Part is active.
-static PartDesign::Body* autoSpawnBodyInActivePart(App::Document* doc)
+// Cruth §8.5/§4.6 spawn-vs-extend decision (GUI entry point).
+//
+// Thin wrapper over PartDesign::Body::resolveBaseBody — the shared App-layer
+// service that the Python API (PartDesign.resolveBaseBody) also calls. Both
+// paths run identical decision + auto-spawn code, which is the P8 (UI/API
+// equivalence) guarantee. The GUI's only addition is the human-facing
+// ambiguity warning; the anchor walk, the spawn-vs-extend decision, and the
+// document-level auto-spawn (§4.6) all live in the App layer.
+static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, App::Document* doc)
 {
-    auto* activeView = Gui::Application::Instance->activeView();
-    auto* activePart = activeView ? activeView->getActiveObject<App::Part*>(PARTKEY) : nullptr;
-
-    auto* body = PartDesignGui::makeBody(doc);
-    if (body && activePart) {
-        Gui::Command::doCommand(
-            Gui::Command::Doc,
-            "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-            activePart->getNameInDocument(),
-            body->getNameInDocument()
+    bool ambiguous = false;
+    PartDesign::Body* body = PartDesign::Body::resolveBaseBody(sketch, doc, ambiguous);
+    if (ambiguous) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("Ambiguous anchor"),
+            QObject::tr(
+                "This sketch's attachment chain reaches more than one Body. "
+                "Pick a single Body explicitly before continuing."
+            )
         );
     }
     return body;
-}
-
-// Cap on §8.5 anchor-chain recursion depth. Realistic chains are
-// sketch → datum → datum → body face (3 hops); 4 gives safety margin
-// against pathological user-created datum cycles.
-static constexpr int MaxAnchorWalkDepth = 4;
-
-// CoreCAD §8.5 anchor walk.
-//
-// Recurses through a feature's attachment chain, collecting any Bodies
-// the chain terminates on. Returns true if at least one branch ends at
-// a global plane, free datum, or otherwise unanchored geometry — the
-// signal to spawn a new Body when no Body is found.
-//
-// Order of checks matters: a Part::Datum has AttachExtension and is also
-// a Part::Feature, so the AttachExtension branch must come first to
-// avoid treating it as a solid feature.
-static bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodies, int depth)
-{
-    if (!obj || depth > MaxAnchorWalkDepth) {
-        return true;
-    }
-
-    auto* attach = obj->getExtensionByType<Part::AttachExtension>(true);
-    if (attach) {
-        const auto& support = attach->AttachmentSupport.getValues();
-        if (support.empty()) {
-            return true;
-        }
-        bool reachedGlobal = false;
-        for (auto* link : support) {
-            if (walkAnchorChain(link, bodies, depth + 1)) {
-                reachedGlobal = true;
-            }
-        }
-        return reachedGlobal;
-    }
-
-    if (obj->isDerivedFrom(App::DatumElement::getClassTypeId())) {
-        return true;
-    }
-
-    if (obj->isDerivedFrom(Part::Feature::getClassTypeId())) {
-        if (auto* body = PartDesign::Body::findBodyOf(obj)) {
-            bodies.insert(body);
-            return false;
-        }
-        return true;
-    }
-
-    return true;
-}
-
-// CoreCAD §8.5 spawn-vs-extend decision.
-//
-// Returns:
-// - a freshly auto-spawned Body, when the sketch's anchor chain ends at
-//   a global plane or independent reference geometry,
-// - the existing Body, when the chain terminates on exactly one Body,
-// - nullptr (after warning the user), when the chain reaches more than
-//   one Body.
-//
-// POC Path A pragma: when the chain points at one existing Body, we
-// silently extend. The visible Merge Result selector in the Pad task
-// pane is deferred to the follow-up session.
-static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, App::Document* doc)
-{
-    std::set<PartDesign::Body*> bodies;
-    auto* attach = sketch->getExtensionByType<Part::AttachExtension>(true);
-    if (attach) {
-        for (auto* link : attach->AttachmentSupport.getValues()) {
-            walkAnchorChain(link, bodies, 1);
-        }
-    }
-
-    if (bodies.empty()) {
-        return autoSpawnBodyInActivePart(doc);
-    }
-    if (bodies.size() == 1) {
-        return *bodies.begin();
-    }
-
-    QMessageBox::warning(
-        Gui::getMainWindow(),
-        QObject::tr("Ambiguous anchor"),
-        QObject::tr(
-            "This sketch's attachment chain reaches more than one Body. "
-            "Pick a single Body explicitly before continuing."
-        )
-    );
-    return nullptr;
 }
 
 // CoreCAD §8.5: pick the sketch the user means to operate on.
