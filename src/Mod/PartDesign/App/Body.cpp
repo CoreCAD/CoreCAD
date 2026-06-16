@@ -27,12 +27,17 @@
 #include <array>
 
 #include <App/Application.h>
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <App/VarSet.h>
 #include <App/Origin.h>
 #include <Base/Color.h>
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
+
+#include <Mod/Part/App/AttachExtension.h>
+#include <Mod/Part/App/Part2DObject.h>
+#include <Mod/Part/App/PartFeature.h>
 
 #include "Body.h"
 #include "BodyPy.h"
@@ -81,6 +86,55 @@ bool deownedFeatureCreation()
                                              ->GetGroup("Mod/PartDesign");
     return hGrp->GetBool("DeownedFeatureCreation", false);
 }
+
+// Cruth §8.5 anchor-walk recursion cap. Realistic chains are
+// sketch → datum → datum → body face (3 hops); 4 gives safety margin against
+// pathological user-created datum cycles.
+constexpr int MaxAnchorWalkDepth = 4;
+
+// Cruth §8.5 anchor walk. Recurses through a feature's attachment chain,
+// collecting any Bodies the chain terminates on. Returns true if at least one
+// branch ends at a global plane, free datum, or otherwise unanchored geometry —
+// the signal to spawn a new Body when no Body is found.
+//
+// Order of checks matters: a Part::Datum has AttachExtension and is also a
+// Part::Feature, so the AttachExtension branch must come first to avoid treating
+// it as a solid feature.
+bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodies, int depth)
+{
+    if (!obj || depth > MaxAnchorWalkDepth) {
+        return true;
+    }
+
+    auto* attach = obj->getExtensionByType<Part::AttachExtension>(true);
+    if (attach) {
+        const auto& support = attach->AttachmentSupport.getValues();
+        if (support.empty()) {
+            return true;
+        }
+        bool reachedGlobal = false;
+        for (auto* link : support) {
+            if (walkAnchorChain(link, bodies, depth + 1)) {
+                reachedGlobal = true;
+            }
+        }
+        return reachedGlobal;
+    }
+
+    if (obj->isDerivedFrom(App::DatumElement::getClassTypeId())) {
+        return true;
+    }
+
+    if (obj->isDerivedFrom(Part::Feature::getClassTypeId())) {
+        if (auto* body = PartDesign::Body::findBodyOf(obj)) {
+            bodies.insert(body);
+            return false;
+        }
+        return true;
+    }
+
+    return true;
+}
 }  // namespace
 
 Body::Body()
@@ -95,6 +149,51 @@ Body::Body()
     );
 
     _GroupTouched.setStatus(App::Property::Output, true);
+}
+
+Body* Body::spawnAutoBody(App::Document* doc)
+{
+    if (!doc) {
+        return nullptr;
+    }
+
+    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
+        "BaseApp/Preferences/Mod/PartDesign"
+    );
+    const bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
+
+    auto name = doc->getUniqueObjectName("Body");
+    auto* body = freecad_cast<Body*>(doc->addObject("PartDesign::Body", name.c_str()));
+    if (body) {
+        // Color is assigned by setupObject() from the per-document palette index.
+        body->AllowCompound.setValue(allowCompound);
+    }
+    return body;
+}
+
+Body* Body::resolveBaseBody(Part::Part2DObject* sketch, App::Document* doc, bool& ambiguous)
+{
+    ambiguous = false;
+
+    std::set<Body*> bodies;
+    if (sketch) {
+        auto* attach = sketch->getExtensionByType<Part::AttachExtension>(true);
+        if (attach) {
+            for (auto* link : attach->AttachmentSupport.getValues()) {
+                walkAnchorChain(link, bodies, 1);
+            }
+        }
+    }
+
+    if (bodies.empty()) {
+        return spawnAutoBody(doc);
+    }
+    if (bodies.size() == 1) {
+        return *bodies.begin();
+    }
+
+    ambiguous = true;
+    return nullptr;
 }
 
 /*

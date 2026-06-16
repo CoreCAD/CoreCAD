@@ -23,10 +23,14 @@
  ***************************************************************************/
 
 
+#include <App/DocumentObjectPy.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/Interpreter.h>
 #include <Base/VectorPy.h>
 #include <Base/Tools.h>
+
+#include <Mod/Part/App/Part2DObject.h>
+#include <Mod/PartDesign/App/Body.h>
 
 
 namespace PartDesign
@@ -38,10 +42,48 @@ public:
         : Py::ExtensionModule<Module>("_PartDesign")
     {
         add_varargs_method("makeFilletArc", &Module::makeFilletArc, "makeFilletArc(...) -- Fillet arc.");
+        add_varargs_method(
+            "resolveBaseBody",
+            &Module::resolveBaseBody,
+            "resolveBaseBody(sketch) -> Body or None\n\n"
+            "Cruth §8.5/§4.6: resolve the base Body for a sketch-based feature by\n"
+            "walking the sketch's anchor chain, auto-spawning a new Body when the\n"
+            "chain ends at a global plane. Shared with the GUI command — this is the\n"
+            "P8 (UI/API equivalence) entry point for auto-spawn. Raises if the chain\n"
+            "reaches more than one Body (ambiguous)."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
 private:
+    Py::Object resolveBaseBody(const Py::Tuple& args)
+    {
+        PyObject* pySketch = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pySketch)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pySketch)->getDocumentObjectPtr();
+        auto* sketch = freecad_cast<Part::Part2DObject*>(obj);
+        if (!sketch) {
+            throw Py::TypeError("resolveBaseBody expects a sketch (Part::Part2DObject)");
+        }
+
+        bool ambiguous = false;
+        Body* body = Body::resolveBaseBody(sketch, sketch->getDocument(), ambiguous);
+        if (ambiguous) {
+            throw Py::RuntimeError(
+                "This sketch's attachment chain reaches more than one Body. "
+                "Pick a single Body explicitly before continuing."
+            );
+        }
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
     Py::Object makeFilletArc(const Py::Tuple& args)
     {
         PyObject* pM1;

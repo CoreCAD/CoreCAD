@@ -35,6 +35,11 @@ namespace App
 class Origin;
 }
 
+namespace Part
+{
+class Part2DObject;
+}
+
 namespace PartDesign
 {
 
@@ -140,6 +145,28 @@ public:
      * The only difference to BodyBase::findBodyOf() is that this one casts value to Body*
      */
     static Body* findBodyOf(const App::DocumentObject* feature);
+
+    /**
+     * Cruth §8.5/§4.6: resolve the base Body for a new sketch-based feature by
+     * walking the sketch's anchor chain (AttachmentSupport through datums/reference
+     * geometry).
+     *  - chain ends at a global plane or independent geometry → auto-spawn a new
+     *    Body at document level (§4.6) and return it;
+     *  - chain terminates on exactly one Body → return that Body (extend);
+     *  - chain reaches more than one Body → return nullptr and set @p ambiguous
+     *    (the caller surfaces the §8.3 ambiguity prompt).
+     *
+     * Lives in the App layer so the Gui command and the Python API share one code
+     * path — this is the P8 (Programmatic Equivalence) guarantee for auto-spawn.
+     */
+    static Body* resolveBaseBody(Part::Part2DObject* sketch, App::Document* doc, bool& ambiguous);
+
+    /**
+     * Cruth §4.6: auto-spawn a new Body at document level (no active-Part
+     * containment). Color is assigned in setupObject() from the per-document
+     * palette index. Returns nullptr if @p doc is null.
+     */
+    static Body* spawnAutoBody(App::Document* doc);
 
     PyObject* getPyObject() override;
 
