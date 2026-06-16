@@ -324,13 +324,14 @@ std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObje
     return objs;
 }
 
-// CoreCAD intra-body de-ownership (Day 3): wire a new feature into the Body's
-// pipeline by reference — BaseFeature chain + Tip — WITHOUT adding it to
-// Body.Group. The pipeline is derived from the chain back from the Tip
-// (ARCHITECTURE §3.2/§3.3), so group membership is no longer the source of
-// truth for feature ordering. This covers the dominant tip-append gesture:
-// a new solid extends the body from the current Tip. Mid-pipeline insert and
-// reorder still rely on the group-ordered legacy path (Day 4 scope).
+// Cruth intra-body de-ownership (Day 3; mid-chain splice added Day 6): wire a new
+// feature into the Body's pipeline by reference — BaseFeature chain + Tip —
+// WITHOUT adding it to Body.Group. The pipeline is derived from the chain back
+// from the Tip (ARCHITECTURE §3.2/§3.3), so group membership is no longer the
+// source of truth for feature ordering. Handles both the tip-append gesture (the
+// new solid extends the body from the current Tip) and mid-chain insert (the Tip
+// is an interior feature): in the latter case the displaced successor is rerouted
+// onto the new feature so the chain stays linear instead of forking.
 std::vector<App::DocumentObject*> Body::addObjectDeowned(App::DocumentObject* feature)
 {
     // Detach from any prior owning group, mirroring the legacy path. A freshly
@@ -350,10 +351,26 @@ std::vector<App::DocumentObject*> Body::addObjectDeowned(App::DocumentObject* fe
     }
 
     if (isSolidFeature(feature)) {
-        // Extend the chain at the Tip: the new solid's base is the old Tip, and
-        // the Body now propagates the new feature.
+        // Splice the new solid into the chain at the Tip: its base is the old Tip,
+        // and the Body now propagates the new feature.
         App::DocumentObject* prevTip = Tip.getValue();
+
+        // Capture the insert point's existing chain successor BEFORE rewiring.
+        // When the Tip is not the last feature (mid-chain insert), the new feature
+        // must splice between prevTip and its successor rather than forking the
+        // chain — otherwise the displaced tail is silently orphaned (its geometry
+        // drops out of the Body with no error). The successor scan reads the
+        // BaseFeature chain, not Group order, so it works on a de-owned body.
+        App::DocumentObject* successor = getNextSolidFeatureByChain(prevTip);
+
         static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(prevTip);
+
+        // Mid-chain insert: reroute the displaced successor onto the new feature so
+        // the chain stays linear (prevTip -> feature -> successor -> ...).
+        if (successor && successor->isDerivedFrom<PartDesign::Feature>()) {
+            static_cast<PartDesign::Feature*>(successor)->BaseFeature.setValue(feature);
+        }
+
         Tip.setValue(feature);
 
         // Tip visibility bookkeeping: only the current Tip shows by default.
