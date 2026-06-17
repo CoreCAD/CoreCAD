@@ -99,6 +99,7 @@ not a defect in the POC.
 | Status | Source | Concern |
 |--------|--------|---------|
 | ⬜ Todo | Step 7 (Variant configs, 2026-06-16) | **No user-facing way to choose a configuration.** The mechanism works — switching the active option rebuilds the model — but the only way to switch today is editing the active-option property in the property panel. A user needs a first-class selector: a dropdown in the toolbar (SolidWorks/Onshape model — pick "M6 / M8" and the part updates). The ARCHITECTURE (§7.7 "MVP Scope") explicitly defers the configuration-table editor UI to post-POC, so this is expected; recording it so the UI work is scheduled, not assumed. |
+| ⬜ Todo | Step 8 (STEP re-import, 2026-06-16) | **Full parametric STEP-import feature is product plumbing, descoped from the POC.** A live spike proved the only *architectural* question — stable face identity for history-less imported geometry (geometric-signature fingerprint, green/red match) — so the core contract is validated. The remaining build is real but is feature work, not validation: a parametric Import feature keyed on a **source content hash** (not file path), auto-spawning its BRep into a Body, the native C++ face-signature seeder (`BRepAdaptor_Surface`/`BRepGProp`/`BRepLProp` — see OCCT notes), and the **yellow case** (symmetric-feature ambiguity under re-positioning, needs topological-context/curvature signature components). Schedule as a product feature. |
 
 ---
 
