@@ -589,6 +589,9 @@ std::vector<App::DocumentObject*> Body::removeObjectDeowned(App::DocumentObject*
         auto* nextPD = static_cast<PartDesign::Feature*>(nextSolidFeature);
         if (nextPD->BaseFeature.getValue() == feature) {
             nextPD->BaseFeature.setValue(prevSolidFeature);
+            // Re-map subelement links (fillet/chamfer faces, direct face profiles)
+            // from the deleted base onto the matching geometry of the new base.
+            nextPD->onBaseFeatureRerouted(feature, prevSolidFeature);
         }
     }
 
@@ -648,6 +651,7 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
         // Check if the next feature is pointing to the one being deleted
         if (nextPD->BaseFeature.getValue() == feature) {
             nextPD->BaseFeature.setValue(prevSolidFeature);
+            nextPD->onBaseFeatureRerouted(feature, prevSolidFeature);
         }
     }
 
