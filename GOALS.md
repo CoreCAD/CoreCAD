@@ -89,6 +89,19 @@ flip by Friday is a win.
 
 ---
 
+## POC Follow-Up Concerns
+
+Real questions surfaced *during* the POC that are out of POC scope but must not
+be lost. The POC proves a mechanism works; these are the gaps between "mechanism
+proven" and "product a user can actually drive." Each is a deliberate follow-up,
+not a defect in the POC.
+
+| Status | Source | Concern |
+|--------|--------|---------|
+| ⬜ Todo | Step 7 (Variant configs, 2026-06-16) | **No user-facing way to choose a configuration.** The mechanism works — switching the active option rebuilds the model — but the only way to switch today is editing the active-option property in the property panel. A user needs a first-class selector: a dropdown in the toolbar (SolidWorks/Onshape model — pick "M6 / M8" and the part updates). The ARCHITECTURE (§7.7 "MVP Scope") explicitly defers the configuration-table editor UI to post-POC, so this is expected; recording it so the UI work is scheduled, not assumed. |
+
+---
+
 ## Goals
 
 ### 1. Branding
