@@ -113,6 +113,18 @@ public:
      */
     std::vector<App::DocumentObject*> claimChildren() const override;
 
+    /**
+     * Derive the body's 3D scene-graph children from the BaseFeature chain too,
+     * mirroring claimChildren(). The base OriginGroup extension parents only
+     * Group members under the body's coordinate node, so a de-owned feature (on
+     * the chain but not in Group) would never inherit the body frame. This flat
+     * variant returns Origin + every chain feature + their claimed sub-objects
+     * (sketches/datums) so all pipeline objects are parented. For a normal body
+     * (every feature both on the chain and in Group) the set is identical to the
+     * old Group-based one, so non-de-owned bodies are unaffected.
+     */
+    std::vector<App::DocumentObject*> claimChildren3D() const override;
+
     void show() override;
 
 protected:
@@ -123,6 +135,11 @@ protected:
 
 private:
     static const char* BodyModeEnum[];
+
+    /// Ordered pipeline (base -> tip) derived by walking BaseFeature back from
+    /// the Tip, with a cycle guard. Shared by claimChildren() and
+    /// claimChildren3D() so the chain walk has a single source of truth.
+    std::vector<App::DocumentObject*> pipelineChain() const;
 
     void afterRecompute(const App::Document&, const std::vector<App::DocumentObject*>& recomputedObjs);
     fastsignals::scoped_connection m_RecomputedConn;

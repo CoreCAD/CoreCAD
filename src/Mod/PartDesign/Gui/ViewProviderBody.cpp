@@ -444,21 +444,16 @@ std::map<std::string, Base::Color> ViewProviderBody::getElementColors(const char
 }
 
 
-std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderBody::pipelineChain() const
 {
-    auto* body = getObject<PartDesign::Body>();
-    if (!body) {
-        // Degenerate case: fall back to the group-based extension behaviour.
-        return ViewProviderOriginGroupExtension::extensionClaimChildren();
-    }
-
-    // 1. Derive the ordered solid pipeline by walking the BaseFeature chain
-    //    backward from the Tip (tip-first), guarding against cycles. This is the
-    //    source-of-truth flip: the chain *is* the pipeline (ARCHITECTURE.md
-    //    §3.3), independent of Group membership.
+    // Walk the BaseFeature chain backward from the Tip (tip-first), guarding
+    // against cycles, then reverse to base -> tip pipeline order. This is the
+    // source-of-truth flip: the chain *is* the pipeline (ARCHITECTURE.md §3.3),
+    // independent of Group membership.
     std::vector<App::DocumentObject*> chain;  // tip -> base
     std::set<App::DocumentObject*> onChain;
-    for (App::DocumentObject* feat = body->Tip.getValue(); feat;) {
+    auto* body = getObject<PartDesign::Body>();
+    for (App::DocumentObject* feat = body ? body->Tip.getValue() : nullptr; feat;) {
         if (!onChain.insert(feat).second) {
             break;  // cycle guard
         }
@@ -467,6 +462,20 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
         feat = pdFeat ? pdFeat->BaseFeature.getValue() : nullptr;
     }
     std::reverse(chain.begin(), chain.end());  // base -> tip (pipeline order)
+    return chain;
+}
+
+std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
+{
+    auto* body = getObject<PartDesign::Body>();
+    if (!body) {
+        // Degenerate case: fall back to the group-based extension behaviour.
+        return ViewProviderOriginGroupExtension::extensionClaimChildren();
+    }
+
+    // 1. Derive the ordered solid pipeline from the BaseFeature chain.
+    std::vector<App::DocumentObject*> chain = pipelineChain();  // base -> tip
+    std::set<App::DocumentObject*> onChain(chain.begin(), chain.end());
 
     // 2. Collect objects claimed by features (so profiles/sketches nest under
     //    their feature instead of appearing at body level). Both the chain
@@ -526,6 +535,50 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
     }
 
     // 5. Origin must come first (matching the OriginGroup extension convention).
+    if (auto* originExt = body->getExtensionByType<App::OriginGroupExtension>()) {
+        if (App::DocumentObject* origin = originExt->Origin.getValue()) {
+            result.insert(result.begin(), origin);
+        }
+    }
+    return result;
+}
+
+
+std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
+{
+    auto* body = getObject<PartDesign::Body>();
+    if (!body) {
+        // Degenerate case: fall back to the group-based extension behaviour.
+        return ViewProviderOriginGroupExtension::extensionClaimChildren3D();
+    }
+
+    // Flat set of every object that must inherit the body's coordinate frame:
+    // the pipeline features, the sub-objects they claim (profile sketches,
+    // datums), and any remaining Group members not reached via the chain. Unlike
+    // the tree (claimChildren), the 3D scene graph parents these flat, not
+    // nested, so we dedupe rather than nest. Order is irrelevant for parenting.
+    std::vector<App::DocumentObject*> result;
+    std::set<App::DocumentObject*> seen;
+    auto emit = [&](App::DocumentObject* obj) {
+        if (obj && obj->isAttachedToDocument() && seen.insert(obj).second) {
+            result.push_back(obj);
+        }
+    };
+
+    for (auto* feat : pipelineChain()) {
+        emit(feat);
+        Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(feat);
+        if (vp && vp != this) {
+            for (auto* child : vp->claimChildren()) {
+                emit(child);
+            }
+        }
+    }
+    for (auto* obj : body->Group.getValues()) {
+        emit(obj);
+    }
+
+    // Origin first, matching the OriginGroup extension convention.
     if (auto* originExt = body->getExtensionByType<App::OriginGroupExtension>()) {
         if (App::DocumentObject* origin = originExt->Origin.getValue()) {
             result.insert(result.begin(), origin);
