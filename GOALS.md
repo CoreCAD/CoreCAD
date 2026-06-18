@@ -103,6 +103,16 @@ is left present but dormant. Stages 3–4 (one document-level Origin, drop `Body
 remove `GeoFeatureGroupExtension`) are **deferred to the `.cpart` document-format work** —
 the irreversible, user-invisible part, where Stage 3 *is* essentially the `.cpart` format.
 
+> ⚠️ **Flagged loose end (found 2026-06-17 during a `Body.cpp` cleanup):** the "no dual
+> path" claim has an asterisk. `Body::addObject`/`removeObject` are de-ownership-only, but a
+> **second, still-live `Group`-writing path** survives: `Body::insertObject` (→ `setBaseProperty`
+> → `getPrev/NextSolidFeature`, which read `Group` order). It is reached from
+> `Body::onDocumentRestored`, `PartDesign::Feature`, `FeatureTransformed`, the GUI insert
+> commands, and the `BodyPy` Python API. So mid-pipeline insert, restore, and transformed-feature
+> wiring still depend on `Group`. This is not cruft to delete piecemeal — it is the unfinished
+> remainder of the flip and belongs in **Stage 3b** scope (resolve when removing `Group`/
+> `GeoFeatureGroupExtension`), not a quick patch.
+
 ---
 
 ## POC Follow-Up Concerns
