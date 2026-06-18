@@ -31,6 +31,7 @@
 #include <App/Document.h>
 #include <App/VarSet.h>
 #include <App/Origin.h>
+#include <App/OriginGroupExtension.h>
 #include <Base/Color.h>
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
@@ -400,8 +401,11 @@ std::vector<App::DocumentObject*> Body::addObjectDeowned(App::DocumentObject* fe
         group->getExtensionByType<GroupExtension>()->removeObject(feature);
     }
 
-    // Keep origin/datum links resolving against this Body's Origin frame.
-    relinkToOrigin(feature);
+    // Cruth substrate flip (Stage 3a): resolve origin/datum links against the single
+    // document-level Origin, not this Body's own (now-dormant) per-body Origin. In the
+    // de-ownership model the coordinate frame is shared at document level (Day-5 design;
+    // ARCHITECTURE §3.3), so all bodies' features anchor to one Origin.
+    relinkToOrigin(feature, ensureDocumentOrigin());
 
     // Associate the feature with this Body by reference (used by findBodyOf and
     // active-body tooling) without imprisoning it in the group.
@@ -738,6 +742,37 @@ void Body::onChanged(const App::Property* prop)
     }
 
     Part::BodyBase::onChanged(prop);
+}
+
+App::Origin* Body::ensureDocumentOrigin()
+{
+    App::Document* doc = getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+
+    // The single document-level Origin is a free-standing App::Origin that no OriginGroup
+    // owns. Every per-body Origin has its owning Body in its inList (set via
+    // OriginGroupExtension::Origin), so we identify the shared one by the absence of any
+    // OriginGroup in its inList.
+    for (auto* obj : doc->getObjectsOfType<App::Origin>()) {
+        bool ownedByGroup = false;
+        for (auto* in : obj->getInList()) {
+            if (in->hasExtension(App::OriginGroupExtension::getExtensionClassTypeId())) {
+                ownedByGroup = true;
+                break;
+            }
+        }
+        if (!ownedByGroup) {
+            return obj;
+        }
+    }
+
+    // None yet — create it. It carries the world-frame datum planes/axes and is linked
+    // only by the features that reference it, never owned by a body.
+    auto* shared = doc->addObject<App::Origin>("Origin");
+    shared->Label.setValue("Origin");
+    return shared;
 }
 
 void Body::setupObject()

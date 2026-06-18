@@ -68,6 +68,13 @@ public:
     // changes all links of obj to a origin to point to this groups origin
     void relinkToOrigin(App::DocumentObject* obj);
 
+    // Cruth substrate flip (Stage 3a): same as relinkToOrigin(obj) but retargets the
+    // object's origin-feature links onto an explicitly supplied Origin instead of this
+    // group's own Origin. Lets a de-owned PartDesign::Body resolve its features against
+    // the single document-level Origin while the per-body Origin stays dormant. Base
+    // behaviour is unchanged — the one-arg overload delegates here with getOrigin().
+    void relinkToOrigin(App::DocumentObject* obj, App::Origin* origin);
+
     std::vector<DocumentObject*> addObjects(std::vector<DocumentObject*> obj) override;
     bool hasObject(const DocumentObject* obj, bool recursive = false) const override;
 

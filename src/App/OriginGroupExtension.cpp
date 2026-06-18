@@ -218,6 +218,14 @@ void OriginGroupExtension::extensionOnChanged(const Property* p)
 
 void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
 {
+    relinkToOrigin(obj, getOrigin());
+}
+
+void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj, App::Origin* origin)
+{
+    if (!origin) {
+        return;
+    }
     // we get all links and replace the origin objects if needed (subnames need not to change, they
     // would stay the same)
     std::vector<App::DocumentObject*> result;
@@ -240,7 +248,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
                 continue;
             }
 
-            p->setValue(getOrigin()->getDatumElement(
+            p->setValue(origin->getDatumElement(
                 static_cast<DatumElement*>(p->getValue())->Role.getValue()));
         }
         else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
@@ -253,7 +261,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
                     result.push_back(o);
                 }
                 else {
-                    result.push_back(getOrigin()->getDatumElement(
+                    result.push_back(origin->getDatumElement(
                         static_cast<DatumElement*>(o)->Role.getValue()));
                     changed = true;
                 }
@@ -269,7 +277,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
             }
 
             std::vector<std::string> subValues = p->getSubValues();
-            p->setValue(getOrigin()->getDatumElement(
+            p->setValue(origin->getDatumElement(
                             static_cast<DatumElement*>(p->getValue())->Role.getValue()),
                         subValues);
         }
@@ -279,7 +287,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
             bool changed = false;
             for (auto& v : vec) {
                 if (isOriginFeature(v.first)) {
-                    v.first = getOrigin()->getDatumElement(
+                    v.first = origin->getDatumElement(
                         static_cast<DatumElement*>(v.first)->Role.getValue());
                     changed = true;
                 }
