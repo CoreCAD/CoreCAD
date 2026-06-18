@@ -183,49 +183,6 @@ Body* Body::resolveBaseBody(Part::Part2DObject* sketch, App::Document* doc, bool
     return nullptr;
 }
 
-/*
-// Note: The following code will catch Python Document::removeObject() modifications. If the object
-removed is
-// a member of the Body::Group, then it will be automatically removed from the Group property which
-triggers the
-// following two methods
-// But since we require the Python user to call both Document::addObject() and Body::addObject(), we
-should
-// also require calling both Document::removeObject and Body::removeFeature() in order to be
-consistent void Body::onBeforeChange(const App::Property *prop)
-{
-    // Remember the feature before the current Tip. If the Tip is already at the first feature,
-remember the next feature if (prop == &Group) { std::vector<App::DocumentObject*> features =
-Group.getValues(); if (features.empty()) { rememberTip = NULL; } else {
-            std::vector<App::DocumentObject*>::iterator it = std::find(features.begin(),
-features.end(), Tip.getValue()); if (it == features.begin()) { it++; if (it == features.end())
-rememberTip = NULL; else rememberTip = *it; } else { it--; rememberTip = *it;
-            }
-        }
-    }
-
-    return Part::Feature::onBeforeChange(prop);
-}
-
-void Body::onChanged(const App::Property *prop)
-{
-    if (prop == &Group) {
-        std::vector<App::DocumentObject*> features = Group.getValues();
-        if (features.empty()) {
-            Tip.setValue(NULL);
-        } else {
-            std::vector<App::DocumentObject*>::iterator it = std::find(features.begin(),
-features.end(), Tip.getValue()); if (it == features.end()) {
-                // Tip feature was deleted
-                Tip.setValue(rememberTip);
-            }
-        }
-    }
-
-    return Part::Feature::onChanged(prop);
-}
-*/
-
 short Body::mustExecute() const
 {
     if (Tip.isTouched()) {
@@ -369,31 +326,14 @@ std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
     }
 
     // De-ownership is the only feature-wiring path (ARCHITECTURE §3.2/§3.3): a new
-    // feature joins the Body's pipeline by reference (BaseFeature chain + Tip), never
-    // by exclusive Body.Group membership. See addObjectDeowned.
-    return addObjectDeowned(feature);
-}
+    // feature joins the Body's pipeline by reference — BaseFeature chain + Tip —
+    // WITHOUT being added to Body.Group. The pipeline is derived from the chain back
+    // from the Tip, so group membership is no longer the source of truth for feature
+    // ordering. Handles both the tip-append gesture (the new solid extends the body
+    // from the current Tip) and mid-chain insert (the Tip is an interior feature): in
+    // the latter case the displaced successor is rerouted onto the new feature so the
+    // chain stays linear instead of forking.
 
-std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObject*> objs)
-{
-
-    for (auto obj : objs) {
-        addObject(obj);
-    }
-
-    return objs;
-}
-
-// Cruth intra-body de-ownership (Day 3; mid-chain splice added Day 6): wire a new
-// feature into the Body's pipeline by reference — BaseFeature chain + Tip —
-// WITHOUT adding it to Body.Group. The pipeline is derived from the chain back
-// from the Tip (ARCHITECTURE §3.2/§3.3), so group membership is no longer the
-// source of truth for feature ordering. Handles both the tip-append gesture (the
-// new solid extends the body from the current Tip) and mid-chain insert (the Tip
-// is an interior feature): in the latter case the displaced successor is rerouted
-// onto the new feature so the chain stays linear instead of forking.
-std::vector<App::DocumentObject*> Body::addObjectDeowned(App::DocumentObject* feature)
-{
     // Detach from any prior owning group, mirroring the legacy path. A freshly
     // created feature is normally group-less, but a moved feature may not be.
     auto* group = App::GroupExtension::getGroupOfObject(feature);
@@ -443,10 +383,18 @@ std::vector<App::DocumentObject*> Body::addObjectDeowned(App::DocumentObject* fe
         }
     }
 
-    std::vector<App::DocumentObject*> result = {feature};
-    return result;
+    return {feature};
 }
 
+std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObject*> objs)
+{
+
+    for (auto obj : objs) {
+        addObject(obj);
+    }
+
+    return objs;
+}
 
 void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after)
 {
@@ -540,8 +488,11 @@ App::DocumentObject* Body::getNextSolidFeatureByChain(App::DocumentObject* featu
 // feature's own base, and the Tip retreats along the chain. Group is never
 // consulted for ordering, so this works on a fully de-owned body (empty Group);
 // any stale legacy Group entry is still dropped. ARCHITECTURE §3.2/§3.3.
-std::vector<App::DocumentObject*> Body::removeObjectDeowned(App::DocumentObject* feature)
+std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
 {
+    // This method must be called BEFORE the feature is removed from the Document!
+    // De-ownership is the only path: heal the BaseFeature chain directly, retreat the
+    // Tip, and retire the Body if its chain empties — Group order is never consulted.
     App::DocumentObject* prevSolidFeature = nullptr;
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         prevSolidFeature = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
@@ -596,16 +547,6 @@ std::vector<App::DocumentObject*> Body::removeObjectDeowned(App::DocumentObject*
 
     return result;
 }
-
-std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
-{
-    // This method must be called BEFORE the feature is removed from the Document!
-    // De-ownership is the only path: heal the BaseFeature chain directly, retreat the
-    // Tip, and retire the Body if its chain empties — Group order is never consulted.
-    // See removeObjectDeowned.
-    return removeObjectDeowned(feature);
-}
-
 
 App::DocumentObjectExecReturn* Body::execute()
 {

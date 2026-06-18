@@ -77,16 +77,13 @@ public:
      * Add the feature into the body at the current insert point.
      * The insertion point is the before next solid after the Tip feature
      */
+    /**
+     * Cruth intra-body de-ownership: a new feature joins the pipeline by reference
+     * (BaseFeature chain + Tip) without being added to Body.Group; handles both the
+     * tip-append gesture and mid-chain insert. See ARCHITECTURE §3.2/§3.3.
+     */
     std::vector<App::DocumentObject*> addObject(App::DocumentObject*) override;
     std::vector<DocumentObject*> addObjects(std::vector<DocumentObject*> obj) override;
-
-    /**
-     * CoreCAD intra-body de-ownership: wire a new feature into the pipeline by
-     * reference (BaseFeature chain + Tip) without adding it to Body.Group.
-     * The implementation behind addObject(); handles the tip-append gesture and
-     * mid-chain insert. See ARCHITECTURE §3.2/§3.3.
-     */
-    std::vector<App::DocumentObject*> addObjectDeowned(App::DocumentObject* feature);
 
     /**
      * Insert the feature into the body after the given feature.
@@ -103,15 +100,13 @@ public:
 
     void setBaseProperty(App::DocumentObject* feature);
 
-    /// Remove the feature from the body
-    std::vector<DocumentObject*> removeObject(DocumentObject* obj) override;
-
     /**
-     * Cruth intra-body de-ownership: remove a feature by rewiring the
-     * BaseFeature chain (and retreating the Tip) without consulting Group order.
-     * The implementation behind removeObject(). See ARCHITECTURE §3.2/§3.3.
+     * Remove the feature from the body (Cruth intra-body de-ownership): rewire the
+     * BaseFeature chain and retreat the Tip without consulting Group order; retire the
+     * Body if its chain empties. Must be called BEFORE the feature is removed from the
+     * Document. See ARCHITECTURE §3.2/§3.3.
      */
-    std::vector<App::DocumentObject*> removeObjectDeowned(App::DocumentObject* feature);
+    std::vector<DocumentObject*> removeObject(DocumentObject* obj) override;
 
     /// Cruth: chain successor of a feature (the solid whose BaseFeature links to it).
     App::DocumentObject* getNextSolidFeatureByChain(App::DocumentObject* feature) const;
