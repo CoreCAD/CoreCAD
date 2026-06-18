@@ -87,6 +87,22 @@ flip by Friday is a win.
 > Carry-over from last sprint: live test doc at `/tmp/poc_step5_roundtrip.FCStd`
 > (BodyA cut by referenced BodyB, extended by a sketch-on-boolean-face Pad).
 
+### Substrate flip — Stage 2 COMPLETE (2026-06-17)
+
+The de-ownership model is now the **only** path, not a flag-gated experiment. Full plan +
+staging in `corecad-strategy/FLIP_PLAN.md`.
+
+| Status | Cut | What |
+|--------|-----|------|
+| ✅ | 2.1 | `ViewProviderBody::claimChildren3D` derives the 3D scene graph from the chain (commit `06efd1cb42`). |
+| ✅ | 2.2 | `DeownedFeatureCreation` default flipped → on; de-ownership is the default GUI path (commit `b16f06a159`). |
+| ✅ | 2.3 | `Body::addObject`/`removeObject` route through the de-owned impls unconditionally; legacy Group branches + the flag **deleted** (commit `2cd2828ac4`). PartDesign 8/8. |
+
+**The architectural bet is closed in practice: one model, no flag, no dual path.** `Group`
+is left present but dormant. Stages 3–4 (one document-level Origin, drop `Body.Placement`,
+remove `GeoFeatureGroupExtension`) are **deferred to the `.cpart` document-format work** —
+the irreversible, user-invisible part, where Stage 3 *is* essentially the `.cpart` format.
+
 ---
 
 ## POC Follow-Up Concerns
