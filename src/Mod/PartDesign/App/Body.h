@@ -83,8 +83,8 @@ public:
     /**
      * CoreCAD intra-body de-ownership: wire a new feature into the pipeline by
      * reference (BaseFeature chain + Tip) without adding it to Body.Group.
-     * Used by addObject() when the DeownedFeatureCreation flag is set. Covers
-     * the tip-append gesture; see ARCHITECTURE §3.2/§3.3.
+     * The implementation behind addObject(); handles the tip-append gesture and
+     * mid-chain insert. See ARCHITECTURE §3.2/§3.3.
      */
     std::vector<App::DocumentObject*> addObjectDeowned(App::DocumentObject* feature);
 
@@ -109,8 +109,7 @@ public:
     /**
      * Cruth intra-body de-ownership: remove a feature by rewiring the
      * BaseFeature chain (and retreating the Tip) without consulting Group order.
-     * Used by removeObject() when the DeownedFeatureCreation flag is set.
-     * See ARCHITECTURE §3.2/§3.3.
+     * The implementation behind removeObject(). See ARCHITECTURE §3.2/§3.3.
      */
     std::vector<App::DocumentObject*> removeObjectDeowned(App::DocumentObject* feature);
 
