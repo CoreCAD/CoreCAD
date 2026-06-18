@@ -1,0 +1,26 @@
+# Cruth dev launch helper (used by `pixi run freecad-test`).
+#
+# freecad-test launches with a throwaway --user-cfg that is wiped each run, so the
+# saved window layout starts empty and the Model and Report view panels come up
+# toggled OFF in this build. This macro re-enables them at startup.
+#
+# It only changes runtime dock visibility (Qt keeps the View > Panels menu items in
+# sync), and writes nothing to user.cfg — so the pristine-defaults guarantee that
+# freecad-test exists to provide is preserved.
+import FreeCADGui as Gui
+from PySide import QtCore, QtWidgets
+
+_PANELS = ("Model", "Report view")
+
+
+def _show_panels():
+    mw = Gui.getMainWindow()
+    if mw is None:
+        return
+    for dock in mw.findChildren(QtWidgets.QDockWidget):
+        if dock.objectName() in _PANELS:
+            dock.setVisible(True)
+
+
+# Defer past workbench activation / the Start page, which can otherwise re-hide docks.
+QtCore.QTimer.singleShot(1500, _show_panels)
