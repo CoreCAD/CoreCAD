@@ -698,6 +698,21 @@ void Body::onChanged(const App::Property* prop)
                 BaseFeature.setValue(nullptr);
             }
         }
+        else if (prop == &Placement) {
+            // Cruth substrate flip, Stage 3a (interim guard). In the de-ownership
+            // model the modeling Body carries no coordinate frame of its own — the
+            // frame comes from each feature's attachment, not from Body containment
+            // (Day-5 design; ARCHITECTURE §3.3). De-owned features do not inherit
+            // Body.Placement, so a non-identity Body placement would silently diverge
+            // from its features (the Day-1 Experiment-C case). Pin it back to identity
+            // on any live edit until Stage 3b removes the property outright. Restore
+            // and undo/redo are excluded by the guard above, so loaded data is never
+            // mutated; this fires only on a live user change (e.g. dragging the Body).
+            const Base::Placement identity;
+            if (Placement.getValue() != identity) {
+                Placement.setValue(identity);
+            }
+        }
         else if (prop == &AllowCompound) {
             // As disallowing compounds can break the model we need to recompute the whole tree.
             // This will inform user about first place where there is more than one solid.
