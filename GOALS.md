@@ -113,6 +113,21 @@ the irreversible, user-invisible part, where Stage 3 *is* essentially the `.cpar
 > remainder of the flip and belongs in **Stage 3b** scope (resolve when removing `Group`/
 > `GeoFeatureGroupExtension`), not a quick patch.
 
+> 📦 **Deferred refactor — `Body.cpp` modularity (analysed 2026-06-17, do AFTER this phase).**
+> `Body.cpp` (~850 lines) is ~⅓ framework-mandated DocumentObject hub code (can't move), so
+> line count is a weak smell. Two real wins, both deliberately deferred until the phase closes:
+> (1) **Extract base-body resolution** — `walkAnchorChain` + `MaxAnchorWalkDepth` (anon ns) +
+> `Body::spawnAutoBody` + `Body::resolveBaseBody` (~90 lines, currently lines 77–184). It's a
+> self-contained "which Body owns this sketch?" policy (§8.5/§4.6) mis-housed on `Body` as
+> statics; extracting to free functions in the `PartDesign` namespace (`BaseBodyResolver.{h,cpp}`)
+> makes it independently testable. **Blast radius is small — only 2 callers:** `decideBaseBody`
+> (Gui `Command.cpp:98`) and the Python binding `Module::resolveBaseBody` (`AppPartDesignPy.cpp:74`).
+> (NB: leave the `bodyPalette`/`paletteColorFor` identity-colour helper in `Body.cpp` — it's used
+> by the ctor + `setupObject`, a *different* concern from resolution; I mis-grouped it earlier.)
+> (2) **Decompose `onChanged`** — a 5-branch dispatcher (~77 lines) into private per-property
+> helpers; in-file readability only. The remaining bloat (dual Group/chain ordering) should be
+> shed by finishing 3b, not by filing it into tidier boxes.
+
 ---
 
 ## POC Follow-Up Concerns
