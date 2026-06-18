@@ -75,8 +75,9 @@ Base::Color paletteColorFor(std::size_t index)
 
 // CoreCAD intra-body de-ownership (Day 3). When enabled, new features are wired
 // into the Body's pipeline by reference (BaseFeature chain + Tip) instead of by
-// exclusive Body.Group membership (ARCHITECTURE §3.2/§3.3). Off by default so the
-// legacy ownership path remains the backstop during the migration.
+// exclusive Body.Group membership (ARCHITECTURE §3.2/§3.3). Default ON as of the
+// substrate flip (Stage 2): de-ownership is the proven model and the default path;
+// the legacy Group path remains opt-out only until the dual path is retired.
 bool deownedFeatureCreation()
 {
     Base::Reference<ParameterGrp> hGrp = App::GetApplication()
@@ -84,7 +85,7 @@ bool deownedFeatureCreation()
                                              .GetGroup("BaseApp")
                                              ->GetGroup("Preferences")
                                              ->GetGroup("Mod/PartDesign");
-    return hGrp->GetBool("DeownedFeatureCreation", false);
+    return hGrp->GetBool("DeownedFeatureCreation", true);
 }
 
 // Cruth §8.5 anchor-walk recursion cap. Realistic chains are
