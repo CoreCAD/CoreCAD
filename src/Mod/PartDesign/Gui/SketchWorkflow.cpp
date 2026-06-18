@@ -494,7 +494,11 @@ private:
         if (!activeBody) {
             return;
         }
-        auto* origin = activeBody->getOrigin();
+        // Cruth substrate flip (Stage 3a-2b): highlight the shared document-level Origin's
+        // planes, not the dormant per-body Origin. This is the coordinate root de-owned
+        // features resolve against, so the plane the user clicks is the one the sketch
+        // ends up attached to (no later relink needed for display consistency).
+        auto* origin = activeBody->ensureDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -591,7 +595,9 @@ private:
         if (!partDesignBody) {
             return;
         }
-        auto* origin = partDesignBody->getOrigin();
+        // Cruth substrate flip (Stage 3a-2b): must match the Origin made visible in
+        // setOriginTemporaryVisibility() — the shared document-level one, not per-body.
+        auto* origin = partDesignBody->ensureDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
