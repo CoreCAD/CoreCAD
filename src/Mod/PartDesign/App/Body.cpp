@@ -73,21 +73,6 @@ Base::Color paletteColorFor(std::size_t index)
     return Base::Color(rgb[0], rgb[1], rgb[2], 1.0F);
 }
 
-// CoreCAD intra-body de-ownership (Day 3). When enabled, new features are wired
-// into the Body's pipeline by reference (BaseFeature chain + Tip) instead of by
-// exclusive Body.Group membership (ARCHITECTURE §3.2/§3.3). Default ON as of the
-// substrate flip (Stage 2): de-ownership is the proven model and the default path;
-// the legacy Group path remains opt-out only until the dual path is retired.
-bool deownedFeatureCreation()
-{
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication()
-                                             .GetUserParameter()
-                                             .GetGroup("BaseApp")
-                                             ->GetGroup("Preferences")
-                                             ->GetGroup("Mod/PartDesign");
-    return hGrp->GetBool("DeownedFeatureCreation", true);
-}
-
 // Cruth §8.5 anchor-walk recursion cap. Realistic chains are
 // sketch → datum → datum → body face (3 hops); 4 gives safety margin against
 // pathological user-created datum cycles.
@@ -382,36 +367,10 @@ std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
         throw Base::ValueError("Body: object is not allowed");
     }
 
-    if (deownedFeatureCreation()) {
-        return addObjectDeowned(feature);
-    }
-
-    // TODO: features should not add all links
-
-    // only one group per object. If it is in a body the single feature will be removed
-    auto* group = App::GroupExtension::getGroupOfObject(feature);
-    if (group && group != getExtendedObject()) {
-        group->getExtensionByType<GroupExtension>()->removeObject(feature);
-    }
-
-
-    insertObject(feature, getNextSolidFeature(), /*after = */ false);
-    // Move the Tip if we added a solid
-    if (isSolidFeature(feature)) {
-        Tip.setValue(feature);
-    }
-
-    if (feature->Visibility.getValue() && feature->isDerivedFrom<PartDesign::Feature>()) {
-        for (auto obj : Group.getValues()) {
-            if (obj->Visibility.getValue() && obj != feature
-                && obj->isDerivedFrom<PartDesign::Feature>()) {
-                obj->Visibility.setValue(false);
-            }
-        }
-    }
-
-    std::vector<App::DocumentObject*> result = {feature};
-    return result;
+    // De-ownership is the only feature-wiring path (ARCHITECTURE §3.2/§3.3): a new
+    // feature joins the Body's pipeline by reference (BaseFeature chain + Tip), never
+    // by exclusive Body.Group membership. See addObjectDeowned.
+    return addObjectDeowned(feature);
 }
 
 std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObject*> objs)
@@ -637,45 +596,10 @@ std::vector<App::DocumentObject*> Body::removeObjectDeowned(App::DocumentObject*
 std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
 {
     // This method must be called BEFORE the feature is removed from the Document!
-
-    if (deownedFeatureCreation()) {
-        return removeObjectDeowned(feature);
-    }
-
-    App::DocumentObject* nextSolidFeature = getNextSolidFeature(feature);
-    App::DocumentObject* prevSolidFeature = getPrevSolidFeature(feature);
-
-    // It's ok to remove the first solid feature, that just mean the next feature become the base one
-
-    if (nextSolidFeature && nextSolidFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
-        auto* nextPD = static_cast<PartDesign::Feature*>(nextSolidFeature);
-        // Check if the next feature is pointing to the one being deleted
-        if (nextPD->BaseFeature.getValue() == feature) {
-            nextPD->BaseFeature.setValue(prevSolidFeature);
-            nextPD->onBaseFeatureRerouted(feature, prevSolidFeature);
-        }
-    }
-
-    std::vector<App::DocumentObject*> model = Group.getValues();
-    const auto it = std::ranges::find(model, feature);
-
-    // Adjust Tip feature if it is pointing to the deleted object
-    if (Tip.getValue() == feature) {
-        if (prevSolidFeature) {
-            Tip.setValue(prevSolidFeature);
-        }
-        else {
-            Tip.setValue(nextSolidFeature);
-        }
-    }
-
-    // Erase feature from Group
-    if (it != model.end()) {
-        model.erase(it);
-        Group.setValues(model);
-    }
-    std::vector<App::DocumentObject*> result = {feature};
-    return result;
+    // De-ownership is the only path: heal the BaseFeature chain directly, retreat the
+    // Tip, and retire the Body if its chain empties — Group order is never consulted.
+    // See removeObjectDeowned.
+    return removeObjectDeowned(feature);
 }
 
 
