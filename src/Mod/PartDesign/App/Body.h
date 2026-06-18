@@ -198,6 +198,13 @@ public:
     // a body is solid if it has features that are solid according to member isSolidFeature.
     bool isSolid();
 
+    /// Cruth substrate flip (Stage 3a): returns the single document-level Origin,
+    /// lazily creating it if absent. This is the shared coordinate root that de-owned
+    /// features resolve against, replacing the per-body Origin (which stays created and
+    /// persisted but dormant until Stage 3b removes it). The document-level Origin is a
+    /// free-standing App::Origin not owned by any OriginGroup.
+    App::Origin* ensureDocumentOrigin();
+
 protected:
     void onSettingDocument() override;
 
