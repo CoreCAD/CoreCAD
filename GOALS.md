@@ -248,6 +248,18 @@ by the developer at build time via `cMake/CoreCAD_Options.cmake`.
 
 **Already OFF upstream** (no action needed): `BUILD_CLOUD`, `BUILD_SANDBOX`
 
+**Planned additions (decided 2026-06-17):**
+- **Sheet Metal — accepted as a future core component, built AFTER the substrate flip.**
+  Sheet metal is legitimately core mechanical CAD, so it belongs in the curated set. But it is
+  **not** to be added now: today it would have to be built on the old ownership substrate (only
+  PartDesign is converted; `.cpart`/3b isn't done) and would immediately become migration debt.
+  Add it once the new substrate exists — it's a strong **"second module"** candidate to prove the
+  post-flip architecture generalizes beyond PartDesign. (FreeCAD's SheetMetal is a community addon
+  on Part/PartDesign; importing it as-is would validate nothing about our architecture.)
+- **Point Cloud — stays OUT** (already excluded above via `BUILD_POINTS`/`REVERSEENGINEERING`/
+  `BUILD_INSPECTION`). Scan-to-CAD is a domain-specific workflow outside core mechanical CAD; it
+  conflicts with the curation vision. Decision reaffirmed.
+
 ---
 
 ### 3. RibbonUI as Default Interface
