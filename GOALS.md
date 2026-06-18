@@ -14,6 +14,44 @@ that fall outside core mechanical CAD.
 
 ---
 
+## Architecture Progress (standing scorecard)
+
+> Progress toward the goals of `corecad-strategy/ARCHITECTURE.md` (frozen v1.0.0).
+> **Keep this updated as work lands** — it's the high-level dashboard. Last reviewed **2026-06-17**.
+
+**Headline:** the architecture is **fully validated** (the §11 POC is complete — all 8
+principles exercised against working code), but **implementation is early and narrow**: nearly
+all real work landed in **one module (PartDesign/Body)**; the rest of the system still runs on
+the old substrate. Proof ≈ done; production ≈ keystone converted, building not yet.
+
+**Rough proportions:** validation **~100%** · core-substrate conversion (PartDesign Body model)
+**~75%** · system-wide implementation **~15–20%**.
+
+### Principles (P1–P8)
+
+| | Principle | Status | Where it stands |
+|---|---|---|---|
+| P1 | Shapes are values | ✅ Validated | Largely inherent in OCCT/FreeCAD; confirmed (tool bodies referenced, not consumed) |
+| P2 | Features are functions | ✅ Validated | Explicit `BaseFeature`/`Profile` links; DAG propagation proven |
+| **P3** | **References, not ownership** | 🟡 Real progress, PartDesign-only | De-ownership is the *only* model in PartDesign (Stages 1–2 + 3a). Open: other modules still own; `insertObject`→`Group` remnant (3b); authored-sketch cleanup gaps |
+| P4 | Every result modelable | 🟡 Partial | Sketch-on-boolean-face proven; Part-boolean→PartDesign-body & Surface gaps open |
+| P5 | Topological names maintained | ✅ Validated | Element-map byte-identical across save/reopen |
+| P6 | Absorb workflows, not workarounds | 🟡 Ongoing | De-ownership removes the `Group` crutch; `SubShapeBinder`/`Clone` still present elsewhere |
+| P7 | Robustness through honesty | 🟡 Gaps characterized, unfixed | Fail-loud works where wired; silent-frozen refs, "body up-to-date while Tip invalid," bowtie-sketch silence open. Honesty-contract phase deferred |
+| P8 | Programmatic equivalence | 🟡 Strong, one thread | Shared App/Python service + MCP exist; UI parity "by construction," not yet "by diff" |
+
+### Structural pieces
+
+| Piece | Status | Note |
+|---|---|---|
+| Body/Feature reference model (§3–4) | 🟡 ~75% | Converted keystone; Stages 1–2 + 3a done. Remaining: 3b cliff + `Group` remnant |
+| Document type system / `.cpart` format (§7) | 🔴 Not started | **The long pole — *is* Stage 3b.** Highest-leverage next step (finishes P3 in PartDesign + unlocks §7) |
+| Multi-body ops (§5) | 🟡 Partial | Cross-body Cut proven; split-body identity (§4.7 component-id) is a known gap with no cheap fix |
+| UI contract (§8) | 🟡 Partial | Ambiguity prompts exist; config-selector + face-click-to-sketch not built |
+| Other workbenches (Assembly, TechDraw, FEM, CAM, Sketcher integration) | 🔴 Untouched | Still upstream FreeCAD on the old ownership substrate |
+
+---
+
 ## Current Sprint — Week of 2026-06-06 (POC Steps 2–6)
 
 **Focus:** make real ownership→reference-model progress on a small, usable slice — *not* a full migration. Build the smallest real thing, use it, then correct. Each step: build → test (App/Part/PartDesign) → manual check → commit, in small tested increments.
