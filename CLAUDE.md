@@ -16,6 +16,7 @@ pixi run configure-debug   # Configure debug build (output: build/debug/)
 pixi run build-debug       # Build debug
 pixi run install-debug     # Install to build/debug/
 pixi run freecad-debug     # Run the application (alias: pixi run freecad)
+pixi run freecad-test      # Run for testing: clean-room launch, throwaway user.cfg
 pixi run configure-release
 pixi run build-release
 
@@ -27,6 +28,13 @@ cmake --install build/debug
 
 Build output goes to `build/debug/` or `build/release/`. Binary at `build/debug/bin/FreeCAD`.
 Key build config files: `pixi.toml`, `CMakePresets.json`, `CMakeLists.txt`.
+
+For live GUI/MCP verification, prefer `pixi run freecad-test`. It launches the debug
+build with a throwaway `--user-cfg` wiped each run, so every session starts from pristine
+code defaults — a persisted preference in `user.cfg` can otherwise silently override a
+source-code default (e.g. a feature flag changed in C++ appears to have no effect). The MCP
+bridge is unaffected (its auto-start setting lives in a separate JSON under the app-data
+dir, not `user.cfg`).
 
 ## Testing
 
