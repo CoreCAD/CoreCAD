@@ -201,20 +201,22 @@ App::DocumentObject* Body::getPrevSolidFeature(App::DocumentObject* start)
         return nullptr;
     }
 
-    if (!hasObject(start)) {
-        return nullptr;
-    }
-
-    const std::vector<App::DocumentObject*>& features = Group.getValues();
-
-    auto startIt = std::find(features.rbegin(), features.rend(), start);
-    if (startIt == features.rend()) {  // object not found
-        return nullptr;
-    }
-
-    auto rvIt = std::find_if(startIt + 1, features.rend(), isSolidFeature);
-    if (rvIt != features.rend()) {  // the solid found in model list
-        return *rvIt;
+    // Cruth de-ownership (Stage 3b-i): walk the BaseFeature chain backward, not
+    // Group order. Group is dormant — reading it returns nothing on a de-owned
+    // body, silently degrading every caller. The chain links solid features
+    // directly, so the previous solid is found by following BaseFeature back from
+    // `start`, skipping any non-solid link and guarding against cycles.
+    // ARCHITECTURE §3.2/§3.3.
+    std::set<App::DocumentObject*> seen {start};
+    for (auto* pd = freecad_cast<PartDesign::Feature*>(start); pd;) {
+        App::DocumentObject* prev = pd->BaseFeature.getValue();
+        if (!prev || !seen.insert(prev).second) {
+            return nullptr;  // chain end or cycle
+        }
+        if (isSolidFeature(prev)) {
+            return prev;
+        }
+        pd = freecad_cast<PartDesign::Feature*>(prev);  // skip non-solid, keep walking
     }
     return nullptr;
 }
@@ -225,26 +227,25 @@ App::DocumentObject* Body::getNextSolidFeature(App::DocumentObject* start)
         start = Tip.getValue();
     }
 
-    if (!start || !hasObject(start)) {  // no or faulty tip
+    if (!start) {  // no tip
         return nullptr;
     }
 
-    const std::vector<App::DocumentObject*>& features = Group.getValues();
-    std::vector<App::DocumentObject*>::const_iterator startIt;
-
-    startIt = std::find(features.begin(), features.end(), start);
-    if (startIt == features.end()) {  // object not found
-        return nullptr;
-    }
-
-    startIt++;
-    if (startIt == features.end()) {  // features list has only one element
-        return nullptr;
-    }
-
-    auto rvIt = std::find_if(startIt, features.end(), isSolidFeature);
-    if (rvIt != features.end()) {  // the solid found in model list
-        return *rvIt;
+    // Cruth de-ownership (Stage 3b-i): the chain successor is the feature whose
+    // BaseFeature links back to `start`. Walk forward across any non-solid link,
+    // returning the first solid successor; cycle-guarded. Mirrors
+    // getNextSolidFeatureByChain but preserves the solid-only filter the callers
+    // expect. ARCHITECTURE §3.2/§3.3.
+    std::set<App::DocumentObject*> seen {start};
+    for (App::DocumentObject* cursor = start; cursor;) {
+        App::DocumentObject* next = getNextSolidFeatureByChain(cursor);
+        if (!next || !seen.insert(next).second) {
+            return nullptr;  // chain end or cycle
+        }
+        if (isSolidFeature(next)) {
+            return next;
+        }
+        cursor = next;  // skip non-solid, keep walking
     }
     return nullptr;
 }
@@ -398,50 +399,74 @@ std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObje
 
 void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after)
 {
-    if (target && !hasObject(target)) {
-        throw Base::ValueError(
-            "Body: the feature we should insert relative to is not part of that body"
-        );
-    }
+    // Cruth de-ownership (Stage 3b-i): splice `feature` into the BaseFeature chain at
+    // the requested position rather than editing Group order — Group is dormant and
+    // the pipeline is derived from the chain, so wiring BaseFeature links *is* the
+    // insert. Generalizes the Tip-splice addObject performs to an arbitrary (target,
+    // after) anchor. ARCHITECTURE §3.2/§3.3.
 
-    // ensure that all origin links are ok
-    relinkToOrigin(feature);
-
-    std::vector<App::DocumentObject*> model = Group.getValues();
-    std::vector<App::DocumentObject*>::iterator insertInto;
-
-    // Find out the position there to insert the feature
-    if (!target) {
-        if (after) {
-            insertInto = model.begin();
-        }
-        else {
-            insertInto = model.end();
-        }
-    }
-    else {
-        std::vector<App::DocumentObject*>::iterator targetIt
-            = std::find(model.begin(), model.end(), target);
-        assert(targetIt != model.end());
-        if (after) {
-            insertInto = targetIt + 1;
-        }
-        else {
-            insertInto = targetIt;
+    // Validate target membership via the de-ownership back-pointer, not dormant Group.
+    if (target) {
+        auto* tf = freecad_cast<PartDesign::Feature*>(target);
+        if (!tf || tf->_Body.getValue() != this) {
+            throw Base::ValueError(
+                "Body: the feature we should insert relative to is not part of that body"
+            );
         }
     }
 
-    // Insert the new feature after the given
-    model.insert(insertInto, feature);
-
-    Group.setValues(model);
+    // Resolve origin/datum links against the shared document-level Origin (Stage 3a).
+    relinkToOrigin(feature, ensureDocumentOrigin());
 
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
     }
 
-    // Set the BaseFeature property
-    setBaseProperty(feature);
+    // Non-solid members (sketches, datums) carry no pipeline position — nothing to splice.
+    if (!isSolidFeature(feature)) {
+        return;
+    }
+
+    // Resolve the predecessor/successor solids that will bracket `feature`.
+    App::DocumentObject* pred = nullptr;
+    App::DocumentObject* succ = nullptr;
+    if (target) {
+        if (after) {
+            pred = target;
+            succ = getNextSolidFeature(target);
+        }
+        else {
+            pred = getPrevSolidFeature(target);
+            succ = target;
+        }
+    }
+    else if (after) {
+        // Base end: feature becomes the new chain root; the old root rebases onto it.
+        std::set<App::DocumentObject*> seen;
+        App::DocumentObject* root = Tip.getValue();
+        for (auto* pd = freecad_cast<PartDesign::Feature*>(root); pd;
+             pd = freecad_cast<PartDesign::Feature*>(root)) {
+            App::DocumentObject* base = pd->BaseFeature.getValue();
+            if (!base || !seen.insert(root).second) {
+                break;
+            }
+            root = base;
+        }
+        succ = root;
+    }
+    else {
+        // Tip end: feature appends after the current Tip.
+        pred = Tip.getValue();
+    }
+
+    static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(pred);
+    if (succ && succ->isDerivedFrom<PartDesign::Feature>()) {
+        static_cast<PartDesign::Feature*>(succ)->BaseFeature.setValue(feature);
+    }
+    if (!succ) {
+        // No chain successor → feature is the new Tip.
+        Tip.setValue(feature);
+    }
 }
 
 void Body::setBaseProperty(App::DocumentObject* feature)
