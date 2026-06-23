@@ -333,7 +333,39 @@ void ViewProviderBody::updateData(const App::Property* prop)
         }
     }
 
+    if (prop == &body->Tip || prop == &body->TipComponentId) {
+        applyMultiOutputDisplay();
+    }
+
     PartGui::ViewProviderPart::updateData(prop);
+}
+
+void ViewProviderBody::finishRestoring()
+{
+    PartGui::ViewProviderPart::finishRestoring();
+    // Re-open of a multi-output document: TipComponentId is loaded but the feature-
+    // hide step is skipped during restore, so apply it once restore has settled.
+    applyMultiOutputDisplay();
+}
+
+void ViewProviderBody::applyMultiOutputDisplay()
+{
+    PartDesign::Body* body = getObject<PartDesign::Body>();
+    if (!body || body->TipComponentId.getStrValue().empty()) {
+        return;  // single-component Body — long-standing "Through" behaviour is correct
+    }
+
+    if (DisplayModeBody.getValue() != 1) {
+        DisplayModeBody.setValue(static_cast<long>(1));  // "Tip": render own component shape
+    }
+
+    if (!isRestoring()) {
+        if (App::DocumentObject* tip = body->Tip.getValue()) {
+            if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(tip)) {
+                vp->setVisible(false);
+            }
+        }
+    }
 }
 
 void ViewProviderBody::onChanged(const App::Property* prop)

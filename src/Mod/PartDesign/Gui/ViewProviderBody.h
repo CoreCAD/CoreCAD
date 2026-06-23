@@ -126,6 +126,7 @@ public:
     std::vector<App::DocumentObject*> claimChildren3D() const override;
 
     void show() override;
+    void finishRestoring() override;
 
 protected:
     /// Copy over all visual properties to the child features
@@ -140,6 +141,16 @@ private:
     /// the Tip, with a cycle guard. Shared by claimChildren() and
     /// claimChildren3D() so the chain walk has a single source of truth.
     std::vector<App::DocumentObject*> pipelineChain() const;
+
+    /**
+     * Cruth §3.3 multi-output display. A Body whose TipComponentId is set shares its
+     * Tip feature with sibling Bodies, so it cannot delegate display to that feature
+     * ("Through" mode would draw the whole multi-solid shape under every sibling).
+     * Force "Tip" mode so the Body renders its own component shape as its own
+     * selectable scene node, and hide the shared feature so its full shape does not
+     * also draw. No-op for ordinary single-component Bodies.
+     */
+    void applyMultiOutputDisplay();
 
     void afterRecompute(const App::Document&, const std::vector<App::DocumentObject*>& recomputedObjs);
     fastsignals::scoped_connection m_RecomputedConn;
