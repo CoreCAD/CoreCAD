@@ -57,6 +57,17 @@ public:
     App::PropertyEnumeration TransformMode;
     App::PropertyBool Refine;
 
+    /// Cruth §5.5: when true, the pattern emits its N copies as disconnected solids
+    /// (a compound) instead of fusing them into one. The multi-output reconciler then
+    /// spawns one Body per copy — "each copy is its own Body". Default false keeps the
+    /// classic instance-fusing behaviour.
+    App::PropertyBool MultiBody;
+
+    /// Cruth §5.6 skip-list: instance indices (0-based, 0 = the original) omitted from
+    /// the MultiBody output. Break-out records the detached instance here so the pattern
+    /// continues with one fewer member and never silently re-merges it.
+    App::PropertyIntegerList SkipInstances;
+
     /**
      * Returns the BaseFeature property's object(if any) otherwise return first original,
      *         which serves as "Support" for old style workflows

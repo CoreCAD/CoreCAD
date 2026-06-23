@@ -33,6 +33,7 @@
 #include <TopExp_Explorer.hxx>
 
 
+#include <algorithm>
 #include <array>
 
 #include <Base/Console.h>
@@ -70,6 +71,22 @@ Transformed::Transformed()
 
     ADD_PROPERTY(TransformMode, (static_cast<long>(Mode::Features)));
     TransformMode.setEnums(transformModeEnums.data());
+
+    ADD_PROPERTY_TYPE(
+        MultiBody,
+        (false),
+        "Base",
+        App::Prop_None,
+        "Cruth §5.5: emit the pattern's N copies as disconnected solids (one Body each) "
+        "instead of fusing them"
+    );
+    ADD_PROPERTY_TYPE(
+        SkipInstances,
+        (),
+        "Base",
+        App::Prop_None,
+        "Cruth §5.6 skip-list: instance indices omitted from the MultiBody output (break-out)"
+    );
 }
 
 void Transformed::positionBySupport()
@@ -432,6 +449,28 @@ App::DocumentObjectExecReturn* Transformed::execute()
             auto shapes = getTransformedCompShape(supportShape, supportShape);
             if (Base::Sequencer().wasCanceled()) {
                 return new App::DocumentObjectExecReturn("User aborted");
+            }
+            if (MultiBody.getValue()) {
+                // Cruth §5.5/§5.6: emit the copies as disconnected solids (one Body each
+                // via the multi-output reconciler), omitting any instance indices the
+                // skip-list records from a break-out. Bypass the single-solid fuse/rule.
+                const std::vector<long>& skip = SkipInstances.getValues();
+                std::vector<Part::TopoShape> kept;
+                for (std::size_t i = 0; i < shapes.size(); ++i) {
+                    if (std::ranges::find(skip, static_cast<long>(i)) == skip.end()) {
+                        kept.push_back(shapes[i]);
+                    }
+                }
+                if (kept.empty()) {
+                    return new App::DocumentObjectExecReturn(
+                        QT_TRANSLATE_NOOP("Exception", "Pattern skip-list removed every instance")
+                    );
+                }
+                Part::TopoShape compound;
+                compound.makeElementCompound(kept);
+                this->Shape.setValue(compound);
+                rejected.Nullify();
+                return App::DocumentObject::StdReturn;
             }
             supportShape.makeElementFuse(shapes);
             break;
