@@ -163,5 +163,9 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::Measure ::initialize();
     // clang-format on
 
+    // Cruth §4.8: wire multi-output Body spawn onto document recompute (P8: one
+    // observer serves both the UI and Python recompute paths).
+    PartDesign::Body::initMultiOutputObserver();
+
     PyMOD_Return(mod);
 }

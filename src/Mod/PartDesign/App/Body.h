@@ -52,10 +52,10 @@ class PartDesignExport Body: public Part::BodyBase
 public:
     App::PropertyBool AllowCompound;
 
-    /// CoreCAD §4.6 visual identity — auto-assigned from a deterministic palette at spawn.
+    /// Cruth §4.6 visual identity — auto-assigned from a deterministic palette at spawn.
     App::PropertyColor Color;
 
-    /// CoreCAD §3.3 component identity. A Body's Tip is a (feature, component-id) pair: this
+    /// Cruth §3.3 component identity. A Body's Tip is a (feature, component-id) pair: this
     /// names which connected component of the Tip feature's output shape the Body represents.
     /// Empty means the implicit, single-component case (the overwhelming majority of Bodies).
     /// Features that produce multiple disjoint components spawn one Body per component, each
@@ -117,6 +117,25 @@ public:
 
     /// Cruth: chain successor of a feature (the solid whose BaseFeature links to it).
     App::DocumentObject* getNextSolidFeatureByChain(App::DocumentObject* feature) const;
+
+    /**
+     * Cruth §4.8 multi-output spawn. Run after a document recompute: for each
+     * recomputed PartDesign feature that a Body points at as its Tip, count the
+     * connected solid components of the feature's output. When the count exceeds
+     * the number of Bodies referencing that feature, spawn one Body per extra
+     * component and stamp each Body's TipComponentId (§3.3) with an element-map-
+     * stable id. The single-component case is a no-op. Idempotent: re-running on a
+     * reconciled document changes nothing. Spawn direction only — shrink/retire
+     * (§4.7) is handled separately. See ARCHITECTURE §3.3/§4.7/§4.8.
+     */
+    static void reconcileMultiOutput(
+        App::Document* doc,
+        const std::vector<App::DocumentObject*>& recomputed
+    );
+
+    /// Wire reconcileMultiOutput onto every document's recompute signal. Call once
+    /// at module init; idempotent. P8: fires for both UI and API recompute paths.
+    static void initMultiOutputObserver();
 
     /**
      * Checks if the given document object lays after the current insert point
