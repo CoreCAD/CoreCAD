@@ -55,6 +55,13 @@ public:
     /// CoreCAD §4.6 visual identity — auto-assigned from a deterministic palette at spawn.
     App::PropertyColor Color;
 
+    /// CoreCAD §3.3 component identity. A Body's Tip is a (feature, component-id) pair: this
+    /// names which connected component of the Tip feature's output shape the Body represents.
+    /// Empty means the implicit, single-component case (the overwhelming majority of Bodies).
+    /// Features that produce multiple disjoint components spawn one Body per component, each
+    /// sharing the Tip feature but carrying a distinct, element-map-stable id here.
+    App::PropertyString TipComponentId;
+
     /// True if this body feature is active or was active when the document was last closed
     // App::PropertyBool IsActive;
 
