@@ -26,19 +26,30 @@
 
 #include <array>
 
+#include <map>
+
+#include <TopAbs_ShapeEnum.hxx>
+
 #include <App/Application.h>
 #include <App/Datums.h>
 #include <App/Document.h>
+#include <App/GeoFeatureGroupExtension.h>
+#include <App/IndexedName.h>
+#include <App/MappedName.h>
 #include <App/VarSet.h>
 #include <App/Origin.h>
 #include <App/OriginGroupExtension.h>
 #include <Base/Color.h>
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
+#include <Base/Tools.h>
 
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/TopoShape.h>
+
+#include "Feature.h"
 
 #include "Body.h"
 #include "BodyPy.h"
@@ -55,7 +66,7 @@ PROPERTY_SOURCE(PartDesign::Body, Part::BodyBase)
 
 namespace
 {
-// CoreCAD §4.6 palette — 8 distinguishable Body identity colours.
+// Cruth §4.6 palette — 8 distinguishable Body identity colours.
 // Order: blue, orange, green, purple, teal, magenta, gold, slate.
 constexpr std::array<std::array<float, 3>, 8> bodyPalette = {{
     {0.30F, 0.55F, 0.90F},
@@ -122,6 +133,48 @@ bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodi
 
     return true;
 }
+
+// Cruth §3.3 component-id for the i-th (1-based) solid of a shape. OCCT element
+// maps name faces/edges/vertices but not solids, so identity is anchored to the
+// solid's lexicographically-smallest mapped face name: stable across recomputes
+// that preserve topology and independent of OCCT's solid ordering. Falls back to a
+// positional "Solid{i}" only when no face carries a mapped name.
+std::string solidComponentId(const Part::TopoShape& shape, int index)
+{
+    const Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
+    if (!solid.isNull()) {
+        std::string best;
+        const auto faceCount = static_cast<int>(solid.countSubShapes(TopAbs_FACE));
+        for (int f = 1; f <= faceCount; ++f) {
+            const Data::MappedName mapped = solid.getMappedName(Data::IndexedName("Face", f));
+            if (!mapped.empty()) {
+                const std::string name = mapped.toString();
+                if (best.empty() || name < best) {
+                    best = name;
+                }
+            }
+        }
+        if (!best.empty()) {
+            return best;
+        }
+    }
+    return std::string("Solid") + std::to_string(index);
+}
+
+// Return the solid sub-shape whose component-id matches, or a null shape if none.
+Part::TopoShape extractSolidById(const Part::TopoShape& shape, const std::string& cid)
+{
+    const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+    for (int i = 1; i <= count; ++i) {
+        if (solidComponentId(shape, i) == cid) {
+            return shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true);
+        }
+    }
+    return Part::TopoShape();
+}
+
+// Guards reconcileMultiOutput against re-entry while it spawns/recomputes Bodies.
+bool g_reconciling = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 }  // namespace
 
 Body::Body()
@@ -139,7 +192,7 @@ Body::Body()
         (""),
         "Base",
         App::Prop_None,
-        "CoreCAD §3.3 component-id half of the (feature, component-id) Tip identity; empty means "
+        "Cruth §3.3 component-id half of the (feature, component-id) Tip identity; empty means "
         "the implicit single-component case"
     );
 
@@ -164,6 +217,172 @@ Body* Body::spawnAutoBody(App::Document* doc)
         body->AllowCompound.setValue(allowCompound);
     }
     return body;
+}
+
+void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)
+{
+    if (!doc || g_reconciling) {
+        return;
+    }
+    Base::StateLocker guard(g_reconciling);
+
+    // All Bodies in the document, so we can find which ones point at a given Tip.
+    std::vector<Body*> allBodies;
+    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
+        allBodies.push_back(static_cast<Body*>(obj));
+    }
+    if (allBodies.empty()) {
+        return;
+    }
+
+    for (auto* obj : recomputed) {
+        auto* feature = freecad_cast<PartDesign::Feature*>(obj);
+        if (!feature) {
+            continue;
+        }
+
+        // Bodies whose Tip is this feature. Only a Tip feature's components spawn
+        // Bodies; a mid-chain feature is referenced by none and is skipped.
+        std::vector<Body*> bodies;
+        for (auto* body : allBodies) {
+            if (body->Tip.getValue() == feature) {
+                bodies.push_back(body);
+            }
+        }
+        if (bodies.empty()) {
+            continue;
+        }
+
+        const Part::TopoShape shape = feature->Shape.getShape();
+        if (shape.isNull()) {
+            continue;
+        }
+        const auto componentCount = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+
+        if (componentCount <= 1) {
+            // Single component: the lone Body propagates the whole Tip shape, so its
+            // component-id must be empty. (Shrink/retire of extra Bodies is §4.7,
+            // handled separately — not here.)
+            if (bodies.size() == 1 && !bodies.front()->TipComponentId.getStrValue().empty()) {
+                bodies.front()->TipComponentId.setValue("");
+                bodies.front()->recomputeFeature();
+                bodies.front()->purgeTouched();
+            }
+            continue;
+        }
+
+        // Multi-output: ensure one Body per component, each stamped with its id.
+        std::vector<std::string> ids;
+        ids.reserve(componentCount);
+        for (int i = 1; i <= componentCount; ++i) {
+            ids.push_back(solidComponentId(shape, i));
+        }
+
+        // Keep Bodies already pointing at a still-present component; the rest are
+        // free to be re-stamped (covers the first multi-output recompute, where the
+        // originating Body still carries the empty single-component id).
+        std::set<std::string> claimed;
+        std::vector<Body*> freeBodies;
+        for (auto* body : bodies) {
+            const std::string cid = body->TipComponentId.getStrValue();
+            if (!cid.empty() && claimed.count(cid) == 0
+                && std::find(ids.begin(), ids.end(), cid) != ids.end()) {
+                claimed.insert(cid);
+            }
+            else {
+                freeBodies.push_back(body);
+            }
+        }
+
+        App::DocumentObject* group = App::GeoFeatureGroupExtension::getGroupOfObject(bodies.front());
+        for (const std::string& cid : ids) {
+            if (claimed.count(cid) != 0) {
+                continue;
+            }
+            Body* body = nullptr;
+            if (!freeBodies.empty()) {
+                body = freeBodies.back();
+                freeBodies.pop_back();
+            }
+            else {
+                body = Body::spawnAutoBody(doc);
+                if (!body) {
+                    continue;
+                }
+                body->Tip.setValue(feature);
+                if (group) {
+                    group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(body);
+                }
+            }
+            body->TipComponentId.setValue(cid);
+            claimed.insert(cid);
+        }
+
+        // Re-extract each Body's component shape under its (possibly new) id. Re-query
+        // so freshly spawned Bodies — not in the original `bodies` list — recompute too.
+        // We run inside signalRecomputed (the document is still marked Recomputing), so
+        // recomputeFeature takes the direct _recomputeFeature path, which computes the
+        // shape but does not purge the touched flag — purge explicitly so the document
+        // settles instead of looping on perpetually-touched Bodies.
+        for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
+            auto* body = static_cast<Body*>(obj);
+            if (body->Tip.getValue() == feature) {
+                body->recomputeFeature();
+                body->purgeTouched();
+            }
+        }
+    }
+}
+
+namespace
+{
+// Per-document observer that runs reconcileMultiOutput after every recompute.
+// Lives for the process; connections are scoped and dropped when a document
+// closes. P8: signalRecomputed fires for both UI and Python recompute paths.
+class MultiOutputObserver
+{
+public:
+    void init()
+    {
+        if (m_initialized) {
+            return;
+        }
+        m_initialized = true;
+        auto& app = App::GetApplication();
+        m_newDocConn = app.signalNewDocument.connect([this](const App::Document& doc, bool) {
+            watch(const_cast<App::Document&>(doc));
+        });
+        m_delDocConn = app.signalDeleteDocument.connect([this](const App::Document& doc) {
+            m_recomputeConns.erase(&doc);
+        });
+        for (auto* doc : app.getDocuments()) {
+            watch(*doc);
+        }
+    }
+
+private:
+    void watch(App::Document& doc)
+    {
+        App::Document* docPtr = &doc;
+        m_recomputeConns[docPtr] = doc.signalRecomputed.connect(
+            [docPtr](const App::Document&, const std::vector<App::DocumentObject*>& objs) {
+                Body::reconcileMultiOutput(docPtr, objs);
+            }
+        );
+    }
+
+    bool m_initialized = false;
+    fastsignals::scoped_connection m_newDocConn;
+    fastsignals::scoped_connection m_delDocConn;
+    std::map<const App::Document*, fastsignals::scoped_connection> m_recomputeConns;
+};
+
+MultiOutputObserver g_multiOutputObserver;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+}  // namespace
+
+void Body::initMultiOutputObserver()
+{
+    g_multiOutputObserver.init();
 }
 
 Body* Body::resolveBaseBody(Part::Part2DObject* sketch, App::Document* doc, bool& ambiguous)
@@ -619,6 +838,23 @@ App::DocumentObjectExecReturn* Body::execute()
             );
         }
 
+        // Cruth §3.3: a multi-output Body represents one component of its Tip's
+        // shape, named by TipComponentId. Empty id = the implicit single-component
+        // case (propagate the whole shape). A set id that no longer resolves is an
+        // honest failure (P7), not a silent fall-back to the whole shape.
+        const std::string cid = TipComponentId.getStrValue();
+        if (!cid.empty()) {
+            const Base::Matrix4D transform = tipShape.getTransform();
+            Part::TopoShape component = extractSolidById(tipShape, cid);
+            if (component.isNull()) {
+                return new App::DocumentObjectExecReturn(
+                    QT_TRANSLATE_NOOP("Exception", "Tip component for this Body no longer exists")
+                );
+            }
+            component.setTransform(transform);
+            tipShape = component;
+        }
+
         // We should hide here the transformation of the baseFeature
         tipShape.transformShape(tipShape.getTransform(), true);
     }
@@ -753,7 +989,7 @@ void Body::setupObject()
 {
     Part::BodyBase::setupObject();
 
-    // CoreCAD §4.6: assign a deterministic identity colour at spawn time.
+    // Cruth §4.6: assign a deterministic identity colour at spawn time.
     // Per-document index — count Bodies already in the doc (excluding this one,
     // which is in the doc but not yet visible to countObjectsOfType).
     if (auto* doc = getDocument()) {
