@@ -134,6 +134,14 @@ Body::Body()
         App::Prop_None,
         "Body identity colour, auto-assigned at spawn from a deterministic palette"
     );
+    ADD_PROPERTY_TYPE(
+        TipComponentId,
+        (""),
+        "Base",
+        App::Prop_None,
+        "CoreCAD §3.3 component-id half of the (feature, component-id) Tip identity; empty means "
+        "the implicit single-component case"
+    );
 
     _GroupTouched.setStatus(App::Property::Output, true);
 }
