@@ -860,14 +860,18 @@ App::DocumentObjectExecReturn* Body::execute()
         // honest failure (P7), not a silent fall-back to the whole shape.
         const std::string cid = TipComponentId.getStrValue();
         if (!cid.empty()) {
-            const Base::Matrix4D transform = tipShape.getTransform();
             Part::TopoShape component = extractSolidById(tipShape, cid);
             if (component.isNull()) {
                 return new App::DocumentObjectExecReturn(
                     QT_TRANSLATE_NOOP("Exception", "Tip component for this Body no longer exists")
                 );
             }
-            component.setTransform(transform);
+            // A pattern stores each instance's offset in the solid's placement, not
+            // its geometry. Bake that placement into the geometry (an identity
+            // transform with copy bakes the location and resets it) so this Body
+            // keeps its own pattern position; otherwise every component would
+            // collapse onto the Tip origin. (Cruth §3.3 multi-output.)
+            component.transformShape(Base::Matrix4D(), true);
             tipShape = component;
         }
 
