@@ -260,13 +260,20 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
         const auto componentCount = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
 
         if (componentCount <= 1) {
-            // Single component: the lone Body propagates the whole Tip shape, so its
-            // component-id must be empty. (Shrink/retire of extra Bodies is §4.7,
-            // handled separately — not here.)
-            if (bodies.size() == 1 && !bodies.front()->TipComponentId.getStrValue().empty()) {
-                bodies.front()->TipComponentId.setValue("");
-                bodies.front()->recomputeFeature();
-                bodies.front()->purgeTouched();
+            // Collapse to a single component (Cruth §4.7 retire-on-shrink): the Tip now
+            // has one solid, so one Body survives carrying the whole shape and any extra
+            // Bodies are retired. A marker owns nothing, so removing it breaks no refs;
+            // downstream breakage, if any, surfaces honestly at the feature graph (P7).
+            Body* survivor = bodies.front();
+            const bool hadExtras = bodies.size() > 1;
+            const bool staleCid = !survivor->TipComponentId.getStrValue().empty();
+            for (std::size_t i = 1; i < bodies.size(); ++i) {
+                doc->removeObject(bodies[i]->getNameInDocument());
+            }
+            if (hadExtras || staleCid) {
+                survivor->TipComponentId.setValue("");
+                survivor->recomputeFeature();
+                survivor->purgeTouched();
             }
             continue;
         }
@@ -317,6 +324,15 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             body->TipComponentId.setValue(cid);
             claimed.insert(cid);
         }
+
+        // Retire orphaned markers: any freeBodies left after the assign loop carry a
+        // component-id that has vanished from the Tip (e.g. a pattern instance was
+        // skipped, N->N-1). A marker owns nothing, so removal is the exact inverse of
+        // auto-spawn and always safe (Cruth §4.7).
+        for (auto* orphan : freeBodies) {
+            doc->removeObject(orphan->getNameInDocument());
+        }
+        freeBodies.clear();
 
         // Re-extract each Body's component shape under its (possibly new) id. Re-query
         // so freshly spawned Bodies — not in the original `bodies` list — recompute too.
