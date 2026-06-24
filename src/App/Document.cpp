@@ -3469,7 +3469,11 @@ void Document::removeObject(const char* sName)
         return;
     }
 
-    if (pos->second->testStatus(ObjectStatus::PendingRecompute)) {
+    // Never mutate the object graph synchronously while a recompute is in flight:
+    // a removal during signalRecomputed() (e.g. Cruth multi-output marker retirement)
+    // tears down objects while the document is still marked Recomputing and crashes.
+    // Defer to the pendingRemove queue, which is flushed once recompute settles.
+    if (pos->second->testStatus(ObjectStatus::PendingRecompute) || testStatus(Document::Recomputing)) {
         // TODO: shall we allow removal if there is active undo transaction?
         FC_MSG("pending remove of " << sName << " after recomputing document " << getName());
         d->pendingRemove.emplace_back(pos->second);
