@@ -626,6 +626,25 @@ std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
             prevTip->Visibility.setValue(false);
         }
     }
+    else if (feature->isDerivedFrom<PartDesign::Transformed>()) {
+        // A freshly-created Transformed feature (LinearPattern/PolarPattern/Mirror/
+        // MultiTransform) is misclassified by isSolidFeature() during the init phase:
+        // isMultiTransformChild() heuristically reports true while TransformMode is at
+        // its default and Originals is still empty (they are set after creation). That
+        // skips the solid-splice above, leaving BaseFeature unset — so the pattern, and
+        // hence its input feature, never join the BaseFeature chain (issue #1).
+        //
+        // A Transformed reaching addObject is always a standalone, body-level pattern:
+        // MultiTransform *children* are held in the parent's Transformations list and
+        // are never added to the Body. The execute-time self-wiring (FeatureTransformed
+        // execute -> Body::setBaseProperty) cannot recover here because by execute time
+        // the caller has set Tip to the pattern, so getPrevSolidFeature() (which walks
+        // the BaseFeature chain) finds nothing. Wire BaseFeature now, while the previous
+        // Tip is still known. Tip is intentionally NOT advanced: the caller advances it
+        // once Originals are set (prepareTransformed), avoiding a transient recompute
+        // with an unconfigured pattern as Tip.
+        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(Tip.getValue());
+    }
 
     return {feature};
 }
