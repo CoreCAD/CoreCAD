@@ -143,12 +143,14 @@ private:
     std::vector<App::DocumentObject*> pipelineChain() const;
 
     /**
-     * Cruth §3.3 multi-output display. A Body whose TipComponentId is set shares its
-     * Tip feature with sibling Bodies, so it cannot delegate display to that feature
-     * ("Through" mode would draw the whole multi-solid shape under every sibling).
-     * Force "Tip" mode so the Body renders its own component shape as its own
-     * selectable scene node, and hide the shared feature so its full shape does not
-     * also draw. No-op for ordinary single-component Bodies.
+     * Cruth §3.3 multi-output display, two-way. A Body whose TipComponentId is set
+     * shares its Tip feature with sibling Bodies, so it cannot delegate display to that
+     * feature ("Through" mode would draw the whole multi-solid shape under every sibling).
+     * Force "Tip" mode so the Body renders its own component shape as its own selectable
+     * scene node, and hide the shared feature so its full shape does not also draw.
+     * When the component id is cleared (collapse back to a single output) undo that:
+     * revert to "Through" mode and re-show the shared feature. No-op for ordinary
+     * single-component Bodies, which already sit in "Through" mode.
      */
     void applyMultiOutputDisplay();
 
