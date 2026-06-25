@@ -351,18 +351,36 @@ void ViewProviderBody::finishRestoring()
 void ViewProviderBody::applyMultiOutputDisplay()
 {
     PartDesign::Body* body = getObject<PartDesign::Body>();
-    if (!body || body->TipComponentId.getStrValue().empty()) {
-        return;  // single-component Body — long-standing "Through" behaviour is correct
+    if (!body) {
+        return;
     }
 
-    if (DisplayModeBody.getValue() != 1) {
-        DisplayModeBody.setValue(static_cast<long>(1));  // "Tip": render own component shape
+    if (!body->TipComponentId.getStrValue().empty()) {
+        // Multi-output: force "Tip" mode so this Body draws its own component shape,
+        // and hide the shared feature so its full multi-solid shape does not also draw.
+        if (DisplayModeBody.getValue() != 1) {
+            DisplayModeBody.setValue(static_cast<long>(1));
+        }
+        if (!isRestoring()) {
+            if (App::DocumentObject* tip = body->Tip.getValue()) {
+                if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(tip)) {
+                    vp->setVisible(false);
+                }
+            }
+        }
+        return;
     }
 
-    if (!isRestoring()) {
-        if (App::DocumentObject* tip = body->Tip.getValue()) {
-            if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(tip)) {
-                vp->setVisible(false);
+    // Collapsed back to a single component: undo only what the multi-output path forced.
+    // An ordinary single-component Body is already in "Through" mode (0), so guarding on
+    // mode == 1 keeps this a no-op for it and avoids clobbering normal display.
+    if (DisplayModeBody.getValue() == 1) {
+        DisplayModeBody.setValue(static_cast<long>(0));  // back to "Through"
+        if (!isRestoring()) {
+            if (App::DocumentObject* tip = body->Tip.getValue()) {
+                if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(tip)) {
+                    vp->setVisible(true);  // re-show the previously hidden shared feature
+                }
             }
         }
     }
