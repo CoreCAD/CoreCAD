@@ -214,9 +214,15 @@ Body* Body::breakOutInstance(Body* instanceBody)
         return nullptr;
     }
 
-    // Capture the instance's solid (element map preserved) before recording the
-    // skip — once skipped, the pattern no longer emits it.
-    const Part::TopoShape captured = extractSolidById(pattern->Shape.getShape(), cid);
+    // Capture the instance's solid straight from the instance Body's own Shape: it
+    // is already the pattern component for this cid with the instance offset baked
+    // into the geometry (the §3.3 multi-output display path does that bake) and the
+    // element map intact. Capture before recording the skip — once skipped, neither
+    // the pattern nor this Body emit it any more.
+    Part::TopoShape captured = instanceBody->Shape.getShape();
+    if (captured.countSubShapes(TopAbs_SOLID) >= 1) {
+        captured = captured.getSubTopoShape(TopAbs_SOLID, 1, /*silent*/ true);
+    }
     if (captured.isNull()) {
         return nullptr;
     }
