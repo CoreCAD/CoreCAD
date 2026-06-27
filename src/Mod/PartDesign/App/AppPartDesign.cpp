@@ -33,6 +33,7 @@
 #include "DatumPlane.h"
 #include "DatumPoint.h"
 #include "Measure.h"
+#include "FeatureBakedShape.h"
 #include "FeatureBase.h"
 #include "FeatureBoolean.h"
 #include "FeatureChamfer.h"
@@ -92,6 +93,7 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::FeatureRefine               ::init();
     PartDesign::FeatureRefinePython         ::init();
     PartDesign::Solid                       ::init();
+    PartDesign::BakedShape                  ::init();
     PartDesign::FeatureAddSub               ::init();
     PartDesign::FeatureAddSubPython         ::init();
     PartDesign::FeatureAdditivePython       ::init();
