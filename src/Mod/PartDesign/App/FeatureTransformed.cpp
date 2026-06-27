@@ -81,11 +81,11 @@ Transformed::Transformed()
         "instead of fusing them"
     );
     ADD_PROPERTY_TYPE(
-        SkipInstances,
+        SkipComponentIds,
         (),
         "Base",
         App::Prop_None,
-        "Cruth §5.6 skip-list: instance indices omitted from the MultiBody output (break-out)"
+        "Cruth §5.6 skip-list: component-ids omitted from the MultiBody output (break-out)"
     );
 }
 
@@ -242,7 +242,8 @@ void Transformed::handleChangedPropertyType(
 
 short Transformed::mustExecute() const
 {
-    if (Originals.isTouched() || TransformMode.isTouched()) {
+    if (Originals.isTouched() || TransformMode.isTouched() || MultiBody.isTouched()
+        || SkipComponentIds.isTouched()) {
         return 1;
     }
     return PartDesign::Feature::mustExecute();
@@ -452,13 +453,26 @@ App::DocumentObjectExecReturn* Transformed::execute()
             }
             if (MultiBody.getValue()) {
                 // Cruth §5.5/§5.6: emit the copies as disconnected solids (one Body each
-                // via the multi-output reconciler), omitting any instance indices the
-                // skip-list records from a break-out. Bypass the single-solid fuse/rule.
-                const std::vector<long>& skip = SkipInstances.getValues();
+                // via the multi-output reconciler), omitting any instance whose component-id
+                // the skip-list records from a break-out. Matching by component-id (not
+                // position) keeps the skip-list in the same identity language as the Body
+                // the user selects. Bypass the single-solid fuse/rule.
+                //
+                // Compute the per-solid component-id on the *compound*, not on the loose
+                // instance shapes: makeElementCompound op-tags the element-map names, so a
+                // cid taken from a bare instance solid would not match the cid the Body
+                // carries (which the reconciler derives from this stored compound). Build
+                // the full compound first, id its solids exactly as the reconciler will,
+                // then drop the skipped ones.
+                const std::vector<std::string>& skip = SkipComponentIds.getValues();
+                Part::TopoShape full;
+                full.makeElementCompound(shapes);
                 std::vector<Part::TopoShape> kept;
-                for (std::size_t i = 0; i < shapes.size(); ++i) {
-                    if (std::ranges::find(skip, static_cast<long>(i)) == skip.end()) {
-                        kept.push_back(shapes[i]);
+                const auto solidCount = static_cast<int>(full.countSubShapes(TopAbs_SOLID));
+                for (int i = 1; i <= solidCount; ++i) {
+                    const std::string cid = Body::componentIdOfSolid(full, i);
+                    if (std::ranges::find(skip, cid) == skip.end()) {
+                        kept.push_back(full.getSubTopoShape(TopAbs_SOLID, i));
                     }
                 }
                 if (kept.empty()) {
