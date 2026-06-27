@@ -34,3 +34,16 @@ class Body(BodyBase):
         @note the method doesn't modify the Tip unlike addObject()
         """
         ...
+
+    def breakOutInstance(self, /) -> object:
+        """
+        Cruth §5.6: break this pattern instance out into its own independent,
+        frozen Body. Captures this Body's solid from the pattern output, re-homes
+        it into a new Body backed by a BakedShape feature, and skips the instance
+        on the pattern. The result is fully severed from the pattern.
+
+        Must be called on a Body whose Tip is a multi-output pattern feature.
+
+        @return the new frozen Body, or None on failure.
+        """
+        ...

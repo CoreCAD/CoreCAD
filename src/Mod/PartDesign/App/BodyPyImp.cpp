@@ -95,6 +95,19 @@ PyObject* BodyPy::insertObject(PyObject* args)
     Py_Return;
 }
 
+PyObject* BodyPy::breakOutInstance(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    Body* newBody = Body::breakOutInstance(this->getBodyPtr());
+    if (!newBody) {
+        Py_RETURN_NONE;
+    }
+    return newBody->getPyObject();
+}
+
 Py::Object BodyPy::getVisibleFeature() const
 {
     for (auto obj : getBodyPtr()->Group.getValues()) {
