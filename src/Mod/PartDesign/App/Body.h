@@ -197,6 +197,26 @@ public:
      */
     static Body* spawnAutoBody(App::Document* doc);
 
+    /**
+     * Cruth §5.6: break a single pattern instance out into its own independent,
+     * frozen Body. Captures the instance's solid (element map preserved, §7.8)
+     * from the pattern's current output, re-homes it into a fresh Body whose
+     * chain begins with a BakedShape feature, then records a skip on the pattern
+     * so it emits one fewer instance and recomputes. The new Body is fully
+     * severed — no link back to the pattern or its base — so subsequent pattern
+     * edits never re-merge it.
+     *
+     * Order matters: the capture happens before the skip recompute, while the
+     * instance solid still exists; the now-orphaned originating Body is retired
+     * by the reconciler (§4.7).
+     *
+     * @param instanceBody a Body whose Tip is a multi-output pattern feature and
+     *                     whose TipComponentId names one emitted instance.
+     * @return the new frozen Body, or nullptr on failure (Tip is not a pattern,
+     *         component not found, etc.).
+     */
+    static Body* breakOutInstance(Body* instanceBody);
+
     PyObject* getPyObject() override;
 
     std::vector<std::string> getSubObjects(int reason = 0) const override;

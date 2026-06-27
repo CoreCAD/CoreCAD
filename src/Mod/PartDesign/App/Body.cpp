@@ -53,6 +53,7 @@
 
 #include "Body.h"
 #include "BodyPy.h"
+#include "FeatureBakedShape.h"
 #include "FeatureBase.h"
 #include "FeatureSketchBased.h"
 #include "FeatureSolid.h"
@@ -190,6 +191,68 @@ Body* Body::spawnAutoBody(App::Document* doc)
         body->AllowCompound.setValue(allowCompound);
     }
     return body;
+}
+
+Body* Body::breakOutInstance(Body* instanceBody)
+{
+    if (!instanceBody) {
+        return nullptr;
+    }
+    App::Document* doc = instanceBody->getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+
+    // The instance's Tip must be a multi-output pattern feature, and the Body must
+    // name one emitted instance via its component-id (§3.3).
+    auto* pattern = freecad_cast<PartDesign::Transformed*>(instanceBody->Tip.getValue());
+    if (!pattern) {
+        return nullptr;
+    }
+    const std::string cid = instanceBody->TipComponentId.getStrValue();
+    if (cid.empty()) {
+        return nullptr;
+    }
+
+    // Capture the instance's solid (element map preserved) before recording the
+    // skip — once skipped, the pattern no longer emits it.
+    const Part::TopoShape captured = extractSolidById(pattern->Shape.getShape(), cid);
+    if (captured.isNull()) {
+        return nullptr;
+    }
+
+    // Re-home the captured solid into a frozen BakedShape (§7.8) inside a fresh,
+    // independent Body. The BakedShape has no input link, so the new Body is
+    // severed from the pattern and its base.
+    auto* baked = freecad_cast<PartDesign::BakedShape*>(
+        doc->addObject("PartDesign::BakedShape", "BakedShape")
+    );
+    if (!baked) {
+        return nullptr;
+    }
+    baked->StoredShape.setValue(captured);
+
+    Body* newBody = spawnAutoBody(doc);
+    if (!newBody) {
+        doc->removeObject(baked->getNameInDocument());
+        return nullptr;
+    }
+    // Keep the new Body in the same container as the originating instance.
+    if (auto* group = App::GeoFeatureGroupExtension::getGroupOfObject(instanceBody)) {
+        group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(newBody);
+    }
+    newBody->addObject(baked);  // also points the new Body's Tip at the BakedShape
+
+    // Record the skip (§5.6) so the pattern drops this instance, then recompute.
+    // The originating Body becomes an orphan and is retired by the reconciler (§4.7).
+    std::vector<std::string> skips = pattern->SkipComponentIds.getValues();
+    if (std::find(skips.begin(), skips.end(), cid) == skips.end()) {
+        skips.push_back(cid);
+        pattern->SkipComponentIds.setValues(skips);
+    }
+    doc->recompute();
+
+    return newBody;
 }
 
 // Cruth §3.3 component-id. OCCT element maps name faces/edges/vertices but not solids,
