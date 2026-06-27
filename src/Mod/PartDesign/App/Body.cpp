@@ -134,39 +134,12 @@ bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodi
     return true;
 }
 
-// Cruth §3.3 component-id for the i-th (1-based) solid of a shape. OCCT element
-// maps name faces/edges/vertices but not solids, so identity is anchored to the
-// solid's lexicographically-smallest mapped face name: stable across recomputes
-// that preserve topology and independent of OCCT's solid ordering. Falls back to a
-// positional "Solid{i}" only when no face carries a mapped name.
-std::string solidComponentId(const Part::TopoShape& shape, int index)
-{
-    const Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
-    if (!solid.isNull()) {
-        std::string best;
-        const auto faceCount = static_cast<int>(solid.countSubShapes(TopAbs_FACE));
-        for (int f = 1; f <= faceCount; ++f) {
-            const Data::MappedName mapped = solid.getMappedName(Data::IndexedName("Face", f));
-            if (!mapped.empty()) {
-                const std::string name = mapped.toString();
-                if (best.empty() || name < best) {
-                    best = name;
-                }
-            }
-        }
-        if (!best.empty()) {
-            return best;
-        }
-    }
-    return std::string("Solid") + std::to_string(index);
-}
-
 // Return the solid sub-shape whose component-id matches, or a null shape if none.
 Part::TopoShape extractSolidById(const Part::TopoShape& shape, const std::string& cid)
 {
     const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
     for (int i = 1; i <= count; ++i) {
-        if (solidComponentId(shape, i) == cid) {
+        if (Body::componentIdOfSolid(shape, i) == cid) {
             return shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true);
         }
     }
@@ -217,6 +190,30 @@ Body* Body::spawnAutoBody(App::Document* doc)
         body->AllowCompound.setValue(allowCompound);
     }
     return body;
+}
+
+// Cruth §3.3 component-id. OCCT element maps name faces/edges/vertices but not solids,
+// so identity is anchored to the solid's lexicographically-smallest mapped face name.
+std::string Body::componentIdOfSolid(const Part::TopoShape& shape, int index)
+{
+    const Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
+    if (!solid.isNull()) {
+        std::string best;
+        const auto faceCount = static_cast<int>(solid.countSubShapes(TopAbs_FACE));
+        for (int f = 1; f <= faceCount; ++f) {
+            const Data::MappedName mapped = solid.getMappedName(Data::IndexedName("Face", f));
+            if (!mapped.empty()) {
+                const std::string name = mapped.toString();
+                if (best.empty() || name < best) {
+                    best = name;
+                }
+            }
+        }
+        if (!best.empty()) {
+            return best;
+        }
+    }
+    return std::string("Solid") + std::to_string(index);
 }
 
 void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)
@@ -282,7 +279,7 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
         std::vector<std::string> ids;
         ids.reserve(componentCount);
         for (int i = 1; i <= componentCount; ++i) {
-            ids.push_back(solidComponentId(shape, i));
+            ids.push_back(componentIdOfSolid(shape, i));
         }
 
         // Keep Bodies already pointing at a still-present component; the rest are

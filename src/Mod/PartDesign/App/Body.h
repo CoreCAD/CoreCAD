@@ -38,7 +38,8 @@ class Origin;
 namespace Part
 {
 class Part2DObject;
-}
+class TopoShape;
+}  // namespace Part
 
 namespace PartDesign
 {
@@ -136,6 +137,14 @@ public:
     /// Wire reconcileMultiOutput onto every document's recompute signal. Call once
     /// at module init; idempotent. P8: fires for both UI and API recompute paths.
     static void initMultiOutputObserver();
+
+    /// Cruth §3.3 component-id for the i-th (1-based) solid of a shape: the solid's
+    /// lexicographically-smallest mapped face name, stable across recomputes that
+    /// preserve topology and independent of OCCT's solid ordering (positional
+    /// "Solid{i}" fallback when no face is mapped). This is THE component identity —
+    /// the Tip's TipComponentId and the pattern break-out skip-list (§5.6) both match
+    /// against it, so the computation must have a single source of truth.
+    static std::string componentIdOfSolid(const Part::TopoShape& shape, int index);
 
     /**
      * Checks if the given document object lays after the current insert point
