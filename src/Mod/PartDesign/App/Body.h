@@ -281,6 +281,13 @@ private:
     /// see them. Returns nullptr if no owned feature matches.
     PartDesign::Feature* findOwnedFeature(const std::string& name) const;
 
+    /// Cruth de-ownership (§9 / §8.3): repopulate the transient Feature::_Body cache from
+    /// the BaseFeature chain after a document restore. Membership is not serialised, so it
+    /// is reconstructed by walking back from the Tip and claiming each feature up to the
+    /// seam (where the chain bases on another Body's Tip via a FeatureBase). Group is empty
+    /// under de-ownership and is no longer consulted.
+    void rebuildBodyCacheFromChain();
+
     fastsignals::scoped_connection connection;
     bool showTip = false;
 };
