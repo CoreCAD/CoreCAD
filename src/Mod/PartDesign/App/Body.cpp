@@ -1327,13 +1327,49 @@ App::DocumentObject* Body::getSubObject(
 #endif
 }
 
-void Body::onDocumentRestored()
+void Body::rebuildBodyCacheFromChain()
 {
-    for (auto obj : Group.getValues()) {
-        if (obj->isDerivedFrom<PartDesign::Feature>()) {
-            static_cast<PartDesign::Feature*>(obj)->_Body.setValue(this);
+    App::Document* doc = getDocument();
+    if (!doc) {
+        return;
+    }
+
+    // Tips owned by OTHER bodies mark the seam where this body's chain ends: walking back
+    // from our Tip, the first feature that is another body's Tip belongs to that upstream
+    // body (the cross-body FeatureBase reference), and so does everything before it.
+    std::set<const App::DocumentObject*> otherTips;
+    for (auto* it : doc->getObjectsOfType(Body::getClassTypeId())) {
+        auto* body = static_cast<Body*>(it);
+        if (body != this && body->Tip.getValue()) {
+            otherTips.insert(body->Tip.getValue());
         }
     }
+
+    // Walk back from the Tip along BaseFeature, claiming each feature for this body until
+    // the seam. The seen-set guards against a malformed cyclic chain.
+    App::DocumentObject* cursor = Tip.getValue();
+    std::set<const App::DocumentObject*> seen;
+    while (cursor && seen.insert(cursor).second) {
+        if (otherTips.count(cursor)) {
+            break;
+        }
+        if (!cursor->isDerivedFrom<PartDesign::Feature>()) {
+            break;
+        }
+        auto* pdFeat = static_cast<PartDesign::Feature*>(cursor);
+        pdFeat->_Body.setValue(this);
+        cursor = pdFeat->BaseFeature.getValue();
+    }
+}
+
+void Body::onDocumentRestored()
+{
+    // CPART_DESIGN §9 / §8.3: feature->Body membership is not serialised; it is
+    // reconstructed by query at load. Repopulate the transient _Body cache from the
+    // BaseFeature chain (Group is empty under de-ownership). findBodyOf self-heals on
+    // demand, but direct _Body readers — findOwnedFeature, the de-owned sub-element path
+    // — need the cache warm before the first selection click.
+    rebuildBodyCacheFromChain();
     _GroupTouched.setStatus(App::Property::Output, true);
 
     // trigger ViewProviderBody::copyColorsfromTip
