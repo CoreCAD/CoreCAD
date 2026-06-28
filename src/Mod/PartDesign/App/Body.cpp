@@ -1066,19 +1066,25 @@ App::Origin* Body::ensureDocumentOrigin()
         return nullptr;
     }
 
-    // The single document-level Origin is a free-standing App::Origin that no OriginGroup
-    // owns. Every per-body Origin has its owning Body in its inList (set via
-    // OriginGroupExtension::Origin), so we identify the shared one by the absence of any
-    // OriginGroup in its inList.
+    // The single document-level Origin is shared by every PartDesign Body via the
+    // shared-Origin contract (onExtendedSetupObject). It is identified as the App::Origin
+    // already linked by a Body, or — before the first Body has linked it — a free-standing
+    // App::Origin that no OriginGroup owns. A per-body/per-part private Origin (e.g. an
+    // App::Part's own ruler) is owned by exactly that group and is never linked by a Body,
+    // so it is correctly skipped.
     for (auto* obj : doc->getObjectsOfType<App::Origin>()) {
+        bool usedByBody = false;
         bool ownedByGroup = false;
         for (auto* in : obj->getInList()) {
-            if (in->hasExtension(App::OriginGroupExtension::getExtensionClassTypeId())) {
-                ownedByGroup = true;
+            if (in->isDerivedFrom<PartDesign::Body>()) {
+                usedByBody = true;
                 break;
             }
+            if (in->hasExtension(App::OriginGroupExtension::getExtensionClassTypeId())) {
+                ownedByGroup = true;
+            }
         }
-        if (!ownedByGroup) {
+        if (usedByBody || !ownedByGroup) {
             return obj;
         }
     }
@@ -1088,6 +1094,37 @@ App::Origin* Body::ensureDocumentOrigin()
     auto* shared = doc->addObject<App::Origin>("Origin");
     shared->Label.setValue("Origin");
     return shared;
+}
+
+void Body::onExtendedSetupObject()
+{
+    // Cruth shared-Origin contract (GitHub #4): a PartDesign Body does NOT own a private
+    // coordinate frame. In the de-ownership model the world frame is shared at document
+    // level (ARCHITECTURE §3.3) — every Body anchors its features to the single
+    // free-standing App::Origin. Bind this Body's Origin link to that shared Origin instead
+    // of letting OriginGroupExtension mint a private one. Because no per-body Origin is ever
+    // created, retiring a Body can never bin an axis that another Body's feature references
+    // (the leak that nulled a pattern's Direction on break-out), getOrigin() returns the
+    // shared ruler so the ~20 GUI feature-creation sites auto-anchor to it, and there is only
+    // one X/Y/Z axis so no create-order race can escape onto a dormant per-body axis.
+    //
+    // We deliberately bypass OriginGroupExtension::onExtendedSetupObject() (which would call
+    // getLocalizedOrigin()); App::Part still uses the base behaviour since it does not derive
+    // from Body.
+    if (App::Origin* shared = ensureDocumentOrigin()) {
+        Origin.setValue(shared);
+    }
+    App::GeoFeatureGroupExtension::onExtendedSetupObject();
+}
+
+void Body::onExtendedUnsetupObject()
+{
+    // Counterpart to the contract above: the shared document Origin is not owned by this
+    // Body, so it must outlive the Body's retirement. Detach our link and skip
+    // OriginGroupExtension::onExtendedUnsetupObject()'s destructive delete of the linked
+    // Origin; defer the remaining teardown to the grandparent.
+    Origin.setValue(nullptr);
+    App::GeoFeatureGroupExtension::onExtendedUnsetupObject();
 }
 
 void Body::setupObject()
