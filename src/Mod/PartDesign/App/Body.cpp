@@ -625,6 +625,61 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
         return nullptr;
     }
 
+    // CPART_DESIGN §9.1 derived primitive (bodyNaming). A feature's owning Body is no
+    // longer read from Group membership — it is *derived*: walk the BaseFeature chain
+    // forward from this feature and stop at the FIRST feature that is some Body's Tip;
+    // that Body owns this feature. De-owned features (ARCHITECTURE §3.2/§3.3) carry no
+    // Group membership, so this forward walk — not hasObject() — is the source of truth.
+    // The answer is cached on the feature's transient _Body link (Prop_Output, so writing
+    // it neither dirties the feature nor triggers recompute; Prop_Transient, so it is
+    // never serialised — CPART_DESIGN §9 / §8.2). No persisted feature->Body link is
+    // introduced.
+    //
+    // Stopping at the FIRST Tip (not the chain terminal) is what keeps a cross-body seam
+    // correct: where Body B's chain bases on Body A's Tip (via a FeatureBase), A's
+    // upstream features must resolve to A — they would otherwise be dragged across the
+    // seam to B's Tip at the terminal of the merged chain.
+    if (feature->isDerivedFrom<PartDesign::Feature>()) {
+        auto* pdFeat = const_cast<PartDesign::Feature*>(
+            static_cast<const PartDesign::Feature*>(feature)
+        );
+
+        // Cache hit.
+        if (auto* cached = freecad_cast<Body*>(pdFeat->_Body.getValue())) {
+            return cached;
+        }
+
+        if (App::Document* doc = feature->getDocument()) {
+            const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
+            const auto bodies = doc->getObjectsOfType(Body::getClassTypeId());
+
+            // Walk forward, testing each feature for Tip-ownership before advancing.
+            // The seen-set guards against a malformed cyclic chain.
+            App::DocumentObject* cursor = pdFeat;
+            std::set<const App::DocumentObject*> seen;
+            while (cursor && seen.insert(cursor).second) {
+                for (auto* it : bodies) {
+                    auto* body = static_cast<Body*>(it);
+                    if (body->Tip.getValue() == cursor) {
+                        pdFeat->_Body.setValue(body);
+                        return body;
+                    }
+                }
+                App::DocumentObject* next = nullptr;
+                for (auto* obj : pdFeats) {
+                    if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == cursor) {
+                        next = obj;
+                        break;
+                    }
+                }
+                cursor = next;
+            }
+        }
+    }
+
+    // Fall-through for non-PartDesign objects (and any feature genuinely still held in a
+    // Group): the legacy membership query. The de-owned chain walk above has already
+    // handled every PartDesign::Feature case.
     return static_cast<Body*>(BodyBase::findBodyOf(feature));
 }
 
