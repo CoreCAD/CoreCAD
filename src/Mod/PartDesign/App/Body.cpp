@@ -625,20 +625,22 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
         return nullptr;
     }
 
-    // CPART_DESIGN §9.1 derived primitive (bodyNaming). A feature's owning Body is no
-    // longer read from Group membership — it is *derived*: walk the BaseFeature chain
-    // forward from this feature and stop at the FIRST feature that is some Body's Tip;
-    // that Body owns this feature. De-owned features (ARCHITECTURE §3.2/§3.3) carry no
-    // Group membership, so this forward walk — not hasObject() — is the source of truth.
-    // The answer is cached on the feature's transient _Body link (Prop_Output, so writing
-    // it neither dirties the feature nor triggers recompute; Prop_Transient, so it is
-    // never serialised — CPART_DESIGN §9 / §8.2). No persisted feature->Body link is
-    // introduced.
+    // CPART_DESIGN §9.1 derived primitive (bodyNaming). This is a reverse lookup, not an
+    // ownership read: a Body only ever points one way, at the Tip it marks. Asking "which
+    // Body is this feature under" means walking the BaseFeature chain forward from the
+    // feature and stopping at the FIRST feature that is some Body's Tip — the nearest
+    // downstream marker. That marker is the answer. The result is a derived view of the
+    // current graph (single only because chains are linear today), never an attribute the
+    // feature carries: nothing feature->Body is stored. The answer is memoised on the
+    // feature's transient _Body link (Prop_Output, so writing it neither dirties the
+    // feature nor triggers recompute; Prop_Transient, so it is never serialised —
+    // CPART_DESIGN §9 / §8.2). De-owned features (ARCHITECTURE §3.2/§3.3) sit in no Group,
+    // so this forward walk — not hasObject() — is the source of truth.
     //
-    // Stopping at the FIRST Tip (not the chain terminal) is what keeps a cross-body seam
-    // correct: where Body B's chain bases on Body A's Tip (via a FeatureBase), A's
-    // upstream features must resolve to A — they would otherwise be dragged across the
-    // seam to B's Tip at the terminal of the merged chain.
+    // Stopping at the FIRST downstream Tip (not the chain terminal) is what keeps a
+    // cross-body seam correct: where Body B's chain bases on Body A's Tip (via a
+    // FeatureBase), A's upstream features must resolve to A — they would otherwise be
+    // dragged across the seam to B's Tip at the terminal of the merged chain.
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         auto* pdFeat = const_cast<PartDesign::Feature*>(
             static_cast<const PartDesign::Feature*>(feature)
@@ -653,8 +655,9 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
             const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
             const auto bodies = doc->getObjectsOfType(Body::getClassTypeId());
 
-            // Walk forward, testing each feature for Tip-ownership before advancing.
-            // The seen-set guards against a malformed cyclic chain.
+            // Walk forward, testing whether each feature is some Body's Tip — i.e. the
+            // nearest downstream marker — before advancing. The seen-set guards against a
+            // malformed cyclic chain.
             App::DocumentObject* cursor = pdFeat;
             std::set<const App::DocumentObject*> seen;
             while (cursor && seen.insert(cursor).second) {
@@ -677,9 +680,9 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
         }
     }
 
-    // Fall-through for non-PartDesign objects (and any feature genuinely still held in a
-    // Group): the legacy membership query. The de-owned chain walk above has already
-    // handled every PartDesign::Feature case.
+    // Fall-through for non-PartDesign objects (and any feature still sitting in a legacy
+    // Group): the old Group-scan lookup. The derived chain walk above has already handled
+    // every PartDesign::Feature case.
     return static_cast<Body*>(BodyBase::findBodyOf(feature));
 }
 
@@ -1276,14 +1279,14 @@ App::DocumentObject* Body::getSubObject(
             }
         }
     }
-    // Cruth de-ownership (§3.3): a Body owns its pipeline features by reference, not via
-    // Group membership, so the base GeoFeatureGroup resolver (which looks children up in
+    // Cruth de-ownership (§3.3): a Body's pipeline features reference it, they are not
+    // held in its Group, so the base GeoFeatureGroup resolver (which looks children up in
     // Group) cannot resolve a "Feature.SubElement" path such as "Pad.Edge3" or
     // "BakedShape.Edge3" — the selection that drives fillet/dressup edge picking. Per the
     // architecture's reference model, a sub-element reference is anchored to the *feature*
     // that emits it (ARCHITECTURE §3 references table: "Anchored to the feature"), so a
-    // click on an edge must resolve through the owning feature, not the Body. When the
-    // first path component names a feature this Body owns by reference, delegate the
+    // click on an edge must resolve through the emitting feature, not the Body. When the
+    // first path component names a feature that resolves to this Body, delegate the
     // remainder to that feature. (A plain "Edge3" with no feature component still resolves
     // against the Body's Tip shape via the fall-through below, unchanged.)
     if (subname && *subname && !Data::isMappedElement(subname)) {
@@ -1334,9 +1337,10 @@ void Body::rebuildBodyCacheFromChain()
         return;
     }
 
-    // Tips owned by OTHER bodies mark the seam where this body's chain ends: walking back
-    // from our Tip, the first feature that is another body's Tip belongs to that upstream
-    // body (the cross-body FeatureBase reference), and so does everything before it.
+    // The Tips that OTHER bodies mark are the seams where this body's chain ends: walking
+    // back from our Tip, the first feature that is another body's Tip has that upstream
+    // marker as its nearest downstream Tip (the cross-body FeatureBase reference), and so
+    // does everything before it — none of it resolves to us.
     std::set<const App::DocumentObject*> otherTips;
     for (auto* it : doc->getObjectsOfType(Body::getClassTypeId())) {
         auto* body = static_cast<Body*>(it);
@@ -1345,8 +1349,8 @@ void Body::rebuildBodyCacheFromChain()
         }
     }
 
-    // Walk back from the Tip along BaseFeature, claiming each feature for this body until
-    // the seam. The seen-set guards against a malformed cyclic chain.
+    // Walk back from the Tip along BaseFeature, memoising this marker on each feature that
+    // resolves to us, up to the seam. The seen-set guards against a malformed cyclic chain.
     App::DocumentObject* cursor = Tip.getValue();
     std::set<const App::DocumentObject*> seen;
     while (cursor && seen.insert(cursor).second) {
@@ -1364,8 +1368,8 @@ void Body::rebuildBodyCacheFromChain()
 
 void Body::onDocumentRestored()
 {
-    // CPART_DESIGN §9 / §8.3: feature->Body membership is not serialised; it is
-    // reconstructed by query at load. Repopulate the transient _Body cache from the
+    // CPART_DESIGN §9 / §8.3: the feature->marker relationship is not serialised; it is
+    // re-derived by query at load. Repopulate the transient _Body cache from the
     // BaseFeature chain (Group is empty under de-ownership). findBodyOf self-heals on
     // demand, but direct _Body readers — findOwnedFeature, the de-owned sub-element path
     // — need the cache warm before the first selection click.

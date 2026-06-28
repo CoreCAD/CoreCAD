@@ -65,6 +65,10 @@ public:
 
     /// Base feature which this feature will be fused into or cut out of
     App::PropertyLink BaseFeature;
+    /// Transient memo of the nearest downstream Body marker for this feature (CPART_DESIGN
+    /// §9). NOT a stored membership: it is Prop_Transient, never serialised, and always
+    /// re-derivable from the BaseFeature chain via Body::findBodyOf. The name is legacy;
+    /// read it as a cache of the reverse lookup, not as a body this feature belongs to.
     App::PropertyLinkHidden _Body;
 
     /// Keep a copy of suppressed shapes so that we can restore them (and maybe display them)
