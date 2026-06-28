@@ -275,6 +275,12 @@ protected:
     void onDocumentRestored() override;
 
 private:
+    /// Cruth de-ownership (§3.3): find a pipeline feature this Body owns *by reference*
+    /// (via Feature::_Body) whose name (or $-prefixed label) matches, for sub-object path
+    /// resolution. Features are no longer Group members, so the Group-based resolver cannot
+    /// see them. Returns nullptr if no owned feature matches.
+    PartDesign::Feature* findOwnedFeature(const std::string& name) const;
+
     fastsignals::scoped_connection connection;
     bool showTip = false;
 };

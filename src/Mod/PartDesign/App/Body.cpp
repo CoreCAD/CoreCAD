@@ -1162,6 +1162,26 @@ std::vector<std::string> Body::getSubObjects(int reason) const
     return {};
 }
 
+PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
+{
+    App::Document* doc = getDocument();
+    if (!doc || name.empty()) {
+        return nullptr;
+    }
+    const bool byLabel = name[0] == '$';
+    const std::string key = byLabel ? name.substr(1) : name;
+    for (auto* feat : doc->getObjectsOfType<PartDesign::Feature>()) {
+        if (feat->_Body.getValue() != this) {
+            continue;
+        }
+        const char* fname = feat->getNameInDocument();
+        if (byLabel ? (key == feat->Label.getStrValue()) : (fname && key == fname)) {
+            return feat;
+        }
+    }
+    return nullptr;
+}
+
 App::DocumentObject* Body::getSubObject(
     const char* subname,
     PyObject** pyObj,
@@ -1197,6 +1217,29 @@ App::DocumentObject* Body::getSubObject(
                             depth + 1
                         );
                     }
+                }
+            }
+        }
+    }
+    // Cruth de-ownership (§3.3): a Body owns its pipeline features by reference, not via
+    // Group membership, so the base GeoFeatureGroup resolver (which looks children up in
+    // Group) cannot resolve a "Feature.SubElement" path such as "Pad.Edge3" or
+    // "BakedShape.Edge3" — the selection that drives fillet/dressup edge picking. Per the
+    // architecture's reference model, a sub-element reference is anchored to the *feature*
+    // that emits it (ARCHITECTURE §3 references table: "Anchored to the feature"), so a
+    // click on an edge must resolve through the owning feature, not the Body. When the
+    // first path component names a feature this Body owns by reference, delegate the
+    // remainder to that feature. (A plain "Edge3" with no feature component still resolves
+    // against the Body's Tip shape via the fall-through below, unchanged.)
+    if (subname && *subname && !Data::isMappedElement(subname)) {
+        if (const char* dot = strchr(subname, '.')) {
+            const std::string first(subname, dot);
+            if (!Group.findUsingMap(first)) {  // not a (still-grouped) child
+                if (auto* feat = findOwnedFeature(first)) {
+                    if (pmat && transform) {
+                        *pmat *= Placement.getValue().toMatrix();
+                    }
+                    return feat->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
                 }
             }
         }
