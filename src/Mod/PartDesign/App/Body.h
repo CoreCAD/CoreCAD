@@ -266,6 +266,12 @@ protected:
     /// Removes all planes and axis if they are still linked to the document
     void unsetupObject() override;
 
+    /// Cruth shared-Origin contract (GitHub #4): bind this Body's Origin link to the single
+    /// shared document Origin instead of minting a private per-body one.
+    void onExtendedSetupObject() override;
+    /// Counterpart to the above: detach (do not delete) the shared Origin on retirement.
+    void onExtendedUnsetupObject() override;
+
     void onDocumentRestored() override;
 
 private:
