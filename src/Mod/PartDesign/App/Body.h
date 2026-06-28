@@ -170,8 +170,14 @@ public:
     }
 
     /**
-     * Return the body which this feature belongs too, or NULL
-     * The only difference to BodyBase::findBodyOf() is that this one casts value to Body*
+     * Return the nearest downstream Body marker for @p feature, or NULL.
+     *
+     * CPART_DESIGN §9.1: this is a reverse lookup, not an ownership read. A Body points
+     * only one way — at the Tip it marks — so "which Body is this feature under" is
+     * answered by walking the BaseFeature chain forward to the first feature that is some
+     * Body's Tip and returning that marker. The result is a derived view of the current
+     * graph, never a stored attribute of the feature. Group membership is no longer
+     * consulted for PartDesign features (it is empty under de-ownership).
      */
     static Body* findBodyOf(const App::DocumentObject* feature);
 
@@ -275,17 +281,18 @@ protected:
     void onDocumentRestored() override;
 
 private:
-    /// Cruth de-ownership (§3.3): find a pipeline feature this Body owns *by reference*
-    /// (via Feature::_Body) whose name (or $-prefixed label) matches, for sub-object path
-    /// resolution. Features are no longer Group members, so the Group-based resolver cannot
-    /// see them. Returns nullptr if no owned feature matches.
+    /// Cruth de-ownership (§3.3): find a pipeline feature that resolves to this Body (via
+    /// the derived Feature::_Body marker) whose name (or $-prefixed label) matches, for
+    /// sub-object path resolution. Features are no longer Group members, so the Group-based
+    /// resolver cannot see them. Returns nullptr if no matching feature resolves to us.
     PartDesign::Feature* findOwnedFeature(const std::string& name) const;
 
     /// Cruth de-ownership (§9 / §8.3): repopulate the transient Feature::_Body cache from
-    /// the BaseFeature chain after a document restore. Membership is not serialised, so it
-    /// is reconstructed by walking back from the Tip and claiming each feature up to the
-    /// seam (where the chain bases on another Body's Tip via a FeatureBase). Group is empty
-    /// under de-ownership and is no longer consulted.
+    /// the BaseFeature chain after a document restore. The feature->marker relationship is
+    /// not serialised, so it is re-derived by walking back from the Tip and memoising this
+    /// marker on each feature that resolves to us, up to the seam (where the chain bases on
+    /// another Body's Tip via a FeatureBase). Group is empty under de-ownership and is no
+    /// longer consulted.
     void rebuildBodyCacheFromChain();
 
     fastsignals::scoped_connection connection;
