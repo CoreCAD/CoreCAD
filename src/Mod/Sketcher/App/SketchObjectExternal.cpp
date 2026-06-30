@@ -212,6 +212,11 @@ bool SketchObject::isExternalAllowed(App::Document* pDoc, App::DocumentObject* p
 
     // Note: Checking for the body of the support doesn't work when the support are the three base
     // planes
+    //
+    // PARKED (Cruth #9): these base-layer findBodyOf calls scan the (now-empty) Body Group and
+    // return nullptr under de-ownership. They cannot use the §9.1 reverse-lookup because Sketcher
+    // must not depend on PartDesign (where the BaseFeature chain lives). Fix once that primitive is
+    // lowered into the shared Part layer — fork-break scope.
     Part::BodyBase* body_this = Part::BodyBase::findBodyOf(this);
     Part::BodyBase* body_obj = Part::BodyBase::findBodyOf(pObj);
 
@@ -290,6 +295,9 @@ bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject*
 
     // Note: Checking for the body of the support doesn't work when the support are the three base
     // planes
+    //
+    // PARKED (Cruth #9): base-layer findBodyOf is nullptr under de-ownership — see the matching note
+    // in allowOtherBody above. Fork-break scope.
     Part::BodyBase* body_this = Part::BodyBase::findBodyOf(this);
     Part::BodyBase* body_obj = Part::BodyBase::findBodyOf(pObj);
     App::Part* part_this = App::Part::getPartOfObject(this);
