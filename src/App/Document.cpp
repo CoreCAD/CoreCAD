@@ -1011,6 +1011,12 @@ Document::Document(const char* documentName)
     Base::Uuid id;
     ADD_PROPERTY_TYPE(Id, (""), 0, Prop_None, "ID of the document");
     ADD_PROPERTY_TYPE(Uid, (id), 0, Prop_ReadOnly, "UUID of the document");
+    // Cruth: document-type marker. Empty = legacy/untyped; a Part document carries "Part".
+    ADD_PROPERTY_TYPE(DocumentType,
+                      (""),
+                      0,
+                      Prop_None,
+                      "Cruth document-type marker (e.g. \"Part\"); drives content scoping");
 
     // license stuff
     auto paramGrp {GetApplication().GetParameterGroupByPath(
