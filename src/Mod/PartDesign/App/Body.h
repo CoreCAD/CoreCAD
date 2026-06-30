@@ -63,6 +63,11 @@ public:
     /// sharing the Tip feature but carrying a distinct, element-map-stable id here.
     App::PropertyString TipComponentId;
 
+    /// Cruth §8.2 durable body identity — a UUID minted once at birth, never recomputed,
+    /// persisted. This is the stable id assemblies and BOMs resolve a body through (§13.1);
+    /// unlike the runtime which-solid predicate, it costs no robustness to topology changes.
+    App::PropertyUUID Uid;
+
     /// True if this body feature is active or was active when the document was last closed
     // App::PropertyBool IsActive;
 
