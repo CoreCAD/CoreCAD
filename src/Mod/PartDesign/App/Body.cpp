@@ -1113,7 +1113,26 @@ void Body::onChanged(const App::Property* prop)
         && !this->getDocument()->isPerformingTransaction()) {
         if (prop == &BaseFeature) {
             FeatureBase* bf = nullptr;
-            auto first = Group.getValues().empty() ? nullptr : Group.getValues().front();
+
+            // The chain root — the existing FeatureBase, if any — used to be Group.front().
+            // Under de-ownership Group is empty (§9.1), so find the root by walking the
+            // BaseFeature chain back from the Tip until it leaves this Body (null base, or a
+            // base belonging to another Body across a seam). Reading Group here would always
+            // see "empty" and mint a duplicate FeatureBase on every BaseFeature re-set.
+            App::DocumentObject* first = nullptr;
+            std::set<App::DocumentObject*> seen;
+            for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
+                auto* pd = freecad_cast<PartDesign::Feature*>(cursor);
+                if (!pd) {
+                    break;
+                }
+                App::DocumentObject* base = pd->BaseFeature.getValue();
+                if (!base || findBodyOf(base) != this) {
+                    first = cursor;  // earliest member of this Body's chain
+                    break;
+                }
+                cursor = base;
+            }
 
             if (BaseFeature.getValue()) {
                 // setup the FeatureBase if needed
@@ -1135,7 +1154,11 @@ void Body::onChanged(const App::Property* prop)
             }
         }
         else if (prop == &Group) {
-            // if the FeatureBase was deleted we set the BaseFeature link to nullptr
+            // Legacy FeatureBase-deletion guard: if the FeatureBase was removed, clear the
+            // body-level BaseFeature link. Dormant under de-ownership — features no longer
+            // enter or leave Group, so this Group change never fires for a born-de-owned
+            // body. FeatureBase removal is handled along the chain by removeFeature instead.
+            // Kept for any legacy doc whose features still sit in Group.
             if (BaseFeature.getValue()
                 && (Group.getValues().empty()
                     || !Group.getValues().front()->isDerivedFrom<FeatureBase>())) {
@@ -1166,7 +1189,9 @@ void Body::onChanged(const App::Property* prop)
             }
         }
         else if (prop == &ShapeMaterial) {
-            std::vector<App::DocumentObject*> features = Group.getValues();
+            // Derived membership (§9.1-inverse): Group is empty under de-ownership, so push
+            // the Body material onto its features via the derived list, not the container.
+            std::vector<App::DocumentObject*> features = getFullModel();
             if (!features.empty()) {
                 for (auto it : features) {
                     auto feature = dynamic_cast<Part::Feature*>(it);
@@ -1384,8 +1409,9 @@ App::DocumentObject* Body::getSubObject(
         return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
     }
 
-    // We return the shape only if there are feature visible inside
-    for (auto obj : Group.getValues()) {
+    // We return the shape only if there are feature visible inside. Derived membership
+    // (§9.1-inverse): Group is empty under de-ownership, so scan the derived list.
+    for (auto obj : getFullModel()) {
         if (obj->Visibility.getValue() && obj->isDerivedFrom<PartDesign::Feature>()) {
             return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
         }
