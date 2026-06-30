@@ -59,10 +59,16 @@ public:
     App::PropertyString ActiveOption;
     /** The per-option Variant override table.
      *
-     * Each key is an option/target/property triple joined by the unit
-     * separator (0x1f): "<option>\x1f<objectName>\x1f<propertyName>"; each
-     * value is the serialized override value for that property under that
-     * option. Stored as a flat PropertyMap so it round-trips natively.
+     * Each key is an option/target/property triple joined by the pipe
+     * separator: "<option>|<objectName>|<propertyName>"; each value is the
+     * serialized override value for that property under that option. Stored as
+     * a flat PropertyMap so it round-trips natively. The separator must be an
+     * XML-legal character: a control char such as 0x1f is silently stripped
+     * when the PropertyMap serialises to the document XML, which corrupts the
+     * keys and loses the table on reopen. '|' is safe because object and
+     * property names are always identifiers (never contain '|'), and the
+     * option is matched as a full prefix, so parsing stays unambiguous even if
+     * an option name itself contains '|'.
      */
     App::PropertyMap Overrides;
 
@@ -80,8 +86,9 @@ protected:
      */
     void applyActiveOption();
 
-    /// Separator used to join the Overrides map key fields.
-    static const char keySep = '\x1f';
+    /// Separator used to join the Overrides map key fields. Must be XML-legal
+    /// (a control char like 0x1f is stripped on serialise and corrupts the keys).
+    static const char keySep = '|';
 };
 
 }  // namespace App
