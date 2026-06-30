@@ -110,7 +110,9 @@ PyObject* BodyPy::breakOutInstance(PyObject* args)
 
 Py::Object BodyPy::getVisibleFeature() const
 {
-    for (auto obj : getBodyPtr()->Group.getValues()) {
+    // Derived membership (§9.1-inverse): the Group is empty under de-ownership, so read the
+    // Body's features through getFullModel, which computes them from the feature graph.
+    for (auto obj : getBodyPtr()->getFullModel()) {
         if (obj->Visibility.getValue() && obj->isDerivedFrom<PartDesign::Feature>()) {
             return Py::Object(obj->getPyObject(), true);
         }

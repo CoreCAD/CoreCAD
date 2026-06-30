@@ -687,6 +687,73 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
 }
 
 
+std::vector<App::DocumentObject*> Body::getFullModel()
+{
+    // CPART_DESIGN §9.1-inverse. A de-owned Body keeps no Group (ARCHITECTURE §3.2/§3.3),
+    // so "what features make up this Body" is derived from the graph — the mirror image of
+    // findBodyOf — never read from a stored list. Two sources, matching the two ways a
+    // feature joins a Body:
+    //   1. Solid features: those whose findBodyOf resolves to this Body. Collected by
+    //      walking the BaseFeature chain back from the Tip, which stops naturally at a
+    //      cross-body seam (the upstream feature there belongs to the other Body).
+    //   2. Loose features (sketches, datums, shapebinders): those whose §8.5 attachment
+    //      anchor-walk terminates on this Body.
+    // Returned solids-first in build order, then the loose features.
+    std::vector<App::DocumentObject*> rv;
+    App::Document* doc = getDocument();
+    if (!doc) {
+        return rv;
+    }
+
+    // 1) Solid chain, Tip → base, including only members (findBodyOf == this); the membership
+    //    test is what halts the walk at a seam. Reversed afterwards to give build order.
+    std::set<App::DocumentObject*> seen;
+    for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
+        auto* pd = freecad_cast<PartDesign::Feature*>(cursor);
+        if (!pd || findBodyOf(cursor) != this) {
+            break;  // non-PartDesign terminal, or crossed the seam into another Body
+        }
+        rv.push_back(cursor);
+        cursor = pd->BaseFeature.getValue();
+    }
+    std::reverse(rv.begin(), rv.end());
+    const std::set<App::DocumentObject*> solidMembers(rv.begin(), rv.end());
+
+    // 2) Loose features (sketches, datums, shapebinders) that are not part of the solid
+    //    chain. One belongs to this Body when either:
+    //      (a) a member solid references it — e.g. a profile sketch consumed by a Pad, even
+    //          when that sketch sits on a global plane; or
+    //      (b) its §8.5 attachment anchor-walk terminates on this Body — e.g. a datum
+    //          attached to one of this Body's faces.
+    for (auto* obj : doc->getObjects()) {
+        if (obj->isDerivedFrom<PartDesign::Feature>()) {
+            continue;  // solids handled by the chain walk above
+        }
+        if (!obj->getExtensionByType<Part::AttachExtension>(true)) {
+            continue;  // only attachable geometry can belong to a Body
+        }
+
+        bool member = false;
+        for (auto* consumer : obj->getInList()) {  // (a) referenced by a member solid
+            if (solidMembers.count(consumer)) {
+                member = true;
+                break;
+            }
+        }
+        if (!member) {  // (b) anchored into this Body's geometry
+            std::set<PartDesign::Body*> bodies;
+            walkAnchorChain(obj, bodies, 0);
+            member = bodies.count(this) > 0;
+        }
+        if (member) {
+            rv.push_back(obj);
+        }
+    }
+
+    return rv;
+}
+
+
 std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
 {
     if (!isAllowed(feature)) {

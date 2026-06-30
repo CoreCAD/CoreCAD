@@ -182,6 +182,18 @@ public:
     static Body* findBodyOf(const App::DocumentObject* feature);
 
     /**
+     * Return the features that make up this Body, derived from the feature graph.
+     *
+     * CPART_DESIGN §9.1-inverse: a de-owned Body keeps no Group, so its member list is
+     * computed, not stored — the mirror image of findBodyOf. Solid features are those
+     * whose findBodyOf resolves to this Body (collected along the BaseFeature chain from
+     * the Tip back, which stops naturally at a cross-body seam). Loose features (sketches,
+     * datums, shapebinders) belong here when their §8.5 attachment anchor-walk terminates
+     * on this Body. Returned solids-first in build order, then the loose features.
+     */
+    std::vector<App::DocumentObject*> getFullModel() override;
+
+    /**
      * Cruth §8.5/§4.6: resolve the base Body for a new sketch-based feature by
      * walking the sketch's anchor chain (AttachmentSupport through datums/reference
      * geometry).
