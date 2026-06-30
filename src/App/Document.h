@@ -173,6 +173,9 @@ public:
     PropertyString Id;
     /// A unique identifier of the document.
     PropertyUUID Uid;
+    /// Cruth document-type marker (e.g. "Part"); drives content scoping and workbench
+    /// selection. Empty on legacy/untyped documents. (CPART_DESIGN §8.2 / ARCHITECTURE §7.4)
+    PropertyString DocumentType;
     /// The full name of the licence e.g. "Creative Commons Attribution". See https://spdx.org/licenses/.
     PropertyString License;
     /// The URL to the license description or contract.
