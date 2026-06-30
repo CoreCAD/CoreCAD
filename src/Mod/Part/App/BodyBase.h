@@ -59,8 +59,10 @@ public:
      */
     App::PropertyLink BaseFeature;
 
-    /// Returns all Group objects prepanded by BaseFeature (if any)
-    std::vector<App::DocumentObject*> getFullModel()
+    /// Returns all Group objects prepanded by BaseFeature (if any).
+    /// Virtual so a de-owned Body (Cruth) can derive its member list from the
+    /// feature graph instead of the now-empty Group — see PartDesign::Body.
+    virtual std::vector<App::DocumentObject*> getFullModel()
     {
         std::vector<App::DocumentObject*> rv;
         if (BaseFeature.getValue()) {
