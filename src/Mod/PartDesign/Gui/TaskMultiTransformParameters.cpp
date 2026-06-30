@@ -251,7 +251,7 @@ void TaskMultiTransformParameters::onTransformAddMirrored()
         "Mirror"
     );
     auto pcBody = dynamic_cast<PartDesign::Body*>(
-        Part::BodyBase::findBodyOf(getTopTransformedObject())
+        PartDesign::Body::findBodyOf(getTopTransformedObject())
     );
     if (!pcBody) {
         return;
@@ -291,7 +291,7 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
         "Linear Pattern"
     );
     auto pcBody = dynamic_cast<PartDesign::Body*>(
-        Part::BodyBase::findBodyOf(getTopTransformedObject())
+        PartDesign::Body::findBodyOf(getTopTransformedObject())
     );
     if (!pcBody) {
         return;
@@ -314,7 +314,7 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
     else {
         // set Direction value before filling up the combo box to avoid creating an empty item
         // inside updateUI()
-        auto body = dynamic_cast<PartDesign::Body*>(Part::BodyBase::findBodyOf(getObject()));
+        auto body = dynamic_cast<PartDesign::Body*>(PartDesign::Body::findBodyOf(getObject()));
         if (body) {
             FCMD_OBJ_CMD(
                 Feat,
@@ -340,7 +340,7 @@ void TaskMultiTransformParameters::onTransformAddPolarPattern()
         "Polar Pattern"
     );
     auto pcBody = dynamic_cast<PartDesign::Body*>(
-        Part::BodyBase::findBodyOf(getTopTransformedObject())
+        PartDesign::Body::findBodyOf(getTopTransformedObject())
     );
     if (!pcBody) {
         return;
@@ -379,7 +379,7 @@ void TaskMultiTransformParameters::onTransformAddScaled()
     closeSubTask();
     std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("Scale");
     auto pcBody = dynamic_cast<PartDesign::Body*>(
-        Part::BodyBase::findBodyOf(getTopTransformedObject())
+        PartDesign::Body::findBodyOf(getTopTransformedObject())
     );
     if (!pcBody) {
         return;

@@ -282,7 +282,7 @@ void ViewProvider::onChanged(const App::Property* prop)
     // if the object is inside of a body we make sure it is the only visible one on activation
     if (prop == &Visibility && Visibility.getValue()) {
 
-        Part::BodyBase* body = Part::BodyBase::findBodyOf(getObject());
+        Part::BodyBase* body = PartDesign::Body::findBodyOf(getObject());
         if (body) {
 
             // hide all features in the body other than this object
