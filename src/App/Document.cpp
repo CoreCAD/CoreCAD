@@ -1010,6 +1010,8 @@ Document::Document(const char* documentName)
     // create the uuid for the document
     Base::Uuid id;
     ADD_PROPERTY_TYPE(Id, (""), 0, Prop_None, "ID of the document");
+    // Cruth: revision label, part of the §8.2 metadata header read by PDM/BOM tools.
+    ADD_PROPERTY_TYPE(Revision, (""), 0, Prop_None, "Cruth revision label (e.g. \"A\", \"01\")");
     ADD_PROPERTY_TYPE(Uid, (id), 0, Prop_ReadOnly, "UUID of the document");
     // Cruth: document-type marker. Empty = legacy/untyped; a Part document carries "Part".
     ADD_PROPERTY_TYPE(DocumentType,
