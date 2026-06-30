@@ -43,6 +43,7 @@
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
 #include <Base/Tools.h>
+#include <Base/Uuid.h>
 
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/Part2DObject.h>
@@ -168,6 +169,17 @@ Body::Body()
         App::Prop_None,
         "Cruth §3.3 component-id half of the (feature, component-id) Tip identity; empty means "
         "the implicit single-component case"
+    );
+    // Cruth §8.2: mint a durable body UUID at birth. On file load the persisted value restores
+    // over this freshly-minted one (same pattern as App::Document::Uid). Read-only — never
+    // recomputed, so body identity is robust to topology changes by construction (§13.1).
+    Base::Uuid bodyId;
+    ADD_PROPERTY_TYPE(
+        Uid,
+        (bodyId),
+        "Base",
+        App::Prop_ReadOnly,
+        "Cruth §8.2 durable body identity; minted once at birth, persisted, never recomputed"
     );
 
     _GroupTouched.setStatus(App::Property::Output, true);
