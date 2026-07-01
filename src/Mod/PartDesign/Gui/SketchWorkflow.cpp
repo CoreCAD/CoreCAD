@@ -365,8 +365,12 @@ public:
             }
 
             planes.push_back(plane);
-            // Check whether this plane belongs to the active body
-            if (activeBody->hasObject(plane, true)) {
+            // Check whether this plane belongs to the active body: a datum plane derives to the
+            // body's Tip; a world-frame base plane lives in the single shared document Origin and
+            // is valid for every body (Cruth §11 step 5e shared-Origin).
+            if (PartDesign::Body::findBodyOf(plane) == activeBody
+                || (plane->isDerivedFrom<App::DatumElement>()
+                    && static_cast<App::DatumElement*>(plane)->isOriginFeature())) {
                 if (!activeBody->isAfterInsertPoint(plane)) {
                     validPlaneCount++;
                     status.push_back(PartDesignGui::TaskFeaturePick::validFeature);
@@ -408,7 +412,7 @@ public:
         shapeBinders.insert(shapeBinders.end(), binders.begin(), binders.end());
         for (auto binder : shapeBinders) {
             // Check whether this plane belongs to the active body
-            if (activeBody->hasObject(binder)) {
+            if (PartDesign::Body::findBodyOf(binder) == activeBody) {
                 Part::TopoShape shape = static_cast<Part::Feature*>(binder)->Shape.getShape();
                 if (shape.isPlanar()) {
                     if (!activeBody->isAfterInsertPoint(binder)) {

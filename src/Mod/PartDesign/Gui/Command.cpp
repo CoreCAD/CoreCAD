@@ -750,7 +750,7 @@ unsigned validateSketches(
             }
         }
         bool isCrossBody = false;
-        if (pcActiveBody && !pcActiveBody->hasObject(*s)) {
+        if (pcActiveBody && PartDesign::Body::findBodyOf(*s) != pcActiveBody) {
             // Check whether this sketch belongs to a body of the same part
             PartDesign::Body* b = PartDesign::Body::findBodyOf(*s);
             if (!b) {

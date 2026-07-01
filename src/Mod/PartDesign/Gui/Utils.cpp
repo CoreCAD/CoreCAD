@@ -260,10 +260,8 @@ PartDesign::Body* getBodyFor(
 
     PartDesign::Body* rv
         = getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
-    if (rv && rv->hasObject(obj)) {
-        return rv;
-    }
-
+    // Membership is a reverse lookup up the BaseFeature chain, not a Group read: a de-owned
+    // feature is never in the active body's (empty) Group (Cruth §11 step 5e).
     rv = PartDesign::Body::findBodyOf(obj);
     if (rv) {
         return rv;
