@@ -1196,15 +1196,17 @@ void Body::onChanged(const App::Property* prop)
             }
         }
         else if (prop == &Placement) {
-            // Cruth substrate flip, Stage 3a (interim guard). In the de-ownership
-            // model the modeling Body carries no coordinate frame of its own — the
-            // frame comes from each feature's attachment, not from Body containment
-            // (Day-5 design; ARCHITECTURE §3.3). De-owned features do not inherit
-            // Body.Placement, so a non-identity Body placement would silently diverge
-            // from its features (the Day-1 Experiment-C case). Pin it back to identity
-            // on any live edit until Stage 3b removes the property outright. Restore
-            // and undo/redo are excluded by the guard above, so loaded data is never
-            // mutated; this fires only on a live user change (e.g. dragging the Body).
+            // Cruth substrate flip (de-ownership): the modeling Body carries no coordinate
+            // frame of its own — the frame comes from each feature's attachment, not from
+            // Body containment (ARCHITECTURE §3.3). De-owned features do not inherit
+            // Body.Placement, so a non-identity Body placement would silently diverge from
+            // its features (the Day-1 Experiment-C case). The property itself cannot be
+            // removed: it lives on the shared App::GeoFeature base and every Part::Feature
+            // inherits it. So this is a PERMANENT guard, not interim — it pins the frame to
+            // identity on any live edit (e.g. dragging the Body) for as long as Body derives
+            // from GeoFeature. Removing it requires reparenting Body off GeoFeature; tracked
+            // as CoreCAD/CoreCAD#12. Restore and undo/redo are excluded by the guard above,
+            // so loaded data is never mutated; this fires only on a live user change.
             const Base::Placement identity;
             if (Placement.getValue() != identity) {
                 Placement.setValue(identity);
