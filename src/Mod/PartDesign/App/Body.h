@@ -198,6 +198,12 @@ public:
      */
     std::vector<App::DocumentObject*> getFullModel() override;
 
+    /// Cruth de-ownership (§3.3): find a pipeline feature that resolves to this Body (via
+    /// the derived Feature::_Body marker) whose name (or $-prefixed label) matches, for
+    /// sub-object path resolution. Features are no longer Group members, so the Group-based
+    /// resolver cannot see them. Returns nullptr if no matching feature resolves to us.
+    PartDesign::Feature* findOwnedFeature(const std::string& name) const;
+
     /**
      * Cruth §8.5/§4.6: resolve the base Body for a new sketch-based feature by
      * walking the sketch's anchor chain (AttachmentSupport through datums/reference
@@ -298,12 +304,6 @@ protected:
     void onDocumentRestored() override;
 
 private:
-    /// Cruth de-ownership (§3.3): find a pipeline feature that resolves to this Body (via
-    /// the derived Feature::_Body marker) whose name (or $-prefixed label) matches, for
-    /// sub-object path resolution. Features are no longer Group members, so the Group-based
-    /// resolver cannot see them. Returns nullptr if no matching feature resolves to us.
-    PartDesign::Feature* findOwnedFeature(const std::string& name) const;
-
     /// Cruth de-ownership (§9 / §8.3): repopulate the transient Feature::_Body cache from
     /// the BaseFeature chain after a document restore. The feature->marker relationship is
     /// not serialised, so it is re-derived by walking back from the Tip and memoising this

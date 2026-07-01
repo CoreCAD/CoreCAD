@@ -1368,33 +1368,11 @@ App::DocumentObject* Body::getSubObject(
         ++subname;  // skip leading .
     }
 
-    // PartDesign::Feature now support grouping sibling features, and the user
-    // is free to expand/collapse at any time. To not disrupt subname path
-    // because of this, the body will peek the next two sub-objects reference,
-    // and skip the first sub-object if possible.
-    if (subname) {
-        const char* firstDot = strchr(subname, '.');
-        if (firstDot) {
-            const char* secondDot = strchr(firstDot + 1, '.');
-            if (secondDot) {
-                auto firstObj = Group.find(std::string(subname, firstDot).c_str());
-                if (!firstObj || firstObj->isDerivedFrom<PartDesign::Feature>()) {
-                    auto secondObj = Group.find(std::string(firstDot + 1, secondDot).c_str());
-                    if (secondObj) {
-                        // we support only one level of sibling grouping, so no
-                        // recursive call to our own getSubObject()
-                        return Part::BodyBase::getSubObject(
-                            firstDot + 1,
-                            pyObj,
-                            pmat,
-                            transform,
-                            depth + 1
-                        );
-                    }
-                }
-            }
-        }
-    }
+    // (Cruth §11 step 5c) The legacy sibling-grouping peek that skipped a display-folder
+    // path component was removed here: feature grouping placed those folders in Body.Group,
+    // which is empty under de-ownership, so the peek was inert. Path resolution now runs
+    // entirely through the derived findOwnedFeature delegation below.
+
     // Cruth de-ownership (§3.3): a Body's pipeline features reference it, they are not
     // held in its Group, so the base GeoFeatureGroup resolver (which looks children up in
     // Group) cannot resolve a "Feature.SubElement" path such as "Pad.Edge3" or
@@ -1408,13 +1386,11 @@ App::DocumentObject* Body::getSubObject(
     if (subname && *subname && !Data::isMappedElement(subname)) {
         if (const char* dot = strchr(subname, '.')) {
             const std::string first(subname, dot);
-            if (!Group.findUsingMap(first)) {  // not a (still-grouped) child
-                if (auto* feat = findOwnedFeature(first)) {
-                    if (pmat && transform) {
-                        *pmat *= Placement.getValue().toMatrix();
-                    }
-                    return feat->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
+            if (auto* feat = findOwnedFeature(first)) {
+                if (pmat && transform) {
+                    *pmat *= Placement.getValue().toMatrix();
                 }
+                return feat->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
             }
         }
     }
