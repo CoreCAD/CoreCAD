@@ -1023,14 +1023,6 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
         Tip.setValue(prevSolidFeature ? prevSolidFeature : nextSolidFeature);
     }
 
-    // Drop any stale legacy Group membership (no-op on a born-de-owned body).
-    std::vector<App::DocumentObject*> model = Group.getValues();
-    const auto it = std::ranges::find(model, feature);
-    if (it != model.end()) {
-        model.erase(it);
-        Group.setValues(model);
-    }
-
     std::vector<App::DocumentObject*> result = {feature};
 
     // Auto-retire (Cruth intra-body de-ownership, Day 4 — option 2). A Body is a
