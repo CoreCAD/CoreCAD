@@ -183,6 +183,15 @@ Body::Body()
     );
 
     _GroupTouched.setStatus(App::Property::Output, true);
+
+    // Cruth substrate flip, Stage 3b step 4 (first irreversible on-disk change). A de-owned
+    // Body carries no feature membership in Group — features are derived from the BaseFeature
+    // chain (§9.1-inverse), and Group stays empty by construction. Stop persisting it: writing
+    // a dead empty list serves no purpose and old FreeCAD-style Group ownership must not be
+    // re-established off disk. The extension (and the property itself) is retired in step 5;
+    // this only stops its content being saved. App::Part / DocumentObjectGroup are unaffected —
+    // the flag is set on this Body instance only.
+    Group.setStatus(App::Property::Transient, true);
 }
 
 Body* Body::spawnAutoBody(App::Document* doc)
