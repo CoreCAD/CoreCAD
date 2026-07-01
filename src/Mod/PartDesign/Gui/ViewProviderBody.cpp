@@ -24,6 +24,7 @@
 
 
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
+#include <Inventor/nodes/SoSeparator.h>
 #include <QMenu>
 
 #include <algorithm>
@@ -41,6 +42,7 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MDIView.h>
+#include <Gui/Selection/SoFCUnifiedSelection.h>
 #include <Gui/ViewProviderDatum.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
@@ -57,7 +59,7 @@ namespace sp = std::placeholders;
 
 const char* PartDesignGui::ViewProviderBody::BodyModeEnum[] = {"Through", "Tip", nullptr};
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesignGui::ViewProviderBody, PartGui::ViewProviderPart)
+PROPERTY_SOURCE(PartDesignGui::ViewProviderBody, PartGui::ViewProviderPart)
 
 ViewProviderBody::ViewProviderBody()
 {
@@ -66,15 +68,49 @@ ViewProviderBody::ViewProviderBody()
 
     sPixmap = "PartDesign_Body.svg";
 
-    Gui::ViewProviderOriginGroupExtension::initExtension(this);
+    // Own the scene nodes that the retired Gui OriginGroup extension used to provide
+    // (Cruth §11 step 5e). pcBodyChildren is both the "Group"/Through display-mask node
+    // and the 3D child root; front/back are the annotation separators.
+    pcBodyChildren = new Gui::SoFCSelectionRoot;
+    pcBodyChildren->ref();
+    pcBodyFront = new SoSeparator();
+    pcBodyFront->ref();
+    pcBodyBack = new SoSeparator();
+    pcBodyBack->ref();
 }
 
-ViewProviderBody::~ViewProviderBody() = default;
+ViewProviderBody::~ViewProviderBody()
+{
+    pcBodyChildren->unref();
+    pcBodyFront->unref();
+    pcBodyBack->unref();
+}
+
+SoGroup* ViewProviderBody::getChildRoot() const
+{
+    return pcBodyChildren;
+}
+
+SoSeparator* ViewProviderBody::getFrontRoot() const
+{
+    return pcBodyFront;
+}
+
+SoSeparator* ViewProviderBody::getBackRoot() const
+{
+    return pcBodyBack;
+}
 
 void ViewProviderBody::attach(App::DocumentObject* pcFeat)
 {
     // call parent attach method
     ViewProviderPart::attach(pcFeat);
+
+    // Register the "Group" display-mask mode against our own child-root node (formerly
+    // done by ViewProviderGeoFeatureGroupExtension::extensionAttach). onChanged() switches
+    // to this mode for "Through" body display; Document::handleChildren3D parents the
+    // pipeline features under the same node.
+    addDisplayMaskMode(pcBodyChildren, "Group");
 
     // set default display mode
     onChanged(&DisplayModeBody);
@@ -552,8 +588,8 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
 {
     auto* body = getObject<PartDesign::Body>();
     if (!body) {
-        // Degenerate case: fall back to the group-based extension behaviour.
-        return ViewProviderOriginGroupExtension::extensionClaimChildren();
+        // Degenerate case (no Body object): nothing to claim.
+        return {};
     }
 
     // 1. Derive the ordered solid pipeline from the BaseFeature chain.
@@ -631,8 +667,8 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
 {
     auto* body = getObject<PartDesign::Body>();
     if (!body) {
-        // Degenerate case: fall back to the group-based extension behaviour.
-        return ViewProviderOriginGroupExtension::extensionClaimChildren3D();
+        // Degenerate case (no Body object): nothing to claim.
+        return {};
     }
 
     // Flat set of every object that must inherit the body's coordinate frame:
@@ -694,11 +730,11 @@ void ViewProviderBody::setVisualBodyMode(bool bodymode)
 std::vector<std::string> ViewProviderBody::getDisplayModes() const
 {
 
-    // we get all display modes and remove the "Group" mode, as this is what we use for "Through"
-    // body display mode
-    std::vector<std::string> modes = ViewProviderPart::getDisplayModes();
-    modes.erase(modes.begin());
-    return modes;
+    // The user-facing display modes are the inherited Part modes only. "Through"/"Tip" are
+    // driven by the DisplayModeBody enum, not this list. The retired OriginGroup extension
+    // used to inject a leading "Group" mode that we erased here; with the extension gone it is
+    // no longer present, so nothing needs removing.
+    return ViewProviderPart::getDisplayModes();
 }
 
 PartDesign::Feature* ViewProviderBody::getShownFeature() const

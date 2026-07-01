@@ -29,7 +29,6 @@
 #include <Mod/PartDesign/PartDesignGlobal.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Gui/ViewProviderPart.h>
-#include <Gui/ViewProviderOriginGroupExtension.h>
 #include <QCoreApplication>
 #include <fastsignals/signal.h>
 
@@ -37,6 +36,11 @@ class SoGroup;
 class SoSeparator;
 class SbBox3f;
 class SoGetBoundingBoxAction;
+
+namespace Gui
+{
+class SoFCSelectionRoot;
+}
 namespace PartDesignGui
 {
 
@@ -46,11 +50,10 @@ namespace PartDesignGui
  *  If the Body is not active it shows only the result shape (tip).
  * \author jriegel
  */
-class PartDesignGuiExport ViewProviderBody: public PartGui::ViewProviderPart,
-                                            public Gui::ViewProviderOriginGroupExtension
+class PartDesignGuiExport ViewProviderBody: public PartGui::ViewProviderPart
 {
     Q_DECLARE_TR_FUNCTIONS(PartDesignGui::ViewProviderBody)
-    PROPERTY_HEADER_WITH_EXTENSIONS(PartDesignGui::ViewProviderBody);
+    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderBody);
 
 public:
     /// constructor
@@ -128,6 +131,19 @@ public:
     void show() override;
     void finishRestoring() override;
 
+    /**
+     * Scene-graph child plumbing, formerly supplied by the Gui OriginGroup extension
+     * (Cruth §11 step 5e). The Body is a coordinate container for its pipeline
+     * features in 3D: getChildRoot() returns the node under which
+     * Document::handleChildren3D parents the claimChildren3D() members, and it is
+     * the same node registered as the "Group" display-mask mode (Through mode).
+     * getFrontRoot()/getBackRoot() are the annotation separators the same code path
+     * clears, so all three must be non-null.
+     */
+    SoGroup* getChildRoot() const override;
+    SoSeparator* getFrontRoot() const override;
+    SoSeparator* getBackRoot() const override;
+
 protected:
     /// Copy over all visual properties to the child features
     void unifyVisualProperty(const App::Property* prop);
@@ -136,6 +152,11 @@ protected:
 
 private:
     static const char* BodyModeEnum[];
+
+    /// Own scene nodes replacing the retired Gui OriginGroup extension's group nodes.
+    Gui::SoFCSelectionRoot* pcBodyChildren;
+    SoSeparator* pcBodyFront;
+    SoSeparator* pcBodyBack;
 
     /// Ordered pipeline (base -> tip) derived by walking BaseFeature back from
     /// the Tip, with a cycle guard. Shared by claimChildren() and
