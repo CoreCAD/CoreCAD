@@ -155,7 +155,12 @@ bool ReferenceSelection::allowOrigin(
     if (fits) {  // check that it actually belongs to the chosen body or part
         try {    // here are some throwers
             if (body) {
-                if (body->hasObject(pObj, true)) {
+                // A datum belongs to the body if it derives to the body's Tip; a world-frame
+                // base plane/axis lives in the single shared document Origin and is valid for
+                // every body (Cruth §11 step 5e shared-Origin).
+                if (PartDesign::Body::findBodyOf(pObj) == body
+                    || (pObj->isDerivedFrom<App::DatumElement>()
+                        && static_cast<App::DatumElement*>(pObj)->isOriginFeature())) {
                     return true;
                 }
             }
@@ -176,7 +181,7 @@ bool ReferenceSelection::allowDatum(PartDesign::Body* body, App::DocumentObject*
     if (!body) {  // Allow selecting Part::Datum features from the active Body
         return false;
     }
-    else if (!type.testFlag(AllowSelection::OTHERBODY) && !body->hasObject(pObj)) {
+    else if (!type.testFlag(AllowSelection::OTHERBODY) && PartDesign::Body::findBodyOf(pObj) != body) {
         return false;
     }
 

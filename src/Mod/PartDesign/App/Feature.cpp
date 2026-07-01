@@ -541,22 +541,10 @@ TopoShape Feature::makeTopoShapeFromPlane(const App::DocumentObject* obj)
 
 Body* Feature::getFeatureBody() const
 {
-
-    auto body = freecad_cast<Body*>(_Body.getValue());
-    if (body) {
-        return body;
-    }
-
-    auto list = getInList();
-    for (auto in : list) {
-        if (in->isDerivedFrom<Body>() &&                // is Body?
-            static_cast<Body*>(in)->hasObject(this)) {  // is part of this Body?
-
-            return static_cast<Body*>(in);
-        }
-    }
-
-    return nullptr;
+    // De-owned features sit in no Group, so a Body's membership is a reverse lookup up the
+    // BaseFeature chain, not a Group read (Cruth §11 step 5e). findBodyOf already honours the
+    // transient _Body cache, so this simply delegates.
+    return Body::findBodyOf(this);
 }
 
 App::DocumentObject* Feature::getSubObject(

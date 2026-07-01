@@ -112,7 +112,8 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
                         }
                         // if all at least one selected feature doesn't belong to the same body
                         // disable the menu entry
-                        if (addMoveFeatureInTree && !body->hasObject(sel.pObject)) {
+                        if (addMoveFeatureInTree
+                            && PartDesign::Body::findBodyOf(sel.pObject) != body) {
                             addMoveFeatureInTree = false;
                         }
 
