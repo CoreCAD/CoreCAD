@@ -171,9 +171,6 @@ public:
     PropertyString Comment;
     /// The Id, e.g. a Part number.
     PropertyString Id;
-    /// Cruth revision label (e.g. "A", "B", "01") — the metadata-header field PDM/BOM tools
-    /// read alongside the part number. Empty on legacy/untyped documents. (CPART_DESIGN §8.2)
-    PropertyString Revision;
     /// A unique identifier of the document.
     PropertyUUID Uid;
     /// Cruth document-type marker (e.g. "Part"); drives content scoping and workbench
