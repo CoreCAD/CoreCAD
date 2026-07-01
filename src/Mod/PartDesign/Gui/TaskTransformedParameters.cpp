@@ -341,7 +341,7 @@ void TaskTransformedParameters::checkVisibility()
     }
     auto inset = feat->getInListEx(true);
     inset.emplace(feat);
-    for (auto obj : body->Group.getValues()) {
+    for (auto obj : body->getFullModel()) {
         if (!obj->Visibility.getValue() || !obj->isDerivedFrom<PartDesign::Feature>()) {
             continue;
         }

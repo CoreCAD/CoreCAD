@@ -299,7 +299,7 @@ void CmdPartDesignBody::activated(int iMsg)
             baseFeature->getDocument()->getObject(bodyString)
         );
         if (body) {
-            std::vector<App::DocumentObject*> links = body->Group.getValues();
+            std::vector<App::DocumentObject*> links = body->getFullModel();
             for (auto it : links) {
                 if (it->isDerivedFrom<PartDesign::FeatureBase>()) {
                     PartDesign::FeatureBase* base = static_cast<PartDesign::FeatureBase*>(it);
@@ -1092,7 +1092,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     }
 
     // Create a list of all features in this body
-    const std::vector<App::DocumentObject*>& model = body->Group.getValues();
+    const std::vector<App::DocumentObject*>& model = body->getFullModel();
 
     // Ask user to select the target feature
     bool ok;
@@ -1150,7 +1150,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     // depend on later objects
     std::vector<App::DocumentObject*> bodyFeatures;
     std::map<App::DocumentObject*, size_t> orders;
-    for (auto obj : body->Group.getValues()) {
+    for (auto obj : body->getFullModel()) {
         if (obj->isDerivedFrom<PartDesign::Feature>()) {
             orders.emplace(obj, bodyFeatures.size());
             bodyFeatures.push_back(obj);

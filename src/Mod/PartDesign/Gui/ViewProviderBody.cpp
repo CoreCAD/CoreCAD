@@ -112,7 +112,7 @@ void ViewProviderBody::onChangedObject(const Gui::ViewProvider& vp, const App::P
     if (!body) {
         return;
     }
-    const auto& features = body->Group.getValues();
+    const auto& features = body->getFullModel();
     bool isRelevantChange = (changedObj == body)
         || (std::ranges::find(features, changedObj) != features.end());
 
@@ -132,7 +132,7 @@ void ViewProviderBody::refreshOverlays()
     if (!body) {
         return;
     }
-    for (auto* obj : body->Group.getValues()) {
+    for (auto* obj : body->getFullModel()) {
         Gui::ViewProvider* vpBase = Gui::Application::Instance->getViewProvider(obj);
         if (auto* vpPartDesign = dynamic_cast<PartDesignGui::ViewProvider*>(vpBase)) {
             vpPartDesign->updateOverlay();
@@ -177,7 +177,7 @@ void ViewProviderBody::setOverrideMode(const std::string& mode)
             Gui::Document* gdoc = Gui::Application::Instance->getDocument(pcObject->getDocument());
             if (gdoc) {
                 PartDesign::Body* body = static_cast<PartDesign::Body*>(getObject());
-                auto features = body->Group.getValues();
+                auto features = body->getFullModel();
                 for (auto feature : features) {
                     if (feature && feature->isDerivedFrom<PartDesign::Feature>()) {
                         if (Gui::ViewProvider* vp = gdoc->getViewProvider(feature)) {
@@ -287,7 +287,7 @@ bool ViewProviderBody::doubleClicked()
 //    bool active = body->IsActive.getValue();
 //    //Base::Console().error("Body is %s\n", active ? "active" : "inactive");
 //    ActiveGuiDoc->signalHighlightObject(*this, Gui::Blue, active);
-//    std::vector<App::DocumentObject*> features = body->Group.getValues();
+//    std::vector<App::DocumentObject*> features = body->getFullModel();
 //    bool highlight = true;
 //    App::DocumentObject* tip = body->Tip.getValue();
 //    for (std::vector<App::DocumentObject*>::const_iterator f = features.begin(); f !=
@@ -322,7 +322,7 @@ void ViewProviderBody::updateData(const App::Property* prop)
         // We changed Tip
         App::DocumentObject* tip = body->Tip.getValue();
 
-        auto features = body->Group.getValues();
+        auto features = body->getFullModel();
 
         // restore icons
         for (auto feature : features) {
@@ -496,7 +496,7 @@ void ViewProviderBody::unifyVisualProperty(const App::Property* prop)
     Gui::Document* gdoc = Gui::Application::Instance->getDocument(pcObject->getDocument());
 
     PartDesign::Body* body = static_cast<PartDesign::Body*>(getObject());
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
     for (auto feature : features) {
 
         if (!feature->isDerivedFrom<PartDesign::Feature>()) {
@@ -563,7 +563,7 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
     // 2. Collect objects claimed by features (so profiles/sketches nest under
     //    their feature instead of appearing at body level). Both the chain
     //    features and any remaining Group members are potential claimers.
-    const std::vector<App::DocumentObject*> groupMembers = body->Group.getValues();
+    const std::vector<App::DocumentObject*> groupMembers = body->getFullModel();
     std::set<App::DocumentObject*> claimed;
     auto collectClaimed = [&](App::DocumentObject* obj) {
         if (!obj) {
@@ -657,7 +657,7 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
             }
         }
     }
-    for (auto* obj : body->Group.getValues()) {
+    for (auto* obj : body->getFullModel()) {
         emit(obj);
     }
 
@@ -677,7 +677,7 @@ void ViewProviderBody::setVisualBodyMode(bool bodymode)
     Gui::Document* gdoc = Gui::Application::Instance->getDocument(pcObject->getDocument());
 
     PartDesign::Body* body = static_cast<PartDesign::Body*>(getObject());
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
     for (auto feature : features) {
 
         if (!feature->isDerivedFrom<PartDesign::Feature>()) {
@@ -704,7 +704,7 @@ std::vector<std::string> ViewProviderBody::getDisplayModes() const
 PartDesign::Feature* ViewProviderBody::getShownFeature() const
 {
     auto body = static_cast<PartDesign::Body*>(getObject());
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
 
     for (auto feature : features) {
         if (!feature->isDerivedFrom<PartDesign::Feature>()) {
@@ -810,7 +810,7 @@ void ViewProviderBody::dropObject(App::DocumentObject* obj)
     doc->recompute();
 
     // check if a proxy object has been created for the base feature
-    std::vector<App::DocumentObject*> links = body->Group.getValues();
+    std::vector<App::DocumentObject*> links = body->getFullModel();
     for (auto it : links) {
         if (it->isDerivedFrom<PartDesign::FeatureBase>()) {
             PartDesign::FeatureBase* base = static_cast<PartDesign::FeatureBase*>(it);
@@ -843,7 +843,7 @@ void ViewProviderBody::show()
         return;
     }
 
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
     if (features.empty()) {
         return;
     }

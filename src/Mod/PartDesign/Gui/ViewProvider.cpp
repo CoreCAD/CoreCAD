@@ -286,7 +286,7 @@ void ViewProvider::onChanged(const App::Property* prop)
         if (body) {
 
             // hide all features in the body other than this object
-            for (App::DocumentObject* obj : body->Group.getValues()) {
+            for (App::DocumentObject* obj : body->getFullModel()) {
 
                 if (obj->isDerivedFrom<PartDesign::Feature>() && obj != getObject()) {
                     auto vpd = freecad_cast<Gui::ViewProviderDocumentObject*>(

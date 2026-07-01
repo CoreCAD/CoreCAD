@@ -234,21 +234,10 @@ void Feature::onChanged(const App::Property* prop)
 {
     if (!this->isRestoring() && this->getDocument()
         && !this->getDocument()->isPerformingTransaction()) {
-        if (prop == &Visibility || prop == &BaseFeature) {
-            auto body = Body::findBodyOf(this);
-            if (body) {
-                if (prop == &BaseFeature && BaseFeature.getValue()) {
-                    int idx = -1;
-                    body->Group.find(this->getNameInDocument(), &idx);
-                    int baseidx = -1;
-                    body->Group.find(BaseFeature.getValue()->getNameInDocument(), &idx);
-                    if (idx >= 0 && baseidx >= 0 && baseidx + 1 != idx) {
-                        body->insertObject(BaseFeature.getValue(), this);
-                    }
-                }
-            }
-        }
-        else if (prop == &ShapeMaterial) {
+        // Cruth de-ownership: feature order follows the BaseFeature chain itself, so a
+        // BaseFeature change needs no Group reindexing (Group is empty). The former
+        // Visibility/BaseFeature reorder branch is retired here.
+        if (prop == &ShapeMaterial) {
             auto body = Body::findBodyOf(this);
             if (body) {
                 if (body->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID()) {
