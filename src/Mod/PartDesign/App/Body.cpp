@@ -192,6 +192,15 @@ Body::Body()
     // this only stops its content being saved. App::Part / DocumentObjectGroup are unaffected —
     // the flag is set on this Body instance only.
     Group.setStatus(App::Property::Transient, true);
+
+    // Cruth substrate flip, Stage 3b step 4. A de-owned Body carries no coordinate frame of
+    // its own: de-owned features are not Group members, so the Body's placement never enters
+    // a feature's global frame (globalGroupPlacement walks group membership, which is empty)
+    // — the Day-1 Experiment-C finding. The onChanged guard already pins any live edit back to
+    // identity; stop persisting the property too, so a legacy non-identity Body.Placement can't
+    // be read back off disk and silently diverge from its features. Property lives on the shared
+    // GeoFeature base and is retired for Body in step 5; this only stops its content being saved.
+    Placement.setStatus(App::Property::Transient, true);
 }
 
 Body* Body::spawnAutoBody(App::Document* doc)
