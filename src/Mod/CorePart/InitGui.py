@@ -465,16 +465,17 @@ class CorePartWorkbench(Gui.Workbench):
         if not doc:
             return
 
-        # Find the PartDesign Body (if any) that contains the first selected object.
-        body = None
+        # Find the PartDesign Body (if any) that emits the first selected object.
+        # Body membership is DERIVED (reverse lookup along the BaseFeature chain),
+        # never stored — Body.Group is empty under de-ownership, so we must ask
+        # PartDesign.findBodyOf rather than test `feature in b.Group`.
+        import PartDesign
+
         bodies = [o for o in doc.Objects if o.isDerivedFrom("PartDesign::Body")]
-        for b in bodies:
-            try:
-                if feature in b.Group:
-                    body = b
-                    break
-            except Exception:
-                pass
+        try:
+            body = PartDesign.findBodyOf(feature)
+        except Exception:
+            body = None
 
         # MoveTip: single feature that lives inside a body
         if len(selection) == 1 and body is not None:
@@ -497,7 +498,7 @@ class CorePartWorkbench(Gui.Workbench):
                         add_move_feature = False
                     if add_move_in_tree and body is not None:
                         try:
-                            if sel not in body.Group:
+                            if PartDesign.findBodyOf(sel) != body:
                                 add_move_in_tree = False
                         except Exception:
                             add_move_in_tree = False

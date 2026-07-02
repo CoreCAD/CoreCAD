@@ -52,10 +52,35 @@ public:
             "P8 (UI/API equivalence) entry point for auto-spawn. Raises if the chain\n"
             "reaches more than one Body (ambiguous)."
         );
+        add_varargs_method(
+            "findBodyOf",
+            &Module::findBodyOf,
+            "findBodyOf(feature) -> Body or None\n\n"
+            "Cruth §11: reverse lookup from a feature to the Body whose pipeline emits it.\n"
+            "Body membership is DERIVED (walked along the BaseFeature chain), never stored —\n"
+            "the mirror image of the de-owned Group. Returns None if the feature belongs to\n"
+            "no Body. This is the Python entry point for the C++ static Body::findBodyOf."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
 private:
+    Py::Object findBodyOf(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyFeature)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+        Body* body = Body::findBodyOf(obj);
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
     Py::Object resolveBaseBody(const Py::Tuple& args)
     {
         PyObject* pySketch = nullptr;
