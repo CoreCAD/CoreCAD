@@ -61,8 +61,8 @@ public:
             "Cruth §4.6: explicitly create a document-level Body (the auto-spawn step,\n"
             "separated from resolveBaseBody so the lookup stays side-effect free — #17).\n"
             "The GUI runs this inside the feature's undo transaction; scripts call it\n"
-            "when resolveBaseBody returns None. Applies the AllowCompound default and\n"
-            "the per-document palette colour, matching the GUI auto-spawn."
+            "when resolveBaseBody returns None. Applies the per-document palette colour,\n"
+            "matching the GUI auto-spawn."
         );
         add_varargs_method(
             "findBodyOf",

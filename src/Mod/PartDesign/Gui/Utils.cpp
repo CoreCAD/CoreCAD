@@ -215,12 +215,6 @@ void needActiveBodyError()
 
 PartDesign::Body* makeBody(App::Document* doc)
 {
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Mod/PartDesign"
-    );
-
-    bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
     // This is intended as a convenience when starting a new document.
     auto bodyName(doc->getUniqueObjectName("Body"));
     Gui::Command::doCommand(
@@ -229,14 +223,6 @@ PartDesign::Body* makeBody(App::Document* doc)
         doc->getName(),
         bodyName.c_str()
     );
-    Gui::Command::doCommand(
-        Gui::Command::Doc,
-        "App.getDocument('%s').getObject('%s').AllowCompound = %s",
-        doc->getName(),
-        bodyName.c_str(),
-        allowCompound ? "True" : "False"
-    );
-
 
     auto body = dynamic_cast<PartDesign::Body*>(doc->getObject(bodyName.c_str()));
     if (body) {
