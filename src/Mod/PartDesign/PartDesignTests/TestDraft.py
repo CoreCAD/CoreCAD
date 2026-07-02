@@ -38,7 +38,7 @@ class TestDraft(unittest.TestCase):
         # and then find which has the higher center of mass Z-value
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -46,12 +46,12 @@ class TestDraft(unittest.TestCase):
         self.DatumPlane = self.Doc.addObject("PartDesign::Plane", "DatumPlane")
         self.DatumPlane.AttachmentSupport = [(self.Doc.YZ_Plane, "")]
         self.DatumPlane.MapMode = "FlatFace"
-        self.Body.addObject(self.DatumPlane)
+        self.Body.addFeature(self.DatumPlane)
         self.Doc.recompute()
         self.DatumLine = self.Doc.addObject("PartDesign::Line", "DatumLine")
         self.DatumLine.AttachmentSupport = [(self.Doc.X_Axis, "")]
         self.DatumLine.MapMode = "TwoPointLine"
-        self.Body.addObject(self.DatumLine)
+        self.Body.addFeature(self.DatumLine)
         self.Doc.recompute()
         self.Draft = self.Doc.addObject("PartDesign::Draft", "Draft")
         # Draft.Base needs to be top face
@@ -72,7 +72,7 @@ class TestDraft(unittest.TestCase):
         self.Draft.PullDirection = (self.DatumLine, [""])
         self.Draft.Angle = 45.0
         self.Draft.Reversed = 1
-        self.Body.addObject(self.Draft)
+        self.Body.addFeature(self.Draft)
         self.Doc.recompute()
         if "Invalid" in self.Draft.State:
             self.Draft.Reversed = 0

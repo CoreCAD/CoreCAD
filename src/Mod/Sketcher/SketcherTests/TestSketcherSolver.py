@@ -737,11 +737,11 @@ class TestSketcherSolver(unittest.TestCase):
     def testRemovedExternalGeometryReference(self):
         if "BUILD_PARTDESIGN" in FreeCAD.__cmake__:
             body = self.Doc.addObject("PartDesign::Body", "Body")
-            sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+            sketch = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
             CreateRectangleSketch(sketch, (0, 0), (30, 30))
-            pad = body.newObject("PartDesign::Pad", "Pad")
+            pad = body.addFeature(body.Document.addObject("PartDesign::Pad", "Pad"))
             pad.Profile = sketch
-            sketch1 = body.newObject("Sketcher::SketchObject", "Sketch1")
+            sketch1 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch1"))
             CreateCircleSketch(sketch1, (15, 15), 0.25)
             self.Doc.recompute()
             self.assertEqual(len(pad.Shape.Edges), 12)
@@ -749,7 +749,7 @@ class TestSketcherSolver(unittest.TestCase):
             hole = self.Doc.addObject("PartDesign::Hole", "Hole")
             hole.Refine = True
             hole.Reversed = True
-            body.addObject(hole)
+            body.addFeature(hole)
             hole.Profile = sketch1
             hole.DrillPointAngle = 118.000000
             hole.Diameter = 6.000000
@@ -772,7 +772,7 @@ class TestSketcherSolver(unittest.TestCase):
             self.assertEqual(len(hole.Shape.Edges), 17)
 
             hole.ModelThread = 1
-            sketch2 = body.newObject("Sketcher::SketchObject", "Sketch2")
+            sketch2 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch2"))
             CreateRectangleSketch(sketch2, (0, 0), (3, 3))
             self.Doc.recompute()
             self.assertGreater(len(hole.Shape.Edges), 17)
@@ -796,9 +796,9 @@ class TestSketcherSolver(unittest.TestCase):
             pad = self.Doc.addObject("PartDesign::Pad", "Pad")
             pad.Profile = sketch
             sketch1 = self.Doc.addObject("Sketcher::SketchObject", "Sketch1")
-            body.addObject(sketch)
-            body.addObject(pad)
-            body.addObject(sketch1)
+            body.addFeature(sketch)
+            body.addFeature(pad)
+            body.addFeature(sketch1)
             self.Doc.recompute()
             sketch1.addExternal("Pad", "Edge12")
             self.Doc.recompute()
@@ -926,8 +926,8 @@ class TestSketcherSolver(unittest.TestCase):
 
             pad = self.Doc.addObject("PartDesign::Pad", "Pad")
             pad.Profile = sketch
-            body.addObject(sketch)
-            body.addObject(pad)
+            body.addFeature(sketch)
+            body.addFeature(pad)
             self.Doc.recompute()
             sketch1 = self.Doc.addObject("Sketcher::SketchObject", "Sketch1")
             sketch1.AttachmentSupport = (pad, ("Face6"))
@@ -936,7 +936,7 @@ class TestSketcherSolver(unittest.TestCase):
 
             CreateCircleSketch(sketch1, (2, 2, 0), 1)
             CreateCircleSketch(sketch1, (6, 2, 0), 1)
-            body.addObject(sketch1)
+            body.addFeature(sketch1)
             self.Doc.recompute()
             # Act toggle construction lines on in sketch; pad now has 9 instead of 6 faces.
             sketch.setConstruction(4, False)

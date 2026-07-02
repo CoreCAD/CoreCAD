@@ -37,7 +37,7 @@ class TestDatumPoint(unittest.TestCase):
         self.DatumPoint = self.Doc.addObject("PartDesign::Point", "DatumPoint")
         self.DatumPoint.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumPoint.MapMode = "ObjectOrigin"
-        self.Body.addObject(self.DatumPoint)
+        self.Body.addFeature(self.DatumPoint)
         self.Doc.recompute()
         self.assertEqual(self.DatumPoint.AttachmentOffset.Base, App.Vector(0))
 
@@ -56,7 +56,7 @@ class TestDatumLine(unittest.TestCase):
         self.DatumLine = self.Doc.addObject("PartDesign::Line", "DatumLine")
         self.DatumLine.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumLine.MapMode = "ObjectX"
-        self.Body.addObject(self.DatumLine)
+        self.Body.addFeature(self.DatumLine)
         self.Doc.recompute()
         self.assertNotIn("Invalid", self.DatumLine.State)
 
@@ -75,7 +75,7 @@ class TestDatumPlane(unittest.TestCase):
         self.DatumPlane = self.Doc.addObject("PartDesign::Plane", "DatumPlane")
         self.DatumPlane.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumPlane.MapMode = "FlatFace"
-        self.Body.addObject(self.DatumPlane)
+        self.Body.addFeature(self.DatumPlane)
         self.Doc.recompute()
         self.DatumPlaneNormal = self.DatumPlane.Shape.Surface.Axis
         self.assertEqual(abs(self.DatumPlaneNormal.dot(App.Vector(0, 0, 1))), 1)

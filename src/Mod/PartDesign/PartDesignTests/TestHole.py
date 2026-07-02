@@ -38,18 +38,18 @@ class TestHole(unittest.TestCase):
         self.Box.Length = 10
         self.Box.Width = 10
         self.Box.Height = 10
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Doc.recompute()
         self.HoleSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchHole")
         self.HoleSketch.AttachmentSupport = (self.Doc.XY_Plane, [""])
         self.HoleSketch.MapMode = "FlatFace"
         self.HoleSketch.MapReversed = True
-        self.Body.addObject(self.HoleSketch)
+        self.Body.addFeature(self.HoleSketch)
         TestSketcherApp.CreateCircleSketch(self.HoleSketch, (-5, 5), 1)
         self.Doc.recompute()
         self.Hole = self.Doc.addObject("PartDesign::Hole", "Hole")
         self.Hole.Profile = self.HoleSketch
-        self.Body.addObject(self.Hole)
+        self.Body.addFeature(self.Hole)
         self.Doc.recompute()
 
     def testPlainHole(self):
@@ -137,11 +137,11 @@ class TestHole(unittest.TestCase):
 
         # Set the Refine option to False, otherwise adding the second box would be useless
         self.Box2.Refine = False
-        self.Body.addObject(self.Box2)
+        self.Body.addFeature(self.Box2)
         self.Doc.recompute()
 
         # Move the Hole on top of the Body
-        self.Body.removeObject(self.Hole)
+        self.Body.removeFeature(self.Hole)
         self.Body.insertObject(self.Hole, self.Box2, True)
         self.Body.Tip = self.Hole
         self.Hole.Diameter = 6
@@ -176,11 +176,11 @@ class TestHole(unittest.TestCase):
 
         # Set the Refine option to False, otherwise adding the second box would be useless
         self.Box2.Refine = False
-        self.Body.addObject(self.Box2)
+        self.Body.addFeature(self.Box2)
         self.Doc.recompute()
 
         # Move the Hole on top of the Body
-        self.Body.removeObject(self.Hole)
+        self.Body.removeFeature(self.Hole)
         self.Body.insertObject(self.Hole, self.Box2, True)
         self.Body.Tip = self.Hole
         self.Hole.Diameter = 6
