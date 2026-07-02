@@ -209,19 +209,23 @@ public:
     PartDesign::Feature* findOwnedFeature(const std::string& name) const;
 
     /**
-     * Cruth §8.5/§4.6: resolve the base Body for a new sketch-based feature by
-     * walking the sketch's anchor chain (AttachmentSupport through datums/reference
-     * geometry).
-     *  - chain ends at a global plane or independent geometry → auto-spawn a new
-     *    Body at document level (§4.6) and return it;
+     * Cruth §8.5/§4.6: PURE reverse query — resolve the base Body for a new
+     * sketch-based feature by walking the sketch's anchor chain (AttachmentSupport
+     * through datums/reference geometry). No side effects; it never creates anything.
      *  - chain terminates on exactly one Body → return that Body (extend);
-     *  - chain reaches more than one Body → return nullptr and set @p ambiguous
-     *    (the caller surfaces the §8.3 ambiguity prompt).
+     *  - chain reaches more than one Body → return nullptr, set @p ambiguous
+     *    (the caller surfaces the §8.3 ambiguity prompt);
+     *  - chain ends at a global plane / independent geometry (no Body) → return
+     *    nullptr with @p ambiguous false. This is the auto-spawn case: the caller
+     *    decides to create a Body (§4.6) via the explicit spawnAutoBody() step, and
+     *    must do so INSIDE its undo transaction so a cancelled feature does not leak
+     *    a stray Body (#17).
      *
      * Lives in the App layer so the Gui command and the Python API share one code
-     * path — this is the P8 (Programmatic Equivalence) guarantee for auto-spawn.
+     * path — the P8 (Programmatic Equivalence) guarantee. Both resolve purely here,
+     * then spawn explicitly.
      */
-    static Body* resolveBaseBody(Part::Part2DObject* sketch, App::Document* doc, bool& ambiguous);
+    static Body* resolveBaseBody(Part::Part2DObject* sketch, bool& ambiguous);
 
     /**
      * Cruth §4.6: auto-spawn a new Body at document level (no active-Part

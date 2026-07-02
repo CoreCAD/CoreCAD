@@ -24,6 +24,7 @@
 
 
 #include <App/DocumentObjectPy.h>
+#include <App/DocumentPy.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/Interpreter.h>
 #include <Base/VectorPy.h>
@@ -46,11 +47,22 @@ public:
             "resolveBaseBody",
             &Module::resolveBaseBody,
             "resolveBaseBody(sketch) -> Body or None\n\n"
-            "Cruth §8.5/§4.6: resolve the base Body for a sketch-based feature by\n"
-            "walking the sketch's anchor chain, auto-spawning a new Body when the\n"
-            "chain ends at a global plane. Shared with the GUI command — this is the\n"
-            "P8 (UI/API equivalence) entry point for auto-spawn. Raises if the chain\n"
-            "reaches more than one Body (ambiguous)."
+            "Cruth §8.5/§4.6: PURE query — resolve the base Body for a sketch-based\n"
+            "feature by walking the sketch's anchor chain. No side effects. Returns the\n"
+            "single Body the chain reaches, or None when it reaches no Body (the\n"
+            "auto-spawn case — create one explicitly with spawnBody()). Raises if the\n"
+            "chain reaches more than one Body (ambiguous). Shared with the GUI command\n"
+            "(P8 UI/API equivalence): both resolve purely, then spawn explicitly."
+        );
+        add_varargs_method(
+            "spawnBody",
+            &Module::spawnBody,
+            "spawnBody(doc) -> Body\n\n"
+            "Cruth §4.6: explicitly create a document-level Body (the auto-spawn step,\n"
+            "separated from resolveBaseBody so the lookup stays side-effect free — #17).\n"
+            "The GUI runs this inside the feature's undo transaction; scripts call it\n"
+            "when resolveBaseBody returns None. Applies the AllowCompound default and\n"
+            "the per-document palette colour, matching the GUI auto-spawn."
         );
         add_varargs_method(
             "findBodyOf",
@@ -96,13 +108,28 @@ private:
         }
 
         bool ambiguous = false;
-        Body* body = Body::resolveBaseBody(sketch, sketch->getDocument(), ambiguous);
+        Body* body = Body::resolveBaseBody(sketch, ambiguous);
         if (ambiguous) {
             throw Py::RuntimeError(
                 "This sketch's attachment chain reaches more than one Body. "
                 "Pick a single Body explicitly before continuing."
             );
         }
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
+    Py::Object spawnBody(const Py::Tuple& args)
+    {
+        PyObject* pyDoc = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentPy::Type), &pyDoc)) {
+            throw Py::Exception();
+        }
+
+        App::Document* doc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+        Body* body = Body::spawnAutoBody(doc);
         if (!body) {
             return Py::None();
         }

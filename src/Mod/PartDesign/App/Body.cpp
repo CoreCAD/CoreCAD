@@ -573,7 +573,7 @@ void Body::initMultiOutputObserver()
     g_multiOutputObserver.init();
 }
 
-Body* Body::resolveBaseBody(Part::Part2DObject* sketch, App::Document* doc, bool& ambiguous)
+Body* Body::resolveBaseBody(Part::Part2DObject* sketch, bool& ambiguous)
 {
     ambiguous = false;
 
@@ -587,14 +587,17 @@ Body* Body::resolveBaseBody(Part::Part2DObject* sketch, App::Document* doc, bool
         }
     }
 
-    if (bodies.empty()) {
-        return spawnAutoBody(doc);
-    }
     if (bodies.size() == 1) {
         return *bodies.begin();
     }
+    if (bodies.size() > 1) {
+        ambiguous = true;
+    }
 
-    ambiguous = true;
+    // Empty chain (no Body reached) → nullptr with ambiguous == false. This is a
+    // pure query: the auto-spawn (§4.6) is the caller's explicit spawnAutoBody()
+    // step, run inside its undo transaction so a cancelled feature leaks no Body
+    // (#17). Nothing is created here.
     return nullptr;
 }
 
