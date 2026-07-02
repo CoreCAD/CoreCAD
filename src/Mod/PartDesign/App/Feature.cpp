@@ -325,16 +325,13 @@ bool Feature::isSingleSolidRuleSatisfied(const TopoDS_Shape& shape, TopAbs_Shape
 
 Feature::SingleSolidRuleMode Feature::singleSolidRuleMode() const
 {
-    auto body = getFeatureBody();
-
-    // When the feature is not part of an body (which should not happen) let's stay with the default
-    if (!body) {
-        return SingleSolidRuleMode::Enforced;
-    }
-
-    auto areCompoundSolidsAllowed = body->AllowCompound.getValue();
-
-    return areCompoundSolidsAllowed ? SingleSolidRuleMode::Disabled : SingleSolidRuleMode::Enforced;
+    // The single-solid rule is permanently disabled (Cruth #21). A feature that emits
+    // several disconnected solids is not an error to reject — per ARCHITECTURE §4.7 it is a
+    // multi-output spawn event, and reconcileMultiOutput turns each solid into its own
+    // component-id Body. The legacy per-Body AllowCompound flag that used to select
+    // enforcement has been retired; this seam stays as the one documented place the rule
+    // is switched, and every getSolid/isSingleSolidRuleSatisfied call site flows through it.
+    return SingleSolidRuleMode::Disabled;
 }
 
 const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)

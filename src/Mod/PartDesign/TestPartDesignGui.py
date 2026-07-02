@@ -322,7 +322,6 @@ class CreateSketch(unittest.TestCase):
         App.newDocument()
         App.activeDocument().addObject("PartDesign::Body", "Body")
         App.ActiveDocument.getObject("Body").Label = "Body"
-        App.ActiveDocument.getObject("Body").AllowCompound = True
         FreeCADGui.activateView("Gui::View3DInventor", True)
         FreeCADGui.activeView().setActiveObject("pdbody", App.activeDocument().Body)
         FreeCADGui.Selection.clearSelection()

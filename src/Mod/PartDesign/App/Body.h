@@ -51,8 +51,6 @@ class PartDesignExport Body: public Part::BodyBase
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::Body);
 
 public:
-    App::PropertyBool AllowCompound;
-
     /// Cruth §4.6 visual identity — auto-assigned from a deterministic palette at spawn.
     App::PropertyColor Color;
 

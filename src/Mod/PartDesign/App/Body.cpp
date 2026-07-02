@@ -237,7 +237,6 @@ bool g_reconciling = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-
 
 Body::Body()
 {
-    ADD_PROPERTY_TYPE(AllowCompound, (true), "Base", App::Prop_None, "Allow multiple solids in Body");
     ADD_PROPERTY_TYPE(
         Color,
         (paletteColorFor(0)),
@@ -285,17 +284,9 @@ Body* Body::spawnAutoBody(App::Document* doc)
         return nullptr;
     }
 
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Mod/PartDesign"
-    );
-    const bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
     auto name = doc->getUniqueObjectName("Body");
     auto* body = freecad_cast<Body*>(doc->addObject("PartDesign::Body", name.c_str()));
-    if (body) {
-        // Color is assigned by setupObject() from the per-document palette index.
-        body->AllowCompound.setValue(allowCompound);
-    }
+    // Color is assigned by setupObject() from the per-document palette index.
     return body;
 }
 
@@ -1318,14 +1309,6 @@ void Body::onChanged(const App::Property* prop)
             const Base::Placement identity;
             if (Placement.getValue() != identity) {
                 Placement.setValue(identity);
-            }
-        }
-        else if (prop == &AllowCompound) {
-            // As disallowing compounds can break the model we need to recompute the whole tree.
-            // This will inform user about first place where there is more than one solid.
-            // On allowing compounds we must also recompute the entire feature tree
-            for (auto feature : getFullModel()) {
-                feature->enforceRecompute();
             }
         }
         else if (prop == &ShapeMaterial) {
