@@ -122,19 +122,14 @@ void CmdPrimtiveCompAdditive::activated(int iMsg)
 
     auto FeatName(getUniqueObjectName(shapeType.c_str(), pcActiveBody));
 
-    FCMD_OBJ_DOC_CMD(
-        pcActiveBody,
-        "addObject('PartDesign::Additive" << shapeType << "','" << FeatName << "')"
-    );
-
+    const std::string featType = std::string("PartDesign::Additive") + shapeType;
     auto* prm = static_cast<PartDesign::FeaturePrimitive*>(
-        pcActiveBody->getDocument()->getObject(FeatName.c_str())
+        PartDesignGui::createFeature(pcActiveBody, featType.c_str(), FeatName)
     );
 
     if (!prm) {
         return;
     }
-    FCMD_OBJ_CMD(pcActiveBody, "addObject(" << getObjectCmd(prm) << ")");
     Gui::Command::updateActive();
 
     auto base = prm->BaseFeature.getValue();
@@ -316,13 +311,9 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
     auto FeatName(getUniqueObjectName(shapeType, pcActiveBody));
 
     openCommand(std::string("Make subtractive ") + shapeType);
-    FCMD_OBJ_CMD(
-        pcActiveBody,
-        "newObject('PartDesign::Subtractive" << shapeType << "','" << FeatName << "')"
-    );
+    const std::string featType = std::string("PartDesign::Subtractive") + shapeType;
+    auto Feat = PartDesignGui::createFeature(pcActiveBody, featType.c_str(), FeatName);
     Gui::Command::updateActive();
-
-    auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
     copyVisual(Feat, "ShapeAppearance", prevSolid);
     copyVisual(Feat, "LineColor", prevSolid);
     copyVisual(Feat, "PointColor", prevSolid);

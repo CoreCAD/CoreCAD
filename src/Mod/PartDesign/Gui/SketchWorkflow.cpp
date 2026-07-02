@@ -269,8 +269,7 @@ public:
         std::string FeatName = appdocument->getUniqueObjectName("Sketch");
 
         guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Sketch on Face"));
-        FCMD_OBJ_CMD(activeBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
-        auto Feat = activeBody->getDocument()->getObject(FeatName.c_str());
+        auto Feat = PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
         FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << supportString);
         if (sketchFilter.match()) {
             FCMD_OBJ_CMD(
@@ -538,7 +537,7 @@ private:
         App::Document* doc = guidocument->getDocument();
         std::string FeatName = doc->getUniqueObjectName("Sketch");
         if (activeBody) {
-            FCMD_OBJ_CMD(activeBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
+            PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
         }
         else {
             Gui::Command::doCommand(
@@ -763,8 +762,7 @@ private:
             doc->openTransaction(QT_TRANSLATE_NOOP("Command", "New Sketch"));
         }
 
-        FCMD_OBJ_CMD(partDesignBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
-        auto Feat = doc->getObject(FeatName.c_str());
+        auto Feat = PartDesignGui::createFeature(partDesignBody, "Sketcher::SketchObject", FeatName);
         FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << supportString);
         FCMD_OBJ_CMD(
             Feat,

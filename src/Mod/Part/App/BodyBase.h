@@ -40,9 +40,9 @@ namespace Part
  * in edit or active on a workbench, the body shows only the
  * resulting shape to the outside (Tip link).
  */
-class PartExport BodyBase: public Part::Feature, public App::OriginGroupExtension
+class PartExport BodyBase: public Part::Feature
 {
-    PROPERTY_HEADER_WITH_EXTENSIONS(Part::BodyBase);
+    PROPERTY_HEADER(Part::BodyBase);
 
 public:
     BodyBase();
@@ -59,16 +59,15 @@ public:
      */
     App::PropertyLink BaseFeature;
 
-    /// Returns all Group objects prepanded by BaseFeature (if any).
-    /// Virtual so a de-owned Body (Cruth) can derive its member list from the
-    /// feature graph instead of the now-empty Group — see PartDesign::Body.
+    /// Base member list: just the BaseFeature (if any). The OriginGroup extension and its
+    /// Group container were retired (Cruth §11 step 5e); a de-owned Body derives its real
+    /// member list from the feature graph — the override in PartDesign::Body.
     virtual std::vector<App::DocumentObject*> getFullModel()
     {
         std::vector<App::DocumentObject*> rv;
         if (BaseFeature.getValue()) {
             rv.push_back(BaseFeature.getValue());
         }
-        std::copy(Group.getValues().begin(), Group.getValues().end(), std::back_inserter(rv));
         return rv;
     }
 
@@ -90,11 +89,6 @@ protected:
     void onBeforeChange(const App::Property* prop) override;
     /// If BaseFeature is set and Tip is null set the Tip to it
     void onChanged(const App::Property* prop) override;
-    void handleChangedPropertyName(
-        Base::XMLReader& reader,
-        const char* TypeName,
-        const char* PropName
-    ) override;
 };
 
 }  // namespace Part

@@ -39,6 +39,7 @@
 #include <App/VarSet.h>
 #include <App/Origin.h>
 #include <App/OriginGroupExtension.h>
+#include <App/PropertyLinks.h>
 #include <Base/Color.h>
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
@@ -85,6 +86,88 @@ Base::Color paletteColorFor(std::size_t index)
 {
     const auto& rgb = bodyPalette[index % bodyPalette.size()];
     return Base::Color(rgb[0], rgb[1], rgb[2], 1.0F);
+}
+
+// Cruth §11 step 5e: retarget a feature's origin/datum links onto the given shared Origin.
+// Ported from the retired OriginGroupExtension::relinkToOrigin — it walks the feature's link
+// properties and replaces any link pointing at an origin datum element (matched by Role) with
+// the equivalent element of `origin`; subnames are unchanged. Under the shared-Origin model
+// this is normally a no-op (there is only one Origin), but it keeps a moved or legacy feature
+// that referenced a different Origin correctly anchored.
+void relinkFeatureToOrigin(App::DocumentObject* obj, App::Origin* origin)
+{
+    if (!origin) {
+        return;
+    }
+    auto isOriginFeature = [](App::DocumentObject* o) -> bool {
+        if (auto* datumElement = dynamic_cast<App::DatumElement*>(o)) {
+            return datumElement->isOriginFeature();
+        }
+        return false;
+    };
+
+    std::vector<App::Property*> list;
+    obj->getPropertyList(list);
+    for (App::Property* prop : list) {
+        if (prop->isDerivedFrom<App::PropertyLink>()) {
+            auto p = static_cast<App::PropertyLink*>(prop);
+            if (!p->getValue() || !isOriginFeature(p->getValue())) {
+                continue;
+            }
+            p->setValue(origin->getDatumElement(
+                static_cast<App::DatumElement*>(p->getValue())->Role.getValue()
+            ));
+        }
+        else if (prop->isDerivedFrom<App::PropertyLinkList>()) {
+            auto p = static_cast<App::PropertyLinkList*>(prop);
+            auto vec = p->getValues();
+            std::vector<App::DocumentObject*> result;
+            bool changed = false;
+            for (App::DocumentObject* o : vec) {
+                if (!isOriginFeature(o)) {
+                    result.push_back(o);
+                }
+                else {
+                    result.push_back(
+                        origin->getDatumElement(static_cast<App::DatumElement*>(o)->Role.getValue())
+                    );
+                    changed = true;
+                }
+            }
+            if (changed) {
+                p->setValues(result);
+            }
+        }
+        else if (prop->isDerivedFrom<App::PropertyLinkSub>()) {
+            auto p = static_cast<App::PropertyLinkSub*>(prop);
+            if (!p->getValue() || !isOriginFeature(p->getValue())) {
+                continue;
+            }
+            std::vector<std::string> subValues = p->getSubValues();
+            p->setValue(
+                origin->getDatumElement(
+                    static_cast<App::DatumElement*>(p->getValue())->Role.getValue()
+                ),
+                subValues
+            );
+        }
+        else if (prop->isDerivedFrom<App::PropertyLinkSubList>()) {
+            auto p = static_cast<App::PropertyLinkSubList*>(prop);
+            auto vec = p->getSubListValues();
+            bool changed = false;
+            for (auto& v : vec) {
+                if (isOriginFeature(v.first)) {
+                    v.first = origin->getDatumElement(
+                        static_cast<App::DatumElement*>(v.first)->Role.getValue()
+                    );
+                    changed = true;
+                }
+            }
+            if (changed) {
+                p->setSubListValues(vec);
+            }
+        }
+    }
 }
 
 // Cruth §8.5 anchor-walk recursion cap. Realistic chains are
@@ -182,16 +265,9 @@ Body::Body()
         "Cruth §8.2 durable body identity; minted once at birth, persisted, never recomputed"
     );
 
-    _GroupTouched.setStatus(App::Property::Output, true);
-
-    // Cruth substrate flip, Stage 3b step 4 (first irreversible on-disk change). A de-owned
-    // Body carries no feature membership in Group — features are derived from the BaseFeature
-    // chain (§9.1-inverse), and Group stays empty by construction. Stop persisting it: writing
-    // a dead empty list serves no purpose and old FreeCAD-style Group ownership must not be
-    // re-established off disk. The extension (and the property itself) is retired in step 5;
-    // this only stops its content being saved. App::Part / DocumentObjectGroup are unaffected —
-    // the flag is set on this Body instance only.
-    Group.setStatus(App::Property::Transient, true);
+    // (Cruth §11 step 5e) The Group property and its _GroupTouched companion are gone entirely
+    // now the OriginGroup extension is retired — nothing left to mark Transient/Output. Members
+    // are derived from the BaseFeature chain (§9.1-inverse).
 
     // Cruth substrate flip, Stage 3b step 4. A de-owned Body carries no coordinate frame of
     // its own: de-owned features are not Group members, so the Body's placement never enters
@@ -277,7 +353,7 @@ Body* Body::breakOutInstance(Body* instanceBody)
     if (auto* group = App::GeoFeatureGroupExtension::getGroupOfObject(instanceBody)) {
         group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(newBody);
     }
-    newBody->addObject(baked);  // also points the new Body's Tip at the BakedShape
+    newBody->addFeature(baked);  // also points the new Body's Tip at the BakedShape
 
     // Record the skip (§5.6) so the pattern drops this instance, then recompute.
     // The originating Body becomes an orphan and is retired by the reconciler (§4.7).
@@ -784,7 +860,7 @@ std::vector<App::DocumentObject*> Body::getFullModel()
 }
 
 
-std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
+std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
 {
     if (!isAllowed(feature)) {
         throw Base::ValueError("Body: object is not allowed");
@@ -803,14 +879,14 @@ std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
     // created feature is normally group-less, but a moved feature may not be.
     auto* group = App::GroupExtension::getGroupOfObject(feature);
     if (group) {
-        group->getExtensionByType<GroupExtension>()->removeObject(feature);
+        group->getExtensionByType<App::GroupExtension>()->removeObject(feature);
     }
 
     // Cruth substrate flip (Stage 3a): resolve origin/datum links against the single
     // document-level Origin, not this Body's own (now-dormant) per-body Origin. In the
     // de-ownership model the coordinate frame is shared at document level (Day-5 design;
     // ARCHITECTURE §3.3), so all bodies' features anchor to one Origin.
-    relinkToOrigin(feature, ensureDocumentOrigin());
+    relinkFeatureToOrigin(feature, ensureDocumentOrigin());
 
     // Associate the feature with this Body by reference (used by findBodyOf and
     // active-body tooling) without imprisoning it in the group.
@@ -870,14 +946,13 @@ std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
     return {feature};
 }
 
-std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObject*> objs)
+std::vector<App::DocumentObject*> Body::addFeatures(std::vector<App::DocumentObject*> features)
 {
-
-    for (auto obj : objs) {
-        addObject(obj);
+    for (auto* feature : features) {
+        addFeature(feature);
     }
 
-    return objs;
+    return features;
 }
 
 void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after)
@@ -899,7 +974,7 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
     }
 
     // Resolve origin/datum links against the shared document-level Origin (Stage 3a).
-    relinkToOrigin(feature, ensureDocumentOrigin());
+    relinkFeatureToOrigin(feature, ensureDocumentOrigin());
 
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
@@ -996,7 +1071,7 @@ App::DocumentObject* Body::getNextSolidFeatureByChain(App::DocumentObject* featu
 // feature's own base, and the Tip retreats along the chain. Group is never
 // consulted for ordering, so this works on a fully de-owned body (empty Group);
 // any stale legacy Group entry is still dropped. ARCHITECTURE §3.2/§3.3.
-std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
+std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* feature)
 {
     // This method must be called BEFORE the feature is removed from the Document!
     // De-ownership is the only path: heal the BaseFeature chain directly, retreat the
@@ -1046,6 +1121,13 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
     }
 
     return result;
+}
+
+void Body::removeFeatures(const std::vector<App::DocumentObject*>& features)
+{
+    for (auto* feature : features) {
+        removeFeature(feature);
+    }
 }
 
 App::DocumentObjectExecReturn* Body::execute()
@@ -1175,18 +1257,6 @@ void Body::onChanged(const App::Property* prop)
                 bf->BaseFeature.setValue(BaseFeature.getValue());
             }
         }
-        else if (prop == &Group) {
-            // Legacy FeatureBase-deletion guard: if the FeatureBase was removed, clear the
-            // body-level BaseFeature link. Dormant under de-ownership — features no longer
-            // enter or leave Group, so this Group change never fires for a born-de-owned
-            // body. FeatureBase removal is handled along the chain by removeFeature instead.
-            // Kept for any legacy doc whose features still sit in Group.
-            if (BaseFeature.getValue()
-                && (Group.getValues().empty()
-                    || !Group.getValues().front()->isDerivedFrom<FeatureBase>())) {
-                BaseFeature.setValue(nullptr);
-            }
-        }
         else if (prop == &Placement) {
             // Cruth substrate flip (de-ownership): the modeling Body carries no coordinate
             // frame of its own — the frame comes from each feature's attachment, not from
@@ -1241,11 +1311,11 @@ App::Origin* Body::ensureDocumentOrigin()
     }
 
     // The single document-level Origin is shared by every PartDesign Body via the
-    // shared-Origin contract (onExtendedSetupObject). It is identified as the App::Origin
-    // already linked by a Body, or — before the first Body has linked it — a free-standing
-    // App::Origin that no OriginGroup owns. A per-body/per-part private Origin (e.g. an
-    // App::Part's own ruler) is owned by exactly that group and is never linked by a Body,
-    // so it is correctly skipped.
+    // shared-Origin contract (setupObject). It is identified as a free-standing App::Origin
+    // that no OriginGroup owns (the older per-body Origin link is gone — Cruth §11 step 5e).
+    // A per-body/per-part private Origin (e.g. an App::Part's own ruler) is owned by exactly
+    // that group, so it is correctly skipped. The legacy "already linked by a Body" match is
+    // kept as a belt-and-braces fallback for any Origin a Body still references.
     for (auto* obj : doc->getObjectsOfType<App::Origin>()) {
         bool usedByBody = false;
         bool ownedByGroup = false;
@@ -1270,40 +1340,17 @@ App::Origin* Body::ensureDocumentOrigin()
     return shared;
 }
 
-void Body::onExtendedSetupObject()
-{
-    // Cruth shared-Origin contract (GitHub #4): a PartDesign Body does NOT own a private
-    // coordinate frame. In the de-ownership model the world frame is shared at document
-    // level (ARCHITECTURE §3.3) — every Body anchors its features to the single
-    // free-standing App::Origin. Bind this Body's Origin link to that shared Origin instead
-    // of letting OriginGroupExtension mint a private one. Because no per-body Origin is ever
-    // created, retiring a Body can never bin an axis that another Body's feature references
-    // (the leak that nulled a pattern's Direction on break-out), getOrigin() returns the
-    // shared ruler so the ~20 GUI feature-creation sites auto-anchor to it, and there is only
-    // one X/Y/Z axis so no create-order race can escape onto a dormant per-body axis.
-    //
-    // We deliberately bypass OriginGroupExtension::onExtendedSetupObject() (which would call
-    // getLocalizedOrigin()); App::Part still uses the base behaviour since it does not derive
-    // from Body.
-    if (App::Origin* shared = ensureDocumentOrigin()) {
-        Origin.setValue(shared);
-    }
-    App::GeoFeatureGroupExtension::onExtendedSetupObject();
-}
-
-void Body::onExtendedUnsetupObject()
-{
-    // Counterpart to the contract above: the shared document Origin is not owned by this
-    // Body, so it must outlive the Body's retirement. Detach our link and skip
-    // OriginGroupExtension::onExtendedUnsetupObject()'s destructive delete of the linked
-    // Origin; defer the remaining teardown to the grandparent.
-    Origin.setValue(nullptr);
-    App::GeoFeatureGroupExtension::onExtendedUnsetupObject();
-}
-
 void Body::setupObject()
 {
     Part::BodyBase::setupObject();
+
+    // Cruth shared-Origin contract (GitHub #4) / §11 step 5e: a PartDesign Body does NOT own
+    // a private coordinate frame. The world frame is shared at document level (ARCHITECTURE
+    // §3.3) — every Body's features anchor to one free-standing App::Origin. With the
+    // OriginGroup extension retired the Body stores no Origin link at all: getOrigin() resolves
+    // the shared ruler by lookup. Ensure it exists at spawn so the base planes/axes are
+    // available immediately (and so later getOrigin() calls in const display paths never mint).
+    ensureDocumentOrigin();
 
     // Cruth §4.6: assign a deterministic identity colour at spawn time.
     // Per-document index — count Bodies already in the doc (excluding this one,
@@ -1467,7 +1514,6 @@ void Body::onDocumentRestored()
     // demand, but direct _Body readers — findOwnedFeature, the de-owned sub-element path
     // — need the cache warm before the first selection click.
     rebuildBodyCacheFromChain();
-    _GroupTouched.setStatus(App::Property::Output, true);
 
     // trigger ViewProviderBody::copyColorsfromTip
     if (Tip.getValue()) {
