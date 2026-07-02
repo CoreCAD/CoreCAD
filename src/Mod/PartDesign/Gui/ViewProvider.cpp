@@ -374,7 +374,7 @@ bool ViewProvider::onDelete(const std::vector<std::string>&)
         //
         // fixes (#3084)
 
-        FCMD_OBJ_CMD(body, "removeObject(" << Gui::Command::getObjectCmd(feature) << ')');
+        FCMD_OBJ_CMD(body, "removeFeature(" << Gui::Command::getObjectCmd(feature) << ')');
     }
 
     makeChildrenVisible();

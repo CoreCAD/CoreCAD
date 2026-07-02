@@ -31,7 +31,40 @@ class Body(BodyBase):
           and into the begin if where is InsertAfter.
         @param after    if true insert the feature after the target. Default is false.
 
-        @note the method doesn't modify the Tip unlike addObject()
+        @note the method doesn't modify the Tip unlike addFeature()
+        """
+        ...
+
+    def addFeature(self, feature: object, /) -> object:
+        """
+        Splice an already-created feature into this Body's pipeline (BaseFeature chain + Tip),
+        advancing the Tip.
+
+        Cruth §11 step 5e: a pipeline edit, not a container add — the feature must already
+        exist in the document; the Body does not create or own it. Replaces the retired
+        GroupExtension addObject(). Returns the added feature.
+        """
+        ...
+
+    def removeFeature(self, feature: object, /) -> None:
+        """
+        Remove a feature from this Body's pipeline, rewiring the BaseFeature chain and
+        retreating the Tip. The feature is not destroyed. Must be called before the feature
+        is removed from the document. Replaces the retired GroupExtension removeObject().
+        """
+        ...
+
+    def addFeatures(self, features: object, /) -> None:
+        """
+        Splice a list of already-created features into this Body's pipeline (Cruth §11 step 5e).
+        Convenience over addFeature; used when re-homing features between bodies.
+        """
+        ...
+
+    def removeFeatures(self, features: object, /) -> None:
+        """
+        Remove a list of features from this Body's pipeline (Cruth §11 step 5e). Convenience
+        over removeFeature; used when re-homing features between bodies.
         """
         ...
 

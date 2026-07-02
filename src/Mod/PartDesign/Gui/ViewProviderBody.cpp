@@ -349,8 +349,9 @@ void ViewProviderBody::updateData(const App::Property* prop)
 {
     PartDesign::Body* body = getObject<PartDesign::Body>();
 
-    if (prop == &body->Group || prop == &body->BaseFeature) {
-        // ensure all model features are in visual body mode
+    if (prop == &body->BaseFeature || prop == &body->Tip) {
+        // ensure all model features are in visual body mode. Membership now changes via the
+        // BaseFeature chain / Tip, not a Group edit (Cruth §11 step 5e).
         setVisualBodyMode(true);
     }
 
@@ -653,11 +654,10 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
         }
     }
 
-    // 5. Origin must come first (matching the OriginGroup extension convention).
-    if (auto* originExt = body->getExtensionByType<App::OriginGroupExtension>()) {
-        if (App::DocumentObject* origin = originExt->Origin.getValue()) {
-            result.insert(result.begin(), origin);
-        }
+    // 5. Origin must come first (the shared document Origin, resolved by lookup now the
+    //    OriginGroup extension is gone — Cruth §11 step 5e).
+    if (App::DocumentObject* origin = body->getOrigin()) {
+        result.insert(result.begin(), origin);
     }
     return result;
 }
@@ -697,11 +697,9 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
         emit(obj);
     }
 
-    // Origin first, matching the OriginGroup extension convention.
-    if (auto* originExt = body->getExtensionByType<App::OriginGroupExtension>()) {
-        if (App::DocumentObject* origin = originExt->Origin.getValue()) {
-            result.insert(result.begin(), origin);
-        }
+    // Origin first (the shared document Origin, resolved by lookup — Cruth §11 step 5e).
+    if (App::DocumentObject* origin = body->getOrigin()) {
+        result.insert(result.begin(), origin);
     }
     return result;
 }
@@ -819,7 +817,7 @@ void ViewProviderBody::dropObject(App::DocumentObject* obj)
     auto* body = getObject<PartDesign::Body>();
     if (obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<App::DatumElement>()
         || obj->isDerivedFrom<App::LocalCoordinateSystem>()) {
-        body->addObject(obj);
+        body->addFeature(obj);
     }
     else if (PartDesign::Body::isAllowed(obj) && PartDesignGui::isFeatureMovable(obj)) {
         std::vector<App::DocumentObject*> move;
@@ -829,10 +827,10 @@ void ViewProviderBody::dropObject(App::DocumentObject* obj)
 
         PartDesign::Body* source = PartDesign::Body::findBodyOf(obj);
         if (source) {
-            source->removeObjects(move);
+            source->removeFeatures(move);
         }
         try {
-            body->addObjects(move);
+            body->addFeatures(move);
         }
         catch (const Base::Exception& e) {
             e.reportException();

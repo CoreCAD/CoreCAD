@@ -32,7 +32,7 @@
 namespace Part
 {
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(Part::BodyBase, Part::Feature)
+PROPERTY_SOURCE(Part::BodyBase, Part::Feature)
 
 BodyBase::BodyBase()
 {
@@ -40,8 +40,6 @@ BodyBase::BodyBase()
     Tip.setScope(App::LinkScope::Child);
 
     ADD_PROPERTY(BaseFeature, (nullptr));
-
-    App::OriginGroupExtension::initExtension(this);
 }
 
 BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
@@ -51,7 +49,11 @@ BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
         std::vector<App::DocumentObject*> bodies = doc->getObjectsOfType(BodyBase::getClassTypeId());
         for (auto it : bodies) {
             BodyBase* body = static_cast<BodyBase*>(it);
-            if (body->hasObject(f)) {
+            // De-owned Bodies keep no Group (Cruth §11 step 5e); membership is the derived
+            // member list, resolved through the virtual getFullModel() so a PartDesign Body
+            // uses its BaseFeature-chain reverse lookup.
+            std::vector<App::DocumentObject*> model = body->getFullModel();
+            if (std::ranges::find(model, f) != model.end()) {
                 return body;
             }
         }
@@ -68,11 +70,14 @@ bool BodyBase::isAfter(const App::DocumentObject* feature, const App::DocumentOb
         return false;
     }
 
+    // De-owned Bodies keep no Group (Cruth §11 step 5e); order the members by the derived
+    // member list (getFullModel is solids-first in build order) instead of Group position.
+    const std::vector<App::DocumentObject*> features = const_cast<BodyBase*>(this)->getFullModel();
+
     if (!target || target == BaseFeature.getValue()) {
-        return hasObject(feature);
+        return std::ranges::find(features, feature) != features.end();
     }
 
-    const std::vector<App::DocumentObject*>& features = Group.getValues();
     const auto featureIt = std::ranges::find(features, feature);
     const auto targetIt = std::ranges::find(features, target);
 
@@ -98,18 +103,6 @@ void BodyBase::onChanged(const App::Property* prop)
         Tip.setValue( BaseFeature.getValue () );
     }*/
     Part::Feature::onChanged(prop);
-}
-
-void BodyBase::handleChangedPropertyName(Base::XMLReader& reader, const char* TypeName, const char* PropName)
-{
-    // The App::PropertyLinkList property was Model in the past (#0002642)
-    Base::Type type = Base::Type::fromName(TypeName);
-    if (Group.getClassTypeId() == type && strcmp(PropName, "Model") == 0) {
-        Group.Restore(reader);
-    }
-    else {
-        Part::Feature::handleChangedPropertyName(reader, TypeName, PropName);
-    }
 }
 
 PyObject* BodyBase::getPyObject()

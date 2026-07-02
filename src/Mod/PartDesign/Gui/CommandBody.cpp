@@ -254,9 +254,11 @@ void CmdPartDesignBody::activated(int iMsg)
             );
         }
         if (addtogroup) {
+            // De-owned (Cruth §11 step 5e): a sketch base joins the body's pipeline by
+            // reference (addFeature), not by Group membership — the Group is gone.
             doCommand(
                 Doc,
-                "App.activeDocument().%s.Group = [App.activeDocument().%s]",
+                "App.activeDocument().%s.addFeature(App.activeDocument().%s)",
                 bodyString,
                 baseFeature->getNameInDocument()
             );
@@ -610,7 +612,7 @@ void CmdPartDesignMigrate::activated(int iMsg)
                 if (sketch) {
                     doCommand(
                         Doc,
-                        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+                        "App.activeDocument().%s.addFeature(App.activeDocument().%s)",
                         bodyName.c_str(),
                         sketch->getNameInDocument()
                     );
@@ -640,7 +642,7 @@ void CmdPartDesignMigrate::activated(int iMsg)
             }
             doCommand(
                 Doc,
-                "App.activeDocument().%s.addObject(App.activeDocument().%s)",
+                "App.activeDocument().%s.addFeature(App.activeDocument().%s)",
                 bodyName.c_str(),
                 feature->getNameInDocument()
             );
@@ -801,7 +803,7 @@ void CmdPartDesignDuplicateSelection::activated(int iMsg)
                 // if feature already is in a body, then we don't put it into the active body issue #6278
                 auto body = App::GeoFeatureGroupExtension::getGroupOfObject(feature);
                 if (!body) {
-                    FCMD_OBJ_CMD(pcActiveBody, "addObject(" << getObjectCmd(feature) << ")");
+                    FCMD_OBJ_CMD(pcActiveBody, "addFeature(" << getObjectCmd(feature) << ")");
                     FCMD_OBJ_HIDE(feature);
                 }
             }
@@ -950,8 +952,8 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
 
     stream << "]";
     runCommand(Doc, stream.str().c_str());
-    FCMD_OBJ_CMD(source_body, "removeObjects(features_)");
-    FCMD_OBJ_CMD(target, "addObjects(features_)");
+    FCMD_OBJ_CMD(source_body, "removeFeatures(features_)");
+    FCMD_OBJ_CMD(target, "addFeatures(features_)");
     /*
 
         // Find body of this feature
@@ -963,14 +965,14 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
         // Remove from the source body if the feature belonged to a body
         if (source) {
             featureWasTip = (source->Tip.getValue() == feat);
-            doCommand(Doc,"App.activeDocument().%s.removeObject(App.activeDocument().%s)",
+            doCommand(Doc,"App.activeDocument().%s.removeFeature(App.activeDocument().%s)",
                       source->getNameInDocument(), (feat)->getNameInDocument());
         }
 
         App::DocumentObject* targetOldTip = target->Tip.getValue();
 
         // Add to target body (always at the Tip)
-        doCommand(Doc,"App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        doCommand(Doc,"App.activeDocument().%s.addFeature(App.activeDocument().%s)",
                       target->getNameInDocument(), (feat)->getNameInDocument());
         // Recompute to update the shape
         doCommand(Gui,"App.activeDocument().recompute()");
@@ -1136,7 +1138,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
         // TODO: if tip was moved the new position of tip is quite undetermined (2015-08-07, Fat-Zer)
         // TODO: warn the user if we are moving an object to some place before the object's link
         // (2015-08-07, Fat-Zer)
-        FCMD_OBJ_CMD(body, "removeObject(" << getObjectCmd(feat) << ")");
+        FCMD_OBJ_CMD(body, "removeFeature(" << getObjectCmd(feat) << ")");
         FCMD_OBJ_CMD(
             body,
             "insertObject(" << getObjectCmd(feat) << "," << getObjectCmd(lastObject) << ", True)"

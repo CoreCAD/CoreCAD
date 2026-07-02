@@ -87,16 +87,18 @@ public:
     //@}
 
     /**
-     * Add the feature into the body at the current insert point.
-     * The insertion point is the before next solid after the Tip feature
+     * Splice an already-created feature into this Body's pipeline at the current insert
+     * point (the position before the next solid after the Tip), advancing the Tip.
+     *
+     * Cruth §11 step 5e: this is a pipeline edit, NOT a container add. The Body does not
+     * create or own the feature — the Document creates it (see PartDesignGui::createFeature);
+     * this method only rewires the BaseFeature chain + Tip that the Body marks and stamps the
+     * derived _Body back-pointer. It replaced the retired GroupExtension addObject(); the
+     * feature-flavoured name makes the pipeline (not container) semantics explicit. Handles
+     * both the tip-append gesture and mid-chain insert. See ARCHITECTURE §3.2/§3.3.
      */
-    /**
-     * Cruth intra-body de-ownership: a new feature joins the pipeline by reference
-     * (BaseFeature chain + Tip) without being added to Body.Group; handles both the
-     * tip-append gesture and mid-chain insert. See ARCHITECTURE §3.2/§3.3.
-     */
-    std::vector<App::DocumentObject*> addObject(App::DocumentObject*) override;
-    std::vector<DocumentObject*> addObjects(std::vector<DocumentObject*> obj) override;
+    std::vector<App::DocumentObject*> addFeature(App::DocumentObject* feature);
+    std::vector<DocumentObject*> addFeatures(std::vector<DocumentObject*> features);
 
     /**
      * Insert the feature into the body after the given feature.
@@ -107,19 +109,21 @@ public:
      *                 and into the begin if where is InsertAfter.
      * @param after    if true insert the feature after the target. Default is false.
      *
-     * @note the method doesn't modify the Tip unlike addObject()
+     * @note the method doesn't modify the Tip unlike addFeature()
      */
     void insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after = false);
 
     void setBaseProperty(App::DocumentObject* feature);
 
     /**
-     * Remove the feature from the body (Cruth intra-body de-ownership): rewire the
-     * BaseFeature chain and retreat the Tip without consulting Group order; retire the
-     * Body if its chain empties. Must be called BEFORE the feature is removed from the
-     * Document. See ARCHITECTURE §3.2/§3.3.
+     * Remove a feature from this Body's pipeline (Cruth intra-body de-ownership): rewire the
+     * BaseFeature chain and retreat the Tip; retire the Body if its chain empties. A pipeline
+     * edit, not a container remove — the feature is not destroyed. Must be called BEFORE the
+     * feature is removed from the Document. See ARCHITECTURE §3.2/§3.3.
      */
-    std::vector<DocumentObject*> removeObject(DocumentObject* obj) override;
+    std::vector<DocumentObject*> removeFeature(DocumentObject* feature);
+    /// Convenience: removeFeature over a list (used when re-homing features between bodies).
+    void removeFeatures(const std::vector<App::DocumentObject*>& features);
 
     /// Cruth: chain successor of a feature (the solid whose BaseFeature links to it).
     App::DocumentObject* getNextSolidFeatureByChain(App::DocumentObject* feature) const;
@@ -169,7 +173,7 @@ public:
      * all features derived from PartDesign::Feature and Part::Datum and sketches
      */
     static bool isAllowed(const App::DocumentObject* obj);
-    bool allowObject(DocumentObject* obj) override
+    bool allowObject(DocumentObject* obj)
     {
         return isAllowed(obj);
     }
@@ -284,6 +288,15 @@ public:
     /// free-standing App::Origin not owned by any OriginGroup.
     App::Origin* ensureDocumentOrigin();
 
+    /// Cruth §11 step 5e: with the OriginGroup extension retired, a Body no longer stores an
+    /// Origin link. getOrigin() returns the single shared document Origin by lookup (the same
+    /// object every Body and de-owned feature anchors to), lazily creating it. Preserves the
+    /// GUI feature-creation call sites that reach the base planes/axes via body->getOrigin().
+    App::Origin* getOrigin()
+    {
+        return ensureDocumentOrigin();
+    }
+
 protected:
     void onSettingDocument() override;
 
@@ -294,12 +307,6 @@ protected:
     void setupObject() override;
     /// Removes all planes and axis if they are still linked to the document
     void unsetupObject() override;
-
-    /// Cruth shared-Origin contract (GitHub #4): bind this Body's Origin link to the single
-    /// shared document Origin instead of minting a private per-body one.
-    void onExtendedSetupObject() override;
-    /// Counterpart to the above: detach (do not delete) the shared Origin on retirement.
-    void onExtendedUnsetupObject() override;
 
     void onDocumentRestored() override;
 

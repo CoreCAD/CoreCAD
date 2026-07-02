@@ -122,4 +122,15 @@ std::vector<App::DocumentObject*> collectMovableDependencies(
 /// Relink sketches and datums to target body's origin
 void relinkToOrigin(App::DocumentObject* feature, PartDesign::Body* body);
 
+/**
+ * Cruth §11 step 5e: author a new feature under de-ownership. Creates the object at the
+ * document level (creation is the Document's responsibility, no longer the Body's) then
+ * splices it into @p body's pipeline via Body::addFeature (the Tip/BaseFeature-chain edit).
+ * Both steps are emitted to the command console for macro fidelity (P8). This is the single
+ * replacement for the retired `body.newObject(type, name)` group-extension idiom.
+ *
+ * @return the created object, or nullptr on failure.
+ */
+App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, const std::string& name);
+
 }  // namespace PartDesignGui
