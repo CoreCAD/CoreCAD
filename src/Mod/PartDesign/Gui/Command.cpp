@@ -86,16 +86,21 @@ static bool hasActiveBody()
 
 // Cruth §8.5/§4.6 spawn-vs-extend decision (GUI entry point).
 //
-// Thin wrapper over PartDesign::Body::resolveBaseBody — the shared App-layer
-// service that the Python API (PartDesign.resolveBaseBody) also calls. Both
-// paths run identical decision + auto-spawn code, which is the P8 (UI/API
-// equivalence) guarantee. The GUI's only addition is the human-facing
-// ambiguity warning; the anchor walk, the spawn-vs-extend decision, and the
-// document-level auto-spawn (§4.6) all live in the App layer.
-static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, App::Document* doc)
+// PURE query wrapper over PartDesign::Body::resolveBaseBody — the shared App-layer
+// service the Python API (PartDesign.resolveBaseBody) also calls. Neither path has
+// a side effect: they resolve the anchor chain and nothing more (P8 UI/API
+// equivalence). The GUI's only addition is the human-facing ambiguity warning.
+//
+// Returns the resolved base Body, or nullptr. nullptr with @p abort == false means
+// "the anchor chain reached no Body": the caller proceeds and the feature's undo
+// transaction auto-spawns one (#17 — creation must live inside that transaction so a
+// cancelled feature leaks no stray Body). @p abort == true means the chain is
+// ambiguous and the command must stop.
+static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, bool& abort)
 {
+    abort = false;
     bool ambiguous = false;
-    PartDesign::Body* body = PartDesign::Body::resolveBaseBody(sketch, doc, ambiguous);
+    PartDesign::Body* body = PartDesign::Body::resolveBaseBody(sketch, ambiguous);
     if (ambiguous) {
         QMessageBox::warning(
             Gui::getMainWindow(),
@@ -105,6 +110,7 @@ static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, App::Documen
                 "Pick a single Body explicitly before continuing."
             )
         );
+        abort = true;
     }
     return body;
 }
@@ -936,12 +942,25 @@ void prepareProfileBased(
             feature->recomputeFeature();
         }
 
-        std::string FeatName = cmd->getUniqueObjectName(which.c_str(), pcActiveBody);
-
         cmd->openCommand(std::string("Make ") + which);
 
+        // Cruth §4.6/#17: if the anchor chain reached no Body, auto-spawn one now —
+        // INSIDE the transaction just opened — so cancelling the feature (which
+        // aborts this command) also removes the Body. resolveBaseBody is a pure
+        // query; creation happens here, never during the lookup.
+        PartDesign::Body* activeBody = pcActiveBody;
+        if (!activeBody) {
+            activeBody = PartDesign::Body::spawnAutoBody(cmd->getDocument());
+            if (!activeBody) {
+                cmd->abortCommand();
+                return;
+            }
+        }
+
+        std::string FeatName = cmd->getUniqueObjectName(which.c_str(), activeBody);
+
         const std::string featType = std::string("PartDesign::") + which;
-        auto Feat = PartDesignGui::createFeature(pcActiveBody, featType.c_str(), FeatName);
+        auto Feat = PartDesignGui::createFeature(activeBody, featType.c_str(), FeatName);
 
         auto objCmd = Gui::Command::getObjectCmd(feature);
 
@@ -954,7 +973,7 @@ void prepareProfileBased(
             // CoreCAD Phase 2: skip importExternalElements for cross-body profiles —
             // it returns false for them anyway, and the cycle check inside it incorrectly
             // fires because the new feature is already in the body's InList at this point.
-            if (PartDesign::Body::findBodyOf(feature) == pcActiveBody) {
+            if (PartDesign::Body::findBodyOf(feature) == activeBody) {
                 importExternalElements(ProfileFeature->Profile, {feature});
                 cmdSubs = ProfileFeature->Profile.getSubValues();
             }
@@ -1059,7 +1078,11 @@ void prepareProfileBased(
     if ((which.find("Subtractive") != std::string::npos) || (which.compare("Groove") == 0)
         || (which.compare("Pocket") == 0)) {
 
-        if (!pcActiveBody->isSolid()) {
+        // A subtractive feature needs an existing solid. If the anchor chain reached
+        // no Body (pcActiveBody == nullptr, the auto-spawn case) there is nothing to
+        // subtract from — reject here, before the transaction, so no stray Body is
+        // ever spawned for an operation that cannot succeed (#17).
+        if (!pcActiveBody || !pcActiveBody->isSolid()) {
             QMessageBox msgBox(Gui::getMainWindow());
             msgBox.setText(
                 QObject::tr("Cannot use this command as there is no solid to subtract from.")
@@ -1207,8 +1230,13 @@ void prepareProfileBased(Gui::Command* cmd, const std::string& which, double len
         return;
     }
 
-    PartDesign::Body* pcActiveBody = decideBaseBody(sketch, doc);
-    if (!pcActiveBody) {
+    // pcActiveBody may be null: the anchor chain reached no Body. That is the
+    // auto-spawn case — prepareProfileBased() creates the Body inside the feature's
+    // undo transaction so a cancelled feature leaks nothing (#17). Only abort when
+    // the chain is ambiguous.
+    bool abort = false;
+    PartDesign::Body* pcActiveBody = decideBaseBody(sketch, abort);
+    if (abort) {
         return;
     }
 
