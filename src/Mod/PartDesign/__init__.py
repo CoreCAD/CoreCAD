@@ -13,3 +13,7 @@ spawnBody = _PartDesign.spawnBody
 # Cruth §11: reverse lookup from a feature to the Body whose pipeline emits it.
 # Derived on demand (walked along the BaseFeature chain), never stored — not ownership.
 findBodyOf = _PartDesign.findBodyOf
+
+# Cruth §8.5 (#27): re-home a feature onto another Body (or None to spawn a fresh one) —
+# the model half of the feature-creation "Merge result" control.
+moveFeatureToBody = _PartDesign.moveFeatureToBody

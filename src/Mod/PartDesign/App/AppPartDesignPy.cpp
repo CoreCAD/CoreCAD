@@ -73,10 +73,50 @@ public:
             "the mirror image of the de-owned Group. Returns None if the feature belongs to\n"
             "no Body. This is the Python entry point for the C++ static Body::findBodyOf."
         );
+        add_varargs_method(
+            "moveFeatureToBody",
+            &Module::moveFeatureToBody,
+            "moveFeatureToBody(feature, target) -> Body\n\n"
+            "Cruth §8.5 (Merge Result, #27): re-home a feature onto another Body's\n"
+            "pipeline. target may be a Body (extend it) or None (spawn a fresh Body for\n"
+            "the feature — the 'Merge result off' case). Detaches the feature from its\n"
+            "current Body first, retiring that Body if it empties (§4.7). Returns the\n"
+            "Body the feature now belongs to. Shared with the GUI control (P8)."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
 private:
+    Py::Object moveFeatureToBody(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        PyObject* pyTarget = nullptr;  // Body or None
+        if (!PyArg_ParseTuple(args.ptr(), "O!O", &(App::DocumentObjectPy::Type), &pyFeature, &pyTarget)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* feature
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+
+        Body* target = nullptr;
+        if (pyTarget != Py_None) {
+            if (!PyObject_TypeCheck(pyTarget, &(App::DocumentObjectPy::Type))) {
+                throw Py::TypeError("moveFeatureToBody expects a Body or None as target");
+            }
+            auto* obj = static_cast<App::DocumentObjectPy*>(pyTarget)->getDocumentObjectPtr();
+            target = freecad_cast<Body*>(obj);
+            if (!target) {
+                throw Py::TypeError("moveFeatureToBody expects a Body or None as target");
+            }
+        }
+
+        Body* result = Body::moveFeatureToBody(feature, target);
+        if (!result) {
+            return Py::None();
+        }
+        return Py::asObject(result->getPyObject());
+    }
+
     Py::Object findBodyOf(const Py::Tuple& args)
     {
         PyObject* pyFeature = nullptr;
