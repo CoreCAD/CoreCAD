@@ -260,17 +260,9 @@ void CmdSketcherNewSketch::activated(int iMsg)
                                                            // on its support
         doCommand(Gui, "Gui.activeDocument().setEdit('%s')", FeatName.c_str());
 
-        Part::Feature* part = static_cast<Part::Feature*>(
-            support.getValue());// if multi-part support, this will return 0
-        if (part) {
-            App::DocumentObjectGroup* grp = part->getGroup();
-            if (grp) {
-                doCommand(Doc,
-                          "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-                          grp->getNameInDocument(),
-                          FeatName.c_str());
-            }
-        }
+        // Cruth de-ownership (§8.5): a sketch belongs to the document, not a Body/group.
+        // Its Body is DERIVED by walking AttachmentSupport (findBodyOf / getFullModel), so we
+        // no longer file the sketch into the support object's group here.
         commitCommand();
     }
     else {
