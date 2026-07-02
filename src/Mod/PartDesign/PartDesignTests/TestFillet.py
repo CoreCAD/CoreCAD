@@ -38,13 +38,13 @@ class TestFillet(unittest.TestCase):
         box.Length = 10.00
         box.Width = 10.00
         box.Height = 10.00
-        body.addObject(box)
+        body.addFeature(box)
         self.Doc.recompute()
 
         fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
         fillet.Base = (box, ["Edge1"])
         fillet.Radius = 1.0
-        body.addObject(fillet)
+        body.addFeature(fillet)
         self.Doc.recompute()
         self.assertTrue(fillet.isValid())
         return body, box, fillet
@@ -65,7 +65,7 @@ class TestFillet(unittest.TestCase):
     def testFilletCubeToSphere(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -73,7 +73,7 @@ class TestFillet(unittest.TestCase):
         self.Fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
         self.Fillet.Base = (self.Box, ["Face" + str(i + 1) for i in range(6)])
         self.Fillet.Radius = 4.999999
-        self.Body.addObject(self.Fillet)
+        self.Body.addFeature(self.Fillet)
         self.Doc.recompute()
         self.assertAlmostEqual(self.Fillet.Shape.Volume, 4 / 3 * pi * 5**3, places=3)
         # test UseAllEdges property
@@ -96,11 +96,11 @@ class TestFillet(unittest.TestCase):
         followup = self.Doc.addObject("PartDesign::Fillet", "FollowupFillet")
         followup.Base = (fillet, [old_edge])
         followup.Radius = 0.25
-        body.addObject(followup)
+        body.addFeature(followup)
         self.Doc.recompute()
         self.assertTrue(followup.isValid())
 
-        body.removeObject(fillet)
+        body.removeFeature(fillet)
 
         self.assertEqual(followup.Base[0].Name, box.Name)
         self.assertEqual(list(followup.Base[1]), [new_edge])
@@ -112,10 +112,10 @@ class TestFillet(unittest.TestCase):
         followup = self.Doc.addObject("PartDesign::Fillet", "FollowupFillet")
         followup.Base = (fillet, [old_edge])
         followup.Radius = 0.25
-        body.addObject(followup)
+        body.addFeature(followup)
         self.Doc.recompute()
 
-        body.removeObject(fillet)
+        body.removeFeature(fillet)
 
         if followup.Base[0]:
             self.assertNotEqual(followup.Base[0].Name, box.Name)

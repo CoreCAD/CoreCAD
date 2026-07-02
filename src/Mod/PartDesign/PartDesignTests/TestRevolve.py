@@ -33,7 +33,7 @@ class TestRevolve(unittest.TestCase):
     def testRevolveFace(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -43,7 +43,7 @@ class TestRevolve(unittest.TestCase):
         self.Revolution.ReferenceAxis = (self.Doc.Y_Axis, [""])
         self.Revolution.Angle = 180.0
         self.Revolution.Reversed = 1
-        self.Body.addObject(self.Revolution)
+        self.Body.addFeature(self.Revolution)
         self.Doc.recompute()
         # depending on if refinement is done we expect 8 or 10 faces
         self.assertIn(len(self.Revolution.Shape.Faces), (8, 10))
@@ -51,7 +51,7 @@ class TestRevolve(unittest.TestCase):
     def testGrooveFace(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -61,7 +61,7 @@ class TestRevolve(unittest.TestCase):
         self.Groove.ReferenceAxis = (self.Doc.X_Axis, [""])
         self.Groove.Angle = 180.0
         self.Groove.Reversed = 1
-        self.Body.addObject(self.Groove)
+        self.Body.addFeature(self.Groove)
         self.Doc.recompute()
         self.assertEqual(len(self.Groove.Shape.Faces), 5)
 

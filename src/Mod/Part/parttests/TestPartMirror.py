@@ -128,7 +128,7 @@ class TestPartMirroringRegression(unittest.TestCase):
         box.Length = 10
         box.Width = 10
         box.Height = 10
-        body.addObject(box)
+        body.addFeature(box)
         self.doc.recompute()
 
         # body shape should be at origin
@@ -187,7 +187,7 @@ class TestPartMirroringRegression(unittest.TestCase):
         box.Length = 10
         box.Width = 20
         box.Height = 5
-        body.addObject(box)
+        body.addFeature(box)
         self.doc.recompute()
 
         # link with translation and 90° rotation around Z

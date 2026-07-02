@@ -38,11 +38,11 @@ class TestPipe(unittest.TestCase):
     def testSimpleAdditivePipeCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.ProfileSketch = self.Doc.addObject("Sketcher::SketchObject", "ProfileSketch")
-        self.Body.addObject(self.ProfileSketch)
+        self.Body.addFeature(self.ProfileSketch)
         TestSketcherApp.CreateCircleSketch(self.ProfileSketch, (0, 0), 1)
         self.Doc.recompute()
         self.SpineSketch = self.Doc.addObject("Sketcher::SketchObject", "SpineSketch")
-        self.Body.addObject(self.SpineSketch)
+        self.Body.addFeature(self.SpineSketch)
         self.SpineSketch.MapMode = "FlatFace"
         self.SpineSketch.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         self.Doc.recompute()
@@ -54,7 +54,7 @@ class TestPipe(unittest.TestCase):
         self.SpineSketch.addConstraint(Sketcher.Constraint("DistanceY", 0, 1, 0, 2, 1))
         self.Doc.recompute()
         self.AdditivePipe = self.Doc.addObject("PartDesign::AdditivePipe", "AdditivePipe")
-        self.Body.addObject(self.AdditivePipe)
+        self.Body.addFeature(self.AdditivePipe)
         self.AdditivePipe.Profile = self.ProfileSketch
         self.AdditivePipe.Spine = self.SpineSketch
         self.Doc.recompute()
@@ -63,11 +63,11 @@ class TestPipe(unittest.TestCase):
     def testSimpleSubtractivePipeCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.ProfileSketch = self.Doc.addObject("Sketcher::SketchObject", "ProfileSketch")
-        self.Body.addObject(self.ProfileSketch)
+        self.Body.addFeature(self.ProfileSketch)
         TestSketcherApp.CreateCircleSketch(self.ProfileSketch, (0, 0), 1)
         self.Doc.recompute()
         self.SpineSketch = self.Doc.addObject("Sketcher::SketchObject", "SpineSketch")
-        self.Body.addObject(self.SpineSketch)
+        self.Body.addFeature(self.SpineSketch)
         self.SpineSketch.MapMode = "FlatFace"
         self.SpineSketch.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         self.Doc.recompute()
@@ -79,16 +79,16 @@ class TestPipe(unittest.TestCase):
         self.SpineSketch.addConstraint(Sketcher.Constraint("DistanceY", 0, 1, 0, 2, 1))
         self.Doc.recompute()
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "PadSketch")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (-5, -5), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 1.0
         self.Doc.recompute()
         self.SubtractivePipe = self.Doc.addObject("PartDesign::SubtractivePipe", "SubtractivePipe")
-        self.Body.addObject(self.SubtractivePipe)
+        self.Body.addFeature(self.SubtractivePipe)
         self.SubtractivePipe.Profile = self.ProfileSketch
         self.SubtractivePipe.Spine = self.SpineSketch
         self.Doc.recompute()

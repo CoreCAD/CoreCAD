@@ -1343,9 +1343,12 @@ def createPart(partName, doc):
     part = doc.addObject("App::Part", partName)
     body = part.newObject("PartDesign::Body", "Body")
     # Gui.ActiveDocument.ActiveView.setActiveObject('pdbody', body)
-    sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+    # De-ownership (marker model): the Document creates the object and the Body splices it
+    # into its own pipeline via addFeature; features anchor to the single shared document
+    # origin, so the base plane comes from doc, not a per-body Origin.
+    sketch = body.addFeature(doc.addObject("Sketcher::SketchObject", "Sketch"))
     sketch.MapMode = "FlatFace"
-    sketch.AttachmentSupport = [(body.Origin.OriginFeatures[3], "")]  # XY_Plane
+    sketch.AttachmentSupport = [(doc.XY_Plane, "")]
 
     # add a circle as a base shape for visualisation
     sketch.addGeometry(Part.Circle(App.Vector(0, 0), App.Vector(0, 0, 1), 5), False)

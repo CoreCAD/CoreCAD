@@ -33,14 +33,14 @@ class TestThickness(unittest.TestCase):
     def testReversedThickness(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
         self.Doc.recompute()
         self.Thickness = self.Doc.addObject("PartDesign::Thickness", "Thickness")
         self.Thickness.Base = (self.Box, ["Face1"])
-        self.Body.addObject(self.Thickness)
+        self.Body.addFeature(self.Thickness)
         self.Doc.recompute()
         self.Thickness.Value = 1.0
         self.Thickness.Reversed = 1
