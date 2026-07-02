@@ -2,6 +2,7 @@
 
 /***************************************************************************
  *   Copyright (c) 2010 Juergen Riegel <FreeCAD@juergen-riegel.net>        *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -25,6 +26,7 @@
 
 #pragma once
 
+#include <App/PropertyStandard.h>
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
 
@@ -32,6 +34,12 @@ namespace App
 {
 class Origin;
 }
+
+namespace Part
+{
+class Part2DObject;
+class TopoShape;
+}  // namespace Part
 
 namespace PartDesign
 {
@@ -44,6 +52,21 @@ class PartDesignExport Body: public Part::BodyBase
 
 public:
     App::PropertyBool AllowCompound;
+
+    /// Cruth §4.6 visual identity — auto-assigned from a deterministic palette at spawn.
+    App::PropertyColor Color;
+
+    /// Cruth §3.3 component identity. A Body's Tip is a (feature, component-id) pair: this
+    /// names which connected component of the Tip feature's output shape the Body represents.
+    /// Empty means the implicit, single-component case (the overwhelming majority of Bodies).
+    /// Features that produce multiple disjoint components spawn one Body per component, each
+    /// sharing the Tip feature but carrying a distinct, element-map-stable id here.
+    App::PropertyString TipComponentId;
+
+    /// Cruth §8.2 durable body identity — a UUID minted once at birth, never recomputed,
+    /// persisted. This is the stable id assemblies and BOMs resolve a body through (§13.1);
+    /// unlike the runtime which-solid predicate, it costs no robustness to topology changes.
+    App::PropertyUUID Uid;
 
     /// True if this body feature is active or was active when the document was last closed
     // App::PropertyBool IsActive;
@@ -64,11 +87,18 @@ public:
     //@}
 
     /**
-     * Add the feature into the body at the current insert point.
-     * The insertion point is the before next solid after the Tip feature
+     * Splice an already-created feature into this Body's pipeline at the current insert
+     * point (the position before the next solid after the Tip), advancing the Tip.
+     *
+     * Cruth §11 step 5e: this is a pipeline edit, NOT a container add. The Body does not
+     * create or own the feature — the Document creates it (see PartDesignGui::createFeature);
+     * this method only rewires the BaseFeature chain + Tip that the Body marks and stamps the
+     * derived _Body back-pointer. It replaced the retired GroupExtension addObject(); the
+     * feature-flavoured name makes the pipeline (not container) semantics explicit. Handles
+     * both the tip-append gesture and mid-chain insert. See ARCHITECTURE §3.2/§3.3.
      */
-    std::vector<App::DocumentObject*> addObject(App::DocumentObject*) override;
-    std::vector<DocumentObject*> addObjects(std::vector<DocumentObject*> obj) override;
+    std::vector<App::DocumentObject*> addFeature(App::DocumentObject* feature);
+    std::vector<DocumentObject*> addFeatures(std::vector<DocumentObject*> features);
 
     /**
      * Insert the feature into the body after the given feature.
@@ -79,14 +109,51 @@ public:
      *                 and into the begin if where is InsertAfter.
      * @param after    if true insert the feature after the target. Default is false.
      *
-     * @note the method doesn't modify the Tip unlike addObject()
+     * @note the method doesn't modify the Tip unlike addFeature()
      */
     void insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after = false);
 
     void setBaseProperty(App::DocumentObject* feature);
 
-    /// Remove the feature from the body
-    std::vector<DocumentObject*> removeObject(DocumentObject* obj) override;
+    /**
+     * Remove a feature from this Body's pipeline (Cruth intra-body de-ownership): rewire the
+     * BaseFeature chain and retreat the Tip; retire the Body if its chain empties. A pipeline
+     * edit, not a container remove — the feature is not destroyed. Must be called BEFORE the
+     * feature is removed from the Document. See ARCHITECTURE §3.2/§3.3.
+     */
+    std::vector<DocumentObject*> removeFeature(DocumentObject* feature);
+    /// Convenience: removeFeature over a list (used when re-homing features between bodies).
+    void removeFeatures(const std::vector<App::DocumentObject*>& features);
+
+    /// Cruth: chain successor of a feature (the solid whose BaseFeature links to it).
+    App::DocumentObject* getNextSolidFeatureByChain(App::DocumentObject* feature) const;
+
+    /**
+     * Cruth §4.8 multi-output spawn. Run after a document recompute: for each
+     * recomputed PartDesign feature that a Body points at as its Tip, count the
+     * connected solid components of the feature's output. When the count exceeds
+     * the number of Bodies referencing that feature, spawn one Body per extra
+     * component and stamp each Body's TipComponentId (§3.3) with an element-map-
+     * stable id. The single-component case is a no-op. Idempotent: re-running on a
+     * reconciled document changes nothing. Spawn direction only — shrink/retire
+     * (§4.7) is handled separately. See ARCHITECTURE §3.3/§4.7/§4.8.
+     */
+    static void reconcileMultiOutput(
+        App::Document* doc,
+        const std::vector<App::DocumentObject*>& recomputed
+    );
+
+    /// Wire reconcileMultiOutput onto every document's recompute signal. Call once
+    /// at module init; idempotent. P8: fires for both UI and API recompute paths.
+    static void initMultiOutputObserver();
+
+    /// Cruth §3.3 component-id for the i-th (1-based) solid of a shape: the solid's
+    /// lexicographically-smallest mapped face name, stable across recomputes that
+    /// preserve topology and independent of OCCT's solid ordering (positional
+    /// "Solid{i}" fallback when no face is mapped). This is THE component identity —
+    /// the Tip's TipComponentId and the pattern break-out skip-list (§5.6) both match
+    /// against it, so the computation must have a single source of truth.
+    static std::string componentIdOfSolid(const Part::TopoShape& shape, int index);
 
     /**
      * Checks if the given document object lays after the current insert point
@@ -106,16 +173,86 @@ public:
      * all features derived from PartDesign::Feature and Part::Datum and sketches
      */
     static bool isAllowed(const App::DocumentObject* obj);
-    bool allowObject(DocumentObject* obj) override
+    bool allowObject(DocumentObject* obj)
     {
         return isAllowed(obj);
     }
 
     /**
-     * Return the body which this feature belongs too, or NULL
-     * The only difference to BodyBase::findBodyOf() is that this one casts value to Body*
+     * Return the nearest downstream Body marker for @p feature, or NULL.
+     *
+     * CPART_DESIGN §9.1: this is a reverse lookup, not an ownership read. A Body points
+     * only one way — at the Tip it marks — so "which Body is this feature under" is
+     * answered by walking the BaseFeature chain forward to the first feature that is some
+     * Body's Tip and returning that marker. The result is a derived view of the current
+     * graph, never a stored attribute of the feature. Group membership is no longer
+     * consulted for PartDesign features (it is empty under de-ownership).
      */
     static Body* findBodyOf(const App::DocumentObject* feature);
+
+    /**
+     * Return the features that make up this Body, derived from the feature graph.
+     *
+     * CPART_DESIGN §9.1-inverse: a de-owned Body keeps no Group, so its member list is
+     * computed, not stored — the mirror image of findBodyOf. Solid features are those
+     * whose findBodyOf resolves to this Body (collected along the BaseFeature chain from
+     * the Tip back, which stops naturally at a cross-body seam). Loose features (sketches,
+     * datums, shapebinders) belong here when their §8.5 attachment anchor-walk terminates
+     * on this Body. Returned solids-first in build order, then the loose features.
+     */
+    std::vector<App::DocumentObject*> getFullModel() override;
+
+    /// Cruth de-ownership (§3.3): find a pipeline feature that resolves to this Body (via
+    /// the derived Feature::_Body marker) whose name (or $-prefixed label) matches, for
+    /// sub-object path resolution. Features are no longer Group members, so the Group-based
+    /// resolver cannot see them. Returns nullptr if no matching feature resolves to us.
+    PartDesign::Feature* findOwnedFeature(const std::string& name) const;
+
+    /**
+     * Cruth §8.5/§4.6: PURE reverse query — resolve the base Body for a new
+     * sketch-based feature by walking the sketch's anchor chain (AttachmentSupport
+     * through datums/reference geometry). No side effects; it never creates anything.
+     *  - chain terminates on exactly one Body → return that Body (extend);
+     *  - chain reaches more than one Body → return nullptr, set @p ambiguous
+     *    (the caller surfaces the §8.3 ambiguity prompt);
+     *  - chain ends at a global plane / independent geometry (no Body) → return
+     *    nullptr with @p ambiguous false. This is the auto-spawn case: the caller
+     *    decides to create a Body (§4.6) via the explicit spawnAutoBody() step, and
+     *    must do so INSIDE its undo transaction so a cancelled feature does not leak
+     *    a stray Body (#17).
+     *
+     * Lives in the App layer so the Gui command and the Python API share one code
+     * path — the P8 (Programmatic Equivalence) guarantee. Both resolve purely here,
+     * then spawn explicitly.
+     */
+    static Body* resolveBaseBody(Part::Part2DObject* sketch, bool& ambiguous);
+
+    /**
+     * Cruth §4.6: auto-spawn a new Body at document level (no active-Part
+     * containment). Color is assigned in setupObject() from the per-document
+     * palette index. Returns nullptr if @p doc is null.
+     */
+    static Body* spawnAutoBody(App::Document* doc);
+
+    /**
+     * Cruth §5.6: break a single pattern instance out into its own independent,
+     * frozen Body. Captures the instance's solid (element map preserved, §7.8)
+     * from the pattern's current output, re-homes it into a fresh Body whose
+     * chain begins with a BakedShape feature, then records a skip on the pattern
+     * so it emits one fewer instance and recomputes. The new Body is fully
+     * severed — no link back to the pattern or its base — so subsequent pattern
+     * edits never re-merge it.
+     *
+     * Order matters: the capture happens before the skip recompute, while the
+     * instance solid still exists; the now-orphaned originating Body is retired
+     * by the reconciler (§4.7).
+     *
+     * @param instanceBody a Body whose Tip is a multi-output pattern feature and
+     *                     whose TipComponentId names one emitted instance.
+     * @return the new frozen Body, or nullptr on failure (Tip is not a pattern,
+     *         component not found, etc.).
+     */
+    static Body* breakOutInstance(Body* instanceBody);
 
     PyObject* getPyObject() override;
 
@@ -148,6 +285,22 @@ public:
     // a body is solid if it has features that are solid according to member isSolidFeature.
     bool isSolid();
 
+    /// Cruth substrate flip (Stage 3a): returns the single document-level Origin,
+    /// lazily creating it if absent. This is the shared coordinate root that de-owned
+    /// features resolve against, replacing the per-body Origin (which stays created and
+    /// persisted but dormant until Stage 3b removes it). The document-level Origin is a
+    /// free-standing App::Origin not owned by any OriginGroup.
+    App::Origin* ensureDocumentOrigin();
+
+    /// Cruth §11 step 5e: with the OriginGroup extension retired, a Body no longer stores an
+    /// Origin link. getOrigin() returns the single shared document Origin by lookup (the same
+    /// object every Body and de-owned feature anchors to), lazily creating it. Preserves the
+    /// GUI feature-creation call sites that reach the base planes/axes via body->getOrigin().
+    App::Origin* getOrigin()
+    {
+        return ensureDocumentOrigin();
+    }
+
 protected:
     void onSettingDocument() override;
 
@@ -162,6 +315,14 @@ protected:
     void onDocumentRestored() override;
 
 private:
+    /// Cruth de-ownership (§9 / §8.3): repopulate the transient Feature::_Body cache from
+    /// the BaseFeature chain after a document restore. The feature->marker relationship is
+    /// not serialised, so it is re-derived by walking back from the Tip and memoising this
+    /// marker on each feature that resolves to us, up to the seam (where the chain bases on
+    /// another Body's Tip via a FeatureBase). Group is empty under de-ownership and is no
+    /// longer consulted.
+    void rebuildBodyCacheFromChain();
+
     fastsignals::scoped_connection connection;
     bool showTip = false;
 };

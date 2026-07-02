@@ -34,7 +34,7 @@ class TestPolarPattern(unittest.TestCase):
     def testXAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -45,7 +45,7 @@ class TestPolarPattern(unittest.TestCase):
         self.PolarPattern.Angle = 360
         self.PolarPattern.Occurrences = 4
         self.PolarPattern.Refine = True
-        self.Body.addObject(self.PolarPattern)
+        self.Body.addFeature(self.PolarPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.PolarPattern.Shape.Volume, 4000)
         # self.assertEqual(self.PolarPattern.Shape.ElementMapSize, 66)  # TODO
@@ -54,7 +54,7 @@ class TestPolarPattern(unittest.TestCase):
     def testYAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -65,7 +65,7 @@ class TestPolarPattern(unittest.TestCase):
         self.PolarPattern.Angle = 360
         self.PolarPattern.Occurrences = 4
         self.PolarPattern.Refine = True
-        self.Body.addObject(self.PolarPattern)
+        self.Body.addFeature(self.PolarPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.PolarPattern.Shape.Volume, 4000)
         # self.assertEqual(self.PolarPattern.Shape.ElementMapSize, 66)  # TODO
@@ -74,7 +74,7 @@ class TestPolarPattern(unittest.TestCase):
     def testZAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -85,7 +85,7 @@ class TestPolarPattern(unittest.TestCase):
         self.PolarPattern.Angle = 360
         self.PolarPattern.Occurrences = 4
         self.PolarPattern.Refine = True
-        self.Body.addObject(self.PolarPattern)
+        self.Body.addFeature(self.PolarPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.PolarPattern.Shape.Volume, 4000)
         # self.assertEqual(self.PolarPattern.Shape.ElementMapSize, 66)  # TODO
@@ -94,11 +94,11 @@ class TestPolarPattern(unittest.TestCase):
     def testNormalSketchAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 10
         self.Doc.recompute()
@@ -108,7 +108,7 @@ class TestPolarPattern(unittest.TestCase):
         self.PolarPattern.Angle = 360
         self.PolarPattern.Occurrences = 4
         self.PolarPattern.Refine = True
-        self.Body.addObject(self.PolarPattern)
+        self.Body.addFeature(self.PolarPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.PolarPattern.Shape.Volume, 4000)
         # self.assertEqual(self.PolarPattern.Shape.ElementMapSize, 66)  # TODO
@@ -117,11 +117,11 @@ class TestPolarPattern(unittest.TestCase):
     def testVerticalSketchAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 10
         self.Doc.recompute()
@@ -131,7 +131,7 @@ class TestPolarPattern(unittest.TestCase):
         self.PolarPattern.Angle = 360
         self.PolarPattern.Occurrences = 4
         self.PolarPattern.Refine = True
-        self.Body.addObject(self.PolarPattern)
+        self.Body.addFeature(self.PolarPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.PolarPattern.Shape.Volume, 4000)
         # self.assertEqual(self.PolarPattern.Shape.ElementMapSize, 66)  # TODO
@@ -140,11 +140,11 @@ class TestPolarPattern(unittest.TestCase):
     def testHorizontalSketchAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 10
         self.Doc.recompute()
@@ -154,7 +154,7 @@ class TestPolarPattern(unittest.TestCase):
         self.PolarPattern.Angle = 360
         self.PolarPattern.Occurrences = 4
         self.PolarPattern.Refine = True
-        self.Body.addObject(self.PolarPattern)
+        self.Body.addFeature(self.PolarPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.PolarPattern.Shape.Volume, 4000)
         # 26 original plus 3 new instances:

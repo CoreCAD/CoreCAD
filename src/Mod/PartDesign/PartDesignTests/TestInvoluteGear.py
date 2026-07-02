@@ -290,8 +290,8 @@ class TestInvoluteGear(unittest.TestCase):
     def testUsagePadGearProfile(self):
         profile = InvoluteGearFeature.makeInvoluteGear("GearProfile")
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
-        body.addObject(profile)
-        pad = body.newObject("PartDesign::Pad", "GearPad")
+        body.addFeature(profile)
+        pad = body.addFeature(body.Document.addObject("PartDesign::Pad", "GearPad"))
         pad.Profile = profile
         pad.Length = "5 mm"  # that our gear's "Face Width"
         self.assertSuccessfulRecompute()
@@ -304,8 +304,10 @@ class TestInvoluteGear(unittest.TestCase):
         profile.HighPrecision = False
         profile.NumberOfTeeth = 8
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
-        body.addObject(profile)
-        cylinder = body.newObject("PartDesign::AdditiveCylinder", "GearCylinder")
+        body.addFeature(profile)
+        cylinder = body.addFeature(
+            body.Document.addObject("PartDesign::AdditiveCylinder", "GearCylinder")
+        )
         default_dedendum = 1.25
         rim_width = 3 * FreeCAD.Units.MilliMetre
         cylinder.Height = "5 mm"  # that our gear's "Face Width"
@@ -314,7 +316,7 @@ class TestInvoluteGear(unittest.TestCase):
             + default_dedendum * profile.Modules
             + rim_width
         )
-        pocket = body.newObject("PartDesign::Pocket", "GearPocket")
+        pocket = body.addFeature(body.Document.addObject("PartDesign::Pocket", "GearPocket"))
         pocket.Profile = profile
         pocket.Reversed = True  # need to "pocket upwards" into the cylinder
         pocket.Type = "ThroughAll"

@@ -197,3 +197,10 @@ test-debug = { cmd = ["ctest", "--test-dir", "build/debug"]}
 test-release = { cmd = ["ctest", "--test-dir", "build/release"]}
 freecad-debug = "build/debug/bin/FreeCAD"
 freecad-release = "build/release/bin/FreeCAD"
+# Clean-room launch for testing: throwaway user.cfg wiped each run, so every
+# session starts from pristine code defaults (no persisted preference can
+# silently override a source default). The MCP bridge is unaffected — its
+# auto-start setting lives in a separate JSON under the app-data dir, not user.cfg.
+# The startup macro re-enables the Model and Report view panels (the wiped cfg
+# leaves them toggled off); it touches runtime dock visibility only, not user.cfg.
+freecad-test = { cmd = ["bash", "-c", "rm -f /tmp/cruth-test-user.cfg && exec build/debug/bin/FreeCAD --user-cfg /tmp/cruth-test-user.cfg tools/dev/freecad-test-startup.FCMacro"], depends-on = ["install-debug"] }

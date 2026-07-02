@@ -33,6 +33,7 @@
 #include <TopoDS_Face.hxx>
 
 
+#include <App/Datums.h>
 #include <App/Origin.h>
 #include <App/Part.h>
 #include <Base/Tools.h>
@@ -42,8 +43,10 @@
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Gui/MDIView.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/Selection/SelectionObject.h>
+#include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureBoolean.h>
@@ -79,6 +82,73 @@ using namespace Attacher;
 static bool hasActiveBody()
 {
     return PartDesignGui::getBody(/*messageIfNot=*/false) != nullptr;
+}
+
+// Cruth §8.5/§4.6 spawn-vs-extend decision (GUI entry point).
+//
+// PURE query wrapper over PartDesign::Body::resolveBaseBody — the shared App-layer
+// service the Python API (PartDesign.resolveBaseBody) also calls. Neither path has
+// a side effect: they resolve the anchor chain and nothing more (P8 UI/API
+// equivalence). The GUI's only addition is the human-facing ambiguity warning.
+//
+// Returns the resolved base Body, or nullptr. nullptr with @p abort == false means
+// "the anchor chain reached no Body": the caller proceeds and the feature's undo
+// transaction auto-spawns one (#17 — creation must live inside that transaction so a
+// cancelled feature leaks no stray Body). @p abort == true means the chain is
+// ambiguous and the command must stop.
+static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, bool& abort)
+{
+    abort = false;
+    bool ambiguous = false;
+    PartDesign::Body* body = PartDesign::Body::resolveBaseBody(sketch, ambiguous);
+    if (ambiguous) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("Ambiguous anchor"),
+            QObject::tr(
+                "This sketch's attachment chain reaches more than one Body. "
+                "Pick a single Body explicitly before continuing."
+            )
+        );
+        abort = true;
+    }
+    return body;
+}
+
+// CoreCAD §8.5: pick the sketch the user means to operate on.
+//
+// Rules:
+// - exactly one Part2DObject in the current selection → use it,
+// - nothing selected, exactly one sketch in the document → use it,
+// - anything else → warn and return nullptr.
+static Part::Part2DObject* resolveSketchFromSelection(Gui::Command* cmd, App::Document* doc)
+{
+    auto selected = cmd->getSelection().getObjectsOfType(Part::Part2DObject::getClassTypeId());
+    if (selected.size() == 1) {
+        return static_cast<Part::Part2DObject*>(selected.front());
+    }
+    if (selected.size() > 1) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("Multiple sketches selected"),
+            QObject::tr("Select exactly one sketch to extrude.")
+        );
+        return nullptr;
+    }
+
+    auto inDoc = doc->getObjectsOfType(Part::Part2DObject::getClassTypeId());
+    if (inDoc.size() == 1) {
+        return static_cast<Part::Part2DObject*>(inDoc.front());
+    }
+    QMessageBox::warning(
+        Gui::getMainWindow(),
+        QObject::tr("No sketch selected"),
+        QObject::tr(
+            "Multiple sketches exist in the document. "
+            "Select the one you want to extrude."
+        )
+    );
+    return nullptr;
 }
 
 //===========================================================================
@@ -123,13 +193,11 @@ void UnifiedDatumCommand(Gui::Command& cmd, Base::Type type, std::string name)
             pcActiveBody->getDocument()->openTransaction(
                 std::string(std::string("Create ") + name).c_str()
             );  // Will be closed in the edit dialog accept/reject
-            FCMD_OBJ_CMD(pcActiveBody, "newObject('" << fullTypeName << "','" << FeatName << "')");
-
             // remove the body from links in case it's selected as
             // otherwise a cyclic dependency will be created
             support.removeValue(pcActiveBody);
 
-            auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
+            auto Feat = PartDesignGui::createFeature(pcActiveBody, fullTypeName.c_str(), FeatName);
             if (!Feat) {
                 return;
             }
@@ -352,13 +420,12 @@ void CmdPartDesignShapeBinder::activated(int iMsg)
         std::string FeatName = getUniqueObjectName("ShapeBinder", pcActiveBody);
 
         openCommand(QT_TRANSLATE_NOOP("Command", "Create Shape Binder"));
-        FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::ShapeBinder','" << FeatName << "')");
 
         // remove the body from links in case it's selected as
         // otherwise a cyclic dependency will be created
         support.removeValue(pcActiveBody);
 
-        auto Feat = pcActiveBody->getObject(FeatName.c_str());
+        auto Feat = PartDesignGui::createFeature(pcActiveBody, "PartDesign::ShapeBinder", FeatName);
         if (!Feat) {
             return;
         }
@@ -446,9 +513,8 @@ void CmdPartDesignSubShapeBinder::activated(int iMsg)
     try {
         openCommand(QT_TRANSLATE_NOOP("Command", "Create Sub-Shape Binder"));
         if (pcActiveBody) {
-            FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::SubShapeBinder','" << FeatName << "')");
             binder = dynamic_cast<PartDesign::SubShapeBinder*>(
-                pcActiveBody->getObject(FeatName.c_str())
+                PartDesignGui::createFeature(pcActiveBody, "PartDesign::SubShapeBinder", FeatName)
             );
         }
         else {
@@ -597,7 +663,9 @@ void CmdPartDesignNewSketch::activated(int iMsg)
 
 bool CmdPartDesignNewSketch::isActive()
 {
-    return hasActiveBody();
+    // CoreCAD §4.6: sketch creation is available whenever a document is open;
+    // a Body is no longer a precondition.
+    return getActiveGuiDocument() != nullptr;
 }
 
 //===========================================================================
@@ -684,7 +752,7 @@ unsigned validateSketches(
             }
         }
         bool isCrossBody = false;
-        if (pcActiveBody && !pcActiveBody->hasObject(*s)) {
+        if (pcActiveBody && PartDesign::Body::findBodyOf(*s) != pcActiveBody) {
             // Check whether this sketch belongs to a body of the same part
             PartDesign::Body* b = PartDesign::Body::findBodyOf(*s);
             if (!b) {
@@ -874,12 +942,25 @@ void prepareProfileBased(
             feature->recomputeFeature();
         }
 
-        std::string FeatName = cmd->getUniqueObjectName(which.c_str(), pcActiveBody);
-
         cmd->openCommand(std::string("Make ") + which);
 
-        FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::" << which << "','" << FeatName << "')");
-        auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
+        // Cruth §4.6/#17: if the anchor chain reached no Body, auto-spawn one now —
+        // INSIDE the transaction just opened — so cancelling the feature (which
+        // aborts this command) also removes the Body. resolveBaseBody is a pure
+        // query; creation happens here, never during the lookup.
+        PartDesign::Body* activeBody = pcActiveBody;
+        if (!activeBody) {
+            activeBody = PartDesign::Body::spawnAutoBody(cmd->getDocument());
+            if (!activeBody) {
+                cmd->abortCommand();
+                return;
+            }
+        }
+
+        std::string FeatName = cmd->getUniqueObjectName(which.c_str(), activeBody);
+
+        const std::string featType = std::string("PartDesign::") + which;
+        auto Feat = PartDesignGui::createFeature(activeBody, featType.c_str(), FeatName);
 
         auto objCmd = Gui::Command::getObjectCmd(feature);
 
@@ -892,7 +973,7 @@ void prepareProfileBased(
             // CoreCAD Phase 2: skip importExternalElements for cross-body profiles —
             // it returns false for them anyway, and the cycle check inside it incorrectly
             // fires because the new feature is already in the body's InList at this point.
-            if (PartDesign::Body::findBodyOf(feature) == pcActiveBody) {
+            if (PartDesign::Body::findBodyOf(feature) == activeBody) {
                 importExternalElements(ProfileFeature->Profile, {feature});
                 cmdSubs = ProfileFeature->Profile.getSubValues();
             }
@@ -997,7 +1078,11 @@ void prepareProfileBased(
     if ((which.find("Subtractive") != std::string::npos) || (which.compare("Groove") == 0)
         || (which.compare("Pocket") == 0)) {
 
-        if (!pcActiveBody->isSolid()) {
+        // A subtractive feature needs an existing solid. If the anchor chain reached
+        // no Body (pcActiveBody == nullptr, the auto-spawn case) there is nothing to
+        // subtract from — reject here, before the transaction, so no stray Body is
+        // ever spawned for an operation that cannot succeed (#17).
+        if (!pcActiveBody || !pcActiveBody->isSolid()) {
             QMessageBox msgBox(Gui::getMainWindow());
             msgBox.setText(
                 QObject::tr("Cannot use this command as there is no solid to subtract from.")
@@ -1123,9 +1208,35 @@ void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, Ap
 
 void prepareProfileBased(Gui::Command* cmd, const std::string& which, double length)
 {
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    auto* doc = cmd->getDocument();
+    if (!doc) {
+        return;
+    }
 
-    if (!pcActiveBody) {
+    // CoreCAD §4.6: validate sketch availability before spawning a Body.
+    if (doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty()) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No sketch to work on"),
+            QObject::tr("No sketch is available in the document")
+        );
+        return;
+    }
+
+    // CoreCAD §8.5: the sketch's anchor chain decides spawn-vs-extend.
+    // Active-body session state is no longer consulted.
+    auto* sketch = resolveSketchFromSelection(cmd, doc);
+    if (!sketch) {
+        return;
+    }
+
+    // pcActiveBody may be null: the anchor chain reached no Body. That is the
+    // auto-spawn case — prepareProfileBased() creates the Body inside the feature's
+    // undo transaction so a cancelled feature leaks nothing (#17). Only abort when
+    // the chain is ambiguous.
+    bool abort = false;
+    PartDesign::Body* pcActiveBody = decideBaseBody(sketch, abort);
+    if (abort) {
         return;
     }
 
@@ -1180,7 +1291,10 @@ void CmdPartDesignPad::activated(int iMsg)
 
 bool CmdPartDesignPad::isActive()
 {
-    return hasActiveBody();
+    // CoreCAD §4.6: Pad is enabled when the document holds at least one sketch.
+    // The Body is auto-spawned by prepareProfileBased() when the user clicks Pad.
+    auto* doc = getDocument();
+    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
 }
 
 //===========================================================================
@@ -1843,8 +1957,8 @@ void finishDressupFeature(
         return;
     }
     cmd->openCommand(std::string("Make ") + which);
-    FCMD_OBJ_CMD(body, "newObject('PartDesign::" << which << "','" << FeatName << "')");
-    auto Feat = body->getDocument()->getObject(FeatName.c_str());
+    const std::string featType = std::string("PartDesign::") + which;
+    auto Feat = PartDesignGui::createFeature(body, featType.c_str(), FeatName);
     FCMD_OBJ_CMD(Feat, "Base = " << str.str());
     if (useAllEdges && (which.compare("Fillet") == 0 || which.compare("Chamfer") == 0)) {
         FCMD_OBJ_CMD(Feat, "UseAllEdges = True");
@@ -2089,13 +2203,9 @@ void prepareTransformed(
         std::string msg("Make ");
         msg += which;
         cmd->openCommand(msg.c_str());
-        FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::" << which << "','" << FeatName << "')");
-        // FIXME: There seems to be kind of a race condition here, leading to sporadic errors like
-        // Exception (Thu Sep  6 11:52:01 2012): 'App.Document' object has no attribute 'Mirrored'
-        Gui::Command::updateActive();  // Helps to ensure that the object already exists when the
-                                       // next command comes up
-
-        auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
+        const std::string featType = std::string("PartDesign::") + which;
+        auto Feat = PartDesignGui::createFeature(pcActiveBody, featType.c_str(), FeatName);
+        Gui::Command::updateActive();
 
         if (features.empty()) {
             FCMD_OBJ_CMD(Feat, "TransformMode = \"Whole shape\"");
@@ -2451,13 +2561,12 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
 #if 0
         // Remove the Transformed feature from the Body
         if (pcActiveBody)
-            FCMD_OBJ_CMD(pcActiveBody,"removeObject("<<getObjectCmd(trFeat)<<")");
+            FCMD_OBJ_CMD(pcActiveBody,"removeFeature("<<getObjectCmd(trFeat)<<")");
 #endif
 
         // Create a MultiTransform feature and move the Transformed feature inside it
         std::string FeatName = getUniqueObjectName("MultiTransform", pcActiveBody);
-        FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::MultiTransform','" << FeatName << "')");
-        auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
+        auto Feat = PartDesignGui::createFeature(pcActiveBody, "PartDesign::MultiTransform", FeatName);
         auto objCmd = getObjectCmd(trFeat);
         FCMD_OBJ_CMD(Feat, "Originals = " << objCmd << ".Originals");
         FCMD_OBJ_CMD(Feat, "TransformMode = " << objCmd << ".TransformMode");
@@ -2536,8 +2645,7 @@ void CmdPartDesignBoolean::activated(int iMsg)
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Boolean"));
     std::string FeatName = getUniqueObjectName("Boolean", pcActiveBody);
-    FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::Boolean','" << FeatName << "')");
-    auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
+    auto Feat = PartDesignGui::createFeature(pcActiveBody, "PartDesign::Boolean", FeatName);
 
     // If we don't add an object to the boolean group then don't update the body
     // as otherwise this will fail and it will be marked as invalid

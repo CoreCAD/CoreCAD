@@ -24,10 +24,16 @@
 
 
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
+#include <Inventor/nodes/SoSeparator.h>
 #include <QMenu>
+
+#include <algorithm>
+#include <set>
+#include <vector>
 
 #include <App/Document.h>
 #include <App/Origin.h>
+#include <App/OriginGroupExtension.h>
 #include <App/Part.h>
 #include <App/VarSet.h>
 #include <Base/Console.h>
@@ -36,6 +42,7 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MDIView.h>
+#include <Gui/Selection/SoFCUnifiedSelection.h>
 #include <Gui/ViewProviderDatum.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
@@ -52,7 +59,7 @@ namespace sp = std::placeholders;
 
 const char* PartDesignGui::ViewProviderBody::BodyModeEnum[] = {"Through", "Tip", nullptr};
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesignGui::ViewProviderBody, PartGui::ViewProviderPart)
+PROPERTY_SOURCE(PartDesignGui::ViewProviderBody, PartGui::ViewProviderPart)
 
 ViewProviderBody::ViewProviderBody()
 {
@@ -61,15 +68,49 @@ ViewProviderBody::ViewProviderBody()
 
     sPixmap = "PartDesign_Body.svg";
 
-    Gui::ViewProviderOriginGroupExtension::initExtension(this);
+    // Own the scene nodes that the retired Gui OriginGroup extension used to provide
+    // (Cruth §11 step 5e). pcBodyChildren is both the "Group"/Through display-mask node
+    // and the 3D child root; front/back are the annotation separators.
+    pcBodyChildren = new Gui::SoFCSelectionRoot;
+    pcBodyChildren->ref();
+    pcBodyFront = new SoSeparator();
+    pcBodyFront->ref();
+    pcBodyBack = new SoSeparator();
+    pcBodyBack->ref();
 }
 
-ViewProviderBody::~ViewProviderBody() = default;
+ViewProviderBody::~ViewProviderBody()
+{
+    pcBodyChildren->unref();
+    pcBodyFront->unref();
+    pcBodyBack->unref();
+}
+
+SoGroup* ViewProviderBody::getChildRoot() const
+{
+    return pcBodyChildren;
+}
+
+SoSeparator* ViewProviderBody::getFrontRoot() const
+{
+    return pcBodyFront;
+}
+
+SoSeparator* ViewProviderBody::getBackRoot() const
+{
+    return pcBodyBack;
+}
 
 void ViewProviderBody::attach(App::DocumentObject* pcFeat)
 {
     // call parent attach method
     ViewProviderPart::attach(pcFeat);
+
+    // Register the "Group" display-mask mode against our own child-root node (formerly
+    // done by ViewProviderGeoFeatureGroupExtension::extensionAttach). onChanged() switches
+    // to this mode for "Through" body display; Document::handleChildren3D parents the
+    // pipeline features under the same node.
+    addDisplayMaskMode(pcBodyChildren, "Group");
 
     // set default display mode
     onChanged(&DisplayModeBody);
@@ -107,7 +148,7 @@ void ViewProviderBody::onChangedObject(const Gui::ViewProvider& vp, const App::P
     if (!body) {
         return;
     }
-    const auto& features = body->Group.getValues();
+    const auto& features = body->getFullModel();
     bool isRelevantChange = (changedObj == body)
         || (std::ranges::find(features, changedObj) != features.end());
 
@@ -127,7 +168,7 @@ void ViewProviderBody::refreshOverlays()
     if (!body) {
         return;
     }
-    for (auto* obj : body->Group.getValues()) {
+    for (auto* obj : body->getFullModel()) {
         Gui::ViewProvider* vpBase = Gui::Application::Instance->getViewProvider(obj);
         if (auto* vpPartDesign = dynamic_cast<PartDesignGui::ViewProvider*>(vpBase)) {
             vpPartDesign->updateOverlay();
@@ -172,7 +213,7 @@ void ViewProviderBody::setOverrideMode(const std::string& mode)
             Gui::Document* gdoc = Gui::Application::Instance->getDocument(pcObject->getDocument());
             if (gdoc) {
                 PartDesign::Body* body = static_cast<PartDesign::Body*>(getObject());
-                auto features = body->Group.getValues();
+                auto features = body->getFullModel();
                 for (auto feature : features) {
                     if (feature && feature->isDerivedFrom<PartDesign::Feature>()) {
                         if (Gui::ViewProvider* vp = gdoc->getViewProvider(feature)) {
@@ -282,7 +323,7 @@ bool ViewProviderBody::doubleClicked()
 //    bool active = body->IsActive.getValue();
 //    //Base::Console().error("Body is %s\n", active ? "active" : "inactive");
 //    ActiveGuiDoc->signalHighlightObject(*this, Gui::Blue, active);
-//    std::vector<App::DocumentObject*> features = body->Group.getValues();
+//    std::vector<App::DocumentObject*> features = body->getFullModel();
 //    bool highlight = true;
 //    App::DocumentObject* tip = body->Tip.getValue();
 //    for (std::vector<App::DocumentObject*>::const_iterator f = features.begin(); f !=
@@ -308,8 +349,9 @@ void ViewProviderBody::updateData(const App::Property* prop)
 {
     PartDesign::Body* body = getObject<PartDesign::Body>();
 
-    if (prop == &body->Group || prop == &body->BaseFeature) {
-        // ensure all model features are in visual body mode
+    if (prop == &body->BaseFeature || prop == &body->Tip) {
+        // ensure all model features are in visual body mode. Membership now changes via the
+        // BaseFeature chain / Tip, not a Group edit (Cruth §11 step 5e).
         setVisualBodyMode(true);
     }
 
@@ -317,7 +359,7 @@ void ViewProviderBody::updateData(const App::Property* prop)
         // We changed Tip
         App::DocumentObject* tip = body->Tip.getValue();
 
-        auto features = body->Group.getValues();
+        auto features = body->getFullModel();
 
         // restore icons
         for (auto feature : features) {
@@ -328,7 +370,90 @@ void ViewProviderBody::updateData(const App::Property* prop)
         }
     }
 
+    if (prop == &body->Tip || prop == &body->TipComponentId) {
+        applyMultiOutputDisplay();
+    }
+
     PartGui::ViewProviderPart::updateData(prop);
+}
+
+void ViewProviderBody::finishRestoring()
+{
+    PartGui::ViewProviderPart::finishRestoring();
+    // Re-open of a multi-output document: TipComponentId is loaded but the feature-
+    // hide step is skipped during restore, so apply it once restore has settled.
+    applyMultiOutputDisplay();
+}
+
+namespace
+{
+// A multi-output Body IS the representation of its Tip, so no feature feeding that Tip
+// may draw independently. Walk the Tip's dependency chain (backward via getOutList) and
+// hide every body-content feature in it — solid features (the shared pattern and its
+// upstream Pad/base features) and their profile sketches — so only the Bodies' own
+// component shapes show. Datums/origins are left alone: they are reference geometry the
+// user may want visible. Without this, e.g. the base Pad of a multi-output pattern keeps
+// drawing at instance 0's location, leaving a phantom solid with no Body (Cruth: a Body
+// is the representation of its Tip, §4.6/§5.5).
+void hideTipChain(App::DocumentObject* tip)
+{
+    if (!tip) {
+        return;
+    }
+    const Base::Type sketchType = Base::Type::fromName("Sketcher::SketchObject");
+    std::set<App::DocumentObject*> seen;
+    std::vector<App::DocumentObject*> stack {tip};
+    while (!stack.empty()) {
+        App::DocumentObject* obj = stack.back();
+        stack.pop_back();
+        if (!obj || !seen.insert(obj).second) {
+            continue;
+        }
+        const bool isSketch = !sketchType.isBad() && obj->isDerivedFrom(sketchType);
+        if (PartDesign::Body::isSolidFeature(obj) || isSketch) {
+            if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj)) {
+                vp->setVisible(false);
+            }
+        }
+        for (App::DocumentObject* dep : obj->getOutList()) {
+            stack.push_back(dep);
+        }
+    }
+}
+}  // namespace
+
+void ViewProviderBody::applyMultiOutputDisplay()
+{
+    PartDesign::Body* body = getObject<PartDesign::Body>();
+    if (!body) {
+        return;
+    }
+
+    if (!body->TipComponentId.getStrValue().empty()) {
+        // Multi-output: force "Tip" mode so this Body draws its own component shape,
+        // and hide the shared feature so its full multi-solid shape does not also draw.
+        if (DisplayModeBody.getValue() != 1) {
+            DisplayModeBody.setValue(static_cast<long>(1));
+        }
+        if (!isRestoring()) {
+            hideTipChain(body->Tip.getValue());
+        }
+        return;
+    }
+
+    // Collapsed back to a single component: undo only what the multi-output path forced.
+    // An ordinary single-component Body is already in "Through" mode (0), so guarding on
+    // mode == 1 keeps this a no-op for it and avoids clobbering normal display.
+    if (DisplayModeBody.getValue() == 1) {
+        DisplayModeBody.setValue(static_cast<long>(0));  // back to "Through"
+        if (!isRestoring()) {
+            if (App::DocumentObject* tip = body->Tip.getValue()) {
+                if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(tip)) {
+                    vp->setVisible(true);  // re-show the previously hidden shared feature
+                }
+            }
+        }
+    }
 }
 
 void ViewProviderBody::onChanged(const App::Property* prop)
@@ -408,7 +533,7 @@ void ViewProviderBody::unifyVisualProperty(const App::Property* prop)
     Gui::Document* gdoc = Gui::Application::Instance->getDocument(pcObject->getDocument());
 
     PartDesign::Body* body = static_cast<PartDesign::Body*>(getObject());
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
     for (auto feature : features) {
 
         if (!feature->isDerivedFrom<PartDesign::Feature>()) {
@@ -439,13 +564,154 @@ std::map<std::string, Base::Color> ViewProviderBody::getElementColors(const char
 }
 
 
+std::vector<App::DocumentObject*> ViewProviderBody::pipelineChain() const
+{
+    // Walk the BaseFeature chain backward from the Tip (tip-first), guarding
+    // against cycles, then reverse to base -> tip pipeline order. This is the
+    // source-of-truth flip: the chain *is* the pipeline (ARCHITECTURE.md §3.3),
+    // independent of Group membership.
+    std::vector<App::DocumentObject*> chain;  // tip -> base
+    std::set<App::DocumentObject*> onChain;
+    auto* body = getObject<PartDesign::Body>();
+    for (App::DocumentObject* feat = body ? body->Tip.getValue() : nullptr; feat;) {
+        if (!onChain.insert(feat).second) {
+            break;  // cycle guard
+        }
+        chain.push_back(feat);
+        auto* pdFeat = freecad_cast<PartDesign::Feature*>(feat);
+        feat = pdFeat ? pdFeat->BaseFeature.getValue() : nullptr;
+    }
+    std::reverse(chain.begin(), chain.end());  // base -> tip (pipeline order)
+    return chain;
+}
+
+std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
+{
+    auto* body = getObject<PartDesign::Body>();
+    if (!body) {
+        // Degenerate case (no Body object): nothing to claim.
+        return {};
+    }
+
+    // 1. Derive the ordered solid pipeline from the BaseFeature chain.
+    std::vector<App::DocumentObject*> chain = pipelineChain();  // base -> tip
+    std::set<App::DocumentObject*> onChain(chain.begin(), chain.end());
+
+    // 2. Collect objects claimed by features (so profiles/sketches nest under
+    //    their feature instead of appearing at body level). Both the chain
+    //    features and any remaining Group members are potential claimers.
+    const std::vector<App::DocumentObject*> groupMembers = body->getFullModel();
+    std::set<App::DocumentObject*> claimed;
+    auto collectClaimed = [&](App::DocumentObject* obj) {
+        if (!obj) {
+            return;
+        }
+        Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj);
+        if (!vp || vp == this) {
+            return;
+        }
+        for (auto* child : vp->claimChildren()) {
+            if (child) {
+                claimed.insert(child);
+            }
+        }
+    };
+    for (auto* obj : chain) {
+        collectClaimed(obj);
+    }
+    for (auto* obj : groupMembers) {
+        collectClaimed(obj);
+    }
+
+    // 3. Assemble the result: pipeline first in chain order, then auxiliary
+    //    Group members that are not on the chain (Origin is handled separately,
+    //    below; datums and unconsumed sketches land here). Skip anything nested
+    //    under a feature.
+    std::vector<App::DocumentObject*> result;
+    std::set<App::DocumentObject*> emitted;
+    auto emit = [&](App::DocumentObject* obj) {
+        if (!obj || !obj->isAttachedToDocument() || claimed.contains(obj)) {
+            return;
+        }
+        if (emitted.insert(obj).second) {
+            result.push_back(obj);
+        }
+    };
+    for (auto* obj : chain) {
+        emit(obj);
+    }
+    for (auto* obj : groupMembers) {
+        if (!onChain.contains(obj)) {
+            emit(obj);
+        }
+    }
+
+    // 4. Keep the GeoExcluded status of Group members consistent with what we
+    //    nested, so sub-object resolution (extensionGetSubObjects) stays correct.
+    for (auto* obj : groupMembers) {
+        if (obj && obj->isAttachedToDocument()) {
+            obj->setStatus(App::ObjectStatus::GeoExcluded, claimed.contains(obj));
+        }
+    }
+
+    // 5. Origin must come first (the shared document Origin, resolved by lookup now the
+    //    OriginGroup extension is gone — Cruth §11 step 5e).
+    if (App::DocumentObject* origin = body->getOrigin()) {
+        result.insert(result.begin(), origin);
+    }
+    return result;
+}
+
+
+std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
+{
+    auto* body = getObject<PartDesign::Body>();
+    if (!body) {
+        // Degenerate case (no Body object): nothing to claim.
+        return {};
+    }
+
+    // Flat set of every object that must inherit the body's coordinate frame:
+    // the pipeline features, the sub-objects they claim (profile sketches,
+    // datums), and any remaining Group members not reached via the chain. Unlike
+    // the tree (claimChildren), the 3D scene graph parents these flat, not
+    // nested, so we dedupe rather than nest. Order is irrelevant for parenting.
+    std::vector<App::DocumentObject*> result;
+    std::set<App::DocumentObject*> seen;
+    auto emit = [&](App::DocumentObject* obj) {
+        if (obj && obj->isAttachedToDocument() && seen.insert(obj).second) {
+            result.push_back(obj);
+        }
+    };
+
+    for (auto* feat : pipelineChain()) {
+        emit(feat);
+        Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(feat);
+        if (vp && vp != this) {
+            for (auto* child : vp->claimChildren()) {
+                emit(child);
+            }
+        }
+    }
+    for (auto* obj : body->getFullModel()) {
+        emit(obj);
+    }
+
+    // Origin first (the shared document Origin, resolved by lookup — Cruth §11 step 5e).
+    if (App::DocumentObject* origin = body->getOrigin()) {
+        result.insert(result.begin(), origin);
+    }
+    return result;
+}
+
+
 void ViewProviderBody::setVisualBodyMode(bool bodymode)
 {
 
     Gui::Document* gdoc = Gui::Application::Instance->getDocument(pcObject->getDocument());
 
     PartDesign::Body* body = static_cast<PartDesign::Body*>(getObject());
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
     for (auto feature : features) {
 
         if (!feature->isDerivedFrom<PartDesign::Feature>()) {
@@ -462,17 +728,17 @@ void ViewProviderBody::setVisualBodyMode(bool bodymode)
 std::vector<std::string> ViewProviderBody::getDisplayModes() const
 {
 
-    // we get all display modes and remove the "Group" mode, as this is what we use for "Through"
-    // body display mode
-    std::vector<std::string> modes = ViewProviderPart::getDisplayModes();
-    modes.erase(modes.begin());
-    return modes;
+    // The user-facing display modes are the inherited Part modes only. "Through"/"Tip" are
+    // driven by the DisplayModeBody enum, not this list. The retired OriginGroup extension
+    // used to inject a leading "Group" mode that we erased here; with the extension gone it is
+    // no longer present, so nothing needs removing.
+    return ViewProviderPart::getDisplayModes();
 }
 
 PartDesign::Feature* ViewProviderBody::getShownFeature() const
 {
     auto body = static_cast<PartDesign::Body*>(getObject());
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
 
     for (auto feature : features) {
         if (!feature->isDerivedFrom<PartDesign::Feature>()) {
@@ -551,7 +817,7 @@ void ViewProviderBody::dropObject(App::DocumentObject* obj)
     auto* body = getObject<PartDesign::Body>();
     if (obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<App::DatumElement>()
         || obj->isDerivedFrom<App::LocalCoordinateSystem>()) {
-        body->addObject(obj);
+        body->addFeature(obj);
     }
     else if (PartDesign::Body::isAllowed(obj) && PartDesignGui::isFeatureMovable(obj)) {
         std::vector<App::DocumentObject*> move;
@@ -561,10 +827,10 @@ void ViewProviderBody::dropObject(App::DocumentObject* obj)
 
         PartDesign::Body* source = PartDesign::Body::findBodyOf(obj);
         if (source) {
-            source->removeObjects(move);
+            source->removeFeatures(move);
         }
         try {
-            body->addObjects(move);
+            body->addFeatures(move);
         }
         catch (const Base::Exception& e) {
             e.reportException();
@@ -578,7 +844,7 @@ void ViewProviderBody::dropObject(App::DocumentObject* obj)
     doc->recompute();
 
     // check if a proxy object has been created for the base feature
-    std::vector<App::DocumentObject*> links = body->Group.getValues();
+    std::vector<App::DocumentObject*> links = body->getFullModel();
     for (auto it : links) {
         if (it->isDerivedFrom<PartDesign::FeatureBase>()) {
             PartDesign::FeatureBase* base = static_cast<PartDesign::FeatureBase*>(it);
@@ -611,7 +877,7 @@ void ViewProviderBody::show()
         return;
     }
 
-    auto features = body->Group.getValues();
+    auto features = body->getFullModel();
     if (features.empty()) {
         return;
     }

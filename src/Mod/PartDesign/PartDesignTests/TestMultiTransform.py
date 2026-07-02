@@ -39,11 +39,11 @@ class TestMultiTransform(unittest.TestCase):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 10
         self.Doc.recompute()
@@ -51,21 +51,21 @@ class TestMultiTransform(unittest.TestCase):
         self.Doc.recompute()
         self.MultiTransform.Originals = [self.Pad]
         self.MultiTransform.Shape = self.Pad.Shape
-        self.Body.addObject(self.MultiTransform)
+        self.Body.addFeature(self.MultiTransform)
         self.Doc.recompute()
         self.Mirrored = self.Doc.addObject("PartDesign::Mirrored", "Mirrored")
         self.Mirrored.MirrorPlane = (self.PadSketch, ["H_Axis"])
-        self.Body.addObject(self.Mirrored)
+        self.Body.addFeature(self.Mirrored)
         self.LinearPattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
         self.LinearPattern.Direction = (self.PadSketch, ["H_Axis"])
         self.LinearPattern.Length = 20
         self.LinearPattern.Occurrences = 3
-        self.Body.addObject(self.LinearPattern)
+        self.Body.addFeature(self.LinearPattern)
         self.PolarPattern = self.Doc.addObject("PartDesign::PolarPattern", "PolarPattern")
         self.PolarPattern.Axis = (self.PadSketch, ["N_Axis"])
         self.PolarPattern.Angle = 360
         self.PolarPattern.Occurrences = 4
-        self.Body.addObject(self.PolarPattern)
+        self.Body.addFeature(self.PolarPattern)
         self.MultiTransform.Transformations = [self.Mirrored, self.LinearPattern, self.PolarPattern]
         self.Doc.recompute()
         self.assertAlmostEqual(self.MultiTransform.Shape.Volume, 20000)
@@ -77,12 +77,12 @@ class TestMultiTransform(unittest.TestCase):
         Body.AllowCompound = False
         # Make first offset cube Pad
         PadSketch = Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        Body.addObject(PadSketch)
+        Body.addFeature(PadSketch)
         xw = yw = zw = 10
         TestSketcherApp.CreateRectangleSketch(PadSketch, (0, 0), (xw, yw))
         Doc.recompute()
         Pad = Doc.addObject("PartDesign::Pad", "Pad")
-        Body.addObject(Pad)
+        Body.addFeature(Pad)
         Pad.Profile = PadSketch
         Pad.Length = zw
         Doc.recompute()
@@ -90,16 +90,16 @@ class TestMultiTransform(unittest.TestCase):
         Doc.recompute()
         MultiTransform.Originals = [Pad]
         MultiTransform.Shape = Pad.Shape
-        Body.addObject(MultiTransform)
+        Body.addFeature(MultiTransform)
         Doc.recompute()
         Mirrored = Doc.addObject("PartDesign::Mirrored", "Mirrored")
         Mirrored.MirrorPlane = (Doc.getObject("XY_Plane"), [""])
         Mirrored.Refine = True
-        Body.addObject(Mirrored)
+        Body.addFeature(Mirrored)
         Mirrored2 = Doc.addObject("PartDesign::Mirrored", "Mirrored")
         Mirrored2.MirrorPlane = (Doc.getObject("XZ_Plane"), [""])
         Mirrored2.Refine = True
-        Body.addObject(Mirrored2)
+        Body.addFeature(Mirrored2)
         MultiTransform.Transformations = [Mirrored, Mirrored2]
         MultiTransform.Refine = True
         Doc.recompute()
@@ -107,7 +107,7 @@ class TestMultiTransform(unittest.TestCase):
         Fillet.Base = (MultiTransform, ["Face1", "Face2"])
         radius = 3
         Fillet.Radius = radius
-        Body.addObject(Fillet)
+        Body.addFeature(Fillet)
         # Broken out calculation of volume with two adjacent filleted faces = 5 long edges, 2 short edges,
         # 2 fully rounded corners and 4 corners with only 2 fillets meeting
         cubeVolume = xw * yw * zw * 2 * 2  # Mirrored and mirrored again.

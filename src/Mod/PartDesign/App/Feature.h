@@ -26,6 +26,7 @@
 #pragma once
 
 #include <App/PropertyStandard.h>
+#include <App/PropertyLinks.h>
 #include <App/SuppressibleExtension.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PreviewExtension.h>
@@ -64,6 +65,10 @@ public:
 
     /// Base feature which this feature will be fused into or cut out of
     App::PropertyLink BaseFeature;
+    /// Transient memo of the nearest downstream Body marker for this feature (CPART_DESIGN
+    /// §9). NOT a stored membership: it is Prop_Transient, never serialised, and always
+    /// re-derivable from the BaseFeature chain via Body::findBodyOf. The name is legacy;
+    /// read it as a cache of the reverse lookup, not as a body this feature belongs to.
     App::PropertyLinkHidden _Body;
 
     /// Keep a copy of suppressed shapes so that we can restore them (and maybe display them)
@@ -112,6 +117,11 @@ public:
 
     void onChanged(const App::Property* prop) override;
 
+    /// Called by Body::removeObject() when this feature's BaseFeature is
+    /// rerouted around a deleted feature. Subclasses may reroute only the
+    /// subelement links that are known to follow BaseFeature.
+    virtual void onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase);
+
     App::DocumentObject* getSubObject(
         const char* subname,
         PyObject** pyObj,
@@ -127,6 +137,11 @@ protected:
      */
     TopoShape getSolid(const TopoShape&) const;
     static int countSolids(const TopoDS_Shape&, TopAbs_ShapeEnum type = TopAbs_SOLID);
+    static bool relinkToMatchingSubelements(
+        App::PropertyLinkSub& link,
+        App::DocumentObject* oldBase,
+        App::DocumentObject* newBase
+    );
 
     /**
      * Fix solids

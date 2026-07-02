@@ -430,7 +430,7 @@ TopoDS_Shape ViewProviderHole::getCurrentlyVisibleShape(const PartDesign::Hole* 
     if (!body) {
         return {};
     }
-    const auto& features = body->Group.getValues();
+    const auto& features = body->getFullModel();
     auto holeIt = std::ranges::find(features, pcHole);
     if (holeIt == features.end()) {
         return {};
@@ -675,7 +675,7 @@ bool ViewProviderHole::isHoleThreadVisible() const
         || hole->ModelThread.getValue()) {
         return false;
     }
-    const auto& features = body->Group.getValues();
+    const auto& features = body->getFullModel();
     auto holeIt = std::ranges::find(features, hole);
     if (holeIt == features.end()) {
         return false;

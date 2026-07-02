@@ -260,10 +260,8 @@ PartDesign::Body* getBodyFor(
 
     PartDesign::Body* rv
         = getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
-    if (rv && rv->hasObject(obj)) {
-        return rv;
-    }
-
+    // Membership is a reverse lookup up the BaseFeature chain, not a Group read: a de-owned
+    // feature is never in the active body's (empty) Group (Cruth §11 step 5e).
     rv = PartDesign::Body::findBodyOf(obj);
     if (rv) {
         return rv;
@@ -295,6 +293,40 @@ App::Part* getActivePart()
     else {
         return nullptr;
     }
+}
+
+App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, const std::string& name)
+{
+    if (!body) {
+        return nullptr;
+    }
+    App::Document* doc = body->getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+
+    // Creation is the Document's responsibility, not the Body's (Cruth §11 step 5e): birth the
+    // object at document level ...
+    Gui::Command::doCommand(
+        Gui::Command::Doc,
+        "App.getDocument('%s').addObject('%s', '%s')",
+        doc->getName(),
+        type,
+        name.c_str()
+    );
+    App::DocumentObject* feature = doc->getObject(name.c_str());
+
+    // ... then splice it into this Body's pipeline (Tip + BaseFeature chain) — a pipeline edit,
+    // not a container add.
+    if (feature) {
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "%s.addFeature(%s)",
+            Gui::Command::getObjectCmd(body).c_str(),
+            Gui::Command::getObjectCmd(feature).c_str()
+        );
+    }
+    return feature;
 }
 
 App::Part* getPartFor(const App::DocumentObject* obj, bool messageIfNot)

@@ -62,37 +62,37 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (1, 1))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 1
         self.Doc.recompute()
 
         # Attach a second pad to the top of the first.
         self.PadSketch1 = self.Doc.addObject("Sketcher::SketchObject", "SketchPad1")
-        self.Body.addObject(self.PadSketch1)
+        self.Body.addFeature(self.PadSketch1)
         self.PadSketch1.MapMode = "FlatFace"
         self.PadSketch1.AttachmentSupport = [(self.Doc.getObject("Pad"), "Face6")]
         TestSketcherApp.CreateRectangleSketch(self.PadSketch1, (0, 0), (1, 1))
         self.Doc.recompute()
         self.Pad1 = self.Doc.addObject("PartDesign::Pad", "Pad1")
-        self.Body.addObject(self.Pad1)
+        self.Body.addFeature(self.Pad1)
         self.Pad1.Profile = self.PadSketch1
         self.Pad1.Length = 1
         self.Doc.recompute()
 
         # Attach a third pad to the top of the second.
         self.PadSketch2 = self.Doc.addObject("Sketcher::SketchObject", "SketchPad2")
-        self.Body.addObject(self.PadSketch2)
+        self.Body.addFeature(self.PadSketch2)
         self.PadSketch2.MapMode = "FlatFace"
         self.PadSketch2.AttachmentSupport = [(self.Doc.getObject("Pad1"), "Face6")]
         TestSketcherApp.CreateRectangleSketch(self.PadSketch2, (0, 0), (1, 1))
         self.Doc.recompute()
         self.Pad2 = self.Doc.addObject("PartDesign::Pad", "Pad2")
-        self.Body.addObject(self.Pad2)
+        self.Body.addFeature(self.Pad2)
         self.Pad2.Profile = self.PadSketch2
         self.Pad2.Length = 1
         self.Doc.recompute()
@@ -124,7 +124,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         body = self.Doc.addObject("PartDesign::Body", "Body")
         sketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        body.addObject(sketch)
+        body.addFeature(sketch)
         TestSketcherApp.CreateRectangleSketch(sketch, (0, 0), (1, 1))
         # Act
         self.Doc.recompute()
@@ -175,8 +175,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         body = self.Doc.addObject("PartDesign::Body", "Body")
         padSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
         pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        body.addObject(padSketch)
-        body.addObject(pad)
+        body.addFeature(padSketch)
+        body.addFeature(pad)
         TestSketcherApp.CreateRectangleSketch(padSketch, (0, 0), (1, 1))
         pad.Profile = padSketch
         pad.Length = 1
@@ -206,7 +206,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(box.Shape.childShapes()), 1)
         self.assertEqual(box.Shape.childShapes()[0].ElementMapSize, 26)
-        body.addObject(box)
+        body.addFeature(box)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -223,7 +223,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(cylinder.Shape.childShapes()), 1)
         self.assertEqual(cylinder.Shape.childShapes()[0].ElementMapSize, 8)
-        body.addObject(cylinder)
+        body.addFeature(cylinder)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
@@ -248,7 +248,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(sphere.Shape.childShapes()), 1)
         self.assertEqual(sphere.Shape.childShapes()[0].ElementMapSize, 6)
-        body.addObject(sphere)
+        body.addFeature(sphere)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
@@ -273,7 +273,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(cone.Shape.childShapes()), 1)
         self.assertEqual(cone.Shape.childShapes()[0].ElementMapSize, 8)
-        body.addObject(cone)
+        body.addFeature(cone)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
@@ -298,7 +298,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(ellipsoid.Shape.childShapes()), 1)
         self.assertEqual(ellipsoid.Shape.childShapes()[0].ElementMapSize, 6)
-        body.addObject(ellipsoid)
+        body.addFeature(ellipsoid)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
@@ -323,7 +323,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(torus.Shape.childShapes()), 1)
         self.assertEqual(torus.Shape.childShapes()[0].ElementMapSize, 4)
-        body.addObject(torus)
+        body.addFeature(torus)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
@@ -348,7 +348,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(prism.Shape.childShapes()), 1)
         self.assertEqual(prism.Shape.childShapes()[0].ElementMapSize, 38)
-        body.addObject(prism)
+        body.addFeature(prism)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
@@ -373,7 +373,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(wedge.Shape.childShapes()), 1)
         self.assertEqual(wedge.Shape.childShapes()[0].ElementMapSize, 26)
-        body.addObject(wedge)
+        body.addFeature(wedge)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
@@ -396,13 +396,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subbox = self.Doc.addObject("PartDesign::SubtractiveBox", "Box")
-        subbox.BaseFeature = box
-        body.addObject(subbox)
+        body.addFeature(subbox)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -415,13 +414,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subcylinder = self.Doc.addObject("PartDesign::SubtractiveCylinder", "Cylinder")
-        subcylinder.BaseFeature = box
-        body.addObject(subcylinder)
+        body.addFeature(subcylinder)
         # Assert
         self.Doc.recompute()
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -434,13 +432,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subsphere = self.Doc.addObject("PartDesign::SubtractiveSphere", "Sphere")
-        subsphere.BaseFeature = box
-        body.addObject(subsphere)
+        body.addFeature(subsphere)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -453,13 +450,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subcone = self.Doc.addObject("PartDesign::SubtractiveCone", "Cone")
-        subcone.BaseFeature = box
-        body.addObject(subcone)
+        body.addFeature(subcone)
         # Assert
         self.Doc.recompute()
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -472,13 +468,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subellipsoid = self.Doc.addObject("PartDesign::SubtractiveEllipsoid", "Ellipsoid")
-        subellipsoid.BaseFeature = box
-        body.addObject(subellipsoid)
+        body.addFeature(subellipsoid)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -491,13 +486,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subtorus = self.Doc.addObject("PartDesign::SubtractiveTorus", "Torus")
-        subtorus.BaseFeature = box
-        body.addObject(subtorus)
+        body.addFeature(subtorus)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -510,13 +504,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subprism = self.Doc.addObject("PartDesign::SubtractivePrism", "Prism")
-        subprism.BaseFeature = box
-        body.addObject(subprism)
+        body.addFeature(subprism)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -529,13 +522,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box.Length = 20
         box.Width = 20
         box.Height = 20
-        body.addObject(box)
+        body.addFeature(box)
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
         # Act
         subwedge = self.Doc.addObject("PartDesign::SubtractiveWedge", "Wedge")
-        subwedge.BaseFeature = box
-        body.addObject(subwedge)
+        body.addFeature(subwedge)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -551,8 +543,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Act
         pad = self.Doc.addObject("PartDesign::Pad", "Pad")
         pad.Profile = sketch
-        body.addObject(sketch)
-        body.addObject(pad)
+        body.addFeature(sketch)
+        body.addFeature(pad)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -576,19 +568,19 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         body = self.Doc.addObject("PartDesign::Body", "Body")
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         TestSketcherApp.CreateRectangleSketch(sketch, (0, 1), (3, 2))  # (pt), (w,l)
-        body.addObject(sketch)
+        body.addFeature(sketch)
         self.Doc.recompute()
         pad = self.Doc.addObject("PartDesign::Pad", "Pad")
         pad.Profile = sketch
         pad.Length = 3
-        body.addObject(pad)
+        body.addFeature(pad)
         self.Doc.recompute()
 
         sketch2 = self.Doc.addObject("Sketcher::SketchObject", "Sketch001")
         TestSketcherApp.CreateRectangleSketch(sketch2, (2, -3), (1, 2))  # (pt), (w,l)
         sketch2.AttachmentSupport = (pad, ["Face5"])
         sketch2.MapMode = "FlatFace"
-        body.addObject(sketch2)
+        body.addFeature(sketch2)
         self.Doc.recompute()
         revolution = self.Doc.addObject("PartDesign::Revolution", "Revolution")
         revolution.ReferenceAxis = (sketch2, ["V_Axis"])
@@ -597,7 +589,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         revolution.Angle = 180
         revolution.Refine = True
         revolution.FuseOrder = order
-        body.addObject(revolution)
+        body.addFeature(revolution)
         volume = (math.pi * 3 * 3 - math.pi * 2 * 2) * 2 / 2
         padVolume = 3 * 3 * 2  # 50.26548245743668
         # Act
@@ -652,7 +644,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
     def testPartDesignBinderRevolution(self):
         doc = self.Doc
         body = doc.addObject("PartDesign::Body", "Body")
-        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         sketch.AttachmentSupport = (doc.getObject("XY_Plane"), [""])
         sketch.MapMode = "FlatFace"
         doc.recompute()
@@ -698,14 +690,14 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         del constraintList
 
         doc.recompute()
-        binder = body.newObject("PartDesign::ShapeBinder", "ShapeBinder")
+        binder = body.addFeature(body.Document.addObject("PartDesign::ShapeBinder", "ShapeBinder"))
         binder.Support = [
             sketch,
             (""),
         ]
         binder.Visibility = False
         doc.recompute()
-        revolve = body.newObject("PartDesign::Revolution", "Revolution")
+        revolve = body.addFeature(body.Document.addObject("PartDesign::Revolution", "Revolution"))
         revolve.Profile = (
             doc.getObject("ShapeBinder"),
             [
@@ -731,9 +723,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         loft = self.Doc.addObject("PartDesign::AdditiveLoft", "Loft")
         loft.Profile = sketch
         loft.Sections = [sketch2]
-        body.addObject(sketch)
-        body.addObject(sketch2)
-        body.addObject(loft)
+        body.addFeature(sketch)
+        body.addFeature(sketch2)
+        body.addFeature(loft)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -766,9 +758,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         pipe = self.Doc.addObject("PartDesign::AdditivePipe", "Pipe")
         pipe.Profile = sketch
         pipe.Spine = sketch2
-        body.addObject(sketch)
-        body.addObject(sketch2)
-        body.addObject(pipe)
+        body.addFeature(sketch)
+        body.addFeature(sketch2)
+        body.addFeature(pipe)
         self.Doc.recompute()
         # Assert
         self.assertAlmostEqual(body.Shape.Volume, 1)
@@ -798,8 +790,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         helix.Profile = sketch
         helix.ReferenceAxis = (self.Doc.getObject("Sketch"), ["N_Axis"])
         # helix.Mode = 0
-        body.addObject(sketch)
-        body.addObject(helix)
+        body.addFeature(sketch)
+        body.addFeature(helix)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -825,7 +817,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         sketch.AttachmentSupport = (box, "Face6")
         sketch.MapMode = "FlatFace"
@@ -840,8 +832,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         pocket.ReferenceAxis = (sketch, ["N_Axis"])
         pocket.Refine = True
 
-        body.addObject(sketch)
-        body.addObject(pocket)
+        body.addFeature(sketch)
+        body.addFeature(pocket)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -860,7 +852,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         self.Doc.recompute()
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         sketch.AttachmentSupport = (box, "Face6")
@@ -872,8 +864,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         hole = self.Doc.addObject("PartDesign::Hole", "Hole")
         hole.Profile = sketch
 
-        body.addObject(sketch)
-        body.addObject(hole)
+        body.addFeature(sketch)
+        body.addFeature(hole)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -891,9 +883,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         groove = self.Doc.addObject("PartDesign::Groove", "Groove")
-        body.addObject(groove)
+        body.addFeature(groove)
         groove.ReferenceAxis = (self.Doc.getObject("Y_Axis"), [""])
         groove.Angle = 360.0
         groove.Profile = (box, ["Face6"])
@@ -914,7 +906,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         TestSketcherApp.CreateRectangleSketch(sketch, (1, 1), (1, 1))
         sketch2 = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
@@ -926,7 +918,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         loft = self.Doc.addObject("PartDesign::SubtractiveLoft", "SubLoft")
         loft.Profile = sketch
         loft.Sections = [sketch2]
-        body.addObject(loft)
+        body.addFeature(loft)
         self.Doc.recompute()
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
@@ -940,7 +932,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         TestSketcherApp.CreateRectangleSketch(sketch, (0, 0), (1, 1))
         sketch2 = self.Doc.addObject("Sketcher::SketchObject", "Sketch001")
@@ -956,9 +948,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         pipe = self.Doc.addObject("PartDesign::SubtractivePipe", "SubPipe")
         pipe.Profile = sketch
         pipe.Spine = sketch2
-        body.addObject(sketch)
-        body.addObject(sketch2)
-        body.addObject(pipe)
+        body.addFeature(sketch)
+        body.addFeature(sketch2)
+        body.addFeature(pipe)
         self.Doc.recompute()
         # Assert
         self.assertAlmostEqual(body.Shape.Volume, 999)
@@ -977,7 +969,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         TestSketcherApp.CreateRectangleSketch(sketch, (5, 5), (1, 1))
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
@@ -987,8 +979,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         helix.Profile = sketch
         helix.ReferenceAxis = (self.Doc.getObject("Sketch"), ["V_Axis"])
         helix.Reversed = True
-        body.addObject(sketch)
-        body.addObject(helix)
+        body.addFeature(sketch)
+        body.addFeature(helix)
         self.Doc.recompute()
         # Assert
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -1026,8 +1018,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         chamfer.Size = 1
         chamfer.UseAllEdges = True
         # Act / Assert
-        body.addObject(box)
-        body.addObject(chamfer)
+        body.addFeature(box)
+        body.addFeature(chamfer)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -1066,8 +1058,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
             ],
         )
         # Act / Assert
-        body.addObject(box)
-        body.addObject(fillet)
+        body.addFeature(box)
+        body.addFeature(fillet)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -1095,8 +1087,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
         # Act / Assert
         self.Doc.recompute()
-        body.addObject(box)
-        body.addObject(multitransform)
+        body.addFeature(box)
+        body.addFeature(multitransform)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         self.assertEqual(len(body.Shape.childShapes()), 1)
@@ -1110,8 +1102,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         if body.Shape.ElementMapVersion == "":  # Skip without element maps.
             return
         # Act / Assert
-        body.addObject(box)
-        body.addObject(shapebinder)
+        body.addFeature(box)
+        body.addFeature(shapebinder)
         shapebinder.Support = [box]
         self.Doc.recompute()
         self.assertEqual(len(shapebinder.Shape.childShapes()), 1)
@@ -1125,8 +1117,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         if body.Shape.ElementMapVersion == "":  # Skip without element maps.
             return
         # Act / Assert
-        body.addObject(box)
-        body.addObject(subshapebinder)
+        body.addFeature(box)
+        body.addFeature(subshapebinder)
         subshapebinder.Support = [(box, ["Face1"])]
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
@@ -1137,12 +1129,12 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         body = self.Doc.addObject("PartDesign::Body", "Body")
         sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         TestSketcherApp.CreateRectangleSketch(sketch, (0, 0), (1, 1))
-        body.addObject(sketch)
+        body.addFeature(sketch)
         self.Doc.recompute()
         self.assertEqual(sketch.Shape.ElementMapSize, 12)
         pad = self.Doc.addObject("PartDesign::Pad", "Pad")
         pad.Profile = sketch
-        body.addObject(pad)
+        body.addFeature(pad)
         self.Doc.recompute()
         if body.Shape.ElementMapVersion == "":  # Should be '4' as of Mar 2023.
             return
@@ -1175,16 +1167,16 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         body = doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         padSketch = doc.addObject("Sketcher::SketchObject", "Sketch")
-        body.addObject(padSketch)
+        body.addFeature(padSketch)
         TestSketcherApp.CreateRectangleSketch(padSketch, (0, 0), (31.37, 25.2))
         doc.recompute()
         pad = doc.addObject("PartDesign::Pad", "Pad")
-        body.addObject(pad)
+        body.addFeature(pad)
         pad.Profile = padSketch
         pad.Length = 10
         doc.recompute()
 
-        sketch001 = body.newObject("Sketcher::SketchObject", "Sketch001")
+        sketch001 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
         sketch001 = doc.Sketch001
         sketch001.AttachmentSupport = (
             doc.getObject("Pad"),
@@ -1208,7 +1200,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         sketch001.addConstraint(Sketcher.Constraint("Radius", 0, 5.000000))
         doc.recompute()
 
-        pad001 = body.newObject("PartDesign::Pad", "Pad001")
+        pad001 = body.addFeature(body.Document.addObject("PartDesign::Pad", "Pad001"))
         pad001.Profile = doc.getObject("Sketch001")
         pad001.Length = 10
         App.ActiveDocument.recompute()
@@ -1288,16 +1280,16 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         body = doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         padSketch = doc.addObject("Sketcher::SketchObject", "Sketch")
-        body.addObject(padSketch)
+        body.addFeature(padSketch)
         TestSketcherApp.CreateRectangleSketch(padSketch, (0, 0), (31.37, 25.2))
         doc.recompute()
         pad = doc.addObject("PartDesign::Pad", "Pad")
-        body.addObject(pad)
+        body.addFeature(pad)
         pad.Profile = padSketch
         pad.Length = 10
         doc.recompute()
 
-        sketch001 = body.newObject("Sketcher::SketchObject", "Sketch001")
+        sketch001 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
         sketch001.AttachmentSupport = (
             doc.getObject("Pad"),
             [
@@ -1319,7 +1311,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         sketch001.addConstraint(Sketcher.Constraint("Radius", 0, 5.000000))
         doc.recompute()
 
-        pad001 = body.newObject("PartDesign::Pad", "Pad001")
+        pad001 = body.addFeature(body.Document.addObject("PartDesign::Pad", "Pad001"))
         pad001.Profile = doc.getObject("Sketch001")
         pad001.Length = 10
         App.ActiveDocument.recompute()
@@ -1375,7 +1367,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.getObject("TNP_Test_Body_SubShape").Label = "TNP_Test_Body_SubShape"
 
         doc.recompute()
-        doc.getObject("TNP_Test_Body_SubShape").newObject("Sketcher::SketchObject", "Sketch")
+        doc.getObject("TNP_Test_Body_SubShape").addFeature(
+            doc.addObject("Sketcher::SketchObject", "Sketch")
+        )
         doc.Sketch.AttachmentSupport = (doc.getObject("XY_Plane"), [""])
         doc.Sketch.MapMode = "FlatFace"
         doc.recompute()
@@ -1426,7 +1420,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
         doc.recompute()
 
-        doc.getObject("TNP_Test_Body_SubShape").newObject("PartDesign::Pad", "Pad")
+        doc.getObject("TNP_Test_Body_SubShape").addFeature(doc.addObject("PartDesign::Pad", "Pad"))
         doc.Pad.Profile = doc.Sketch
         doc.Pad.Length = 10
         doc.recompute()
@@ -1450,12 +1444,14 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.addObject("PartDesign::Body", "TNP_Test_Body_Second")
         doc.getObject("TNP_Test_Body_Second").Label = "TNP_Test_Body_Second"
         doc.recompute()
-        obj = doc.getObject("TNP_Test_Body_Second").newObject(
-            "PartDesign::ShapeBinder", "ShapeBinder"
+        obj = doc.getObject("TNP_Test_Body_Second").addFeature(
+            doc.addObject("PartDesign::ShapeBinder", "ShapeBinder")
         )
         obj.Support = (doc.getObject("TNP_Test_Body_SubShape"), ["Face6"])
         doc.recompute()
-        doc.getObject("TNP_Test_Body_Second").newObject("Sketcher::SketchObject", "Sketch001")
+        doc.getObject("TNP_Test_Body_Second").addFeature(
+            doc.addObject("Sketcher::SketchObject", "Sketch001")
+        )
         doc.getObject("Sketch001").AttachmentSupport = (
             doc.getObject("ShapeBinder"),
             [""],
@@ -1475,7 +1471,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         del geoList
 
         doc.recompute()
-        doc.getObject("TNP_Test_Body_Second").newObject("PartDesign::Pad", "Pad001")
+        doc.getObject("TNP_Test_Body_Second").addFeature(doc.addObject("PartDesign::Pad", "Pad001"))
         doc.getObject("Pad001").Profile = doc.getObject("Sketch001")
         doc.getObject("Pad001").Length = 10
         doc.recompute()
@@ -1553,7 +1549,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Body = doc.addObject("PartDesign::Body", "Body")
         doc.Body.Label = "Body"
         doc.recompute()
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (doc.getObject("XY_Plane"), [""])
         doc.Sketch.MapMode = "FlatFace"
         doc.recompute()
@@ -1603,7 +1599,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Sketch.addConstraint(Sketcher.Constraint("Coincident", 0, 1, -1, 1))
 
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad"))
         doc.Pad.Profile = doc.Sketch
         doc.Pad.Length = 10
         doc.recompute()
@@ -1625,9 +1621,11 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.addObject("PartDesign::Body", "Body001")
         doc.getObject("Body001").Label = "Body"
         doc.recompute()
-        binder = doc.getObject("Body001").newObject("PartDesign::SubShapeBinder", "Binder")
+        binder = doc.getObject("Body001").addFeature(
+            doc.addObject("PartDesign::SubShapeBinder", "Binder")
+        )
         binder.Support = self.Body
-        doc.getObject("Body001").newObject("Sketcher::SketchObject", "Sketch001")
+        doc.getObject("Body001").addFeature(doc.addObject("Sketcher::SketchObject", "Sketch001"))
         doc.getObject("Sketch001").AttachmentSupport = (
             doc.getObject("Binder"),
             [
@@ -1650,7 +1648,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
         doc.recompute()
         ### Begin command PartDesign_Pad
-        doc.getObject("Body001").newObject("PartDesign::Pad", "Pad001")
+        doc.getObject("Body001").addFeature(doc.addObject("PartDesign::Pad", "Pad001"))
         doc.Pad001.Profile = doc.getObject("Sketch001")
         doc.Pad001.Length = 10
         doc.recompute()
@@ -1729,7 +1727,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc = self.Doc
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         self.Doc.recompute()
         volume1 = body.Shape.Volume
         chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
@@ -1742,11 +1740,11 @@ class TestTopologicalNamingProblem(unittest.TestCase):
             ],
         )
         chamfer.Size = 1
-        body.addObject(chamfer)
+        body.addFeature(chamfer)
         self.Doc.recompute()
         volume2 = body.Shape.Volume
 
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (chamfer, "Face8")
         doc.Sketch.MapMode = "FlatFace"
         doc.recompute()
@@ -1776,14 +1774,14 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         constraintList.append(Sketcher.Constraint("Vertical", 3))
         doc.Sketch.addConstraint(constraintList)
         del constraintList
-        body.addObject(doc.Sketch)
+        body.addFeature(doc.Sketch)
 
         pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
         pocket.Type = "Length"
         pocket.Length = 3
         pocket.Direction = App.Vector(-0.710000000, 0.7100000000, 0.0000000000)
         pocket.Profile = doc.Sketch
-        body.addObject(pocket)
+        body.addFeature(pocket)
         self.Doc.recompute()
         volume3 = body.Shape.Volume
         # Change the chamfered edges, potentially triggering TNP
@@ -1825,7 +1823,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc = self.Doc
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         self.Doc.recompute()
         volume1 = body.Shape.Volume
         fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
@@ -1839,11 +1837,11 @@ class TestTopologicalNamingProblem(unittest.TestCase):
             ],
         )
         # fillet.Size = 1
-        body.addObject(fillet)
+        body.addFeature(fillet)
         self.Doc.recompute()
         volume2 = body.Shape.Volume
 
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (fillet, "Face2")
         doc.Sketch.MapMode = "FlatFace"
         doc.recompute()
@@ -1868,7 +1866,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         constraintList.append(Sketcher.Constraint("Vertical", 3))
         doc.Sketch.addConstraint(constraintList)
         del constraintList
-        body.addObject(doc.Sketch)
+        body.addFeature(doc.Sketch)
 
         pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
         pocket.Refine = True
@@ -1877,7 +1875,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         pocket.Direction = App.Vector(-0.710000000, 0.7100000000, 0.0000000000)
         pocket.Profile = doc.Sketch
         # pocket.Reversed = False
-        body.addObject(pocket)
+        body.addFeature(pocket)
         self.Doc.recompute()
         volume3 = body.Shape.Volume
         # Change the filleted edges, potentially triggering TNP
@@ -1917,7 +1915,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
     #     """ Prove that a sketch with multiple wires works correctly"""
     #     doc = App.ActiveDocument
     #     App.activeDocument().addObject('PartDesign::Body','Body')
-    #     doc.Body.newObject('Sketcher::SketchObject','Sketch')
+    #     doc.Body.addFeature(doc.Body.Document.addObject('Sketcher::SketchObject','Sketch'))
     #     doc.Sketch.AttachmentSupport = (doc.XY_Plane,[''])
     #     doc.Sketch.MapMode = 'FlatFace'
     #     radius = 15
@@ -1935,7 +1933,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
     #     doc.Sketch.addGeometry(geoList,False)
     #     del geoList
     #     doc.recompute()
-    #     doc.Body.newObject('PartDesign::Pad','Pad')
+    #     doc.Body.addFeature(doc.Body.Document.addObject('PartDesign::Pad','Pad'))
     #     doc.Pad.Profile = (doc.Sketch, ['',])
     #     doc.Pad.Length = 10
     #     doc.Pad.ReferenceAxis = (doc.Sketch,['N_Axis'])
@@ -1949,7 +1947,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         """Prove that a sketch with touching wires works correctly"""
         doc = App.ActiveDocument
         App.activeDocument().addObject("PartDesign::Body", "Body")
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (doc.XY_Plane, [""])
         doc.Sketch.MapMode = "FlatFace"
         radius = 20
@@ -1991,7 +1989,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Sketch.addGeometry(geoList, False)
         del geoList
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad"))
         doc.Pad.Profile = (
             doc.Sketch,
             [
@@ -2012,7 +2010,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
     #     """ Prove that a sketch with overlapping wires works correctly"""
     #     doc = App.ActiveDocument
     #     App.activeDocument().addObject('PartDesign::Body','Body')
-    #     doc.Body.newObject('Sketcher::SketchObject','Sketch')
+    #     doc.Body.addFeature(doc.Body.Document.addObject('Sketcher::SketchObject','Sketch'))
     #     doc.Sketch.AttachmentSupport = (doc.XY_Plane,[''])
     #     doc.Sketch.MapMode = 'FlatFace'
     #     radius = 25
@@ -2030,7 +2028,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
     #     doc.Sketch.addGeometry(geoList,False)
     #     del geoList
     #     doc.recompute()
-    #     doc.Body.newObject('PartDesign::Pad','Pad')
+    #     doc.Body.addFeature(doc.Body.Document.addObject('PartDesign::Pad','Pad'))
     #     doc.Pad.Profile = (doc.Sketch, ['',])
     #     doc.Pad.Length = 10
     #     doc.Pad.ReferenceAxis = (doc.Sketch,['N_Axis'])
@@ -2047,7 +2045,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         """Prove that a sketch attached to a padded sketch shape does not have a problem when the initial sketch has geometry move"""
         doc = App.ActiveDocument
         App.activeDocument().addObject("PartDesign::Body", "Body")
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (doc.XY_Plane, [""])
         doc.Sketch.MapMode = "FlatFace"
         geoList = []
@@ -2067,7 +2065,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         constraintList.append(Sketcher.Constraint("Vertical", 3))
         doc.Sketch.addConstraint(constraintList)
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad"))
         doc.Pad.Profile = (
             doc.Sketch,
             [
@@ -2090,7 +2088,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Pad.Offset = 0
         doc.recompute()
         doc.Sketch.Visibility = False
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch001")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
         doc.Sketch001.AttachmentSupport = (
             doc.Pad,
             [
@@ -2116,7 +2114,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         constraintList.append(Sketcher.Constraint("Horizontal", 3))
         doc.Sketch001.addConstraint(constraintList)
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad001")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad001"))
         doc.Pad001.Profile = (
             doc.Sketch001,
             [
@@ -2155,7 +2153,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         """Prove that a sketch attached to a padded sketch shape does not have a problem when the initial sketch has geometry deleted"""
         doc = App.ActiveDocument
         App.activeDocument().addObject("PartDesign::Body", "Body")
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (doc.XY_Plane, [""])
         doc.Sketch.MapMode = "FlatFace"
         import ProfileLib.RegularPolygon
@@ -2170,7 +2168,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Sketch.addConstraint(Sketcher.Constraint("Coincident", 6, 3, -1, 1))
         doc.Sketch.addConstraint(Sketcher.Constraint("PointOnObject", 0, 2, -2))
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad"))
         doc.Pad.Profile = (
             doc.Sketch,
             [
@@ -2193,7 +2191,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Pad.Offset = 0
         doc.recompute()
         doc.Sketch.Visibility = False
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch001")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
         doc.Sketch001.AttachmentSupport = (
             doc.Pad,
             [
@@ -2220,7 +2218,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Sketch001.addConstraint(constraintList)
         constraintList = []
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad001")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad001"))
         doc.Pad001.Profile = (
             doc.Sketch001,
             [
@@ -2258,7 +2256,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         """Prove that a sketch attached to a padded sketch shape does not have a problem when the initial sketch has geometry split"""
         doc = App.ActiveDocument
         App.activeDocument().addObject("PartDesign::Body", "Body")
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (doc.XY_Plane, [""])
         doc.Sketch.MapMode = "FlatFace"
         geoList = []
@@ -2282,7 +2280,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         constraintList.append(Sketcher.Constraint("DistanceY", 0, 1, 0))
         doc.Sketch.addConstraint(constraintList)
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad"))
         doc.Pad.Profile = (
             doc.Sketch,
             [
@@ -2306,7 +2304,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Pad.Refine = True
         doc.recompute()
         doc.Sketch.Visibility = False
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch001")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
         doc.Sketch001.AttachmentSupport = (
             doc.Pad,
             [
@@ -2332,7 +2330,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         constraintList.append(Sketcher.Constraint("Horizontal", 3))
         doc.Sketch001.addConstraint(constraintList)
         doc.recompute()
-        doc.Body.newObject("PartDesign::Pad", "Pad001")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad001"))
         doc.Pad001.Profile = (
             doc.Sketch001,
             [
@@ -2441,8 +2439,8 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         body = self.Doc.addObject("PartDesign::Body", "Body")
         padSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
         pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        body.addObject(padSketch)
-        body.addObject(pad)
+        body.addFeature(padSketch)
+        body.addFeature(pad)
         TestSketcherApp.CreateRectangleSketch(padSketch, (0, 0), (1, 1))
         pad.Profile = padSketch
         pad.Length = 1
@@ -2496,7 +2494,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
         # act
         # Set up the subshapebinder version
-        binder = doc.Body.newObject("PartDesign::SubShapeBinder", "Binder")
+        binder = doc.Body.addFeature(
+            doc.Body.Document.addObject("PartDesign::SubShapeBinder", "Binder")
+        )
         binder.Support = [(doc.Fusion, (""))]
         doc.recompute()
 
@@ -2505,8 +2505,10 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.recompute()
 
         # assert
+        # De-ownership (marker model): the body no longer holds its members in a Group, so
+        # the binder is not reachable through doc.Body.OutList. Check the binder directly.
         self.assertEqual(
-            doc.Body.OutList[1].Shape.ElementMapSize, 26
+            binder.Shape.ElementMapSize, 26
         )  # subobjects ( subshapebinder here ) should have elementmap
         self.assertEqual(
             doc.Body.Shape.ElementMapSize, 0
@@ -2548,7 +2550,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         doc.Body.BaseFeature = App.activeDocument().Fusion
         doc.recompute()
 
-        doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+        doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         doc.Sketch.AttachmentSupport = (doc.getObject("BaseFeature"), ("Face8"))
         doc.Sketch.MapMode = "FlatFace"
         doc.recompute()
@@ -2585,7 +2587,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(doc.Sketch.Shape.ElementMapSize, 12)
 
         # Arrange
-        doc.Body.newObject("PartDesign::Pad", "Pad")
+        doc.Body.addFeature(doc.Body.Document.addObject("PartDesign::Pad", "Pad"))
         doc.Pad.Profile = (
             doc.Sketch,
             [
@@ -2630,7 +2632,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # potentially check the .BoundBox ( calc seems off on this, Not applying sketch position to Pad object )
 
     def create_t_sketch(self):
-        self.Doc.getObject("Body").newObject("Sketcher::SketchObject", "Sketch")
+        self.Doc.getObject("Body").addFeature(
+            self.Doc.addObject("Sketcher::SketchObject", "Sketch")
+        )
         geo_list = [
             Part.LineSegment(App.Vector(0, 0, 0), App.Vector(20, 0, 0)),
             Part.LineSegment(App.Vector(20, 0, 0), App.Vector(20, 10, 0)),
@@ -2663,16 +2667,18 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (-50, -25), (100, 50))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 10
         self.Doc.recompute()
 
-        self.Sketch001 = self.Body.newObject("Sketcher::SketchObject", "Sketch001")
+        self.Sketch001 = self.Body.addFeature(
+            self.Body.Document.addObject("Sketcher::SketchObject", "Sketch001")
+        )
         self.Sketch001.AttachmentSupport = (
             self.Doc.getObject("Pad"),
             [
@@ -2684,7 +2690,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         TestSketcherApp.CreateRectangleSketch(self.Sketch001, (-40, -20), (80, 40))
         self.Doc.recompute()
         self.Pad1 = self.Doc.addObject("PartDesign::Pad", "Pad1")
-        self.Body.addObject(self.Pad1)
+        self.Body.addFeature(self.Pad1)
         self.Pad1.Profile = self.Sketch001
         self.Pad1.Length = 10
         self.Doc.recompute()
@@ -2727,7 +2733,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         # Arrange
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
-        self.PadSketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        self.PadSketch = self.Body.addFeature(
+            self.Body.Document.addObject("Sketcher::SketchObject", "Sketch")
+        )
         self.PadSketch.AttachmentSupport = (self.Doc.getObject("XY_Plane"), [""])
         self.PadSketch.MapMode = "FlatFace"
         self.Doc.recompute()
@@ -2775,7 +2783,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
         self.Doc.recompute()
 
-        self.Pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        self.Pad = self.Body.addFeature(self.Body.Document.addObject("PartDesign::Pad", "Pad"))
         self.Pad.Profile = (
             self.Doc.getObject("Sketch"),
             [
@@ -2800,7 +2808,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Pad.Offset = 0
         self.Doc.recompute()
 
-        self.Sketch001 = self.Body.newObject("Sketcher::SketchObject", "Sketch001")
+        self.Sketch001 = self.Body.addFeature(
+            self.Body.Document.addObject("Sketcher::SketchObject", "Sketch001")
+        )
         self.Sketch001.AttachmentSupport = (
             self.Doc.getObject("Pad"),
             [
@@ -2854,7 +2864,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
         self.Doc.recompute()
 
-        self.Pad1 = self.Body.newObject("PartDesign::Pad", "Pad001")
+        self.Pad1 = self.Body.addFeature(self.Body.Document.addObject("PartDesign::Pad", "Pad001"))
         self.Pad1.Profile = (
             self.Doc.getObject("Sketch001"),
             [
@@ -2912,18 +2922,20 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
-        self.Body.addObject(self.PadSketch)
+        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (-42.5, -42.5), (85, 85))
         self.Doc.recompute()
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (-37.5, -37.5), (75, 75))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 10
         self.Doc.recompute()
 
-        self.Sketch001 = self.Body.newObject("Sketcher::SketchObject", "Sketch001")
+        self.Sketch001 = self.Body.addFeature(
+            self.Body.Document.addObject("Sketcher::SketchObject", "Sketch001")
+        )
         self.Sketch001.AttachmentSupport = (
             self.Doc.getObject("Pad"),
             [
@@ -2975,7 +2987,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         del self.constraintList
 
         self.Doc.recompute()
-        self.Pad001 = self.Body.newObject("PartDesign::Pad", "Pad001")
+        self.Pad001 = self.Body.addFeature(
+            self.Body.Document.addObject("PartDesign::Pad", "Pad001")
+        )
         self.Pad001.Profile = (
             self.Doc.getObject("Sketch001"),
             [
@@ -2996,7 +3010,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Pad001.SideType = "One side"
         self.Pad001.Offset = 0
         self.Doc.recompute()
-        self.Sketch002 = self.Body.newObject("Sketcher::SketchObject", "Sketch002")
+        self.Sketch002 = self.Body.addFeature(
+            self.Body.Document.addObject("Sketcher::SketchObject", "Sketch002")
+        )
         self.Sketch002.AttachmentSupport = (
             self.Doc.getObject("Pad001"),
             [
@@ -3049,7 +3065,9 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
         self.Doc.recompute()
 
-        self.Pad002 = self.Body.newObject("PartDesign::Pad", "Pad002")
+        self.Pad002 = self.Body.addFeature(
+            self.Body.Document.addObject("PartDesign::Pad", "Pad002")
+        )
         self.Pad002.Profile = (
             self.Doc.getObject("Sketch002"),
             [

@@ -32,10 +32,40 @@ class TestFillet(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("PartDesignTestFillet")
 
+    def _create_box_with_fillet(self):
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
+        box.Length = 10.00
+        box.Width = 10.00
+        box.Height = 10.00
+        body.addFeature(box)
+        self.Doc.recompute()
+
+        fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
+        fillet.Base = (box, ["Edge1"])
+        fillet.Radius = 1.0
+        body.addFeature(fillet)
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        return body, box, fillet
+
+    def _find_edge_with_match_count(self, source_shape, target_shape, match_count):
+        for index in range(1, source_shape.countElement("Edge") + 1):
+            source_name = "Edge" + str(index)
+            source_edge = source_shape.getElement(source_name, True)
+            matches = target_shape.findSubShapesWithSharedVertex(
+                source_edge,
+                needName=True,
+                checkGeometry=True,
+            )
+            if len(matches) == match_count:
+                return source_name, matches[0][0] if matches else None
+        self.skipTest("Test model did not contain a suitable edge")
+
     def testFilletCubeToSphere(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.00
         self.Box.Width = 10.00
         self.Box.Height = 10.00
@@ -43,7 +73,7 @@ class TestFillet(unittest.TestCase):
         self.Fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
         self.Fillet.Base = (self.Box, ["Face" + str(i + 1) for i in range(6)])
         self.Fillet.Radius = 4.999999
-        self.Body.addObject(self.Fillet)
+        self.Body.addFeature(self.Fillet)
         self.Doc.recompute()
         self.assertAlmostEqual(self.Fillet.Shape.Volume, 4 / 3 * pi * 5**3, places=3)
         # test UseAllEdges property
@@ -58,6 +88,37 @@ class TestFillet(unittest.TestCase):
         self.Fillet.Base = (self.Box, ["Face1"])
         self.Doc.recompute()
         self.assertNotAlmostEqual(self.Fillet.Shape.Volume, 4 / 3 * pi * 5**3, places=3)
+
+    def testDeletingPreviousFeatureRelinksUniqueMatchingBaseEdge(self):
+        body, box, fillet = self._create_box_with_fillet()
+        old_edge, new_edge = self._find_edge_with_match_count(fillet.Shape, box.Shape, 1)
+
+        followup = self.Doc.addObject("PartDesign::Fillet", "FollowupFillet")
+        followup.Base = (fillet, [old_edge])
+        followup.Radius = 0.25
+        body.addFeature(followup)
+        self.Doc.recompute()
+        self.assertTrue(followup.isValid())
+
+        body.removeFeature(fillet)
+
+        self.assertEqual(followup.Base[0].Name, box.Name)
+        self.assertEqual(list(followup.Base[1]), [new_edge])
+
+    def testDeletingPreviousFeatureDoesNotRelinkUnsafeBaseEdge(self):
+        body, box, fillet = self._create_box_with_fillet()
+        old_edge, _new_edge = self._find_edge_with_match_count(fillet.Shape, box.Shape, 0)
+
+        followup = self.Doc.addObject("PartDesign::Fillet", "FollowupFillet")
+        followup.Base = (fillet, [old_edge])
+        followup.Radius = 0.25
+        body.addFeature(followup)
+        self.Doc.recompute()
+
+        body.removeFeature(fillet)
+
+        if followup.Base[0]:
+            self.assertNotEqual(followup.Base[0].Name, box.Name)
 
     def tearDown(self):
         # closing doc

@@ -2,6 +2,7 @@
 
 /***************************************************************************
  *   Copyright (c) 2011 Juergen Riegel <FreeCAD@juergen-riegel.net>        *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -281,11 +282,11 @@ void ViewProvider::onChanged(const App::Property* prop)
     // if the object is inside of a body we make sure it is the only visible one on activation
     if (prop == &Visibility && Visibility.getValue()) {
 
-        Part::BodyBase* body = Part::BodyBase::findBodyOf(getObject());
+        Part::BodyBase* body = PartDesign::Body::findBodyOf(getObject());
         if (body) {
 
             // hide all features in the body other than this object
-            for (App::DocumentObject* obj : body->Group.getValues()) {
+            for (App::DocumentObject* obj : body->getFullModel()) {
 
                 if (obj->isDerivedFrom<PartDesign::Feature>() && obj != getObject()) {
                     auto vpd = freecad_cast<Gui::ViewProviderDocumentObject*>(
@@ -351,8 +352,12 @@ bool ViewProvider::onDelete(const std::vector<std::string>&)
         Gui::Application::Instance->getViewProvider(previousfeat)->show();
     }
 
-    // find surrounding features in the tree
-    Part::BodyBase* body = PartDesign::Body::findBodyOf(getObject());
+    // find surrounding features in the tree. Resolve the owning Body through the
+    // feature's own _Body reference (Cruth intra-body de-ownership, ARCHITECTURE
+    // §3.2/§3.3) rather than Group membership, so a de-owned feature — which is
+    // not a Group member — is still cleaned up on delete. getFeatureBody() falls
+    // back to the Group/in-list scan, so legacy bodies resolve identically.
+    Part::BodyBase* body = feature->getFeatureBody();
 
     if (body) {
         // Deletion from the tree of a feature is handled by Document.removeObject, which has no
@@ -369,7 +374,7 @@ bool ViewProvider::onDelete(const std::vector<std::string>&)
         //
         // fixes (#3084)
 
-        FCMD_OBJ_CMD(body, "removeObject(" << Gui::Command::getObjectCmd(feature) << ')');
+        FCMD_OBJ_CMD(body, "removeFeature(" << Gui::Command::getObjectCmd(feature) << ')');
     }
 
     makeChildrenVisible();

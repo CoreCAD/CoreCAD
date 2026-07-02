@@ -1579,7 +1579,7 @@ class SpreadsheetCases(unittest.TestCase):
         square = FreeCAD.newDocument("square")
         body = square.addObject("PartDesign::Body", "Body")
         box = square.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         box.Length = 10.00
         box.Width = 10.00
         box.Height = 10.00

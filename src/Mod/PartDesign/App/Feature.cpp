@@ -174,25 +174,70 @@ TopoShape Feature::getSolid(const TopoShape& shape) const
     return shape;
 }
 
+void Feature::onBaseFeatureRerouted(App::DocumentObject* /*oldBase*/, App::DocumentObject* /*newBase*/)
+{}
+
+bool Feature::relinkToMatchingSubelements(
+    App::PropertyLinkSub& link,
+    App::DocumentObject* oldBase,
+    App::DocumentObject* newBase
+)
+{
+    if (!oldBase || !newBase || link.getValue() != oldBase) {
+        return false;
+    }
+
+    auto oldFeature = freecad_cast<Part::Feature*>(oldBase);
+    auto newFeature = freecad_cast<Part::Feature*>(newBase);
+    if (!oldFeature || !newFeature) {
+        return false;
+    }
+
+    const auto& oldShape = oldFeature->Shape.getShape();
+    const auto& newShape = newFeature->Shape.getShape();
+    if (oldShape.isNull() || newShape.isNull()) {
+        return false;
+    }
+
+    const auto& oldSubs = link.getSubValues();
+    std::vector<std::string> newSubs;
+    newSubs.reserve(oldSubs.size());
+
+    for (const auto& sub : oldSubs) {
+        if (sub.empty()) {
+            newSubs.emplace_back();
+            continue;
+        }
+
+        auto oldSubShape = oldShape.getSubTopoShape(sub.c_str(), true);
+        if (oldSubShape.isNull()) {
+            return false;
+        }
+
+        std::vector<std::string> names;
+        auto matches = newShape.findSubShapesWithSharedVertex(
+            oldSubShape,
+            &names,
+            Data::SearchOption::CheckGeometry
+        );
+        if (matches.size() != 1 || names.size() != 1) {
+            return false;
+        }
+        newSubs.push_back(names.front());
+    }
+
+    link.setValue(newBase, std::move(newSubs));
+    return true;
+}
+
 void Feature::onChanged(const App::Property* prop)
 {
     if (!this->isRestoring() && this->getDocument()
         && !this->getDocument()->isPerformingTransaction()) {
-        if (prop == &Visibility || prop == &BaseFeature) {
-            auto body = Body::findBodyOf(this);
-            if (body) {
-                if (prop == &BaseFeature && BaseFeature.getValue()) {
-                    int idx = -1;
-                    body->Group.find(this->getNameInDocument(), &idx);
-                    int baseidx = -1;
-                    body->Group.find(BaseFeature.getValue()->getNameInDocument(), &idx);
-                    if (idx >= 0 && baseidx >= 0 && baseidx + 1 != idx) {
-                        body->insertObject(BaseFeature.getValue(), this);
-                    }
-                }
-            }
-        }
-        else if (prop == &ShapeMaterial) {
+        // Cruth de-ownership: feature order follows the BaseFeature chain itself, so a
+        // BaseFeature change needs no Group reindexing (Group is empty). The former
+        // Visibility/BaseFeature reorder branch is retired here.
+        if (prop == &ShapeMaterial) {
             auto body = Body::findBodyOf(this);
             if (body) {
                 if (body->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID()) {
@@ -496,22 +541,10 @@ TopoShape Feature::makeTopoShapeFromPlane(const App::DocumentObject* obj)
 
 Body* Feature::getFeatureBody() const
 {
-
-    auto body = freecad_cast<Body*>(_Body.getValue());
-    if (body) {
-        return body;
-    }
-
-    auto list = getInList();
-    for (auto in : list) {
-        if (in->isDerivedFrom<Body>() &&                // is Body?
-            static_cast<Body*>(in)->hasObject(this)) {  // is part of this Body?
-
-            return static_cast<Body*>(in);
-        }
-    }
-
-    return nullptr;
+    // De-owned features sit in no Group, so a Body's membership is a reverse lookup up the
+    // BaseFeature chain, not a Group read (Cruth §11 step 5e). findBodyOf already honours the
+    // transient _Body cache, so this simply delegates.
+    return Body::findBodyOf(this);
 }
 
 App::DocumentObject* Feature::getSubObject(
@@ -527,7 +560,7 @@ App::DocumentObject* Feature::getSubObject(
         if (dot) {
             auto body = PartDesign::Body::findBodyOf(this);
             if (body) {
-                auto feat = body->Group.findUsingMap(std::string(subname, dot));
+                auto feat = body->findOwnedFeature(std::string(subname, dot));
                 if (feat) {
                     Base::Matrix4D _mat;
                     if (!transform) {

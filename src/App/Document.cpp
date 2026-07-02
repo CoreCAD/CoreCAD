@@ -1011,6 +1011,12 @@ Document::Document(const char* documentName)
     Base::Uuid id;
     ADD_PROPERTY_TYPE(Id, (""), 0, Prop_None, "ID of the document");
     ADD_PROPERTY_TYPE(Uid, (id), 0, Prop_ReadOnly, "UUID of the document");
+    // Cruth: document-type marker. Empty = legacy/untyped; a Part document carries "Part".
+    ADD_PROPERTY_TYPE(DocumentType,
+                      (""),
+                      0,
+                      Prop_None,
+                      "Cruth document-type marker (e.g. \"Part\"); drives content scoping");
 
     // license stuff
     auto paramGrp {GetApplication().GetParameterGroupByPath(
@@ -3464,7 +3470,16 @@ void Document::removeObject(const char* sName)
         return;
     }
 
-    if (pos->second->testStatus(ObjectStatus::PendingRecompute)) {
+    if (pos->second->testStatus(ObjectStatus::Remove)) {
+        FC_LOG("Avoid recursive deletion of " << pos->second->getFullName());
+        return;
+    }
+
+    // Never mutate the object graph synchronously while a recompute is in flight:
+    // a removal during signalRecomputed() (e.g. Cruth multi-output marker retirement)
+    // tears down objects while the document is still marked Recomputing and crashes.
+    // Defer to the pendingRemove queue, which is flushed once recompute settles.
+    if (pos->second->testStatus(ObjectStatus::PendingRecompute) || testStatus(Document::Recomputing)) {
         // TODO: shall we allow removal if there is active undo transaction?
         FC_MSG("pending remove of " << sName << " after recomputing document " << getName());
         d->pendingRemove.emplace_back(pos->second);
@@ -3487,6 +3502,7 @@ void Document::_removeObject(DocumentObject* pcObject, RemoveObjectOptions optio
     auto pos = d->objectMap.find(pcObject->getNameInDocument());
     if (pos == d->objectMap.end()) {
         FC_ERR("Internal error, could not find " << pcObject->getFullName() << " to remove");
+        return;
     }
 
     if (options.testFlag(RemoveObjectOption::PreserveChildrenVisibility)

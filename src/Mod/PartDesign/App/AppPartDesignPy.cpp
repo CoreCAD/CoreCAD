@@ -23,10 +23,15 @@
  ***************************************************************************/
 
 
+#include <App/DocumentObjectPy.h>
+#include <App/DocumentPy.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/Interpreter.h>
 #include <Base/VectorPy.h>
 #include <Base/Tools.h>
+
+#include <Mod/Part/App/Part2DObject.h>
+#include <Mod/PartDesign/App/Body.h>
 
 
 namespace PartDesign
@@ -38,10 +43,99 @@ public:
         : Py::ExtensionModule<Module>("_PartDesign")
     {
         add_varargs_method("makeFilletArc", &Module::makeFilletArc, "makeFilletArc(...) -- Fillet arc.");
+        add_varargs_method(
+            "resolveBaseBody",
+            &Module::resolveBaseBody,
+            "resolveBaseBody(sketch) -> Body or None\n\n"
+            "Cruth §8.5/§4.6: PURE query — resolve the base Body for a sketch-based\n"
+            "feature by walking the sketch's anchor chain. No side effects. Returns the\n"
+            "single Body the chain reaches, or None when it reaches no Body (the\n"
+            "auto-spawn case — create one explicitly with spawnBody()). Raises if the\n"
+            "chain reaches more than one Body (ambiguous). Shared with the GUI command\n"
+            "(P8 UI/API equivalence): both resolve purely, then spawn explicitly."
+        );
+        add_varargs_method(
+            "spawnBody",
+            &Module::spawnBody,
+            "spawnBody(doc) -> Body\n\n"
+            "Cruth §4.6: explicitly create a document-level Body (the auto-spawn step,\n"
+            "separated from resolveBaseBody so the lookup stays side-effect free — #17).\n"
+            "The GUI runs this inside the feature's undo transaction; scripts call it\n"
+            "when resolveBaseBody returns None. Applies the AllowCompound default and\n"
+            "the per-document palette colour, matching the GUI auto-spawn."
+        );
+        add_varargs_method(
+            "findBodyOf",
+            &Module::findBodyOf,
+            "findBodyOf(feature) -> Body or None\n\n"
+            "Cruth §11: reverse lookup from a feature to the Body whose pipeline emits it.\n"
+            "Body membership is DERIVED (walked along the BaseFeature chain), never stored —\n"
+            "the mirror image of the de-owned Group. Returns None if the feature belongs to\n"
+            "no Body. This is the Python entry point for the C++ static Body::findBodyOf."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
 private:
+    Py::Object findBodyOf(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyFeature)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+        Body* body = Body::findBodyOf(obj);
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
+    Py::Object resolveBaseBody(const Py::Tuple& args)
+    {
+        PyObject* pySketch = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pySketch)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pySketch)->getDocumentObjectPtr();
+        auto* sketch = freecad_cast<Part::Part2DObject*>(obj);
+        if (!sketch) {
+            throw Py::TypeError("resolveBaseBody expects a sketch (Part::Part2DObject)");
+        }
+
+        bool ambiguous = false;
+        Body* body = Body::resolveBaseBody(sketch, ambiguous);
+        if (ambiguous) {
+            throw Py::RuntimeError(
+                "This sketch's attachment chain reaches more than one Body. "
+                "Pick a single Body explicitly before continuing."
+            );
+        }
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
+    Py::Object spawnBody(const Py::Tuple& args)
+    {
+        PyObject* pyDoc = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentPy::Type), &pyDoc)) {
+            throw Py::Exception();
+        }
+
+        App::Document* doc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+        Body* body = Body::spawnAutoBody(doc);
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
     Py::Object makeFilletArc(const Py::Tuple& args)
     {
         PyObject* pM1;

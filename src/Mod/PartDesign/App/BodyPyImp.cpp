@@ -95,9 +95,136 @@ PyObject* BodyPy::insertObject(PyObject* args)
     Py_Return;
 }
 
+PyObject* BodyPy::addFeature(PyObject* args)
+{
+    PyObject* featurePy;
+    if (!PyArg_ParseTuple(args, "O!", &(App::DocumentObjectPy::Type), &featurePy)) {
+        return nullptr;
+    }
+
+    App::DocumentObject* feature
+        = static_cast<App::DocumentObjectPy*>(featurePy)->getDocumentObjectPtr();
+
+    if (!Body::isAllowed(feature)) {
+        PyErr_SetString(
+            PyExc_SystemError,
+            "Only PartDesign features, datum features and sketches can be added to a Body"
+        );
+        return nullptr;
+    }
+
+    try {
+        this->getBodyPtr()->addFeature(feature);
+    }
+    catch (Base::Exception& e) {
+        PyErr_SetString(PyExc_SystemError, e.what());
+        return nullptr;
+    }
+
+    return feature->getPyObject();
+}
+
+PyObject* BodyPy::removeFeature(PyObject* args)
+{
+    PyObject* featurePy;
+    if (!PyArg_ParseTuple(args, "O!", &(App::DocumentObjectPy::Type), &featurePy)) {
+        return nullptr;
+    }
+
+    App::DocumentObject* feature
+        = static_cast<App::DocumentObjectPy*>(featurePy)->getDocumentObjectPtr();
+
+    try {
+        this->getBodyPtr()->removeFeature(feature);
+    }
+    catch (Base::Exception& e) {
+        PyErr_SetString(PyExc_SystemError, e.what());
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
+static bool collectFeatures(PyObject* listPy, std::vector<App::DocumentObject*>& out)
+{
+    Py::Sequence seq(listPy);
+    for (const auto& item : seq) {
+        PyObject* obj = item.ptr();
+        if (!PyObject_TypeCheck(obj, &(App::DocumentObjectPy::Type))) {
+            PyErr_SetString(PyExc_TypeError, "Expected a list of document objects");
+            return false;
+        }
+        App::DocumentObject* feature = static_cast<App::DocumentObjectPy*>(obj)->getDocumentObjectPtr();
+        if (!Body::isAllowed(feature)) {
+            PyErr_SetString(
+                PyExc_SystemError,
+                "Only PartDesign features, datum features and sketches can be added to a Body"
+            );
+            return false;
+        }
+        out.push_back(feature);
+    }
+    return true;
+}
+
+PyObject* BodyPy::addFeatures(PyObject* args)
+{
+    PyObject* listPy;
+    if (!PyArg_ParseTuple(args, "O", &listPy)) {
+        return nullptr;
+    }
+    std::vector<App::DocumentObject*> features;
+    if (!collectFeatures(listPy, features)) {
+        return nullptr;
+    }
+    try {
+        this->getBodyPtr()->addFeatures(features);
+    }
+    catch (Base::Exception& e) {
+        PyErr_SetString(PyExc_SystemError, e.what());
+        return nullptr;
+    }
+    Py_Return;
+}
+
+PyObject* BodyPy::removeFeatures(PyObject* args)
+{
+    PyObject* listPy;
+    if (!PyArg_ParseTuple(args, "O", &listPy)) {
+        return nullptr;
+    }
+    std::vector<App::DocumentObject*> features;
+    if (!collectFeatures(listPy, features)) {
+        return nullptr;
+    }
+    try {
+        this->getBodyPtr()->removeFeatures(features);
+    }
+    catch (Base::Exception& e) {
+        PyErr_SetString(PyExc_SystemError, e.what());
+        return nullptr;
+    }
+    Py_Return;
+}
+
+PyObject* BodyPy::breakOutInstance(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    Body* newBody = Body::breakOutInstance(this->getBodyPtr());
+    if (!newBody) {
+        Py_RETURN_NONE;
+    }
+    return newBody->getPyObject();
+}
+
 Py::Object BodyPy::getVisibleFeature() const
 {
-    for (auto obj : getBodyPtr()->Group.getValues()) {
+    // Derived membership (§9.1-inverse): the Group is empty under de-ownership, so read the
+    // Body's features through getFullModel, which computes them from the feature graph.
+    for (auto obj : getBodyPtr()->getFullModel()) {
         if (obj->Visibility.getValue() && obj->isDerivedFrom<PartDesign::Feature>()) {
             return Py::Object(obj->getPyObject(), true);
         }

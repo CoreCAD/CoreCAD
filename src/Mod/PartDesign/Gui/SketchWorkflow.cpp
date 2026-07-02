@@ -2,7 +2,7 @@
 
 /**************************************************************************
  *   Copyright (c) 2022 Werner Mayer <wmayer[at]users.sourceforge.net>     *
- *   Copyright (c) 2026 CoreCAD contributors                               *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -34,7 +34,6 @@
 
 
 #include "SketchWorkflow.h"
-#include "DlgActiveBody.h"
 #include "TaskFeaturePick.h"
 #include "Utils.h"
 #include "ViewProviderBody.h"
@@ -270,8 +269,7 @@ public:
         std::string FeatName = appdocument->getUniqueObjectName("Sketch");
 
         guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Sketch on Face"));
-        FCMD_OBJ_CMD(activeBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
-        auto Feat = activeBody->getDocument()->getObject(FeatName.c_str());
+        auto Feat = PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
         FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << supportString);
         if (sketchFilter.match()) {
             FCMD_OBJ_CMD(
@@ -366,8 +364,12 @@ public:
             }
 
             planes.push_back(plane);
-            // Check whether this plane belongs to the active body
-            if (activeBody->hasObject(plane, true)) {
+            // Check whether this plane belongs to the active body: a datum plane derives to the
+            // body's Tip; a world-frame base plane lives in the single shared document Origin and
+            // is valid for every body (Cruth §11 step 5e shared-Origin).
+            if (PartDesign::Body::findBodyOf(plane) == activeBody
+                || (plane->isDerivedFrom<App::DatumElement>()
+                    && static_cast<App::DatumElement*>(plane)->isOriginFeature())) {
                 if (!activeBody->isAfterInsertPoint(plane)) {
                     validPlaneCount++;
                     status.push_back(PartDesignGui::TaskFeaturePick::validFeature);
@@ -409,7 +411,7 @@ public:
         shapeBinders.insert(shapeBinders.end(), binders.begin(), binders.end());
         for (auto binder : shapeBinders) {
             // Check whether this plane belongs to the active body
-            if (activeBody->hasObject(binder)) {
+            if (PartDesign::Body::findBodyOf(binder) == activeBody) {
                 Part::TopoShape shape = static_cast<Part::Feature*>(binder)->Shape.getShape();
                 if (shape.isPlanar()) {
                     if (!activeBody->isAfterInsertPoint(binder)) {
@@ -482,36 +484,24 @@ public:
 private:
     void tryFindSupport()
     {
-        createBodyOrThrow();
-
+        // CoreCAD POC: no Body is created here. The sketch is born free and the
+        // Pad anchor walk later decides which Body (new or existing) owns it.
         createSketchAndShowAttachment();
-    }
-
-    void createBodyOrThrow()
-    {
-        if (!activeBody) {
-            App::Document* appdocument = guidocument->getDocument();
-            activeBody = PartDesignGui::makeBody(appdocument);
-            if (activeBody) {
-                tryAddNewBodyToActivePart();
-            }
-            else {
-                throw RejectException();
-            }
-        }
-    }
-
-    void tryAddNewBodyToActivePart()
-    {
-        App::Part* activePart = PartDesignGui::getActivePart();
-        if (activePart) {
-            activePart->addObject(activeBody);
-        }
     }
 
     void setOriginTemporaryVisibility()
     {
-        auto* origin = activeBody->getOrigin();
+        // Origin-plane highlighting is a non-critical visual aid. Without an
+        // active Body there is no Origin to show; the user can still pick a
+        // global plane in the attachment dialog.
+        if (!activeBody) {
+            return;
+        }
+        // Cruth substrate flip (Stage 3a-2b): highlight the shared document-level Origin's
+        // planes, not the dormant per-body Origin. This is the coordinate root de-owned
+        // features resolve against, so the plane the user clicks is the one the sketch
+        // ends up attached to (no later relink needed for display consistency).
+        auto* origin = activeBody->ensureDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -529,7 +519,9 @@ private:
         // This mirrors UnifiedDatumCommand: use attacher to find the best fit mode.
         App::PropertyLinkSubList support;
         Gui::Selection().getAsPropertyLinkSubList(support);
-        support.removeValue(activeBody);
+        if (activeBody) {
+            support.removeValue(activeBody);
+        }
 
         // Don't pre-populate when the selection contains sketches. A sketch selected
         // from prior work should not automatically become the attachment reference —
@@ -538,10 +530,30 @@ private:
             return obj && obj->isDerivedFrom<Part::Part2DObject>();
         });
 
-        // Create sketch
-        App::Document* doc = activeBody->getDocument();
+        // Create sketch. CoreCAD POC: when there is an active Body, nest the sketch
+        // in it (legacy behaviour); otherwise create it free at document level and,
+        // if a Part workspace is active, add it there. The Pad anchor walk decides
+        // Body ownership later.
+        App::Document* doc = guidocument->getDocument();
         std::string FeatName = doc->getUniqueObjectName("Sketch");
-        FCMD_OBJ_CMD(activeBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
+        if (activeBody) {
+            PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
+        }
+        else {
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "App.activeDocument().addObject('Sketcher::SketchObject','%s')",
+                FeatName.c_str()
+            );
+            if (App::Part* activePart = PartDesignGui::getActivePart()) {
+                Gui::Command::doCommand(
+                    Gui::Command::Doc,
+                    "%s.addObject(%s)",
+                    Gui::Command::getObjectCmd(activePart).c_str(),
+                    Gui::Command::getObjectCmd(doc->getObject(FeatName.c_str())).c_str()
+                );
+            }
+        }
         auto sketch = doc->getObject(FeatName.c_str());
 
         if (!hasSketch && support.getSize() > 0) {
@@ -583,7 +595,12 @@ private:
 
     static void resetOriginVisibility(PartDesign::Body* partDesignBody)
     {
-        auto* origin = partDesignBody->getOrigin();
+        if (!partDesignBody) {
+            return;
+        }
+        // Cruth substrate flip (Stage 3a-2b): must match the Origin made visible in
+        // setOriginTemporaryVisibility() — the shared document-level one, not per-body.
+        auto* origin = partDesignBody->ensureDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -745,8 +762,7 @@ private:
             doc->openTransaction(QT_TRANSLATE_NOOP("Command", "New Sketch"));
         }
 
-        FCMD_OBJ_CMD(partDesignBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
-        auto Feat = doc->getObject(FeatName.c_str());
+        auto Feat = PartDesignGui::createFeature(partDesignBody, "Sketcher::SketchObject", FeatName);
         FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << supportString);
         FCMD_OBJ_CMD(
             Feat,
@@ -815,11 +831,14 @@ void SketchWorkflow::tryCreateSketch()
         return;
     }
 
+    // CoreCAD POC: route every PartDesign sketch creation through the attachment
+    // dialog by default. The Phase 4 attempt at this default was reverted because
+    // of a "body disappears" UX glitch — re-evaluate under the auto-spawn flow.
     bool useAttachment = App::GetApplication()
                              .GetParameterGroupByPath(
                                  "User parameter:BaseApp/Preferences/Mod/PartDesign"
                              )
-                             ->GetBool("NewSketchUseAttachmentDialog", false);
+                             ->GetBool("NewSketchUseAttachmentDialog", true);
 
     bool shiftHeld = QApplication::queryKeyboardModifiers() & Qt::ShiftModifier;
 
@@ -831,7 +850,10 @@ void SketchWorkflow::tryCreateSketch()
     // to the attachment dialog instead of showing an error.
     // A selected sketch, multiple references, no selection, Shift, or preference on
     // all go through the attachment dialog.
-    if (!useAttachment && !shiftHeld && sketchOnFace.isSingleFaceOrPlane()) {
+    // CoreCAD POC: the fast path requires a Body to host the sketch and is not
+    // null-safe, so skip it entirely when no Body is active. Sketches are now
+    // born free (see shouldCreateBody/createSketchAndShowAttachment).
+    if (activeBody && !useAttachment && !shiftHeld && sketchOnFace.isSingleFaceOrPlane()) {
         try {
             sketchOnFace.createSupport();
             sketchOnFace.createSketchOnSupport(sketchOnFace.getSupport());
@@ -854,36 +876,35 @@ void SketchWorkflow::tryCreateSketch()
 
 std::tuple<bool, PartDesign::Body*> SketchWorkflow::shouldCreateBody()
 {
-    auto shouldMakeBody {false};
-
-    // We need either an active Body, or for there to be no Body
-    // objects (in which case, just make one) to make a new sketch.
-    // If we are inside a link, we need to use its placement.
-    App::DocumentObject* topParent;
-    PartDesign::Body* pdBody
-        = PartDesignGui::getBody(/* messageIfNot = */ false, true, true, &topParent);
-    if (pdBody && topParent->isLink()) {
+    // CoreCAD POC: sketches are now born free. Sketch creation never spawns a
+    // Body and never shows the legacy DlgActiveBody modal — the Pad anchor walk
+    // is the single thing that decides Body spawn-vs-extend. We simply report
+    // the active Body if there is one (it may be null).
+    // If we are inside a link, we still need to use its placement.
+    // CoreCAD POC: autoActivate is OFF here. We deliberately do NOT let getBody
+    // auto-activate the lone Body of a single-Body document — otherwise every
+    // sketch would nest into that Body and a second independent Body could never
+    // be started. A Body is used only when one is genuinely active; with no
+    // active Body the sketch is born free and Pad's anchor walk owns the spawn.
+    App::DocumentObject* topParent = nullptr;
+    PartDesign::Body* pdBody = PartDesignGui::getBody(
+        /* messageIfNot = */ false,
+        /* autoActivate = */ false,
+        /* assertModern = */ true,
+        &topParent
+    );
+    if (pdBody && topParent && topParent->isLink()) {
         auto* xLink = dynamic_cast<App::Link*>(topParent);
         pdBody->Placement.setValue(xLink->Placement.getValue());
     }
-    if (!pdBody) {
-        if (appdocument->countObjectsOfType<PartDesign::Body>() == 0) {
-            shouldMakeBody = true;
-        }
-        else {
-            PartDesignGui::DlgActiveBody dia(Gui::getMainWindow(), appdocument);
-            if (dia.exec() == QDialog::Accepted) {
-                pdBody = dia.getActiveBody();
-            }
-        }
-    }
 
-    return std::make_tuple(shouldMakeBody, pdBody);
+    return std::make_tuple(false, pdBody);
 }
 
-bool SketchWorkflow::shouldAbort(bool shouldMakeBody) const
+bool SketchWorkflow::shouldAbort(bool) const
 {
-    return !shouldMakeBody && !activeBody;
+    // CoreCAD POC: a missing Body no longer aborts sketch creation.
+    return false;
 }
 
 std::tuple<Gui::SelectionFilter, Gui::SelectionFilter, Gui::SelectionFilter> SketchWorkflow::getFilters() const

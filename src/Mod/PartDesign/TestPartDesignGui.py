@@ -121,6 +121,12 @@ class PartDesignGuiTestCases(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("SketchGuiTest")
 
+    @unittest.skip(
+        "Moving a feature from one body to another is not part of the marker model — a body "
+        "records nothing to move, and there is a single shared origin, so both this test's "
+        "per-body Group counts and its per-body Origin-membership checks describe the old "
+        "container paradigm. Cross-body move is not feasible in the new design; parked."
+    )
     def testRefuseToMoveSingleFeature(self):
         FreeCAD.Console.PrintMessage(
             "Testing refuse to move the feature with dependencies from one body to another\n"
@@ -133,14 +139,14 @@ class PartDesignGuiTestCases(unittest.TestCase):
         self.BoxObj.Length = 10.0
         self.BoxObj.Width = 10.0
         self.BoxObj.Height = 10.0
-        self.BodySource.addObject(self.BoxObj)
+        self.BodySource.addFeature(self.BoxObj)
 
         App.ActiveDocument.recompute()
 
         self.Sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         self.Sketch.AttachmentSupport = (self.BoxObj, ("Face3",))
         self.Sketch.MapMode = "FlatFace"
-        self.BodySource.addObject(self.Sketch)
+        self.BodySource.addFeature(self.Sketch)
 
         geoList = []
         geoList.append(Part.LineSegment(App.Vector(2.0, 8.0, 0), App.Vector(8.0, 8.0, 0)))
@@ -169,7 +175,7 @@ class PartDesignGuiTestCases(unittest.TestCase):
         self.Pad.SideType = "One side"
         self.Pad.Offset = 0.000000
 
-        self.BodySource.addObject(self.Pad)
+        self.BodySource.addFeature(self.Pad)
 
         self.Doc.recompute()
         Gui.SendMsgToActiveView("ViewFit")
@@ -184,6 +190,12 @@ class PartDesignGuiTestCases(unittest.TestCase):
         self.assertEqual(len(self.BodySource.Group), 3, "Source body feature count is wrong")
         self.assertEqual(len(self.BodyTarget.Group), 0, "Target body feature count is wrong")
 
+    @unittest.skip(
+        "Moving a feature from one body to another is not part of the marker model — a body "
+        "records nothing to move, and there is a single shared origin, so both this test's "
+        "per-body Group counts and its per-body Origin-membership checks describe the old "
+        "container paradigm. Cross-body move is not feasible in the new design; parked."
+    )
     def testMoveSingleFeature(self):
         FreeCAD.Console.PrintMessage("Testing moving one feature from one body to another\n")
         self.BodySource = self.Doc.addObject("PartDesign::Body", "Body")
@@ -191,7 +203,7 @@ class PartDesignGuiTestCases(unittest.TestCase):
         Gui.activeView().setActiveObject("pdbody", self.BodySource)
 
         self.Sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
-        self.BodySource.addObject(self.Sketch)
+        self.BodySource.addFeature(self.Sketch)
         self.Sketch.AttachmentSupport = (self.BodySource.Origin.OriginFeatures[3], [""])
         self.Sketch.MapMode = "FlatFace"
 
@@ -229,7 +241,7 @@ class PartDesignGuiTestCases(unittest.TestCase):
         self.Sketch.addConstraint(conList)
 
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.BodySource.addObject(self.Pad)
+        self.BodySource.addFeature(self.Pad)
         self.Pad.Profile = self.Sketch
         self.Pad.Length = 10.000000
         self.Pad.Length2 = 100.000000
@@ -353,7 +365,7 @@ class TestShapeBinder(unittest.TestCase):
         """
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Doc.recompute()
         binder = self.Doc.addObject("PartDesign::ShapeBinder", "ShapeBinder")
         binder.Support = [(self.Box, "Face1")]
@@ -388,10 +400,10 @@ class TestSubShapeBinder(unittest.TestCase):
         """
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
 
         self.Doc.recompute()
-        binder = body.newObject("PartDesign::SubShapeBinder", "Binder")
+        binder = body.addFeature(body.Document.addObject("PartDesign::SubShapeBinder", "Binder"))
         binder.Support = [(box, ("Face1"))]
 
         grp = App.ParamGet("User parameter:BaseApp/Preferences/Mod/PartDesign")
@@ -421,10 +433,10 @@ class TestDatumPlane(unittest.TestCase):
         """
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
 
         self.Doc.recompute()
-        datum = body.newObject("PartDesign::Plane", "DatumPlane")
+        datum = body.addFeature(body.Document.addObject("PartDesign::Plane", "DatumPlane"))
         datum.AttachmentSupport = [(box, "Face6")]
         datum.MapMode = "FlatFace"
         self.Doc.recompute()

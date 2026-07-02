@@ -138,7 +138,7 @@ class TestSketchValidateCoincidents(unittest.TestCase):
             doc.addObject("PartDesign::Body", "Body")
             doc.Body.Label = "Body"
             doc.recompute()
-            doc.Body.newObject("Sketcher::SketchObject", "Sketch")
+            doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch"))
             doc.Sketch.AttachmentSupport = (doc.XY_Plane, [""])
             doc.Sketch.MapMode = "FlatFace"
             doc.recompute()
@@ -182,7 +182,7 @@ class TestSketchValidateCoincidents(unittest.TestCase):
             del constraintList
             constraintList = []
             doc.recompute()
-            doc.Body.newObject("Sketcher::SketchObject", "Sketch001")
+            doc.Body.addFeature(doc.Body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
             doc.Sketch001.AttachmentSupport = (doc.XY_Plane, [""])
             doc.Sketch001.MapMode = "FlatFace"
             doc.recompute()

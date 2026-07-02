@@ -38,18 +38,18 @@ class TestMirrored(unittest.TestCase):
         """
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Rect = self.Doc.addObject("Sketcher::SketchObject", "Rect")
-        self.Body.addObject(self.Rect)
+        self.Body.addFeature(self.Rect)
         TestSketcherApp.CreateRectangleSketch(self.Rect, (0, 0), (1, 1))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
         self.Pad.Profile = self.Rect
         self.Pad.Length = 1
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Doc.recompute()
         self.Mirrored = self.Doc.addObject("PartDesign::Mirrored", "Mirrored")
         self.Mirrored.Originals = [self.Pad]
         self.Mirrored.MirrorPlane = (self.Rect, ["V_Axis"])
-        self.Body.addObject(self.Mirrored)
+        self.Body.addFeature(self.Mirrored)
         self.Doc.recompute()
         self.assertAlmostEqual(self.Mirrored.Shape.Volume, 2.0)
 
@@ -64,30 +64,30 @@ class TestMirrored(unittest.TestCase):
         self.Box.Length = 1
         self.Box.Width = 1
         self.Box.Height = 1
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Doc.recompute()
         self.Mirrored = self.Doc.addObject("PartDesign::Mirrored", "Mirrored")
         self.Mirrored.Originals = [self.Box]
         self.Mirrored.MirrorPlane = (self.Doc.XY_Plane, [""])
-        self.Body.addObject(self.Mirrored)
+        self.Body.addFeature(self.Mirrored)
         self.Doc.recompute()
         self.assertAlmostEqual(self.Mirrored.Shape.Volume, 2.0)
 
     def testMirroredOffsetCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Rect = self.Doc.addObject("Sketcher::SketchObject", "Rect")
-        self.Body.addObject(self.Rect)
+        self.Body.addFeature(self.Rect)
         TestSketcherApp.CreateRectangleSketch(self.Rect, (0, 1), (1, 1))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
         self.Pad.Profile = self.Rect
         self.Pad.Length = 1
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Doc.recompute()
         self.Mirrored = self.Doc.addObject("PartDesign::Mirrored", "Mirrored")
         self.Mirrored.Originals = [self.Pad]
         self.Mirrored.MirrorPlane = (self.Rect, ["H_Axis"])
-        self.Body.addObject(self.Mirrored)
+        self.Body.addFeature(self.Mirrored)
         self.Doc.recompute()
         self.assertIn("Up-to-date", self.Mirrored.State)
 

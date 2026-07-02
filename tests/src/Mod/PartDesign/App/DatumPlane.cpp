@@ -50,7 +50,7 @@ TEST_F(DatumPlaneTest, attachDatumPlane)
 {
     auto datumPlane = getDocument()->addObject<PartDesign::Plane>("Plane");
     ASSERT_TRUE(datumPlane);
-    getBody()->addObject(datumPlane);
+    getBody()->addFeature(datumPlane);
     auto origin = getBody()->getOrigin();
 
     App::PropertyLinkSubList support;

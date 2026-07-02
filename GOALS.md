@@ -80,6 +80,12 @@ by the developer at build time via `cMake/CoreCAD_Options.cmake`.
 
 **Already OFF upstream** (no action needed): `BUILD_CLOUD`, `BUILD_SANDBOX`
 
+**Planned additions:**
+- **Sheet Metal — planned** as a future core mechanical-CAD workbench (added once the modeling
+  substrate work it would build on is in place).
+- **Point Cloud — stays out** (excluded above): scan-to-CAD is a domain-specific workflow
+  outside core mechanical CAD.
+
 ---
 
 ### 3. RibbonUI as Default Interface
@@ -193,13 +199,7 @@ immediately without requiring a manual "File → New" step first.
 
 Eliminate context switching between the Part and PartDesign workbenches by making CorePart
 the single entry point for all part creation. The raw Part and PartDesign workbenches remain
-under the hood but are hidden from users.
-
-**Strategic split:**
-- **Open layer (CoreCAD repo):** parametric foundation, container model, dialog quality,
-  Part/PartDesign consolidation. All built on the existing `App::Part` container work.
-- **Proprietary layer (private repo, like CoreRibbon):** premium UX interactions — smart
-  face manipulation, inline constraint visualization, advanced dialogs. Not open-sourced yet.
+under the hood but are hidden from users. Built on the existing `App::Part` container work.
 
 **What Part has that must be preserved in CorePart:**
 
@@ -214,8 +214,6 @@ under the hood but are hidden from users.
 
 Everything else (primitives, sketch-based features) is covered by PartDesign with better dialogs.
 
-#### Open Layer Tasks
-
 | Status | Task |
 |--------|------|
 | ✅ Done | `App::Part` container — all Part operation results placed inside active Part |
@@ -225,51 +223,6 @@ Everything else (primitives, sketch-based features) is covered by PartDesign wit
 | ⬜ Todo | **Harmonise boolean tool-body contract:** `Part::Cut` shows input bodies as dependency tree children; `PartDesign::Boolean` leaves them as independent objects but makes them invisible. Both preserve §5.3 tools-persist but the UX contracts differ — users cannot predict what happens to inputs without knowing which workbench they used. Standardise on one convention (see `.local/compact-phase3.md` Deferred §2). |
 | ⬜ Todo | Surface essential Part-only operations (multi-body Boolean, Defeaturing, Compounds) in CorePart ribbon |
 | ⬜ Todo | Improve Part primitive dialogs to match PartDesign quality |
-
-#### Proprietary Layer Tasks (UX — private repo)
-
-Informed by competitive audit of Fusion 360, Onshape, SolidWorks, Plasticity, and Shapr3D.
-The Shapr3D model is the target: interactions always work, parametric history is created silently
-in the background, users never need to think about which mode they are in.
-
-**Tier 1 — implement first:**
-
-| Status | Task |
-|--------|------|
-| ⬜ Todo | **Face-click-to-sketch:** clicking a planar face immediately activates sketch tools on that plane — no separate "create sketch" dialog (Shapr3D model). **Known blocker:** `SketchWorkflow::findAndSelectPlane()` silently swallows face clicks when no face is pre-selected; only planes (origin/datum) appear in its list. Fix: default `NewSketchUseAttachmentDialog` to `true`, or route face-hover clicks to the attachment dialog. See `.local/compact-phase3.md` Deferred Items §1. |
-| ✅ Done | **Sketch creation cycle guard:** `SketchWorkflow.cpp:232` — before placing sketch, `activeBody->getInListEx(true).count(supportObj)` detects DAG cycle; auto-creates and activates new Body. Fully verified 2026-04-22: DAG logic via MCP (4c), GUI tests 4a.1–4a.3 manually confirmed in running CoreCAD. |
-| ⬜ Todo | **Press/Pull with graceful fallback:** drag any face → creates Pad/Pocket if sketch origin exists, Move Face feature otherwise — never refuses to act (Fusion/Shapr3D model) |
-| ⬜ Todo | **Unified Add/Remove dialogs:** consolidate opposite-pair commands into single dialogs with an Add/Remove material toggle — Extrude (Pad↔Pocket), Revolve (Revolution↔Groove), Loft (AdditiveLoft↔SubtractiveLoft), Sweep (AdditivePipe↔SubtractivePipe), Helix (AdditiveHelix↔SubtractiveHelix). Matches Inventor/Fusion UX; eliminates the need to choose the "right" command upfront. 100% Python task panels in the proprietary layer; dispatch to the appropriate PartDesign command on confirm. **Prerequisite:** CorePart ribbon surfacing these commands and raw Part/PartDesign workbenches suppressed, so the unified dialog is the sole entry point. |
-| ⬜ Todo | **Inline constraint status coloring:** black = fully defined, blue = under-constrained, red = over-constrained as persistent geometry overlays (SolidWorks model) |
-
-**Tier 2 — after core is stable:**
-
-| Status | Task |
-|--------|------|
-| ⬜ Todo | **Section view (clipping plane):** interactive display-only clipping plane to expose interiors — no geometry created or modified. Click a face to place the plane; toggle which side is clipped by view direction. Replaces `Part_SectionCut` for inspection (that tool incorrectly creates `BooleanFragments` geometry). API: `view.toggleClippingPlane(pla=...)` (`View3DPy.cpp:321`). 100% Python, zero C++ changes needed. |
-| ⬜ Todo | **Interference & clearance analyser:** highlight faces of two or more solids that overlap or are within a threshold distance. API: `shape.proximity(other, tol)` and `shape.distToShape(other)` (`TopoShapePyImp.cpp:2500, 2864`). Colour-code interfering faces in the 3D view; show clearance gap measurements. |
-| ⬜ Todo | **Geometry metrics panel:** persistent panel showing area, volume, centre of gravity, and bounding box dimensions for the selected object — no Python console required. API: `shape.Area`, `shape.Volume`, `shape.CenterOfGravity`, `shape.BoundBox` (all properties on `TopoShape`). |
-| ⬜ Todo | **Geometry Doctor:** guided repair flow for imported STEP/IGES geometry. Detect issues via `shape.check()` / `shape.isValid()`, suggest and apply fixes via `shape.fix()` / `shape.fixTolerance()` (`TopoShapePy.cpp:259-837`). Before/after 3D preview. |
-| ⬜ Todo | **Face origin inspector:** select a face → highlight the feature that created it using `shape.getElementHistory()` and `shape.mapShapes()` (`TopoShapePy.cpp:1127-1136`). Directly addresses the "where did this face come from?" gap that no CAD tool solves well. |
-| ⬜ Todo | **"Extrude to face" snap:** dragging an extrusion snaps to opposing faces with visual highlight |
-| ⬜ Todo | **Timeline scrub:** roll feature history back to any point for editing (Fusion model) |
-| ⬜ Todo | **History opt-in mode:** direct modeling by default, feature list available on request without changing the UI (Shapr3D model) |
-| ⬜ Todo | **Multi-face simultaneous drag:** select multiple faces and push/pull together (Plasticity/Shapr3D) |
-
-**Tier 3 — defer:**
-
-| Status | Task |
-|--------|------|
-| 🔮 Future | **Boolean debugger:** after a Fuse/Cut/Common, colour-code output faces by which input solid they came from. API: `shape.mapShapes()` (`TopoShapePy.cpp:1094-1126`). Solves a real frustration when booleans produce unexpected topology. |
-| 🔮 Future | **Interactive offset previewer:** live slider for `shape.makeOffsetShape()` and `shape.makeOffset2D()` with real-time 3D preview. Useful for machining and mold design. Current Part Offset dialogs have no preview. |
-| 🔮 Future | **Optimal bounding box visualiser:** display the minimum-volume oriented bounding box via `shape.optimalBoundingBox()` (`TopoShapePy.cpp:1227`). Useful for nesting, shipping volume, and stock material sizing. |
-| 🔮 Future | Live cross-section view (SolidWorks "Live Section") — superseded by Section View above for inspection; revisit only if 2D annotation on section is needed |
-| 🔮 Future | History-free NURBS direct modeling (Plasticity model) — wrong paradigm for mechanical CAD |
-
-> The proprietary layer follows the same pattern as CoreRibbon: private repo, copied into the
-> build tree by CMake, never modifies upstream files. LGPL2+ compliance: new code that *uses*
-> the FreeCAD API as a separate module can be proprietary; only modifications to existing
-> LGPL2+ files must remain open.
 
 ---
 
@@ -296,88 +249,6 @@ in the background, users never need to think about which mode they are in.
 >
 > **Files to change:** `CommandConstraints.cpp` — `CmdSketcherToggleDrivingConstraint::activated()`
 > and `updateAction()`, plus all `addCommandMode("ToggleDrivingConstraint", ...)` registrations.
-
----
-
-## Research Areas
-
-Unsolved problems across the CAD industry worth investigating — not committed goals,
-but worth revisiting as CorePart matures.
-
-- **Constraint impact visualisation:** when dragging a face, show in real time which existing
-  dimensions and constraints are affected. No current tool does this.
-- **Fine-grained undo in direct edit mode:** every tool treats an entire drag as a single undo
-  step. Finer granularity (pause mid-drag = new undo point) would be a meaningful improvement.
-- **Face origin transparency:** selecting a face should clearly indicate which feature created it.
-  Only Onshape surfaces this well; others leave users guessing in complex models.
-- **Sketch reuse:** using one sketch profile as input to multiple features is awkward in every
-  tool. A cleaner referencing model could reduce duplication in parametric models.
-- **Taper/draft on drag:** adding a draft angle during face manipulation without opening a dialog
-  (Fusion shows a secondary input handle; SolidWorks requires the feature dialog).
-- **Tolerance inspector:** `shape.getTolerance()`, `overTolerance()`, `inTolerance()` are all
-  Python-accessible (`TopoShapePy.cpp:1142-1220`) but have no UI. An inspector that identifies
-  faces/edges with bad tolerances could prevent downstream assembly issues.
-- **Mesh/tessellation inspector:** `shape.tessellate()`, `getPoints()`, `getFaces()` expose the
-  render mesh directly. A visualiser showing triangle quality, degenerate faces, and edge length
-  distribution could help diagnose rendering and FEM mesh problems.
-- **Curvature/surface quality heatmap:** `shape.reflectLines()` highlights curvature
-  discontinuities. A proper heatmap overlay (G0/G1/G2 continuity colouring) would aid surface
-  quality review — common in industrial design but absent from FreeCAD entirely.
-- **Document health dashboard:** document-wide analysis of orphaned objects, broken links, and
-  recompute errors — beyond the per-object property panel that exists today.
-- **Camera animation / presentation studio:** `view.startAnimating()`, `setCamera()`,
-  `setCameraOrientation()` are all Python-accessible (`View3DPy.cpp:80-171`). A keyframe
-  animator with orbit presets and video export could be valuable for product visualisation.
-
----
-
-## Long-Term Architecture: Renderer Independence
-
-CoreCAD currently inherits FreeCAD's Coin3D renderer (an OpenInventor-derived scene graph from
-the early 1990s). Coin3D works well for today's needs but has a visible ceiling: no
-physically-based rendering, no GPU instancing for large assemblies, no modern post-processing
-(SSAO, proper MSAA), and OpenGL is deprecated on macOS.
-
-**The likely future:** Vulkan is becoming the low-level GPU standard on Linux/Android; Metal
-is the equivalent on macOS/iOS; DX12 on Windows. The most promising cross-platform abstraction
-over all three is **wgpu** (the WebGPU implementation in Rust, with Python bindings via
-`wgpu-py`). WebGPU is being standardised by browser vendors and will not be abandoned. If the
-industry converges on a single modern GPU API, wgpu is the most likely vehicle.
-
-Qt3D is the lower-risk alternative — already a Qt dependency, familiar paradigm, prior
-FreeCAD community discussion — but it is less future-proof than wgpu/Vulkan long-term.
-
-**The abstraction principle (apply now, pay off later):**
-
-The proprietary UX layer must never call Coin3D APIs directly. All renderer interaction should
-go through FreeCAD's existing Python view API (`view.toggleClippingPlane()`, `ViewProvider`
-methods, etc.). Where the Python API doesn't expose something, write a thin named adapter
-rather than reaching into Coin3D. This creates a clean seam:
-
-```
-CoreCAD proprietary UX
-          ↓
-   RenderInterface         ← thin named adapters ("highlight face", "place clipping plane",
-          ↓                   "draw overlay annotation") — no Coin3D types leak through
-Coin3D today / wgpu tomorrow
-```
-
-**Performance note:** This abstraction adds no appreciable overhead. The abstraction layer
-sits *above* the render loop — it makes setup calls ("highlight this face") at interaction
-frequency, not per-frame. The actual render loop (tessellation, GPU draw calls) runs
-entirely in C++ at full speed regardless. Python dispatch overhead is microseconds; CAD
-geometry recompute is milliseconds to seconds. The bottleneck is always OCCT, never the
-render call setup.
-
-**Immediate actions (low cost, high future value):**
-- When building proprietary features that touch the 3D view, define what the renderer
-  needs to do in terms of *operations* (highlight, annotate, clip) not Coin3D primitives
-- Document which proprietary features touch the renderer and through which adapter
-- When FreeCAD's Python view API is insufficient, add the missing call to the open-source
-  layer (a thin C++ exposure) rather than bypassing it
-
-**Watch list:** `wgpu-py`, Qt3D activity in upstream FreeCAD, any OCCT move toward Vulkan
-output (OCCT 7.x roadmap has `TKOpenGl` being supplemented with a Vulkan backend).
 
 ---
 

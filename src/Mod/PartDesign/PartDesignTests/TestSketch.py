@@ -48,12 +48,15 @@ class TestSketch(unittest.TestCase):
         box.Label = "Object"
         self.doc.commitTransaction()
 
-        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         sketch.AttachmentSupport = (plane, [""])
         sketch.MapMode = "FlatFace"
         self.doc.recompute()
 
-        self.assertEqual(sketch.InList, [body])
+        # De-ownership (marker model): a body records nothing, so a loose sketch that no
+        # solid has consumed yet has no owner — nothing links back to it. It still links
+        # out to its attachment plane.
+        self.assertEqual(sketch.InList, [])
         self.assertEqual(sketch.OutList, [plane])
         sketch.AttachmentSupport == [(plane, ("",))]
 
@@ -86,7 +89,7 @@ class TestSketch(unittest.TestCase):
         box.Label = "Object"
         self.doc.commitTransaction()
 
-        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
         sketch.AttachmentSupport = (plane, [""])
         sketch.MapMode = "FlatFace"
         self.doc.recompute()
