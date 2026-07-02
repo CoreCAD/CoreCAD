@@ -151,6 +151,45 @@ static Part::Part2DObject* resolveSketchFromSelection(Gui::Command* cmd, App::Do
     return nullptr;
 }
 
+// Cruth §8.5/§4.6: resolve the base Body for a NEW sketch-based solid feature by walking
+// the selected profile's anchor chain — the replacement for the legacy getBody(true)
+// active-body requirement. Shared by every solid-producing command so they all decide
+// spawn-vs-extend the same way (P8 UI consistency).
+//
+// Returns false (after showing the appropriate message) when there is no usable sketch or
+// the anchor chain is ambiguous. On success @p body is the Body to extend, or nullptr for
+// the auto-spawn case — prepareProfileBased() then spawns the Body inside the feature's
+// undo transaction (#17), so a cancelled feature leaks nothing.
+static bool resolveBaseBodyForNewFeature(Gui::Command* cmd, PartDesign::Body*& body)
+{
+    body = nullptr;
+    auto* doc = cmd->getDocument();
+    if (!doc) {
+        return false;
+    }
+
+    // Cruth §4.6: a solid feature needs a profile to work on, not an active Body.
+    if (doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty()) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No sketch to work on"),
+            QObject::tr("No sketch is available in the document")
+        );
+        return false;
+    }
+
+    // Cruth §8.5: the sketch's anchor chain decides spawn-vs-extend. Active-body session
+    // state is no longer consulted.
+    auto* sketch = resolveSketchFromSelection(cmd, doc);
+    if (!sketch) {
+        return false;
+    }
+
+    bool abort = false;
+    body = decideBaseBody(sketch, abort);
+    return !abort;
+}
+
 //===========================================================================
 // PartDesign_Datum
 //===========================================================================
@@ -1208,35 +1247,11 @@ void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, Ap
 
 void prepareProfileBased(Gui::Command* cmd, const std::string& which, double length)
 {
-    auto* doc = cmd->getDocument();
-    if (!doc) {
-        return;
-    }
-
-    // CoreCAD §4.6: validate sketch availability before spawning a Body.
-    if (doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty()) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("No sketch to work on"),
-            QObject::tr("No sketch is available in the document")
-        );
-        return;
-    }
-
-    // CoreCAD §8.5: the sketch's anchor chain decides spawn-vs-extend.
-    // Active-body session state is no longer consulted.
-    auto* sketch = resolveSketchFromSelection(cmd, doc);
-    if (!sketch) {
-        return;
-    }
-
-    // pcActiveBody may be null: the anchor chain reached no Body. That is the
-    // auto-spawn case — prepareProfileBased() creates the Body inside the feature's
-    // undo transaction so a cancelled feature leaks nothing (#17). Only abort when
-    // the chain is ambiguous.
-    bool abort = false;
-    PartDesign::Body* pcActiveBody = decideBaseBody(sketch, abort);
-    if (abort) {
+    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
+    // body). pcActiveBody may be null — the auto-spawn case handled inside
+    // prepareProfileBased(pcActiveBody, ...).
+    PartDesign::Body* pcActiveBody = nullptr;
+    if (!resolveBaseBodyForNewFeature(cmd, pcActiveBody)) {
         return;
     }
 
@@ -1348,9 +1363,10 @@ void CmdPartDesignHole::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
-
-    if (!pcActiveBody) {
+    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
+    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
+    PartDesign::Body* pcActiveBody = nullptr;
+    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
         return;
     }
 
@@ -1368,7 +1384,9 @@ void CmdPartDesignHole::activated(int iMsg)
 
 bool CmdPartDesignHole::isActive()
 {
-    return hasActiveBody();
+    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
+    auto* doc = getDocument();
+    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
 }
 
 //===========================================================================
