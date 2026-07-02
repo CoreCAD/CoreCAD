@@ -936,6 +936,15 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         // and the Body now propagates the new feature.
         App::DocumentObject* prevTip = Tip.getValue();
 
+        // Clear any BaseFeature the caller pre-set on the incoming feature before we
+        // scan for prevTip's successor (Cruth #18). addFeature owns the chain wiring;
+        // if the feature already pointed at prevTip, the successor scan below would
+        // return the new feature itself and the reroute would set
+        // feature.BaseFeature = feature — a self-cycle that fails recompute with "The
+        // graph must be a DAG". Clearing first also lets the scan find the *genuine*
+        // mid-chain successor instead of the pre-wired feature.
+        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(nullptr);
+
         // Capture the insert point's existing chain successor BEFORE rewiring.
         // When the Tip is not the last feature (mid-chain insert), the new feature
         // must splice between prevTip and its successor rather than forking the

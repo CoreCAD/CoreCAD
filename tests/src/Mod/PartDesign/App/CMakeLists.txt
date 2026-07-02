@@ -6,6 +6,7 @@ add_executable(PartDesign_tests_run
         ShapeBinder.cpp
         Pad.cpp
         MoveFeatureToBody.cpp
+        AddFeature.cpp
 )
 
 set(PartDesignTestData_Files
