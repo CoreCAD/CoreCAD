@@ -1412,14 +1412,15 @@ void CmdPartDesignRevolution::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
-
-    if (!pcActiveBody) {
+    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
+    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
+    PartDesign::Body* pcActiveBody = nullptr;
+    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
         return;
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd, &pcActiveBody](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1427,10 +1428,12 @@ void CmdPartDesignRevolution::activated(int iMsg)
         if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
-        else {
+        else if (auto* body = PartDesign::Body::findBodyOf(Feat)) {
+            // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
+            // Body the feature landed in (resolved or auto-spawned), not an active body.
             FCMD_OBJ_CMD(
                 Feat,
-                "ReferenceAxis = (" << getObjectCmd(pcActiveBody->getOrigin()->getY()) << ",[''])"
+                "ReferenceAxis = (" << getObjectCmd(body->getOrigin()->getY()) << ",[''])"
             );
         }
 
@@ -1448,7 +1451,9 @@ void CmdPartDesignRevolution::activated(int iMsg)
 
 bool CmdPartDesignRevolution::isActive()
 {
-    return hasActiveBody();
+    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
+    auto* doc = getDocument();
+    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
 }
 
 //===========================================================================
@@ -1474,14 +1479,15 @@ void CmdPartDesignGroove::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
-
-    if (!pcActiveBody) {
+    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
+    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
+    PartDesign::Body* pcActiveBody = nullptr;
+    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
         return;
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd, &pcActiveBody](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1489,10 +1495,12 @@ void CmdPartDesignGroove::activated(int iMsg)
         if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
-        else {
+        else if (auto* body = PartDesign::Body::findBodyOf(Feat)) {
+            // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
+            // Body the feature landed in (resolved or auto-spawned), not an active body.
             FCMD_OBJ_CMD(
                 Feat,
-                "ReferenceAxis = (" << getObjectCmd(pcActiveBody->getOrigin()->getY()) << ",[''])"
+                "ReferenceAxis = (" << getObjectCmd(body->getOrigin()->getY()) << ",[''])"
             );
         }
 
@@ -1518,7 +1526,9 @@ void CmdPartDesignGroove::activated(int iMsg)
 
 bool CmdPartDesignGroove::isActive()
 {
-    return hasActiveBody();
+    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
+    auto* doc = getDocument();
+    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
 }
 
 //===========================================================================
