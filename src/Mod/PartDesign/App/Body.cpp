@@ -299,6 +299,40 @@ Body* Body::spawnAutoBody(App::Document* doc)
     return body;
 }
 
+Body* Body::moveFeatureToBody(App::DocumentObject* feature, Body* target)
+{
+    if (!feature) {
+        return nullptr;
+    }
+
+    Body* from = findBodyOf(feature);
+    if (target && from == target) {
+        return target;  // already there — nothing to do
+    }
+
+    App::Document* doc = feature->getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+
+    // Detach first. removeFeature heals the source chain and, if this was the source
+    // Body's last feature, retires it (§4.7) — never touch `from` after this call.
+    if (from) {
+        from->removeFeature(feature);
+    }
+
+    // Null target = the "Merge result off" case: the feature starts a fresh Body (§4.6).
+    if (!target) {
+        target = spawnAutoBody(doc);
+        if (!target) {
+            return nullptr;
+        }
+    }
+
+    target->addFeature(feature);
+    return target;
+}
+
 Body* Body::breakOutInstance(Body* instanceBody)
 {
     if (!instanceBody) {

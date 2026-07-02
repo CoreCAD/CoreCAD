@@ -235,6 +235,23 @@ public:
     static Body* spawnAutoBody(App::Document* doc);
 
     /**
+     * Cruth §8.5 (Merge Result, #27): re-home @p feature onto @p target's pipeline —
+     * the model half of the feature-creation "Merge result" control. Composes the
+     * existing pipeline primitives so the spawn-vs-extend choice is reversible:
+     *   - detach @p feature from its current Body (removeFeature: heals the
+     *     BaseFeature chain, retreats that Body's Tip, and auto-retires the Body if
+     *     its chain empties, §4.7);
+     *   - if @p target is null, spawn a fresh Body (§4.6) to receive @p feature;
+     *   - splice @p feature onto @p target's Tip (addFeature).
+     *
+     * A no-op returning @p target when @p feature already resolves to it. Returns
+     * the Body the feature now belongs to (the freshly spawned one when @p target was
+     * null), or nullptr on failure. Does not recompute — the caller does, inside its
+     * undo transaction. Shared by the GUI control and the Python API (P8 equivalence).
+     */
+    static Body* moveFeatureToBody(App::DocumentObject* feature, Body* target);
+
+    /**
      * Cruth §5.6: break a single pattern instance out into its own independent,
      * frozen Body. Captures the instance's solid (element map preserved, §7.8)
      * from the pattern's current output, re-homes it into a fresh Body whose
