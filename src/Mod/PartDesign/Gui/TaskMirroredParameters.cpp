@@ -87,11 +87,11 @@ void TaskMirroredParameters::setupParameterUI(QWidget* widget)
         this->fillPlanesCombo(planeLinks, nullptr);
     }
 
-    // show the parts coordinate system planes for selection
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-    if (body) {
+    // show the parts coordinate system planes for selection. The frame is the shared document
+    // Origin (Cruth §11 step 5e) — reach it directly, not through an arbitrary owning body.
+    App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
+    if (origin) {
         try {
-            App::Origin* origin = body->getOrigin();
             auto vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
                 Gui::Application::Instance->getViewProvider(origin)
             );
@@ -227,9 +227,8 @@ TaskMirroredParameters::~TaskMirroredParameters()
 {
     // hide the parts coordinate system axis for selection
     try {
-        PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-        if (body) {
-            App::Origin* origin = body->getOrigin();
+        App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
+        if (origin) {
             auto vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
                 Gui::Application::Instance->getViewProvider(origin)
             );

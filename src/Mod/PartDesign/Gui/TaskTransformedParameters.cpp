@@ -410,13 +410,12 @@ void TaskTransformedParameters::fillAxisCombo(Gui::ComboLinks& combolinks, Part:
         }
     }
 
-    // add part axes
+    // add part axes from the shared document Origin (Cruth §11 step 5e), not via a body
     App::DocumentObject* obj = getObject();
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(obj);
+    App::Origin* orig = PartDesign::Body::findDocumentOrigin(obj->getDocument());
 
-    if (body) {
+    if (orig) {
         try {
-            App::Origin* orig = body->getOrigin();
             combolinks.addLink(orig->getX(), "", tr("Base X-axis"));
             combolinks.addLink(orig->getY(), "", tr("Base Y-axis"));
             combolinks.addLink(orig->getZ(), "", tr("Base Z-axis"));
@@ -446,13 +445,12 @@ void TaskTransformedParameters::fillPlanesCombo(Gui::ComboLinks& combolinks, Par
         }
     }
 
-    // add part baseplanes
+    // add part baseplanes from the shared document Origin (Cruth §11 step 5e), not via a body
     App::DocumentObject* obj = getObject();
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(obj);
+    App::Origin* orig = PartDesign::Body::findDocumentOrigin(obj->getDocument());
 
-    if (body) {
+    if (orig) {
         try {
-            App::Origin* orig = body->getOrigin();
             combolinks.addLink(orig->getXY(), "", tr("Base XY-plane"));
             combolinks.addLink(orig->getYZ(), "", tr("Base YZ-plane"));
             combolinks.addLink(orig->getXZ(), "", tr("Base XZ-plane"));

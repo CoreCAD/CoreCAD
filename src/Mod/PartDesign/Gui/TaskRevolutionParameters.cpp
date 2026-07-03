@@ -106,10 +106,10 @@ TaskRevolutionParameters::TaskRevolutionParameters(
 
 Gui::ViewProviderCoordinateSystem* TaskRevolutionParameters::getOriginView() const
 {
-    // show the parts coordinate system axis for selection
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-    if (body) {
-        App::Origin* origin = body->getOrigin();
+    // show the parts coordinate system axis for selection. The frame is the shared document
+    // Origin (Cruth §11 step 5e) — reach it directly, not through an arbitrary owning body.
+    App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
+    if (origin) {
         return freecad_cast<ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -216,9 +216,9 @@ void TaskRevolutionParameters::fillAxisCombo(bool forceRefill)
         }
 
         // add origin axes
-        if (PartDesign::Body* body = PartDesign::Body::findBodyOf(pcFeat)) {
+        // Reference axes come from the shared document Origin (Cruth §11 step 5e), not a body.
+        if (App::Origin* orig = PartDesign::Body::findDocumentOrigin(pcFeat->getDocument())) {
             try {
-                App::Origin* orig = body->getOrigin();
                 addAxisToCombo(orig->getX(), std::string(), tr("Base X-axis"));
                 addAxisToCombo(orig->getY(), std::string(), tr("Base Y-axis"));
                 addAxisToCombo(orig->getZ(), std::string(), tr("Base Z-axis"));

@@ -1422,13 +1422,10 @@ void CmdPartDesignRevolution::activated(int iMsg)
         if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
-        else if (auto* body = PartDesign::Body::findBodyOf(Feat)) {
+        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
             // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // Body the feature landed in (resolved or auto-spawned), not an active body.
-            FCMD_OBJ_CMD(
-                Feat,
-                "ReferenceAxis = (" << getObjectCmd(body->getOrigin()->getY()) << ",[''])"
-            );
+            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
+            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
         }
 
         FCMD_OBJ_CMD(Feat, "Angle = 360.0");
@@ -1489,13 +1486,10 @@ void CmdPartDesignGroove::activated(int iMsg)
         if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
-        else if (auto* body = PartDesign::Body::findBodyOf(Feat)) {
+        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
             // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // Body the feature landed in (resolved or auto-spawned), not an active body.
-            FCMD_OBJ_CMD(
-                Feat,
-                "ReferenceAxis = (" << getObjectCmd(body->getOrigin()->getY()) << ",[''])"
-            );
+            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
+            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
         }
 
         FCMD_OBJ_CMD(Feat, "Angle = 360.0");
@@ -1787,13 +1781,10 @@ void CmdPartDesignAdditiveHelix::activated(int iMsg)
         if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
-        else if (auto* body = PartDesign::Body::findBodyOf(Feat)) {
+        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
             // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // Body the feature landed in (resolved or auto-spawned), not an active body.
-            FCMD_OBJ_CMD(
-                Feat,
-                "ReferenceAxis = (" << getObjectCmd(body->getOrigin()->getY()) << ",[''])"
-            );
+            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
+            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
         }
 
         finishProfileBased(cmd, sketch, Feat);
@@ -1867,13 +1858,10 @@ void CmdPartDesignSubtractiveHelix::activated(int iMsg)
         if (sketch->isDerivedFrom<Part::Part2DObject>()) {
             FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
         }
-        else if (auto* body = PartDesign::Body::findBodyOf(Feat)) {
+        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
             // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // Body the feature landed in (resolved or auto-spawned), not an active body.
-            FCMD_OBJ_CMD(
-                Feat,
-                "ReferenceAxis = (" << getObjectCmd(body->getOrigin()->getY()) << ",[''])"
-            );
+            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
+            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
         }
 
         finishProfileBased(cmd, sketch, Feat);

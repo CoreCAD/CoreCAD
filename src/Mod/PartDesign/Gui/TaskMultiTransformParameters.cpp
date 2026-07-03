@@ -312,12 +312,10 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
     else {
         // set Direction value before filling up the combo box to avoid creating an empty item
         // inside updateUI()
-        auto body = dynamic_cast<PartDesign::Body*>(PartDesign::Body::findBodyOf(getObject()));
-        if (body) {
-            FCMD_OBJ_CMD(
-                Feat,
-                "Direction = (" << Gui::Command::getObjectCmd(body->getOrigin()->getX()) << ",[''])"
-            );
+        // Default direction is the shared document Origin's X axis (Cruth §11 step 5e), not a body's.
+        App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
+        if (origin) {
+            FCMD_OBJ_CMD(Feat, "Direction = (" << Gui::Command::getObjectCmd(origin->getX()) << ",[''])");
         }
     }
 
