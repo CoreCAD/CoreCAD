@@ -666,6 +666,13 @@ Document* Application::newDocument(const char * proposedName, const char * propo
 
     doc->Label.setValue(label);
 
+    // Cruth: stamp the document type at creation. A typed CAD document (e.g. "Part")
+    // owns its world frame and mints it here, so a fresh document has planes/axes
+    // immediately — no body is needed to bring the coordinate system into existence.
+    if (!CreateFlags.documentType.empty()) {
+        doc->applyDocumentType(CreateFlags.documentType.c_str());
+    }
+
     // set the old document active again if the new is temporary
     if (CreateFlags.temporary && oldActiveDoc) {
         setActiveDocument(oldActiveDoc);
