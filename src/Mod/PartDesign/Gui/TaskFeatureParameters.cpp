@@ -125,6 +125,11 @@ TaskMergeResultParameters::TaskMergeResultParameters(ViewProvider* vp, QWidget* 
     bool additive = feature && feature->getAddSubType() == PartDesign::FeatureAddSub::Additive;
     bool extending = feature && feature->BaseFeature.getValue() != nullptr;
     if (extending) {
+        // A feature being edited in its own creation dialog is a single in-chain feature,
+        // so the derived reverse query answers unambiguously and first-match is the right
+        // body, not a lucky one. We keep the non-throwing findBodyOf (not the fail-loud
+        // bodyOf) on purpose: this is a GUI splice-target capture that must degrade
+        // gracefully, never throw inside the dialog constructor.
         mergeTargetBody = PartDesign::Body::findBodyOf(feature);
     }
 
