@@ -143,31 +143,6 @@ void ViewProviderTransformed::updatePreview()
 
 void ViewProviderTransformed::handleTransformedResult(PartDesign::Transformed* pcTransformed)
 {
-    unsigned rejected = 0;
-
-    TopoDS_Shape cShape = pcTransformed->rejected;
-    TopExp_Explorer xp;
-    xp.Init(cShape, TopAbs_SOLID);
-    for (; xp.More(); xp.Next()) {
-        rejected++;
-    }
-
-    if (rejected > 0) {
-        if (rejected == 1) {
-            Base::Console().translatedUserWarning(
-                "ViewProviderTransformed",
-                "One transformed shape does not intersect the support"
-            );
-        }
-        else {
-            Base::Console().translatedUserWarning(
-                "ViewProviderTransformed",
-                "%d transformed shapes do not intersect the support",
-                rejected
-            );
-        }
-    }
-
     auto error = pcTransformed->getDocument()->getErrorDescription(pcTransformed);
     if (error) {
         Base::Console().translatedUserError("ViewProviderTransformed", error);
