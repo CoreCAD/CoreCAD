@@ -28,6 +28,7 @@
 
 #include <map>
 
+#include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 
 #include <App/Application.h>
@@ -759,28 +760,88 @@ bool Body::isAllowed(const App::DocumentObject* obj)
 }
 
 
-Body* Body::findBodyOf(const App::DocumentObject* feature)
+std::vector<Body*> Body::bodiesOf(const App::DocumentObject* feature)
 {
-    if (!feature) {
-        return nullptr;
-    }
-
-    // CPART_DESIGN §9.1 derived primitive (bodyNaming). This is a reverse lookup, not an
-    // ownership read: a Body only ever points one way, at the Tip it marks. Asking "which
-    // Body is this feature under" means walking the BaseFeature chain forward from the
-    // feature and stopping at the FIRST feature that is some Body's Tip — the nearest
-    // downstream marker. That marker is the answer. The result is a derived view of the
-    // current graph (single only because chains are linear today), never an attribute the
-    // feature carries: nothing feature->Body is stored. The answer is memoised on the
-    // feature's transient _Body link (Prop_Output, so writing it neither dirties the
-    // feature nor triggers recompute; Prop_Transient, so it is never serialised —
-    // CPART_DESIGN §9 / §8.2). De-owned features (ARCHITECTURE §3.2/§3.3) sit in no Group,
-    // so this forward walk — not hasObject() — is the source of truth.
+    // Cruth ownership-query contract — the honest, N-valued reverse lookup. This is a
+    // reverse lookup, not an ownership read: a Body only ever points one way, at the Tip it
+    // marks. Asking "which Bodies is this feature under" means walking the BaseFeature chain
+    // forward from the feature and stopping at the FIRST feature that is some Body's Tip —
+    // the nearest downstream marker — then returning EVERY Body naming that Tip. Under
+    // de-ownership a single Tip feature can back several Bodies at once, one per output
+    // component of a pattern or a severed solid (§4.7), told apart by TipComponentId. The
+    // result is a derived view of the current graph, never an attribute the feature carries:
+    // nothing feature->Body is stored. De-owned features (ARCHITECTURE §3.2/§3.3) sit in no
+    // Group, so this forward walk — not hasObject() — is the source of truth.
     //
     // Stopping at the FIRST downstream Tip (not the chain terminal) is what keeps a
     // cross-body seam correct: where Body B's chain bases on Body A's Tip (via a
     // FeatureBase), A's upstream features must resolve to A — they would otherwise be
     // dragged across the seam to B's Tip at the terminal of the merged chain.
+    std::vector<Body*> result;
+    if (!feature) {
+        return result;
+    }
+
+    if (!feature->isDerivedFrom<PartDesign::Feature>()) {
+        // Non-PartDesign objects (and any feature still sitting in a legacy Group) never
+        // back multiple Bodies: defer to the old Group-scan lookup and wrap its 0-or-1
+        // answer as a list.
+        if (auto* body = static_cast<Body*>(BodyBase::findBodyOf(feature))) {
+            result.push_back(body);
+        }
+        return result;
+    }
+
+    App::Document* doc = feature->getDocument();
+    if (!doc) {
+        return result;
+    }
+    const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
+    const auto bodies = doc->getObjectsOfType(Body::getClassTypeId());
+
+    // Walk forward, collecting every Body whose Tip is the current feature — the nearest
+    // downstream marker — before advancing. The seen-set guards against a malformed cyclic
+    // chain.
+    App::DocumentObject* cursor = const_cast<App::DocumentObject*>(feature);
+    std::set<const App::DocumentObject*> seen;
+    while (cursor && seen.insert(cursor).second) {
+        for (auto* it : bodies) {
+            auto* body = static_cast<Body*>(it);
+            if (body->Tip.getValue() == cursor) {
+                result.push_back(body);
+            }
+        }
+        if (!result.empty()) {
+            return result;  // nearest downstream Tip reached — do not walk past it
+        }
+        App::DocumentObject* next = nullptr;
+        for (auto* obj : pdFeats) {
+            if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == cursor) {
+                next = obj;
+                break;
+            }
+        }
+        cursor = next;
+    }
+    return result;
+}
+
+Body* Body::findBodyOf(const App::DocumentObject* feature)
+{
+    // CPART_DESIGN §9.1 scalar convenience over the N-valued bodiesOf primitive. Returns the
+    // nearest downstream marker; when several Bodies share that Tip (a multi-output feature)
+    // it returns the FIRST — callers that must disambiguate use bodyOf(feature, subElement),
+    // which fails loud rather than guessing (Cruth ownership-query contract, P7). Kept
+    // best-effort (not fail-loud) here so the ~40 pre-sweep callers keep their current
+    // behaviour; the #7 sweep moves the ones that mean "the one Body" onto bodyOf.
+    //
+    // The answer is memoised on the feature's transient _Body link (Prop_Output, so writing
+    // it neither dirties the feature nor triggers recompute; Prop_Transient, so it is never
+    // serialised — CPART_DESIGN §9 / §8.2).
+    if (!feature) {
+        return nullptr;
+    }
+
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         auto* pdFeat = const_cast<PartDesign::Feature*>(
             static_cast<const PartDesign::Feature*>(feature)
@@ -791,32 +852,10 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
             return cached;
         }
 
-        if (App::Document* doc = feature->getDocument()) {
-            const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
-            const auto bodies = doc->getObjectsOfType(Body::getClassTypeId());
-
-            // Walk forward, testing whether each feature is some Body's Tip — i.e. the
-            // nearest downstream marker — before advancing. The seen-set guards against a
-            // malformed cyclic chain.
-            App::DocumentObject* cursor = pdFeat;
-            std::set<const App::DocumentObject*> seen;
-            while (cursor && seen.insert(cursor).second) {
-                for (auto* it : bodies) {
-                    auto* body = static_cast<Body*>(it);
-                    if (body->Tip.getValue() == cursor) {
-                        pdFeat->_Body.setValue(body);
-                        return body;
-                    }
-                }
-                App::DocumentObject* next = nullptr;
-                for (auto* obj : pdFeats) {
-                    if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == cursor) {
-                        next = obj;
-                        break;
-                    }
-                }
-                cursor = next;
-            }
+        const std::vector<Body*> found = bodiesOf(feature);
+        if (!found.empty()) {
+            pdFeat->_Body.setValue(found.front());
+            return found.front();
         }
     }
 
@@ -824,6 +863,86 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
     // Group): the old Group-scan lookup. The derived chain walk above has already handled
     // every PartDesign::Feature case.
     return static_cast<Body*>(BodyBase::findBodyOf(feature));
+}
+
+std::string Body::componentIdOfSub(const App::DocumentObject* feature, const char* subElement)
+{
+    // Discriminator half of bodyOf: turn a picked sub-element (e.g. "Face5") into the
+    // component-id of the solid that owns it. Empty on any miss — a missing/blank name, a
+    // non-shape feature, an unresolvable element, or a sub-element owned by no solid — so
+    // the caller falls through to its fail-loud path rather than matching the wrong Body.
+    if (!subElement || subElement[0] == '\0') {
+        return {};
+    }
+    auto* geo = freecad_cast<Part::Feature*>(const_cast<App::DocumentObject*>(feature));
+    if (!geo) {
+        return {};
+    }
+    const Part::TopoShape shape = geo->Shape.getShape();
+    if (shape.isNull()) {
+        return {};
+    }
+
+    TopoDS_Shape sub;
+    try {
+        sub = shape.getSubShape(subElement, /*silent*/ true);
+    }
+    catch (const Standard_Failure&) {
+        return {};
+    }
+    if (sub.IsNull()) {
+        return {};
+    }
+
+    // A picked face/edge/vertex resolves to its owning solid via the ancestor map. A picked
+    // solid has no solid ancestor, so match it against the shape's own solids by identity.
+    if (sub.ShapeType() == TopAbs_SOLID) {
+        const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+        for (int i = 1; i <= count; ++i) {
+            if (shape.getSubShape(TopAbs_SOLID, i, /*silent*/ true).IsSame(sub)) {
+                return componentIdOfSolid(shape, i);
+            }
+        }
+        return {};
+    }
+
+    const std::vector<int> solids = shape.findAncestors(sub, TopAbs_SOLID);
+    if (solids.empty()) {
+        return {};
+    }
+    return componentIdOfSolid(shape, solids.front());
+}
+
+Body* Body::bodyOf(const App::DocumentObject* feature, const char* subElement)
+{
+    // Cruth ownership-query contract, P7 fail-loud. One candidate → the sub-element is
+    // irrelevant, return it. Several candidates (a multi-output Tip) → the picked
+    // sub-element names the component; match the Body carrying that component-id. Asking for
+    // "the" Body of a multi-output feature with NO usable sub-element is ambiguous and
+    // THROWS rather than silently guessing a Body.
+    const std::vector<Body*> bodies = bodiesOf(feature);
+    if (bodies.empty()) {
+        return nullptr;
+    }
+    if (bodies.size() == 1) {
+        return bodies.front();
+    }
+
+    const std::string cid = componentIdOfSub(feature, subElement);
+    if (cid.empty()) {
+        throw Base::RuntimeError(
+            "This feature backs several bodies; a picked sub-element is required to say "
+            "which one is meant."
+        );
+    }
+    for (auto* body : bodies) {
+        if (body->TipComponentId.getStrValue() == cid) {
+            return body;
+        }
+    }
+    throw Base::RuntimeError(
+        "The picked sub-element does not match any of the bodies this feature backs."
+    );
 }
 
 

@@ -75,6 +75,25 @@ public:
             "no Body. This is the Python entry point for the C++ static Body::findBodyOf."
         );
         add_varargs_method(
+            "bodiesOf",
+            &Module::bodiesOf,
+            "bodiesOf(feature) -> list of Body\n\n"
+            "Cruth ownership-query contract: the honest, N-valued reverse lookup. A single\n"
+            "Tip feature can back several Bodies at once (one per output component of a\n"
+            "pattern or a severed solid), so this returns EVERY Body the feature backs,\n"
+            "derived from the feature graph. Empty when the feature belongs to no Body."
+        );
+        add_varargs_method(
+            "bodyOf",
+            &Module::bodyOf,
+            "bodyOf(feature, sub='') -> Body or None\n\n"
+            "Cruth ownership-query contract (P7 fail-loud): resolve a feature plus the\n"
+            "picked sub-element (e.g. 'Face5') to the single Body meant. With one candidate\n"
+            "the sub-element is ignored. With several, the sub-element names the component.\n"
+            "Asking for 'the' Body of a multi-output feature with no sub-element RAISES\n"
+            "rather than guessing. Returns None only when the feature backs no Body."
+        );
+        add_varargs_method(
             "moveFeatureToBody",
             &Module::moveFeatureToBody,
             "moveFeatureToBody(feature, target) -> Body\n\n"
@@ -128,6 +147,48 @@ private:
         App::DocumentObject* obj
             = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
         Body* body = Body::findBodyOf(obj);
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
+    Py::Object bodiesOf(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyFeature)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+        Py::List list;
+        for (auto* body : Body::bodiesOf(obj)) {
+            list.append(Py::asObject(body->getPyObject()));
+        }
+        return list;
+    }
+
+    Py::Object bodyOf(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        const char* sub = "";
+        if (!PyArg_ParseTuple(args.ptr(), "O!|s", &(App::DocumentObjectPy::Type), &pyFeature, &sub)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+        Body* body = nullptr;
+        try {
+            body = Body::bodyOf(obj, sub);
+        }
+        catch (const Base::Exception& e) {
+            // bodyOf throws on ambiguity (a multi-output feature asked for "the" Body with
+            // no sub-element). Surface it as a catchable Python exception rather than
+            // letting the C++ exception escape uncaught (P7 fail-loud, P8 UI/API parity).
+            throw Py::RuntimeError(e.what());
+        }
         if (!body) {
             return Py::None();
         }

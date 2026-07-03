@@ -14,6 +14,14 @@ spawnBody = _PartDesign.spawnBody
 # Derived on demand (walked along the BaseFeature chain), never stored — not ownership.
 findBodyOf = _PartDesign.findBodyOf
 
+# Cruth ownership-query contract: N-valued reverse lookup — every Body a feature backs
+# (a multi-output Tip backs one Body per output component). Derived, never stored.
+bodiesOf = _PartDesign.bodiesOf
+
+# Cruth ownership-query contract (P7 fail-loud): resolve feature + picked sub-element to
+# the single Body meant; raises on a multi-output feature asked with no sub-element.
+bodyOf = _PartDesign.bodyOf
+
 # Cruth §8.5 (#27): re-home a feature onto another Body (or None to spawn a fresh one) —
 # the model half of the feature-creation "Merge result" control.
 moveFeatureToBody = _PartDesign.moveFeatureToBody
