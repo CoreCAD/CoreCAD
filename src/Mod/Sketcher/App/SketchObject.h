@@ -828,16 +828,6 @@ public:
     /// parameters. these parameters relate to not fully constraint edges/vertices.
     void getGeometryWithDependentParameters(std::vector<std::pair<int, PointPos>>& geometrymap);
 
-    /// Flag to allow external geometry from other bodies than the one this sketch belongs to
-    bool isAllowedOtherBody() const
-    {
-        return allowOtherBody;
-    }
-    void setAllowOtherBody(bool on)
-    {
-        allowOtherBody = on;
-    }
-
     /// Flag to allow carbon copy from misaligned geometry
     bool isAllowedUnaligned() const
     {
@@ -854,12 +844,10 @@ public:
         rlOtherDoc,
         rlCircularReference,
         rlOtherPart,
-        rlOtherBody,
-        rlOtherBodyWithLinks,  // for carbon copy
-        rlNotASketch,          // for carbon copy
-        rlNonParallel,         // for carbon copy
-        rlAxesMisaligned,      // for carbon copy
-        rlOriginsMisaligned    // for carbon copy
+        rlNotASketch,        // for carbon copy
+        rlNonParallel,       // for carbon copy
+        rlAxesMisaligned,    // for carbon copy
+        rlOriginsMisaligned  // for carbon copy
     };
     /// Return true if this object is allowed as external geometry for the
     /// sketch. rsn argument receives the reason for disallowing.
@@ -1158,9 +1146,6 @@ private:
     /// Add geometry and constraints to `this`, then delete the geometry and constraints in the
     /// vectors Note that the contents of the two vectors are invalid after this call.
     void addAndCleanup(std::vector<Part::Geometry*> igeo, std::vector<Constraint*> icon);
-
-    /// Flag to allow external geometry from other bodies than the one this sketch belongs to
-    bool allowOtherBody;
 
     /// Flag to allow carbon copy from misaligned geometry
     bool allowUnaligned;
