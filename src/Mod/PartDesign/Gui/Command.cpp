@@ -781,7 +781,11 @@ unsigned validateSketches(
             }
         }
         bool isCrossBody = false;
-        if (pcActiveBody && PartDesign::Body::findBodyOf(*s) != pcActiveBody) {
+        // "In the active body?" is honest membership: a sketch feeding a feature that splits
+        // into several component bodies backs them all, so backsBody catches the active one
+        // even when it is not the first (Cruth §4.7). The representative body below stays
+        // first-match — it only labels same-part vs other-part.
+        if (pcActiveBody && !PartDesign::Body::backsBody(*s, pcActiveBody)) {
             // Check whether this sketch belongs to a body of the same part
             PartDesign::Body* b = PartDesign::Body::findBodyOf(*s);
             if (!b) {
@@ -1002,7 +1006,7 @@ void prepareProfileBased(
             // CoreCAD Phase 2: skip importExternalElements for cross-body profiles —
             // it returns false for them anyway, and the cycle check inside it incorrectly
             // fires because the new feature is already in the body's InList at this point.
-            if (PartDesign::Body::findBodyOf(feature) == activeBody) {
+            if (PartDesign::Body::backsBody(feature, activeBody)) {
                 importExternalElements(ProfileFeature->Profile, {feature});
                 cmdSubs = ProfileFeature->Profile.getSubValues();
             }
