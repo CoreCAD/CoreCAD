@@ -34,7 +34,6 @@
 
 #include "Utils.h"
 #include "Workbench.h"
-#include "WorkflowManager.h"
 
 using namespace PartDesignGui;
 namespace sp = std::placeholders;
@@ -72,9 +71,7 @@ TYPESYSTEM_SOURCE(PartDesignGui::Workbench, Gui::StdWorkbench)
 Workbench::Workbench() = default;
 
 Workbench::~Workbench()
-{
-    WorkflowManager::destruct();
-}
+{}
 
 void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) const
 {
@@ -146,7 +143,6 @@ void Workbench::activated()
 {
     Gui::Workbench::activated();
 
-    WorkflowManager::init();
 
     std::vector<Gui::TaskView::TaskWatcher*> Watcher;
 

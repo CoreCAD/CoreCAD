@@ -37,7 +37,6 @@
 #include "TaskFeaturePick.h"
 #include "Utils.h"
 #include "ViewProviderBody.h"
-#include "WorkflowManager.h"
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>

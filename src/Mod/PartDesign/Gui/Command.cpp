@@ -65,7 +65,6 @@
 #include "SketchWorkflow.h"
 #include "TaskFeaturePick.h"
 #include "Utils.h"
-#include "WorkflowManager.h"
 #include "ViewProvider.h"
 #include "ViewProviderBody.h"
 

@@ -103,16 +103,6 @@ App::Part* getActivePart();
 /// Fix sketch support after moving a free sketch into a body
 void fixSketchSupport(Sketcher::SketchObject* sketch);
 
-/**
- * Returns true if document has any non-PartDesign objects that links to the given object.
- * If respectGroups is true don't count links from App::GeoFeatureGroup-derived objects (default is
- * false)
- */
-bool isAnyNonPartDesignLinksTo(PartDesign::Feature* feature, bool respectGroups = false);
-
-/// Relink all nonPartDesign features to the body instead of the given partDesign Feature
-void relinkToBody(PartDesign::Feature* feature, PartDesign::Body* body);
-
 /// Check if feature is dependent on anything except movable sketches and datums
 bool isFeatureMovable(App::DocumentObject* feature);
 /// Collect dependencies of the features during the move. Dependencies should only be dependent on origin
