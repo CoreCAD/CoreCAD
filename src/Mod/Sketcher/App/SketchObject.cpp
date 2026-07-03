@@ -123,7 +123,6 @@ SketchObject::SketchObject() : geoLastId(0)
 
     Geometry.setOrderRelevant(true);
 
-    allowOtherBody = true;
     allowUnaligned = true;
 
     initExternalGeo();
