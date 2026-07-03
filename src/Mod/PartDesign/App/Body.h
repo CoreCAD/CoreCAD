@@ -189,6 +189,41 @@ public:
     static Body* findBodyOf(const App::DocumentObject* feature);
 
     /**
+     * Return EVERY Body that @p feature backs — the honest, N-valued reverse lookup.
+     *
+     * Cruth ownership-query contract. findBodyOf is scalar (one feature → one Body), which
+     * is correct only while chains are linear. Under de-ownership a single Tip feature can
+     * back several Bodies at once — one per output component of a pattern or a severed solid
+     * (§4.7), told apart by TipComponentId. This walks the BaseFeature chain forward to the
+     * first feature that is some Body's Tip (the nearest downstream marker) and returns all
+     * Bodies naming that Tip. Ownership stays derived: it reads the graph, never a stored
+     * feature→Body link or a Group. Empty when the feature reaches no Body.
+     */
+    static std::vector<Body*> bodiesOf(const App::DocumentObject* feature);
+
+    /**
+     * Resolve @p feature plus the caller's picked @p subElement to the single Body meant.
+     *
+     * Cruth ownership-query contract, P7 fail-loud. One candidate → the sub-element is
+     * irrelevant, return it. Several candidates (a multi-output Tip) → the picked
+     * sub-element names the component: map it to its solid, take that solid's component-id
+     * and return the Body carrying it. Asking for "the" Body of a multi-output feature with
+     * NO sub-element is ambiguous and THROWS rather than silently guessing a Body. Returns
+     * NULL only when the feature backs no Body at all.
+     */
+    static Body* bodyOf(const App::DocumentObject* feature, const char* subElement);
+
+    /**
+     * Component-id of the solid that owns @p subElement on @p feature's shape, or empty.
+     *
+     * The discriminator half of bodyOf: resolves a picked sub-element (e.g. "Face5") to its
+     * owning solid and returns that solid's componentIdOfSolid. Empty when the sub-element
+     * is missing, unresolvable, or owned by no solid. Shared with the §7 import
+     * face-identity work (same fingerprint need).
+     */
+    static std::string componentIdOfSub(const App::DocumentObject* feature, const char* subElement);
+
+    /**
      * Return the features that make up this Body, derived from the feature graph.
      *
      * CPART_DESIGN §9.1-inverse: a de-owned Body keeps no Group, so its member list is
