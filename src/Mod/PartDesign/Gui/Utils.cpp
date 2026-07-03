@@ -497,11 +497,13 @@ bool isAnyNonPartDesignLinksTo(PartDesign::Feature* feature, bool respectGroups)
     return false;
 }
 
-void relinkToBody(PartDesign::Feature* feature)
+void relinkToBody(PartDesign::Feature* feature, PartDesign::Body* body)
 {
     App::Document* doc = feature->getDocument();
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(feature);
 
+    // The relink target is supplied by the caller that owns the decision (the object that
+    // just placed the feature into this body), not re-derived here: a scalar findBodyOf would
+    // guess it back, and guess wrong for a feature that backs several bodies (§4.7).
     if (!body) {
         throw Base::RuntimeError("Could not find a body for the feature");
     }

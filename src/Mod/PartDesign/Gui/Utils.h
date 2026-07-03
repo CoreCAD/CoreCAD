@@ -111,7 +111,7 @@ void fixSketchSupport(Sketcher::SketchObject* sketch);
 bool isAnyNonPartDesignLinksTo(PartDesign::Feature* feature, bool respectGroups = false);
 
 /// Relink all nonPartDesign features to the body instead of the given partDesign Feature
-void relinkToBody(PartDesign::Feature* feature);
+void relinkToBody(PartDesign::Feature* feature, PartDesign::Body* body);
 
 /// Check if feature is dependent on anything except movable sketches and datums
 bool isFeatureMovable(App::DocumentObject* feature);

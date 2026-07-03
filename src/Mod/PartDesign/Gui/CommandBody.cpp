@@ -623,7 +623,8 @@ void CmdPartDesignMigrate::activated(int iMsg)
                 feature->getNameInDocument()
             );
 
-            PartDesignGui::relinkToBody(feature);
+            auto* newBody = freecad_cast<PartDesign::Body*>(getDocument()->getObject(bodyName.c_str()));
+            PartDesignGui::relinkToBody(feature, newBody);
         }
     }
 
