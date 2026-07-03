@@ -284,6 +284,12 @@ Body* Body::spawnAutoBody(App::Document* doc)
         return nullptr;
     }
 
+    // Fail early, before creating anything: a Body requires the document's shared world frame,
+    // and it must never mint one. Checking here means an attempt to spawn into a non-CAD
+    // document throws with no side effect, instead of leaving a half-created Body behind when
+    // the setupObject backstop trips after addObject has already registered the object.
+    requireDocumentOrigin(doc);
+
     auto name = doc->getUniqueObjectName("Body");
     auto* body = freecad_cast<Body*>(doc->addObject("PartDesign::Body", name.c_str()));
     // Color is assigned by setupObject() from the per-document palette index.
@@ -914,7 +920,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     // document-level Origin, not this Body's own (now-dormant) per-body Origin. In the
     // de-ownership model the coordinate frame is shared at document level (Day-5 design;
     // ARCHITECTURE §3.3), so all bodies' features anchor to one Origin.
-    relinkFeatureToOrigin(feature, ensureDocumentOrigin());
+    relinkFeatureToOrigin(feature, getDocumentOrigin());
 
     // Associate the feature with this Body by reference (used by findBodyOf and
     // active-body tooling) without imprisoning it in the group.
@@ -1011,7 +1017,7 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
     }
 
     // Resolve origin/datum links against the shared document-level Origin (Stage 3a).
-    relinkFeatureToOrigin(feature, ensureDocumentOrigin());
+    relinkFeatureToOrigin(feature, getDocumentOrigin());
 
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
@@ -1332,9 +1338,8 @@ void Body::onChanged(const App::Property* prop)
     Part::BodyBase::onChanged(prop);
 }
 
-App::Origin* Body::ensureDocumentOrigin()
+App::Origin* Body::findDocumentOrigin(App::Document* doc)
 {
-    App::Document* doc = getDocument();
     if (!doc) {
         return nullptr;
     }
@@ -1362,11 +1367,26 @@ App::Origin* Body::ensureDocumentOrigin()
         }
     }
 
-    // None yet — create it. It carries the world-frame datum planes/axes and is linked
-    // only by the features that reference it, never owned by a body.
-    auto* shared = doc->addObject<App::Origin>("Origin");
-    shared->Label.setValue("Origin");
-    return shared;
+    return nullptr;
+}
+
+App::Origin* Body::requireDocumentOrigin(App::Document* doc)
+{
+    if (App::Origin* origin = findDocumentOrigin(doc)) {
+        return origin;
+    }
+
+    // No shared world frame in this document — a Body only ever LOOKS the frame up; it must
+    // never mint one. Under the document-owned world-frame contract (ARCHITECTURE_AMENDMENTS
+    // Amendment 2, GitHub #19) a CAD (Part) document mints its App::Origin at creation
+    // (App.newDocument(type='Part')). Reaching here means a Body was created in a document
+    // that has no world frame — a call-site error, not a recoverable state, so fail loudly
+    // rather than lazily bootstrapping the coordinate system off the body.
+    throw Base::RuntimeError(
+        "PartDesign Body requires a document-level world frame (App::Origin), but the "
+        "document has none. Create the Body in a Part document "
+        "(App.newDocument(type='Part')); a Body must not create the coordinate frame."
+    );
 }
 
 void Body::setupObject()
@@ -1374,12 +1394,13 @@ void Body::setupObject()
     Part::BodyBase::setupObject();
 
     // Cruth shared-Origin contract (GitHub #4) / §11 step 5e: a PartDesign Body does NOT own
-    // a private coordinate frame. The world frame is shared at document level (ARCHITECTURE
-    // §3.3) — every Body's features anchor to one free-standing App::Origin. With the
-    // OriginGroup extension retired the Body stores no Origin link at all: getOrigin() resolves
-    // the shared ruler by lookup. Ensure it exists at spawn so the base planes/axes are
-    // available immediately (and so later getOrigin() calls in const display paths never mint).
-    ensureDocumentOrigin();
+    // a private coordinate frame, and it does NOT create one either. The world frame is shared
+    // at document level (ARCHITECTURE §3.3) and minted by the CAD document at its creation
+    // (ARCHITECTURE_AMENDMENTS Amendment 2, GitHub #19) — every Body's features anchor to that
+    // one free-standing App::Origin. Resolve it here so the invariant is checked at spawn: a
+    // Body born into a document with no world frame fails loudly (getDocumentOrigin throws)
+    // rather than lazily bootstrapping the coordinate system off the body.
+    getDocumentOrigin();
 
     // Cruth §4.6: assign a deterministic identity colour at spawn time.
     // Per-document index — count Bodies already in the doc (excluding this one,
