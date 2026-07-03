@@ -1046,7 +1046,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     if (body) {
         bodyBase = body->BaseFeature.getValue();
         for (auto feat : features) {
-            if (PartDesign::Body::findBodyOf(feat) != body) {
+            if (!PartDesign::Body::backsBody(feat, body)) {
                 allFeaturesFromSameBody = false;
                 break;
             }

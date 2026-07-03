@@ -1010,6 +1010,19 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
     return static_cast<Body*>(BodyBase::findBodyOf(feature));
 }
 
+bool Body::backsBody(const App::DocumentObject* feature, const Body* body)
+{
+    // CPART_DESIGN §9 honest membership over the N-valued bodiesOf primitive. `body` counts as
+    // backed when it is among EVERY Body the feature backs, not just the first marker that a
+    // scalar findBodyOf would report. Ownership stays derived — this reads the graph and holds
+    // no stored feature→Body link (Cruth ownership-query invariant).
+    if (!feature || !body) {
+        return false;
+    }
+    const std::vector<Body*> bodies = bodiesOf(feature);
+    return std::find(bodies.begin(), bodies.end(), body) != bodies.end();
+}
+
 std::string Body::componentIdOfSub(const App::DocumentObject* feature, const char* subElement)
 {
     // Discriminator half of bodyOf: turn a picked sub-element (e.g. "Face5") into the
