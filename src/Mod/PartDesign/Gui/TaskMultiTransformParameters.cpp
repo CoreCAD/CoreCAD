@@ -271,8 +271,14 @@ void TaskMultiTransformParameters::onTransformAddMirrored()
         FCMD_OBJ_CMD(Feat, "MirrorPlane = (" << Gui::Command::getObjectCmd(sketch) << ",['V_Axis'])");
     }
     else {
-        App::Origin* orig = pcBody->getOrigin();
-        FCMD_OBJ_CMD(Feat, "MirrorPlane = (" << Gui::Command::getObjectCmd(orig->getXY()) << ",[''])");
+        // Default plane is the shared document Origin's XY (Cruth §11 step 5e), not a body's.
+        App::Origin* orig = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
+        if (orig) {
+            FCMD_OBJ_CMD(
+                Feat,
+                "MirrorPlane = (" << Gui::Command::getObjectCmd(orig->getXY()) << ",[''])"
+            );
+        }
     }
     finishAdd(newFeatName);
     // show the new view when no error
@@ -356,8 +362,11 @@ void TaskMultiTransformParameters::onTransformAddPolarPattern()
         FCMD_OBJ_CMD(Feat, "Axis = (" << Gui::Command::getObjectCmd(sketch) << ",['N_Axis'])");
     }
     else {
-        App::Origin* orig = pcBody->getOrigin();
-        FCMD_OBJ_CMD(Feat, "Axis = (" << Gui::Command::getObjectCmd(orig->getX()) << ",[''])");
+        // Default axis is the shared document Origin's X (Cruth §11 step 5e), not a body's.
+        App::Origin* orig = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
+        if (orig) {
+            FCMD_OBJ_CMD(Feat, "Axis = (" << Gui::Command::getObjectCmd(orig->getX()) << ",[''])");
+        }
     }
     FCMD_OBJ_CMD(Feat, "Angle = 360");
     FCMD_OBJ_CMD(Feat, "Occurrences = 2");
