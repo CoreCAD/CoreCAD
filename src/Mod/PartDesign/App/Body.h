@@ -235,6 +235,17 @@ public:
     static bool backsBody(const App::DocumentObject* feature, const Body* body);
 
     /**
+     * True when @p feature backs at least one Body — an honest membership predicate.
+     *
+     * Cruth ownership-query contract. Several call sites use `findBodyOf(x)` purely as a
+     * yes/no ("is x already in a body?"), never touching the returned Body. Phrased that way
+     * the scalar lookup answers a question it was not asked and hides that the real intent is
+     * membership, not identity. This says only what those sites mean: does @p feature reach
+     * any Body? Derived over bodiesOf — reads the graph, stores nothing.
+     */
+    static bool inAnyBody(const App::DocumentObject* feature);
+
+    /**
      * Return the features that make up this Body, derived from the feature graph.
      *
      * CPART_DESIGN §9.1-inverse: a de-owned Body keeps no Group, so its member list is

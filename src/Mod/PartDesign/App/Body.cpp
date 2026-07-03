@@ -1023,6 +1023,14 @@ bool Body::backsBody(const App::DocumentObject* feature, const Body* body)
     return std::find(bodies.begin(), bodies.end(), body) != bodies.end();
 }
 
+bool Body::inAnyBody(const App::DocumentObject* feature)
+{
+    // Honest membership: the yes/no that call sites really wanted when they tested the
+    // truthiness of a scalar findBodyOf. Non-empty bodiesOf ⇔ the feature reaches some Body.
+    // Derived over the graph, no stored feature→Body link (Cruth ownership-query invariant).
+    return feature && !bodiesOf(feature).empty();
+}
+
 std::string Body::componentIdOfSub(const App::DocumentObject* feature, const char* subElement)
 {
     // Discriminator half of bodyOf: turn a picked sub-element (e.g. "Face5") into the

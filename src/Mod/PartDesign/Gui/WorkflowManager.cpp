@@ -242,7 +242,7 @@ Workflow WorkflowManager::guessWorkflow(const App::Document* doc)
             bool features_without_bodies = false;
 
             for (auto feat : features) {
-                if (!PartDesign::Body::findBodyOf(feat)) {
+                if (!PartDesign::Body::inAnyBody(feat)) {
                     features_without_bodies = true;
                     break;
                 }
