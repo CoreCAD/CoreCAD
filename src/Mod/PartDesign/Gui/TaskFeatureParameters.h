@@ -32,6 +32,14 @@
 
 #include "ViewProvider.h"
 
+class QCheckBox;
+class QLabel;
+
+namespace PartDesign
+{
+class Body;
+}
+
 namespace PartDesignGui
 {
 
@@ -56,6 +64,35 @@ private:
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/PartDesign/Preview"
     );
+};
+
+/// Cruth §8.5 (#27): the "Merge result" control. Makes the otherwise-silent
+/// spawn-vs-extend choice at feature creation visible and reversible. Checked = the
+/// feature extends the Body it was anchored to; unchecked = the feature is its own new
+/// Body. Additive sketch features only — a subtractive cut must extend something, and a
+/// feature that opened as its own new Body (bare global plane) has nothing to merge into,
+/// so in both cases the checkbox is present but disabled.
+class TaskMergeResultParameters: public Gui::TaskView::TaskBox
+{
+    Q_OBJECT
+
+public:
+    explicit TaskMergeResultParameters(PartDesignGui::ViewProvider* vp, QWidget* parent = nullptr);
+    ~TaskMergeResultParameters() override;
+
+private Q_SLOTS:
+    void onMergeToggled(bool merge);
+
+private:
+    void refreshBodyLabel();
+
+    PartDesignGui::ViewProvider* vp;
+    QCheckBox* mergeCheckBox;
+    QLabel* bodyLabel;
+    /// The pre-existing Body the feature was anchored to when the dialog opened — the
+    /// target we splice back onto when the user re-enables merge after toggling off.
+    /// Null when the feature opened as its own new Body (nothing to merge into).
+    PartDesign::Body* mergeTargetBody;
 };
 
 /// Convenience class to collect common methods for all SketchBased features
