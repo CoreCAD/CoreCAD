@@ -24,10 +24,13 @@
  ***************************************************************************/
 
 
+#include <algorithm>
 #include <array>
 
 #include <map>
 
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 
@@ -231,6 +234,100 @@ Part::TopoShape extractSolidById(const Part::TopoShape& shape, const std::string
     }
     return Part::TopoShape();
 }
+
+// Cruth ownership-query contract, piece 2 — the multi-trait signature by which a recomputed
+// solid is recognised as "the same body as last cycle" across a topology-PRESERVING
+// recompute. Single-fingerprint matching (one face map-name, exact equality) misfires when
+// that one name shifts while the body is unchanged, wrongly reading the body as vanished.
+// Combining size, position, surface count and a few surface landmarks makes recognition
+// robust; crucially, position (centre of mass) tells apart two identically-shaped lumps that
+// a name/volume signature alone cannot. This does NOT carry identity across a genuine split
+// (ARCHITECTURE §4.7 forbids that — see #33); it only recognises the unchanged case.
+struct SolidSignature
+{
+    bool valid = false;
+    double volume = 0.0;
+    Base::Vector3d cog;
+    int faceCount = 0;
+    std::set<std::string> faceNames;  // a few stable, lexicographically-smallest map-names
+};
+
+SolidSignature signatureOf(const Part::TopoShape& solid)
+{
+    SolidSignature sig;
+    if (solid.isNull()) {
+        return sig;
+    }
+    try {
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(solid.getShape(), props);
+        sig.volume = props.Mass();
+        const gp_Pnt c = props.CentreOfMass();
+        sig.cog = Base::Vector3d(c.X(), c.Y(), c.Z());
+    }
+    catch (const Standard_Failure&) {
+        return sig;  // a degenerate solid: leave invalid, it will never confidently match
+    }
+    sig.faceCount = static_cast<int>(solid.countSubShapes(TopAbs_FACE));
+    for (int f = 1; f <= sig.faceCount; ++f) {
+        const Data::MappedName mapped = solid.getMappedName(Data::IndexedName("Face", f));
+        if (!mapped.empty()) {
+            sig.faceNames.insert(mapped.toString());
+        }
+    }
+    // Keep only the few smallest names: enough to fingerprint, cheap to compare, and stable
+    // against churn in the higher-numbered faces.
+    constexpr std::size_t kMaxNames = 4;
+    while (sig.faceNames.size() > kMaxNames) {
+        sig.faceNames.erase(std::prev(sig.faceNames.end()));
+    }
+    sig.valid = true;
+    return sig;
+}
+
+// Similarity of two solid signatures in [0, 1]; higher means "more likely the same body".
+// Blends shared surface landmarks (primary), size similarity, and closeness in space.
+double signatureScore(const SolidSignature& a, const SolidSignature& b)
+{
+    if (!a.valid || !b.valid) {
+        return 0.0;
+    }
+    // Shared face landmarks (Jaccard). Strong signal that a body persisted through recompute.
+    double jaccard = 0.0;
+    if (!a.faceNames.empty() || !b.faceNames.empty()) {
+        std::vector<std::string> inter;
+        std::set_intersection(
+            a.faceNames.begin(),
+            a.faceNames.end(),
+            b.faceNames.begin(),
+            b.faceNames.end(),
+            std::back_inserter(inter)
+        );
+        std::set<std::string> uni = a.faceNames;
+        uni.insert(b.faceNames.begin(), b.faceNames.end());
+        jaccard = uni.empty() ? 0.0 : static_cast<double>(inter.size()) / uni.size();
+    }
+    // Size similarity: ratio of the smaller volume to the larger.
+    double volSim = 0.0;
+    const double vmax = std::max(std::fabs(a.volume), std::fabs(b.volume));
+    if (vmax > 1e-9) {
+        volSim = std::min(std::fabs(a.volume), std::fabs(b.volume)) / vmax;
+    }
+    else {
+        volSim = 1.0;  // both ~zero volume
+    }
+    // Closeness in space, scaled by a characteristic length so it is unit-independent. This
+    // is what separates two identically-shaped lumps sitting at different positions.
+    const double scale = std::max(1e-6, std::cbrt(vmax));
+    const double dist = (a.cog - b.cog).Length();
+    const double cogSim = 1.0 / (1.0 + dist / scale);
+
+    return 0.5 * jaccard + 0.3 * volSim + 0.2 * cogSim;
+}
+
+// Below this score a candidate is not confidently the same body; the solid is treated as a
+// fresh component instead of re-binding an existing body's identity to it.
+constexpr double kSameBodyThreshold = 0.5;
 
 // Guards reconcileMultiOutput against re-entry while it spawns/recomputes Bodies.
 bool g_reconciling = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
@@ -482,32 +579,81 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             continue;
         }
 
-        // Multi-output: ensure one Body per component, each stamped with its id.
+        // Multi-output: ensure one Body per component. Recognise which existing Bodies
+        // persisted (identity preserved) by best-overlap over a multi-trait signature, not
+        // by exact component-id equality — so a topology-preserving recompute that merely
+        // shifts a face map-name no longer churns identity. Each current solid carries its
+        // (refreshed) component-id; a Body that best-matches a solid keeps its UUID/name and
+        // adopts that solid's current id.
         std::vector<std::string> ids;
+        std::vector<SolidSignature> solidSigs;
         ids.reserve(componentCount);
+        solidSigs.reserve(componentCount);
         for (int i = 1; i <= componentCount; ++i) {
+            const Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true);
             ids.push_back(componentIdOfSolid(shape, i));
+            solidSigs.push_back(signatureOf(solid));
         }
 
-        // Keep Bodies already pointing at a still-present component; the rest are
-        // free to be re-stamped (covers the first multi-output recompute, where the
-        // originating Body still carries the empty single-component id).
-        std::set<std::string> claimed;
-        std::vector<Body*> freeBodies;
+        // Score every (existing Body, current solid) pair by how strongly the Body's prior
+        // component shape resembles the solid, then assign greedily highest-first so each
+        // Body claims the one solid it most likely persisted into. Below the confidence
+        // threshold a Body does not claim — its identity is not re-bound to a solid it may
+        // not actually be. The Body's prior component is its own Shape from last cycle.
+        std::vector<SolidSignature> bodySigs;
+        bodySigs.reserve(bodies.size());
         for (auto* body : bodies) {
-            const std::string cid = body->TipComponentId.getStrValue();
-            if (!cid.empty() && claimed.count(cid) == 0
-                && std::find(ids.begin(), ids.end(), cid) != ids.end()) {
-                claimed.insert(cid);
+            bodySigs.push_back(signatureOf(body->Shape.getShape()));
+        }
+
+        struct Candidate
+        {
+            double score;
+            std::size_t bodyIdx;
+            std::size_t solidIdx;
+        };
+        std::vector<Candidate> candidates;
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            for (std::size_t s = 0; s < solidSigs.size(); ++s) {
+                const double score = signatureScore(bodySigs[b], solidSigs[s]);
+                if (score >= kSameBodyThreshold) {
+                    candidates.push_back({score, b, s});
+                }
             }
-            else {
-                freeBodies.push_back(body);
+        }
+        std::sort(candidates.begin(), candidates.end(), [](const Candidate& x, const Candidate& y) {
+            return x.score > y.score;
+        });
+
+        std::vector<bool> bodyClaimed(bodies.size(), false);
+        std::vector<Body*> solidOwner(static_cast<std::size_t>(componentCount), nullptr);
+        for (const Candidate& c : candidates) {
+            if (bodyClaimed[c.bodyIdx] || solidOwner[c.solidIdx]) {
+                continue;
+            }
+            bodyClaimed[c.bodyIdx] = true;
+            solidOwner[c.solidIdx] = bodies[c.bodyIdx];
+            // Refresh the cached component-id to the solid's current one (only if it moved,
+            // so an unchanged Body is not needlessly marked touched).
+            if (bodies[c.bodyIdx]->TipComponentId.getStrValue() != ids[c.solidIdx]) {
+                bodies[c.bodyIdx]->TipComponentId.setValue(ids[c.solidIdx]);
+            }
+        }
+
+        // Bodies that matched no solid are free to fill the still-unowned solids (a genuinely
+        // new component reuses one rather than spawning where possible), then any left over
+        // are retired. This reuse/spawn/retire structure is unchanged from before — the
+        // split-retire correction (ARCHITECTURE §4.7) is #33, not this piece.
+        std::vector<Body*> freeBodies;
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!bodyClaimed[b]) {
+                freeBodies.push_back(bodies[b]);
             }
         }
 
         App::DocumentObject* group = App::GeoFeatureGroupExtension::getGroupOfObject(bodies.front());
-        for (const std::string& cid : ids) {
-            if (claimed.count(cid) != 0) {
+        for (std::size_t s = 0; s < solidOwner.size(); ++s) {
+            if (solidOwner[s]) {
                 continue;
             }
             Body* body = nullptr;
@@ -525,14 +671,13 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
                     group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(body);
                 }
             }
-            body->TipComponentId.setValue(cid);
-            claimed.insert(cid);
+            body->TipComponentId.setValue(ids[s]);
+            solidOwner[s] = body;
         }
 
-        // Retire orphaned markers: any freeBodies left after the assign loop carry a
-        // component-id that has vanished from the Tip (e.g. a pattern instance was
-        // skipped, N->N-1). A marker owns nothing, so removal is the exact inverse of
-        // auto-spawn and always safe (Cruth §4.7).
+        // Retire orphaned markers: any freeBodies left after filling carry a component that
+        // has vanished from the Tip (e.g. a pattern instance was skipped, N->N-1). A marker
+        // owns nothing, so removal is the exact inverse of auto-spawn and always safe (§4.7).
         for (auto* orphan : freeBodies) {
             doc->removeObject(orphan->getNameInDocument());
         }
