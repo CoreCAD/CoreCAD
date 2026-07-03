@@ -923,7 +923,7 @@ bool importExternalElements(App::PropertyLinkSub& prop, std::vector<App::SubObje
     std::vector<std::string> subs;
     for (const auto& sobjT : sobjs) {
         auto sobj = sobjT.getSubObject();
-        if (PartDesign::Body::findBodyOf(sobj) != body) {
+        if (!PartDesign::Body::backsBody(sobj, body)) {
             import = 1;
             break;
         }

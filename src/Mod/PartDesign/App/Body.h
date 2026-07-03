@@ -224,6 +224,17 @@ public:
     static std::string componentIdOfSub(const App::DocumentObject* feature, const char* subElement);
 
     /**
+     * True when @p feature is one of the makers of @p body — honest membership.
+     *
+     * Cruth ownership-query contract. The pre-sweep idiom `findBodyOf(x) == body` asks "does x
+     * belong to body?" but findBodyOf returns only the FIRST marker, so it answers false for a
+     * feature that legitimately backs @p body alongside others (a multi-output Tip, §4.7). This
+     * tests whether @p body is among ALL the Bodies @p feature backs. Derived over bodiesOf —
+     * reads the graph, stores nothing.
+     */
+    static bool backsBody(const App::DocumentObject* feature, const Body* body);
+
+    /**
      * Return the features that make up this Body, derived from the feature graph.
      *
      * CPART_DESIGN §9.1-inverse: a de-owned Body keeps no Group, so its member list is
