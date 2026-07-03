@@ -230,7 +230,8 @@ void StdCmdImport::activated(int iMsg)
     FileDialog::Filter allSupportedFormats {QObject::tr("Supported formats"), {}};
     const auto filetypes = App::GetApplication().getImportTypes();
     for (const auto& type : filetypes) {
-        if (type != "FCStd") {
+        // A whole document format (.FCStd, .cpart) is opened, not imported.
+        if (type != "FCStd" && type != "cpart") {
             allSupportedFormats.patterns.append(QStringLiteral("*.") + QString::fromStdString(type));
         }
     }
@@ -238,7 +239,8 @@ void StdCmdImport::activated(int iMsg)
 
     const auto importFilters = App::GetApplication().getImportFilters();
     for (auto it = importFilters.cbegin(); it != importFilters.cend(); ++it) {
-        if (it->first.find("*.FCStd") == std::string::npos) {
+        if (it->first.find("*.FCStd") == std::string::npos
+            && it->first.find("*.cpart") == std::string::npos) {
             formatList.append(FileDialog::Filter::fromFilterString(QString::fromStdString(it->first)));
         }
     }
@@ -618,7 +620,7 @@ void StdCmdMergeProjects::activated(int iMsg)
         Gui::getMainWindow(),
         QObject::tr("Merge Document"),
         FileDialog::getWorkingDirectory(),
-        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), {"*.FCStd"}}}
+        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), {"*.FCStd", "*.cpart"}}}
     );
     if (!project.isEmpty()) {
         FileDialog::setWorkingDirectory(project);
