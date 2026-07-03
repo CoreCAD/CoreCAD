@@ -1692,6 +1692,21 @@ bool Document::save()
     }
 }
 
+namespace
+{
+// Cruth: the save dialog offers the document's own type-derived extension first
+// (a Part document defaults to .cpart), with .FCStd always available as a fallback.
+FileDialog::FilterList documentSaveFilters(App::Document* doc, const QString& exe)
+{
+    FileDialog::FilterList filters;
+    if (doc->documentFileExtension() == "cpart") {
+        filters.append({QObject::tr("Part document"), {QStringLiteral("*.cpart")}});
+    }
+    filters.append({QObject::tr("%1 document").arg(exe), {QStringLiteral("*.FCStd")}});
+    return filters;
+}
+}  // namespace
+
 /// Save the document under a new file name
 bool Document::saveAs()
 {
@@ -1704,15 +1719,17 @@ bool Document::saveAs()
     }
     if (name.endsWith(QStringLiteral(".FCBak"), Qt::CaseInsensitive)) {
         name.chop(QStringLiteral(".FCBak").size());
-        if (!name.endsWith(QStringLiteral(".FCStd"), Qt::CaseInsensitive)) {
-            name += QStringLiteral(".FCStd");
+        const QString docExt = QStringLiteral(".")
+            + QString::fromStdString(getDocument()->documentFileExtension());
+        if (!name.endsWith(docExt, Qt::CaseInsensitive)) {
+            name += docExt;
         }
     }
     QString fn = FileDialog::getSaveFileName(
         getMainWindow(),
         QObject::tr("Save %1 Document").arg(exe),
         name,
-        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), {"*.FCStd"}}}
+        documentSaveFilters(getDocument(), exe)
     );
 
     if (!fn.isEmpty()) {
@@ -1834,15 +1851,17 @@ bool Document::saveCopy()
     QString name = QString::fromUtf8(getDocument()->FileName.getValue());
     if (name.endsWith(QStringLiteral(".FCBak"), Qt::CaseInsensitive)) {
         name.chop(QStringLiteral(".FCBak").size());
-        if (!name.endsWith(QStringLiteral(".FCStd"), Qt::CaseInsensitive)) {
-            name += QStringLiteral(".FCStd");
+        const QString docExt = QStringLiteral(".")
+            + QString::fromStdString(getDocument()->documentFileExtension());
+        if (!name.endsWith(docExt, Qt::CaseInsensitive)) {
+            name += docExt;
         }
     }
     QString fn = FileDialog::getSaveFileName(
         getMainWindow(),
         QObject::tr("Save %1 Document").arg(exe),
         name,
-        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), {"*.FCStd"}}}
+        documentSaveFilters(getDocument(), exe)
     );
     if (!fn.isEmpty()) {
         const char* DocName = App::GetApplication().getDocumentName(getDocument());
