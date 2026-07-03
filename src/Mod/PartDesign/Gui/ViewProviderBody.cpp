@@ -796,7 +796,7 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
     else if (!obj->isDerivedFrom<Part::Feature>()) {
         return false;
     }
-    else if (PartDesign::Body::findBodyOf(obj)) {
+    else if (PartDesign::Body::inAnyBody(obj)) {
         return false;
     }
     else if (obj->isDerivedFrom(Part::BodyBase::getClassTypeId())) {

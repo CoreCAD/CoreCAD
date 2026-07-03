@@ -118,7 +118,7 @@ void CmdPartDesignBody::activated(int iMsg)
         if (features.size() == 1) {
             baseFeature = features[0];
             if (baseFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-                && PartDesign::Body::findBodyOf(baseFeature)) {
+                && PartDesign::Body::inAnyBody(baseFeature)) {
                 // Prevent creating bodies based on features already belonging to other bodies
                 QMessageBox::warning(
                     Gui::getMainWindow(),
@@ -127,7 +127,7 @@ void CmdPartDesignBody::activated(int iMsg)
                 );
                 baseFeature = nullptr;
             }
-            else if (PartDesign::Body::findBodyOf(baseFeature)) {
+            else if (PartDesign::Body::inAnyBody(baseFeature)) {
                 QMessageBox::warning(
                     Gui::getMainWindow(),
                     QObject::tr("Bad base feature"),
@@ -404,7 +404,7 @@ void CmdPartDesignMigrate::activated(int iMsg)
     // Retrieve all PartDesign Features objects and filter out features already belonging to some body
     for (const auto& feat : doc->getObjects()) {
         if (feat->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-            && !PartDesign::Body::findBodyOf(feat) && PartDesign::Body::isSolidFeature(feat)) {
+            && !PartDesign::Body::inAnyBody(feat) && PartDesign::Body::isSolidFeature(feat)) {
             migrateFeatures.insert(static_cast<PartDesign::Feature*>(feat));
         }
     }
