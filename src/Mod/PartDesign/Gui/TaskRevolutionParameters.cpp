@@ -801,6 +801,7 @@ TaskDlgRevolutionParameters::TaskDlgRevolutionParameters(ViewProviderRevolution*
     Content.push_back(
         new TaskRevolutionParameters(RevolutionView, "PartDesign_Revolution", tr("Revolution Parameters"))
     );
+    Content.push_back(new TaskMergeResultParameters(RevolutionView));
     Content.push_back(preview);
 }
 
