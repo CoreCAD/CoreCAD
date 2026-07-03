@@ -261,10 +261,9 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
     Gui::Document* doc = vp->getDocument();
     this->attachDocument(doc);
 
-    //show the parts coordinate system axis for selection
-    if(PartDesign::Body * body = PartDesign::Body::findBodyOf(getObject())) {
+    //show the parts coordinate system axis for selection (shared document Origin, Cruth §11 step 5e)
+    if(App::Origin * origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument())) {
         try {
-            App::Origin *origin = body->getOrigin();
             Gui::ViewProviderCoordinateSystem* vpOrigin {};
             vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
             vpOrigin->setTemporaryVisibility(Gui::DatumElement::Planes | Gui::DatumElement::Axes);
@@ -385,8 +384,9 @@ TaskBoxPrimitives::~TaskBoxPrimitives()
     // hide the parts coordinate system axis for selection
     try {
         auto obj = getObject();
-        if (PartDesign::Body* body = obj ? PartDesign::Body::findBodyOf(obj) : nullptr) {
-            App::Origin* origin = body->getOrigin();
+        App::Origin* origin = obj ? PartDesign::Body::findDocumentOrigin(obj->getDocument())
+                                  : nullptr;
+        if (origin) {
             Gui::ViewProviderCoordinateSystem* vpOrigin;
             vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(
                 Gui::Application::Instance->getViewProvider(origin)
