@@ -243,11 +243,13 @@ PartDesign::Body* getBodyFor(
         return nullptr;
     }
 
-    PartDesign::Body* rv
-        = getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
-    // Membership is a reverse lookup up the BaseFeature chain, not a Group read: a de-owned
-    // feature is never in the active body's (empty) Group (Cruth §11 step 5e).
-    rv = PartDesign::Body::findBodyOf(obj);
+    // The body we RETURN is obj's own, found by reverse lookup up the BaseFeature chain,
+    // not a Group read: a de-owned feature is never in the active body's (empty) Group
+    // (Cruth §11 step 5e). getBody() is still called for its side effects only — active-body
+    // housekeeping: autoActivate a lone body and fill the topParent/subname out-params — so
+    // its return value is deliberately discarded.
+    getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
+    PartDesign::Body* rv = PartDesign::Body::findBodyOf(obj);
     if (rv) {
         return rv;
     }
