@@ -1145,12 +1145,15 @@ std::vector<App::DocumentObject*> Body::getFullModel()
         return rv;
     }
 
-    // 1) Solid chain, Tip → base, including only members (findBodyOf == this); the membership
-    //    test is what halts the walk at a seam. Reversed afterwards to give build order.
+    // 1) Solid chain, Tip → base, including only members (backsBody(cursor, this)); the
+    //    membership test is what halts the walk at a seam. backsBody, not the scalar
+    //    findBodyOf: a multi-output straddler backs several Bodies at once, and first-match
+    //    could report a sibling Body and truncate this Body's model at the seam. Reversed
+    //    afterwards to give build order.
     std::set<App::DocumentObject*> seen;
     for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
         auto* pd = freecad_cast<PartDesign::Feature*>(cursor);
-        if (!pd || findBodyOf(cursor) != this) {
+        if (!pd || !backsBody(cursor, this)) {
             break;  // non-PartDesign terminal, or crossed the seam into another Body
         }
         rv.push_back(cursor);
@@ -1574,7 +1577,7 @@ void Body::onChanged(const App::Property* prop)
                     break;
                 }
                 App::DocumentObject* base = pd->BaseFeature.getValue();
-                if (!base || findBodyOf(base) != this) {
+                if (!base || !backsBody(base, this)) {
                     first = cursor;  // earliest member of this Body's chain
                     break;
                 }
