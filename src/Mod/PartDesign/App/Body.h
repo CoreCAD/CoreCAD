@@ -246,6 +246,18 @@ public:
     static bool inAnyBody(const App::DocumentObject* feature);
 
     /**
+     * True when @p a and @p b share at least one Body — an honest same-body test.
+     *
+     * Cruth ownership-query contract. Code that asks "are these two features in the same
+     * body?" tended to materialize one feature's Body via a scalar findBodyOf and then test
+     * the other against it. That middleman coin-flips when a feature straddles several Bodies
+     * (§4.7): the arbitrary first marker may miss the Body they genuinely share. This compares
+     * the two feature→Body sets directly and is true iff they overlap. Derived over bodiesOf —
+     * reads the graph, stores nothing.
+     */
+    static bool sameBody(const App::DocumentObject* a, const App::DocumentObject* b);
+
+    /**
      * Return the features that make up this Body, derived from the feature graph.
      *
      * CPART_DESIGN §9.1-inverse: a de-owned Body keeps no Group, so its member list is

@@ -1031,6 +1031,21 @@ bool Body::inAnyBody(const App::DocumentObject* feature)
     return feature && !bodiesOf(feature).empty();
 }
 
+bool Body::sameBody(const App::DocumentObject* a, const App::DocumentObject* b)
+{
+    // Honest same-body test: true iff the two feature→Body sets overlap. Comparing the sets
+    // directly avoids the straddle coin-flip of picking one feature's scalar Body and testing
+    // the other against it. Derived over bodiesOf, no stored link (ownership-query invariant).
+    if (!a || !b) {
+        return false;
+    }
+    const std::vector<Body*> ba = bodiesOf(a);
+    const std::vector<Body*> bb = bodiesOf(b);
+    return std::any_of(ba.begin(), ba.end(), [&bb](Body* body) {
+        return std::find(bb.begin(), bb.end(), body) != bb.end();
+    });
+}
+
 std::string Body::componentIdOfSub(const App::DocumentObject* feature, const char* subElement)
 {
     // Discriminator half of bodyOf: turn a picked sub-element (e.g. "Face5") into the
