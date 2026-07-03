@@ -290,17 +290,6 @@ TopoShape Feature::fixSolids(const TopoShape& solids)
     return fixShape;
 }
 
-Feature::SingleSolidRuleMode Feature::singleSolidRuleMode() const
-{
-    // The single-solid rule is permanently disabled (Cruth #21). A feature that emits
-    // several disconnected solids is not an error to reject — per ARCHITECTURE §4.7 it is a
-    // multi-output spawn event, and reconcileMultiOutput turns each solid into its own
-    // component-id Body. The legacy per-Body AllowCompound flag that used to select
-    // enforcement has been retired. This inert seam is the last remaining consumer of the
-    // rule and is removed with the FeatureTransformed reject branch in Cruth #28.
-    return SingleSolidRuleMode::Disabled;
-}
-
 const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)
 {
     if (!f.Infinite()) {

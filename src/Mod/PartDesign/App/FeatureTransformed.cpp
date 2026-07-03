@@ -483,7 +483,6 @@ App::DocumentObjectExecReturn* Transformed::execute()
                 Part::TopoShape compound;
                 compound.makeElementCompound(kept);
                 this->Shape.setValue(compound);
-                rejected.Nullify();
                 return App::DocumentObject::StdReturn;
             }
             supportShape.makeElementFuse(shapes);
@@ -494,34 +493,8 @@ App::DocumentObjectExecReturn* Transformed::execute()
     supportShape = refineShapeIfActive((supportShape));
 
     this->Shape.setValue(supportShape);
-    if (singleSolidRuleMode() == SingleSolidRuleMode::Enforced) {
-        rejected = getRemainingSolids(supportShape.getShape());
-    }
-    else {
-        rejected.Nullify();
-    }
 
     return App::DocumentObject::StdReturn;
-}
-
-TopoDS_Shape Transformed::getRemainingSolids(const TopoDS_Shape& shape)
-{
-    BRep_Builder builder;
-    TopoDS_Compound compShape;
-    builder.MakeCompound(compShape);
-
-    if (shape.IsNull()) {
-        Standard_Failure::Raise("Shape is null");
-    }
-    TopExp_Explorer xp;
-    xp.Init(shape, TopAbs_SOLID);
-    xp.Next();  // skip the first
-
-    for (; xp.More(); xp.Next()) {
-        builder.Add(compShape, xp.Current());
-    }
-
-    return {std::move(compShape)};
 }
 
 }  // namespace PartDesign

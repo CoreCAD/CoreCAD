@@ -57,12 +57,6 @@ class PartDesignExport Feature: public Part::Feature,
 public:
     Feature();
 
-    enum SingleSolidRuleMode
-    {
-        Disabled = 0,
-        Enforced = 1
-    };
-
     /// Base feature which this feature will be fused into or cut out of
     App::PropertyLink BaseFeature;
     /// Transient memo of the nearest downstream Body marker for this feature (CPART_DESIGN
@@ -143,8 +137,6 @@ protected:
      * Fix solids
      */
     TopoShape fixSolids(const TopoShape&);
-
-    SingleSolidRuleMode singleSolidRuleMode() const;
 
     void updateSuppressedShape();
 

@@ -111,11 +111,6 @@ public:
 
     void onChanged(const App::Property* prop) override;
 
-    /** returns the compound of the shapes that were rejected during the last execute
-     * because they did not overlap with the support
-     */
-    TopoDS_Shape rejected;
-
 protected:
     void Restore(Base::XMLReader& reader) override;
     void handleChangedPropertyType(
@@ -125,7 +120,6 @@ protected:
     ) override;
 
     virtual void positionBySupport();
-    static TopoDS_Shape getRemainingSolids(const TopoDS_Shape&);
 
 private:
 };
