@@ -25,6 +25,7 @@
 
 #include <App/DocumentObjectPy.h>
 #include <App/DocumentPy.h>
+#include <Base/Exception.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/Interpreter.h>
 #include <Base/VectorPy.h>
@@ -169,7 +170,16 @@ private:
         }
 
         App::Document* doc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
-        Body* body = Body::spawnAutoBody(doc);
+        Body* body = nullptr;
+        try {
+            body = Body::spawnAutoBody(doc);
+        }
+        catch (const Base::Exception& e) {
+            // spawnAutoBody throws when the document has no world frame (a Body in a non-CAD
+            // document). Surface it as a catchable Python exception rather than letting the
+            // C++ exception escape uncaught to the interpreter's top-level handler.
+            throw Py::RuntimeError(e.what());
+        }
         if (!body) {
             return Py::None();
         }

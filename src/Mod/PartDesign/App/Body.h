@@ -300,20 +300,33 @@ public:
     // a body is solid if it has features that are solid according to member isSolidFeature.
     bool isSolid();
 
-    /// Cruth substrate flip (Stage 3a): returns the single document-level Origin,
-    /// lazily creating it if absent. This is the shared coordinate root that de-owned
-    /// features resolve against, replacing the per-body Origin (which stays created and
-    /// persisted but dormant until Stage 3b removes it). The document-level Origin is a
-    /// free-standing App::Origin not owned by any OriginGroup.
-    App::Origin* ensureDocumentOrigin();
+    /// Pure LOOKUP of the single document-level Origin — no side effects, no throw. Returns the
+    /// shared free-standing App::Origin (the coordinate root de-owned features anchor to), or
+    /// nullptr if the document has none. A Body never mints the world frame: under the
+    /// document-owned world-frame contract (ARCHITECTURE_AMENDMENTS Amendment 2, GitHub #19) a
+    /// CAD (Part) document creates it at document creation. Static so body-creation entry points
+    /// can check a document up front, before any Body object exists.
+    static App::Origin* findDocumentOrigin(App::Document* doc);
+
+    /// Same lookup as findDocumentOrigin, but throws Base::RuntimeError with a clear message when
+    /// the document has no world frame. Body-creation entry points call this BEFORE addObject so
+    /// an invalid attempt (a Body in a non-CAD document) fails with no side effect.
+    static App::Origin* requireDocumentOrigin(App::Document* doc);
+
+    /// Resolves this Body's shared document-level Origin (the setupObject/display backstop),
+    /// throwing via requireDocumentOrigin if absent. See findDocumentOrigin for the contract.
+    App::Origin* getDocumentOrigin()
+    {
+        return requireDocumentOrigin(getDocument());
+    }
 
     /// Cruth §11 step 5e: with the OriginGroup extension retired, a Body no longer stores an
     /// Origin link. getOrigin() returns the single shared document Origin by lookup (the same
-    /// object every Body and de-owned feature anchors to), lazily creating it. Preserves the
-    /// GUI feature-creation call sites that reach the base planes/axes via body->getOrigin().
+    /// object every Body and de-owned feature anchors to). Preserves the GUI feature-creation
+    /// call sites that reach the base planes/axes via body->getOrigin(). Throws if absent.
     App::Origin* getOrigin()
     {
-        return ensureDocumentOrigin();
+        return getDocumentOrigin();
     }
 
 protected:

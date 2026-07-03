@@ -25,7 +25,8 @@ protected:
 
     void SetUp() override
     {
-        _doc = App::GetApplication().newDocument("MoveFeatureToBody_test", "testUser");
+        _doc = App::GetApplication()
+                   .newDocument("MoveFeatureToBody_test", "testUser", {.documentType = "Part"});
         _bodyA = _doc->addObject<PartDesign::Body>();
         _pad1 = _doc->addObject<PartDesign::Pad>("Pad1");
         _bodyA->addFeature(_pad1);

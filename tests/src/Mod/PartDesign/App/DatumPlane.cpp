@@ -21,7 +21,7 @@ protected:
     void SetUp() override
     {
         _docName = App::GetApplication().getUniqueDocumentName("test");
-        _doc = App::GetApplication().newDocument(_docName.c_str(), "testUser");
+        _doc = App::GetApplication().newDocument(_docName.c_str(), "testUser", {.documentType = "Part"});
         _body = _doc->addObject<PartDesign::Body>();
     }
 
