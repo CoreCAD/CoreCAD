@@ -48,9 +48,9 @@ StdCmdPart::StdCmdPart()
     sGroup = "Structure";
     sMenuText = QT_TR_NOOP("New Part");
     sToolTipText = QT_TR_NOOP(
-        "Creates a part, which is a general-purpose container to group objects so they "
-        "act as a unit in the 3D view. It is intended to arrange objects that have a part "
-        "TopoShape, like part primitives, Part Design bodies, and other parts."
+        "Creates a new Part document — a parametric modelling space for sketches, datums, "
+        "features and bodies. The document owns its coordinate system: the origin and datum "
+        "planes are present from the moment it is created."
     );
     sWhatsThis = "Std_Part";
     sStatusTip = sToolTipText;
@@ -61,53 +61,12 @@ void StdCmdPart::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    if (!ensureActiveDocument()) {
-        return;
-    }
-
-    openCommand(QT_TRANSLATE_NOOP("Command", "Add a part"));
-    std::string FeatName = getUniqueObjectName("Part");
-
-    std::string PartName;
-    PartName = getUniqueObjectName("Part");
-    doCommand(
-        Doc,
-        "App.activeDocument().Tip = App.activeDocument().addObject('App::Part','%s')",
-        PartName.c_str()
-    );
-    // TODO We really must set label ourselves? (2015-08-17, Fat-Zer)
-    doCommand(
-        Doc,
-        "App.activeDocument().%s.Label = '%s'",
-        PartName.c_str(),
-        QObject::tr(PartName.c_str()).toUtf8().data()
-    );
-
-    doCommand(
-        Doc,
-        "selected_objects = Gui.Selection.getSelection()\n"
-        "if len(selected_objects) > 1:\n"
-        "    for obj in selected_objects:\n"
-        "        # Add subobjects if obj is a container\n"
-        "        if hasattr(obj, 'OutList') and len(obj.OutList) > 0:\n"
-        "            for child in obj.OutList:\n"
-        "                App.activeDocument().%s.addObject(child)\n"
-        "        App.activeDocument().%s.addObject(obj)\n",
-        PartName.c_str(),
-        PartName.c_str()
-    );
-
-    doCommand(
-        Gui::Command::Gui,
-        "Gui.activateView('Gui::View3DInventor', True)\n"
-        "Gui.activeView().setActiveObject('%s', App.activeDocument().%s)",
-        PARTKEY,
-        PartName.c_str()
-    );
-
-    commitCommand();
-
-    updateActive();
+    // Cruth: "New Part" creates a Part-type *document* — a parametric modelling space that
+    // owns its world frame (the origin and datum planes are minted at document creation, see
+    // App::Document::applyDocumentType). It no longer drops an App::Part container object into
+    // the active document; in this model the document is the container, not a nested object.
+    runCommand(Command::Doc, "App.newDocument(type='Part')");
+    doCommand(Command::Gui, "Gui.activeDocument().activeView().viewDefaultOrientation()");
 }
 
 bool StdCmdPart::isActive()
