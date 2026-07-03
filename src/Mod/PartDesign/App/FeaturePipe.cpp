@@ -481,18 +481,12 @@ App::DocumentObjectExecReturn* Pipe::execute()
                 );
             }
 
-            if (!isSingleSolidRuleSatisfied(result.getShape())) {
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                    "Exception",
-                    "Result has multiple solids: enable 'Allow Compound' in the active body."
-                ));
-            }
 
             // store shape before refinement
             this->rawShape = result;
 
             result = refineShapeIfActive(result);
-            Shape.setValue(getSolid(result));
+            Shape.setValue(result);
             return App::DocumentObject::StdReturn;
         }
 
@@ -519,7 +513,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
             );
         }
 
-        TopoShape solid = getSolid(boolOp);
+        TopoShape solid = boolOp;
         // lets check if the result is a solid
         if (solid.isNull()) {
             return new App::DocumentObjectExecReturn(
@@ -530,13 +524,6 @@ App::DocumentObjectExecReturn* Pipe::execute()
         // store shape before refinement
         this->rawShape = boolOp;
         boolOp = refineShapeIfActive(boolOp);
-        if (!isSingleSolidRuleSatisfied(boolOp.getShape())) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                "Exception",
-                "Result has multiple solids: enable 'Allow Compound' in the active body."
-            ));
-        }
-        boolOp = getSolid(boolOp);
         Shape.setValue(boolOp);
         return App::DocumentObject::StdReturn;
     }

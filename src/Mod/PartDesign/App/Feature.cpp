@@ -153,27 +153,6 @@ short Feature::mustExecute() const
     return Part::Feature::mustExecute();
 }
 
-TopoShape Feature::getSolid(const TopoShape& shape) const
-{
-    if (shape.isNull()) {
-        throw Part::NullShapeException("Null shape");
-    }
-
-    // If single solid rule is not enforced  we simply return the shape as is
-    if (singleSolidRuleMode() != Feature::SingleSolidRuleMode::Enforced) {
-        return shape;
-    }
-
-    int count = shape.countSubShapes(TopAbs_SOLID);
-    if (count) {
-        auto res = shape.getSubTopoShape(TopAbs_SOLID, 1);
-        res.fixSolidOrientation();
-        return res;
-    }
-
-    return shape;
-}
-
 void Feature::onBaseFeatureRerouted(App::DocumentObject* /*oldBase*/, App::DocumentObject* /*newBase*/)
 {}
 
@@ -311,26 +290,14 @@ TopoShape Feature::fixSolids(const TopoShape& solids)
     return fixShape;
 }
 
-bool Feature::isSingleSolidRuleSatisfied(const TopoDS_Shape& shape, TopAbs_ShapeEnum type)
-{
-    if (singleSolidRuleMode() == Feature::SingleSolidRuleMode::Disabled) {
-        return true;
-    }
-
-    int solidCount = countSolids(shape, type);
-
-    return solidCount <= 1;
-}
-
-
 Feature::SingleSolidRuleMode Feature::singleSolidRuleMode() const
 {
     // The single-solid rule is permanently disabled (Cruth #21). A feature that emits
     // several disconnected solids is not an error to reject — per ARCHITECTURE §4.7 it is a
     // multi-output spawn event, and reconcileMultiOutput turns each solid into its own
     // component-id Body. The legacy per-Body AllowCompound flag that used to select
-    // enforcement has been retired; this seam stays as the one documented place the rule
-    // is switched, and every getSolid/isSingleSolidRuleSatisfied call site flows through it.
+    // enforcement has been retired. This inert seam is the last remaining consumer of the
+    // rule and is removed with the FeatureTransformed reject branch in Cruth #28.
     return SingleSolidRuleMode::Disabled;
 }
 

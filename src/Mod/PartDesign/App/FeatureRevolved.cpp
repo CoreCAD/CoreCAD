@@ -213,13 +213,6 @@ void Revolved::setResult(const TopoShape& base, const TopoShape& revolved)
         this->rawShape = result;
         result = refineShapeIfActive(result);
     }
-    if (!isSingleSolidRuleSatisfied(result.getShape())) {
-        throw Base::RuntimeError(QT_TRANSLATE_NOOP(
-            "Exception",
-            "Result has multiple solids: enable 'Allow Compound' in the active body."
-        ));
-    }
-    result = getSolid(result);
     this->Shape.setValue(result);
 }
 

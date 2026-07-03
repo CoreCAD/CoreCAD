@@ -329,13 +329,7 @@ App::DocumentObjectExecReturn* Loft::execute()
         }
 
         if (base.isNull()) {
-            if (!isSingleSolidRuleSatisfied(result.getShape())) {
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                    "Exception",
-                    "Result has multiple solids: enable 'Allow Compound' in the active body."
-                ));
-            }
-            Shape.setValue(getSolid(result));
+            Shape.setValue(result);
             return App::DocumentObject::StdReturn;
         }
 
@@ -363,7 +357,7 @@ App::DocumentObjectExecReturn* Loft::execute()
                 QT_TRANSLATE_NOOP("Exception", "Failed to perform boolean operation")
             );
         }
-        TopoShape solid = getSolid(boolOp);
+        TopoShape solid = boolOp;
         // lets check if the result is a solid
         if (solid.isNull()) {
             return new App::DocumentObjectExecReturn(
@@ -373,13 +367,6 @@ App::DocumentObjectExecReturn* Loft::execute()
         // store shape before refinement
         this->rawShape = boolOp;
         boolOp = refineShapeIfActive(boolOp);
-        if (!isSingleSolidRuleSatisfied(boolOp.getShape())) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                "Exception",
-                "Result has multiple solids: enable 'Allow Compound' in the active body."
-            ));
-        }
-        boolOp = getSolid(boolOp);
         Shape.setValue(boolOp);
         return App::DocumentObject::StdReturn;
     }

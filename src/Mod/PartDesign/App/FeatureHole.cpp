@@ -2041,7 +2041,6 @@ App::DocumentObjectExecReturn* Hole::execute()
                     Precision::Confusion()
                 );
             }
-            result = getSolid(result);
             retry = false;
         }
         catch (Standard_Failure& e) {
@@ -2083,7 +2082,7 @@ App::DocumentObjectExecReturn* Hole::execute()
                     msg += std::to_string(i);
                     return new App::DocumentObjectExecReturn(msg.c_str());
                 }
-                base = getSolid(result);
+                base = result;
                 if (base.isNull()) {
                     std::string msg(QT_TRANSLATE_NOOP(
                         "Exception",
@@ -2097,12 +2096,6 @@ App::DocumentObjectExecReturn* Hole::execute()
         }
         result = refineShapeIfActive(result);
 
-        if (!isSingleSolidRuleSatisfied(result.getShape())) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                "Exception",
-                "Result has multiple solids: enable 'Allow Compound' in the active body."
-            ));
-        }
         this->Shape.setValue(result);
 
         return App::DocumentObject::StdReturn;

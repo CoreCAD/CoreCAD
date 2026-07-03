@@ -183,6 +183,6 @@ App::DocumentObjectExecReturn* Thickness::execute()
     // store shape before refinement
     this->rawShape = result;
     result = refineShapeIfActive(result);
-    this->Shape.setValue(getSolid(result));
+    this->Shape.setValue(result);
     return App::DocumentObject::StdReturn;
 }

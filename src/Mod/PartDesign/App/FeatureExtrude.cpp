@@ -759,7 +759,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 );
             }
             // we have to get the solids (fuse sometimes creates compounds)
-            auto solRes = this->getSolid(result);
+            auto solRes = result;
             // lets check if the result is a solid
             if (solRes.isNull()) {
                 return new App::DocumentObjectExecReturn(
@@ -771,13 +771,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             this->rawShape = result;
             solRes = refineShapeIfActive(result);
 
-            if (!isSingleSolidRuleSatisfied(solRes.getShape())) {
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                    "Exception",
-                    "Result has multiple solids: enable 'Allow Compound' in the active body."
-                ));
-            }
-            this->Shape.setValue(getSolid(solRes));
+            this->Shape.setValue(solRes);
         }
         else if (prism.hasSubShape(TopAbs_SOLID)) {
             if (prism.countSubShapes(TopAbs_SOLID) > 1) {
@@ -787,25 +781,12 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             // store shape before refinement
             this->rawShape = prism;
             prism = refineShapeIfActive(prism);
-            if (!isSingleSolidRuleSatisfied(prism.getShape())) {
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                    "Exception",
-                    "Result has multiple solids: enable 'Allow Compound' in the active body."
-                ));
-            }
-            prism = getSolid(prism);
             this->Shape.setValue(prism);
         }
         else {
             // store shape before refinement
             this->rawShape = prism;
             prism = refineShapeIfActive(prism);
-            if (!isSingleSolidRuleSatisfied(prism.getShape())) {
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                    "Exception",
-                    "Result has multiple solids: enable 'Allow Compound' in the active body."
-                ));
-            }
             this->Shape.setValue(prism);
         }
 
