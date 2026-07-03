@@ -878,8 +878,7 @@ bool importExternalElements(App::PropertyLinkSub& prop, std::vector<App::SubObje
     if (!editObj) {
         FC_THROWM(Base::RuntimeError, "Editing object not found");
     }
-    auto body = PartDesign::Body::findBodyOf(editObj);
-    if (!body) {
+    if (!PartDesign::Body::inAnyBody(editObj)) {
         FC_THROWM(Base::RuntimeError, "No body for editing object: " << editObj->getNameInDocument());
     }
     std::map<App::DocumentObject*, std::vector<std::string>> links;
@@ -927,7 +926,7 @@ bool importExternalElements(App::PropertyLinkSub& prop, std::vector<App::SubObje
     std::vector<std::string> subs;
     for (const auto& sobjT : sobjs) {
         auto sobj = sobjT.getSubObject();
-        if (!PartDesign::Body::backsBody(sobj, body)) {
+        if (!PartDesign::Body::sameBody(sobj, editObj)) {
             import = 1;
             break;
         }
