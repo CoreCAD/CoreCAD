@@ -493,7 +493,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
 
     supportShape = refineShapeIfActive((supportShape));
 
-    this->Shape.setValue(getSolid(supportShape));
+    this->Shape.setValue(supportShape);
     if (singleSolidRuleMode() == SingleSolidRuleMode::Enforced) {
         rejected = getRemainingSolids(supportShape.getShape());
     }

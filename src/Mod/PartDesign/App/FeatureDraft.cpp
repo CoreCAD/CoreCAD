@@ -331,14 +331,8 @@ App::DocumentObjectExecReturn* Draft::execute()
             );
         }
 
-        if (!isSingleSolidRuleSatisfied(shape.getShape())) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                "Exception",
-                "Result has multiple solids: enable 'Allow Compound' in the active body."
-            ));
-        }
 
-        this->Shape.setValue(getSolid(shape));
+        this->Shape.setValue(shape);
         return App::DocumentObject::StdReturn;
     }
     catch (Standard_Failure& e) {
