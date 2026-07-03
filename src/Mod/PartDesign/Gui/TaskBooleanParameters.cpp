@@ -117,12 +117,27 @@ void TaskBooleanParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
             return;
         }
 
-        // if the selected object is not a body then get the body it is part of
+        // if the selected object is not a body then get the body it is part of. When a face was
+        // picked on a feature that backs several component bodies (Cruth §4.7 multi-output),
+        // resolve through the picked sub-element so we tool in the body the user clicked, not
+        // first-match. Falls back to first-match when no sub was picked or the pick is ambiguous.
         if (!pcBody->isDerivedFrom<PartDesign::Body>()) {
-            pcBody = PartDesign::Body::findBodyOf(pcBody);
-            if (!pcBody) {
+            PartDesign::Body* owner = nullptr;
+            if (msg.pSubName && msg.pSubName[0]) {
+                try {
+                    owner = PartDesign::Body::bodyOf(pcBody, msg.pSubName);
+                }
+                catch (const Base::Exception&) {
+                    owner = nullptr;
+                }
+            }
+            if (!owner) {
+                owner = PartDesign::Body::findBodyOf(pcBody);
+            }
+            if (!owner) {
                 return;
             }
+            pcBody = owner;
             body = pcBody->getNameInDocument();
         }
 
