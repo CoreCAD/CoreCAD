@@ -1992,7 +1992,22 @@ void finishDressupFeature(
 
     std::string FeatName = cmd->getUniqueObjectName(which.c_str(), base);
 
-    auto body = PartDesignGui::getBodyFor(base, false);
+    // Route the dress-up to the Body that actually owns the picked geometry. When the base
+    // feature backs several component bodies (Cruth §4.7 multi-output) first-match is wrong:
+    // resolve through the picked sub-element so the feature lands in the body whose solid the
+    // user clicked. Falls back to first-match when no sub was picked or the pick is ambiguous.
+    PartDesign::Body* body = nullptr;
+    if (!SubNames.empty()) {
+        try {
+            body = PartDesign::Body::bodyOf(base, SubNames.front().c_str());
+        }
+        catch (const Base::Exception&) {
+            body = nullptr;
+        }
+    }
+    if (!body) {
+        body = PartDesignGui::getBodyFor(base, false);
+    }
     if (!body) {
         return;
     }
