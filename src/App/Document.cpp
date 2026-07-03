@@ -79,6 +79,7 @@
 #include "GeoFeature.h"
 #include "License.h"
 #include "Link.h"
+#include "Origin.h"
 #include "MergeDocuments.h"
 #include "StringHasher.h"
 #include "Transactions.h"
@@ -1894,6 +1895,24 @@ static std::string checkFileName(const char* file)
         }
     }
     return fn;
+}
+
+void Document::applyDocumentType(const char* type)
+{
+    if (Base::Tools::isNullOrEmpty(type)) {
+        return;
+    }
+    DocumentType.setValue(type);
+
+    // A Part document owns its coordinate frame and mints it eagerly at creation
+    // (Cruth origin-lifecycle amendment). Bodies only ever look this up — they never
+    // create it. The shared App::Origin carries the world-frame datum planes/axes.
+    if (DocumentType.getStrValue() == "Part") {
+        auto* origin = addObject<App::Origin>("Origin");
+        if (origin) {
+            origin->Label.setValue("Origin");
+        }
+    }
 }
 
 bool Document::saveAs(const char* _file)

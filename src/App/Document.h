@@ -293,6 +293,12 @@ public:
      * @{
      */
 
+    /// Cruth: stamp the document-type marker and set up type-specific content at creation.
+    /// A "Part" document mints its shared world frame (App::Origin) so the coordinate
+    /// system exists from the moment the document is born, owned by the document itself.
+    /// The marker is the authority; the on-disk file extension is derived from it.
+    void applyDocumentType(const char* type);
+
     /// Save the document to the file in Property Path
     bool save();
 
