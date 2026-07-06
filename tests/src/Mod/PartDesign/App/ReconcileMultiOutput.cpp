@@ -11,12 +11,18 @@
 #include "src/App/InitApplication.h"
 
 #include <algorithm>
+#include <iterator>
+#include <set>
 #include <string>
 #include <vector>
+
+#include <TopAbs_ShapeEnum.hxx>
 
 #include <App/Application.h>
 #include <App/Document.h>
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 #include <Mod/PartDesign/App/FeaturePocket.h>
@@ -81,6 +87,32 @@ protected:
         for (auto* obj : _doc->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
             out.push_back(static_cast<PartDesign::Body*>(obj));
         }
+        return out;
+    }
+
+    // The individual solids of a feature's output shape.
+    static std::vector<Part::TopoShape> solidsOf(App::DocumentObject* feat)
+    {
+        std::vector<Part::TopoShape> out;
+        auto* pf = dynamic_cast<Part::Feature*>(feat);
+        if (!pf) {
+            return out;
+        }
+        const Part::TopoShape shape = pf->Shape.getShape();
+        const auto n = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+        for (int i = 1; i <= n; ++i) {
+            out.push_back(shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true));
+        }
+        return out;
+    }
+
+    static std::vector<std::string> intersect(
+        const std::set<std::string>& a,
+        const std::set<std::string>& b
+    )
+    {
+        std::vector<std::string> out;
+        std::set_intersection(a.begin(), a.end(), b.begin(), b.end(), std::back_inserter(out));
         return out;
     }
 
@@ -175,6 +207,65 @@ TEST_F(ReconcileMultiOutputTest, SplitRetiresOriginalAndMintsFreshHalves)
     EXPECT_EQ(std::count(uids.begin(), uids.end(), origUid), 0)
         << "a split must not transfer the original UUID to a half (#33)";
     EXPECT_NE(uids[0], uids[1]) << "the two halves must have distinct fresh UUIDs";
+}
+
+// Piece 1 (native-ancestry provenance): two separate profiles grow from different sketch edges, so
+// their solids' provenance root-sets are DISJOINT — the reconciler will read them as unrelated
+// bodies, not a split.
+TEST_F(ReconcileMultiOutputTest, ProvenanceDisjointForSeparateProfiles)
+{
+    auto* body = _doc->addObject<PartDesign::Body>();
+    auto* sketch = newSketch(body, "Base");
+    addRect(sketch, 0, 0, 10, 10);
+    addRect(sketch, 30, 0, 40, 10);
+
+    auto* pad = _doc->addObject<PartDesign::Pad>("Pad");
+    body->addFeature(pad);
+    pad->Profile.setValue(sketch, {""});
+    pad->Length.setValue(5.0);
+    _doc->recompute();
+
+    auto solids = solidsOf(pad);
+    ASSERT_EQ(solids.size(), 2U);
+    const std::set<std::string> pa = PartDesign::Body::provenanceOfSolid(solids[0]);
+    const std::set<std::string> pb = PartDesign::Body::provenanceOfSolid(solids[1]);
+    EXPECT_FALSE(pa.empty());
+    EXPECT_FALSE(pb.empty());
+    EXPECT_TRUE(intersect(pa, pb).empty()) << "separate profiles must have disjoint provenance";
+}
+
+// Two halves of a severed bar both grow from the SAME base-bar edges, so their provenance root-sets
+// OVERLAP — that shared ancestry is exactly what marks the event as a split of one original body
+// (not two unrelated bodies).
+TEST_F(ReconcileMultiOutputTest, ProvenanceOverlapsForSeveredHalves)
+{
+    auto* body = _doc->addObject<PartDesign::Body>();
+    auto* base = newSketch(body, "Base");
+    addRect(base, 0, 0, 40, 10);
+
+    auto* pad = _doc->addObject<PartDesign::Pad>("Pad");
+    body->addFeature(pad);
+    pad->Profile.setValue(base, {""});
+    pad->Length.setValue(10.0);
+    _doc->recompute();
+
+    auto* cut = newSketch(body, "Cut");
+    addRect(cut, 18, -5, 22, 15);
+    auto* pocket = _doc->addObject<PartDesign::Pocket>("Pocket");
+    body->addFeature(pocket);
+    pocket->Profile.setValue(cut, {""});
+    pocket->Type.setValue("ThroughAll");
+    pocket->Midplane.setValue(true);
+    _doc->recompute();
+
+    auto solids = solidsOf(pocket);
+    ASSERT_EQ(solids.size(), 2U);
+    const std::set<std::string> pa = PartDesign::Body::provenanceOfSolid(solids[0]);
+    const std::set<std::string> pb = PartDesign::Body::provenanceOfSolid(solids[1]);
+    EXPECT_FALSE(pa.empty());
+    EXPECT_FALSE(pb.empty());
+    EXPECT_FALSE(intersect(pa, pb).empty())
+        << "severed halves share base-bar ancestry, so their provenance must overlap";
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
