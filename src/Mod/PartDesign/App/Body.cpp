@@ -221,12 +221,33 @@ bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodi
     return true;
 }
 
-// Return the solid sub-shape whose component-id matches, or a null shape if none.
-Part::TopoShape extractSolidById(const Part::TopoShape& shape, const std::string& cid)
+// Encode a provenance root-set as one deterministic, reversible string for the TipComponentId
+// slot. Each root is length-prefixed ("<n>#<root>"), so a root containing any delimiter character
+// cannot corrupt the join; the set is already sorted (std::set), so the encoding is order-
+// independent and stable across recompute. Reversed by parseProvenance (the piece-3 matcher).
+std::string serializeProvenance(const std::set<std::string>& roots)
+{
+    std::string out;
+    for (const auto& root : roots) {
+        out += std::to_string(root.size());
+        out += '#';
+        out += root;
+    }
+    return out;
+}
+
+// Return the solid sub-shape whose component key matches, or a null shape if none. The key is
+// resolved via Body::componentKeyOfSolid, so it matches whatever the reconciler stamped —
+// native-ancestry provenance for a built-geometry Tip, the instance-selector for a pattern.
+Part::TopoShape extractSolidById(
+    const App::DocumentObject* tipFeature,
+    const Part::TopoShape& shape,
+    const std::string& cid
+)
 {
     const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
     for (int i = 1; i <= count; ++i) {
-        if (Body::componentIdOfSolid(shape, i) == cid) {
+        if (Body::componentKeyOfSolid(tipFeature, shape, i) == cid) {
             return shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true);
         }
     }
@@ -453,6 +474,32 @@ std::set<std::string> Body::provenanceOfSolid(const Part::TopoShape& solid)
     return roots;
 }
 
+std::string Body::componentKeyOfSolid(
+    const App::DocumentObject* tipFeature,
+    const Part::TopoShape& shape,
+    int index
+)
+{
+    // §4.5: pattern/mirror copies all grow from one seed, so their provenance is identical —
+    // lineage cannot tell them apart. They keep the element-map-name instance-selector. Built
+    // geometry (Pad/Pocket/sever) uses the native-ancestry provenance (§4.3), which is stable
+    // across recompute where a bare face name drifts. The face name is also the fallback when
+    // provenance is unavailable (an import or baked shape has no element history), so extraction
+    // still resolves.
+    const bool isPattern = freecad_cast<PartDesign::Transformed*>(
+                               const_cast<App::DocumentObject*>(tipFeature)
+                           )
+        != nullptr;
+    if (!isPattern) {
+        const Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
+        const std::set<std::string> prov = provenanceOfSolid(solid);
+        if (!prov.empty()) {
+            return serializeProvenance(prov);
+        }
+    }
+    return componentIdOfSolid(shape, index);
+}
+
 void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)
 {
     if (!doc || g_reconciling) {
@@ -571,7 +618,7 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             if (group) {
                 group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(body);
             }
-            body->TipComponentId.setValue(multiSolid ? componentIdOfSolid(shape, i) : "");
+            body->TipComponentId.setValue(multiSolid ? componentKeyOfSolid(feature, shape, i) : "");
             if (inheritMat) {
                 body->ShapeMaterial.setValue(sharedMat);
             }
@@ -975,7 +1022,7 @@ std::string Body::componentIdOfSub(const App::DocumentObject* feature, const cha
         const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
         for (int i = 1; i <= count; ++i) {
             if (shape.getSubShape(TopAbs_SOLID, i, /*silent*/ true).IsSame(sub)) {
-                return componentIdOfSolid(shape, i);
+                return componentKeyOfSolid(feature, shape, i);
             }
         }
         return {};
@@ -985,7 +1032,7 @@ std::string Body::componentIdOfSub(const App::DocumentObject* feature, const cha
     if (solids.empty()) {
         return {};
     }
-    return componentIdOfSolid(shape, solids.front());
+    return componentKeyOfSolid(feature, shape, solids.front());
 }
 
 Body* Body::bodyOf(const App::DocumentObject* feature, const char* subElement)
@@ -1414,7 +1461,7 @@ App::DocumentObjectExecReturn* Body::execute()
         // honest failure (P7), not a silent fall-back to the whole shape.
         const std::string cid = TipComponentId.getStrValue();
         if (!cid.empty()) {
-            Part::TopoShape component = extractSolidById(tipShape, cid);
+            Part::TopoShape component = extractSolidById(tip, tipShape, cid);
             if (component.isNull()) {
                 return new App::DocumentObjectExecReturn(
                     QT_TRANSLATE_NOOP("Exception", "Tip component for this Body no longer exists")

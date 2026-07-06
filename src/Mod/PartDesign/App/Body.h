@@ -166,6 +166,18 @@ public:
     /// faces.
     static std::set<std::string> provenanceOfSolid(const Part::TopoShape& solid);
 
+    /// The stored component key for the @p index-th (1-based) solid of @p tipFeature's output —
+    /// the value written to a Body's TipComponentId and matched on for solid extraction and
+    /// picked-sub resolution. Built-geometry Tips use the native-ancestry provenance root-set
+    /// (serialized, stable across recompute, Amendment 3 §4.3); pattern/mirror Tips (Transformed)
+    /// keep the element-map-name instance-selector (§4.5 — copies share provenance). Falls back to
+    /// componentIdOfSolid when provenance is unavailable (import/baked: no element history).
+    static std::string componentKeyOfSolid(
+        const App::DocumentObject* tipFeature,
+        const Part::TopoShape& shape,
+        int index
+    );
+
     /**
      * Checks if the given document object lays after the current insert point
      * (place before next solid after the Tip)
