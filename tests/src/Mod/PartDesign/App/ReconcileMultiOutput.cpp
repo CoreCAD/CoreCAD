@@ -209,6 +209,78 @@ TEST_F(ReconcileMultiOutputTest, SplitRetiresOriginalAndMintsFreshHalves)
     EXPECT_NE(uids[0], uids[1]) << "the two halves must have distinct fresh UUIDs";
 }
 
+// Piece 3 (native-ancestry match, the churn fix): a genuinely two-lump part keeps BOTH body UUIDs
+// across a plain recompute and across a topology-preserving parameter edit. Before piece 3 the
+// floor re-minted them every cycle.
+TEST_F(ReconcileMultiOutputTest, TwoLumpsKeepUuidsAcrossRecompute)
+{
+    auto* body = _doc->addObject<PartDesign::Body>();
+    auto* sketch = newSketch(body, "Base");
+    addRect(sketch, 0, 0, 10, 10);
+    addRect(sketch, 30, 0, 40, 10);
+
+    auto* pad = _doc->addObject<PartDesign::Pad>("Pad");
+    body->addFeature(pad);
+    pad->Profile.setValue(sketch, {""});
+    pad->Length.setValue(5.0);
+    recomputeAndReconcile();
+
+    auto bs = bodies();
+    ASSERT_EQ(bs.size(), 2U);
+    std::set<std::string> before {bs[0]->Uid.getValueStr(), bs[1]->Uid.getValueStr()};
+    ASSERT_EQ(before.size(), 2U);
+
+    // Plain recompute — nothing changed.
+    recomputeAndReconcile();
+    auto bs2 = bodies();
+    ASSERT_EQ(bs2.size(), 2U);
+    std::set<std::string> after {bs2[0]->Uid.getValueStr(), bs2[1]->Uid.getValueStr()};
+    EXPECT_EQ(after, before) << "a two-lump part must keep both UUIDs across recompute (no churn)";
+
+    // A length change preserves the topology, so identity must survive it too.
+    pad->Length.setValue(9.0);
+    recomputeAndReconcile();
+    auto bs3 = bodies();
+    ASSERT_EQ(bs3.size(), 2U);
+    std::set<std::string> after2 {bs3[0]->Uid.getValueStr(), bs3[1]->Uid.getValueStr()};
+    EXPECT_EQ(after2, before) << "a length change must preserve both UUIDs";
+}
+
+// Piece 3: after a sever mints two fresh halves (#33), those halves are STABLE across further
+// recompute — they re-acquire their own UUIDs even though they share base-bar ancestry (the subset
+// match distinguishes them by each half's distinct roots).
+TEST_F(ReconcileMultiOutputTest, SplitHalvesAreStableAcrossRecompute)
+{
+    auto* body = _doc->addObject<PartDesign::Body>();
+    auto* base = newSketch(body, "Base");
+    addRect(base, 0, 0, 40, 10);
+    auto* pad = _doc->addObject<PartDesign::Pad>("Pad");
+    body->addFeature(pad);
+    pad->Profile.setValue(base, {""});
+    pad->Length.setValue(10.0);
+    recomputeAndReconcile();
+
+    auto* cut = newSketch(body, "Cut");
+    addRect(cut, 18, -5, 22, 15);
+    auto* pocket = _doc->addObject<PartDesign::Pocket>("Pocket");
+    body->addFeature(pocket);
+    pocket->Profile.setValue(cut, {""});
+    pocket->Type.setValue("ThroughAll");
+    pocket->Midplane.setValue(true);
+    recomputeAndReconcile();
+
+    auto bs = bodies();
+    ASSERT_EQ(bs.size(), 2U);
+    std::set<std::string> halves {bs[0]->Uid.getValueStr(), bs[1]->Uid.getValueStr()};
+    ASSERT_EQ(halves.size(), 2U);
+
+    recomputeAndReconcile();
+    auto bs2 = bodies();
+    ASSERT_EQ(bs2.size(), 2U);
+    std::set<std::string> after {bs2[0]->Uid.getValueStr(), bs2[1]->Uid.getValueStr()};
+    EXPECT_EQ(after, halves) << "severed halves must keep their UUIDs across further recompute";
+}
+
 // Piece 1 (native-ancestry provenance): two separate profiles grow from different sketch edges, so
 // their solids' provenance root-sets are DISJOINT — the reconciler will read them as unrelated
 // bodies, not a split.
