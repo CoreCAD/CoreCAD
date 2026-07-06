@@ -26,6 +26,9 @@
 
 #pragma once
 
+#include <set>
+#include <string>
+
 #include <App/PropertyStandard.h>
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
@@ -152,6 +155,16 @@ public:
     /// the Tip's TipComponentId and the pattern break-out skip-list (§5.6) both match
     /// against it, so the computation must have a single source of truth.
     static std::string componentIdOfSolid(const Part::TopoShape& shape, int index);
+
+    /// Cruth Amendment 3 §4.3 native-ancestry provenance of a solid: the set of stable
+    /// `(source-object-tag, element-token)` roots its faces trace back to through the element-map
+    /// history (P5). This is the *match key* by which a recomputed solid is re-linked to its prior
+    /// Body across a recompute — never the identity itself (that is the per-body UUID §8.2), never
+    /// a geometric resemblance. One history hop per face (proven for sketch-consuming features and
+    /// the #33 sever); a recursive walk up the feature graph for solid-consuming steps (boolean,
+    /// deep chains) is a bounded robustness follow-on. Empty for a null solid or one with no mapped
+    /// faces.
+    static std::set<std::string> provenanceOfSolid(const Part::TopoShape& solid);
 
     /**
      * Checks if the given document object lays after the current insert point

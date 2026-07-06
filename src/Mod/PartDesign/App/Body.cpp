@@ -424,6 +424,35 @@ std::string Body::componentIdOfSolid(const Part::TopoShape& shape, int index)
     return std::string("Solid") + std::to_string(index);
 }
 
+std::set<std::string> Body::provenanceOfSolid(const Part::TopoShape& solid)
+{
+    std::set<std::string> roots;
+    if (solid.isNull()) {
+        return roots;
+    }
+    // Each face carries an element-map name that records what it grew from. One history hop
+    // (getElementHistory) yields the SOURCE object's tag and the ORIGINAL element token there —
+    // for a sketch-consuming feature that is the sketch geometry itself (the stable root); for a
+    // solid-consuming feature it is the intermediate feature's face (still a stable, recompute-
+    // invariant key, just shallower — the recursive walk to the ultimate sketch root is the
+    // documented follow-on). The (tag, token) pair is the root key; a bare token would collide
+    // across sources (two sketches both start at "g1"), so the tag is required.
+    const auto faceCount = static_cast<int>(solid.countSubShapes(TopAbs_FACE));
+    for (int f = 1; f <= faceCount; ++f) {
+        const Data::MappedName mapped = solid.getMappedName(Data::IndexedName("Face", f));
+        if (mapped.empty()) {
+            continue;
+        }
+        Data::MappedName original;
+        const long tag = solid.getElementHistory(mapped, &original);
+        if (tag == 0 && original.empty()) {
+            continue;
+        }
+        roots.insert(std::to_string(tag) + ":" + original.toString());
+    }
+    return roots;
+}
+
 void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)
 {
     if (!doc || g_reconciling) {
