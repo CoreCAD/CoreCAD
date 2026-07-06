@@ -236,6 +236,69 @@ std::string serializeProvenance(const std::set<std::string>& roots)
     return out;
 }
 
+// Reverse of serializeProvenance. Returns an empty set on any string that is not this format
+// (e.g. a pattern's face-name instance-selector, or the empty whole-shape id) so a non-provenance
+// component-id is simply treated as "no stored ancestry to match" rather than mis-parsed.
+std::set<std::string> parseProvenance(const std::string& encoded)
+{
+    std::set<std::string> roots;
+    std::size_t pos = 0;
+    while (pos < encoded.size()) {
+        const std::size_t hash = encoded.find('#', pos);
+        if (hash == std::string::npos || hash == pos) {
+            return {};  // not our length-prefixed format
+        }
+        std::size_t len = 0;
+        for (std::size_t k = pos; k < hash; ++k) {
+            if (encoded[k] < '0' || encoded[k] > '9') {
+                return {};
+            }
+            len = len * 10 + static_cast<std::size_t>(encoded[k] - '0');
+        }
+        if (hash + 1 + len > encoded.size()) {
+            return {};  // truncated / not our format
+        }
+        roots.insert(encoded.substr(hash + 1, len));
+        pos = hash + 1 + len;
+    }
+    return roots;
+}
+
+// True iff two sorted root-sets share at least one root. Used for MATERIAL descent (did this solid
+// grow from this donor at all), not for identity matching.
+bool provenanceOverlaps(const std::set<std::string>& a, const std::set<std::string>& b)
+{
+    if (a.empty() || b.empty()) {
+        return false;
+    }
+    auto ia = a.begin();
+    auto ib = b.begin();
+    while (ia != a.end() && ib != b.end()) {
+        if (*ia < *ib) {
+            ++ia;
+        }
+        else if (*ib < *ia) {
+            ++ib;
+        }
+        else {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True iff every root of @p sub is present in @p sup (sub ⊆ sup). This — not mere overlap — is the
+// identity match: a Body CONTINUES onto the one solid that holds ALL its provenance (§4.3 "one
+// solid holds all of it"). Severed halves share base-bar roots, so overlap alone would match a half
+// to both solids; requiring the whole set distinguishes them by each half's own distinct roots.
+bool isProvenanceSubset(const std::set<std::string>& sub, const std::set<std::string>& sup)
+{
+    if (sub.empty()) {
+        return false;  // no ancestry to match — never continues (fail-safe)
+    }
+    return std::includes(sup.begin(), sup.end(), sub.begin(), sub.end());
+}
+
 // Return the solid sub-shape whose component key matches, or a null shape if none. The key is
 // resolved via Body::componentKeyOfSolid, so it matches whatever the reconciler stamped —
 // native-ancestry provenance for a built-geometry Tip, the instance-selector for a pattern.
@@ -546,14 +609,11 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
         }
 
         // Cruth Amendment 3 §3.3 — a stored body UUID is re-acquired across a recompute FAIL-SAFE:
-        // ONLY when the match is decidable WITHOUT resemblance. The floor recognises the one such
-        // case, the TRIVIAL 1:1 — exactly one prior Body naming this Tip and exactly one solid, so
-        // the mapping is unambiguous with nothing to compare. That Body keeps its UUID (Clause
-        // 3.1: identity survives recompute and parameter edits, however far the geometry moved).
-        // Recognising a *continuing* multi-solid arrangement without resemblance needs the
-        // recorded-association predicate Clause 3.3 permits as a later sharpening — deliberately
-        // NOT built here, so a multi-solid arrangement re-mints each cycle (a "false retirement"
-        // the amendment anticipates and defers).
+        // ONLY when the match is decidable WITHOUT geometric resemblance. The TRIVIAL 1:1 is the
+        // cheapest such case — exactly one prior Body naming this Tip and exactly one solid, so the
+        // mapping is unambiguous with nothing to match. That Body keeps its UUID (Clause 3.1:
+        // identity survives recompute and parameter edits, however far the geometry moved). The
+        // multi-output cases are matched by native ancestry just below (§4.3).
         if (bodies.size() == 1 && solidCount == 1) {
             Body* survivor = bodies.front();
             // One solid = the whole shape; its component-id handle is the implicit empty case.
@@ -565,51 +625,115 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             continue;
         }
 
-        // Cruth Amendment 3 §4.7 TOPOLOGY EVENT — anything that is not the trivial 1:1 above: a
-        // split (1 Body -> N solids), a union (N Bodies -> 1 solid), or any re-arrangement.
-        // Identity NEVER transfers across it and is NEVER re-attached by resemblance (§3.3):
-        // every prior Body retires, its UUID dies, and a fresh Body is born for each solid with a
-        // fresh UUID/name/colour/component-id. Inbound references to a retired Body do not
-        // silently re-bind — they surface honestly at the feature graph (P7). Only MATERIAL
-        // (describe-the-part, not identify-the-body) carries over, and only when unambiguous: if
-        // every prior Body shares one material the new solids inherit it; if they differ,
-        // attributing a material to a specific new solid would itself be a resemblance judgement,
-        // so it is left at the default.
-        bool inheritMat = false;
-        Materials::Material sharedMat;
-        for (std::size_t b = 0; b < bodies.size(); ++b) {
-            const Materials::Material mat = bodies[b]->ShapeMaterial.getValue();
-            if (b == 0) {
-                sharedMat = mat;
-                inheritMat = true;
+        // Cruth Amendment 3 §4.3 NATIVE-ANCESTRY MATCH (built geometry only). A recomputed solid
+        // re-links to a prior Body when their stored PROVENANCE overlaps — the match key, never
+        // geometry. Descendant-counting (§13 row 1) decides the event: a Body overlapping exactly
+        // one solid, that solid overlapping exactly one Body, CONTINUES (keeps its UUID); a Body
+        // whose provenance is spread across >=2 solids is a SPLIT; >=2 Bodies into one solid a
+        // UNION; the remainder are new / retire. On continue nothing but the stored provenance is
+        // refreshed. Everything else is a §4.7 topology event: the Body retires (UUID dies) and a
+        // fresh Body is minted per unclaimed solid, its inbound refs surfacing at the feature graph
+        // (P7), never silently re-bound. §4.5 pattern copies share provenance (lineage cannot tell
+        // them apart), so a pattern Tip skips the match and every prior Body retires — the floor,
+        // unchanged; their identity is the instance-selector, a separate concern (#34).
+        const bool isPattern = freecad_cast<PartDesign::Transformed*>(feature) != nullptr;
+
+        std::vector<std::set<std::string>> solidProv(static_cast<std::size_t>(solidCount));
+        for (int i = 1; i <= solidCount; ++i) {
+            solidProv[static_cast<std::size_t>(i - 1)] = provenanceOfSolid(
+                shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true)
+            );
+        }
+
+        std::vector<Body*> solidOwner(static_cast<std::size_t>(solidCount), nullptr);
+        std::vector<bool> continues(bodies.size(), false);
+
+        if (!isPattern) {
+            // supCount[b] = how many solids hold ALL of Body b's provenance (subset match);
+            // supIndex[b] = that solid when exactly one. subCount[s] = how many Bodies solid s
+            // holds entirely — >=2 marks a UNION target. A clean CONTINUE is the mutual-unique
+            // case: exactly one solid holds the Body, and that solid holds exactly one Body.
+            std::vector<int> supCount(bodies.size(), 0);
+            std::vector<int> supIndex(bodies.size(), -1);
+            std::vector<int> subCount(static_cast<std::size_t>(solidCount), 0);
+            for (std::size_t b = 0; b < bodies.size(); ++b) {
+                const std::set<std::string> prov = parseProvenance(
+                    bodies[b]->TipComponentId.getStrValue()
+                );
+                for (std::size_t s = 0; s < solidProv.size(); ++s) {
+                    if (isProvenanceSubset(prov, solidProv[s])) {
+                        ++supCount[b];
+                        supIndex[b] = static_cast<int>(s);
+                        ++subCount[s];
+                    }
+                }
             }
-            else if (mat.getUUID() != sharedMat.getUUID()) {
-                inheritMat = false;
-                break;
+            for (std::size_t b = 0; b < bodies.size(); ++b) {
+                if (supCount[b] != 1) {
+                    continue;  // 0 = split / no-match; >=2 = ambiguous — both fall through to retire
+                }
+                const auto s = static_cast<std::size_t>(supIndex[b]);
+                if (subCount[s] == 1 && !solidOwner[s]) {  // subCount>=2 would be a union
+                    continues[b] = true;
+                    solidOwner[s] = bodies[b];
+                    const std::string key = serializeProvenance(solidProv[s]);
+                    if (bodies[b]->TipComponentId.getStrValue() != key) {
+                        bodies[b]->TipComponentId.setValue(key);
+                    }
+                }
             }
         }
 
-        Base::Console().warning(
-            "Cruth Amendment 3 §4.7: feature '%s' changed topology (%zu body/bodies -> %d "
-            "solid(s)); body identity was reset — every piece is a new body. Re-pick any "
-            "references that pointed at the retired bodies.\n",
-            feature->getNameInDocument(),
-            bodies.size(),
-            solidCount
-        );
+        // Snapshot each retiring Body's material + provenance BEFORE removal, so a fresh solid can
+        // inherit material from the retired Body it descends from (§4.3: describe-the-part
+        // inherits). A former single-solid Body has empty provenance and is a whole-shape donor
+        // (e.g. the one bar a sever splits — both halves are its steel).
+        struct Donor
+        {
+            Materials::Material mat;
+            std::set<std::string> prov;
+            bool wholeShape;
+        };
+        std::vector<Donor> donors;
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!continues[b]) {
+                const std::set<std::string> prov = parseProvenance(
+                    bodies[b]->TipComponentId.getStrValue()
+                );
+                donors.push_back({bodies[b]->ShapeMaterial.getValue(), prov, prov.empty()});
+            }
+        }
+
+        const bool anyRetire = std::any_of(continues.begin(), continues.end(), [](bool c) {
+            return !c;
+        });
+        if (anyRetire) {
+            Base::Console().warning(
+                "Cruth Amendment 3 §4.3: feature '%s' changed body topology; identities that could "
+                "not be matched by ancestry were reset. Re-pick any references to the retired "
+                "bodies.\n",
+                feature->getNameInDocument()
+            );
+        }
 
         App::DocumentObject* group = App::GeoFeatureGroupExtension::getGroupOfObject(bodies.front());
 
-        // Retire every prior Body. A marker owns nothing, so removal breaks no property refs.
-        for (auto* body : bodies) {
-            doc->removeObject(body->getNameInDocument());
+        // Retire every prior Body that did not continue. A marker owns nothing, so removal breaks
+        // no property refs (P7 surfaces any dangling inbound link at the feature graph).
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!continues[b]) {
+                doc->removeObject(bodies[b]->getNameInDocument());
+            }
         }
 
-        // Spawn a fresh Body for every solid: split children, union results and new components
-        // alike. Identity resets throughout (fresh name/UUID/colour via spawnAutoBody+setupObject,
-        // fresh component-id here); only material inherits, and only when it was unambiguous.
+        // Spawn a fresh Body per unclaimed solid — split children, union results, new components.
+        // Identity resets (fresh name/UUID/colour via spawnAutoBody+setupObject, fresh component-id
+        // here); material inherits only when the donors for this solid agree on one.
         const bool multiSolid = solidCount > 1;
-        for (int i = 1; i <= solidCount; ++i) {
+        for (std::size_t s = 0; s < solidProv.size(); ++s) {
+            if (solidOwner[s]) {
+                continue;
+            }
             Body* body = Body::spawnAutoBody(doc);
             if (!body) {
                 continue;
@@ -618,9 +742,27 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             if (group) {
                 group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(body);
             }
-            body->TipComponentId.setValue(multiSolid ? componentKeyOfSolid(feature, shape, i) : "");
-            if (inheritMat) {
-                body->ShapeMaterial.setValue(sharedMat);
+            body->TipComponentId.setValue(
+                multiSolid ? componentKeyOfSolid(feature, shape, static_cast<int>(s) + 1) : ""
+            );
+
+            bool haveMat = false;
+            bool consistent = true;
+            Materials::Material mat;
+            for (const Donor& d : donors) {
+                if (d.wholeShape || provenanceOverlaps(d.prov, solidProv[s])) {
+                    if (!haveMat) {
+                        mat = d.mat;
+                        haveMat = true;
+                    }
+                    else if (d.mat.getUUID() != mat.getUUID()) {
+                        consistent = false;
+                        break;
+                    }
+                }
+            }
+            if (haveMat && consistent) {
+                body->ShapeMaterial.setValue(mat);
             }
         }
 
