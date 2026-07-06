@@ -1599,15 +1599,24 @@ App::DocumentObjectExecReturn* Body::execute()
 
         // Cruth §3.3: a multi-output Body represents one component of its Tip's
         // shape, named by TipComponentId. Empty id = the implicit single-component
-        // case (propagate the whole shape). A set id that no longer resolves is an
-        // honest failure (P7), not a silent fall-back to the whole shape.
+        // case (propagate the whole shape). It is never a silent fall-back to the
+        // whole shape — that would show wrong geometry.
+        //
+        // A set id that no longer resolves is NOT an execute-level failure. Per
+        // ARCHITECTURE §4.6/§4.7 a Body whose Tip stops yielding its component is
+        // simply *retired* — lifecycle owned by the reconciler (reconcileMultiOutput,
+        // which runs on signalRecomputed after every recompute), not by execute. The
+        // P7 fail-loud belongs to anything that still *references* the retired Body
+        // (assembly/drawing/BOM), which surfaces at those consumers, not here. So a
+        // component miss means either (a) this Body is about to be retired this same
+        // pass, or (b) it is the §4.3 "Vanish deferred" case (a transient empty/failed
+        // compute the reconciler keeps): in both, leave the last-good Shape untouched
+        // and return normally rather than logging a spurious error every edit.
         const std::string cid = TipComponentId.getStrValue();
         if (!cid.empty()) {
             Part::TopoShape component = extractSolidById(tip, tipShape, cid);
             if (component.isNull()) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Tip component for this Body no longer exists")
-                );
+                return App::DocumentObject::StdReturn;
             }
             // A pattern stores each instance's offset in the solid's placement, not
             // its geometry. Bake that placement into the geometry (an identity
