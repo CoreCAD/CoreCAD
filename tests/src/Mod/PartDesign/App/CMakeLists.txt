@@ -7,6 +7,7 @@ add_executable(PartDesign_tests_run
         Pad.cpp
         MoveFeatureToBody.cpp
         AddFeature.cpp
+        ReconcileMultiOutput.cpp
 )
 
 set(PartDesignTestData_Files
