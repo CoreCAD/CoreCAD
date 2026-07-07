@@ -9,32 +9,6 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 
-class CommandNewPart:
-    """Create a new document with an App::Part and a PartDesign::Body ready to model."""
-
-    def GetResources(self):
-        return {
-            "Pixmap": "CorePart_NewPart",
-            "MenuText": "New Part",
-            "ToolTip": (
-                "Create a new part document containing an App::Part and a Body, "
-                "ready for PartDesign modelling."
-            ),
-        }
-
-    def IsActive(self):
-        return True
-
-    def Activated(self):
-        doc = App.newDocument("Part")
-        part = doc.addObject("App::Part", "Part")
-        doc.recompute()
-        Gui.ActiveDocument.ActiveView.setActiveObject("part", part)
-
-
-Gui.addCommand("CorePart_NewPart", CommandNewPart())
-
-
 class CorePartWorkbench(Gui.Workbench):
     """Combined Part + Part Design workbench for CoreCAD."""
 
@@ -116,7 +90,7 @@ class CorePartWorkbench(Gui.Workbench):
         self.appendToolbar(
             "Part",
             [
-                "CorePart_NewPart",
+                "Std_Part",
                 "PartDesign_Body",
                 "PartDesign_CompSketches",
             ],
@@ -257,7 +231,7 @@ class CorePartWorkbench(Gui.Workbench):
         self.appendMenu(
             ["&Part Design"],
             [
-                "CorePart_NewPart",
+                "Std_Part",
                 "PartDesign_Body",
                 "Separator",
             ],

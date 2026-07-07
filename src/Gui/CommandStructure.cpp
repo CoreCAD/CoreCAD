@@ -54,7 +54,10 @@ StdCmdPart::StdCmdPart()
     );
     sWhatsThis = "Std_Part";
     sStatusTip = sToolTipText;
-    sPixmap = "Geofeaturegroup";
+    // Cruth: the CorePart-branded "New Part" icon (compiled into FreeCADGui via
+    // src/Gui/CMakeLists.txt). Std_Part is the one true "New Part" command, so it carries
+    // the CoreCAD icon everywhere it appears (File menu, ribbon, all workbenches).
+    sPixmap = "CorePart_NewPart";
 }
 
 void StdCmdPart::activated(int iMsg)
