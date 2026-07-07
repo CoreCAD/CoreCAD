@@ -1247,6 +1247,23 @@ void prepareProfileBased(Gui::Command* cmd, const std::string& which, double len
         return;
     }
 
+    // Cruth §8.3 (Scope contract, 1-reach case): a subtractive feature whose profile does
+    // not anchor to a Body — e.g. a sketch on a global origin plane — has no anchor thread
+    // back to the solid it cuts. When the document holds exactly one Body, that Body is
+    // unambiguously the target: the single-reach case of the §8.3 Scope contract, resolved
+    // without a prompt. The feature then chains onto that Body's Tip (createFeature), so a
+    // through-cut that severs it splits into fresh Bodies via the §4.7 matcher, as normal.
+    // Multi-body targeting (a cut reaching >1 candidate Body, the "Apply to A/B/Both"
+    // prompt) is deferred to the Scope amendment and is NOT handled here.
+    const bool subtractive = which.find("Subtractive") != std::string::npos || which == "Groove"
+        || which == "Pocket";
+    if (!pcActiveBody && subtractive) {
+        auto bodies = cmd->getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId());
+        if (bodies.size() == 1) {
+            pcActiveBody = static_cast<PartDesign::Body*>(bodies.front());
+        }
+    }
+
     auto worker = [cmd, length](Part::Feature* profile, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
