@@ -1522,9 +1522,31 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
         }
     }
 
-    // Retreat the Tip if it pointed at the removed feature.
-    if (Tip.getValue() == feature) {
-        Tip.setValue(prevSolidFeature ? prevSolidFeature : nextSolidFeature);
+    // Retreat the Tip of EVERY Body tipped by the removed feature — not only this one.
+    // A splitter (e.g. a Pocket that severs a solid) is the Tip of ALL the halves it
+    // produced, so deleting it is a forward §4.7 topology event (a merge) that touches
+    // every one of them. Retreat each onto the removed feature's base; when the feature
+    // backed more than one Body, mark that base for recompute so reconcileMultiOutput runs
+    // the §4.3 union — it retires the now-surplus split-children (identities reset; inbound
+    // refs fail loud per P7) and mints one fresh Body for the merged solid. Undo, the reverse
+    // edit, is what restores the originals; a forward delete never silently re-owns the merge.
+    App::DocumentObject* const retreatTo = prevSolidFeature ? prevSolidFeature : nextSolidFeature;
+    App::Document* doc = getDocument();
+    std::size_t tippedByFeature = 0;
+    if (doc) {
+        for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
+            auto* sibling = static_cast<Body*>(obj);
+            if (sibling->Tip.getValue() == feature) {
+                ++tippedByFeature;
+                sibling->Tip.setValue(retreatTo);
+            }
+        }
+    }
+    if (tippedByFeature > 1 && retreatTo) {
+        // Force the merged base into the next recompute's signalRecomputed set — the
+        // reconciler keys off that list, and nothing downstream touches the base (the
+        // deleted feature was the Tip, so it had no successor to propagate a touch).
+        retreatTo->touch();
     }
 
     std::vector<App::DocumentObject*> result = {feature};
@@ -1541,7 +1563,6 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
     // this MUST be the last action: copy what we need into locals and touch no member
     // of `this` afterward.
     if (Tip.getValue() == nullptr) {
-        App::Document* doc = getDocument();
         const char* name = getNameInDocument();
         if (doc && name) {
             const std::string bodyName = name;
