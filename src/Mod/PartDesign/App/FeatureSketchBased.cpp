@@ -128,21 +128,12 @@ void ProfileBased::setupObject()
 
 void ProfileBased::positionByPrevious()
 {
-    Part::Feature* feat = getBaseObject(/* silent = */ true);
-    if (feat) {
-        this->Placement.setValue(feat->Placement.getValue());
-    }
-    else {
-        // no base. Use either Sketch support's placement, or sketch's placement itself.
-        Part::Part2DObject* sketch = getVerifiedSketch();
-        App::DocumentObject* support = sketch->AttachmentSupport.getValue();
-        if (support && support->isDerivedFrom<App::GeoFeature>()) {
-            this->Placement.setValue(static_cast<App::GeoFeature*>(support)->Placement.getValue());
-        }
-        else {
-            this->Placement.setValue(sketch->Placement.getValue());
-        }
-    }
+    // Amendment 4 (world-frame feature geometry), Stage A: a derived feature no longer copies its
+    // consumed frame (base feature / sketch support / sketch) into its own position. Its geometry
+    // is produced directly in the document world frame, so its position is neutral. The "undo the
+    // copied frame" moves in execute() and reference resolution become inert once this is neutral;
+    // they are removed in Stage B along with this authored-position slot itself.
+    this->Placement.setValue(Base::Placement());
 }
 
 void ProfileBased::transformPlacement(const Base::Placement& transform)

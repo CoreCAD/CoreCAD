@@ -57,7 +57,8 @@ void MultiTransform::positionBySupport()
             throw Base::TypeError("Transformation features must be subclasses of Transformed");
         }
 
-        transFeature->Placement.setValue(this->Placement.getValue());
+        // Amendment 4, Stage A: sub-transform features are world-frame too — no copied position.
+        transFeature->Placement.setValue(Base::Placement());
 
         // To avoid that a linked transform feature stays touched after a recompute
         // we have to purge the touched state

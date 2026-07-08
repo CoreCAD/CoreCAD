@@ -77,10 +77,10 @@ short DressUp::mustExecute() const
 
 void DressUp::positionByBaseFeature()
 {
-    Part::Feature* base = static_cast<Part::Feature*>(BaseFeature.getValue());
-    if (base && base->isDerivedFrom<Part::Feature>()) {
-        this->Placement.setValue(base->Placement.getValue());
-    }
+    // Amendment 4, Stage A: a dress-up produces its geometry in the document world frame, so it no
+    // longer copies its base feature's position. Its position is neutral; the copied-frame juggling
+    // it fed is removed in Stage B.
+    this->Placement.setValue(Base::Placement());
 }
 
 Part::Feature* DressUp::getBaseObject(bool silent) const

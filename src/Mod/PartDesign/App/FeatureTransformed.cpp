@@ -91,11 +91,10 @@ Transformed::Transformed()
 
 void Transformed::positionBySupport()
 {
-    // TODO May be here better to throw exception (silent=false) (2015-07-27, Fat-Zer)
-    Part::Feature* support = getBaseObject(/* silent =*/true);
-    if (support) {
-        this->Placement.setValue(support->Placement.getValue());
-    }
+    // Amendment 4, Stage A: a pattern produces its geometry in the document world frame, so it no
+    // longer copies its support's position. Position is neutral; the pattern transforms resolve in
+    // world coordinates (verified per build plan §6). Copied-frame juggling removed in Stage B.
+    this->Placement.setValue(Base::Placement());
 }
 
 Part::Feature* Transformed::getBaseObject(bool silent) const
