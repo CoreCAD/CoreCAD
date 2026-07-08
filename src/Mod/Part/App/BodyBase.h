@@ -25,7 +25,6 @@
 #pragma once
 
 #include <App/PropertyStandard.h>
-#include <App/OriginGroupExtension.h>
 
 #include <Mod/Part/PartGlobal.h>
 
