@@ -58,6 +58,12 @@ public:
     short int mustExecute() const override;
     App::DocumentObjectExecReturn* execute() override;
 
+    /// Amendment 4: derived feature; its geometry lives in the world frame.
+    bool holdsAuthoredPlacement() const override
+    {
+        return false;
+    }
+
     /// No upstream object: a BakedShape is severed from its origin.
     Part::Feature* getBaseObject(bool silent = false) const override;
 };

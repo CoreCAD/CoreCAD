@@ -73,6 +73,14 @@ const PropertyComplexGeoData* GeoFeature::getPropertyOfGeometry() const
     return nullptr;
 }
 
+bool GeoFeature::holdsAuthoredPlacement() const
+{
+    // Anchors author their own frame (the common case). Derived features —
+    // whose geometry already lives in the document world frame — override
+    // this to false. See Amendment 4, Clause 4.2.
+    return true;
+}
+
 PyObject* GeoFeature::getPyObject()
 {
     if (PythonObject.is(Py::_None())) {

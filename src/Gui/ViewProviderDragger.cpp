@@ -198,6 +198,13 @@ bool ViewProviderDragger::setEdit(int ModNum)
 {
     Q_UNUSED(ModNum);
 
+    // Amendment 4: the transform dragger edits an authored placement. A derived
+    // feature carries none (its geometry already lives in the world frame), so
+    // refuse to enter transform editing rather than drag a meaningless frame.
+    if (auto* geo = getObject<App::GeoFeature>(); geo && !geo->holdsAuthoredPlacement()) {
+        return false;
+    }
+
     if (forwardToLink()) {
         return true;
     }

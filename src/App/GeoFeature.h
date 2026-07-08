@@ -58,6 +58,21 @@ public:
      */
     virtual void transformPlacement(const Base::Placement& transform);
     /**
+     * @brief Whether this object holds an authored placement of its own.
+     *
+     * Amendment 4 (world-frame feature geometry): a geometric object either
+     * *anchors* a coordinate frame it authors (sketches, datums, primitives,
+     * shape-binders, meshes, imports, App::Part, origin datums — the common
+     * case) or it is *derived*, its geometry already living in the document
+     * world frame with no position of its own. Anchors return true; derived
+     * features override this to false. The default is true.
+     *
+     * This is the seam that Clause 4.2 names: "position belongs only to frame
+     * anchors." Generic consumers ask this rather than probing AttachExtension
+     * (which is sufficient-not-necessary — shape-binders and Body lack it).
+     */
+    virtual bool holdsAuthoredPlacement() const;
+    /**
      * This method returns the main property of a geometric object that holds
      * the actual geometry. For a part object this is the Shape property, for
      * a mesh object the Mesh property and so on.

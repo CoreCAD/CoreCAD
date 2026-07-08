@@ -51,6 +51,10 @@ public:
     App::DocumentObjectExecReturn* execute() override;
     void onDocumentRestored() override;
 
+    /// Amendment 4: in-body the base solid is world-placed (derived); an
+    /// orphaned base outside a body keeps its own movable placement (legacy).
+    bool holdsAuthoredPlacement() const override;
+
 private:
     void trySetBaseFeatureOfBody();
 };

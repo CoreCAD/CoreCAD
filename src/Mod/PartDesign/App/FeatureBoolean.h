@@ -56,6 +56,13 @@ public:
     App::DocumentObjectExecReturn* execute() override;
     void updatePreviewShape() override;
     short mustExecute() const override;
+
+    /// Amendment 4: derived feature; its geometry lives in the world frame.
+    bool holdsAuthoredPlacement() const override
+    {
+        return false;
+    }
+
     /// returns the type name of the view provider
     const char* getViewProviderName() const override
     {

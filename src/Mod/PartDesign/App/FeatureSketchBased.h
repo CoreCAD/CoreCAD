@@ -68,6 +68,12 @@ public:
 
     short mustExecute() const override;
 
+    /// Amendment 4: derived feature; its geometry lives in the world frame.
+    bool holdsAuthoredPlacement() const override
+    {
+        return false;
+    }
+
     void setupObject() override;
 
     /** calculates and updates the Placement property based on the features

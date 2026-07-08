@@ -46,6 +46,13 @@ public:
     App::PropertyBool SupportTransform;
 
     short mustExecute() const override;
+
+    /// Amendment 4: derived feature; its geometry lives in the world frame.
+    bool holdsAuthoredPlacement() const override
+    {
+        return false;
+    }
+
     /// updates the Placement property from the Placement of the BaseFeature
     void positionByBaseFeature();
     /**

@@ -121,4 +121,12 @@ void FeatureBase::onDocumentRestored()
     PartDesign::Feature::onDocumentRestored();
 }
 
+bool FeatureBase::holdsAuthoredPlacement() const
+{
+    // In a body the base solid is world-placed like any derived feature. An
+    // orphaned base (outside a body — a legacy state) un-hides its Placement
+    // and remains movable, so it does hold an authored placement of its own.
+    return getFeatureBody() == nullptr;
+}
+
 }  // namespace PartDesign
