@@ -79,26 +79,28 @@ bool setEdit(App::DocumentObject* obj, PartDesign::Body* body)
         return false;
     }
     if (!body) {
+        // Marker model: an object may legitimately have no owning body yet — a
+        // global-plane sketch lives at document level until a solid-producing feature
+        // emerges a body (ARCHITECTURE §4.6). That is not an error; we simply edit the
+        // object directly, with no body context, instead of demanding one.
         body = getBodyFor(obj, false);
-        if (!body) {
-            FC_ERR("no body found");
-            return false;
-        }
     }
     auto* activeView = Gui::Application::Instance->activeView();
     if (!activeView) {
         return false;
     }
-    App::DocumentObject* parent = nullptr;
+    App::DocumentObject* parent = obj;
     std::string subname;
-    auto activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY, &parent, &subname);
-    if (activeBody != body) {
-        parent = obj;
-        subname.clear();
-    }
-    else {
-        subname += obj->getNameInDocument();
-        subname += '.';
+    if (body) {
+        auto activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY, &parent, &subname);
+        if (activeBody != body) {
+            parent = obj;
+            subname.clear();
+        }
+        else {
+            subname += obj->getNameInDocument();
+            subname += '.';
+        }
     }
 
     Gui::cmdGuiDocument(
