@@ -175,7 +175,11 @@ void ViewProviderGeometryObject::updateData(const App::Property* prop)
     }
     else if (prop->isDerivedFrom<App::PropertyPlacement>()) {
         auto geometry = getObject<App::GeoFeature>();
-        if (geometry && prop == &geometry->Placement) {
+        // Match the authored placement by name, not by member address: under Amendment 4
+        // the Placement member no longer lives on every GeoFeature, but a placed object's
+        // authored-placement property is still named "Placement" (a derived feature has none,
+        // so this branch never fires for it — its geometry is already world-placed).
+        if (geometry && std::string(prop->getName()) == "Placement") {
             const App::PropertyComplexGeoData* data = geometry->getPropertyOfGeometry();
             if (data) {
                 Base::BoundBox3d box = data->getBoundingBox();
