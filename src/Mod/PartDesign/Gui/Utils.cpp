@@ -43,7 +43,6 @@
 #include "Utils.h"
 #include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
-#include "WorkflowManager.h"
 
 
 FC_LOG_LEVEL_INIT("PartDesignGui", true, true)
@@ -215,12 +214,6 @@ void needActiveBodyError()
 
 PartDesign::Body* makeBody(App::Document* doc)
 {
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Mod/PartDesign"
-    );
-
-    bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
     // This is intended as a convenience when starting a new document.
     auto bodyName(doc->getUniqueObjectName("Body"));
     Gui::Command::doCommand(
@@ -229,14 +222,6 @@ PartDesign::Body* makeBody(App::Document* doc)
         doc->getName(),
         bodyName.c_str()
     );
-    Gui::Command::doCommand(
-        Gui::Command::Doc,
-        "App.getDocument('%s').getObject('%s').AllowCompound = %s",
-        doc->getName(),
-        bodyName.c_str(),
-        allowCompound ? "True" : "False"
-    );
-
 
     auto body = dynamic_cast<PartDesign::Body*>(doc->getObject(bodyName.c_str()));
     if (body) {
@@ -258,11 +243,13 @@ PartDesign::Body* getBodyFor(
         return nullptr;
     }
 
-    PartDesign::Body* rv
-        = getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
-    // Membership is a reverse lookup up the BaseFeature chain, not a Group read: a de-owned
-    // feature is never in the active body's (empty) Group (Cruth §11 step 5e).
-    rv = PartDesign::Body::findBodyOf(obj);
+    // The body we RETURN is obj's own, found by reverse lookup up the BaseFeature chain,
+    // not a Group read: a de-owned feature is never in the active body's (empty) Group
+    // (Cruth §11 step 5e). getBody() is still called for its side effects only — active-body
+    // housekeeping: autoActivate a lone body and fill the topParent/subname out-params — so
+    // its return value is deliberately discarded.
+    getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
+    PartDesign::Body* rv = PartDesign::Body::findBodyOf(obj);
     if (rv) {
         return rv;
     }
@@ -462,124 +449,6 @@ void fixSketchSupport(Sketcher::SketchObject* sketch)
     }
 }
 
-bool isPartDesignAwareObjecta(App::DocumentObject* obj, bool respectGroups = false)
-{
-    return (
-        obj->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-        || PartDesign::Body::isAllowed(obj) || obj->isDerivedFrom(PartDesign::Body::getClassTypeId())
-        || (respectGroups
-            && (obj->hasExtension(App::GeoFeatureGroupExtension::getExtensionClassTypeId())
-                || obj->hasExtension(App::GroupExtension::getExtensionClassTypeId())))
-    );
-}
-
-bool isAnyNonPartDesignLinksTo(PartDesign::Feature* feature, bool respectGroups)
-{
-    App::Document* doc = feature->getDocument();
-
-    for (const auto& obj : doc->getObjects()) {
-        if (!isPartDesignAwareObjecta(obj, respectGroups)) {
-            std::vector<App::Property*> properties;
-            obj->getPropertyList(properties);
-            for (auto prop : properties) {
-                if (prop->isDerivedFrom(App::PropertyLink::getClassTypeId())) {
-                    if (static_cast<App::PropertyLink*>(prop)->getValue() == feature) {
-                        return true;
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
-                    if (static_cast<App::PropertyLinkSub*>(prop)->getValue() == feature) {
-                        return true;
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
-                    auto values = static_cast<App::PropertyLinkList*>(prop)->getValues();
-                    if (std::find(values.begin(), values.end(), feature) != values.end()) {
-                        return true;
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSubList::getClassTypeId())) {
-                    auto values = static_cast<App::PropertyLinkSubList*>(prop)->getValues();
-                    if (std::find(values.begin(), values.end(), feature) != values.end()) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
-void relinkToBody(PartDesign::Feature* feature)
-{
-    App::Document* doc = feature->getDocument();
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(feature);
-
-    if (!body) {
-        throw Base::RuntimeError("Could not find a body for the feature");
-    }
-
-    for (const auto& obj : doc->getObjects()) {
-        if (!isPartDesignAwareObjecta(obj)) {
-            std::vector<App::Property*> properties;
-            obj->getPropertyList(properties);
-            for (auto prop : properties) {
-                std::string valueStr;
-                if (prop->isDerivedFrom(App::PropertyLink::getClassTypeId())) {
-                    App::PropertyLink* propLink = static_cast<App::PropertyLink*>(prop);
-                    if (propLink->getValue() != feature) {
-                        continue;
-                    }
-                    valueStr = Gui::Command::getObjectCmd(body);
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
-                    App::PropertyLinkSub* propLink = static_cast<App::PropertyLinkSub*>(prop);
-                    if (propLink->getValue() != feature) {
-                        continue;
-                    }
-                    valueStr = buildLinkSubPythonStr(body, propLink->getSubValues());
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
-                    App::PropertyLinkList* propLink = static_cast<App::PropertyLinkList*>(prop);
-                    std::vector<App::DocumentObject*> linkList = propLink->getValues();
-                    bool valueChanged = false;
-                    for (auto& link : linkList) {
-                        if (link == feature) {
-                            link = body;
-                            valueChanged = true;
-                        }
-                    }
-                    if (valueChanged) {
-                        valueStr = buildLinkListPythonStr(linkList);
-                        // TODO Issue some message here due to it likely will break something
-                        //     (2015-08-13, Fat-Zer)
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
-                    App::PropertyLinkSubList* propLink = static_cast<App::PropertyLinkSubList*>(prop);
-                    std::vector<App::DocumentObject*> linkList = propLink->getValues();
-                    bool valueChanged = false;
-                    for (auto& link : linkList) {
-                        if (link == feature) {
-                            link = body;
-                            valueChanged = true;
-                        }
-                    }
-                    if (valueChanged) {
-                        valueStr = buildLinkSubListPythonStr(linkList, propLink->getSubValues());
-                        // TODO Issue some message here due to it likely will break something
-                        //     (2015-08-13, Fat-Zer)
-                    }
-                }
-
-                if (!valueStr.empty() && prop->hasName()) {
-                    FCMD_OBJ_CMD(obj, prop->getName() << '=' << valueStr);
-                }
-            }
-        }
-    }
-}
 
 bool isFeatureMovable(App::DocumentObject* const feat)
 {

@@ -171,12 +171,14 @@ PyMethodDef ApplicationPy::Methods[] = {
     {"newDocument",
      reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(ApplicationPy::sNewDocument)),
      METH_VARARGS | METH_KEYWORDS,
-     "newDocument(name, label=None, hidden=False, temp=False) -> object\n"
+     "newDocument(name, label=None, hidden=False, temp=False, type=None) -> object\n"
      "Create a new document with a given name.\n\n"
      "name: unique document name which is checked automatically.\n"
      "label: optional user changeable label for the document.\n"
      "hidden: whether to hide document 3D view.\n"
-     "temp: mark the document as temporary so that it will not be saved"},
+     "temp: mark the document as temporary so that it will not be saved.\n"
+     "type: Cruth document-type marker (e.g. \"Part\"); a Part document mints its\n"
+     "      shared world frame (origin/planes) at creation."},
     {"closeDocument",
      (PyCFunction)ApplicationPy::sCloseDocument,
      METH_VARARGS,
@@ -318,7 +320,7 @@ PyObject* ApplicationPy::sLoadFile(PyObject* /*self*/, PyObject* args)
 
         std::stringstream str;
         str << "import " << module << std::endl;
-        if (fi.hasExtension("FCStd")) {
+        if (fi.hasExtension("FCStd") || fi.hasExtension("cpart")) {
             str << module << ".openDocument(" << pathRepr << ")" << std::endl;
         }
         else {
@@ -393,12 +395,14 @@ PyObject* ApplicationPy::sNewDocument(PyObject* /*self*/, PyObject* args, PyObje
 {
     char* docName = nullptr;
     char* usrName = nullptr;
+    char* docType = nullptr;
     PyObject* hidden = Py_False;
     PyObject* temp = Py_False;
-    static const std::array<const char*, 5> kwlist {"name", "label", "hidden", "temp", nullptr};
+    static const std::array<const char*, 6> kwlist {"name", "label", "hidden", "temp", "type",
+                                                    nullptr};
     if (!Base::Wrapped_ParseTupleAndKeywords(args,
                                              kwd,
-                                             "|etetO!O!",
+                                             "|etetO!O!et",
                                              kwlist,
                                              "utf-8",
                                              &docName,
@@ -407,7 +411,9 @@ PyObject* ApplicationPy::sNewDocument(PyObject* /*self*/, PyObject* args, PyObje
                                              &PyBool_Type,
                                              &hidden,
                                              &PyBool_Type,
-                                             &temp)) {
+                                             &temp,
+                                             "utf-8",
+                                             &docType)) {
         return nullptr;
     }
 
@@ -415,13 +421,15 @@ PyObject* ApplicationPy::sNewDocument(PyObject* /*self*/, PyObject* args, PyObje
     {
         DocumentInitFlags initFlags {
             .createView = !Base::asBoolean(hidden),
-            .temporary = Base::asBoolean(temp)
+            .temporary = Base::asBoolean(temp),
+            .documentType = docType ? docType : ""
         };
         App::Document* doc = GetApplication().newDocument(docName,
                                                           usrName,
                                                           initFlags);
         PyMem_Free(docName);
         PyMem_Free(usrName);
+        PyMem_Free(docType);
         return doc->getPyObject();
     }
     PY_CATCH;

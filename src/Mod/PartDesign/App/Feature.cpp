@@ -153,27 +153,6 @@ short Feature::mustExecute() const
     return Part::Feature::mustExecute();
 }
 
-TopoShape Feature::getSolid(const TopoShape& shape) const
-{
-    if (shape.isNull()) {
-        throw Part::NullShapeException("Null shape");
-    }
-
-    // If single solid rule is not enforced  we simply return the shape as is
-    if (singleSolidRuleMode() != Feature::SingleSolidRuleMode::Enforced) {
-        return shape;
-    }
-
-    int count = shape.countSubShapes(TopAbs_SOLID);
-    if (count) {
-        auto res = shape.getSubTopoShape(TopAbs_SOLID, 1);
-        res.fixSolidOrientation();
-        return res;
-    }
-
-    return shape;
-}
-
 void Feature::onBaseFeatureRerouted(App::DocumentObject* /*oldBase*/, App::DocumentObject* /*newBase*/)
 {}
 
@@ -309,32 +288,6 @@ TopoShape Feature::fixSolids(const TopoShape& solids)
 
     TopoShape fixShape(comp);
     return fixShape;
-}
-
-bool Feature::isSingleSolidRuleSatisfied(const TopoDS_Shape& shape, TopAbs_ShapeEnum type)
-{
-    if (singleSolidRuleMode() == Feature::SingleSolidRuleMode::Disabled) {
-        return true;
-    }
-
-    int solidCount = countSolids(shape, type);
-
-    return solidCount <= 1;
-}
-
-
-Feature::SingleSolidRuleMode Feature::singleSolidRuleMode() const
-{
-    auto body = getFeatureBody();
-
-    // When the feature is not part of an body (which should not happen) let's stay with the default
-    if (!body) {
-        return SingleSolidRuleMode::Enforced;
-    }
-
-    auto areCompoundSolidsAllowed = body->AllowCompound.getValue();
-
-    return areCompoundSolidsAllowed ? SingleSolidRuleMode::Disabled : SingleSolidRuleMode::Enforced;
 }
 
 const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)

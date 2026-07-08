@@ -170,10 +170,9 @@ void TaskHelixParameters::connectSlots()
 
 void TaskHelixParameters::showCoordinateAxes()
 {
-    // show the parts coordinate system axis for selection
-    if (PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject())) {
+    // show the parts coordinate system axis for selection (shared document Origin, Cruth §11 step 5e)
+    if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument())) {
         try {
-            App::Origin* origin = body->getOrigin();
             ViewProviderCoordinateSystem* vpOrigin;
             vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
                 Gui::Application::Instance->getViewProvider(origin)
@@ -235,9 +234,11 @@ void TaskHelixParameters::addSketchAxes()
 void TaskHelixParameters::addPartAxes()
 {
     auto profile = getObject<PartDesign::ProfileBased>();
-    if (PartDesign::Body* body = PartDesign::Body::findBodyOf(profile)) {
+    // Reference axes come from the shared document Origin (Cruth §11 step 5e), not a body.
+    App::Origin* orig = profile ? PartDesign::Body::findDocumentOrigin(profile->getDocument())
+                                : nullptr;
+    if (orig) {
         try {
-            App::Origin* orig = body->getOrigin();
             addAxisToCombo(orig->getX(), "", tr("Base X-axis"));
             addAxisToCombo(orig->getY(), "", tr("Base Y-axis"));
             addAxisToCombo(orig->getZ(), "", tr("Base Z-axis"));
@@ -589,9 +590,9 @@ TaskHelixParameters::~TaskHelixParameters()
     try {
         // hide the parts coordinate system axis for selection
         auto obj = getObject();
-        PartDesign::Body* body = obj ? PartDesign::Body::findBodyOf(obj) : nullptr;
-        if (body) {
-            App::Origin* origin = body->getOrigin();
+        App::Origin* origin = obj ? PartDesign::Body::findDocumentOrigin(obj->getDocument())
+                                  : nullptr;
+        if (origin) {
             ViewProviderCoordinateSystem* vpOrigin {};
             vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
                 Gui::Application::Instance->getViewProvider(origin)
@@ -766,6 +767,7 @@ TaskDlgHelixParameters::TaskDlgHelixParameters(ViewProviderHelix* HelixView)
 {
     assert(HelixView);
     Content.push_back(new TaskHelixParameters(HelixView));
+    Content.push_back(new TaskMergeResultParameters(HelixView));
     Content.push_back(preview);
 }
 

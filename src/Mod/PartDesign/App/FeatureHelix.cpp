@@ -417,15 +417,10 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
 
-            if (!isSingleSolidRuleSatisfied(result)) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Error: Result has multiple solids")
-                );
-            }
 
             // store shape before refinement
             this->rawShape = result;
-            Shape.setValue(getSolid(result));
+            Shape.setValue(result);
             return App::DocumentObject::StdReturn;
         }
 
@@ -438,7 +433,7 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
             // we have to get the solids (fuse sometimes creates compounds)
-            TopoShape boolOp = this->getSolid(mkFuse.Shape());
+            TopoShape boolOp = mkFuse.Shape();
 
             // lets check if the result is a solid
             if (boolOp.isNull()) {
@@ -447,16 +442,11 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
 
-            if (!isSingleSolidRuleSatisfied(boolOp.getShape())) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Error: Result has multiple solids")
-                );
-            }
 
             // store shape before refinement
             this->rawShape = boolOp;
             boolOp = refineShapeIfActive(boolOp, RefineErrorPolicy::Warn);
-            Shape.setValue(getSolid(boolOp));
+            Shape.setValue(boolOp);
         }
         else if (getAddSubType() == FeatureAddSub::Subtractive) {
 
@@ -469,7 +459,7 @@ App::DocumentObjectExecReturn* Helix::execute()
                         QT_TRANSLATE_NOOP("Exception", "Error: Intersecting the helix failed")
                     );
                 }
-                boolOp = this->getSolid(mkCom.Shape());
+                boolOp = mkCom.Shape();
             }
             else {
                 FCBRepAlgoAPI_Cut mkCut(base.getShape(), result);
@@ -478,7 +468,7 @@ App::DocumentObjectExecReturn* Helix::execute()
                         QT_TRANSLATE_NOOP("Exception", "Error: Subtracting the helix failed")
                     );
                 }
-                boolOp = this->getSolid(mkCut.Shape());
+                boolOp = mkCut.Shape();
             }
 
             // lets check if the result is a solid
@@ -488,16 +478,11 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
 
-            if (!isSingleSolidRuleSatisfied(boolOp.getShape())) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Error: Result has multiple solids")
-                );
-            }
 
             // store shape before refinement
             this->rawShape = boolOp;
             boolOp = refineShapeIfActive(boolOp, RefineErrorPolicy::Warn);
-            Shape.setValue(getSolid(boolOp));
+            Shape.setValue(boolOp);
         }
 
         return App::DocumentObject::StdReturn;

@@ -26,6 +26,9 @@
 
 #pragma once
 
+#include <set>
+#include <string>
+
 #include <App/PropertyStandard.h>
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
@@ -51,8 +54,6 @@ class PartDesignExport Body: public Part::BodyBase
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::Body);
 
 public:
-    App::PropertyBool AllowCompound;
-
     /// Cruth §4.6 visual identity — auto-assigned from a deterministic palette at spawn.
     App::PropertyColor Color;
 
@@ -155,6 +156,28 @@ public:
     /// against it, so the computation must have a single source of truth.
     static std::string componentIdOfSolid(const Part::TopoShape& shape, int index);
 
+    /// Cruth Amendment 3 §4.3 native-ancestry provenance of a solid: the set of stable
+    /// `(source-object-tag, element-token)` roots its faces trace back to through the element-map
+    /// history (P5). This is the *match key* by which a recomputed solid is re-linked to its prior
+    /// Body across a recompute — never the identity itself (that is the per-body UUID §8.2), never
+    /// a geometric resemblance. One history hop per face (proven for sketch-consuming features and
+    /// the #33 sever); a recursive walk up the feature graph for solid-consuming steps (boolean,
+    /// deep chains) is a bounded robustness follow-on. Empty for a null solid or one with no mapped
+    /// faces.
+    static std::set<std::string> provenanceOfSolid(const Part::TopoShape& solid);
+
+    /// The stored component key for the @p index-th (1-based) solid of @p tipFeature's output —
+    /// the value written to a Body's TipComponentId and matched on for solid extraction and
+    /// picked-sub resolution. Built-geometry Tips use the native-ancestry provenance root-set
+    /// (serialized, stable across recompute, Amendment 3 §4.3); pattern/mirror Tips (Transformed)
+    /// keep the element-map-name instance-selector (§4.5 — copies share provenance). Falls back to
+    /// componentIdOfSolid when provenance is unavailable (import/baked: no element history).
+    static std::string componentKeyOfSolid(
+        const App::DocumentObject* tipFeature,
+        const Part::TopoShape& shape,
+        int index
+    );
+
     /**
      * Checks if the given document object lays after the current insert point
      * (place before next solid after the Tip)
@@ -189,6 +212,75 @@ public:
      * consulted for PartDesign features (it is empty under de-ownership).
      */
     static Body* findBodyOf(const App::DocumentObject* feature);
+
+    /**
+     * Return EVERY Body that @p feature backs — the honest, N-valued reverse lookup.
+     *
+     * Cruth ownership-query contract. findBodyOf is scalar (one feature → one Body), which
+     * is correct only while chains are linear. Under de-ownership a single Tip feature can
+     * back several Bodies at once — one per output component of a pattern or a severed solid
+     * (§4.7), told apart by TipComponentId. This walks the BaseFeature chain forward to the
+     * first feature that is some Body's Tip (the nearest downstream marker) and returns all
+     * Bodies naming that Tip. Ownership stays derived: it reads the graph, never a stored
+     * feature→Body link or a Group. Empty when the feature reaches no Body.
+     */
+    static std::vector<Body*> bodiesOf(const App::DocumentObject* feature);
+
+    /**
+     * Resolve @p feature plus the caller's picked @p subElement to the single Body meant.
+     *
+     * Cruth ownership-query contract, P7 fail-loud. One candidate → the sub-element is
+     * irrelevant, return it. Several candidates (a multi-output Tip) → the picked
+     * sub-element names the component: map it to its solid, take that solid's component-id
+     * and return the Body carrying it. Asking for "the" Body of a multi-output feature with
+     * NO sub-element is ambiguous and THROWS rather than silently guessing a Body. Returns
+     * NULL only when the feature backs no Body at all.
+     */
+    static Body* bodyOf(const App::DocumentObject* feature, const char* subElement);
+
+    /**
+     * Component-id of the solid that owns @p subElement on @p feature's shape, or empty.
+     *
+     * The discriminator half of bodyOf: resolves a picked sub-element (e.g. "Face5") to its
+     * owning solid and returns that solid's componentIdOfSolid. Empty when the sub-element
+     * is missing, unresolvable, or owned by no solid. Shared with the §7 import
+     * face-identity work (same fingerprint need).
+     */
+    static std::string componentIdOfSub(const App::DocumentObject* feature, const char* subElement);
+
+    /**
+     * True when @p feature is one of the makers of @p body — honest membership.
+     *
+     * Cruth ownership-query contract. The pre-sweep idiom `findBodyOf(x) == body` asks "does x
+     * belong to body?" but findBodyOf returns only the FIRST marker, so it answers false for a
+     * feature that legitimately backs @p body alongside others (a multi-output Tip, §4.7). This
+     * tests whether @p body is among ALL the Bodies @p feature backs. Derived over bodiesOf —
+     * reads the graph, stores nothing.
+     */
+    static bool backsBody(const App::DocumentObject* feature, const Body* body);
+
+    /**
+     * True when @p feature backs at least one Body — an honest membership predicate.
+     *
+     * Cruth ownership-query contract. Several call sites use `findBodyOf(x)` purely as a
+     * yes/no ("is x already in a body?"), never touching the returned Body. Phrased that way
+     * the scalar lookup answers a question it was not asked and hides that the real intent is
+     * membership, not identity. This says only what those sites mean: does @p feature reach
+     * any Body? Derived over bodiesOf — reads the graph, stores nothing.
+     */
+    static bool inAnyBody(const App::DocumentObject* feature);
+
+    /**
+     * True when @p a and @p b share at least one Body — an honest same-body test.
+     *
+     * Cruth ownership-query contract. Code that asks "are these two features in the same
+     * body?" tended to materialize one feature's Body via a scalar findBodyOf and then test
+     * the other against it. That middleman coin-flips when a feature straddles several Bodies
+     * (§4.7): the arbitrary first marker may miss the Body they genuinely share. This compares
+     * the two feature→Body sets directly and is true iff they overlap. Derived over bodiesOf —
+     * reads the graph, stores nothing.
+     */
+    static bool sameBody(const App::DocumentObject* a, const App::DocumentObject* b);
 
     /**
      * Return the features that make up this Body, derived from the feature graph.
@@ -233,6 +325,23 @@ public:
      * palette index. Returns nullptr if @p doc is null.
      */
     static Body* spawnAutoBody(App::Document* doc);
+
+    /**
+     * Cruth §8.5 (Merge Result, #27): re-home @p feature onto @p target's pipeline —
+     * the model half of the feature-creation "Merge result" control. Composes the
+     * existing pipeline primitives so the spawn-vs-extend choice is reversible:
+     *   - detach @p feature from its current Body (removeFeature: heals the
+     *     BaseFeature chain, retreats that Body's Tip, and auto-retires the Body if
+     *     its chain empties, §4.7);
+     *   - if @p target is null, spawn a fresh Body (§4.6) to receive @p feature;
+     *   - splice @p feature onto @p target's Tip (addFeature).
+     *
+     * A no-op returning @p target when @p feature already resolves to it. Returns
+     * the Body the feature now belongs to (the freshly spawned one when @p target was
+     * null), or nullptr on failure. Does not recompute — the caller does, inside its
+     * undo transaction. Shared by the GUI control and the Python API (P8 equivalence).
+     */
+    static Body* moveFeatureToBody(App::DocumentObject* feature, Body* target);
 
     /**
      * Cruth §5.6: break a single pattern instance out into its own independent,
@@ -285,20 +394,33 @@ public:
     // a body is solid if it has features that are solid according to member isSolidFeature.
     bool isSolid();
 
-    /// Cruth substrate flip (Stage 3a): returns the single document-level Origin,
-    /// lazily creating it if absent. This is the shared coordinate root that de-owned
-    /// features resolve against, replacing the per-body Origin (which stays created and
-    /// persisted but dormant until Stage 3b removes it). The document-level Origin is a
-    /// free-standing App::Origin not owned by any OriginGroup.
-    App::Origin* ensureDocumentOrigin();
+    /// Pure LOOKUP of the single document-level Origin — no side effects, no throw. Returns the
+    /// shared free-standing App::Origin (the coordinate root de-owned features anchor to), or
+    /// nullptr if the document has none. A Body never mints the world frame: under the
+    /// document-owned world-frame contract (ARCHITECTURE_AMENDMENTS Amendment 2, GitHub #19) a
+    /// CAD (Part) document creates it at document creation. Static so body-creation entry points
+    /// can check a document up front, before any Body object exists.
+    static App::Origin* findDocumentOrigin(App::Document* doc);
+
+    /// Same lookup as findDocumentOrigin, but throws Base::RuntimeError with a clear message when
+    /// the document has no world frame. Body-creation entry points call this BEFORE addObject so
+    /// an invalid attempt (a Body in a non-CAD document) fails with no side effect.
+    static App::Origin* requireDocumentOrigin(App::Document* doc);
+
+    /// Resolves this Body's shared document-level Origin (the setupObject/display backstop),
+    /// throwing via requireDocumentOrigin if absent. See findDocumentOrigin for the contract.
+    App::Origin* getDocumentOrigin()
+    {
+        return requireDocumentOrigin(getDocument());
+    }
 
     /// Cruth §11 step 5e: with the OriginGroup extension retired, a Body no longer stores an
     /// Origin link. getOrigin() returns the single shared document Origin by lookup (the same
-    /// object every Body and de-owned feature anchors to), lazily creating it. Preserves the
-    /// GUI feature-creation call sites that reach the base planes/axes via body->getOrigin().
+    /// object every Body and de-owned feature anchors to). Preserves the GUI feature-creation
+    /// call sites that reach the base planes/axes via body->getOrigin(). Throws if absent.
     App::Origin* getOrigin()
     {
-        return ensureDocumentOrigin();
+        return getDocumentOrigin();
     }
 
 protected:

@@ -39,7 +39,6 @@
 
 #include "DlgActiveBody.h"
 #include "Utils.h"
-#include "WorkflowManager.h"
 
 using namespace std;
 

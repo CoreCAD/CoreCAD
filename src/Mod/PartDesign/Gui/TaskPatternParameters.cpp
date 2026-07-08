@@ -213,10 +213,10 @@ void TaskPatternParameters::updateUI()
 
 void TaskPatternParameters::showOriginAxes(bool show)
 {
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-    if (body) {
+    // The frame is the shared document Origin (Cruth §11 step 5e) — reach it directly.
+    App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
+    if (origin) {
         try {
-            App::Origin* origin = body->getOrigin();
             auto vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
                 Gui::Application::Instance->getViewProvider(origin)
             );

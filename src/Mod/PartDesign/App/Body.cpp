@@ -24,10 +24,12 @@
  ***************************************************************************/
 
 
+#include <algorithm>
 #include <array>
 
 #include <map>
 
+#include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 
 #include <App/Application.h>
@@ -219,12 +221,96 @@ bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodi
     return true;
 }
 
-// Return the solid sub-shape whose component-id matches, or a null shape if none.
-Part::TopoShape extractSolidById(const Part::TopoShape& shape, const std::string& cid)
+// Encode a provenance root-set as one deterministic, reversible string for the TipComponentId
+// slot. Each root is length-prefixed ("<n>#<root>"), so a root containing any delimiter character
+// cannot corrupt the join; the set is already sorted (std::set), so the encoding is order-
+// independent and stable across recompute. Reversed by parseProvenance (the piece-3 matcher).
+std::string serializeProvenance(const std::set<std::string>& roots)
+{
+    std::string out;
+    for (const auto& root : roots) {
+        out += std::to_string(root.size());
+        out += '#';
+        out += root;
+    }
+    return out;
+}
+
+// Reverse of serializeProvenance. Returns an empty set on any string that is not this format
+// (e.g. a pattern's face-name instance-selector, or the empty whole-shape id) so a non-provenance
+// component-id is simply treated as "no stored ancestry to match" rather than mis-parsed.
+std::set<std::string> parseProvenance(const std::string& encoded)
+{
+    std::set<std::string> roots;
+    std::size_t pos = 0;
+    while (pos < encoded.size()) {
+        const std::size_t hash = encoded.find('#', pos);
+        if (hash == std::string::npos || hash == pos) {
+            return {};  // not our length-prefixed format
+        }
+        std::size_t len = 0;
+        for (std::size_t k = pos; k < hash; ++k) {
+            if (encoded[k] < '0' || encoded[k] > '9') {
+                return {};
+            }
+            len = len * 10 + static_cast<std::size_t>(encoded[k] - '0');
+        }
+        if (hash + 1 + len > encoded.size()) {
+            return {};  // truncated / not our format
+        }
+        roots.insert(encoded.substr(hash + 1, len));
+        pos = hash + 1 + len;
+    }
+    return roots;
+}
+
+// True iff two sorted root-sets share at least one root. Used for MATERIAL descent (did this solid
+// grow from this donor at all), not for identity matching.
+bool provenanceOverlaps(const std::set<std::string>& a, const std::set<std::string>& b)
+{
+    if (a.empty() || b.empty()) {
+        return false;
+    }
+    auto ia = a.begin();
+    auto ib = b.begin();
+    while (ia != a.end() && ib != b.end()) {
+        if (*ia < *ib) {
+            ++ia;
+        }
+        else if (*ib < *ia) {
+            ++ib;
+        }
+        else {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True iff every root of @p sub is present in @p sup (sub ⊆ sup). This — not mere overlap — is the
+// identity match: a Body CONTINUES onto the one solid that holds ALL its provenance (§4.3 "one
+// solid holds all of it"). Severed halves share base-bar roots, so overlap alone would match a half
+// to both solids; requiring the whole set distinguishes them by each half's own distinct roots.
+bool isProvenanceSubset(const std::set<std::string>& sub, const std::set<std::string>& sup)
+{
+    if (sub.empty()) {
+        return false;  // no ancestry to match — never continues (fail-safe)
+    }
+    return std::includes(sup.begin(), sup.end(), sub.begin(), sub.end());
+}
+
+// Return the solid sub-shape whose component key matches, or a null shape if none. The key is
+// resolved via Body::componentKeyOfSolid, so it matches whatever the reconciler stamped —
+// native-ancestry provenance for a built-geometry Tip, the instance-selector for a pattern.
+Part::TopoShape extractSolidById(
+    const App::DocumentObject* tipFeature,
+    const Part::TopoShape& shape,
+    const std::string& cid
+)
 {
     const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
     for (int i = 1; i <= count; ++i) {
-        if (Body::componentIdOfSolid(shape, i) == cid) {
+        if (Body::componentKeyOfSolid(tipFeature, shape, i) == cid) {
             return shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true);
         }
     }
@@ -237,7 +323,6 @@ bool g_reconciling = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-
 
 Body::Body()
 {
-    ADD_PROPERTY_TYPE(AllowCompound, (true), "Base", App::Prop_None, "Allow multiple solids in Body");
     ADD_PROPERTY_TYPE(
         Color,
         (paletteColorFor(0)),
@@ -285,18 +370,50 @@ Body* Body::spawnAutoBody(App::Document* doc)
         return nullptr;
     }
 
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Mod/PartDesign"
-    );
-    const bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
+    // Fail early, before creating anything: a Body requires the document's shared world frame,
+    // and it must never mint one. Checking here means an attempt to spawn into a non-CAD
+    // document throws with no side effect, instead of leaving a half-created Body behind when
+    // the setupObject backstop trips after addObject has already registered the object.
+    requireDocumentOrigin(doc);
 
     auto name = doc->getUniqueObjectName("Body");
     auto* body = freecad_cast<Body*>(doc->addObject("PartDesign::Body", name.c_str()));
-    if (body) {
-        // Color is assigned by setupObject() from the per-document palette index.
-        body->AllowCompound.setValue(allowCompound);
-    }
+    // Color is assigned by setupObject() from the per-document palette index.
     return body;
+}
+
+Body* Body::moveFeatureToBody(App::DocumentObject* feature, Body* target)
+{
+    if (!feature) {
+        return nullptr;
+    }
+
+    Body* from = findBodyOf(feature);
+    if (target && from == target) {
+        return target;  // already there — nothing to do
+    }
+
+    App::Document* doc = feature->getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+
+    // Detach first. removeFeature heals the source chain and, if this was the source
+    // Body's last feature, retires it (§4.7) — never touch `from` after this call.
+    if (from) {
+        from->removeFeature(feature);
+    }
+
+    // Null target = the "Merge result off" case: the feature starts a fresh Body (§4.6).
+    if (!target) {
+        target = spawnAutoBody(doc);
+        if (!target) {
+            return nullptr;
+        }
+    }
+
+    target->addFeature(feature);
+    return target;
 }
 
 Body* Body::breakOutInstance(Body* instanceBody)
@@ -391,6 +508,61 @@ std::string Body::componentIdOfSolid(const Part::TopoShape& shape, int index)
     return std::string("Solid") + std::to_string(index);
 }
 
+std::set<std::string> Body::provenanceOfSolid(const Part::TopoShape& solid)
+{
+    std::set<std::string> roots;
+    if (solid.isNull()) {
+        return roots;
+    }
+    // Each face carries an element-map name that records what it grew from. One history hop
+    // (getElementHistory) yields the SOURCE object's tag and the ORIGINAL element token there —
+    // for a sketch-consuming feature that is the sketch geometry itself (the stable root); for a
+    // solid-consuming feature it is the intermediate feature's face (still a stable, recompute-
+    // invariant key, just shallower — the recursive walk to the ultimate sketch root is the
+    // documented follow-on). The (tag, token) pair is the root key; a bare token would collide
+    // across sources (two sketches both start at "g1"), so the tag is required.
+    const auto faceCount = static_cast<int>(solid.countSubShapes(TopAbs_FACE));
+    for (int f = 1; f <= faceCount; ++f) {
+        const Data::MappedName mapped = solid.getMappedName(Data::IndexedName("Face", f));
+        if (mapped.empty()) {
+            continue;
+        }
+        Data::MappedName original;
+        const long tag = solid.getElementHistory(mapped, &original);
+        if (tag == 0 && original.empty()) {
+            continue;
+        }
+        roots.insert(std::to_string(tag) + ":" + original.toString());
+    }
+    return roots;
+}
+
+std::string Body::componentKeyOfSolid(
+    const App::DocumentObject* tipFeature,
+    const Part::TopoShape& shape,
+    int index
+)
+{
+    // §4.5: pattern/mirror copies all grow from one seed, so their provenance is identical —
+    // lineage cannot tell them apart. They keep the element-map-name instance-selector. Built
+    // geometry (Pad/Pocket/sever) uses the native-ancestry provenance (§4.3), which is stable
+    // across recompute where a bare face name drifts. The face name is also the fallback when
+    // provenance is unavailable (an import or baked shape has no element history), so extraction
+    // still resolves.
+    const bool isPattern = freecad_cast<PartDesign::Transformed*>(
+                               const_cast<App::DocumentObject*>(tipFeature)
+                           )
+        != nullptr;
+    if (!isPattern) {
+        const Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
+        const std::set<std::string> prov = provenanceOfSolid(solid);
+        if (!prov.empty()) {
+            return serializeProvenance(prov);
+        }
+    }
+    return componentIdOfSolid(shape, index);
+}
+
 void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)
 {
     if (!doc || g_reconciling) {
@@ -429,20 +601,23 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
         if (shape.isNull()) {
             continue;
         }
-        const auto componentCount = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+        const auto solidCount = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+        if (solidCount == 0) {
+            // A non-null shape with no solid is a degenerate/empty compute, not a topology
+            // decision; leave identity untouched rather than delete a Body on a transient state.
+            continue;
+        }
 
-        if (componentCount <= 1) {
-            // Collapse to a single component (Cruth §4.7 retire-on-shrink): the Tip now
-            // has one solid, so one Body survives carrying the whole shape and any extra
-            // Bodies are retired. A marker owns nothing, so removing it breaks no refs;
-            // downstream breakage, if any, surfaces honestly at the feature graph (P7).
+        // Cruth Amendment 3 §3.3 — a stored body UUID is re-acquired across a recompute FAIL-SAFE:
+        // ONLY when the match is decidable WITHOUT geometric resemblance. The TRIVIAL 1:1 is the
+        // cheapest such case — exactly one prior Body naming this Tip and exactly one solid, so the
+        // mapping is unambiguous with nothing to match. That Body keeps its UUID (Clause 3.1:
+        // identity survives recompute and parameter edits, however far the geometry moved). The
+        // multi-output cases are matched by native ancestry just below (§4.3).
+        if (bodies.size() == 1 && solidCount == 1) {
             Body* survivor = bodies.front();
-            const bool hadExtras = bodies.size() > 1;
-            const bool staleCid = !survivor->TipComponentId.getStrValue().empty();
-            for (std::size_t i = 1; i < bodies.size(); ++i) {
-                doc->removeObject(bodies[i]->getNameInDocument());
-            }
-            if (hadExtras || staleCid) {
+            // One solid = the whole shape; its component-id handle is the implicit empty case.
+            if (!survivor->TipComponentId.getStrValue().empty()) {
                 survivor->TipComponentId.setValue("");
                 survivor->recomputeFeature();
                 survivor->purgeTouched();
@@ -450,61 +625,153 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             continue;
         }
 
-        // Multi-output: ensure one Body per component, each stamped with its id.
-        std::vector<std::string> ids;
-        ids.reserve(componentCount);
-        for (int i = 1; i <= componentCount; ++i) {
-            ids.push_back(componentIdOfSolid(shape, i));
+        // Cruth Amendment 3 §4.3 NATIVE-ANCESTRY MATCH (built geometry only). A recomputed solid
+        // re-links to a prior Body when their stored PROVENANCE overlaps — the match key, never
+        // geometry. Descendant-counting (§13 row 1) decides the event: a Body overlapping exactly
+        // one solid, that solid overlapping exactly one Body, CONTINUES (keeps its UUID); a Body
+        // whose provenance is spread across >=2 solids is a SPLIT; >=2 Bodies into one solid a
+        // UNION; the remainder are new / retire. On continue nothing but the stored provenance is
+        // refreshed. Everything else is a §4.7 topology event: the Body retires (UUID dies) and a
+        // fresh Body is minted per unclaimed solid, its inbound refs surfacing at the feature graph
+        // (P7), never silently re-bound. §4.5 pattern copies share provenance (lineage cannot tell
+        // them apart), so a pattern Tip skips the match and every prior Body retires — the floor,
+        // unchanged; their identity is the instance-selector, a separate concern (#34).
+        const bool isPattern = freecad_cast<PartDesign::Transformed*>(feature) != nullptr;
+
+        std::vector<std::set<std::string>> solidProv(static_cast<std::size_t>(solidCount));
+        for (int i = 1; i <= solidCount; ++i) {
+            solidProv[static_cast<std::size_t>(i - 1)] = provenanceOfSolid(
+                shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true)
+            );
         }
 
-        // Keep Bodies already pointing at a still-present component; the rest are
-        // free to be re-stamped (covers the first multi-output recompute, where the
-        // originating Body still carries the empty single-component id).
-        std::set<std::string> claimed;
-        std::vector<Body*> freeBodies;
-        for (auto* body : bodies) {
-            const std::string cid = body->TipComponentId.getStrValue();
-            if (!cid.empty() && claimed.count(cid) == 0
-                && std::find(ids.begin(), ids.end(), cid) != ids.end()) {
-                claimed.insert(cid);
+        std::vector<Body*> solidOwner(static_cast<std::size_t>(solidCount), nullptr);
+        std::vector<bool> continues(bodies.size(), false);
+
+        if (!isPattern) {
+            // supCount[b] = how many solids hold ALL of Body b's provenance (subset match);
+            // supIndex[b] = that solid when exactly one. subCount[s] = how many Bodies solid s
+            // holds entirely — >=2 marks a UNION target. A clean CONTINUE is the mutual-unique
+            // case: exactly one solid holds the Body, and that solid holds exactly one Body.
+            std::vector<int> supCount(bodies.size(), 0);
+            std::vector<int> supIndex(bodies.size(), -1);
+            std::vector<int> subCount(static_cast<std::size_t>(solidCount), 0);
+            for (std::size_t b = 0; b < bodies.size(); ++b) {
+                const std::set<std::string> prov = parseProvenance(
+                    bodies[b]->TipComponentId.getStrValue()
+                );
+                for (std::size_t s = 0; s < solidProv.size(); ++s) {
+                    if (isProvenanceSubset(prov, solidProv[s])) {
+                        ++supCount[b];
+                        supIndex[b] = static_cast<int>(s);
+                        ++subCount[s];
+                    }
+                }
             }
-            else {
-                freeBodies.push_back(body);
+            for (std::size_t b = 0; b < bodies.size(); ++b) {
+                if (supCount[b] != 1) {
+                    continue;  // 0 = split / no-match; >=2 = ambiguous — both fall through to retire
+                }
+                const auto s = static_cast<std::size_t>(supIndex[b]);
+                if (subCount[s] == 1 && !solidOwner[s]) {  // subCount>=2 would be a union
+                    continues[b] = true;
+                    solidOwner[s] = bodies[b];
+                    const std::string key = serializeProvenance(solidProv[s]);
+                    if (bodies[b]->TipComponentId.getStrValue() != key) {
+                        bodies[b]->TipComponentId.setValue(key);
+                    }
+                }
             }
+        }
+
+        // Snapshot each retiring Body's material + provenance BEFORE removal, so a fresh solid can
+        // inherit material from the retired Body it descends from (§4.3: describe-the-part
+        // inherits). A former single-solid Body has empty provenance and is a whole-shape donor
+        // (e.g. the one bar a sever splits — both halves are its steel).
+        struct Donor
+        {
+            Materials::Material mat;
+            std::set<std::string> prov;
+            bool wholeShape;
+        };
+        std::vector<Donor> donors;
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!continues[b]) {
+                const std::set<std::string> prov = parseProvenance(
+                    bodies[b]->TipComponentId.getStrValue()
+                );
+                donors.push_back({bodies[b]->ShapeMaterial.getValue(), prov, prov.empty()});
+            }
+        }
+
+        // Warn only when a retired body was actually referenced by something. Retiring a body
+        // whose identity nobody pointed at (the routine split/merge case) is silent bookkeeping,
+        // not a user-actionable event — the message's whole purpose is "re-pick your references".
+        bool anyReferencedRetire = false;
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!continues[b] && !bodies[b]->getInList().empty()) {
+                anyReferencedRetire = true;
+                break;
+            }
+        }
+        if (anyReferencedRetire) {
+            Base::Console().warning(
+                "Cruth Amendment 3 §4.3: feature '%s' changed body topology; identities that could "
+                "not be matched by ancestry were reset. Re-pick any references to the retired "
+                "bodies.\n",
+                feature->getNameInDocument()
+            );
         }
 
         App::DocumentObject* group = App::GeoFeatureGroupExtension::getGroupOfObject(bodies.front());
-        for (const std::string& cid : ids) {
-            if (claimed.count(cid) != 0) {
-                continue;
+
+        // Retire every prior Body that did not continue. A marker owns nothing, so removal breaks
+        // no property refs (P7 surfaces any dangling inbound link at the feature graph).
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!continues[b]) {
+                doc->removeObject(bodies[b]->getNameInDocument());
             }
-            Body* body = nullptr;
-            if (!freeBodies.empty()) {
-                body = freeBodies.back();
-                freeBodies.pop_back();
-            }
-            else {
-                body = Body::spawnAutoBody(doc);
-                if (!body) {
-                    continue;
-                }
-                body->Tip.setValue(feature);
-                if (group) {
-                    group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(body);
-                }
-            }
-            body->TipComponentId.setValue(cid);
-            claimed.insert(cid);
         }
 
-        // Retire orphaned markers: any freeBodies left after the assign loop carry a
-        // component-id that has vanished from the Tip (e.g. a pattern instance was
-        // skipped, N->N-1). A marker owns nothing, so removal is the exact inverse of
-        // auto-spawn and always safe (Cruth §4.7).
-        for (auto* orphan : freeBodies) {
-            doc->removeObject(orphan->getNameInDocument());
+        // Spawn a fresh Body per unclaimed solid — split children, union results, new components.
+        // Identity resets (fresh name/UUID/colour via spawnAutoBody+setupObject, fresh component-id
+        // here); material inherits only when the donors for this solid agree on one.
+        const bool multiSolid = solidCount > 1;
+        for (std::size_t s = 0; s < solidProv.size(); ++s) {
+            if (solidOwner[s]) {
+                continue;
+            }
+            Body* body = Body::spawnAutoBody(doc);
+            if (!body) {
+                continue;
+            }
+            body->Tip.setValue(feature);
+            if (group) {
+                group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(body);
+            }
+            body->TipComponentId.setValue(
+                multiSolid ? componentKeyOfSolid(feature, shape, static_cast<int>(s) + 1) : ""
+            );
+
+            bool haveMat = false;
+            bool consistent = true;
+            Materials::Material mat;
+            for (const Donor& d : donors) {
+                if (d.wholeShape || provenanceOverlaps(d.prov, solidProv[s])) {
+                    if (!haveMat) {
+                        mat = d.mat;
+                        haveMat = true;
+                    }
+                    else if (d.mat.getUUID() != mat.getUUID()) {
+                        consistent = false;
+                        break;
+                    }
+                }
+            }
+            if (haveMat && consistent) {
+                body->ShapeMaterial.setValue(mat);
+            }
         }
-        freeBodies.clear();
 
         // Re-extract each Body's component shape under its (possibly new) id. Re-query
         // so freshly spawned Bodies — not in the original `bodies` list — recompute too.
@@ -728,28 +995,88 @@ bool Body::isAllowed(const App::DocumentObject* obj)
 }
 
 
-Body* Body::findBodyOf(const App::DocumentObject* feature)
+std::vector<Body*> Body::bodiesOf(const App::DocumentObject* feature)
 {
-    if (!feature) {
-        return nullptr;
-    }
-
-    // CPART_DESIGN §9.1 derived primitive (bodyNaming). This is a reverse lookup, not an
-    // ownership read: a Body only ever points one way, at the Tip it marks. Asking "which
-    // Body is this feature under" means walking the BaseFeature chain forward from the
-    // feature and stopping at the FIRST feature that is some Body's Tip — the nearest
-    // downstream marker. That marker is the answer. The result is a derived view of the
-    // current graph (single only because chains are linear today), never an attribute the
-    // feature carries: nothing feature->Body is stored. The answer is memoised on the
-    // feature's transient _Body link (Prop_Output, so writing it neither dirties the
-    // feature nor triggers recompute; Prop_Transient, so it is never serialised —
-    // CPART_DESIGN §9 / §8.2). De-owned features (ARCHITECTURE §3.2/§3.3) sit in no Group,
-    // so this forward walk — not hasObject() — is the source of truth.
+    // Cruth ownership-query contract — the honest, N-valued reverse lookup. This is a
+    // reverse lookup, not an ownership read: a Body only ever points one way, at the Tip it
+    // marks. Asking "which Bodies is this feature under" means walking the BaseFeature chain
+    // forward from the feature and stopping at the FIRST feature that is some Body's Tip —
+    // the nearest downstream marker — then returning EVERY Body naming that Tip. Under
+    // de-ownership a single Tip feature can back several Bodies at once, one per output
+    // component of a pattern or a severed solid (§4.7), told apart by TipComponentId. The
+    // result is a derived view of the current graph, never an attribute the feature carries:
+    // nothing feature->Body is stored. De-owned features (ARCHITECTURE §3.2/§3.3) sit in no
+    // Group, so this forward walk — not hasObject() — is the source of truth.
     //
     // Stopping at the FIRST downstream Tip (not the chain terminal) is what keeps a
     // cross-body seam correct: where Body B's chain bases on Body A's Tip (via a
     // FeatureBase), A's upstream features must resolve to A — they would otherwise be
     // dragged across the seam to B's Tip at the terminal of the merged chain.
+    std::vector<Body*> result;
+    if (!feature) {
+        return result;
+    }
+
+    if (!feature->isDerivedFrom<PartDesign::Feature>()) {
+        // Non-PartDesign objects (and any feature still sitting in a legacy Group) never
+        // back multiple Bodies: defer to the old Group-scan lookup and wrap its 0-or-1
+        // answer as a list.
+        if (auto* body = static_cast<Body*>(BodyBase::findBodyOf(feature))) {
+            result.push_back(body);
+        }
+        return result;
+    }
+
+    App::Document* doc = feature->getDocument();
+    if (!doc) {
+        return result;
+    }
+    const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
+    const auto bodies = doc->getObjectsOfType(Body::getClassTypeId());
+
+    // Walk forward, collecting every Body whose Tip is the current feature — the nearest
+    // downstream marker — before advancing. The seen-set guards against a malformed cyclic
+    // chain.
+    App::DocumentObject* cursor = const_cast<App::DocumentObject*>(feature);
+    std::set<const App::DocumentObject*> seen;
+    while (cursor && seen.insert(cursor).second) {
+        for (auto* it : bodies) {
+            auto* body = static_cast<Body*>(it);
+            if (body->Tip.getValue() == cursor) {
+                result.push_back(body);
+            }
+        }
+        if (!result.empty()) {
+            return result;  // nearest downstream Tip reached — do not walk past it
+        }
+        App::DocumentObject* next = nullptr;
+        for (auto* obj : pdFeats) {
+            if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == cursor) {
+                next = obj;
+                break;
+            }
+        }
+        cursor = next;
+    }
+    return result;
+}
+
+Body* Body::findBodyOf(const App::DocumentObject* feature)
+{
+    // CPART_DESIGN §9.1 scalar convenience over the N-valued bodiesOf primitive. Returns the
+    // nearest downstream marker; when several Bodies share that Tip (a multi-output feature)
+    // it returns the FIRST — callers that must disambiguate use bodyOf(feature, subElement),
+    // which fails loud rather than guessing (Cruth ownership-query contract, P7). Kept
+    // best-effort (not fail-loud) here so the ~40 pre-sweep callers keep their current
+    // behaviour; the #7 sweep moves the ones that mean "the one Body" onto bodyOf.
+    //
+    // The answer is memoised on the feature's transient _Body link (Prop_Output, so writing
+    // it neither dirties the feature nor triggers recompute; Prop_Transient, so it is never
+    // serialised — CPART_DESIGN §9 / §8.2).
+    if (!feature) {
+        return nullptr;
+    }
+
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         auto* pdFeat = const_cast<PartDesign::Feature*>(
             static_cast<const PartDesign::Feature*>(feature)
@@ -760,32 +1087,10 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
             return cached;
         }
 
-        if (App::Document* doc = feature->getDocument()) {
-            const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
-            const auto bodies = doc->getObjectsOfType(Body::getClassTypeId());
-
-            // Walk forward, testing whether each feature is some Body's Tip — i.e. the
-            // nearest downstream marker — before advancing. The seen-set guards against a
-            // malformed cyclic chain.
-            App::DocumentObject* cursor = pdFeat;
-            std::set<const App::DocumentObject*> seen;
-            while (cursor && seen.insert(cursor).second) {
-                for (auto* it : bodies) {
-                    auto* body = static_cast<Body*>(it);
-                    if (body->Tip.getValue() == cursor) {
-                        pdFeat->_Body.setValue(body);
-                        return body;
-                    }
-                }
-                App::DocumentObject* next = nullptr;
-                for (auto* obj : pdFeats) {
-                    if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == cursor) {
-                        next = obj;
-                        break;
-                    }
-                }
-                cursor = next;
-            }
+        const std::vector<Body*> found = bodiesOf(feature);
+        if (!found.empty()) {
+            pdFeat->_Body.setValue(found.front());
+            return found.front();
         }
     }
 
@@ -793,6 +1098,122 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
     // Group): the old Group-scan lookup. The derived chain walk above has already handled
     // every PartDesign::Feature case.
     return static_cast<Body*>(BodyBase::findBodyOf(feature));
+}
+
+bool Body::backsBody(const App::DocumentObject* feature, const Body* body)
+{
+    // CPART_DESIGN §9 honest membership over the N-valued bodiesOf primitive. `body` counts as
+    // backed when it is among EVERY Body the feature backs, not just the first marker that a
+    // scalar findBodyOf would report. Ownership stays derived — this reads the graph and holds
+    // no stored feature→Body link (Cruth ownership-query invariant).
+    if (!feature || !body) {
+        return false;
+    }
+    const std::vector<Body*> bodies = bodiesOf(feature);
+    return std::find(bodies.begin(), bodies.end(), body) != bodies.end();
+}
+
+bool Body::inAnyBody(const App::DocumentObject* feature)
+{
+    // Honest membership: the yes/no that call sites really wanted when they tested the
+    // truthiness of a scalar findBodyOf. Non-empty bodiesOf ⇔ the feature reaches some Body.
+    // Derived over the graph, no stored feature→Body link (Cruth ownership-query invariant).
+    return feature && !bodiesOf(feature).empty();
+}
+
+bool Body::sameBody(const App::DocumentObject* a, const App::DocumentObject* b)
+{
+    // Honest same-body test: true iff the two feature→Body sets overlap. Comparing the sets
+    // directly avoids the straddle coin-flip of picking one feature's scalar Body and testing
+    // the other against it. Derived over bodiesOf, no stored link (ownership-query invariant).
+    if (!a || !b) {
+        return false;
+    }
+    const std::vector<Body*> ba = bodiesOf(a);
+    const std::vector<Body*> bb = bodiesOf(b);
+    return std::any_of(ba.begin(), ba.end(), [&bb](Body* body) {
+        return std::find(bb.begin(), bb.end(), body) != bb.end();
+    });
+}
+
+std::string Body::componentIdOfSub(const App::DocumentObject* feature, const char* subElement)
+{
+    // Discriminator half of bodyOf: turn a picked sub-element (e.g. "Face5") into the
+    // component-id of the solid that owns it. Empty on any miss — a missing/blank name, a
+    // non-shape feature, an unresolvable element, or a sub-element owned by no solid — so
+    // the caller falls through to its fail-loud path rather than matching the wrong Body.
+    if (!subElement || subElement[0] == '\0') {
+        return {};
+    }
+    auto* geo = freecad_cast<Part::Feature*>(const_cast<App::DocumentObject*>(feature));
+    if (!geo) {
+        return {};
+    }
+    const Part::TopoShape shape = geo->Shape.getShape();
+    if (shape.isNull()) {
+        return {};
+    }
+
+    TopoDS_Shape sub;
+    try {
+        sub = shape.getSubShape(subElement, /*silent*/ true);
+    }
+    catch (const Standard_Failure&) {
+        return {};
+    }
+    if (sub.IsNull()) {
+        return {};
+    }
+
+    // A picked face/edge/vertex resolves to its owning solid via the ancestor map. A picked
+    // solid has no solid ancestor, so match it against the shape's own solids by identity.
+    if (sub.ShapeType() == TopAbs_SOLID) {
+        const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+        for (int i = 1; i <= count; ++i) {
+            if (shape.getSubShape(TopAbs_SOLID, i, /*silent*/ true).IsSame(sub)) {
+                return componentKeyOfSolid(feature, shape, i);
+            }
+        }
+        return {};
+    }
+
+    const std::vector<int> solids = shape.findAncestors(sub, TopAbs_SOLID);
+    if (solids.empty()) {
+        return {};
+    }
+    return componentKeyOfSolid(feature, shape, solids.front());
+}
+
+Body* Body::bodyOf(const App::DocumentObject* feature, const char* subElement)
+{
+    // Cruth ownership-query contract, P7 fail-loud. One candidate → the sub-element is
+    // irrelevant, return it. Several candidates (a multi-output Tip) → the picked
+    // sub-element names the component; match the Body carrying that component-id. Asking for
+    // "the" Body of a multi-output feature with NO usable sub-element is ambiguous and
+    // THROWS rather than silently guessing a Body.
+    const std::vector<Body*> bodies = bodiesOf(feature);
+    if (bodies.empty()) {
+        return nullptr;
+    }
+    if (bodies.size() == 1) {
+        return bodies.front();
+    }
+
+    const std::string cid = componentIdOfSub(feature, subElement);
+    if (cid.empty()) {
+        throw Base::RuntimeError(
+            "This feature backs several bodies; a picked sub-element is required to say "
+            "which one is meant."
+        );
+    }
+    for (auto* body : bodies) {
+        if (body->TipComponentId.getStrValue() == cid) {
+            return body;
+        }
+    }
+    throw Base::RuntimeError(
+        "The picked sub-element does not match any of the bodies this feature backs."
+    );
 }
 
 
@@ -814,12 +1235,15 @@ std::vector<App::DocumentObject*> Body::getFullModel()
         return rv;
     }
 
-    // 1) Solid chain, Tip → base, including only members (findBodyOf == this); the membership
-    //    test is what halts the walk at a seam. Reversed afterwards to give build order.
+    // 1) Solid chain, Tip → base, including only members (backsBody(cursor, this)); the
+    //    membership test is what halts the walk at a seam. backsBody, not the scalar
+    //    findBodyOf: a multi-output straddler backs several Bodies at once, and first-match
+    //    could report a sibling Body and truncate this Body's model at the seam. Reversed
+    //    afterwards to give build order.
     std::set<App::DocumentObject*> seen;
     for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
         auto* pd = freecad_cast<PartDesign::Feature*>(cursor);
-        if (!pd || findBodyOf(cursor) != this) {
+        if (!pd || !backsBody(cursor, this)) {
             break;  // non-PartDesign terminal, or crossed the seam into another Body
         }
         rv.push_back(cursor);
@@ -889,7 +1313,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     // document-level Origin, not this Body's own (now-dormant) per-body Origin. In the
     // de-ownership model the coordinate frame is shared at document level (Day-5 design;
     // ARCHITECTURE §3.3), so all bodies' features anchor to one Origin.
-    relinkFeatureToOrigin(feature, ensureDocumentOrigin());
+    relinkFeatureToOrigin(feature, getDocumentOrigin());
 
     // Associate the feature with this Body by reference (used by findBodyOf and
     // active-body tooling) without imprisoning it in the group.
@@ -901,6 +1325,15 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         // Splice the new solid into the chain at the Tip: its base is the old Tip,
         // and the Body now propagates the new feature.
         App::DocumentObject* prevTip = Tip.getValue();
+
+        // Clear any BaseFeature the caller pre-set on the incoming feature before we
+        // scan for prevTip's successor (Cruth #18). addFeature owns the chain wiring;
+        // if the feature already pointed at prevTip, the successor scan below would
+        // return the new feature itself and the reroute would set
+        // feature.BaseFeature = feature — a self-cycle that fails recompute with "The
+        // graph must be a DAG". Clearing first also lets the scan find the *genuine*
+        // mid-chain successor instead of the pre-wired feature.
+        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(nullptr);
 
         // Capture the insert point's existing chain successor BEFORE rewiring.
         // When the Tip is not the last feature (mid-chain insert), the new feature
@@ -977,7 +1410,7 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
     }
 
     // Resolve origin/datum links against the shared document-level Origin (Stage 3a).
-    relinkFeatureToOrigin(feature, ensureDocumentOrigin());
+    relinkFeatureToOrigin(feature, getDocumentOrigin());
 
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
@@ -1096,9 +1529,31 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
         }
     }
 
-    // Retreat the Tip if it pointed at the removed feature.
-    if (Tip.getValue() == feature) {
-        Tip.setValue(prevSolidFeature ? prevSolidFeature : nextSolidFeature);
+    // Retreat the Tip of EVERY Body tipped by the removed feature — not only this one.
+    // A splitter (e.g. a Pocket that severs a solid) is the Tip of ALL the halves it
+    // produced, so deleting it is a forward §4.7 topology event (a merge) that touches
+    // every one of them. Retreat each onto the removed feature's base; when the feature
+    // backed more than one Body, mark that base for recompute so reconcileMultiOutput runs
+    // the §4.3 union — it retires the now-surplus split-children (identities reset; inbound
+    // refs fail loud per P7) and mints one fresh Body for the merged solid. Undo, the reverse
+    // edit, is what restores the originals; a forward delete never silently re-owns the merge.
+    App::DocumentObject* const retreatTo = prevSolidFeature ? prevSolidFeature : nextSolidFeature;
+    App::Document* doc = getDocument();
+    std::size_t tippedByFeature = 0;
+    if (doc) {
+        for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
+            auto* sibling = static_cast<Body*>(obj);
+            if (sibling->Tip.getValue() == feature) {
+                ++tippedByFeature;
+                sibling->Tip.setValue(retreatTo);
+            }
+        }
+    }
+    if (tippedByFeature > 1 && retreatTo) {
+        // Force the merged base into the next recompute's signalRecomputed set — the
+        // reconciler keys off that list, and nothing downstream touches the base (the
+        // deleted feature was the Tip, so it had no successor to propagate a touch).
+        retreatTo->touch();
     }
 
     std::vector<App::DocumentObject*> result = {feature};
@@ -1115,7 +1570,6 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
     // this MUST be the last action: copy what we need into locals and touch no member
     // of `this` afterward.
     if (Tip.getValue() == nullptr) {
-        App::Document* doc = getDocument();
         const char* name = getNameInDocument();
         if (doc && name) {
             const std::string bodyName = name;
@@ -1173,15 +1627,24 @@ App::DocumentObjectExecReturn* Body::execute()
 
         // Cruth §3.3: a multi-output Body represents one component of its Tip's
         // shape, named by TipComponentId. Empty id = the implicit single-component
-        // case (propagate the whole shape). A set id that no longer resolves is an
-        // honest failure (P7), not a silent fall-back to the whole shape.
+        // case (propagate the whole shape). It is never a silent fall-back to the
+        // whole shape — that would show wrong geometry.
+        //
+        // A set id that no longer resolves is NOT an execute-level failure. Per
+        // ARCHITECTURE §4.6/§4.7 a Body whose Tip stops yielding its component is
+        // simply *retired* — lifecycle owned by the reconciler (reconcileMultiOutput,
+        // which runs on signalRecomputed after every recompute), not by execute. The
+        // P7 fail-loud belongs to anything that still *references* the retired Body
+        // (assembly/drawing/BOM), which surfaces at those consumers, not here. So a
+        // component miss means either (a) this Body is about to be retired this same
+        // pass, or (b) it is the §4.3 "Vanish deferred" case (a transient empty/failed
+        // compute the reconciler keeps): in both, leave the last-good Shape untouched
+        // and return normally rather than logging a spurious error every edit.
         const std::string cid = TipComponentId.getStrValue();
         if (!cid.empty()) {
-            Part::TopoShape component = extractSolidById(tipShape, cid);
+            Part::TopoShape component = extractSolidById(tip, tipShape, cid);
             if (component.isNull()) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Tip component for this Body no longer exists")
-                );
+                return App::DocumentObject::StdReturn;
             }
             // A pattern stores each instance's offset in the solid's placement, not
             // its geometry. Bake that placement into the geometry (an identity
@@ -1234,7 +1697,7 @@ void Body::onChanged(const App::Property* prop)
                     break;
                 }
                 App::DocumentObject* base = pd->BaseFeature.getValue();
-                if (!base || findBodyOf(base) != this) {
+                if (!base || !backsBody(base, this)) {
                     first = cursor;  // earliest member of this Body's chain
                     break;
                 }
@@ -1277,14 +1740,6 @@ void Body::onChanged(const App::Property* prop)
                 Placement.setValue(identity);
             }
         }
-        else if (prop == &AllowCompound) {
-            // As disallowing compounds can break the model we need to recompute the whole tree.
-            // This will inform user about first place where there is more than one solid.
-            // On allowing compounds we must also recompute the entire feature tree
-            for (auto feature : getFullModel()) {
-                feature->enforceRecompute();
-            }
-        }
         else if (prop == &ShapeMaterial) {
             // Derived membership (§9.1-inverse): Group is empty under de-ownership, so push
             // the Body material onto its features via the derived list, not the container.
@@ -1306,9 +1761,8 @@ void Body::onChanged(const App::Property* prop)
     Part::BodyBase::onChanged(prop);
 }
 
-App::Origin* Body::ensureDocumentOrigin()
+App::Origin* Body::findDocumentOrigin(App::Document* doc)
 {
-    App::Document* doc = getDocument();
     if (!doc) {
         return nullptr;
     }
@@ -1336,11 +1790,26 @@ App::Origin* Body::ensureDocumentOrigin()
         }
     }
 
-    // None yet — create it. It carries the world-frame datum planes/axes and is linked
-    // only by the features that reference it, never owned by a body.
-    auto* shared = doc->addObject<App::Origin>("Origin");
-    shared->Label.setValue("Origin");
-    return shared;
+    return nullptr;
+}
+
+App::Origin* Body::requireDocumentOrigin(App::Document* doc)
+{
+    if (App::Origin* origin = findDocumentOrigin(doc)) {
+        return origin;
+    }
+
+    // No shared world frame in this document — a Body only ever LOOKS the frame up; it must
+    // never mint one. Under the document-owned world-frame contract (ARCHITECTURE_AMENDMENTS
+    // Amendment 2, GitHub #19) a CAD (Part) document mints its App::Origin at creation
+    // (App.newDocument(type='Part')). Reaching here means a Body was created in a document
+    // that has no world frame — a call-site error, not a recoverable state, so fail loudly
+    // rather than lazily bootstrapping the coordinate system off the body.
+    throw Base::RuntimeError(
+        "PartDesign Body requires a document-level world frame (App::Origin), but the "
+        "document has none. Create the Body in a Part document "
+        "(App.newDocument(type='Part')); a Body must not create the coordinate frame."
+    );
 }
 
 void Body::setupObject()
@@ -1348,12 +1817,13 @@ void Body::setupObject()
     Part::BodyBase::setupObject();
 
     // Cruth shared-Origin contract (GitHub #4) / §11 step 5e: a PartDesign Body does NOT own
-    // a private coordinate frame. The world frame is shared at document level (ARCHITECTURE
-    // §3.3) — every Body's features anchor to one free-standing App::Origin. With the
-    // OriginGroup extension retired the Body stores no Origin link at all: getOrigin() resolves
-    // the shared ruler by lookup. Ensure it exists at spawn so the base planes/axes are
-    // available immediately (and so later getOrigin() calls in const display paths never mint).
-    ensureDocumentOrigin();
+    // a private coordinate frame, and it does NOT create one either. The world frame is shared
+    // at document level (ARCHITECTURE §3.3) and minted by the CAD document at its creation
+    // (ARCHITECTURE_AMENDMENTS Amendment 2, GitHub #19) — every Body's features anchor to that
+    // one free-standing App::Origin. Resolve it here so the invariant is checked at spawn: a
+    // Body born into a document with no world frame fails loudly (getDocumentOrigin throws)
+    // rather than lazily bootstrapping the coordinate system off the body.
+    getDocumentOrigin();
 
     // Cruth §4.6: assign a deterministic identity colour at spawn time.
     // Per-document index — count Bodies already in the doc (excluding this one,

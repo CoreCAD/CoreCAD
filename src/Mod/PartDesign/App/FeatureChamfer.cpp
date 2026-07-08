@@ -192,14 +192,7 @@ App::DocumentObjectExecReturn* Chamfer::execute()
         // store shape before refinement
         this->rawShape = shape;
         shape = refineShapeIfActive(shape);
-        if (!isSingleSolidRuleSatisfied(shape.getShape())) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                "Exception",
-                "Result has multiple solids: enable 'Allow Compound' in the active body."
-            ));
-        }
 
-        shape = getSolid(shape);
         this->Shape.setValue(shape);
         return App::DocumentObject::StdReturn;
     }

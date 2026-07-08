@@ -293,6 +293,20 @@ public:
      * @{
      */
 
+    /// Cruth: stamp the document-type marker and set up type-specific content at creation.
+    /// A "Part" document mints its shared world frame (App::Origin) so the coordinate
+    /// system exists from the moment the document is born, owned by the document itself.
+    /// The marker is the authority; the on-disk file extension is derived from it.
+    void applyDocumentType(const char* type);
+
+    /// Cruth: on-disk file extension (without dot) derived from a document-type marker.
+    /// The marker is the authority; a "Part" document saves as ".cpart", while an
+    /// untyped/legacy document saves as ".FCStd". Unknown types fall back to "FCStd".
+    static std::string fileExtensionForType(const char* type);
+    /// The file extension this document should be saved under, derived from its
+    /// DocumentType marker. See fileExtensionForType().
+    std::string documentFileExtension() const;
+
     /// Save the document to the file in Property Path
     bool save();
 

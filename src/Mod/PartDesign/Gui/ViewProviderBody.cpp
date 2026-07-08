@@ -796,7 +796,7 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
     else if (!obj->isDerivedFrom<Part::Feature>()) {
         return false;
     }
-    else if (PartDesign::Body::findBodyOf(obj)) {
+    else if (PartDesign::Body::inAnyBody(obj)) {
         return false;
     }
     else if (obj->isDerivedFrom(Part::BodyBase::getClassTypeId())) {
@@ -825,6 +825,14 @@ void ViewProviderBody::dropObject(App::DocumentObject* obj)
         std::vector<App::DocumentObject*> deps = PartDesignGui::collectMovableDependencies(move);
         move.insert(std::end(move), std::begin(deps), std::end(deps));
 
+        // The body we are moving these features OUT of, so we detach them (heal its
+        // chain, retreat its Tip, retire it if it empties) before re-homing into the
+        // drop target. This legitimately wants the body object — it is a real body
+        // operation, and it matches the source lookup in Body::moveFeatureToBody.
+        // KNOWN GAP (blocked-by #33/#34): isFeatureMovable only permits dragging a
+        // chain-base feature, but a MULTI-OUTPUT base backs N bodies; first-match
+        // detaches from only one. Left first-match until the "act on all N bodies a
+        // feature backs" semantics are settled — same first-match as today, no regression.
         PartDesign::Body* source = PartDesign::Body::findBodyOf(obj);
         if (source) {
             source->removeFeatures(move);

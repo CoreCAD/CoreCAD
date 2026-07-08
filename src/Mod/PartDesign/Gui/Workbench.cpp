@@ -34,7 +34,6 @@
 
 #include "Utils.h"
 #include "Workbench.h"
-#include "WorkflowManager.h"
 
 using namespace PartDesignGui;
 namespace sp = std::placeholders;
@@ -72,9 +71,7 @@ TYPESYSTEM_SOURCE(PartDesignGui::Workbench, Gui::StdWorkbench)
 Workbench::Workbench() = default;
 
 Workbench::~Workbench()
-{
-    WorkflowManager::destruct();
-}
+{}
 
 void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) const
 {
@@ -112,8 +109,7 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
                         }
                         // if all at least one selected feature doesn't belong to the same body
                         // disable the menu entry
-                        if (addMoveFeatureInTree
-                            && PartDesign::Body::findBodyOf(sel.pObject) != body) {
+                        if (addMoveFeatureInTree && !PartDesign::Body::backsBody(sel.pObject, body)) {
                             addMoveFeatureInTree = false;
                         }
 
@@ -147,7 +143,6 @@ void Workbench::activated()
 {
     Gui::Workbench::activated();
 
-    WorkflowManager::init();
 
     std::vector<Gui::TaskView::TaskWatcher*> Watcher;
 

@@ -37,7 +37,6 @@
 #include "TaskFeaturePick.h"
 #include "Utils.h"
 #include "ViewProviderBody.h"
-#include "WorkflowManager.h"
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
@@ -367,7 +366,7 @@ public:
             // Check whether this plane belongs to the active body: a datum plane derives to the
             // body's Tip; a world-frame base plane lives in the single shared document Origin and
             // is valid for every body (Cruth §11 step 5e shared-Origin).
-            if (PartDesign::Body::findBodyOf(plane) == activeBody
+            if (PartDesign::Body::backsBody(plane, activeBody)
                 || (plane->isDerivedFrom<App::DatumElement>()
                     && static_cast<App::DatumElement*>(plane)->isOriginFeature())) {
                 if (!activeBody->isAfterInsertPoint(plane)) {
@@ -411,7 +410,7 @@ public:
         shapeBinders.insert(shapeBinders.end(), binders.begin(), binders.end());
         for (auto binder : shapeBinders) {
             // Check whether this plane belongs to the active body
-            if (PartDesign::Body::findBodyOf(binder) == activeBody) {
+            if (PartDesign::Body::backsBody(binder, activeBody)) {
                 Part::TopoShape shape = static_cast<Part::Feature*>(binder)->Shape.getShape();
                 if (shape.isPlanar()) {
                     if (!activeBody->isAfterInsertPoint(binder)) {
@@ -501,7 +500,7 @@ private:
         // planes, not the dormant per-body Origin. This is the coordinate root de-owned
         // features resolve against, so the plane the user clicks is the one the sketch
         // ends up attached to (no later relink needed for display consistency).
-        auto* origin = activeBody->ensureDocumentOrigin();
+        auto* origin = activeBody->getDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -600,7 +599,7 @@ private:
         }
         // Cruth substrate flip (Stage 3a-2b): must match the Origin made visible in
         // setOriginTemporaryVisibility() — the shared document-level one, not per-body.
-        auto* origin = partDesignBody->ensureDocumentOrigin();
+        auto* origin = partDesignBody->getDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );

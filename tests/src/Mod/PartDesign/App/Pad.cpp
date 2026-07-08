@@ -22,7 +22,7 @@ protected:
 
     void SetUp() override
     {
-        _doc = App::GetApplication().newDocument("Pad_test", "testUser");
+        _doc = App::GetApplication().newDocument("Pad_test", "testUser", {.documentType = "Part"});
         _body = _doc->addObject<PartDesign::Body>();
         _sketch = _doc->addObject<Sketcher::SketchObject>("Sketch");
         _body->addFeature(_sketch);

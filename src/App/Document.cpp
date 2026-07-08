@@ -79,6 +79,7 @@
 #include "GeoFeature.h"
 #include "License.h"
 #include "Link.h"
+#include "Origin.h"
 #include "MergeDocuments.h"
 #include "StringHasher.h"
 #include "Transactions.h"
@@ -1861,7 +1862,15 @@ unsigned int Document::getMemSize() const
     return size;
 }
 
-static std::string checkFileName(const char* file)
+// Cruth: extensions the save path recognizes as an already-complete document name,
+// so it does not append the type-derived one on top (which produced ".cpart.FCStd").
+static bool isKnownDocumentExtension(const char* ext)
+{
+    return boost::iequals(ext, "FCStd") || boost::iequals(ext, "cpart");
+}
+
+// docExt is the document's own extension (without dot), derived from its type marker.
+static std::string checkFileName(const char* file, const std::string& docExt)
 {
     std::string fn(file);
 
@@ -1871,34 +1880,69 @@ static std::string checkFileName(const char* file)
             .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")
             ->GetBool("CheckExtension", true)) {
         constexpr std::size_t backupExtLen = sizeof(".fcbak") - 1;
-        constexpr std::size_t backupAndDocExtLen = sizeof(".fcbak.fcstd") - 1;
-        if (boost::iends_with(fn, ".fcbak.fcstd")) {
-            fn.erase(fn.size() - backupAndDocExtLen);
-            fn += ".FCStd";
-            return fn;
+
+        // A backup name (".fcbak", optionally trailed by a document extension) is
+        // normalized to the document's own extension.
+        std::string base = fn;
+        if (const char* ext = strrchr(base.c_str(), '.');
+            ext && isKnownDocumentExtension(ext + 1)) {
+            base.erase(static_cast<std::size_t>(ext - base.c_str()));
         }
-        if (boost::iends_with(fn, ".fcbak")) {
-            fn.erase(fn.size() - backupExtLen);
-            fn += ".FCStd";
-            return fn;
+        if (boost::iends_with(base, ".fcbak")) {
+            base.erase(base.size() - backupExtLen);
+            base += ".";
+            base += docExt;
+            return base;
         }
 
         const char* ext = strrchr(fn.c_str(), '.');
-        if ((ext == nullptr) || !boost::iequals(ext + 1, "fcstd")) {
+        if ((ext == nullptr) || !isKnownDocumentExtension(ext + 1)) {
             if (ext && ext[1] == 0) {
-                fn += "FCStd";
+                fn += docExt;
             }
             else {
-                fn += ".FCStd";
+                fn += ".";
+                fn += docExt;
             }
         }
     }
     return fn;
 }
 
+void Document::applyDocumentType(const char* type)
+{
+    if (Base::Tools::isNullOrEmpty(type)) {
+        return;
+    }
+    DocumentType.setValue(type);
+
+    // A Part document owns its coordinate frame and mints it eagerly at creation
+    // (Cruth origin-lifecycle amendment). Bodies only ever look this up — they never
+    // create it. The shared App::Origin carries the world-frame datum planes/axes.
+    if (DocumentType.getStrValue() == "Part") {
+        auto* origin = addObject<App::Origin>("Origin");
+        if (origin) {
+            origin->Label.setValue("Origin");
+        }
+    }
+}
+
+std::string Document::fileExtensionForType(const char* type)
+{
+    if (!Base::Tools::isNullOrEmpty(type) && boost::iequals(type, "Part")) {
+        return "cpart";
+    }
+    return "FCStd";
+}
+
+std::string Document::documentFileExtension() const
+{
+    return fileExtensionForType(DocumentType.getStrValue().c_str());
+}
+
 bool Document::saveAs(const char* _file)
 {
-    const std::string file = checkFileName(_file);
+    const std::string file = checkFileName(_file, documentFileExtension());
     const Base::FileInfo fi(file.c_str());
     if (this->FileName.getStrValue() != file) {
         this->FileName.setValue(file);
@@ -1911,7 +1955,7 @@ bool Document::saveAs(const char* _file)
 
 bool Document::saveCopy(const char* file) const
 {
-    const std::string checked = checkFileName(file);
+    const std::string checked = checkFileName(file, documentFileExtension());
     return this->FileName.getStrValue() != checked ? saveToFile(checked.c_str()) : false;
 }
 
@@ -3481,7 +3525,7 @@ void Document::removeObject(const char* sName)
     // Defer to the pendingRemove queue, which is flushed once recompute settles.
     if (pos->second->testStatus(ObjectStatus::PendingRecompute) || testStatus(Document::Recomputing)) {
         // TODO: shall we allow removal if there is active undo transaction?
-        FC_MSG("pending remove of " << sName << " after recomputing document " << getName());
+        FC_LOG("pending remove of " << sName << " after recomputing document " << getName());
         d->pendingRemove.emplace_back(pos->second);
         return;
     }

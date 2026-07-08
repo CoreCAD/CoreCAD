@@ -48,7 +48,6 @@
 
 #include "TaskFeaturePick.h"
 #include "Utils.h"
-#include "WorkflowManager.h"
 
 
 //===========================================================================
@@ -114,17 +113,11 @@ void CmdPartDesignBody::activated(int iMsg)
     App::DocumentObject* baseFeature = nullptr;
     bool addtogroup = false;
 
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Mod/PartDesign"
-    );
-
-    bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
     if (!features.empty()) {
         if (features.size() == 1) {
             baseFeature = features[0];
             if (baseFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-                && PartDesign::Body::findBodyOf(baseFeature)) {
+                && PartDesign::Body::inAnyBody(baseFeature)) {
                 // Prevent creating bodies based on features already belonging to other bodies
                 QMessageBox::warning(
                     Gui::getMainWindow(),
@@ -133,7 +126,7 @@ void CmdPartDesignBody::activated(int iMsg)
                 );
                 baseFeature = nullptr;
             }
-            else if (PartDesign::Body::findBodyOf(baseFeature)) {
+            else if (PartDesign::Body::inAnyBody(baseFeature)) {
                 QMessageBox::warning(
                     Gui::getMainWindow(),
                     QObject::tr("Bad base feature"),
@@ -237,12 +230,6 @@ void CmdPartDesignBody::activated(int iMsg)
     std::string labelString = QObject::tr("Body").toUtf8().toStdString();
     labelString = Base::Tools::escapeEncodeString(labelString);
     doCommand(Doc, "App.ActiveDocument.getObject('%s').Label = '%s'", bodyString, labelString.c_str());
-    doCommand(
-        Doc,
-        "App.ActiveDocument.getObject('%s').AllowCompound = %s",
-        bodyString,
-        allowCompound ? "True" : "False"
-    );
     if (baseFeature) {
         if (partOfBaseFeature) {
             // withdraw base feature from Part, otherwise visibility madness results
@@ -385,278 +372,6 @@ bool CmdPartDesignBody::isActive()
     // A Body must live inside an App::Part — require the user to have
     // entered a Part context (double-clicked it) before creating a Body.
     return PartDesignGui::getActivePart() != nullptr;
-}
-
-//===========================================================================
-// PartDesign_Migrate
-//===========================================================================
-
-DEF_STD_CMD_A(CmdPartDesignMigrate)
-
-CmdPartDesignMigrate::CmdPartDesignMigrate()
-    : Command("PartDesign_Migrate")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Migrate");
-    sToolTipText = QT_TR_NOOP("Migrates the document to the modern Part Design workflow");
-    sWhatsThis = "PartDesign_Migrate";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_Migrate";
-}
-
-void CmdPartDesignMigrate::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    App::Document* doc = getDocument();
-
-    std::set<PartDesign::Feature*> migrateFeatures;
-
-
-    // Retrieve all PartDesign Features objects and filter out features already belonging to some body
-    for (const auto& feat : doc->getObjects()) {
-        if (feat->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-            && !PartDesign::Body::findBodyOf(feat) && PartDesign::Body::isSolidFeature(feat)) {
-            migrateFeatures.insert(static_cast<PartDesign::Feature*>(feat));
-        }
-    }
-
-    if (migrateFeatures.empty()) {
-        if (!PartDesignGui::isModernWorkflow(doc)) {
-            // If there is nothing to migrate and workflow is still old just set it to modern
-            PartDesignGui::WorkflowManager::instance()->forceWorkflow(
-                doc,
-                PartDesignGui::Workflow::Modern
-            );
-        }
-        else {
-            // Huh? nothing to migrate?
-            QMessageBox::warning(
-                nullptr,
-                QObject::tr("Nothing to migrate"),
-                QObject::tr(
-                    "No Part Design features without body found"
-                    " Nothing to migrate."
-                )
-            );
-        }
-        return;
-    }
-
-    // Note: this action is undoable, should it be?
-    PartDesignGui::WorkflowManager::instance()->forceWorkflow(doc, PartDesignGui::Workflow::Modern);
-
-    // Put features into chains. Each chain should become a separate body.
-    std::list<std::list<PartDesign::Feature*>> featureChains;
-    std::list<PartDesign::Feature*> chain;  //< the current chain we are working on
-
-    for (auto featIt = migrateFeatures.begin(); !migrateFeatures.empty();) {
-        Part::Feature* base = (*featIt)->getBaseObject(/*silent =*/true);
-
-        chain.push_front(*featIt);
-
-        if (!base || !base->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-            || PartDesignGui::isAnyNonPartDesignLinksTo(
-                static_cast<PartDesign::Feature*>(base),
-                /*respectGroups=*/true
-            )) {
-            // a feature based on nothing as well as on non-partdesign solid starts a new chain
-            auto newChainIt = featureChains.emplace(featureChains.end());
-            newChainIt->splice(newChainIt->end(), chain);
-        }
-        else {
-            // we are basing on some partdesign feature which supposed to belong to some body
-            PartDesign::Feature* baseFeat = static_cast<PartDesign::Feature*>(base);
-
-            auto baseFeatSetIt = migrateFeatures.find(baseFeat);
-
-            if (baseFeatSetIt != migrateFeatures.end()) {
-                // base feature is pending for migration, switch to it and continue over
-                migrateFeatures.erase(featIt);
-                featIt = baseFeatSetIt;
-                continue;
-            }
-            else {
-                // The base feature seems already assigned to some chain. Find which
-                std::list<PartDesign::Feature*>::iterator baseFeatIt;
-                auto isChain =
-                    [baseFeat, &baseFeatIt](std::list<PartDesign::Feature*>& fchain) mutable -> bool {
-                    baseFeatIt = std::ranges::find(fchain, baseFeat);
-                    return baseFeatIt != fchain.end();
-                };
-
-                if (auto chainIt = std::ranges::find_if(featureChains, isChain);
-                    chainIt != featureChains.end()) {
-                    assert(baseFeatIt != chainIt->end());
-                    if (std::next(baseFeatIt) == chainIt->end()) {
-                        // just append our chain to already found
-                        chainIt->splice(chainIt->end(), chain);
-                        // TODO: If we will hit a third part everything will be messed up again.
-                        //       Probably it will require a yet another smart-ass find_if.
-                        //       (2015-08-10, Fat-Zer)
-                    }
-                    else {
-                        // We have a fork of a partDesign feature here
-                        // add a chain for current body
-                        auto newChainIt = featureChains.emplace(featureChains.end());
-                        newChainIt->splice(newChainIt->end(), chain);
-                        // add a chain for forked one
-                        newChainIt = featureChains.emplace(featureChains.end());
-                        newChainIt->splice(
-                            newChainIt->end(),
-                            *chainIt,
-                            std::next(baseFeatIt),
-                            chainIt->end()
-                        );
-                    }
-                }
-                else {
-                    // The feature is not present in list pending for migration,
-                    // This generally shouldn't happen but may be if we run into some broken file
-                    // Try to find out the body we should insert into
-                    // TODO: Some error/warning is needed here (2015-08-10, Fat-Zer)
-                    auto newChainIt = featureChains.emplace(featureChains.end());
-                    newChainIt->splice(newChainIt->end(), chain);
-                }
-            }
-        }
-        migrateFeatures.erase(featIt);
-        featIt = migrateFeatures.begin();
-        // TODO: Align visibility (2015-08-17, Fat-Zer)
-    } /* for */
-
-    // TODO: make it work without parts (2015-09-04, Fat-Zer)
-    // add a part if there is no active yet
-    App::Part* actPart = PartDesignGui::assertActivePart();
-
-    if (!actPart) {
-        return;
-    }
-
-    // do the actual migration
-    openCommand(QT_TRANSLATE_NOOP("Command", "Migrate legacy Part Design features to bodies"));
-
-    for (auto chainIt = featureChains.begin(); !featureChains.empty();
-         featureChains.erase(chainIt), chainIt = featureChains.begin()) {
-#ifndef FC_DEBUG
-        if (chainIt->empty()) {  // prevent crash in release in case of errors
-            continue;
-        }
-#else
-        assert(!chainIt->empty());
-#endif
-        Part::Feature* base = chainIt->front()->getBaseObject(/*silent =*/true);
-
-        // Find a suitable chain to work with
-        for (; chainIt != featureChains.end(); chainIt++) {
-            base = chainIt->front()->getBaseObject(/*silent =*/true);
-            if (!base || !base->isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
-                break;  // no base is ok
-            }
-            else {
-                // The base feature is a PartDesign, it's a fork, try to reassign it to a body...
-                base = PartDesign::Body::findBodyOf(base);
-                if (base) {
-                    break;
-                }
-            }
-        }
-
-        if (chainIt == featureChains.end()) {
-            // Shouldn't happen, may be only in case of some circular dependency?
-            // TODO Some error message (2015-08-11, Fat-Zer)
-            chainIt = featureChains.begin();
-            base = chainIt->front()->getBaseObject(/*silent =*/true);
-        }
-
-        // Construct a Pretty Body name based on the Tip
-        std::string bodyName = getUniqueObjectName(
-            std::string(chainIt->back()->getNameInDocument()).append("Body").c_str()
-        );
-
-        Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/Preferences/Mod/PartDesign"
-        );
-
-        bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
-        // Create a body for the chain
-        doCommand(Doc, "App.activeDocument().addObject('PartDesign::Body','%s')", bodyName.c_str());
-        doCommand(
-            Doc,
-            "App.ActiveDocument.getObject('%s').AllowCompound = %s",
-            bodyName.c_str(),
-            allowCompound ? "True" : "False"
-        );
-        doCommand(
-            Doc,
-            "App.activeDocument().%s.addObject(App.ActiveDocument.%s)",
-            actPart->getNameInDocument(),
-            bodyName.c_str()
-        );
-        if (base) {
-            doCommand(
-                Doc,
-                "App.activeDocument().%s.BaseFeature = App.activeDocument().%s",
-                bodyName.c_str(),
-                base->getNameInDocument()
-            );
-        }
-
-        // Fill the body with features
-        for (auto feature : *chainIt) {
-            if (feature->isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
-                // add the sketch and also reroute it if needed
-                PartDesign::ProfileBased* sketchBased = static_cast<PartDesign::ProfileBased*>(feature);
-                Part::Part2DObject* sketch = sketchBased->getVerifiedSketch(/*silent =*/true);
-                if (sketch) {
-                    doCommand(
-                        Doc,
-                        "App.activeDocument().%s.addFeature(App.activeDocument().%s)",
-                        bodyName.c_str(),
-                        sketch->getNameInDocument()
-                    );
-
-                    if (sketch->isDerivedFrom(Sketcher::SketchObject::getClassTypeId())) {
-                        try {
-                            PartDesignGui::fixSketchSupport(
-                                static_cast<Sketcher::SketchObject*>(sketch)
-                            );
-                        }
-                        catch (Base::Exception&) {
-                            QMessageBox::critical(
-                                Gui::getMainWindow(),
-                                QObject::tr("Sketch plane cannot be migrated"),
-                                QObject::tr(
-                                    "Please edit '%1' and redefine it to use a Base or "
-                                    "Datum plane as the sketch plane."
-                                )
-                                    .arg(QString::fromUtf8(sketch->Label.getValue()))
-                            );
-                        }
-                    }
-                    else {
-                        // TODO: Message that sketchbased is based not on a sketch (2015-08-11, Fat-Zer)
-                    }
-                }
-            }
-            doCommand(
-                Doc,
-                "App.activeDocument().%s.addFeature(App.activeDocument().%s)",
-                bodyName.c_str(),
-                feature->getNameInDocument()
-            );
-
-            PartDesignGui::relinkToBody(feature);
-        }
-    }
-
-    updateActive();
-}
-
-bool CmdPartDesignMigrate::isActive()
-{
-    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -1070,7 +785,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     if (body) {
         bodyBase = body->BaseFeature.getValue();
         for (auto feat : features) {
-            if (PartDesign::Body::findBodyOf(feat) != body) {
+            if (!PartDesign::Body::backsBody(feat, body)) {
                 allFeaturesFromSameBody = false;
                 break;
             }
@@ -1235,7 +950,6 @@ void CreatePartDesignBodyCommands()
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
     rcCmdMgr.addCommand(new CmdPartDesignBody());
-    rcCmdMgr.addCommand(new CmdPartDesignMigrate());
     rcCmdMgr.addCommand(new CmdPartDesignMoveTip());
 
     rcCmdMgr.addCommand(new CmdPartDesignDuplicateSelection());

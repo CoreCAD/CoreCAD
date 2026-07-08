@@ -80,7 +80,6 @@
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Base/Vector3D.h>
-#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/DatumFeature.h>
 
 #include <memory>
@@ -210,45 +209,22 @@ bool SketchObject::isExternalAllowed(App::Document* pDoc, App::DocumentObject* p
     }
 
 
-    // Note: Checking for the body of the support doesn't work when the support are the three base
-    // planes
-    //
-    // PARKED (Cruth #9): these base-layer findBodyOf calls scan the (now-empty) Body Group and
-    // return nullptr under de-ownership. They cannot use the §9.1 reverse-lookup because Sketcher
-    // must not depend on PartDesign (where the BaseFeature chain lives). Fix once that primitive is
-    // lowered into the shared Part layer — fork-break scope.
-    Part::BodyBase* body_this = Part::BodyBase::findBodyOf(this);
-    Part::BodyBase* body_obj = Part::BodyBase::findBodyOf(pObj);
-
-    // DatumElements in an LCS, get body from the parent LCS
-    if (!body_obj && pObj->isDerivedFrom<App::DatumElement>()) {
-        auto* datum = static_cast<const App::DatumElement*>(pObj);
-        if (auto* lcs = datum->getLCS()) {
-            body_obj = Part::BodyBase::findBodyOf(lcs);
-        }
-    }
-
+    // Cruth de-ownership: a sketch belongs to the document, not to a Body — the sketch is the
+    // authored primary; a Body is only a downstream marker on a solid step and need not exist at
+    // all. So "same Body?" is no longer a meaningful question here and the old rlOtherBody gate is
+    // gone: within one Part a sketch may reference any geometry it can see (another Body, a stray
+    // sketch, a datum), matching the fork's existing direct cross-body references. The only hard
+    // boundary left is the Part/document: referencing across Parts still goes through a binder.
     App::Part* part_this = App::Part::getPartOfObject(this);
     App::Part* part_obj = App::Part::getPartOfObject(pObj);
-    if (part_this == part_obj) {// either in the same part, or in the root of document
-        if (!body_this) {
-            return true;
-        }
-        else if (body_this == body_obj) {
-            return true;
-        }
-        else {
-            if (rsn)
-                *rsn = rlOtherBody;
-            return false;
-        }
-    }
-    else {
+    if (part_this != part_obj) {
         // cross-part link. Disallow, should be done via shapebinders only
         if (rsn)
             *rsn = rlOtherPart;
         return false;
     }
+
+    return true;// same Part, or both in the document root
 }
 
 bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject* pObj, bool& xinv,
@@ -293,33 +269,17 @@ bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject*
     }
 
 
-    // Note: Checking for the body of the support doesn't work when the support are the three base
-    // planes
-    //
-    // PARKED (Cruth #9): base-layer findBodyOf is nullptr under de-ownership — see the matching note
-    // in allowOtherBody above. Fork-break scope.
-    Part::BodyBase* body_this = Part::BodyBase::findBodyOf(this);
-    Part::BodyBase* body_obj = Part::BodyBase::findBodyOf(pObj);
+    // Cruth de-ownership: the Body is no longer the boundary for a carbon copy — the sketch lives
+    // in the document, and copying another sketch's geometry across Bodies is as legitimate as any
+    // in-Part reference (see isExternalAllowed above). The old rlOtherBody / rlOtherBodyWithLinks
+    // gates (and the allowOtherBody flag they consulted) protected a Body boundary that no longer
+    // exists. Only the Part/document boundary remains.
     App::Part* part_this = App::Part::getPartOfObject(this);
     App::Part* part_obj = App::Part::getPartOfObject(pObj);
     if (part_this != part_obj) {
         // cross-part relation. Disallow, should be done via shapebinders only
         setReason(rlOtherPart);
         return false;
-    }
-
-    // Hereafter assuming: either in the same part, or in the root of document
-    if (body_this && body_this != body_obj) {
-        if (!this->allowOtherBody) {
-            setReason(rlOtherBody);
-            return false;
-        }
-        // if the original sketch has external geometry AND it is not in this body prevent
-        // link
-        else if (psObj->getExternalGeometryCount() > 2) {
-            setReason(rlOtherBodyWithLinks);
-            return false;
-        }
     }
 
     const Rotation& srot = psObj->Placement.getValue().getRotation();

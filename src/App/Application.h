@@ -94,6 +94,9 @@ enum class MessageOption {
 struct DocumentInitFlags {
     bool createView {true}; ///< Whether to hide the document in the tree view.
     bool temporary {false}; ///< Whether the document should be a temporary one.
+    /// Cruth document-type marker to stamp on creation (e.g. "Part"); empty = untyped/legacy.
+    /// A typed CAD document (e.g. "Part") mints its shared world frame at creation.
+    std::string documentType {};
 };
 
 /**

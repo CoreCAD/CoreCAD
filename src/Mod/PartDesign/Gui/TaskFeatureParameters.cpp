@@ -23,7 +23,10 @@
  ***************************************************************************/
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QLabel>
 #include <QMessageBox>
+#include <QVBoxLayout>
 
 
 #include <App/DocumentObserver.h>
@@ -32,6 +35,7 @@
 #include <Gui/MainWindow.h>
 #include <Gui/BitmapFactory.h>
 #include <Mod/PartDesign/App/Feature.h>
+#include <Mod/PartDesign/App/FeatureAddSub.h>
 #include <Mod/PartDesign/App/Body.h>
 
 #include "ui_TaskPreviewParameters.h"
@@ -101,6 +105,83 @@ void TaskPreviewParameters::onShowFinalChanged(bool show)
 void TaskPreviewParameters::onShowPreviewChanged(bool show)
 {
     vp->showPreview(show);
+}
+
+/*********************************************************************
+ *                   Task Merge Result Parameters                    *
+ *********************************************************************/
+
+TaskMergeResultParameters::TaskMergeResultParameters(ViewProvider* vp, QWidget* parent)
+    : TaskBox(tr("Merge result"), true, parent)
+    , vp(vp)
+    , mergeCheckBox(new QCheckBox(tr("Merge with existing body"), this))
+    , bodyLabel(new QLabel(this))
+    , mergeTargetBody(nullptr)
+{
+    auto* feature = vp->getObject<PartDesign::FeatureAddSub>();
+
+    // Cruth §8.5: the feature already has its spawn-vs-extend choice baked in by the
+    // creating command — reflect it. BaseFeature set ⇒ extending a Body; null ⇒ own body.
+    bool additive = feature && feature->getAddSubType() == PartDesign::FeatureAddSub::Additive;
+    bool extending = feature && feature->BaseFeature.getValue() != nullptr;
+    if (extending) {
+        // A feature being edited in its own creation dialog is a single in-chain feature,
+        // so the derived reverse query answers unambiguously and first-match is the right
+        // body, not a lucky one. We keep the non-throwing findBodyOf (not the fail-loud
+        // bodyOf) on purpose: this is a GUI splice-target capture that must degrade
+        // gracefully, never throw inside the dialog constructor.
+        mergeTargetBody = PartDesign::Body::findBodyOf(feature);
+    }
+
+    mergeCheckBox->setChecked(extending);
+    // The choice is only offered when the feature could go either way: additive (a cut
+    // must extend something) and with a real Body to merge into (a bare-plane new body has
+    // no target). Otherwise the checkbox stays as a read-only indicator of the fixed state.
+    mergeCheckBox->setEnabled(additive && mergeTargetBody != nullptr);
+
+    bodyLabel->setWordWrap(true);
+
+    connect(mergeCheckBox, &QCheckBox::toggled, this, &TaskMergeResultParameters::onMergeToggled);
+
+    auto* proxy = new QWidget(this);
+    auto* layout = new QVBoxLayout(proxy);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(mergeCheckBox);
+    layout->addWidget(bodyLabel);
+    groupLayout()->addWidget(proxy);
+
+    refreshBodyLabel();
+}
+
+TaskMergeResultParameters::~TaskMergeResultParameters() = default;
+
+void TaskMergeResultParameters::onMergeToggled(bool merge)
+{
+    auto* feature = vp->getObject<PartDesign::Feature>();
+    if (!feature) {
+        return;
+    }
+
+    // Merge on ⇒ splice back onto the remembered target Body; off ⇒ spawn a fresh Body.
+    // Both branches re-home the feature by rewiring the BaseFeature chain and Tips; the
+    // recompute below refreshes the preview and downstream. We are inside the dialog's
+    // edit transaction, so Cancel rolls the move back (that is what makes it reversible).
+    PartDesign::Body::moveFeatureToBody(feature, merge ? mergeTargetBody : nullptr);
+    feature->getDocument()->recompute();
+
+    refreshBodyLabel();
+}
+
+void TaskMergeResultParameters::refreshBodyLabel()
+{
+    auto* feature = vp->getObject<App::DocumentObject>();
+    PartDesign::Body* body = feature ? PartDesign::Body::findBodyOf(feature) : nullptr;
+    if (body) {
+        bodyLabel->setText(tr("Result body: %1").arg(QString::fromUtf8(body->Label.getValue())));
+    }
+    else {
+        bodyLabel->clear();
+    }
 }
 
 TaskFeatureParameters::TaskFeatureParameters(

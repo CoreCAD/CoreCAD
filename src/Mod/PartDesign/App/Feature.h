@@ -57,12 +57,6 @@ class PartDesignExport Feature: public Part::Feature,
 public:
     Feature();
 
-    enum SingleSolidRuleMode
-    {
-        Disabled = 0,
-        Enforced = 1
-    };
-
     /// Base feature which this feature will be fused into or cut out of
     App::PropertyLink BaseFeature;
     /// Transient memo of the nearest downstream Body marker for this feature (CPART_DESIGN
@@ -132,10 +126,6 @@ public:
 
 
 protected:
-    /**
-     * Get a solid of the given shape. If no solid is found an exception is raised.
-     */
-    TopoShape getSolid(const TopoShape&) const;
     static int countSolids(const TopoDS_Shape&, TopAbs_ShapeEnum type = TopAbs_SOLID);
     static bool relinkToMatchingSubelements(
         App::PropertyLinkSub& link,
@@ -147,12 +137,6 @@ protected:
      * Fix solids
      */
     TopoShape fixSolids(const TopoShape&);
-
-    /**
-     * Checks if the single-solid body rule is fulfilled.
-     */
-    bool isSingleSolidRuleSatisfied(const TopoDS_Shape&, TopAbs_ShapeEnum type = TopAbs_SOLID);
-    SingleSolidRuleMode singleSolidRuleMode() const;
 
     void updateSuppressedShape();
 

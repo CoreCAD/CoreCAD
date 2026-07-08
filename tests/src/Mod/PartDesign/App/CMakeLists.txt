@@ -5,6 +5,9 @@ add_executable(PartDesign_tests_run
         DatumPlane.cpp
         ShapeBinder.cpp
         Pad.cpp
+        MoveFeatureToBody.cpp
+        AddFeature.cpp
+        ReconcileMultiOutput.cpp
 )
 
 set(PartDesignTestData_Files
