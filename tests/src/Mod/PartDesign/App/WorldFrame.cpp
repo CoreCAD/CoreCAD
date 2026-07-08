@@ -15,6 +15,7 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
@@ -111,6 +112,67 @@ TEST_F(WorldFrameTest, ThroughFeatureReferenceEqualsDirect)
     Base::BoundBox3d bt = through.getBoundBox();
     Base::BoundBox3d bd = direct.getBoundBox();
 
+    EXPECT_NEAR(bt.MinX, bd.MinX, 1e-6);
+    EXPECT_NEAR(bt.MaxX, bd.MaxX, 1e-6);
+    EXPECT_NEAR(bt.MinY, bd.MinY, 1e-6);
+    EXPECT_NEAR(bt.MaxY, bd.MaxY, 1e-6);
+    EXPECT_NEAR(bt.MinZ, bd.MinZ, 1e-6);
+    EXPECT_NEAR(bt.MaxZ, bd.MaxZ, 1e-6);
+}
+
+// The trickiest case the build plan flags (#5): a sketch attached to a support that itself has a
+// non-identity placement, *plus* a non-zero attachment offset. The old code copied the support
+// datum's placement (not the sketch's offset placement) into the Pad, so the "undo the frame" move
+// left a residual offset. With the position neutral the residual is gone: the Pad holds an identity
+// placement and a reference through it still matches a direct reference to the sketch.
+TEST_F(WorldFrameTest, PadWithAttachmentOffsetOnPlacedSupport)
+{
+    auto* xy = _doc->getObject("XY_Plane");
+    ASSERT_NE(xy, nullptr);
+
+    // A datum plane with a genuinely non-identity placement (offset + tilt off XY_Plane).
+    auto* datum = _doc->addObject<PartDesign::Plane>("Datum");
+    _body->addFeature(datum);
+    datum->AttachmentSupport.setValue(xy, "");
+    datum->MapMode.setValue("FlatFace");
+    datum->AttachmentOffset.setValue(
+        Base::Placement(Base::Vector3d(2, 3, 7), Base::Rotation(Base::Vector3d(1, 0, 0), M_PI / 2))
+    );
+
+    // A sketch attached to that placed datum, with its own non-zero attachment offset.
+    auto* sketch = _doc->addObject<Sketcher::SketchObject>("OffsetSketch");
+    _body->addFeature(sketch);
+    sketch->AttachmentSupport.setValue(datum, "");
+    sketch->MapMode.setValue("FlatFace");
+    sketch->AttachmentOffset.setValue(
+        Base::Placement(Base::Vector3d(1, 0, 0), Base::Rotation(Base::Vector3d(0, 1, 0), M_PI / 6))
+    );
+    Part::GeomCircle circle;
+    circle.setRadius(5.0);
+    sketch->addGeometry(&circle, false);
+    _doc->recompute();
+
+    auto* pad = _doc->addObject<PartDesign::Pad>("OffsetPad");
+    _body->addFeature(pad);
+    pad->Profile.setValue(sketch, {""});
+    pad->Length.setValue(4.0);
+    _doc->recompute();
+
+    // Support genuinely placed off the origin (guards against a degenerate no-op fixture).
+    ASSERT_FALSE(datum->Placement.getValue().isIdentity());
+
+    // Derived feature holds no copied frame despite the placed, offset support.
+    EXPECT_TRUE(pad->Placement.getValue().isIdentity());
+
+    // A reference through the pad still matches a direct reference to the sketch (no residual).
+    const auto opts = Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform;
+    const std::string throughName = std::string(sketch->getNameInDocument()) + ".";
+    Part::TopoShape through = Part::Feature::getTopoShape(pad, opts, throughName.c_str());
+    Part::TopoShape direct = Part::Feature::getTopoShape(sketch, opts, nullptr);
+    ASSERT_FALSE(through.isNull());
+    ASSERT_FALSE(direct.isNull());
+    Base::BoundBox3d bt = through.getBoundBox();
+    Base::BoundBox3d bd = direct.getBoundBox();
     EXPECT_NEAR(bt.MinX, bd.MinX, 1e-6);
     EXPECT_NEAR(bt.MaxX, bd.MaxX, 1e-6);
     EXPECT_NEAR(bt.MinY, bd.MinY, 1e-6);
