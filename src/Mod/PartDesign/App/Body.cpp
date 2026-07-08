@@ -879,9 +879,9 @@ App::DocumentObject* Body::getPrevSolidFeature(App::DocumentObject* start)
         return nullptr;
     }
 
-    // Cruth de-ownership (Stage 3b-i): walk the BaseFeature chain backward, not
-    // Group order. Group is dormant — reading it returns nothing on a de-owned
-    // body, silently degrading every caller. The chain links solid features
+    // Cruth de-ownership (Stage 3b-i): walk the BaseFeature chain backward. A de-owned
+    // Body has no Group to order features by (the OriginGroup was retired, §11 step 5e),
+    // so the chain is the only ordering there is. The chain links solid features
     // directly, so the previous solid is found by following BaseFeature back from
     // `start`, skipping any non-solid link and guarding against cycles.
     // ARCHITECTURE §3.2/§3.3.
@@ -1011,9 +1011,9 @@ std::vector<Body*> Body::bodiesOf(const App::DocumentObject* feature)
     }
 
     if (!feature->isDerivedFrom<PartDesign::Feature>()) {
-        // Non-PartDesign objects (and any feature still sitting in a legacy Group) never
-        // back multiple Bodies: defer to the old Group-scan lookup and wrap its 0-or-1
-        // answer as a list.
+        // Non-PartDesign objects never back multiple Bodies: defer to the base
+        // BodyBase::findBodyOf (derived-membership lookup) and wrap its 0-or-1 answer as
+        // a list.
         if (auto* body = static_cast<Body*>(BodyBase::findBodyOf(feature))) {
             result.push_back(body);
         }
@@ -1087,9 +1087,9 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
         }
     }
 
-    // Fall-through for non-PartDesign objects (and any feature still sitting in a legacy
-    // Group): the old Group-scan lookup. The derived chain walk above has already handled
-    // every PartDesign::Feature case.
+    // Fall-through for non-PartDesign objects: the base BodyBase::findBodyOf, a
+    // derived-membership lookup (getFullModel), no longer a Group scan. The derived chain
+    // walk above has already handled every PartDesign::Feature case.
     return static_cast<Body*>(BodyBase::findBodyOf(feature));
 }
 
@@ -1333,7 +1333,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         // must splice between prevTip and its successor rather than forking the
         // chain — otherwise the displaced tail is silently orphaned (its geometry
         // drops out of the Body with no error). The successor scan reads the
-        // BaseFeature chain, not Group order, so it works on a de-owned body.
+        // BaseFeature chain — a de-owned Body has no Group ordering to read.
         App::DocumentObject* successor = getNextSolidFeatureByChain(prevTip);
 
         static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(prevTip);
@@ -1387,12 +1387,12 @@ std::vector<App::DocumentObject*> Body::addFeatures(std::vector<App::DocumentObj
 void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after)
 {
     // Cruth de-ownership (Stage 3b-i): splice `feature` into the BaseFeature chain at
-    // the requested position rather than editing Group order — Group is dormant and
-    // the pipeline is derived from the chain, so wiring BaseFeature links *is* the
-    // insert. Generalizes the Tip-splice addObject performs to an arbitrary (target,
-    // after) anchor. ARCHITECTURE §3.2/§3.3.
+    // the requested position. A de-owned Body has no Group to edit; the pipeline is
+    // derived from the chain, so wiring BaseFeature links *is* the insert. Generalizes
+    // the Tip-splice addObject performs to an arbitrary (target, after) anchor.
+    // ARCHITECTURE §3.2/§3.3.
 
-    // Validate target membership via the de-ownership back-pointer, not dormant Group.
+    // Validate target membership via the de-ownership back-pointer (there is no Group).
     if (target) {
         auto* tf = freecad_cast<PartDesign::Feature*>(target);
         if (!tf || tf->_Body.getValue() != this) {
@@ -1475,8 +1475,8 @@ void Body::setBaseProperty(App::DocumentObject* feature)
 
 // Cruth intra-body de-ownership: find the chain successor of a feature — the
 // solid feature whose BaseFeature links back to it — by scanning the document
-// rather than reading Group order. BaseFeature is an intra-body link, so the
-// successor is unique. ARCHITECTURE §3.2/§3.3.
+// (a de-owned Body has no Group ordering to read). BaseFeature is an intra-body
+// link, so the successor is unique. ARCHITECTURE §3.2/§3.3.
 App::DocumentObject* Body::getNextSolidFeatureByChain(App::DocumentObject* feature) const
 {
     if (!feature) {
@@ -1495,16 +1495,15 @@ App::DocumentObject* Body::getNextSolidFeatureByChain(App::DocumentObject* featu
 }
 
 // Cruth intra-body de-ownership (Day 4): delete a feature by rewiring the
-// BaseFeature chain rather than by editing Group order. The chain successor
-// (the solid whose BaseFeature points at this feature) is relinked to this
-// feature's own base, and the Tip retreats along the chain. Group is never
-// consulted for ordering, so this works on a fully de-owned body (empty Group);
-// any stale legacy Group entry is still dropped. ARCHITECTURE §3.2/§3.3.
+// BaseFeature chain. The chain successor (the solid whose BaseFeature points at
+// this feature) is relinked to this feature's own base, and the Tip retreats
+// along the chain. A de-owned Body has no Group ordering, so the chain is the
+// sole source of order. ARCHITECTURE §3.2/§3.3.
 std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* feature)
 {
     // This method must be called BEFORE the feature is removed from the Document!
     // De-ownership is the only path: heal the BaseFeature chain directly, retreat the
-    // Tip, and retire the Body if its chain empties — Group order is never consulted.
+    // Tip, and retire the Body if its chain empties — there is no Group order to consult.
     App::DocumentObject* prevSolidFeature = nullptr;
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         prevSolidFeature = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
@@ -1583,21 +1582,6 @@ void Body::removeFeatures(const std::vector<App::DocumentObject*>& features)
 App::DocumentObjectExecReturn* Body::execute()
 {
     Part::BodyBase::execute();
-    /*
-    Base::Console().error("Body '%s':\n", getNameInDocument());
-    App::DocumentObject* tip = Tip.getValue();
-    Base::Console().error("   Tip: %s\n", (tip == NULL) ? "None" : tip->getNameInDocument());
-    std::vector<App::DocumentObject*> model = Group.getValues();
-    Base::Console().error("   Group:\n");
-    for (std::vector<App::DocumentObject*>::const_iterator m = model.begin(); m != model.end(); m++)
-    { if (*m == NULL) continue; Base::Console().error("      %s", (*m)->getNameInDocument()); if
-    (Body::isSolidFeature(*m)) { App::DocumentObject* baseFeature =
-    static_cast<PartDesign::Feature*>(*m)->BaseFeature.getValue(); Base::Console().error(", Base:
-    %s\n", baseFeature == NULL ? "None" : baseFeature->getNameInDocument()); } else {
-            Base::Console().error("\n");
-        }
-    }
-    */
 
     App::DocumentObject* tip = Tip.getValue();
 
@@ -1678,10 +1662,11 @@ void Body::onChanged(const App::Property* prop)
             FeatureBase* bf = nullptr;
 
             // The chain root — the existing FeatureBase, if any — used to be Group.front().
-            // Under de-ownership Group is empty (§9.1), so find the root by walking the
+            // A de-owned Body has no Group (§9.1), so find the root by walking the
             // BaseFeature chain back from the Tip until it leaves this Body (null base, or a
-            // base belonging to another Body across a seam). Reading Group here would always
-            // see "empty" and mint a duplicate FeatureBase on every BaseFeature re-set.
+            // base belonging to another Body across a seam). There is no Group to read, so
+            // without this walk we would mint a duplicate FeatureBase on every BaseFeature
+            // re-set.
             App::DocumentObject* first = nullptr;
             std::set<App::DocumentObject*> seen;
             for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
@@ -1734,8 +1719,8 @@ void Body::onChanged(const App::Property* prop)
             }
         }
         else if (prop == &ShapeMaterial) {
-            // Derived membership (§9.1-inverse): Group is empty under de-ownership, so push
-            // the Body material onto its features via the derived list, not the container.
+            // Derived membership (§9.1-inverse): a de-owned Body has no Group container, so
+            // push the Body material onto its features via the derived list.
             std::vector<App::DocumentObject*> features = getFullModel();
             if (!features.empty()) {
                 for (auto it : features) {
@@ -1882,9 +1867,9 @@ App::DocumentObject* Body::getSubObject(
     }
 
     // (Cruth §11 step 5c) The legacy sibling-grouping peek that skipped a display-folder
-    // path component was removed here: feature grouping placed those folders in Body.Group,
-    // which is empty under de-ownership, so the peek was inert. Path resolution now runs
-    // entirely through the derived findOwnedFeature delegation below.
+    // path component was removed here: feature grouping placed those folders in the Body
+    // Group, which no longer exists under de-ownership, so the peek was inert. Path
+    // resolution now runs entirely through the derived findOwnedFeature delegation below.
 
     // Cruth de-ownership (§3.3): a Body's pipeline features reference it, they are not
     // held in its Group, so the base GeoFeatureGroup resolver (which looks children up in
@@ -1923,7 +1908,7 @@ App::DocumentObject* Body::getSubObject(
     }
 
     // We return the shape only if there are feature visible inside. Derived membership
-    // (§9.1-inverse): Group is empty under de-ownership, so scan the derived list.
+    // (§9.1-inverse): a de-owned Body has no Group, so scan the derived list.
     for (auto obj : getFullModel()) {
         if (obj->Visibility.getValue() && obj->isDerivedFrom<PartDesign::Feature>()) {
             return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
@@ -1976,7 +1961,7 @@ void Body::onDocumentRestored()
 {
     // CPART_DESIGN §9 / §8.3: the feature->marker relationship is not serialised; it is
     // re-derived by query at load. Repopulate the transient _Body cache from the
-    // BaseFeature chain (Group is empty under de-ownership). findBodyOf self-heals on
+    // BaseFeature chain (a de-owned Body has no Group to read). findBodyOf self-heals on
     // demand, but direct _Body readers — findOwnedFeature, the de-owned sub-element path
     // — need the cache warm before the first selection click.
     rebuildBodyCacheFromChain();
