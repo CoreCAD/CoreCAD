@@ -35,7 +35,6 @@
 #include <App/Application.h>
 #include <App/Datums.h>
 #include <App/Document.h>
-#include <App/GeoFeatureGroupExtension.h>
 #include <App/IndexedName.h>
 #include <App/MappedName.h>
 #include <App/VarSet.h>
@@ -466,10 +465,8 @@ Body* Body::breakOutInstance(Body* instanceBody)
         doc->removeObject(baked->getNameInDocument());
         return nullptr;
     }
-    // Keep the new Body in the same container as the originating instance.
-    if (auto* group = App::GeoFeatureGroupExtension::getGroupOfObject(instanceBody)) {
-        group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(newBody);
-    }
+    // The new Body lives directly in the document (marker model, §7.1): nothing to
+    // re-parent — a body is not nested in a container.
     newBody->addFeature(baked);  // also points the new Body's Tip at the BakedShape
 
     // Record the skip (§5.6) so the pattern drops this instance, then recompute.
@@ -723,8 +720,6 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             );
         }
 
-        App::DocumentObject* group = App::GeoFeatureGroupExtension::getGroupOfObject(bodies.front());
-
         // Retire every prior Body that did not continue. A marker owns nothing, so removal breaks
         // no property refs (P7 surfaces any dangling inbound link at the feature graph).
         for (std::size_t b = 0; b < bodies.size(); ++b) {
@@ -746,9 +741,7 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
                 continue;
             }
             body->Tip.setValue(feature);
-            if (group) {
-                group->getExtensionByType<App::GeoFeatureGroupExtension>()->addObject(body);
-            }
+            // Spawned body lives directly in the document — no container to nest into.
             body->TipComponentId.setValue(
                 multiSolid ? componentKeyOfSolid(feature, shape, static_cast<int>(s) + 1) : ""
             );
