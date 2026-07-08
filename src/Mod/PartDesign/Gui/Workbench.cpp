@@ -345,11 +345,6 @@ void Workbench::activated()
         "PartDesign_CoordinateSystem"
     ));
 
-    const char* NoSel[] = {"PartDesign_Body", nullptr};
-    Watcher.push_back(
-        new Gui::TaskView::TaskWatcherCommandsEmptySelection(NoSel, "Start Part", "Part_Box_Parametric")
-    );
-
     const char* Faces[] = {
         "PartDesign_Fillet",
         "PartDesign_Chamfer",
@@ -531,8 +526,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
               << "PartDesign_Draft"
               << "PartDesign_Thickness";
 
-    *part << "PartDesign_Body"
-          << "Separator" << additives << "PartDesign_CompPrimitiveAdditive"
+    *part << additives << "PartDesign_CompPrimitiveAdditive"
           << "Separator" << subtractives << "PartDesign_CompPrimitiveSubtractive"
           << "Separator" << dressups << "Separator" << transformations << "Separator"
           << "PartDesign_Boolean"
@@ -575,8 +569,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     Gui::ToolBarItem* part = new Gui::ToolBarItem(root);
     part->setCommand("Part Design Helper Features");
 
-    *part << "PartDesign_Body"
-          << "PartDesign_CompSketches"
+    *part << "PartDesign_CompSketches"
           << "Sketcher_ValidateSketch"
           << "Part_CheckGeometry";
 

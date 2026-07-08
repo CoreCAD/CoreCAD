@@ -91,7 +91,6 @@ class CorePartWorkbench(Gui.Workbench):
             "Part",
             [
                 "Std_Part",
-                "PartDesign_Body",
                 "PartDesign_CompSketches",
             ],
         )
@@ -232,7 +231,6 @@ class CorePartWorkbench(Gui.Workbench):
             ["&Part Design"],
             [
                 "Std_Part",
-                "PartDesign_Body",
                 "Separator",
             ],
         )
@@ -700,12 +698,6 @@ class CorePartWorkbench(Gui.Workbench):
                 ],
                 "Datum objects",
                 "PartDesign_CoordinateSystem",
-            ),
-            # No selection — prompt to create a Body
-            EmptySelectionWatcher(
-                ["PartDesign_Body"],
-                "Start Part",
-                "Part_Box_Parametric",
             ),
             # Multiple faces
             FilterWatcher(
