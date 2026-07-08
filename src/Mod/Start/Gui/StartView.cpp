@@ -290,9 +290,11 @@ void StartView::newEmptyFile()
 
 void StartView::newPartDesignFile()
 {
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
+    // Cruth marker model: "New Part" creates a Part-type document (Std_Part mints the
+    // world frame; the document is the container). A body is no longer spawned up front
+    // — it emerges from the first solid-producing feature.
+    Gui::Application::Instance->commandManager().runCommandByName("Std_Part");
     Gui::Application::Instance->activateWorkbench("PartDesignWorkbench");
-    Gui::Application::Instance->commandManager().runCommandByName("PartDesign_Body");
     postStart(PostStartBehavior::doNotSwitchWorkbench);
 }
 
