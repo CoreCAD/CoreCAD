@@ -704,10 +704,17 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             }
         }
 
-        const bool anyRetire = std::any_of(continues.begin(), continues.end(), [](bool c) {
-            return !c;
-        });
-        if (anyRetire) {
+        // Warn only when a retired body was actually referenced by something. Retiring a body
+        // whose identity nobody pointed at (the routine split/merge case) is silent bookkeeping,
+        // not a user-actionable event — the message's whole purpose is "re-pick your references".
+        bool anyReferencedRetire = false;
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!continues[b] && !bodies[b]->getInList().empty()) {
+                anyReferencedRetire = true;
+                break;
+            }
+        }
+        if (anyReferencedRetire) {
             Base::Console().warning(
                 "Cruth Amendment 3 §4.3: feature '%s' changed body topology; identities that could "
                 "not be matched by ancestry were reset. Re-pick any references to the retired "

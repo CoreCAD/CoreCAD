@@ -3525,7 +3525,7 @@ void Document::removeObject(const char* sName)
     // Defer to the pendingRemove queue, which is flushed once recompute settles.
     if (pos->second->testStatus(ObjectStatus::PendingRecompute) || testStatus(Document::Recomputing)) {
         // TODO: shall we allow removal if there is active undo transaction?
-        FC_MSG("pending remove of " << sName << " after recomputing document " << getName());
+        FC_LOG("pending remove of " << sName << " after recomputing document " << getName());
         d->pendingRemove.emplace_back(pos->second);
         return;
     }
