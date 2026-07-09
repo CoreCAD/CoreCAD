@@ -53,7 +53,6 @@ PROPERTY_SOURCE(PartDesign::DressUp, PartDesign::FeatureAddSub)
 DressUp::DressUp()
 {
     ADD_PROPERTY(Base, (nullptr));
-    Placement.setStatus(App::Property::ReadOnly, true);
 
     ADD_PROPERTY_TYPE(
         SupportTransform,
@@ -75,17 +74,9 @@ short DressUp::mustExecute() const
     return PartDesign::FeatureAddSub::mustExecute();
 }
 
-void DressUp::positionByBaseFeature()
+Part::ShapeFeature* DressUp::getBaseObject(bool silent) const
 {
-    Part::Feature* base = static_cast<Part::Feature*>(BaseFeature.getValue());
-    if (base && base->isDerivedFrom<Part::Feature>()) {
-        this->Placement.setValue(base->Placement.getValue());
-    }
-}
-
-Part::Feature* DressUp::getBaseObject(bool silent) const
-{
-    Part::Feature* rv = Feature::getBaseObject(/* silent = */ true);
+    Part::ShapeFeature* rv = Feature::getBaseObject(/* silent = */ true);
     if (rv) {
         return rv;
     }
@@ -93,8 +84,8 @@ Part::Feature* DressUp::getBaseObject(bool silent) const
     const char* err = nullptr;
     App::DocumentObject* base = Base.getValue();
     if (base) {
-        if (base->isDerivedFrom<Part::Feature>()) {
-            rv = static_cast<Part::Feature*>(base);
+        if (base->isDerivedFrom<Part::ShapeFeature>()) {
+            rv = static_cast<Part::ShapeFeature*>(base);
         }
         else {
             err = "Linked object is not a Part object";
@@ -355,7 +346,6 @@ void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShap
             }
             else {
                 baseShape = getBaseTopoShape();
-                baseShape.move(getLocation().Inverted());
                 shapes.emplace_back(shape.makeElementCut(baseShape.getShape()));
                 shapes.emplace_back(baseShape.makeElementCut(shape.getShape()));
             }

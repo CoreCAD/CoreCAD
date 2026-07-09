@@ -31,14 +31,17 @@
 using namespace App;
 
 
-PROPERTY_SOURCE(App::Placement, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(App::Placement, App::GeoFeature)
 
 
 //===========================================================================
 // Feature
 //===========================================================================
 
-Placement::Placement() = default;
+Placement::Placement()
+{
+    App::PlacementExtension::initExtension(this);
+}
 
 Placement::~Placement() = default;
 

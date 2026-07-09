@@ -40,7 +40,7 @@ public:
 
     short int mustExecute() const override;
 
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
 
     const char* getViewProviderName() const override
     {
@@ -50,6 +50,10 @@ public:
     void onChanged(const App::Property* prop) override;
     App::DocumentObjectExecReturn* execute() override;
     void onDocumentRestored() override;
+
+    /// Amendment 4: in-body the base solid is world-placed (derived); an
+    /// orphaned base outside a body keeps its own movable placement (legacy).
+    bool holdsAuthoredPlacement() const override;
 
 private:
     void trySetBaseFeatureOfBody();

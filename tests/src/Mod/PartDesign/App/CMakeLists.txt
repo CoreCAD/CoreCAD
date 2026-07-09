@@ -8,6 +8,7 @@ add_executable(PartDesign_tests_run
         MoveFeatureToBody.cpp
         AddFeature.cpp
         ReconcileMultiOutput.cpp
+        WorldFrame.cpp
 )
 
 set(PartDesignTestData_Files

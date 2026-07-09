@@ -177,7 +177,7 @@ void Constraint::onChanged(const App::Property* prop)
         bool execute = this->isRecomputing();
         for (std::size_t i = 0; i < Objects.size(); i++) {
             App::DocumentObject* obj = Objects[i];
-            Part::Feature* feat = static_cast<Part::Feature*>(obj);
+            Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(obj);
             sh = Tools::getFeatureSubShape(feat, SubElements[i].c_str(), !execute);
             if (!sh.IsNull() && sh.ShapeType() == TopAbs_FACE) {
                 // Get face normal in center point
@@ -273,7 +273,7 @@ bool Constraint::getPoints(
     TopoDS_Shape sh;
 
     for (std::size_t i = 0; i < Objects.size(); i++) {
-        Part::Feature* feat = static_cast<Part::Feature*>(Objects[i]);
+        Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(Objects[i]);
         sh = Tools::getFeatureSubShape(feat, SubElements[i].c_str(), true);
         if (sh.IsNull()) {
             return false;
@@ -480,7 +480,7 @@ Base::Vector3d Constraint::getBasePoint(
         return Base::Vector3d(0, 0, 0);
     }
     std::string subName = names.front();
-    Part::Feature* featLoc = static_cast<Part::Feature*>(objLoc);
+    Part::ShapeFeature* featLoc = static_cast<Part::ShapeFeature*>(objLoc);
     TopoDS_Shape shloc = featLoc->Shape.getShape().getSubShape(subName.c_str());
 
     // Get a plane from the Location reference
@@ -534,7 +534,7 @@ const Base::Vector3d Constraint::getDirection(const App::PropertyLinkSub& direct
         return rot.multVec(Base::Vector3d(0, 0, 1));
     }
 
-    if (!obj->isDerivedFrom<Part::Feature>()) {
+    if (!obj->isDerivedFrom<Part::ShapeFeature>()) {
         std::stringstream str;
         str << "Type is not a line, plane or Part object";
         throw Base::TypeError(str.str());
@@ -545,7 +545,7 @@ const Base::Vector3d Constraint::getDirection(const App::PropertyLinkSub& direct
         return Base::Vector3d(0, 0, 0);
     }
     std::string subName = names.front();
-    Part::Feature* feat = static_cast<Part::Feature*>(obj);
+    Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(obj);
     TopoDS_Shape sh = Tools::getFeatureSubShape(feat, subName.c_str(), !this->isRecomputing());
     if (sh.IsNull()) {
         return Base::Vector3d(0, 0, 0);

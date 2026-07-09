@@ -169,16 +169,18 @@ App::DocumentObjectExecReturn* Mirroring::execute()
         if (refObject->isDerivedFrom<Part::Plane>() || refObject->isDerivedFrom<App::Plane>()
             || (strstr(refObject->getNameInDocument(), "Plane")
                 && refObject->isDerivedFrom<Part::Datum>())) {
-            auto* plane = static_cast<Part::Feature*>(refObject);
-            Base::Vector3d base = plane->Placement.getValue().getPosition();
+            auto* plane = static_cast<Part::ShapeFeature*>(refObject);
+            Base::Vector3d base = plane->getPlacement().getPosition();
             axbase = gp_Pnt(base.x, base.y, base.z);
-            Base::Rotation rot = plane->Placement.getValue().getRotation();
+            Base::Rotation rot = plane->getPlacement().getRotation();
             Base::Vector3d dir;
             rot.multVec(Base::Vector3d(0, 0, 1), dir);
             axdir = gp_Dir(dir.x, dir.y, dir.z);
             // reference is an app::link or a part::feature or some subobject
         }
-        else if (refObject->isDerivedFrom<Part::Feature>() || refObject->isDerivedFrom<App::Link>()) {
+        else if (
+            refObject->isDerivedFrom<Part::ShapeFeature>() || refObject->isDerivedFrom<App::Link>()
+        ) {
             if (subStrings.size() > 1) {
                 throw Base::ValueError(
                     std::string(this->getFullLabel()) + ": Only 1 subobject is supported for Mirror Plane reference, either a plane face or a circle edge."

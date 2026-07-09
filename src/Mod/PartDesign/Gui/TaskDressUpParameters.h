@@ -59,7 +59,7 @@ public:
     ~TaskDressUpParameters() override;
 
     const std::vector<std::string> getReferences() const;
-    Part::Feature* getBase() const;
+    Part::ShapeFeature* getBase() const;
 
     void setupTransaction();
 

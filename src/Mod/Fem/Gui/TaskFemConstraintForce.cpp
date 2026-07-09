@@ -131,7 +131,7 @@ void TaskFemConstraintForce::addToSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
 
     for (auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }
@@ -213,7 +213,7 @@ void TaskFemConstraintForce::removeFromSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
     std::vector<size_t> itemsToDel;
     for (const auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }
@@ -279,7 +279,7 @@ std::pair<App::DocumentObject*, std::string> TaskFemConstraintForce::getDirectio
         link = std::make_pair(selObj, std::string());
     }
     // Sub-element of Part object
-    else if (selectionElement.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+    else if (selectionElement.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
         const std::vector<std::string>& subNames = selectionElement.getSubNames();
         if (subNames.size() != 1) {
             return link;
@@ -287,7 +287,9 @@ std::pair<App::DocumentObject*, std::string> TaskFemConstraintForce::getDirectio
 
         std::string subNamesElement = subNames[0];
 
-        const Part::Feature* feat = static_cast<const Part::Feature*>(selectionElement.getObject());
+        const Part::ShapeFeature* feat = static_cast<const Part::ShapeFeature*>(
+            selectionElement.getObject()
+        );
         TopoDS_Shape ref = feat->Shape.getShape().getSubShape(subNamesElement.c_str());
 
         if (ref.ShapeType() == TopAbs_EDGE) {

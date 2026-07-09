@@ -26,6 +26,7 @@
 #pragma once
 
 #include "GeoFeature.h"
+#include "PlacementExtension.h"
 #include "OriginGroupExtension.h"
 #include "PropertyLinks.h"
 
@@ -36,7 +37,7 @@ namespace App
 
 /** Base class of all geometric document objects.
  */
-class AppExport Part: public App::GeoFeature, public App::OriginGroupExtension
+class AppExport Part: public App::GeoFeature, public App::OriginGroupExtension, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_EXTENSIONS(App::Part);
 

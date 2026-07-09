@@ -68,7 +68,7 @@ Fillet::Fillet()
 
 short Fillet::mustExecute() const
 {
-    if (Placement.isTouched() || Radius.isTouched()) {
+    if (Radius.isTouched()) {
         return 1;
     }
     return DressUp::mustExecute();
@@ -105,8 +105,6 @@ App::DocumentObjectExecReturn* Fillet::execute()
             QT_TRANSLATE_NOOP("Exception", "Fillet radius must be greater than zero")
         );
     }
-
-    this->positionByBaseFeature();
 
     try {
         TopoShape shape(0);  //,getDocument()->getStringHasher());

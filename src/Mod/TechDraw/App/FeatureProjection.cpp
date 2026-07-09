@@ -65,9 +65,9 @@ App::DocumentObjectExecReturn *FeatureProjection::execute()
     App::DocumentObject* link = Source.getValue();
     if (!link)
         return new App::DocumentObjectExecReturn("No object linked");
-    if (!link->isDerivedFrom<Part::Feature>())
+    if (!link->isDerivedFrom<Part::ShapeFeature>())
         return new App::DocumentObjectExecReturn("Linked object is not a Part object");
-    const TopoDS_Shape& shape = static_cast<Part::Feature*>(link)->Shape.getShape().getShape();
+    const TopoDS_Shape& shape = static_cast<Part::ShapeFeature*>(link)->Shape.getShape().getShape();
     if (shape.IsNull())
         return new App::DocumentObjectExecReturn("Linked shape object is empty");
 

@@ -72,3 +72,11 @@ tsupdate_stdout.log
 # pixi environments
 *.egg-info
 .pixi
+
+# FreeCAD scratch/backup files (regenerable; never commit)
+*.FCBak
+/test.FCStd
+/test2.FCStd
+
+# Claude/dev scratch files (throwaway test scripts, docs; never commit)
+/.scratch/

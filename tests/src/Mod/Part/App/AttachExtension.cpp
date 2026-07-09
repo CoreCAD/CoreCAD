@@ -81,18 +81,18 @@ TEST_F(AttachExtensionTest, testAttacherTypeEngine)
     EXPECT_STREQ(plane->AttacherEngine.getValueAsString(), "Engine 3D");
 
     plane->AttacherType.setValue("Attacher::AttachEnginePlane");
-    plane->onExtendedDocumentRestored();
+    plane->Part::AttachExtension::onExtendedDocumentRestored();
     EXPECT_STREQ(plane->AttacherEngine.getValueAsString(), "Engine Plane");
 
     plane->AttacherType.setValue("Attacher::AttachEngineLine");
-    plane->onExtendedDocumentRestored();
+    plane->Part::AttachExtension::onExtendedDocumentRestored();
     EXPECT_STREQ(plane->AttacherEngine.getValueAsString(), "Engine Line");
 
     plane->AttacherType.setValue("Attacher::AttachEnginePoint");
-    plane->onExtendedDocumentRestored();
+    plane->Part::AttachExtension::onExtendedDocumentRestored();
     EXPECT_STREQ(plane->AttacherEngine.getValueAsString(), "Engine Point");
 
     plane->AttacherType.setValue("Attacher::AttachEngine3D");
-    plane->onExtendedDocumentRestored();
+    plane->Part::AttachExtension::onExtendedDocumentRestored();
     EXPECT_STREQ(plane->AttacherEngine.getValueAsString(), "Engine 3D");
 }

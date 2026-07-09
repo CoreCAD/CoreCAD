@@ -403,7 +403,7 @@ void ViewProviderRobotObject::updateData(const App::Property* prop)
     else if (prop == &robObj->ToolShape) {
         App::DocumentObject* o = robObj->ToolShape.getValue<App::DocumentObject*>();
 
-        if (o && (o->isDerivedFrom<Part::Feature>() || o->isDerivedFrom<App::VRMLObject>())) {
+        if (o && (o->isDerivedFrom<Part::ShapeFeature>() || o->isDerivedFrom<App::VRMLObject>())) {
             toolShape = Gui::Application::Instance->getViewProvider(o);
             toolShape->setTransformation(
                 (robObj->Tcp.getValue() * (robObj->ToolBase.getValue().inverse())).toMatrix()

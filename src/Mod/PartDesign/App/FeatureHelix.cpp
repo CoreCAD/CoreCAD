@@ -217,8 +217,7 @@ Helix::Helix()
 
 short Helix::mustExecute() const
 {
-    if (Placement.isTouched() || ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched()
-        || Angle.isTouched()) {
+    if (ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched() || Angle.isTouched()) {
         return 1;
     }
     return ProfileBased::mustExecute();
@@ -352,11 +351,6 @@ App::DocumentObjectExecReturn* Helix::execute()
     }
 
     try {
-        this->positionByPrevious();
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-
-        base.move(invObjLoc);
-
         TopoDS_Shape result;
 
         // generate the helix path
@@ -371,7 +365,6 @@ App::DocumentObjectExecReturn* Helix::execute()
         }
 
         TopoDS_Shape face = sketchshape;
-        face.Move(invObjLoc);
 
         Bnd_Box bounds;
         BRepBndLib::Add(path, bounds);
@@ -625,9 +618,6 @@ TopoDS_Shape Helix::generateHelixPath(double breakAtTurn)
     mov.SetTransformation(sourceCS, targetCS);
     TopLoc_Location loc(mov);
     path.Move(loc.Inverted());
-
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    path.Move(invObjLoc);
 
     return path;
 }

@@ -26,6 +26,7 @@
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>
 #include <Mod/Material/App/PropertyMaterial.h>
 #include <Mod/Part/PartGlobal.h>
 #include <Base/Bitmask.h>
@@ -61,17 +62,25 @@ using ShapeOptions = Base::Flags<ShapeOption>;
 
 
 class PartFeaturePy;
+class Feature;
 
-/** Base class of all shape feature classes in FreeCAD
+/** Base class of all shape feature classes.
+ *
+ * ShapeFeature owns the geometry (Shape) and the shape machinery but authors
+ * no position of its own — Amendment 4's unplaced base. The placed concrete
+ * class Part::Feature (below) adds an authored placement via
+ * App::PlacementExtension; the derived PartDesign feature line derives from
+ * ShapeFeature directly and holds none. Everything asks getLocation() /
+ * getPlacement(), which answer identity when no placement is carried.
  */
-class PartExport Feature: public App::GeoFeature
+class PartExport ShapeFeature: public App::GeoFeature
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Part::Feature);
+    PROPERTY_HEADER_WITH_OVERRIDE(Part::ShapeFeature);
 
 public:
     /// Constructor
-    Feature();
-    ~Feature() override;
+    ShapeFeature();
+    ~ShapeFeature() override;
 
     PropertyPartShape Shape;
     Materials::PropertyMaterial ShapeMaterial;
@@ -222,7 +231,7 @@ protected:
     void onChanged(const App::Property* prop) override;
     void onDocumentRestored() override;
 
-    void copyMaterial(Feature* feature);
+    void copyMaterial(ShapeFeature* feature);
     void copyMaterial(App::DocumentObject* link);
 
     void registerElementCache(const std::string& prefix, PropertyPartShape* prop);
@@ -257,6 +266,23 @@ private:
     struct ElementCache;
     std::map<std::string, ElementCache> _elementCache;
     std::vector<std::pair<std::string, PropertyPartShape*>> _elementCachePrefixMap;
+};
+
+/** A shape feature that also authors its own placement (Amendment 4).
+ *
+ * Kept under the historical type name "Part::Feature" so imported shapes and
+ * existing documents need no migration. It mixes App::PlacementExtension into
+ * the unplaced ShapeFeature base to carry an authored position; the ->Placement
+ * member access resolves to the extension's property. This is the placed
+ * concrete class used for primitives, imports and generic shape holders.
+ */
+class PartExport Feature: public ShapeFeature, public App::PlacementExtension
+{
+    PROPERTY_HEADER_WITH_OVERRIDE(Part::Feature);
+
+public:
+    Feature();
+    ~Feature() override;
 };
 
 class PartExport FilletBase: public Part::Feature

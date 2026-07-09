@@ -61,7 +61,7 @@ public:
     ) override;
 
 protected:
-    void positionBySupport() override;
+    void purgeTouchedTransformations() override;
 };
 
 }  // namespace PartDesign

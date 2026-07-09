@@ -67,7 +67,7 @@ App::DocumentObjectExecReturn* BakedShape::execute()
     return StdReturn;
 }
 
-Part::Feature* BakedShape::getBaseObject(bool /*silent*/) const
+Part::ShapeFeature* BakedShape::getBaseObject(bool /*silent*/) const
 {
     // Severed from its origin: a BakedShape has no base feature.
     return nullptr;

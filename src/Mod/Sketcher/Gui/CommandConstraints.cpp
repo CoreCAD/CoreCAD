@@ -953,7 +953,7 @@ int SketchSelection::setUp()
                 return -1;
             }
             // assume always a Part::Feature derived object as support
-            assert(selection[1].getObject()->isDerivedFrom<Part::Feature>());
+            assert(selection[1].getObject()->isDerivedFrom<Part::ShapeFeature>());
             SketchSubNames = selection[0].getSubNames();
             SupportSubNames = selection[1].getSubNames();
         }
@@ -965,7 +965,7 @@ int SketchSelection::setUp()
                 return -1;
             }
             // assume always a Part::Feature derived object as support
-            assert(selection[0].getObject()->isDerivedFrom<Part::Feature>());
+            assert(selection[0].getObject()->isDerivedFrom<Part::ShapeFeature>());
             SketchSubNames = selection[1].getSubNames();
             SupportSubNames = selection[0].getSubNames();
         }

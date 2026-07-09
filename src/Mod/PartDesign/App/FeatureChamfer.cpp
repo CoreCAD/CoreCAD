@@ -113,7 +113,7 @@ short Chamfer::mustExecute() const
             break;
     }
 
-    if (Placement.isTouched() || touched) {
+    if (touched) {
         return 1;
     }
     return DressUp::mustExecute();
@@ -153,8 +153,6 @@ App::DocumentObjectExecReturn* Chamfer::execute()
     if (res != App::DocumentObject::StdReturn) {
         return res;
     }
-
-    this->positionByBaseFeature();
 
     if (static_cast<Part::ChamferType>(chamferType) == Part::ChamferType::distanceAngle) {
         size2 = angle;

@@ -103,7 +103,7 @@ public:
         // https://forum.freecad.org/viewtopic.php?f=3&t=37448
         if (object == activeBody) {
             App::DocumentObject* tip = activeBody->Tip.getValue();
-            if (tip && tip->isDerivedFrom<Part::Feature>() && elements.size() == 1) {
+            if (tip && tip->isDerivedFrom<Part::ShapeFeature>() && elements.size() == 1) {
                 Gui::SelectionChanges msg;
                 msg.pDocName = faceSelection.getDocName();
                 msg.pObjectName = tip->getNameInDocument();
@@ -123,7 +123,7 @@ public:
         App::DocumentObject* object = faceSelection.getObject();
         std::vector<std::string> elements = faceSelection.getSubNames();
 
-        Part::Feature* partobject = dynamic_cast<Part::Feature*>(object);
+        Part::ShapeFeature* partobject = dynamic_cast<Part::ShapeFeature*>(object);
         if (!partobject) {
             throw WrongSelectionException();
         }
@@ -411,7 +411,7 @@ public:
         for (auto binder : shapeBinders) {
             // Check whether this plane belongs to the active body
             if (PartDesign::Body::backsBody(binder, activeBody)) {
-                Part::TopoShape shape = static_cast<Part::Feature*>(binder)->Shape.getShape();
+                Part::TopoShape shape = static_cast<Part::ShapeFeature*>(binder)->Shape.getShape();
                 if (shape.isPlanar()) {
                     if (!activeBody->isAfterInsertPoint(binder)) {
                         validPlaneCount++;

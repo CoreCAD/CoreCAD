@@ -501,9 +501,9 @@ void TaskExtrudeParameters::selectedShapeFace(const Gui::SelectionChanges& msg, 
     }
 
     // Get the base shape from the correct side's property
-    auto base = static_cast<Part::Feature*>(side.UpToShape->getValue());
+    auto base = static_cast<Part::ShapeFeature*>(side.UpToShape->getValue());
     if (!base) {
-        base = static_cast<Part::Feature*>(extrude);
+        base = static_cast<Part::ShapeFeature*>(extrude);
     }
     else if (strcmp(msg.pObjectName, base->getNameInDocument()) != 0) {
         return;
@@ -655,7 +655,7 @@ void TaskExtrudeParameters::onTaperChanged(double angle, Side side)
 bool TaskExtrudeParameters::hasProfileFace(PartDesign::ProfileBased* profile) const
 {
     try {
-        Part::Feature* pcFeature = profile->getVerifiedObject();
+        Part::ShapeFeature* pcFeature = profile->getVerifiedObject();
         Base::Vector3d SketchVector = profile->getProfileNormal();
         Q_UNUSED(pcFeature)
         Q_UNUSED(SketchVector)

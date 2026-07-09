@@ -76,7 +76,7 @@ public:
 
     bool allow(App::Document* /*pDoc*/, App::DocumentObject* iPObj, const char* sSubName) override
     {
-        auto aPart = dynamic_cast<Part::Feature*>(iPObj);
+        auto aPart = dynamic_cast<Part::ShapeFeature*>(iPObj);
         if (!aPart) {
             return false;
         }
@@ -109,7 +109,7 @@ public:
 
     bool allow(App::Document* /*pDoc*/, App::DocumentObject* iPObj, const char* sSubName) override
     {
-        auto aPart = dynamic_cast<Part::Feature*>(iPObj);
+        auto aPart = dynamic_cast<Part::ShapeFeature*>(iPObj);
         if (!aPart) {
             return false;
         }

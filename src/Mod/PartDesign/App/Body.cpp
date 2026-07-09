@@ -209,7 +209,7 @@ bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodi
         return true;
     }
 
-    if (obj->isDerivedFrom(Part::Feature::getClassTypeId())) {
+    if (obj->isDerivedFrom(Part::ShapeFeature::getClassTypeId())) {
         if (auto* body = PartDesign::Body::findBodyOf(obj)) {
             bodies.insert(body);
             return false;
@@ -980,7 +980,7 @@ bool Body::isAllowed(const App::DocumentObject* obj)
         // TODO Why this lines was here? why should we allow anything of those? (2015-08-13,
         // Fat-Zer) obj->isDerivedFrom<Part::FeaturePython>() // trouble with this line on Windows!?
         // Linker fails to find getClassTypeId() of the Part::FeaturePython...
-        // obj->isDerivedFrom<Part::Feature>()
+        // obj->isDerivedFrom<Part::ShapeFeature>()
         // allow VarSets for parameterization
         obj->isDerivedFrom<App::VarSet>() || obj->isDerivedFrom<App::DatumElement>()
         || obj->isDerivedFrom<App::LocalCoordinateSystem>()
@@ -1138,7 +1138,7 @@ std::string Body::componentIdOfSub(const App::DocumentObject* feature, const cha
     if (!subElement || subElement[0] == '\0') {
         return {};
     }
-    auto* geo = freecad_cast<Part::Feature*>(const_cast<App::DocumentObject*>(feature));
+    auto* geo = freecad_cast<Part::ShapeFeature*>(const_cast<App::DocumentObject*>(feature));
     if (!geo) {
         return {};
     }
@@ -1594,7 +1594,7 @@ App::DocumentObjectExecReturn* Body::execute()
         }
 
         // get the shape of the tip
-        tipShape = static_cast<Part::Feature*>(tip)->Shape.getShape();
+        tipShape = static_cast<Part::ShapeFeature*>(tip)->Shape.getShape();
 
         if (tipShape.getShape().IsNull()) {
             return new App::DocumentObjectExecReturn(
@@ -1724,7 +1724,7 @@ void Body::onChanged(const App::Property* prop)
             std::vector<App::DocumentObject*> features = getFullModel();
             if (!features.empty()) {
                 for (auto it : features) {
-                    auto feature = dynamic_cast<Part::Feature*>(it);
+                    auto feature = dynamic_cast<Part::ShapeFeature*>(it);
                     if (feature) {
                         if (feature->ShapeMaterial.getValue().getUUID()
                             != ShapeMaterial.getValue().getUUID()) {

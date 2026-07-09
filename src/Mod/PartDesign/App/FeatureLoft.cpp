@@ -179,13 +179,6 @@ App::DocumentObjectExecReturn* Loft::execute()
     auto hasher = getDocument()->getStringHasher();
 
     try {
-        // setup the location
-        this->positionByPrevious();
-        auto invObjLoc = this->getLocation().Inverted();
-        if (!base.isNull()) {
-            base.move(invObjLoc);
-        }
-
         // build up multisections
         auto multisections = Sections.getSubListValues();
         if (multisections.empty()) {
@@ -220,9 +213,6 @@ App::DocumentObjectExecReturn* Loft::execute()
         // build all shells
         std::vector<TopoShape> shells;
         for (auto& sectionWires : wiresections) {
-            for (auto& wire : sectionWires) {
-                wire.move(invObjLoc);
-            }
             shells.push_back(TopoShape(0, hasher).makeElementLoft(
                 sectionWires,
                 Part::IsSolid::notSolid,
@@ -240,7 +230,6 @@ App::DocumentObjectExecReturn* Loft::execute()
                     QT_TRANSLATE_NOOP("Exception", "Loft: Creating a face from sketch failed")
                 );
             }
-            front.move(invObjLoc);
         }
 
         TopoShape back;

@@ -78,16 +78,16 @@ TEST_F(FeaturePartTest, create)
     // Act
 
     // A feature with an empty TopoShape
-    auto featureNoShape {Feature::create(TopoShape())};
+    auto featureNoShape {ShapeFeature::create(TopoShape())};
 
     // A feature with a TopoShape
-    auto featureNoName {Feature::create(shape)};
+    auto featureNoName {ShapeFeature::create(shape)};
 
     // A feature with a TopoShape and a name
-    auto featureNoDoc {Feature::create(shape, "Vertex")};
+    auto featureNoDoc {ShapeFeature::create(shape, "Vertex")};
 
     // A feature with a TopoShape and a name in the document otherDoc
-    auto feature {Feature::create(shape, "Vertex", otherDoc)};
+    auto feature {ShapeFeature::create(shape, "Vertex", otherDoc)};
 
     // Assert
 

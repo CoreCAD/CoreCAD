@@ -47,17 +47,14 @@ MultiTransform::MultiTransform()
     Transformations.setSize(0);
 }
 
-void MultiTransform::positionBySupport()
+void MultiTransform::purgeTouchedTransformations()
 {
-    PartDesign::Transformed::positionBySupport();
     std::vector<App::DocumentObject*> transFeatures = Transformations.getValues();
     for (auto f : transFeatures) {
         auto transFeature = freecad_cast<PartDesign::Transformed*>(f);
         if (!transFeature) {
             throw Base::TypeError("Transformation features must be subclasses of Transformed");
         }
-
-        transFeature->Placement.setValue(this->Placement.getValue());
 
         // To avoid that a linked transform feature stays touched after a recompute
         // we have to purge the touched state

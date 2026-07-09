@@ -1311,7 +1311,7 @@ void SketchObject::validateExternalLinks()
                 // do nothing - shape will be calculated later during rebuild
             }
             else {
-                const auto* refObj = static_cast<const Part::Feature*>(Obj);
+                const auto* refObj = static_cast<const Part::ShapeFeature*>(Obj);
                 const Part::TopoShape& refShape = refObj->Shape.getShape();
                 refSubShape = refShape.getSubShape(SubElement.c_str());
             }
@@ -2423,7 +2423,7 @@ void SketchObject::rebuildExternalGeometry(std::optional<ExternalToAdd> extToAdd
             if (auto* datum = freecad_cast<const Part::Datum*>(resolvedObj)) {
                 refSubShape = datum->getShape();
             }
-            else if (auto* refObj = freecad_cast<const Part::Feature*>(resolvedObj)) {
+            else if (auto* refObj = freecad_cast<const Part::ShapeFeature*>(resolvedObj)) {
                 const Part::TopoShape& refShape = refObj->Shape.getShape();
                 refSubShape = refShape.getSubShape(SubElement.c_str());
             }

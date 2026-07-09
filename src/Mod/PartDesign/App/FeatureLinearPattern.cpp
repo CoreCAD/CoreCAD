@@ -422,7 +422,7 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
         Base::Vector3d d = line->getDirection();
         dir = gp_Dir(d.x, d.y, d.z);
     }
-    else if (auto* refFeature = freecad_cast<Part::Feature*>(refObject)) {
+    else if (auto* refFeature = freecad_cast<Part::ShapeFeature*>(refObject)) {
         if (subStrings[0].empty()) {
             throw Base::ValueError("No direction reference specified");
         }
@@ -462,9 +462,6 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
             "Direction reference must be edge/face of a feature or a datum line/plane"
         );
     }
-
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    dir.Transform(invObjLoc.Transformation());
 
     return Base::convertTo<gp_Vec>(dir);
 }

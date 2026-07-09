@@ -52,7 +52,7 @@ bool ViewProviderPathShape::canDragObjects() const
 
 bool ViewProviderPathShape::canDragObject(App::DocumentObject* obj) const
 {
-    return obj && obj->isDerivedFrom<Part::Feature>();
+    return obj && obj->isDerivedFrom<Part::ShapeFeature>();
 }
 
 void ViewProviderPathShape::dragObject(App::DocumentObject* obj)

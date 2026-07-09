@@ -77,7 +77,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
     std::string type = Type.getValueAsString();
 
     // Check the parameters
-    const Part::Feature* baseFeature = this->getBaseObject(/* silent = */ true);
+    const Part::ShapeFeature* baseFeature = this->getBaseObject(/* silent = */ true);
 
     if (!baseFeature && type == "Cut") {
         return new App::DocumentObjectExecReturn(
@@ -97,14 +97,14 @@ App::DocumentObjectExecReturn* Boolean::execute()
     }
     else {
         auto feature = tools.back();
-        if (!feature->isDerivedFrom<Part::Feature>()) {
+        if (!feature->isDerivedFrom<Part::ShapeFeature>()) {
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
                 "Exception",
                 "Cannot do boolean with anything but Part::Feature and its derivatives"
             ));
         }
 
-        baseTopShape = static_cast<Part::Feature*>(feature)->Shape.getShape();
+        baseTopShape = static_cast<Part::ShapeFeature*>(feature)->Shape.getShape();
         tools.pop_back();
     }
 
@@ -173,7 +173,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
 void Boolean::updatePreviewShape()
 {
     if (strcmp(Type.getValueAsString(), "Cut") == 0) {
-        TopoShape base = getBaseTopoShape(true).moved(getLocation().Inverted());
+        TopoShape base = getBaseTopoShape(true);
         TopoShape result = Shape.getShape();
 
         try {

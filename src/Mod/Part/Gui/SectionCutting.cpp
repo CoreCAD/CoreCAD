@@ -357,7 +357,7 @@ Base::BoundBox3d SectionCut::collectObjects()
             // check if this is a BooleanFragments or a Part::Compound
             // Part::Compound is the case when there was only one object
             auto pcCompoundPart = dynamic_cast<Part::Compound*>(compoundObject);
-            auto pcPartFeature = dynamic_cast<Part::Feature*>(compoundObject);
+            auto pcPartFeature = dynamic_cast<Part::ShapeFeature*>(compoundObject);
             if (!pcCompoundPart && pcPartFeature) {
                 // for more security check for validity accessing its ViewProvider
                 auto pcCompoundBF = Gui::Application::Instance->getViewProvider(pcPartFeature);
@@ -885,7 +885,8 @@ bool SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
             }
         }
         // get all shapes that are also Part::Features
-        if (object->getPropertyByName("Shape") != nullptr && object->isDerivedFrom<Part::Feature>()) {
+        if (object->getPropertyByName("Shape") != nullptr
+            && object->isDerivedFrom<Part::ShapeFeature>()) {
             // sort out 2D objects, datums, App:Parts, compounds and objects that are
             // part of a PartDesign body
             if (!object->isDerivedFrom<Part::Part2DObject>() && !object->isDerivedFrom<Part::Datum>()
@@ -898,7 +899,7 @@ bool SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
         // get Links that are derived from Part objects
         if (auto pcLink = dynamic_cast<App::Link*>(object)) {
             auto linkedObject = doc->getObject(pcLink->LinkedObject.getObjectName());
-            if (linkedObject != nullptr && linkedObject->isDerivedFrom<Part::Feature>()) {
+            if (linkedObject != nullptr && linkedObject->isDerivedFrom<Part::ShapeFeature>()) {
                 objects.push_back(object);
             }
         }

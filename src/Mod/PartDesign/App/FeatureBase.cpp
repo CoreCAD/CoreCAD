@@ -43,7 +43,7 @@ FeatureBase::FeatureBase()
     BaseFeature.setStatus(App::Property::Hidden, false);
 }
 
-Part::Feature* FeatureBase::getBaseObject(bool) const
+Part::ShapeFeature* FeatureBase::getBaseObject(bool) const
 {
 
     return nullptr;
@@ -69,7 +69,7 @@ App::DocumentObjectExecReturn* FeatureBase::execute()
         );
     }
 
-    if (!BaseFeature.getValue()->isDerivedFrom<Part::Feature>()) {
+    if (!BaseFeature.getValue()->isDerivedFrom<Part::ShapeFeature>()) {
         return new App::DocumentObjectExecReturn(
             QT_TRANSLATE_NOOP("Exception", "BaseFeature must be a Part::Feature")
         );
@@ -116,9 +116,16 @@ void FeatureBase::onDocumentRestored()
     // if the base is not part of a body then show its placement property again
     auto body = getFeatureBody();
     if (!body) {
-        Placement.setStatus(App::Property::Hidden, false);
     }
     PartDesign::Feature::onDocumentRestored();
+}
+
+bool FeatureBase::holdsAuthoredPlacement() const
+{
+    // In a body the base solid is world-placed like any derived feature. An
+    // orphaned base (outside a body — a legacy state) un-hides its Placement
+    // and remains movable, so it does hold an authored placement of its own.
+    return getFeatureBody() == nullptr;
 }
 
 }  // namespace PartDesign

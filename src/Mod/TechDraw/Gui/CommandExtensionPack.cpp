@@ -894,7 +894,7 @@ void execCosmeticCircleCenter(Gui::Command* cmd)
         if (so.getObject()->isDerivedFrom<TechDraw::DrawViewPart>()) {
             baseFeat = static_cast<TechDraw::DrawViewPart*> (so.getObject());
             subNames2D = so.getSubNames();
-        } else if (so.getObject()->isDerivedFrom<Part::Feature>()) {
+        } else if (so.getObject()->isDerivedFrom<Part::ShapeFeature>()) {
             std::vector<std::string> subNames3D = so.getSubNames();
             for (auto& sub3D: subNames3D) {
                 std::pair<Part::Feature*, std::string> temp;

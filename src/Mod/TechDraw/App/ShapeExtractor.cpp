@@ -67,7 +67,7 @@ std::vector<TopoDS_Shape> ShapeExtractor::getShapes2d(const std::vector<App::Doc
 
     for (auto& l:links) {
         if (is2dObject(l)) {
-            if (l->isDerivedFrom<Part::Feature>()) {
+            if (l->isDerivedFrom<Part::ShapeFeature>()) {
                 TopoDS_Shape temp = getLocatedShape(l);
                 // checkShape on 2d objs?
                 if (!temp.IsNull()) {
@@ -302,7 +302,7 @@ std::vector<TopoDS_Shape> ShapeExtractor::getShapesFromObject(const App::Documen
     const App::GroupExtension* gex = dynamic_cast<const App::GroupExtension*>(docObj);
     App::Property* gProp = docObj->getPropertyByName("Group");
     App::Property* sProp = docObj->getPropertyByName("Shape");
-    if (docObj->isDerivedFrom<Part::Feature>()) {
+    if (docObj->isDerivedFrom<Part::ShapeFeature>()) {
         if (checkShape(docObj, getLocatedShape(docObj))) {
             result.push_back(getLocatedShape(docObj));
         }
@@ -436,7 +436,7 @@ Base::Vector3d ShapeExtractor::getLocation3dFromFeat(const App::DocumentObject* 
 //        //Draft Points are not necc. Part::Feature??
 //        //if Draft option "use part primitives" is not set are Draft points still PartFeature?
 
-    const Part::Feature* pf = dynamic_cast<const Part::Feature*>(obj);
+    const Part::ShapeFeature* pf = dynamic_cast<const Part::ShapeFeature*>(obj);
     if (pf) {
         Part::TopoShape pts = pf->Shape.getShape();
         pts.setPlacement(pf->globalPlacement());
@@ -454,7 +454,7 @@ Base::Vector3d ShapeExtractor::getLocation3dFromFeat(const App::DocumentObject* 
 TopoDS_Shape ShapeExtractor::getLocatedShape(const App::DocumentObject* docObj)
 {
         Part::TopoShape shape = Part::Feature::getTopoShape(docObj, Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform);
-        const Part::Feature* pf = dynamic_cast<const Part::Feature*>(docObj);
+        const Part::ShapeFeature* pf = dynamic_cast<const Part::ShapeFeature*>(docObj);
         if (pf) {
             shape.setPlacement(pf->globalPlacement());
         }

@@ -28,11 +28,14 @@
 #include "FeatureAddSub.h"
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/PrismExtension.h>
+#include <App/PlacementExtension.h>
 
 namespace PartDesign
 {
 
-class PartDesignExport FeaturePrimitive: public PartDesign::FeatureAddSub, public Part::AttachExtension
+class PartDesignExport FeaturePrimitive: public PartDesign::FeatureAddSub,
+                                         public Part::AttachExtension,
+                                         public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_EXTENSIONS(PartDesign::FeaturePrimitive);
 

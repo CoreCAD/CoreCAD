@@ -85,7 +85,7 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
         // lote of assertion so feature should be marked as a tip
         if (selection.size() == 1 && feature && body
             && (feature->isDerivedFrom<PartDesign::Feature>()
-                || (feature->isDerivedFrom<Part::Feature>()
+                || (feature->isDerivedFrom<Part::ShapeFeature>()
                     && body->BaseFeature.getValue() == feature))) {
             *item << "PartDesign_MoveTip";
         }

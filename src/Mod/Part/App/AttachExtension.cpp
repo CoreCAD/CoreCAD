@@ -554,7 +554,7 @@ void AttachExtension::handleLegacyTangentPlaneOrientation()
 
     // extract the plane normal
     Base::Vector3d norm;
-    geof->Placement.getValue().getRotation().multVec(Base::Vector3d(0.0, 0.0, 1.0), norm);
+    geof->getPlacement().getRotation().multVec(Base::Vector3d(0.0, 0.0, 1.0), norm);
     gp_Dir normal(norm.x, norm.y, norm.z);
 
     // determine the dominant global axis

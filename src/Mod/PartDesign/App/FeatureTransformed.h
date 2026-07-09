@@ -77,7 +77,7 @@ public:
      *               silently return a nullptr, otherwise throw Base::Exception.
      *               Default is false.
      */
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
 
     virtual std::vector<App::DocumentObject*> getOriginals() const;
 
@@ -119,7 +119,10 @@ protected:
         App::Property* prop
     ) override;
 
-    virtual void positionBySupport();
+    /// Hook run before gathering transformations. The base implementation does
+    /// nothing; MultiTransform overrides it to purge the touched state of its
+    /// linked sub-transformations during a recompute.
+    virtual void purgeTouchedTransformations();
 
 private:
 };

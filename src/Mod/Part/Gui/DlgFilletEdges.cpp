@@ -597,7 +597,7 @@ void DlgFilletEdges::findShapes()
     }
 
     std::vector<App::DocumentObject*> objs = activeDoc->getObjectsOfType(
-        Part::Feature::getClassTypeId()
+        Part::ShapeFeature::getClassTypeId()
     );
     int index = 1;
     int current_index = 0;
@@ -837,9 +837,9 @@ void DlgFilletEdges::onShapeObjectActivated(int itemPos)
         return;
     }
     App::DocumentObject* part = doc->getObject((const char*)name);
-    if (part && part->isDerivedFrom<Part::Feature>()) {
+    if (part && part->isDerivedFrom<Part::ShapeFeature>()) {
         d->object = part;
-        TopoDS_Shape myShape = static_cast<Part::Feature*>(part)->Shape.getValue();
+        TopoDS_Shape myShape = static_cast<Part::ShapeFeature*>(part)->Shape.getValue();
 
         d->all_edges.Clear();
         TopExp::MapShapes(myShape, TopAbs_EDGE, d->all_edges);

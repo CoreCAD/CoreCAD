@@ -68,7 +68,7 @@ bool getPDRefineModelParameter()
 
 // ------------------------------------------------------------------------------------------------
 
-PROPERTY_SOURCE(PartDesign::Feature, Part::Feature)
+PROPERTY_SOURCE(PartDesign::Feature, Part::ShapeFeature)
 
 Feature::Feature()
 {
@@ -83,7 +83,6 @@ Feature::Feature()
         0
     );
     ADD_PROPERTY(SuppressedShape, (TopoShape()));
-    Placement.setStatus(App::Property::Hidden, true);
     BaseFeature.setStatus(App::Property::Hidden, true);
 
     App::SuppressibleExtension::initExtension(this);
@@ -101,7 +100,7 @@ App::DocumentObjectExecReturn* Feature::recompute()
     }
 
     SuppressedShape.setValue(TopoShape());
-    return Part::Feature::recompute();
+    return Part::ShapeFeature::recompute();
 }
 
 App::DocumentObjectExecReturn* Feature::recomputePreview()
@@ -116,7 +115,7 @@ void Feature::setMaterialToBodyMaterial()
     auto body = getFeatureBody();
     if (body) {
         // Ensure the part has the same material as the body
-        auto feature = dynamic_cast<Part::Feature*>(body);
+        auto feature = dynamic_cast<Part::ShapeFeature*>(body);
         if (feature) {
             copyMaterial(feature);
         }
@@ -140,7 +139,7 @@ void Feature::updateSuppressedShape()
     }
     if (!generated.empty()) {
         res.makeElementCompound(generated);
-        res.setPlacement(Placement.getValue());
+        res.setPlacement(getPlacement());
     }
     SuppressedShape.setValue(res);
 }
@@ -150,7 +149,7 @@ short Feature::mustExecute() const
     if (BaseFeature.isTouched()) {
         return 1;
     }
-    return Part::Feature::mustExecute();
+    return Part::ShapeFeature::mustExecute();
 }
 
 void Feature::onBaseFeatureRerouted(App::DocumentObject* /*oldBase*/, App::DocumentObject* /*newBase*/)
@@ -166,8 +165,8 @@ bool Feature::relinkToMatchingSubelements(
         return false;
     }
 
-    auto oldFeature = freecad_cast<Part::Feature*>(oldBase);
-    auto newFeature = freecad_cast<Part::Feature*>(newBase);
+    auto oldFeature = freecad_cast<Part::ShapeFeature*>(oldBase);
+    auto newFeature = freecad_cast<Part::ShapeFeature*>(newBase);
     if (!oldFeature || !newFeature) {
         return false;
     }
@@ -225,17 +224,15 @@ void Feature::onChanged(const App::Property* prop)
             }
         }
         else if (prop == &Suppressed) {
+            // Amendment 4: a derived feature holds no authored placement, so the
+            // suppress path no longer saves/restores one — its geometry already
+            // lives in the world frame.
             if (Suppressed.getValue()) {
-                SuppressedPlacement = Placement.getValue();
                 updateSuppressedShape();
-            }
-            else {
-                Placement.setValue(SuppressedPlacement);
-                SuppressedPlacement = Base::Placement();
             }
         }
     }
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 int Feature::countSolids(const TopoDS_Shape& shape, TopAbs_ShapeEnum type)
@@ -306,15 +303,15 @@ const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)
     throw Base::NotImplementedError("getPointFromFace(): Not implemented yet for this case");
 }
 
-Part::Feature* Feature::getBaseObject(bool silent) const
+Part::ShapeFeature* Feature::getBaseObject(bool silent) const
 {
     App::DocumentObject* BaseLink = BaseFeature.getValue();
-    Part::Feature* BaseObject = nullptr;
+    Part::ShapeFeature* BaseObject = nullptr;
     const char* err = nullptr;
 
     if (BaseLink) {
-        if (BaseLink->isDerivedFrom<Part::Feature>()) {
-            BaseObject = static_cast<Part::Feature*>(BaseLink);
+        if (BaseLink->isDerivedFrom<Part::ShapeFeature>()) {
+            BaseObject = static_cast<Part::ShapeFeature*>(BaseLink);
         }
         if (!BaseObject) {
             err = "No base feature linked";
@@ -334,7 +331,7 @@ Part::Feature* Feature::getBaseObject(bool silent) const
 
 const TopoDS_Shape& Feature::getBaseShape() const
 {
-    const Part::Feature* BaseObject = getBaseObject();
+    const Part::ShapeFeature* BaseObject = getBaseObject();
 
     if (!BaseObject) {
         throw Base::ValueError("Base feature's shape is not defined");
@@ -361,7 +358,7 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
 {
     Part::TopoShape result;
 
-    const Part::Feature* BaseObject = getBaseObject(silent);
+    const Part::ShapeFeature* BaseObject = getBaseObject(silent);
     if (!BaseObject) {
         return result;
     }
@@ -464,8 +461,8 @@ gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)
         throw Base::ValueError("Feature: Null object");
     }
 
-    Base::Vector3d pos = plane->Placement.getValue().getPosition();
-    Base::Rotation rot = plane->Placement.getValue().getRotation();
+    Base::Vector3d pos = plane->getPlacement().getPosition();
+    Base::Rotation rot = plane->getPlacement().getRotation();
     Base::Vector3d normal(0, 0, 1);
     rot.multVec(normal, normal);
     return gp_Pln(gp_Pnt(pos.x, pos.y, pos.z), gp_Dir(normal.x, normal.y, normal.z));
@@ -515,33 +512,17 @@ App::DocumentObject* Feature::getSubObject(
             if (body) {
                 auto feat = body->findOwnedFeature(std::string(subname, dot));
                 if (feat) {
-                    Base::Matrix4D _mat;
-                    if (!transform) {
-                        // Normally the parent object is supposed to transform
-                        // the sub-object using its own placement. So, if no
-                        // transform is requested, (i.e. no parent
-                        // transformation), we just need to NOT apply the
-                        // transformation.
-                        //
-                        // But PartDesign features (including sketch) are
-                        // supposed to be contained inside a body. It makes
-                        // little sense to transform its sub-object. So if 'no
-                        // transform' is requested, we need to actively apply
-                        // an inverse transform.
-                        _mat = Placement.getValue().inverse().toMatrix();
-                        if (pmat) {
-                            *pmat *= _mat;
-                        }
-                        else {
-                            pmat = &_mat;
-                        }
-                    }
+                    // Amendment 4, Clause 4.4: reference resolution through a
+                    // feature composes no feature transform. The feature holds
+                    // no authored placement, so there is no inverse to apply for
+                    // the no-transform case — resolve straight to the owned
+                    // feature.
                     return feat->getSubObject(dot + 1, pyObj, pmat, true, depth + 1);
                 }
             }
         }
     }
-    return Part::Feature::getSubObject(subname, pyObj, pmat, transform, depth);
+    return Part::ShapeFeature::getSubObject(subname, pyObj, pmat, transform, depth);
 }
 
 

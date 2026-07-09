@@ -610,7 +610,7 @@ void CmdPartDesignClone::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> objs = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
+        Part::ShapeFeature::getClassTypeId()
     );
 
     if (objs.size() == 1) {
@@ -958,11 +958,11 @@ void prepareProfileBased(
     PartDesign::Body* pcActiveBody,
     Gui::Command* cmd,
     const std::string& which,
-    std::function<void(Part::Feature*, App::DocumentObject*)> func
+    std::function<void(Part::ShapeFeature*, App::DocumentObject*)> func
 )
 {
     auto base_worker = [=](App::DocumentObject* feature, const std::vector<std::string>& subs) {
-        if (!feature || !feature->isDerivedFrom<Part::Feature>()) {
+        if (!feature || !feature->isDerivedFrom<Part::ShapeFeature>()) {
             return;
         }
 
@@ -1101,7 +1101,7 @@ void prepareProfileBased(
             runProfileCmdWithSubs();
         }
 
-        func(static_cast<Part::Feature*>(feature), Feat);
+        func(static_cast<Part::ShapeFeature*>(feature), Feat);
     };
 
 
@@ -1229,7 +1229,11 @@ void prepareProfileBased(
     }
 }
 
-void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, App::DocumentObject* Feat)
+void finishProfileBased(
+    const Gui::Command* cmd,
+    const Part::ShapeFeature* sketch,
+    App::DocumentObject* Feat
+)
 {
     if (sketch && sketch->isDerivedFrom<Part::Part2DObject>()) {
         FCMD_OBJ_HIDE(sketch);
@@ -1264,7 +1268,7 @@ void prepareProfileBased(Gui::Command* cmd, const std::string& which, double len
         }
     }
 
-    auto worker = [cmd, length](Part::Feature* profile, App::DocumentObject* Feat) {
+    auto worker = [cmd, length](Part::ShapeFeature* profile, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1380,7 +1384,7 @@ void CmdPartDesignHole::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1429,7 +1433,7 @@ void CmdPartDesignRevolution::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1493,7 +1497,7 @@ void CmdPartDesignGroove::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1565,7 +1569,7 @@ void CmdPartDesignAdditivePipe::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1618,7 +1622,7 @@ void CmdPartDesignSubtractivePipe::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1671,7 +1675,7 @@ void CmdPartDesignAdditiveLoft::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1724,7 +1728,7 @@ void CmdPartDesignSubtractiveLoft::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1776,7 +1780,7 @@ void CmdPartDesignAdditiveHelix::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1862,7 +1866,7 @@ void CmdPartDesignSubtractiveHelix::activated(int iMsg)
     }
 
     Gui::Command* cmd = this;
-    auto worker = [cmd](Part::Feature* sketch, App::DocumentObject* Feat) {
+    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
         if (!Feat) {
             return;
         }
@@ -1938,7 +1942,7 @@ bool dressupGetSelected(
     // set the
     selected = selection[0];
 
-    if (!selected.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+    if (!selected.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
         QMessageBox::warning(
             Gui::getMainWindow(),
             QObject::tr("Wrong object type"),
@@ -1947,7 +1951,7 @@ bool dressupGetSelected(
         return false;
     }
 
-    Part::Feature* base = static_cast<Part::Feature*>(selected.getObject());
+    Part::ShapeFeature* base = static_cast<Part::ShapeFeature*>(selected.getObject());
 
     const Part::TopoShape& TopShape = base->Shape.getShape();
 
@@ -1985,7 +1989,7 @@ bool dressupGetSelected(
 void finishDressupFeature(
     Gui::Command* cmd,
     const std::string& which,
-    Part::Feature* base,
+    Part::ShapeFeature* base,
     const std::vector<std::string>& SubNames,
     const bool useAllEdges
 )
@@ -2050,13 +2054,13 @@ void makeChamferOrFillet(Gui::Command* cmd, const std::string& which)
         return;
     }
 
-    Part::Feature* base;
+    Part::ShapeFeature* base;
     std::vector<std::string> SubNames;
     if (noSelection) {
-        base = static_cast<Part::Feature*>(PartDesignGui::getBody(true)->Tip.getValue());
+        base = static_cast<Part::ShapeFeature*>(PartDesignGui::getBody(true)->Tip.getValue());
     }
     else {
-        base = static_cast<Part::Feature*>(selected.getObject());
+        base = static_cast<Part::ShapeFeature*>(selected.getObject());
         SubNames = std::vector<std::string>(selected.getSubNames());
     }
 
@@ -2147,13 +2151,13 @@ void CmdPartDesignDraft::activated(int iMsg)
         return;
     }
 
-    Part::Feature* base;
+    Part::ShapeFeature* base;
     std::vector<std::string> SubNames;
     if (noSelection) {
-        base = static_cast<Part::Feature*>(PartDesignGui::getBody(true)->Tip.getValue());
+        base = static_cast<Part::ShapeFeature*>(PartDesignGui::getBody(true)->Tip.getValue());
     }
     else {
-        base = static_cast<Part::Feature*>(selected.getObject());
+        base = static_cast<Part::ShapeFeature*>(selected.getObject());
         SubNames = std::vector<std::string>(selected.getSubNames());
 
         const Part::TopoShape& TopShape = base->Shape.getShape();
@@ -2218,13 +2222,13 @@ void CmdPartDesignThickness::activated(int iMsg)
     }
 
 
-    Part::Feature* base;
+    Part::ShapeFeature* base;
     std::vector<std::string> SubNames;
     if (noSelection) {
-        base = static_cast<Part::Feature*>(PartDesignGui::getBody(true)->Tip.getValue());
+        base = static_cast<Part::ShapeFeature*>(PartDesignGui::getBody(true)->Tip.getValue());
     }
     else {
-        base = static_cast<Part::Feature*>(selected.getObject());
+        base = static_cast<Part::ShapeFeature*>(selected.getObject());
         SubNames = std::vector<std::string>(selected.getSubNames());
 
         // filter out the edges
@@ -2658,7 +2662,7 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
                 // transformations are defined yet...
                 App::DocumentObject* prevSolid = pcActiveBody->Tip.getValue();
                 if (prevSolid) {
-                    Part::Feature* feat = static_cast<Part::Feature*>(prevSolid);
+                    Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(prevSolid);
                     FCMD_OBJ_CMD(Feat, "Shape = " << getObjectCmd(feat) << ".Shape");
                 }
                 finishFeature(cmd, Feat);

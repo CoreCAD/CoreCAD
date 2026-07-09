@@ -74,7 +74,7 @@ public:
     }
     bool allow(App::Document*, App::DocumentObject* obj, const char* sSubName) override
     {
-        if (!obj || !obj->isDerivedFrom<Part::Feature>()) {
+        if (!obj || !obj->isDerivedFrom<Part::ShapeFeature>()) {
             return false;
         }
         if (Base::Tools::isNullOrEmpty(sSubName)) {
@@ -152,8 +152,8 @@ void ShapeBuilderWidget::onSelectionChanged(const Gui::SelectionChanges& msg)
                 bool blocked = blockSelection(true);
                 App::Document* doc = App::GetApplication().getDocument(msg.pDocName);
                 App::DocumentObject* obj = doc->getObject(msg.pObjectName);
-                if (obj->isDerivedFrom<Part::Feature>()) {
-                    TopoDS_Shape myShape = static_cast<Part::Feature*>(obj)->Shape.getValue();
+                if (obj->isDerivedFrom<Part::ShapeFeature>()) {
+                    TopoDS_Shape myShape = static_cast<Part::ShapeFeature*>(obj)->Shape.getValue();
                     TopTools_IndexedMapOfShape all_faces;
                     TopExp::MapShapes(myShape, TopAbs_FACE, all_faces);
                     for (int i = 1; i <= all_faces.Extent(); i++) {

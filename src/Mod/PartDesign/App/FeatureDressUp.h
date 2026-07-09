@@ -46,8 +46,7 @@ public:
     App::PropertyBool SupportTransform;
 
     short mustExecute() const override;
-    /// updates the Placement property from the Placement of the BaseFeature
-    void positionByBaseFeature();
+
     /**
      * Returns the BaseFeature property's object if it's set otherwise returns Base's
      * feature property object otherwise feature property's object (if any)
@@ -55,7 +54,7 @@ public:
      *               silently return a nullptr, otherwise throw Base::Exception.
      *               Default is false.
      */
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
     /// extracts all edges from the subshapes (including face edges) and furthermore adds
     /// all C0 continuous edges to the vector
     void getContinuousEdges(Part::TopoShape, std::vector<std::string>&);

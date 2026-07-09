@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 /***************************************************************************
- *   Copyright (c) 2015 Stefan Tröger <stefantroeger@gmx.net>              *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -23,49 +23,41 @@
  ***************************************************************************/
 
 
-#pragma once
+#include <Base/Tools.h>
 
-#include "ViewProvider.h"
+#include "Extension.h"
+#include "PlacementExtension.h"
+#include "PlacementExtensionPy.h"
 
-namespace PartDesignGui
+
+namespace App
 {
 
-class PartDesignGuiExport ViewProviderPipe: public ViewProvider
+EXTENSION_PROPERTY_SOURCE(App::PlacementExtension, App::DocumentObjectExtension)
+
+
+EXTENSION_PROPERTY_SOURCE_TEMPLATE(App::PlacementExtensionPython, App::PlacementExtension)
+
+// explicit template instantiation
+template class AppExport ExtensionPythonT<PlacementExtensionPythonT<PlacementExtension>>;
+
+
+PlacementExtension::PlacementExtension()
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderPipe);
+    initExtensionType(PlacementExtension::getExtensionClassTypeId());
+    EXTENSION_ADD_PROPERTY_TYPE(Placement, (Base::Placement()), nullptr, Prop_NoRecompute, nullptr);
+}
 
-public:
-    enum Reference
-    {
-        Spine,
-        AuxiliarySpine,
-        Profile,
-        Section
-    };
+PlacementExtension::~PlacementExtension() = default;
 
-    /// constructor
-    ViewProviderPipe();
-    /// destructor
-    ~ViewProviderPipe() override;
+PyObject* PlacementExtension::getExtensionPyObject()
+{
+    if (ExtensionPythonObject.is(Py::_None())) {
+        // ref counter is set to 1
+        auto ext = new PlacementExtensionPy(this);
+        ExtensionPythonObject = Py::Object(ext, true);
+    }
+    return Py::new_reference_to(ExtensionPythonObject);
+}
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
-    void setupContextMenu(QMenu*, QObject*, const char*) override;
-
-    void highlightReferences(Reference mode, bool on);
-
-protected:
-    QIcon getIcon() const override;
-
-    /// Returns a newly created TaskDlgPipeParameters
-    TaskDlgFeatureParameters* getEditDialog() override;
-
-private:
-    void highlightReferences(Part::ShapeFeature*, const std::vector<std::string>&, bool);
-
-private:
-    std::map<long, std::vector<Base::Color>> originalLineColors;
-};
-
-
-}  // namespace PartDesignGui
+}  // namespace App

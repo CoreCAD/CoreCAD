@@ -108,7 +108,7 @@ bool ViewProviderDressUp::setEdit(int ModNum)
 void ViewProviderDressUp::highlightReferences(const bool on)
 {
     PartDesign::DressUp* pcDressUp = getObject<PartDesign::DressUp>();
-    Part::Feature* base = pcDressUp->getBaseObject(/*silent =*/true);
+    Part::ShapeFeature* base = pcDressUp->getBaseObject(/*silent =*/true);
     if (!base) {
         return;
     }

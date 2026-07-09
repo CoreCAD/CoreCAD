@@ -52,8 +52,8 @@ Revolved::Revolved()
 
 short Revolved::mustExecute() const
 {
-    if (Placement.isTouched() || ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched()
-        || UpToFace.isTouched() || Angle.isTouched() || Angle2.isTouched()) {
+    if (ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched() || UpToFace.isTouched()
+        || Angle.isTouched() || Angle2.isTouched()) {
         return 1;
     }
     return ProfileBased::mustExecute();
@@ -136,12 +136,6 @@ App::DocumentObjectExecReturn* Revolved::tryExecuteRevolved(Part::RevolMode revo
     const Base::Vector3d b = Base.getValue();
     gp_Dir dir(v.x, v.y, v.z);
     gp_Pnt pnt(b.x, b.y, b.z);
-    positionByPrevious();
-    auto invObjLoc = getLocation().Inverted();
-    pnt.Transform(invObjLoc.Transformation());
-    dir.Transform(invObjLoc.Transformation());
-    base.move(invObjLoc);
-    sketchshape.move(invObjLoc);
 
     // Check distance between sketchshape and axis - to avoid failures and crashes
     TopExp_Explorer xp;
@@ -157,8 +151,6 @@ App::DocumentObjectExecReturn* Revolved::tryExecuteRevolved(Part::RevolMode revo
     // Create a fresh support even when base exists so that it can be used for patterns
     TopoShape result(0);
     TopoShape supportface = tryGetSupportShape();
-
-    supportface.move(invObjLoc);
 
     if (method == RevolMethod::ToFirst
         || (method == RevolMethod::ToLast && revolMode == Part::RevolMode::FuseWithBase)) {
@@ -179,7 +171,6 @@ App::DocumentObjectExecReturn* Revolved::tryExecuteRevolved(Part::RevolMode revo
     else if (method == RevolMethod::ToFace) {
         TopoShape upToFace;
         getUpToFaceFromLinkSub(upToFace, UpToFace);
-        upToFace.move(invObjLoc);
         result = tryToRevolveToFace(upToFace, pnt, dir, base, supportface, sketchshape, revolMode);
     }
     else {

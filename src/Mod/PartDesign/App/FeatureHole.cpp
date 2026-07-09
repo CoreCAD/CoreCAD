@@ -1755,12 +1755,6 @@ App::DocumentObjectExecReturn* Hole::execute()
         std::string method(DepthType.getValueAsString());
         double length = 0.0;
 
-        this->positionByPrevious();
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-
-        base.move(invObjLoc);
-        profileshape.move(invObjLoc);
-
         /* Build the prototype hole */
 
         // Get vector normal to profile
@@ -1772,7 +1766,6 @@ App::DocumentObjectExecReturn* Hole::execute()
 
         // Define this as zDir
         gp_Vec zDir(SketchVector.x, SketchVector.y, SketchVector.z);
-        zDir.Transform(invObjLoc.Transformation());
         gp_Vec xDir = computePerpendicular(zDir);
 
         if (method == "Dimension") {

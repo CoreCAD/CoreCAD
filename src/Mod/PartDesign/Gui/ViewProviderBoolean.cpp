@@ -162,7 +162,7 @@ void ViewProviderBoolean::updatePreview()
     }
 
     const auto addToolPreview = [this, toolTransparency](App::DocumentObject* tool) {
-        const auto feature = freecad_cast<Part::Feature*>(tool);
+        const auto feature = freecad_cast<Part::ShapeFeature*>(tool);
 
         if (!feature) {
             return;

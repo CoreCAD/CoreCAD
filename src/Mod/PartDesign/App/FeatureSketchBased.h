@@ -70,12 +70,6 @@ public:
 
     void setupObject() override;
 
-    /** calculates and updates the Placement property based on the features
-     * this one is made from: either from Base, if there is one, or from sketch,
-     * if there is no base.
-     */
-    void positionByPrevious();
-
     /** applies a transform on the Placement of the Sketch or its
      *  support if it has one
      */
@@ -95,7 +89,7 @@ public:
      *               silently returns nullptr, otherwise throw a Base::Exception.
      *               Default is false.
      */
-    Part::Feature* getVerifiedObject(bool silent = false) const;
+    Part::ShapeFeature* getVerifiedObject(bool silent = false) const;
 
     /**
      * Verifies the linked Object and returns the shape used as profile
@@ -144,7 +138,7 @@ public:
     /// retrieves the number of axes in the linked sketch (defined as construction lines)
     int getSketchAxisCount() const;
 
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
 
     // backwards compatibility: profile property was renamed and has different type now
     void Restore(Base::XMLReader& reader) override;

@@ -25,13 +25,14 @@
 #pragma once
 
 #include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>
 #include <App/PropertyFile.h>
 #include <App/PropertyUnits.h>
 
 namespace Image
 {
 
-class AppExport ImagePlane: public App::GeoFeature
+class AppExport ImagePlane: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Image::ImagePlane);
 

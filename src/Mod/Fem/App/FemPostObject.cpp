@@ -34,11 +34,12 @@
 using namespace Fem;
 using namespace App;
 
-PROPERTY_SOURCE(Fem::FemPostObject, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Fem::FemPostObject, App::GeoFeature)
 
 
 FemPostObject::FemPostObject()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY(Data, (nullptr));
 
     m_transform_filter = vtkSmartPointer<vtkTransformFilter>::New();

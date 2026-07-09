@@ -106,7 +106,7 @@ void ConstraintTransform::onChanged(const App::Property* prop)
                 return;
             }
 
-            Part::Feature* feat = static_cast<Part::Feature*>(ref.front());
+            Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(ref.front());
             TopoDS_Shape sh = Tools::getFeatureSubShape(feat, subRef.front().c_str(), true);
 
             Base::Vector3d axis, base;

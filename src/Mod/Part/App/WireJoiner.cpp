@@ -2889,7 +2889,7 @@ public:
             _name += "_";
             name = _name.c_str();
         }
-        auto obj = Feature::create(sToShow, name);
+        auto obj = Part::ShapeFeature::create(sToShow, name);
         FC_MSG(obj->getNameInDocument() << " " << ShapeHasher()(sToShow));
         if (catchObject == obj->getNameInDocument()) {
             FC_MSG("found");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 /***************************************************************************
- *   Copyright (c) 2015 Stefan Tröger <stefantroeger@gmx.net>              *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -23,49 +23,28 @@
  ***************************************************************************/
 
 
-#pragma once
+#include "DocumentObject.h"
 
-#include "ViewProvider.h"
+// inclusion of the generated files (generated out of PlacementExtensionPy.xml)
+#include "PlacementExtensionPy.h"
+#include "PlacementExtensionPy.cpp"
+#include "DocumentObjectPy.h"
 
-namespace PartDesignGui
+
+using namespace App;
+
+// returns a string which represent the object e.g. when printed in python
+std::string PlacementExtensionPy::representation() const
 {
+    return {"<placement extension object>"};
+}
 
-class PartDesignGuiExport ViewProviderPipe: public ViewProvider
+PyObject* PlacementExtensionPy::getCustomAttributes(const char* /*attr*/) const
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderPipe);
+    return nullptr;
+}
 
-public:
-    enum Reference
-    {
-        Spine,
-        AuxiliarySpine,
-        Profile,
-        Section
-    };
-
-    /// constructor
-    ViewProviderPipe();
-    /// destructor
-    ~ViewProviderPipe() override;
-
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
-    void setupContextMenu(QMenu*, QObject*, const char*) override;
-
-    void highlightReferences(Reference mode, bool on);
-
-protected:
-    QIcon getIcon() const override;
-
-    /// Returns a newly created TaskDlgPipeParameters
-    TaskDlgFeatureParameters* getEditDialog() override;
-
-private:
-    void highlightReferences(Part::ShapeFeature*, const std::vector<std::string>&, bool);
-
-private:
-    std::map<long, std::vector<Base::Color>> originalLineColors;
-};
-
-
-}  // namespace PartDesignGui
+int PlacementExtensionPy::setCustomAttributes(const char* /*attr*/, PyObject* /*obj*/)
+{
+    return 0;
+}

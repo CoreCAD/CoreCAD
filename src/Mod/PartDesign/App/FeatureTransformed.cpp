@@ -67,7 +67,6 @@ Transformed::Transformed()
 {
     ADD_PROPERTY(Originals, (nullptr));
     Originals.setSize(0);
-    Placement.setStatus(App::Property::ReadOnly, true);
 
     ADD_PROPERTY(TransformMode, (static_cast<long>(Mode::Features)));
     TransformMode.setEnums(transformModeEnums.data());
@@ -89,18 +88,16 @@ Transformed::Transformed()
     );
 }
 
-void Transformed::positionBySupport()
+void Transformed::purgeTouchedTransformations()
 {
-    // TODO May be here better to throw exception (silent=false) (2015-07-27, Fat-Zer)
-    Part::Feature* support = getBaseObject(/* silent =*/true);
-    if (support) {
-        this->Placement.setValue(support->Placement.getValue());
-    }
+    // Amendment 4: a pattern produces its geometry directly in the document world frame and holds
+    // no authored position of its own — nothing to set here. This hook survives only so
+    // MultiTransform can override it to purge the touched state of its linked sub-transformations.
 }
 
-Part::Feature* Transformed::getBaseObject(bool silent) const
+Part::ShapeFeature* Transformed::getBaseObject(bool silent) const
 {
-    Part::Feature* rv = Feature::getBaseObject(/* silent = */ true);
+    Part::ShapeFeature* rv = Feature::getBaseObject(/* silent = */ true);
     if (rv) {
         return rv;
     }
@@ -111,7 +108,7 @@ Part::Feature* Transformed::getBaseObject(bool silent) const
     // first
     App::DocumentObject* firstOriginal = originals.empty() ? nullptr : originals.front();
     if (firstOriginal) {
-        rv = freecad_cast<Part::Feature*>(firstOriginal);
+        rv = freecad_cast<Part::ShapeFeature*>(firstOriginal);
         if (!rv) {
             err = QT_TRANSLATE_NOOP(
                 "Exception",
@@ -253,7 +250,7 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
 {
     const auto mode = static_cast<Mode>(TransformMode.getValue());
 
-    const Part::Feature* supportFeature = getBaseObject();
+    const Part::ShapeFeature* supportFeature = getBaseObject();
     const Part::TopoShape supportShape = supportFeature->Shape.getShape();
 
     if (supportShape.isNull()) {
@@ -337,7 +334,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
         }
     }
 
-    this->positionBySupport();
+    this->purgeTouchedTransformations();
 
     // get transformations from subclass by calling virtual method
     std::vector<gp_Trsf> transformations;
@@ -357,7 +354,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
     }
 
     // Get the support
-    Part::Feature* supportFeature = nullptr;
+    Part::ShapeFeature* supportFeature = nullptr;
 
     try {
         supportFeature = getBaseObject();

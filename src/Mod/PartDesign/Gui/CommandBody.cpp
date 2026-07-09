@@ -70,7 +70,7 @@ void CmdPartDesignMoveTip::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
+        Part::ShapeFeature::getClassTypeId()
     );
     App::DocumentObject* selFeature;
     PartDesign::Body* body = nullptr;
@@ -237,7 +237,7 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
+        Part::ShapeFeature::getClassTypeId()
     );
     if (features.empty()) {
         return;
@@ -434,7 +434,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
+        Part::ShapeFeature::getClassTypeId()
     );
 
     // also check and include datum objects, ie. plane, line, and point

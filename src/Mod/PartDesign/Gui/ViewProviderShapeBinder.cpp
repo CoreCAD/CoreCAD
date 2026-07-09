@@ -157,7 +157,7 @@ void ViewProviderShapeBinder::highlightReferences(bool on)
     }
 
     // stop if not a Part feature was found
-    if (!obj || !obj->isDerivedFrom<Part::Feature>()) {
+    if (!obj || !obj->isDerivedFrom<Part::ShapeFeature>()) {
         return;
     }
 
@@ -171,12 +171,12 @@ void ViewProviderShapeBinder::highlightReferences(bool on)
     if (on) {
         if (!subs.empty() && originalLineColors.empty()) {
             TopTools_IndexedMapOfShape eMap;
-            TopExp::MapShapes(static_cast<Part::Feature*>(obj)->Shape.getValue(), TopAbs_EDGE, eMap);
+            TopExp::MapShapes(static_cast<Part::ShapeFeature*>(obj)->Shape.getValue(), TopAbs_EDGE, eMap);
             originalLineColors = svp->LineColorArray.getValues();
             std::vector<Base::Color> lcolors = originalLineColors;
             lcolors.resize(eMap.Extent(), svp->LineColor.getValue());
 
-            TopExp::MapShapes(static_cast<Part::Feature*>(obj)->Shape.getValue(), TopAbs_FACE, eMap);
+            TopExp::MapShapes(static_cast<Part::ShapeFeature*>(obj)->Shape.getValue(), TopAbs_FACE, eMap);
             originalFaceAppearance = svp->ShapeAppearance.getValues();
             std::vector<App::Material> fcolors = originalFaceAppearance;
             fcolors.resize(eMap.Extent(), svp->ShapeAppearance[0]);

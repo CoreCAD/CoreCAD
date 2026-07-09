@@ -59,7 +59,7 @@ public:
     App::DocumentObjectExecReturn* execute() override;
 
     /// No upstream object: a BakedShape is severed from its origin.
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
 };
 
 }  // namespace PartDesign

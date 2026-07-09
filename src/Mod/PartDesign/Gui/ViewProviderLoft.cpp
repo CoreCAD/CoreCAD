@@ -77,7 +77,7 @@ void ViewProviderLoft::highlightProfile(bool on)
 {
     PartDesign::Loft* pcLoft = getObject<PartDesign::Loft>();
     highlightReferences(
-        dynamic_cast<Part::Feature*>(pcLoft->Profile.getValue()),
+        dynamic_cast<Part::ShapeFeature*>(pcLoft->Profile.getValue()),
         pcLoft->Profile.getSubValues(),
         on
     );
@@ -94,7 +94,7 @@ void ViewProviderLoft::highlightSection(bool on)
         if (it.first->isDerivedFrom<Part::Part2DObject>() && subName.compare(0, 6, "Vertex") != 0) {
             it.second.clear();
         }
-        highlightReferences(dynamic_cast<Part::Feature*>(it.first), it.second, on);
+        highlightReferences(dynamic_cast<Part::ShapeFeature*>(it.first), it.second, on);
     }
 }
 
@@ -117,7 +117,7 @@ void ViewProviderLoft::highlightReferences(ViewProviderLoft::Reference mode, boo
 }
 
 void ViewProviderLoft::highlightReferences(
-    Part::Feature* base,
+    Part::ShapeFeature* base,
     const std::vector<std::string>& elements,
     bool on
 )

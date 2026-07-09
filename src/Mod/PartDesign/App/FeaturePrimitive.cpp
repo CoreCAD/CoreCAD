@@ -67,6 +67,7 @@ PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::FeaturePrimitive, PartDesign::Featur
 FeaturePrimitive::FeaturePrimitive()
 {
     Part::AttachExtension::initExtension(this);
+    App::PlacementExtension::initExtension(this);
 }
 
 App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& primitive)

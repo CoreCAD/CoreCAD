@@ -93,8 +93,8 @@ void Draft::handleChangedPropertyType(Base::XMLReader& reader, const char* TypeN
 
 short Draft::mustExecute() const
 {
-    if (Placement.isTouched() || Angle.isTouched() || NeutralPlane.isTouched()
-        || PullDirection.isTouched() || Reversed.isTouched()) {
+    if (Angle.isTouched() || NeutralPlane.isTouched() || PullDirection.isTouched()
+        || Reversed.isTouched()) {
         return 1;
     }
     return DressUp::mustExecute();
@@ -119,7 +119,6 @@ App::DocumentObjectExecReturn* Draft::execute()
 
     // If no element is selected, then we use a copy of previous feature.
     if (SubVals.empty()) {
-        this->positionByBaseFeature();
         this->Shape.setValue(TopShape);
         return App::DocumentObject::StdReturn;
     }
@@ -141,13 +140,13 @@ App::DocumentObjectExecReturn* Draft::execute()
             Base::Vector3d d = line->getDirection();
             pullDirection = gp_Dir(d.x, d.y, d.z);
         }
-        else if (refDirection->isDerivedFrom<Part::Feature>()) {
+        else if (refDirection->isDerivedFrom<Part::ShapeFeature>()) {
             std::vector<std::string> subStrings = PullDirection.getSubValues();
             if (subStrings.empty() || subStrings[0].empty()) {
                 throw Base::ValueError("No pull direction reference specified");
             }
 
-            Part::Feature* refFeature = static_cast<Part::Feature*>(refDirection);
+            Part::ShapeFeature* refFeature = static_cast<Part::ShapeFeature*>(refDirection);
             Part::TopoShape refShape = refFeature->Shape.getShape();
             TopoDS_Shape ref = refShape.getSubShape(subStrings[0].c_str());
 
@@ -172,9 +171,6 @@ App::DocumentObjectExecReturn* Draft::execute()
                 "Pull direction reference must be an edge of a feature or a datum line"
             );
         }
-
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-        pullDirection.Transform(invObjLoc.Transformation());
     }
 
     // Neutral plane
@@ -243,13 +239,13 @@ App::DocumentObjectExecReturn* Draft::execute()
         ) {
             neutralPlane = Feature::makePlnFromPlane(refPlane);
         }
-        else if (refPlane->isDerivedFrom<Part::Feature>()) {
+        else if (refPlane->isDerivedFrom<Part::ShapeFeature>()) {
             std::vector<std::string> subStrings = NeutralPlane.getSubValues();
             if (subStrings.empty() || subStrings[0].empty()) {
                 throw Base::ValueError("No neutral plane reference specified");
             }
 
-            Part::Feature* refFeature = static_cast<Part::Feature*>(refPlane);
+            Part::ShapeFeature* refFeature = static_cast<Part::ShapeFeature*>(refPlane);
             Part::TopoShape refShape = refFeature->Shape.getShape();
             TopoDS_Shape ref = refShape.getSubShape(subStrings[0].c_str());
 
@@ -297,9 +293,6 @@ App::DocumentObjectExecReturn* Draft::execute()
         else {
             throw Base::TypeError("Neutral plane reference must be face of a feature or a datum plane");
         }
-
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-        neutralPlane.Transform(invObjLoc.Transformation());
     }
 
     if (!refDirection) {
@@ -315,7 +308,6 @@ App::DocumentObjectExecReturn* Draft::execute()
 
     computeProps = {pullDirection, neutralPlane};
 
-    this->positionByBaseFeature();
     // create an untransformed copy of the base shape
     Part::TopoShape baseShape(TopShape);
     baseShape.setTransform(Base::Matrix4D());

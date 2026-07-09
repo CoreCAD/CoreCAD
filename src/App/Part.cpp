@@ -59,6 +59,7 @@ Part::Part()
     ADD_PROPERTY(Color, (1.0, 1.0, 1.0, 0.0));  // set transparent -> not used
 
     GroupExtension::initExtension(this);
+    App::PlacementExtension::initExtension(this);
 }
 
 Part::~Part() = default;
