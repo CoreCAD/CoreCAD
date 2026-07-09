@@ -109,8 +109,6 @@ bool isFeatureMovable(App::DocumentObject* feature);
 std::vector<App::DocumentObject*> collectMovableDependencies(
     std::vector<App::DocumentObject*>& features
 );
-/// Relink sketches and datums to target body's origin
-void relinkToOrigin(App::DocumentObject* feature, PartDesign::Body* body);
 
 /**
  * Cruth §11 step 5e: author a new feature under de-ownership. Creates the object at the

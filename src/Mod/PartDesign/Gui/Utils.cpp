@@ -577,42 +577,4 @@ std::vector<App::DocumentObject*> collectMovableDependencies(std::vector<App::Do
     return result;
 }
 
-void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
-{
-    if (feat->hasExtension(Part::AttachExtension::getExtensionClassTypeId())) {
-        auto attachable = feat->getExtensionByType<Part::AttachExtension>();
-        App::DocumentObject* support = attachable->AttachmentSupport.getValue();
-        if (support && support->isDerivedFrom<App::DatumElement>()) {
-            auto originfeat = static_cast<App::DatumElement*>(support);
-            App::DatumElement* targetOriginFeature = targetbody->getOrigin()->getDatumElement(
-                originfeat->Role.getValue()
-            );
-            if (targetOriginFeature) {
-                attachable->AttachmentSupport.setValue(
-                    static_cast<App::DocumentObject*>(targetOriginFeature),
-                    ""
-                );
-            }
-        }
-    }
-    else if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
-        auto prim = static_cast<PartDesign::ProfileBased*>(feat);
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
-            App::DocumentObject* axis = prop->getValue();
-            if (axis && axis->isDerivedFrom<App::DatumElement>()) {
-                auto originfeat = static_cast<App::DatumElement*>(axis);
-                App::DatumElement* targetOriginFeature = targetbody->getOrigin()->getDatumElement(
-                    originfeat->Role.getValue()
-                );
-                if (targetOriginFeature) {
-                    prop->setValue(
-                        static_cast<App::DocumentObject*>(targetOriginFeature),
-                        std::vector<std::string>(0)
-                    );
-                }
-            }
-        }
-    }
-}
-
 }  // namespace PartDesignGui
