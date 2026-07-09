@@ -352,7 +352,6 @@ public:
 
     void findDatumPlanes()
     {
-        App::GeoFeatureGroupExtension* geoGroup = getGroupExtensionOfBody();
         const std::vector<Base::Type> types
             = {PartDesign::Plane::getClassTypeId(), App::Plane::getClassTypeId()};
         auto datumPlanes = appdocument->getObjectsOfType(types);
@@ -380,22 +379,10 @@ public:
             else {
                 PartDesign::Body* planeBody = PartDesign::Body::findBodyOf(plane);
                 if (planeBody) {
-                    if ((geoGroup && geoGroup->hasObject(planeBody, true))
-                        || !App::GeoFeatureGroupExtension::getGroupOfObject(planeBody)) {
-                        status.push_back(PartDesignGui::TaskFeaturePick::otherBody);
-                    }
-                    else {
-                        status.push_back(PartDesignGui::TaskFeaturePick::otherPart);
-                    }
+                    status.push_back(PartDesignGui::TaskFeaturePick::otherBody);
                 }
                 else {
-                    if ((geoGroup && geoGroup->hasObject(plane, true))
-                        || App::GeoFeatureGroupExtension::getGroupOfObject(plane)) {
-                        status.push_back(PartDesignGui::TaskFeaturePick::otherPart);
-                    }
-                    else {
-                        status.push_back(PartDesignGui::TaskFeaturePick::notInBody);
-                    }
+                    status.push_back(PartDesignGui::TaskFeaturePick::notInBody);
                 }
             }
         }
@@ -432,19 +419,6 @@ private:
             status.push_back(PartDesignGui::TaskFeaturePick::basePlane);
             validPlaneCount++;
         }
-    }
-
-    App::GeoFeatureGroupExtension* getGroupExtensionOfBody() const
-    {
-        App::GeoFeatureGroupExtension* geoGroup {nullptr};
-        if (activeBody) {
-            auto group(App::GeoFeatureGroupExtension::getGroupOfObject(activeBody));
-            if (group) {
-                geoGroup = group->getExtensionByType<App::GeoFeatureGroupExtension>();
-            }
-        }
-
-        return geoGroup;
     }
 
 private:
