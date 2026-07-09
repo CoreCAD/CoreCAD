@@ -43,12 +43,6 @@ class PartDesignExport Solid: public Feature
 public:
     Solid();
 
-    /// Amendment 4: derived feature; its geometry lives in the world frame.
-    bool holdsAuthoredPlacement() const override
-    {
-        return false;
-    }
-
 protected:
 };
 

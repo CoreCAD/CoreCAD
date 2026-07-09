@@ -694,10 +694,6 @@ Part::ShapeFeature* ProfileBased::getBaseObject(bool silent) const
 
 void ProfileBased::onChanged(const App::Property* prop)
 {
-    if (prop == &Profile) {
-        // if attached to a sketch then mark it as read-only
-    }
-
     FeatureAddSub::onChanged(prop);
 }
 

@@ -47,12 +47,6 @@ public:
 
     short mustExecute() const override;
 
-    /// Amendment 4: derived feature; its geometry lives in the world frame.
-    bool holdsAuthoredPlacement() const override
-    {
-        return false;
-    }
-
     /**
      * Returns the BaseFeature property's object if it's set otherwise returns Base's
      * feature property object otherwise feature property's object (if any)
