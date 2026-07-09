@@ -106,3 +106,5 @@ f9d66096878c7d89c273522b9ca57bdb14fee3bc # Rearranged CommandCreateGeo.cpp
 b23d5809414d63ea90bcc744212c126645051438 # BIM: add to pre-commit and apply Black formatting
 50e4864efb06faf3e2126e8cb9ff9058a08a54b2 # Draft: add to pre-commit and apply Black formatting
 25c3ba733889264bcb3b3c8d2287b79053c0c8ec # All: Reformat according to new standard
+# Cruth: tree-wide LF line-ending normalization (no content changes).
+7a056948cb4fef2032839651388aed3aae3ee698
