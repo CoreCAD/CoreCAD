@@ -774,7 +774,7 @@ unsigned validateSketches(
         if (!pcActiveBody) {
             // We work in the old style outside any body
             if (PartDesign::Body::findBodyOf(*s)) {
-                status.push_back(PartDesignGui::TaskFeaturePick::otherPart);
+                status.push_back(PartDesignGui::TaskFeaturePick::otherBody);
                 continue;
             }
         }
