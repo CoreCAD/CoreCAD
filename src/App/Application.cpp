@@ -137,6 +137,7 @@
 #include "Datums.h"
 #include "OriginGroupExtension.h"
 #include "OriginGroupExtensionPy.h"
+#include "PlacementExtension.h"
 #include "ProgramInformation.h"
 #include "SuppressibleExtension.h"
 #include "Part.h"
@@ -2313,6 +2314,8 @@ void Application::initTypes()
     App::LinkExtensionPython           ::init();
     App::SuppressibleExtension         ::init();
     App::SuppressibleExtensionPython   ::init();
+    App::PlacementExtension            ::init();
+    App::PlacementExtensionPython      ::init();
 
     // Document classes
     App::TransactionalObject       ::init();
