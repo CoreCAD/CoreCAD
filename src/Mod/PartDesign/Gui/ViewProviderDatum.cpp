@@ -40,7 +40,6 @@
 
 
 #include <App/Document.h>
-#include <App/DocumentObjectGroup.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Control.h>
@@ -367,19 +366,9 @@ SbBox3f ViewProviderDatum::getRelevantBoundBox() const
         objs = body->getFullModel();
     }
     else {
-        // Probe if we belongs to some group
-        App::DocumentObject* group = App::DocumentObjectGroup::getGroupOfObject(this->getObject());
-
-        if (group) {
-            auto* ext = group->getExtensionByType<App::GroupExtension>();
-            if (ext) {
-                objs = ext->getObjects();
-            }
-        }
-        else {
-            // Fallback to whole document
-            objs = this->getObject()->getDocument()->getObjects();
-        }
+        // No owning body: with the container retired, a datum outside a body belongs to
+        // the whole document, so size the bound box against every object in it.
+        objs = this->getObject()->getDocument()->getObjects();
     }
 
     Gui::View3DInventor* view = dynamic_cast<Gui::View3DInventor*>(this->getActiveView());

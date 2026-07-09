@@ -33,7 +33,6 @@
 
 #include <App/Document.h>
 #include <App/Origin.h>
-#include <App/OriginGroupExtension.h>
 #include <App/Part.h>
 #include <App/VarSet.h>
 #include <Base/Console.h>
