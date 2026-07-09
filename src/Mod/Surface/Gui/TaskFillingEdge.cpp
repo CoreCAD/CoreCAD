@@ -72,7 +72,7 @@ public:
         if (pObj == editedObject) {
             return false;
         }
-        if (!pObj->isDerivedFrom<Part::Feature>()) {
+        if (!pObj->isDerivedFrom<Part::ShapeFeature>()) {
             return false;
         }
 
@@ -393,8 +393,8 @@ void FillingEdgePanel::onListUnboundItemDoubleClicked(QListWidgetItem* item)
         try {
             App::Document* doc = App::GetApplication().getDocument(data[0].toByteArray());
             App::DocumentObject* obj = doc ? doc->getObject(data[1].toByteArray()) : nullptr;
-            if (obj && obj->isDerivedFrom<Part::Feature>()) {
-                const Part::TopoShape& shape = static_cast<Part::Feature*>(obj)->Shape.getShape();
+            if (obj && obj->isDerivedFrom<Part::ShapeFeature>()) {
+                const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(obj)->Shape.getShape();
                 TopoDS_Shape edge = shape.getSubShape(data[2].toByteArray());
 
                 // build up map edge->face

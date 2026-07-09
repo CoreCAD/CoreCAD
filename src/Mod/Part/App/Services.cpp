@@ -46,13 +46,13 @@ Base::Placement AttacherSubObjectPlacement::calculate(
 
 std::optional<Base::Vector3d> PartCenterOfMass::ofDocumentObject(App::DocumentObject* object) const
 {
-    if (const auto* feature = freecad_cast<Part::Feature*>(object)) {
+    if (const auto* feature = freecad_cast<Part::ShapeFeature*>(object)) {
         const auto shape = feature->Shape.getShape();
 
         if (const auto cog = shape.centerOfGravity()) {
             const Base::Placement comPlacement {*cog, Base::Rotation {}};
 
-            return (feature->Placement.getValue().inverse() * comPlacement).getPosition();
+            return (feature->getPlacement().inverse() * comPlacement).getPosition();
         }
     }
 
@@ -61,7 +61,7 @@ std::optional<Base::Vector3d> PartCenterOfMass::ofDocumentObject(App::DocumentOb
 
 bool PartCenterOfMass::supports(App::DocumentObject* object) const
 {
-    return object->isDerivedFrom<Part::Feature>();
+    return object->isDerivedFrom<Part::ShapeFeature>();
 }
 
 std::optional<PyObject*> ShapeAttributeProvider::getAttribute(

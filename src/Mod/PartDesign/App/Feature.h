@@ -48,7 +48,7 @@ class Body;
  *   Base class of all PartDesign features.
  *   This kind of features only produce solids or fail.
  */
-class PartDesignExport Feature: public Part::Feature,
+class PartDesignExport Feature: public Part::ShapeFeature,
                                 public App::SuppressibleExtension,
                                 public Part::PreviewExtension
 {
@@ -87,7 +87,7 @@ public:
      *               silently return a nullptr, otherwise throw Base::Exception.
      *               Default is false.
      */
-    virtual Part::Feature* getBaseObject(bool silent = false) const;
+    virtual Part::ShapeFeature* getBaseObject(bool silent = false) const;
     /// Returns the BaseFeature property's shape (if any)
     virtual const TopoDS_Shape& getBaseShape() const;
     /// Returns the BaseFeature property's TopoShape (if any)

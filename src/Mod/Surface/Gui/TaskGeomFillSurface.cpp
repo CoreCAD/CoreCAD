@@ -113,7 +113,7 @@ void ViewProviderGeomFillSurface::highlightReferences(bool on)
     Surface::GeomFillSurface* surface = getObject<Surface::GeomFillSurface>();
     auto bounds = surface->BoundaryList.getSubListValues();
     for (const auto& it : bounds) {
-        Part::Feature* base = dynamic_cast<Part::Feature*>(it.first);
+        Part::ShapeFeature* base = dynamic_cast<Part::ShapeFeature*>(it.first);
         if (base) {
             PartGui::ViewProviderPartExt* svp = dynamic_cast<PartGui::ViewProviderPartExt*>(
                 Gui::Application::Instance->getViewProvider(base)
@@ -167,7 +167,7 @@ bool GeomFillSurface::EdgeSelection::allow(App::Document*, App::DocumentObject* 
     if (pObj == editedObject) {
         return false;
     }
-    if (!pObj->isDerivedFrom<Part::Feature>()) {
+    if (!pObj->isDerivedFrom<Part::ShapeFeature>()) {
         return false;
     }
 

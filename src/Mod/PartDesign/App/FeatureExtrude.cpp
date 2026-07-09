@@ -61,12 +61,12 @@ FeatureExtrude::FeatureExtrude() = default;
 
 short FeatureExtrude::mustExecute() const
 {
-    if (Placement.isTouched() || SideType.isTouched() || Type.isTouched() || Type2.isTouched()
-        || Length.isTouched() || Length2.isTouched() || TaperAngle.isTouched()
-        || TaperAngle2.isTouched() || UseCustomVector.isTouched() || Direction.isTouched()
-        || ReferenceAxis.isTouched() || AlongSketchNormal.isTouched() || Offset.isTouched()
-        || Offset2.isTouched() || UpToFace.isTouched() || UpToFace2.isTouched()
-        || UpToShape.isTouched() || UpToShape2.isTouched()) {
+    if (SideType.isTouched() || Type.isTouched() || Type2.isTouched() || Length.isTouched()
+        || Length2.isTouched() || TaperAngle.isTouched() || TaperAngle2.isTouched()
+        || UseCustomVector.isTouched() || Direction.isTouched() || ReferenceAxis.isTouched()
+        || AlongSketchNormal.isTouched() || Offset.isTouched() || Offset2.isTouched()
+        || UpToFace.isTouched() || UpToFace2.isTouched() || UpToShape.isTouched()
+        || UpToShape2.isTouched()) {
         return 1;
     }
     return ProfileBased::mustExecute();
@@ -361,7 +361,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
         }
     }
 
-    Part::Feature* obj = nullptr;
+    Part::ShapeFeature* obj = nullptr;
     TopoShape sketchshape;
     try {
         obj = getVerifiedObject();

@@ -94,7 +94,7 @@ protected:
     static std::vector<Part::TopoShape> solidsOf(App::DocumentObject* feat)
     {
         std::vector<Part::TopoShape> out;
-        auto* pf = dynamic_cast<Part::Feature*>(feat);
+        auto* pf = dynamic_cast<Part::ShapeFeature*>(feat);
         if (!pf) {
             return out;
         }

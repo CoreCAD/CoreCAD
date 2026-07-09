@@ -60,7 +60,7 @@ protected:
     TaskDlgFeatureParameters* getEditDialog() override;
 
 private:
-    void highlightReferences(Part::Feature*, const std::vector<std::string>&, bool);
+    void highlightReferences(Part::ShapeFeature*, const std::vector<std::string>&, bool);
 
 private:
     std::map<long, std::vector<Base::Color>> originalLineColors;

@@ -422,7 +422,7 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
         Base::Vector3d d = line->getDirection();
         dir = gp_Dir(d.x, d.y, d.z);
     }
-    else if (auto* refFeature = freecad_cast<Part::Feature*>(refObject)) {
+    else if (auto* refFeature = freecad_cast<Part::ShapeFeature*>(refObject)) {
         if (subStrings[0].empty()) {
             throw Base::ValueError("No direction reference specified");
         }

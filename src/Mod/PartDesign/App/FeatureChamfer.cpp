@@ -113,7 +113,7 @@ short Chamfer::mustExecute() const
             break;
     }
 
-    if (Placement.isTouched() || touched) {
+    if (touched) {
         return 1;
     }
     return DressUp::mustExecute();

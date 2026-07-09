@@ -106,9 +106,7 @@ void ViewProviderSketchBased::updateProfileShape()
     auto profileShape = profileBased->getTopoShapeVerifiedFace(true);
 
     // set the correct coordinate space for the profile shape
-    profileShape.setPlacement(
-        profileShape.getPlacement() * profileBased->Placement.getValue().inverse()
-    );
+    profileShape.setPlacement(profileShape.getPlacement() * profileBased->getPlacement().inverse());
 
     updatePreviewShape(profileShape, pcProfileShape);
 }

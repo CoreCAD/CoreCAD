@@ -111,6 +111,7 @@ public:
     void afterRestore() override;
 
     friend class Feature;
+    friend class ShapeFeature;
 
 private:
     void saveToFile(Base::Writer& writer) const;

@@ -68,7 +68,15 @@ PropertyPlacement& GeoFeatureGroupExtension::placement()
         throw Base::RuntimeError("GeoFeatureGroupExtension was not applied to GeoFeature");
     }
 
-    return static_cast<App::GeoFeature*>(getExtendedContainer())->Placement;
+    // Amendment 4: the group's frame is now an authored placement carried via
+    // App::PlacementExtension (App::Part / LocalCoordinateSystem opt in), no
+    // longer an inherited GeoFeature member. A geo-feature group must carry it.
+    auto* prop = static_cast<App::GeoFeature*>(getExtendedContainer())->getPlacementProperty();
+    if (!prop) {
+        throw Base::RuntimeError(
+            "GeoFeatureGroup container carries no Placement (missing PlacementExtension)");
+    }
+    return *prop;
 }
 
 

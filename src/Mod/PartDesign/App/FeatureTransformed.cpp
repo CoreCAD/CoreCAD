@@ -67,7 +67,6 @@ Transformed::Transformed()
 {
     ADD_PROPERTY(Originals, (nullptr));
     Originals.setSize(0);
-    Placement.setStatus(App::Property::ReadOnly, true);
 
     ADD_PROPERTY(TransformMode, (static_cast<long>(Mode::Features)));
     TransformMode.setEnums(transformModeEnums.data());
@@ -96,9 +95,9 @@ void Transformed::purgeTouchedTransformations()
     // MultiTransform can override it to purge the touched state of its linked sub-transformations.
 }
 
-Part::Feature* Transformed::getBaseObject(bool silent) const
+Part::ShapeFeature* Transformed::getBaseObject(bool silent) const
 {
-    Part::Feature* rv = Feature::getBaseObject(/* silent = */ true);
+    Part::ShapeFeature* rv = Feature::getBaseObject(/* silent = */ true);
     if (rv) {
         return rv;
     }
@@ -109,7 +108,7 @@ Part::Feature* Transformed::getBaseObject(bool silent) const
     // first
     App::DocumentObject* firstOriginal = originals.empty() ? nullptr : originals.front();
     if (firstOriginal) {
-        rv = freecad_cast<Part::Feature*>(firstOriginal);
+        rv = freecad_cast<Part::ShapeFeature*>(firstOriginal);
         if (!rv) {
             err = QT_TRANSLATE_NOOP(
                 "Exception",
@@ -251,7 +250,7 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
 {
     const auto mode = static_cast<Mode>(TransformMode.getValue());
 
-    const Part::Feature* supportFeature = getBaseObject();
+    const Part::ShapeFeature* supportFeature = getBaseObject();
     const Part::TopoShape supportShape = supportFeature->Shape.getShape();
 
     if (supportShape.isNull()) {
@@ -355,7 +354,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
     }
 
     // Get the support
-    Part::Feature* supportFeature = nullptr;
+    Part::ShapeFeature* supportFeature = nullptr;
 
     try {
         supportFeature = getBaseObject();

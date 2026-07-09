@@ -84,12 +84,12 @@ App::DocumentObjectExecReturn* FeatureArea::execute()
     }
 
     for (std::vector<App::DocumentObject*>::iterator it = links.begin(); it != links.end(); ++it) {
-        if (!(*it && (*it)->isDerivedFrom<Part::Feature>())) {
+        if (!(*it && (*it)->isDerivedFrom<Part::ShapeFeature>())) {
             return new App::DocumentObjectExecReturn(
                 "Linked object is not a Part object (has no Shape)."
             );
         }
-        TopoDS_Shape shape = static_cast<Part::Feature*>(*it)->Shape.getShape().getShape();
+        TopoDS_Shape shape = static_cast<Part::ShapeFeature*>(*it)->Shape.getShape().getShape();
         if (shape.IsNull()) {
             return new App::DocumentObjectExecReturn("Linked shape object is empty");
         }
@@ -108,7 +108,7 @@ App::DocumentObjectExecReturn* FeatureArea::execute()
 
     for (std::vector<App::DocumentObject*>::iterator it = links.begin(); it != links.end(); ++it) {
         myArea.add(
-            static_cast<Part::Feature*>(*it)->Shape.getShape().getShape(),
+            static_cast<Part::ShapeFeature*>(*it)->Shape.getShape().getShape(),
             PARAM_PROP_ARGS(AREA_PARAMS_OPCODE)
         );
     }

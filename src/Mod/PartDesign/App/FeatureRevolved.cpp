@@ -52,8 +52,8 @@ Revolved::Revolved()
 
 short Revolved::mustExecute() const
 {
-    if (Placement.isTouched() || ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched()
-        || UpToFace.isTouched() || Angle.isTouched() || Angle2.isTouched()) {
+    if (ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched() || UpToFace.isTouched()
+        || Angle.isTouched() || Angle2.isTouched()) {
         return 1;
     }
     return ProfileBased::mustExecute();

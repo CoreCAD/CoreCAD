@@ -46,7 +46,7 @@ void ViewProviderFemConstraintOnBoundary::highlightReferences(const bool on)
     const auto& subSets = pcConstraint->References.getSubListValues();
 
     for (auto& subSet : subSets) {
-        Part::Feature* base = dynamic_cast<Part::Feature*>(subSet.first);
+        Part::ShapeFeature* base = dynamic_cast<Part::ShapeFeature*>(subSet.first);
         if (!base) {
             continue;
         }

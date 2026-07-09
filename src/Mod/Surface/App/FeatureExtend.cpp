@@ -96,7 +96,7 @@ short Extend::mustExecute() const
 App::DocumentObjectExecReturn* Extend::execute()
 {
     App::DocumentObject* part = Face.getValue();
-    if (!part || !part->isDerivedFrom<Part::Feature>()) {
+    if (!part || !part->isDerivedFrom<Part::ShapeFeature>()) {
         return new App::DocumentObjectExecReturn("No shape linked.");
     }
     const auto& faces = Face.getSubValues();
@@ -104,7 +104,7 @@ App::DocumentObjectExecReturn* Extend::execute()
         return new App::DocumentObjectExecReturn("Not exactly one sub-shape linked.");
     }
 
-    TopoDS_Shape shape = static_cast<Part::Feature*>(part)->Shape.getShape().getSubShape(
+    TopoDS_Shape shape = static_cast<Part::ShapeFeature*>(part)->Shape.getShape().getSubShape(
         faces[0].c_str()
     );
     if (shape.IsNull() || shape.ShapeType() != TopAbs_FACE) {

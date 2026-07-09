@@ -290,7 +290,7 @@ private:
         try {
             Py::Sequence list(object);
             std::vector<App::DocumentObject*> objs;
-            std::map<Part::Feature*, std::vector<Base::Color>> partColor;
+            std::map<Part::ShapeFeature*, std::vector<Base::Color>> partColor;
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 PyObject* item = (*it).ptr();
                 if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
@@ -305,7 +305,7 @@ private:
                         auto pydoc = static_cast<App::DocumentObjectPy*>(item0.ptr());
                         App::DocumentObject* obj = pydoc->getDocumentObjectPtr();
                         objs.push_back(obj);
-                        if (Part::Feature* part = dynamic_cast<Part::Feature*>(obj)) {
+                        if (Part::ShapeFeature* part = dynamic_cast<Part::ShapeFeature*>(obj)) {
                             App::PropertyColorList colors;
                             colors.setPyObject(item1.ptr());
                             partColor[part] = colors.getValues();
@@ -320,7 +320,7 @@ private:
 
             auto getShapeColors = [partColor](App::DocumentObject* obj, const char* subname) {
                 std::map<std::string, Base::Color> cols;
-                auto it = partColor.find(dynamic_cast<Part::Feature*>(obj));
+                auto it = partColor.find(dynamic_cast<Part::ShapeFeature*>(obj));
                 if (it != partColor.end() && boost::starts_with(subname, "Face")) {
                     const auto& colors = it->second;
                     std::string face("Face");
@@ -623,7 +623,7 @@ private:
                         else {
                             // do we know that obj is a Part::Feature? is this checked somewhere
                             // before this? this should be a located shape??
-                            Part::Feature* part = static_cast<Part::Feature*>(obj);
+                            Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(obj);
                             shapeToExport = part->Shape.getValue();
                         }
                         writer.exportShape(shapeToExport);
@@ -690,7 +690,7 @@ private:
                     // TODO: do we know that obj is a Part::Feature? is this checked somewhere
                     // before this?
                     // TODO: this should be a located shape??
-                    Part::Feature* part = static_cast<Part::Feature*>(obj);
+                    Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(obj);
                     shapeToExport = part->Shape.getValue();
                 }
                 writer.exportShape(shapeToExport);

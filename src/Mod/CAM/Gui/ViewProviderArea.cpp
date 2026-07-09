@@ -53,7 +53,7 @@ bool ViewProviderArea::canDragObjects() const
 
 bool ViewProviderArea::canDragObject(App::DocumentObject* obj) const
 {
-    return obj && obj->isDerivedFrom<Part::Feature>();
+    return obj && obj->isDerivedFrom<Part::ShapeFeature>();
 }
 
 void ViewProviderArea::dragObject(App::DocumentObject* obj)

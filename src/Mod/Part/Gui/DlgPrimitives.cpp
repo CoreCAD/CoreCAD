@@ -2526,7 +2526,9 @@ void Location::onPlacementChanged()
     placement.setRotation(rotation);
 
     // apply new placement to the feature
-    geom->Placement.setValue(placement);
+    if (auto* pp = geom->getPlacementProperty()) {
+        pp->setValue(placement);
+    }
     geom->recomputeFeature();
 }
 

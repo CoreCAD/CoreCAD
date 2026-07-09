@@ -46,7 +46,9 @@ PROPERTY_SOURCE(App::GeoFeature, App::DocumentObject)
 
 GeoFeature::GeoFeature()
 {
-    ADD_PROPERTY_TYPE(Placement, (Base::Placement()), nullptr, Prop_NoRecompute, nullptr);
+    // Amendment 4: the authored Placement is no longer a birthright bolted onto
+    // every GeoFeature. Placed classes opt into it via App::PlacementExtension;
+    // derived features carry none and answer getPlacement() with identity.
     ADD_PROPERTY_TYPE(_ElementMapVersion,
                     (""),
                     "Base",
@@ -58,9 +60,13 @@ GeoFeature::~GeoFeature() = default;
 
 void GeoFeature::transformPlacement(const Base::Placement& transform)
 {
-    Base::Placement plm = this->Placement.getValue();
-    plm = transform * plm;
-    this->Placement.setValue(plm);
+    // Only meaningful for an object that carries an authored placement; a
+    // derived feature holds none and this is a no-op (Amendment 4).
+    if (auto* plProp = getPlacementProperty()) {
+        Base::Placement plm = plProp->getValue();
+        plm = transform * plm;
+        plProp->setValue(plm);
+    }
 }
 
 Base::Placement GeoFeature::globalPlacement() const
@@ -75,10 +81,11 @@ const PropertyComplexGeoData* GeoFeature::getPropertyOfGeometry() const
 
 bool GeoFeature::holdsAuthoredPlacement() const
 {
-    // Anchors author their own frame (the common case). Derived features —
-    // whose geometry already lives in the document world frame — override
-    // this to false. See Amendment 4, Clause 4.2.
-    return true;
+    // Structural, post member-removal (Amendment 4): an object authors a
+    // position iff it actually carries a Placement property — i.e. it opted
+    // into App::PlacementExtension (or a link placement). Anchors do; a derived
+    // feature, holding no such property, answers false. See Clause 4.2.
+    return getPlacementProperty() != nullptr;
 }
 
 PyObject* GeoFeature::getPyObject()

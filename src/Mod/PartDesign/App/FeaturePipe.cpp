@@ -130,7 +130,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
 
     auto getSectionShape = [](App::DocumentObject* feature,
                               const std::vector<std::string>& subs) -> TopoDS_Shape {
-        if (!feature || !feature->isDerivedFrom<Part::Feature>()) {
+        if (!feature || !feature->isDerivedFrom<Part::ShapeFeature>()) {
             throw Base::TypeError("Pipe: Invalid profile/section");
         }
 
@@ -145,7 +145,9 @@ App::DocumentObjectExecReturn* Pipe::execute()
             if (subName.empty()) {
                 throw Base::ValueError("Pipe: No valid subelement linked in Part::Feature");
             }
-            return static_cast<Part::Feature*>(feature)->Shape.getShape().getSubShape(subName.c_str());
+            return static_cast<Part::ShapeFeature*>(feature)->Shape.getShape().getSubShape(
+                subName.c_str()
+            );
         }
     };
 
@@ -204,27 +206,28 @@ App::DocumentObjectExecReturn* Pipe::execute()
 
         // build the paths
         App::DocumentObject* spine = Spine.getValue();
-        if (!(spine && spine->isDerivedFrom<Part::Feature>())) {
+        if (!(spine && spine->isDerivedFrom<Part::ShapeFeature>())) {
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "No spine linked"));
         }
 
         std::vector<std::string> subedge = Spine.getSubValues();
         TopoDS_Shape path;
-        const Part::TopoShape& shape = static_cast<Part::Feature*>(spine)->Shape.getValue();
+        const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(spine)->Shape.getValue();
         buildPipePath(shape, subedge, path);
 
         // auxiliary
         TopoDS_Shape auxpath;
         if (Mode.getValue() == 3) {
             App::DocumentObject* auxspine = AuxiliarySpine.getValue();
-            if (!(auxspine && auxspine->isDerivedFrom<Part::Feature>())) {
+            if (!(auxspine && auxspine->isDerivedFrom<Part::ShapeFeature>())) {
                 return new App::DocumentObjectExecReturn(
                     QT_TRANSLATE_NOOP("Exception", "No auxiliary spine linked.")
                 );
             }
             std::vector<std::string> auxsubedge = AuxiliarySpine.getSubValues();
 
-            const Part::TopoShape& auxshape = static_cast<Part::Feature*>(auxspine)->Shape.getValue();
+            const Part::TopoShape& auxshape
+                = static_cast<Part::ShapeFeature*>(auxspine)->Shape.getValue();
             buildPipePath(auxshape, auxsubedge, auxpath);
         }
 
@@ -266,7 +269,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
             // TODO: we need to order the sections to prevent occ from crashing,
             // as makepipeshell connects the sections in the order of adding
             for (auto& subSet : multisections) {
-                if (!subSet.first->isDerivedFrom<Part::Feature>()) {
+                if (!subSet.first->isDerivedFrom<Part::ShapeFeature>()) {
                     return new App::DocumentObjectExecReturn(
                         QT_TRANSLATE_NOOP("Exception", "Pipe: All sections need to be Part features")
                     );

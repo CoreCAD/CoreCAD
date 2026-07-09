@@ -447,6 +447,7 @@ PyMOD_INIT_FUNC(Part)
     Part::PreviewExtension      ::init();
     Part::PrismExtension        ::init();
 
+    Part::ShapeFeature          ::init();
     Part::Feature               ::init();
     Part::FeatureExt            ::init();
     Part::BodyBase              ::init();

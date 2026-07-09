@@ -259,7 +259,7 @@ bool CrossSections::apply()
 #ifdef CS_FUTURE
     Standard::SetReentrant(Standard_True);
     for (std::vector<App::DocumentObject*>::iterator it = obj.begin(); it != obj.end(); ++it) {
-        Part::CrossSection cs(a, b, c, static_cast<Part::Feature*>(*it)->Shape.getValue());
+        Part::CrossSection cs(a, b, c, static_cast<Part::ShapeFeature*>(*it)->Shape.getValue());
         QFuture<std::list<TopoDS_Wire>> future
             = QtConcurrent::mapped(d, std::bind(&Part::CrossSection::section, &cs, sp::_1));
         future.waitForFinished();

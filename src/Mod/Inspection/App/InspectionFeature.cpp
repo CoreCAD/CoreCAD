@@ -808,9 +808,9 @@ App::DocumentObjectExecReturn* Feature::execute()
         Points::Feature* pts = static_cast<Points::Feature*>(pcActual);
         actual = new InspectActualPoints(pts->Points.getValue());
     }
-    else if (pcActual->isDerivedFrom<Part::Feature>()) {
+    else if (pcActual->isDerivedFrom<Part::ShapeFeature>()) {
         useMultithreading = false;
-        Part::Feature* part = static_cast<Part::Feature*>(pcActual);
+        Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(pcActual);
         actual = new InspectActualShape(part->Shape.getShape());
     }
     else {
@@ -831,9 +831,9 @@ App::DocumentObjectExecReturn* Feature::execute()
             Points::Feature* pts = static_cast<Points::Feature*>(it);
             nominal = new InspectNominalPoints(pts->Points.getValue(), this->SearchRadius.getValue());
         }
-        else if (it->isDerivedFrom<Part::Feature>()) {
+        else if (it->isDerivedFrom<Part::ShapeFeature>()) {
             useMultithreading = false;
-            Part::Feature* part = static_cast<Part::Feature*>(it);
+            Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(it);
             nominal = new InspectNominalShape(part->Shape.getValue(), this->SearchRadius.getValue());
         }
 

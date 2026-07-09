@@ -208,7 +208,7 @@ void BomObject::addObjectChildrenToBom(
         }
 
         if (!child->isDerivedFrom<AssemblyObject>() && !child->isDerivedFrom<App::Part>()
-            && !(child->isDerivedFrom<Part::Feature>() && !onlyParts.getValue())) {
+            && !(child->isDerivedFrom<Part::ShapeFeature>() && !onlyParts.getValue())) {
             continue;
         }
 

@@ -78,7 +78,7 @@ MassPropertiesData CalculateMassProperties(
 
         TopoDS_Shape shape = object.shape;
         if (shape.IsNull()) {
-            auto* part = freecad_cast<Part::Feature*>(obj);
+            auto* part = freecad_cast<Part::ShapeFeature*>(obj);
             if (!part) {
                 continue;
             }
@@ -97,11 +97,11 @@ MassPropertiesData CalculateMassProperties(
         }
 
 
-        auto materialFeature = [](App::DocumentObject* candidate) -> Part::Feature* {
+        auto materialFeature = [](App::DocumentObject* candidate) -> Part::ShapeFeature* {
             std::unordered_set<App::DocumentObject*> visited;
 
             while (candidate && visited.insert(candidate).second) {
-                if (auto* feature = freecad_cast<Part::Feature*>(candidate)) {
+                if (auto* feature = freecad_cast<Part::ShapeFeature*>(candidate)) {
                     return feature;
                 }
 
@@ -115,7 +115,7 @@ MassPropertiesData CalculateMassProperties(
             return nullptr;
         };
 
-        Part::Feature* part = materialFeature(obj);
+        Part::ShapeFeature* part = materialFeature(obj);
 
         Materials::Material mat;
         // Fallback density the units 1e-6 kg/mm^3 (1000 kg/m^3)

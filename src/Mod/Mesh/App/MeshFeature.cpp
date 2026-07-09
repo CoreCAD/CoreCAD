@@ -36,10 +36,11 @@ using namespace Mesh;
 // Feature
 //===========================================================================
 
-PROPERTY_SOURCE(Mesh::Feature, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Mesh::Feature, App::GeoFeature)
 
 Feature::Feature()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Mesh, (MeshObject()), 0, App::Prop_Output, "The mesh kernel");
 }
 

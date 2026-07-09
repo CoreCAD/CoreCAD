@@ -307,7 +307,7 @@ void TaskFemConstraintRigidBody::addToSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
 
     for (auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }
@@ -390,7 +390,7 @@ void TaskFemConstraintRigidBody::removeFromSelection()
     std::vector<size_t> itemsToDel;
     for (std::vector<Gui::SelectionObject>::iterator it = selection.begin(); it != selection.end();
          ++it) {  // for every selected object
-        if (!it->isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it->isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }

@@ -151,7 +151,7 @@ void CmdPartPointsFromMesh::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    auto getDefaultDistance = [](Part::Feature* geometry) {
+    auto getDefaultDistance = [](Part::ShapeFeature* geometry) {
         auto bbox = geometry->Shape.getBoundingBox();
         int steps {20};
         return bbox.CalcDiagonalLength() / steps;
@@ -163,12 +163,12 @@ void CmdPartPointsFromMesh::activated(int iMsg)
 
     double distance {1.0};
     auto found = std::find_if(geoms.begin(), geoms.end(), [](App::DocumentObject* obj) {
-        return freecad_cast<Part::Feature*>(obj);
+        return freecad_cast<Part::ShapeFeature*>(obj);
     });
 
     if (found != geoms.end()) {
 
-        double defaultDistance = getDefaultDistance(freecad_cast<Part::Feature*>(*found));
+        double defaultDistance = getDefaultDistance(freecad_cast<Part::ShapeFeature*>(*found));
 
         double STD_OCC_TOLERANCE = 1e-6;
 

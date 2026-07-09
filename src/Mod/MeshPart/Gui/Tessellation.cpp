@@ -261,7 +261,7 @@ bool Tessellation::accept()
             shapeObjects.emplace_back(sel.pObject, sel.SubName);
         }
         else if (sel.pObject) {
-            if (sel.pObject->isDerivedFrom<Part::Feature>()) {
+            if (sel.pObject->isDerivedFrom<Part::ShapeFeature>()) {
                 partWithNoFace = true;
             }
             if (auto body = dynamic_cast<Part::BodyBase*>(sel.pObject)) {

@@ -721,7 +721,7 @@ void CmdSketcherMapSketch::activated(int iMsg)
         // check circular dependency
         std::vector<Gui::SelectionObject> selobjs = Gui::Selection().getSelectionEx();
         for (size_t i = 0; i < selobjs.size(); ++i) {
-            App::DocumentObject* part = static_cast<Part::Feature*>(selobjs[i].getObject());
+            App::DocumentObject* part = static_cast<Part::ShapeFeature*>(selobjs[i].getObject());
             if (!part) {
                 assert(0);
                 throw Base::ValueError(

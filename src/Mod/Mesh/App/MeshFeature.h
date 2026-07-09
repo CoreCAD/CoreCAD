@@ -26,7 +26,8 @@
 
 #include <App/FeatureCustom.h>
 #include <App/FeaturePython.h>
-#include <App/GeoFeature.h>  // must be before FeatureCustom.h
+#include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>  // must be before FeatureCustom.h
 
 #include "Core/MeshKernel.h"
 
@@ -54,7 +55,7 @@ class MeshFeaturePy;
  * This class holds a MeshKernel object.
  * \author Werner Mayer
  */
-class MeshExport Feature: public App::GeoFeature
+class MeshExport Feature: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Mesh::Feature);
 

@@ -150,10 +150,10 @@ void ViewProviderBoolean::updateData(const App::Property* prop)
         if (!objBool) {
             return;
         }
-        Part::Feature* objBase = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objBool->Base.getValue())
         );
-        Part::Feature* objTool = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objTool = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objBool->Tool.getValue())
         );
         if (objBase && objTool) {
@@ -289,7 +289,9 @@ void ViewProviderMultiFuse::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::Feature* objBase = dynamic_cast<Part::Feature*>(Part::Feature::getShapeOwner(*it));
+            Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
+                Part::Feature::getShapeOwner(*it)
+            );
             if (!objBase) {
                 continue;
             }
@@ -433,7 +435,9 @@ void ViewProviderMultiCommon::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::Feature* objBase = dynamic_cast<Part::Feature*>(Part::Feature::getShapeOwner(*it));
+            Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
+                Part::Feature::getShapeOwner(*it)
+            );
             if (!objBase) {
                 continue;
             }

@@ -61,7 +61,7 @@ Thickness::Thickness()
 
 int16_t Thickness::mustExecute() const
 {
-    if (Placement.isTouched() || Value.isTouched() || Mode.isTouched() || Join.isTouched()) {
+    if (Value.isTouched() || Mode.isTouched() || Join.isTouched()) {
         return 1;
     }
     return DressUp::mustExecute();

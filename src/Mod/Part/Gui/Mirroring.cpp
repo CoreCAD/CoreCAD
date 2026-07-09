@@ -94,7 +94,7 @@ public:
             return true;
             // reference is an app::link or a part::feature or some subobject
         }
-        else if (pObj->isDerivedFrom<Part::Feature>() || pObj->isDerivedFrom<App::Link>()) {
+        else if (pObj->isDerivedFrom<Part::ShapeFeature>() || pObj->isDerivedFrom<App::Link>()) {
             bool isFace = false;  // will be true if user selected face subobject or if object only
                                   // has 1 face
             bool isEdge = false;  // will be true if user selected edge subobject or if object only
@@ -214,7 +214,7 @@ Mirroring::Mirroring(QWidget* parent)
     findShapes();
 
     Gui::ItemViewSelection sel(ui->shapes);
-    sel.applyFrom(Gui::Selection().getObjectsOfType(Part::Feature::getClassTypeId()));
+    sel.applyFrom(Gui::Selection().getObjectsOfType(Part::ShapeFeature::getClassTypeId()));
     sel.applyFrom(Gui::Selection().getObjectsOfType(App::Link::getClassTypeId()));
     sel.applyFrom(Gui::Selection().getObjectsOfType(App::Part::getClassTypeId()));
 

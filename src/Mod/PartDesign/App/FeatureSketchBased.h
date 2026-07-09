@@ -95,7 +95,7 @@ public:
      *               silently returns nullptr, otherwise throw a Base::Exception.
      *               Default is false.
      */
-    Part::Feature* getVerifiedObject(bool silent = false) const;
+    Part::ShapeFeature* getVerifiedObject(bool silent = false) const;
 
     /**
      * Verifies the linked Object and returns the shape used as profile
@@ -144,7 +144,7 @@ public:
     /// retrieves the number of axes in the linked sketch (defined as construction lines)
     int getSketchAxisCount() const;
 
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
 
     // backwards compatibility: profile property was renamed and has different type now
     void Restore(Base::XMLReader& reader) override;

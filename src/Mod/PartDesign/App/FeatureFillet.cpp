@@ -68,7 +68,7 @@ Fillet::Fillet()
 
 short Fillet::mustExecute() const
 {
-    if (Placement.isTouched() || Radius.isTouched()) {
+    if (Radius.isTouched()) {
         return 1;
     }
     return DressUp::mustExecute();

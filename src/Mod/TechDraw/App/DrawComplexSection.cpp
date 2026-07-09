@@ -1510,14 +1510,14 @@ TopoDS_Edge DrawComplexSection::mapEdgeToBase(const Base::Vector3d& inVector)
 //! +/- same code as in Import::SketchExportHelper
 std::pair< Base::Vector3d, Base::Vector3d> DrawComplexSection::sketchNormalAndX(App::DocumentObject* sketchObj)
 {
-    auto sketch = dynamic_cast<Part::Feature*>(sketchObj);
+    auto sketch = dynamic_cast<Part::ShapeFeature*>(sketchObj);
     if (!sketch ||
         !sketchObj->isDerivedFrom(Base::Type::fromName("Sketcher::SketchObject"))) {
         // should be a throw? up to the caller to enforce this??
         return { Base::Vector3d(0,0,0), Base::Vector3d(0,0,0) };
     }
 
-    auto plm = sketch->Placement.getValue();
+    auto plm = sketch->getPlacement();
     Base::Rotation rot = plm.getRotation();
 
     Base::Vector3d stdZ {0.0, 0.0, 1.0};

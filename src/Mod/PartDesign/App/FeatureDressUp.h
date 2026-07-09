@@ -60,7 +60,7 @@ public:
      *               silently return a nullptr, otherwise throw Base::Exception.
      *               Default is false.
      */
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
     /// extracts all edges from the subshapes (including face edges) and furthermore adds
     /// all C0 continuous edges to the vector
     void getContinuousEdges(Part::TopoShape, std::vector<std::string>&);

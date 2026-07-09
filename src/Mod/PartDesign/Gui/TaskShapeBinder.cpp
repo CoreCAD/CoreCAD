@@ -305,7 +305,7 @@ bool TaskShapeBinder::referenceSelected(const SelectionChanges& msg) const
         // change the references
         std::string subName(msg.pSubName);
 
-        Part::Feature* selectedObj = nullptr;
+        Part::ShapeFeature* selectedObj = nullptr;
         App::GeoFeature* obj = nullptr;
         std::vector<std::string> refs;
 
@@ -317,8 +317,8 @@ bool TaskShapeBinder::referenceSelected(const SelectionChanges& msg) const
 
         // get selected object
         auto docObj = vp->getObject()->getDocument()->getObject(msg.pObjectName);
-        if (docObj && docObj->isDerivedFrom<Part::Feature>()) {
-            selectedObj = static_cast<Part::Feature*>(docObj);
+        if (docObj && docObj->isDerivedFrom<Part::ShapeFeature>()) {
+            selectedObj = static_cast<Part::ShapeFeature*>(docObj);
         }
 
         // ensure we have a valid object

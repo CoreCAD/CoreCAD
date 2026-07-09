@@ -144,7 +144,7 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
         App::DocumentObject* refObject = MirrorPlane.getValue();
         std::vector<std::string> subStrings = MirrorPlane.getSubValues();
 
-        if (auto feature = dynamic_cast<Part::Feature*>(refObject)) {
+        if (auto feature = dynamic_cast<Part::ShapeFeature*>(refObject)) {
             if (subStrings.empty()) {
                 throw Base::ValueError("No mirror plane reference specified");
             }

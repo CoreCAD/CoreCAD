@@ -77,7 +77,11 @@ protected:
 // on a tilted sketch. Before Amendment 4 the Pad copied the sketch's tilted frame here.
 TEST_F(WorldFrameTest, DerivedFeatureHoldsNeutralPlacement)
 {
-    EXPECT_TRUE(_pad->Placement.getValue().isIdentity());
+    // Post member-removal (Amendment 4): the derived feature carries no Placement property at
+    // all, so it holds no authored placement and answers the world-frame query with identity.
+    EXPECT_FALSE(_pad->holdsAuthoredPlacement());
+    EXPECT_EQ(_pad->getPlacementProperty(), nullptr);
+    EXPECT_TRUE(_pad->getPlacement().isIdentity());
 }
 
 // Dropping the copied frame did not move the geometry: the solid still lands in the world XZ plane
@@ -162,7 +166,7 @@ TEST_F(WorldFrameTest, PadWithAttachmentOffsetOnPlacedSupport)
     ASSERT_FALSE(datum->Placement.getValue().isIdentity());
 
     // Derived feature holds no copied frame despite the placed, offset support.
-    EXPECT_TRUE(pad->Placement.getValue().isIdentity());
+    EXPECT_TRUE(pad->getPlacement().isIdentity());
 
     // A reference through the pad still matches a direct reference to the sketch (no residual).
     const auto opts = Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform;

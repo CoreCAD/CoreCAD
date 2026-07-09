@@ -870,7 +870,8 @@ void ViewProviderAssembly::collectMovableObjects(
     // Base case: This is not a flexible link, process it as a potential movable part.
     if (onlySolids
         && !(
-            currentObject->isDerivedFrom<App::Part>() || currentObject->isDerivedFrom<Part::Feature>()
+            currentObject->isDerivedFrom<App::Part>()
+            || currentObject->isDerivedFrom<Part::ShapeFeature>()
             || currentObject->isDerivedFrom<App::Link>()
             || currentObject->isDerivedFrom<App::LinkElement>()
         )) {

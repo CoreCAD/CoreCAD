@@ -217,8 +217,7 @@ Helix::Helix()
 
 short Helix::mustExecute() const
 {
-    if (Placement.isTouched() || ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched()
-        || Angle.isTouched()) {
+    if (ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched() || Angle.isTouched()) {
         return 1;
     }
     return ProfileBased::mustExecute();

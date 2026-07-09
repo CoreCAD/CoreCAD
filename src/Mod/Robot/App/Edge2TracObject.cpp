@@ -59,10 +59,10 @@ App::DocumentObjectExecReturn* Edge2TracObject::execute()
     if (!link) {
         return new App::DocumentObjectExecReturn("No object linked");
     }
-    if (!link->isDerivedFrom<Part::Feature>()) {
+    if (!link->isDerivedFrom<Part::ShapeFeature>()) {
         return new App::DocumentObjectExecReturn("Linked object is not a Part object");
     }
-    Part::Feature* base = static_cast<Part::Feature*>(Source.getValue());
+    Part::ShapeFeature* base = static_cast<Part::ShapeFeature*>(Source.getValue());
     const Part::TopoShape& TopShape = base->Shape.getShape();
 
     const std::vector<std::string>& SubVals = Source.getSubValuesStartsWith("Edge");

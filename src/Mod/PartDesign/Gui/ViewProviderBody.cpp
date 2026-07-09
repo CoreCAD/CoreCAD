@@ -793,7 +793,7 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
     else if (obj->isDerivedFrom<Part::Part2DObject>()) {
         return true;
     }
-    else if (!obj->isDerivedFrom<Part::Feature>()) {
+    else if (!obj->isDerivedFrom<Part::ShapeFeature>()) {
         return false;
     }
     else if (PartDesign::Body::inAnyBody(obj)) {

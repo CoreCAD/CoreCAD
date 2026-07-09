@@ -791,7 +791,7 @@ bool SketchObject::evaluateSupport()
 {
     // returns false if the shape is broken, null or non-planar
     App::DocumentObject* link = AttachmentSupport.getValue();
-    if (!link || !link->isDerivedFrom<Part::Feature>())
+    if (!link || !link->isDerivedFrom<Part::ShapeFeature>())
         return false;
     return true;
 }

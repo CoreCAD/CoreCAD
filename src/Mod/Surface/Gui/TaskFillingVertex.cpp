@@ -65,7 +65,7 @@ public:
         if (pObj == editedObject) {
             return false;
         }
-        if (!pObj->isDerivedFrom<Part::Feature>()) {
+        if (!pObj->isDerivedFrom<Part::ShapeFeature>()) {
             return false;
         }
 

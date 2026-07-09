@@ -42,7 +42,6 @@ class AppExport GeoFeature: public App::DocumentObject
     PROPERTY_HEADER_WITH_OVERRIDE(App::GeoFeature);
 
 public:
-    PropertyPlacement Placement;
     PropertyString _ElementMapVersion;
 
     /// Constructor

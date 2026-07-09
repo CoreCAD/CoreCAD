@@ -3876,7 +3876,7 @@ void View3DInventorViewer::alignToSelection()
             elementName.oldName
         );
         const auto globalRotation = globalPlacement.getRotation()
-            * geoFeature->Placement.getValue().getRotation().inverse();
+            * geoFeature->getPlacement().getRotation().inverse();
         const auto splitSubName = Base::Tools::splitSubName(elementName.oldName);
         const auto geoFeatureSubName = !splitSubName.empty() ? splitSubName.back() : "";
 
@@ -3924,8 +3924,7 @@ void View3DInventorViewer::alignToSelection()
                     sel.pObject,
                     elementName.oldName
                 );
-                grp.globalRotation = gp.getRotation()
-                    * gf->Placement.getValue().getRotation().inverse();
+                grp.globalRotation = gp.getRotation() * gf->getPlacement().getRotation().inverse();
             }
             const auto split = Base::Tools::splitSubName(elementName.oldName);
             grp.subnames.push_back(!split.empty() ? split.back() : "");

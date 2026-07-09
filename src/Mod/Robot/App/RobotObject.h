@@ -25,6 +25,7 @@
 #pragma once
 
 #include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>
 #include <App/PropertyFile.h>
 
 #include <Mod/Robot/RobotGlobal.h>
@@ -35,7 +36,7 @@
 namespace Robot
 {
 
-class RobotExport RobotObject: public App::GeoFeature
+class RobotExport RobotObject: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Robot::RobotObject);
 

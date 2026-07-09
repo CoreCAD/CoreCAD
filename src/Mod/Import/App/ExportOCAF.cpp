@@ -176,8 +176,8 @@ int ExportOCAF::exportObject(
         return_label = root_id;
     }
 
-    if (obj->isDerivedFrom<Part::Feature>()) {
-        Part::Feature* part = static_cast<Part::Feature*>(obj);
+    if (obj->isDerivedFrom<Part::ShapeFeature>()) {
+        Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(obj);
         std::vector<Base::Color> colors;
         findColors(part, colors);
 
@@ -201,7 +201,7 @@ void ExportOCAF::createNode(
     Handle(TDataStd_Name) N;
     TDataStd_Name::Set(shapeLabel, TCollection_ExtendedString(part->Label.getValue(), true));
 
-    Base::Placement pl = part->Placement.getValue();
+    Base::Placement pl = part->getPlacement();
     Base::Rotation rot(pl.getRotation());
     Base::Vector3d axis;
 
@@ -221,7 +221,7 @@ void ExportOCAF::createNode(
 }
 
 int ExportOCAF::saveShape(
-    Part::Feature* part,
+    Part::ShapeFeature* part,
     const std::vector<Base::Color>& colors,
     std::vector<TDF_Label>& hierarchical_label,
     std::vector<TopLoc_Location>& hierarchical_loc,
@@ -237,7 +237,7 @@ int ExportOCAF::saveShape(
     TopLoc_Location aLoc;
     Handle(TDataStd_Name) N;
 
-    Base::Placement pl = part->Placement.getValue();
+    Base::Placement pl = part->getPlacement();
     Base::Rotation rot(pl.getRotation());
     Base::Vector3d axis;
     double angle;
@@ -359,7 +359,9 @@ void ExportOCAF::getPartColors(
     std::size_t n = FreeLabels.size();
     for (std::size_t i = 0; i < n; i++) {
         std::vector<Base::Color> colors;
-        Part::Feature* part = static_cast<Part::Feature*>(hierarchical_part.at(part_id.at(i)));
+        Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(
+            hierarchical_part.at(part_id.at(i))
+        );
         findColors(part, colors);
         Colors.push_back(colors);
     }
@@ -376,8 +378,10 @@ void ExportOCAF::reallocateFreeShape(
     for (std::size_t i = 0; i < n; i++) {
         TDF_Label label = FreeLabels.at(i);
         // hierarchical part does contain only part currently and not node I should add node
-        if (hierarchical_part.at(part_id.at(i))->isDerivedFrom<Part::Feature>()) {
-            Part::Feature* part = static_cast<Part::Feature*>(hierarchical_part.at(part_id.at(i)));
+        if (hierarchical_part.at(part_id.at(i))->isDerivedFrom<Part::ShapeFeature>()) {
+            Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(
+                hierarchical_part.at(part_id.at(i))
+            );
             aShapeTool->SetShape(label, part->Shape.getValue());
             // Add color information
             std::vector<Base::Color> colors;
@@ -473,9 +477,9 @@ ExportOCAFCmd::ExportOCAFCmd(Handle(TDocStd_Document) h, bool explicitPlacement)
     : ExportOCAF(h, explicitPlacement)
 {}
 
-void ExportOCAFCmd::findColors(Part::Feature* part, std::vector<Base::Color>& colors) const
+void ExportOCAFCmd::findColors(Part::ShapeFeature* part, std::vector<Base::Color>& colors) const
 {
-    std::map<Part::Feature*, std::vector<Base::Color>>::const_iterator it = partColors.find(part);
+    std::map<Part::ShapeFeature*, std::vector<Base::Color>>::const_iterator it = partColors.find(part);
     if (it != partColors.end()) {
         colors = it->second;
     }

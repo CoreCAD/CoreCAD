@@ -34,7 +34,7 @@
 
 using namespace App;
 
-PROPERTY_SOURCE(App::DatumElement, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(App::DatumElement, App::GeoFeature)
 PROPERTY_SOURCE(App::Plane, App::DatumElement)
 PROPERTY_SOURCE(App::Line, App::DatumElement)
 PROPERTY_SOURCE(App::Point, App::DatumElement)
@@ -43,6 +43,7 @@ PROPERTY_SOURCE_WITH_EXTENSIONS(App::LocalCoordinateSystem, App::GeoFeature)
 DatumElement::DatumElement(bool hideRole)
     : baseDir{0.0, 0.0, 1.0}
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Role,
                       (""),
                       0,
@@ -154,6 +155,7 @@ LocalCoordinateSystem::LocalCoordinateSystem()
     setStatus(App::NoAutoExpand, true);
 
     GroupExtension::initExtension(this);
+    App::PlacementExtension::initExtension(this);
 }
 
 

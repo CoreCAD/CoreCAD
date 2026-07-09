@@ -76,7 +76,7 @@ void ViewProviderMirror::setupContextMenu(QMenu* menu, QObject* receiver, const 
     // don't add plane editor to context menu if MirrorPlane is set because it would override any
     // changes, anyway
     Part::Mirroring* mf = getObject<Part::Mirroring>();
-    Part::Feature* ref = static_cast<Part::Feature*>(mf->MirrorPlane.getValue());
+    Part::ShapeFeature* ref = static_cast<Part::ShapeFeature*>(mf->MirrorPlane.getValue());
     bool enabled = true;
     if (ref) {
         enabled = false;
@@ -94,7 +94,7 @@ bool ViewProviderMirror::setEdit(int ModNum)
     if (ModNum == ViewProvider::Default) {
         // get the properties from the mirror feature
         Part::Mirroring* mf = getObject<Part::Mirroring>();
-        Part::Feature* ref = static_cast<Part::Feature*>(mf->MirrorPlane.getValue());
+        Part::ShapeFeature* ref = static_cast<Part::ShapeFeature*>(mf->MirrorPlane.getValue());
         if (ref) {  // skip this editor if MirrorPlane property is set
             return false;
         }
@@ -257,7 +257,7 @@ void ViewProviderFillet::updateData(const App::Property* prop)
         if (!objFill) {
             return;
         }
-        Part::Feature* objBase = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objFill->Base.getValue())
         );
         if (objBase) {
@@ -378,7 +378,7 @@ void ViewProviderChamfer::updateData(const App::Property* prop)
         if (!objCham) {
             return;
         }
-        Part::Feature* objBase = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objCham->Base.getValue())
         );
         if (objBase) {

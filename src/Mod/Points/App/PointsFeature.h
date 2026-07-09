@@ -27,6 +27,7 @@
 #include <App/FeatureCustom.h>
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>
 #include <App/PropertyGeo.h>
 
 #include "Points.h"
@@ -51,7 +52,7 @@ class PointsFeaturePy;
 /** Base class of all Points feature classes in FreeCAD.
  * This class holds an PointsKernel object.
  */
-class PointsExport Feature: public App::GeoFeature
+class PointsExport Feature: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Points::Feature);
 

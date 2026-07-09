@@ -37,7 +37,7 @@ using namespace Part;
 // returns a string which represent the object e.g. when printed in python
 std::string PartFeaturePy::representation() const
 {
-    auto* P = getFeaturePtr()->getPropertyByName("Proxy");
+    auto* P = getShapeFeaturePtr()->getPropertyByName("Proxy");
     if (P) {
         PyObject* Featclass = static_cast<App::PropertyPythonObject*>(P)->getValue().ptr();
         PyObject* repstr = PyObject_Repr(Featclass);
@@ -71,7 +71,7 @@ PyObject* PartFeaturePy::getElementHistory(PyObject* args, PyObject* kwds) const
         return {};
     }
 
-    auto feature = getFeaturePtr();
+    auto feature = getShapeFeaturePtr();
     Py::List list;
     bool showObjName = PyObject_IsTrue(showName);
     PY_TRY
