@@ -16,3 +16,17 @@
 # updates.
 src/3rdParty/** -text
 tests/lib/**    -text
+
+# CAD / mesh data fixtures are data, not source. Treat them as opaque so line
+# endings are never rewritten — this protects import round-trips and byte-exact
+# test fixtures (e.g. the NASTRAN .bdf files read by MeshTestsApp.py).
+*.brep  -text
+*.stp   -text
+*.step  -text
+*.iges  -text
+*.igs   -text
+*.stl   -text
+*.obj   -text
+*.bdf   -text
+*.dxf   -text
+*.skf   -text
