@@ -428,12 +428,6 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
     Base::Vector3d SketchVector = getProfileNormal();
 
     try {
-        auto invObjLoc = getLocation().Inverted();
-
-        auto invTrsf = invObjLoc.Transformation();
-
-        base.move(invObjLoc);
-
         Base::Vector3d paddingDirection = computeDirection(SketchVector, inverseDirection);
 
         // create vector in padding direction with length 1
@@ -468,7 +462,6 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
         // if the sketch's normal vector was used
         Direction.setValue(paddingDirection);
 
-        dir.Transform(invTrsf);
         if (Reversed.getValue()) {
             dir.Reverse();
         }
@@ -478,7 +471,6 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 QT_TRANSLATE_NOOP("Exception", "Creating a face from sketch failed")
             );
         }
-        sketchshape.move(invObjLoc);
 
         std::vector<TopoShape> prisms;  // Stores prisms, all in global CS
         double taper1 = TaperAngle.getValue();
@@ -495,8 +487,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 dir,
                 offset1,
                 makeface,
-                base,
-                invObjLoc
+                base
             );
             prisms.push_back(prism1);
         }
@@ -519,8 +510,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                         dir,
                         offset1,
                         makeface,
-                        base,
-                        invObjLoc
+                        base
                     );
                     if (!prism1.isNull() && !prism1.getShape().IsNull()) {
                         prisms.push_back(prism1);
@@ -538,8 +528,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                         dir2,
                         offset1,
                         makeface,
-                        base,
-                        invObjLoc
+                        base
                     );
                     if (!prism2.isNull() && !prism2.getShape().IsNull()) {
                         prisms.push_back(prism2);
@@ -565,8 +554,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                         dir,
                         offset1,
                         makeface,
-                        base,
-                        invObjLoc
+                        base
                     );
                     if (!prism1.isNull() && !prism1.getShape().IsNull()) {
                         prisms.push_back(prism1);
@@ -585,15 +573,13 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                     dir,
                     offset1,
                     makeface,
-                    base,
-                    invObjLoc
+                    base
                 );
                 prisms.push_back(prism1);
 
                 // Prism 2: Mirror prism1 across the sketch plane.
                 // The mirror plane's normal must be the sketch normal, not the extrusion direction.
                 gp_Dir sketchNormalDir(SketchVector.x, SketchVector.y, SketchVector.z);
-                sketchNormalDir.Transform(invTrsf);  // Transform to global CS, like 'dir' was.
 
                 Base::Vector3d sketchCenter = sketchshape.getBoundBox().GetCenter();
                 gp_Ax2 mirrorPlane(
@@ -630,8 +616,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                     dir2,
                     offset2,
                     makeface,
-                    base,
-                    invObjLoc
+                    base
                 );
                 if (!prism.isNull() && !prism.getShape().IsNull()) {
                     prisms.push_back(prism);
@@ -653,8 +638,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                     dir,
                     offset1,
                     makeface,
-                    base,
-                    invObjLoc
+                    base
                 );
                 if (!prism.isNull() && !prism.getShape().IsNull()) {
                     prisms.push_back(prism);
@@ -671,8 +655,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                     dir,
                     offset1,
                     makeface,
-                    base,
-                    invObjLoc
+                    base
                 );
                 if (!prism1.isNull() && !prism1.getShape().IsNull()) {
                     prisms.push_back(prism1);
@@ -689,8 +672,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                     dir2,
                     offset2,
                     makeface,
-                    base,
-                    invObjLoc
+                    base
                 );
                 if (!prism2.isNull() && !prism2.getShape().IsNull()) {
                     prisms.push_back(prism2);
@@ -821,8 +803,7 @@ TopoShape FeatureExtrude::generateSingleExtrusionSide(
     gp_Dir dir,
     double offsetVal,
     bool makeFace,
-    const TopoShape& base,
-    TopLoc_Location& invObjLoc
+    const TopoShape& base
 )
 {
     TopoShape prism(0, getDocument()->getStringHasher());
@@ -831,7 +812,6 @@ TopoShape FeatureExtrude::generateSingleExtrusionSide(
         || method == "UpToShape") {
         // Note: This will return an unlimited planar face if support is a datum plane
         TopoShape supportface = getTopoShapeSupportFace();
-        supportface.move(invObjLoc);
 
         if (!supportface.hasSubShape(TopAbs_WIRE)) {
             supportface = TopoShape();
@@ -842,11 +822,9 @@ TopoShape FeatureExtrude::generateSingleExtrusionSide(
         // Find a valid shape, face or datum plane to extrude up to
         if (method == "UpToFace") {
             getUpToFaceFromLinkSub(upToShape, upToFacePropHandle);
-            upToShape.move(invObjLoc);
         }
         else if (method == "UpToShape") {
             faceCount = getUpToShapeFromLinkSubList(upToShape, upToShapePropHandle);
-            upToShape.move(invObjLoc);
             if (faceCount == 0) {
                 // No shape selected, use the base
                 upToShape = base;

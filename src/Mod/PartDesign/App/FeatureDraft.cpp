@@ -171,9 +171,6 @@ App::DocumentObjectExecReturn* Draft::execute()
                 "Pull direction reference must be an edge of a feature or a datum line"
             );
         }
-
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-        pullDirection.Transform(invObjLoc.Transformation());
     }
 
     // Neutral plane
@@ -296,9 +293,6 @@ App::DocumentObjectExecReturn* Draft::execute()
         else {
             throw Base::TypeError("Neutral plane reference must be face of a feature or a datum plane");
         }
-
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-        neutralPlane.Transform(invObjLoc.Transformation());
     }
 
     if (!refDirection) {

@@ -201,10 +201,6 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
 
 std::list<gp_Trsf> Mirrored::createTransformations(gp_Pnt& axbase, gp_Dir& axdir) const
 {
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    axbase.Transform(invObjLoc.Transformation());
-    axdir.Transform(invObjLoc.Transformation());
-
     gp_Ax2 mirrorAxis(axbase, axdir);
 
     std::list<gp_Trsf> transformations;

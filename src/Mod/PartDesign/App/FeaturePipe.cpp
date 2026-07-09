@@ -194,11 +194,6 @@ App::DocumentObjectExecReturn* Pipe::execute()
     auto hasher = getDocument()->getStringHasher();
 
     try {
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-        if (!base.isNull()) {
-            base.move(invObjLoc);
-        }
-
         // setup the profile section
         TopoDS_Shape profileShape = getSectionShape(Profile.getValue(), Profile.getSubValues());
         if (profileShape.IsNull()) {
@@ -217,7 +212,6 @@ App::DocumentObjectExecReturn* Pipe::execute()
         TopoDS_Shape path;
         const Part::TopoShape& shape = static_cast<Part::Feature*>(spine)->Shape.getValue();
         buildPipePath(shape, subedge, path);
-        path.Move(invObjLoc);
 
         // auxiliary
         TopoDS_Shape auxpath;
@@ -232,7 +226,6 @@ App::DocumentObjectExecReturn* Pipe::execute()
 
             const Part::TopoShape& auxshape = static_cast<Part::Feature*>(auxspine)->Shape.getValue();
             buildPipePath(auxshape, auxsubedge, auxpath);
-            auxpath.Move(invObjLoc);
         }
 
         // build up multisections
@@ -347,9 +340,6 @@ App::DocumentObjectExecReturn* Pipe::execute()
         std::vector<TopoShape> shells;
 
         TopoDS_Shape copyProfilePoint(profilePoint);
-        if (!profilePoint.IsNull()) {
-            copyProfilePoint.Move(invObjLoc);
-        }
 
         std::vector<TopoDS_Wire> frontwires, backwires;
         for (auto& wires : wiresections) {
@@ -362,7 +352,6 @@ App::DocumentObjectExecReturn* Pipe::execute()
                 }
 
                 for (auto& wire : wires) {
-                    wire.Move(invObjLoc);
                     mkPS.Add(wire);
                 }
             }
@@ -372,7 +361,6 @@ App::DocumentObjectExecReturn* Pipe::execute()
                 }
 
                 for (auto& wire : wires) {
-                    wire.Move(invObjLoc);
                     mkPS.SetLaw(wire, scalinglaw);
                 }
             }

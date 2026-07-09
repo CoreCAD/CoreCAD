@@ -125,7 +125,10 @@ protected:
         App::Property* prop
     ) override;
 
-    virtual void positionBySupport();
+    /// Hook run before gathering transformations. The base implementation does
+    /// nothing; MultiTransform overrides it to purge the touched state of its
+    /// linked sub-transformations during a recompute.
+    virtual void purgeTouchedTransformations();
 
 private:
 };

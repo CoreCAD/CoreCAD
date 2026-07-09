@@ -347,7 +347,6 @@ void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShap
             }
             else {
                 baseShape = getBaseTopoShape();
-                baseShape.move(getLocation().Inverted());
                 shapes.emplace_back(shape.makeElementCut(baseShape.getShape()));
                 shapes.emplace_back(baseShape.makeElementCut(shape.getShape()));
             }

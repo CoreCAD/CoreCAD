@@ -89,12 +89,11 @@ Transformed::Transformed()
     );
 }
 
-void Transformed::positionBySupport()
+void Transformed::purgeTouchedTransformations()
 {
     // Amendment 4: a pattern produces its geometry directly in the document world frame and holds
     // no authored position of its own — nothing to set here. This hook survives only so
-    // MultiTransform can override it to purge touched sub-features; it goes with the residual
-    // frame math in Move 4.
+    // MultiTransform can override it to purge the touched state of its linked sub-transformations.
 }
 
 Part::Feature* Transformed::getBaseObject(bool silent) const
@@ -336,7 +335,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
         }
     }
 
-    this->positionBySupport();
+    this->purgeTouchedTransformations();
 
     // get transformations from subclass by calling virtual method
     std::vector<gp_Trsf> transformations;

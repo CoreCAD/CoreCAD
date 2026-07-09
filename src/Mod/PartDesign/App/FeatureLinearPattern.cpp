@@ -463,9 +463,6 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
         );
     }
 
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    dir.Transform(invObjLoc.Transformation());
-
     return Base::convertTo<gp_Vec>(dir);
 }
 

@@ -352,10 +352,6 @@ App::DocumentObjectExecReturn* Helix::execute()
     }
 
     try {
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-
-        base.move(invObjLoc);
-
         TopoDS_Shape result;
 
         // generate the helix path
@@ -370,7 +366,6 @@ App::DocumentObjectExecReturn* Helix::execute()
         }
 
         TopoDS_Shape face = sketchshape;
-        face.Move(invObjLoc);
 
         Bnd_Box bounds;
         BRepBndLib::Add(path, bounds);
@@ -624,9 +619,6 @@ TopoDS_Shape Helix::generateHelixPath(double breakAtTurn)
     mov.SetTransformation(sourceCS, targetCS);
     TopLoc_Location loc(mov);
     path.Move(loc.Inverted());
-
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    path.Move(invObjLoc);
 
     return path;
 }

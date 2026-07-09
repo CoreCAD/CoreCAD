@@ -47,7 +47,7 @@ MultiTransform::MultiTransform()
     Transformations.setSize(0);
 }
 
-void MultiTransform::positionBySupport()
+void MultiTransform::purgeTouchedTransformations()
 {
     std::vector<App::DocumentObject*> transFeatures = Transformations.getValues();
     for (auto f : transFeatures) {

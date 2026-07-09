@@ -257,9 +257,6 @@ const std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<App:
     else {
         throw Base::TypeError("Axis reference must be edge of a feature or datum line");
     }
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    axbase.Transform(invObjLoc.Transformation());
-    axdir.Transform(invObjLoc.Transformation());
 
     gp_Ax2 axis(axbase, axdir);
 

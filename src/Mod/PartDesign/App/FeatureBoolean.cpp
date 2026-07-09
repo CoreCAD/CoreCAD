@@ -173,7 +173,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
 void Boolean::updatePreviewShape()
 {
     if (strcmp(Type.getValueAsString(), "Cut") == 0) {
-        TopoShape base = getBaseTopoShape(true).moved(getLocation().Inverted());
+        TopoShape base = getBaseTopoShape(true);
         TopoShape result = Shape.getShape();
 
         try {
