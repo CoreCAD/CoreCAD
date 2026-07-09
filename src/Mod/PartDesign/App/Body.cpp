@@ -1295,8 +1295,13 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     // the latter case the displaced successor is rerouted onto the new feature so the
     // chain stays linear instead of forking.
 
-    // Detach from any prior owning group, mirroring the legacy path. A freshly
-    // created feature is normally group-less, but a moved feature may not be.
+    // Detach from any prior owning group. This is NOT the body-to-body move path
+    // (that heals the source chain via Body::removeFeatures); the live case here is a
+    // feature the user parked in a plain tree folder (App::DocumentObjectGroup) and
+    // then homed into this body — without this it would stay double-filed (in the
+    // folder AND referenced by the body). Whether that single-home rule is still right
+    // under de-ownership (folder = organization vs body = derived reference, arguably
+    // orthogonal) is an open design question tracked in #37 — keep as-is until settled.
     auto* group = App::GroupExtension::getGroupOfObject(feature);
     if (group) {
         group->getExtensionByType<App::GroupExtension>()->removeObject(feature);
