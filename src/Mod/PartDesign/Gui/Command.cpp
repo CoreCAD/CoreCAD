@@ -763,7 +763,6 @@ unsigned validateSketches(
 {
     // TODO Review the function for non-part bodies (2015-09-04, Fat-Zer)
     PartDesign::Body* pcActiveBody = PartDesignGui::getBody(false);
-    App::Part* pcActivePart = PartDesignGui::getPartFor(pcActiveBody, false);
 
     // TODO: If the user previously opted to allow multiple use of sketches or use of sketches from
     // other bodies, then count these as valid sketches!
@@ -785,19 +784,16 @@ unsigned validateSketches(
         // even when it is not the first (Cruth §4.7). The representative body below stays
         // first-match — it only labels same-part vs other-part.
         if (pcActiveBody && !PartDesign::Body::backsBody(*s, pcActiveBody)) {
-            // Check whether this sketch belongs to a body of the same part
             PartDesign::Body* b = PartDesign::Body::findBodyOf(*s);
             if (!b) {
                 status.push_back(PartDesignGui::TaskFeaturePick::notInBody);
                 continue;
             }
-            else if (!pcActivePart || !pcActivePart->hasObject(b, true)) {
-                status.push_back(PartDesignGui::TaskFeaturePick::otherPart);
-                continue;
-            }
-            // CoreCAD Phase 2: sketch from a different body in the same part — treat as directly
-            // valid (cross-body reference). Skip isUsed/afterTip checks; those apply to the active
-            // body's feature tree only. Fall through to shape/wire validity checks below.
+            // Everything in the same part document is fair game: a sketch owned by any other
+            // body is a valid cross-body reference (ARCHITECTURE §8.7 — features are shareable,
+            // not imprisoned in a body). With the App::Part container retired there is no longer
+            // a "different part" to wall it off from. Skip isUsed/afterTip checks; those apply to
+            // the active body's feature tree only. Fall through to shape/wire validity below.
             isCrossBody = true;
         }
 
