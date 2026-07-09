@@ -136,7 +136,6 @@ App::DocumentObjectExecReturn* Revolved::tryExecuteRevolved(Part::RevolMode revo
     const Base::Vector3d b = Base.getValue();
     gp_Dir dir(v.x, v.y, v.z);
     gp_Pnt pnt(b.x, b.y, b.z);
-    positionByPrevious();
     auto invObjLoc = getLocation().Inverted();
     pnt.Transform(invObjLoc.Transformation());
     dir.Transform(invObjLoc.Transformation());

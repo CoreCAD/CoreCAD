@@ -49,16 +49,12 @@ MultiTransform::MultiTransform()
 
 void MultiTransform::positionBySupport()
 {
-    PartDesign::Transformed::positionBySupport();
     std::vector<App::DocumentObject*> transFeatures = Transformations.getValues();
     for (auto f : transFeatures) {
         auto transFeature = freecad_cast<PartDesign::Transformed*>(f);
         if (!transFeature) {
             throw Base::TypeError("Transformation features must be subclasses of Transformed");
         }
-
-        // Amendment 4, Stage A: sub-transform features are world-frame too — no copied position.
-        transFeature->Placement.setValue(Base::Placement());
 
         // To avoid that a linked transform feature stays touched after a recompute
         // we have to purge the touched state

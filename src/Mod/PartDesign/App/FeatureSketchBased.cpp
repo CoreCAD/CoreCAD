@@ -126,16 +126,6 @@ void ProfileBased::setupObject()
     AllowMultiFace.setValue(true);
 }
 
-void ProfileBased::positionByPrevious()
-{
-    // Amendment 4 (world-frame feature geometry), Stage A: a derived feature no longer copies its
-    // consumed frame (base feature / sketch support / sketch) into its own position. Its geometry
-    // is produced directly in the document world frame, so its position is neutral. The "undo the
-    // copied frame" moves in execute() and reference resolution become inert once this is neutral;
-    // they are removed in Stage B along with this authored-position slot itself.
-    this->Placement.setValue(Base::Placement());
-}
-
 void ProfileBased::transformPlacement(const Base::Placement& transform)
 {
     Part::Feature* feat = getBaseObject(/* silent = */ true);
@@ -146,7 +136,6 @@ void ProfileBased::transformPlacement(const Base::Placement& transform)
         Part::Part2DObject* sketch = getVerifiedSketch();
         sketch->transformPlacement(transform);
     }
-    positionByPrevious();
 }
 
 Part::Part2DObject* ProfileBased::getVerifiedSketch(bool silent) const

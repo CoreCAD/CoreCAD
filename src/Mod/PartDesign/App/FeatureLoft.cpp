@@ -179,8 +179,6 @@ App::DocumentObjectExecReturn* Loft::execute()
     auto hasher = getDocument()->getStringHasher();
 
     try {
-        // setup the location
-        this->positionByPrevious();
         auto invObjLoc = this->getLocation().Inverted();
         if (!base.isNull()) {
             base.move(invObjLoc);

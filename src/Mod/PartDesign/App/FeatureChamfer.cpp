@@ -154,8 +154,6 @@ App::DocumentObjectExecReturn* Chamfer::execute()
         return res;
     }
 
-    this->positionByBaseFeature();
-
     if (static_cast<Part::ChamferType>(chamferType) == Part::ChamferType::distanceAngle) {
         size2 = angle;
     }

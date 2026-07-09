@@ -428,7 +428,6 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
     Base::Vector3d SketchVector = getProfileNormal();
 
     try {
-        this->positionByPrevious();
         auto invObjLoc = getLocation().Inverted();
 
         auto invTrsf = invObjLoc.Transformation();

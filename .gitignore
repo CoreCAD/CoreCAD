@@ -77,3 +77,6 @@ tsupdate_stdout.log
 *.FCBak
 /test.FCStd
 /test2.FCStd
+
+# Claude/dev scratch files (throwaway test scripts, docs; never commit)
+/.scratch/

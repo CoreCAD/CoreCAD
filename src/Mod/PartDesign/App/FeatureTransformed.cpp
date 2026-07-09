@@ -91,10 +91,10 @@ Transformed::Transformed()
 
 void Transformed::positionBySupport()
 {
-    // Amendment 4, Stage A: a pattern produces its geometry in the document world frame, so it no
-    // longer copies its support's position. Position is neutral; the pattern transforms resolve in
-    // world coordinates (verified per build plan §6). Copied-frame juggling removed in Stage B.
-    this->Placement.setValue(Base::Placement());
+    // Amendment 4: a pattern produces its geometry directly in the document world frame and holds
+    // no authored position of its own — nothing to set here. This hook survives only so
+    // MultiTransform can override it to purge touched sub-features; it goes with the residual
+    // frame math in Move 4.
 }
 
 Part::Feature* Transformed::getBaseObject(bool silent) const

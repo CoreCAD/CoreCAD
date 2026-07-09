@@ -352,7 +352,6 @@ App::DocumentObjectExecReturn* Helix::execute()
     }
 
     try {
-        this->positionByPrevious();
         TopLoc_Location invObjLoc = this->getLocation().Inverted();
 
         base.move(invObjLoc);

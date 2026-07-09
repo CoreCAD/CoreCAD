@@ -106,8 +106,6 @@ App::DocumentObjectExecReturn* Fillet::execute()
         );
     }
 
-    this->positionByBaseFeature();
-
     try {
         TopoShape shape(0);  //,getDocument()->getStringHasher());
 

@@ -119,7 +119,6 @@ App::DocumentObjectExecReturn* Draft::execute()
 
     // If no element is selected, then we use a copy of previous feature.
     if (SubVals.empty()) {
-        this->positionByBaseFeature();
         this->Shape.setValue(TopShape);
         return App::DocumentObject::StdReturn;
     }
@@ -315,7 +314,6 @@ App::DocumentObjectExecReturn* Draft::execute()
 
     computeProps = {pullDirection, neutralPlane};
 
-    this->positionByBaseFeature();
     // create an untransformed copy of the base shape
     Part::TopoShape baseShape(TopShape);
     baseShape.setTransform(Base::Matrix4D());

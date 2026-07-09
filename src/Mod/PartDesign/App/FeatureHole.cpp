@@ -1755,7 +1755,6 @@ App::DocumentObjectExecReturn* Hole::execute()
         std::string method(DepthType.getValueAsString());
         double length = 0.0;
 
-        this->positionByPrevious();
         TopLoc_Location invObjLoc = this->getLocation().Inverted();
 
         base.move(invObjLoc);

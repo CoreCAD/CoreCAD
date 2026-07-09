@@ -53,8 +53,6 @@ public:
         return false;
     }
 
-    /// updates the Placement property from the Placement of the BaseFeature
-    void positionByBaseFeature();
     /**
      * Returns the BaseFeature property's object if it's set otherwise returns Base's
      * feature property object otherwise feature property's object (if any)
