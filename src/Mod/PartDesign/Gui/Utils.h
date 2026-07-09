@@ -98,7 +98,6 @@ PartDesign::Body* getBodyFor(
 );
 
 App::Part* getPartFor(const App::DocumentObject*, bool messageIfNot);
-App::Part* getActivePart();
 
 /// Fix sketch support after moving a free sketch into a body
 void fixSketchSupport(Sketcher::SketchObject* sketch);

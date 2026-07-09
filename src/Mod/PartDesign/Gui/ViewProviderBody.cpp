@@ -802,12 +802,6 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
         return false;
     }
 
-    App::Part* actPart = PartDesignGui::getActivePart();
-    App::Part* partOfBaseFeature = App::Part::getPartOfObject(obj);
-    if (partOfBaseFeature && partOfBaseFeature != actPart) {
-        return false;
-    }
-
     return true;
 }
 

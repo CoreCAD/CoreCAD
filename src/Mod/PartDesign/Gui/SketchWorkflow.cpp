@@ -49,7 +49,6 @@
 #include <App/Link.h>
 #include <App/Origin.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Control.h>
@@ -237,7 +236,6 @@ public:
                 if (!activeBody) {
                     throw RejectException();
                 }
-                tryAddNewBodyToActivePart();
                 Base::Console().message(
                     "New Body created: the active Body is a dependency of the selected face.\n"
                 );
@@ -285,20 +283,9 @@ private:
     {
         if (!activeBody) {
             activeBody = PartDesignGui::getBody(/* messageIfNot = */ true);
-            if (activeBody) {
-                tryAddNewBodyToActivePart();
-            }
-            else {
+            if (!activeBody) {
                 throw RejectException();
             }
-        }
-    }
-
-    void tryAddNewBodyToActivePart()
-    {
-        App::Part* activePart = PartDesignGui::getActivePart();
-        if (activePart) {
-            activePart->addObject(activeBody);
         }
     }
 
@@ -391,19 +378,13 @@ private:
             PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
         }
         else {
+            // No active body: the bodyless sketch lives directly in the document (the
+            // document is the container, ARCHITECTURE §7.1). No App::Part to file it into.
             Gui::Command::doCommand(
                 Gui::Command::Doc,
                 "App.activeDocument().addObject('Sketcher::SketchObject','%s')",
                 FeatName.c_str()
             );
-            if (App::Part* activePart = PartDesignGui::getActivePart()) {
-                Gui::Command::doCommand(
-                    Gui::Command::Doc,
-                    "%s.addObject(%s)",
-                    Gui::Command::getObjectCmd(activePart).c_str(),
-                    Gui::Command::getObjectCmd(doc->getObject(FeatName.c_str())).c_str()
-                );
-            }
         }
         auto sketch = doc->getObject(FeatName.c_str());
 
