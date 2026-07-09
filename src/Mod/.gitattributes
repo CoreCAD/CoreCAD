@@ -83,29 +83,34 @@ JtReader    export-ignore
 # line endings of the modules NOT commented will NOT be normalized
 # Be carefully changes here could affect a lot of files automatically!
 
-Cloud/** -text
-Drawing/** -text
-Import/** -text
-Inspection/** -text
-JtReader/** -text
-Measure/** -text
-Mesh/** -text
-MeshPart/** -text
-Part/** -text
-PartDesign/** -text
-Plot/** -text
-Points/** -text
-ReverseEngineering/** -text
-Robot/** -text
-Sandbox/** -text
-Sketcher/** -text
-Spreadsheet/** -text
-Start/** -text
-Surface/** -text
-TechDraw/** -text
-TemplatePyMod/** -text
-Test/** -text
-Web/** -text
+# Cruth: upstream's incremental LF migration is finished here. Every module
+# below is now commented out (i.e. normalized to LF via the repo-root
+# .gitattributes `* text=auto eol=lf`). As a downstream fork that only pulls
+# from upstream, we keep the whole tree on one line ending rather than carry the
+# mixed CRLF/LF state that made touched files churn wholesale.
+# Cloud/** -text
+# Drawing/** -text
+# Import/** -text
+# Inspection/** -text
+# JtReader/** -text
+# Measure/** -text
+# Mesh/** -text
+# MeshPart/** -text
+# Part/** -text
+# PartDesign/** -text
+# Plot/** -text
+# Points/** -text
+# ReverseEngineering/** -text
+# Robot/** -text
+# Sandbox/** -text
+# Sketcher/** -text
+# Spreadsheet/** -text
+# Start/** -text
+# Surface/** -text
+# TechDraw/** -text
+# TemplatePyMod/** -text
+# Test/** -text
+# Web/** -text
 
 
 # this would let git manage the file endings automatically

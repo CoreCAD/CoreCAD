@@ -1,0 +1,32 @@
+# Repository-wide line-ending policy.
+#
+# Store every text file with LF in the repository and check it out with LF on
+# every platform. `text=auto` lets git detect binary files and leave them byte
+# for byte; `eol=lf` forces LF for everything it treats as text. This ends the
+# mixed CRLF/LF state that made the pre-commit line-ending fixer rewrite whole
+# files whenever they were touched.
+#
+# Per-directory .gitattributes (src/Mod, src/Doc, ...) still apply on top of
+# this baseline; they only set the `text` attribute, so the `eol=lf` here still
+# governs their checkout.
+* text=auto eol=lf
+
+# Vendored / third-party sources keep their upstream line endings so our copies
+# do not diverge from upstream and create needless conflicts on dependency
+# updates.
+src/3rdParty/** -text
+tests/lib/**    -text
+
+# CAD / mesh data fixtures are data, not source. Treat them as opaque so line
+# endings are never rewritten — this protects import round-trips and byte-exact
+# test fixtures (e.g. the NASTRAN .bdf files read by MeshTestsApp.py).
+*.brep  -text
+*.stp   -text
+*.step  -text
+*.iges  -text
+*.igs   -text
+*.stl   -text
+*.obj   -text
+*.bdf   -text
+*.dxf   -text
+*.skf   -text
