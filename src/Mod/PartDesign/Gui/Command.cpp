@@ -62,6 +62,7 @@
 
 #include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
+#include "SketchPickDialog.h"
 #include "SketchWorkflow.h"
 #include "TaskFeaturePick.h"
 #include "Utils.h"
@@ -114,12 +115,30 @@ static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, bool& abort)
     return body;
 }
 
+// Cruth §8.5: push a resolved sketch into the GUI selection so the shared
+// feature-creation path (prepareProfileBased's "a profile is selected" fast-path,
+// Command.cpp ~1132) consumes exactly this sketch. Without this, that lower path
+// re-resolves from an empty selection and falls into the legacy TaskDlgFeaturePick —
+// the orphaned active-body picker that returns nothing here, leaving the user unable
+// to reach the feature's parameter dialog.
+static void selectResolvedSketch(Part::Part2DObject* sketch)
+{
+    if (!sketch) {
+        return;
+    }
+    Gui::Selection().clearSelection();
+    Gui::Selection().addSelection(sketch->getDocument()->getName(), sketch->getNameInDocument());
+}
+
 // CoreCAD §8.5: pick the sketch the user means to operate on.
 //
 // Rules:
 // - exactly one Part2DObject in the current selection → use it,
 // - nothing selected, exactly one sketch in the document → use it,
 // - anything else → warn and return nullptr.
+//
+// Every non-null result is pushed back into the selection (selectResolvedSketch) so the
+// downstream feature-creation path uses precisely this sketch and never re-prompts.
 static Part::Part2DObject* resolveSketchFromSelection(Gui::Command* cmd, App::Document* doc)
 {
     auto selected = cmd->getSelection().getObjectsOfType(Part::Part2DObject::getClassTypeId());
@@ -137,17 +156,22 @@ static Part::Part2DObject* resolveSketchFromSelection(Gui::Command* cmd, App::Do
 
     auto inDoc = doc->getObjectsOfType(Part::Part2DObject::getClassTypeId());
     if (inDoc.size() == 1) {
-        return static_cast<Part::Part2DObject*>(inDoc.front());
+        auto* only = static_cast<Part::Part2DObject*>(inDoc.front());
+        selectResolvedSketch(only);
+        return only;
     }
-    QMessageBox::warning(
-        Gui::getMainWindow(),
-        QObject::tr("No sketch selected"),
-        QObject::tr(
-            "Multiple sketches exist in the document. "
-            "Select the one you want to extrude."
-        )
-    );
-    return nullptr;
+
+    // Cruth §8.5: several sketches, none selected — open the de-owned chooser so the
+    // user can pick one (each labelled with where its anchor chain lands). Cancel
+    // returns nullptr and the command aborts silently.
+    std::vector<Part::Part2DObject*> candidates;
+    candidates.reserve(inDoc.size());
+    for (auto* obj : inDoc) {
+        candidates.push_back(static_cast<Part::Part2DObject*>(obj));
+    }
+    Part::Part2DObject* picked = PartDesignGui::pickSketch(candidates);
+    selectResolvedSketch(picked);
+    return picked;
 }
 
 // Cruth §8.5/§4.6: resolve the base Body for a NEW sketch-based solid feature by walking
@@ -715,7 +739,12 @@ static void finishFeature(
         activeBody = PartDesignGui::getBodyFor(prevSolidFeature, /*messageIfNot = */ false);
     }
     else {
-        activeBody = PartDesignGui::getBody(/*messageIfNot = */ false);
+        // Marker model (§4.6): the feature has already been created inside its owning body
+        // — which, for an anchor-walk that reached no body, is a freshly auto-spawned one,
+        // NOT the GUI's active body. Resolve the body the feature actually landed in so the
+        // subsequent setEdit targets the right container; using the stale active body builds
+        // an edit path the feature isn't under, and the parameter panel silently fails to open.
+        activeBody = PartDesignGui::getBodyFor(feature, /*messageIfNot = */ false);
     }
 
     if (hidePrevSolid && prevSolidFeature) {

@@ -206,6 +206,8 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskHelixParameters.cpp
     DlgActiveBody.h
     DlgActiveBody.cpp
+    SketchPickDialog.cpp
+    SketchPickDialog.h
 )
 SOURCE_GROUP("TaskDialogs" FILES ${PartDesignGuiTaskDlgs_SRCS})
 
