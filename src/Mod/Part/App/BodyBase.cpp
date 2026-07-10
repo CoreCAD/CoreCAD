@@ -24,6 +24,7 @@
 
 
 #include <App/Document.h>
+#include <App/PropertyLinks.h>
 
 #include "BodyBase.h"
 #include "BodyBasePy.h"
@@ -60,6 +61,34 @@ BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
     }
 
     return nullptr;
+}
+
+void BodyBase::rebaseBodySubReferencesToTip(
+    std::vector<App::DocumentObject*>& objs,
+    std::vector<std::string>& subs
+)
+{
+    const std::size_t count = std::min(objs.size(), subs.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        if (subs[i].empty()) {
+            continue;  // a whole-Body reference stays a Body reference (tracks the Tip, §8)
+        }
+        if (!objs[i] || !objs[i]->isDerivedFrom<BodyBase>()) {
+            continue;
+        }
+        auto* body = static_cast<BodyBase*>(objs[i]);
+        if (auto* tip = body->Tip.getValue()) {
+            objs[i] = tip;  // feature-anchor the sub-element reference (§8)
+        }
+    }
+}
+
+void BodyBase::rebaseBodySubReferencesToTip(App::PropertyLinkSubList& links)
+{
+    std::vector<App::DocumentObject*> objs = links.getValues();
+    std::vector<std::string> subs = links.getSubValues();
+    rebaseBodySubReferencesToTip(objs, subs);
+    links.setValues(objs, subs);
 }
 
 bool BodyBase::isAfter(const App::DocumentObject* feature, const App::DocumentObject* target) const

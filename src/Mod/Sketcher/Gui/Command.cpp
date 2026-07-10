@@ -49,6 +49,7 @@
 #include <Gui/Selection/SelectionFilter.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Mod/Part/App/Attacher.h>
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/Gui/AttacherTexts.h>
 #include <Mod/Sketcher/App/Constraint.h>
@@ -238,6 +239,9 @@ void CmdSketcherNewSketch::activated(int iMsg)
         std::vector<Gui::SelectionObject> objects = Gui::Selection().getSelectionEx();
         App::PropertyLinkSubList support;
         Gui::Selection().getAsPropertyLinkSubList(support);
+        // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the
+        // Tip feature so the sketch attaches to the feature, not the tip-tracking Body (§8).
+        Part::BodyBase::rebaseBodySubReferencesToTip(support);
         std::string supportString = support.getPyReprString();
 
         // create Sketch on Face

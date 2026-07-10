@@ -231,6 +231,9 @@ void UnifiedDatumCommand(Gui::Command& cmd, Base::Type type, std::string name)
 
         App::PropertyLinkSubList support;
         cmd.getSelection().getAsPropertyLinkSubList(support);
+        // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the
+        // Tip feature so the datum attaches to the feature, not the tip-tracking Body (§8).
+        Part::BodyBase::rebaseBodySubReferencesToTip(support);
 
         bool bEditSelected = false;
         if (support.getSize() == 1 && support.getValue()) {
@@ -461,6 +464,9 @@ void CmdPartDesignShapeBinder::activated(int iMsg)
     Q_UNUSED(iMsg);
     App::PropertyLinkSubList support;
     getSelection().getAsPropertyLinkSubList(support);
+    // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the Tip
+    // feature so the binder references the feature, not the tip-tracking Body (§8).
+    Part::BodyBase::rebaseBodySubReferencesToTip(support);
 
     bool bEditSelected = false;
     if (support.getSize() == 1 && support.getValue()) {

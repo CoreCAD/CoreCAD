@@ -56,6 +56,7 @@
 #include <Gui/ViewProvider.h>
 #include <Base/Tools.h>
 #include <Mod/Part/App/AttachExtension.h>
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/Gui/AttacherTexts.h>
 #include <Mod/Part/Gui/TaskAttacher.h>
@@ -690,6 +691,9 @@ void TaskAttacher::addToReference(const std::vector<SubAndObjName>& pairs)
             refnames.push_back(subname);
         }
 
+        // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the
+        // Tip feature so the attachment references the feature, not the tip-tracking Body (§8).
+        Part::BodyBase::rebaseBodySubReferencesToTip(refs, refnames);
         pcAttach->AttachmentSupport.setValues(refs, refnames);
 
         QLineEdit* line = getLine(iActiveRef);
