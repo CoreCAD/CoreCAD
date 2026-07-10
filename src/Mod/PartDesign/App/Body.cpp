@@ -1238,6 +1238,30 @@ std::vector<App::DocumentObject*> Body::getFullModel()
         return rv;
     }
 
+    // Re-entrancy guard (#46). Part 2 below walks each loose feature's attachment chain and
+    // calls findBodyOf on the anchor solid; when that anchor is not a PartDesign::Feature the
+    // query routes through BodyBase::findBodyOf, which calls getFullModel on every Body —
+    // re-entering this one. A datum/sketch attached to a face of its own Body closes that loop
+    // (getFullModel → walkAnchorChain → findBodyOf → BodyBase::findBodyOf → getFullModel) and it
+    // recurses without bound, SIGSEGV on sketch-create and on document load. The solid chain
+    // (part 1) is recursion-free, so on re-entry we compute only the solids and skip the
+    // anchor-walk: an anchor that is a member solid is still found there, which is all the
+    // findBodyOf that re-entered us needs to resolve membership.
+    static thread_local std::set<const Body*> inProgress;
+    const bool reentrant = !inProgress.insert(this).second;
+    struct ProgressGuard
+    {
+        std::set<const Body*>& set;
+        const Body* body;
+        bool owns;
+        ~ProgressGuard()
+        {
+            if (owns) {
+                set.erase(body);
+            }
+        }
+    } progressGuard {inProgress, this, !reentrant};
+
     // 1) Solid chain, Tip → base, including only members (backsBody(cursor, this)); the
     //    membership test is what halts the walk at a seam. backsBody, not the scalar
     //    findBodyOf: a multi-output straddler backs several Bodies at once, and first-match
@@ -1254,6 +1278,10 @@ std::vector<App::DocumentObject*> Body::getFullModel()
     }
     std::reverse(rv.begin(), rv.end());
     const std::set<App::DocumentObject*> solidMembers(rv.begin(), rv.end());
+
+    if (reentrant) {
+        return rv;  // solids only — breaks the getFullModel↔findBodyOf cycle (#46)
+    }
 
     // 2) Loose features (sketches, datums, shapebinders) that are not part of the solid
     //    chain. One belongs to this Body when either:
