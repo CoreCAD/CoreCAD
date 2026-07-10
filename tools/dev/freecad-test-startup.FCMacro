@@ -22,5 +22,8 @@ def _show_panels():
             dock.setVisible(True)
 
 
-# Defer past workbench activation / the Start page, which can otherwise re-hide docks.
-QtCore.QTimer.singleShot(1500, _show_panels)
+# Workbench activation / the Start page / the ribbon settling can re-hide the docks
+# *after* a single deferred call runs (observed still-hidden at ~2.5s). Re-assert across a
+# longer window so the panels stay up regardless of when the last re-hide lands.
+for _ms in (1500, 3000, 5000, 8000):
+    QtCore.QTimer.singleShot(_ms, _show_panels)
