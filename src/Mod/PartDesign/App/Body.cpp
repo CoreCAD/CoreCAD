@@ -1641,7 +1641,19 @@ App::DocumentObjectExecReturn* Body::execute()
         tipShape.transformShape(tipShape.getTransform(), true);
     }
     else {
-        tipShape = Part::TopoShape();
+        // Cruth §4.6/§4.8: a Body is the system's accounting of a connected solid — it
+        // exists only because a feature's recompute produced one, and its identity IS
+        // its Tip. A Body that reaches recompute with no Tip has no such component: it
+        // is the illegal authored-empty-Body state (a raw addObject('PartDesign::Body')
+        // with nothing spliced in, or a spawn whose feature never arrived). Fail loudly
+        // rather than sit in the tree looking healthy with an empty shape. Legitimate
+        // emptying — the last feature removed — retires the Body by deleting it in
+        // removeFeature() within the same synchronous call, so execute() never observes
+        // a *live* Tipless Body except this never-populated case.
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
+            "Exception",
+            "A Body must have at least one feature; empty bodies are not allowed"
+        ));
     }
 
     Shape.setValue(tipShape);
