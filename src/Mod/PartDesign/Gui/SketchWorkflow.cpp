@@ -329,17 +329,15 @@ private:
 
     void setOriginTemporaryVisibility()
     {
-        // Origin-plane highlighting is a non-critical visual aid. Without an
-        // active Body there is no Origin to show; the user can still pick a
-        // global plane in the attachment dialog.
-        if (!activeBody) {
+        // Cruth substrate flip: the base planes belong to the shared document-level
+        // Origin, not to any Body, so highlight them for picking whether or not a Body
+        // is active. On an empty doc / no-active-body the planes are the ONLY thing the
+        // user can attach a sketch to (no solid faces yet); the old !activeBody
+        // early-return left the attachment dialog with nothing selectable ("no picker").
+        auto* origin = PartDesign::Body::findDocumentOrigin(guidocument->getDocument());
+        if (!origin) {
             return;
         }
-        // Cruth substrate flip (Stage 3a-2b): highlight the shared document-level Origin's
-        // planes, not the dormant per-body Origin. This is the coordinate root de-owned
-        // features resolve against, so the plane the user clicks is the one the sketch
-        // ends up attached to (no later relink needed for display consistency).
-        auto* origin = activeBody->getDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -405,15 +403,15 @@ private:
         }
 
         PartDesign::Body* partDesignBody = activeBody;
-        auto onAccept = [partDesignBody, sketch]() {
-            resetOriginVisibility(partDesignBody);
+        auto onAccept = [partDesignBody, sketch, doc]() {
+            resetOriginVisibility(doc);
 
             Gui::Selection().clearSelection();
 
             PartDesignGui::setEdit(sketch, partDesignBody);
         };
-        auto onReject = [partDesignBody]() {
-            resetOriginVisibility(partDesignBody);
+        auto onReject = [doc]() {
+            resetOriginVisibility(doc);
         };
 
         Gui::Selection().clearSelection();
@@ -425,14 +423,14 @@ private:
         vps->showAttachmentEditor(onAccept, onReject);
     }
 
-    static void resetOriginVisibility(PartDesign::Body* partDesignBody)
+    static void resetOriginVisibility(App::Document* doc)
     {
-        if (!partDesignBody) {
+        // Must match the Origin made visible in setOriginTemporaryVisibility() — the
+        // shared document-level one — and, like it, run whether or not a Body is active.
+        auto* origin = PartDesign::Body::findDocumentOrigin(doc);
+        if (!origin) {
             return;
         }
-        // Cruth substrate flip (Stage 3a-2b): must match the Origin made visible in
-        // setOriginTemporaryVisibility() — the shared document-level one, not per-body.
-        auto* origin = partDesignBody->getDocumentOrigin();
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
