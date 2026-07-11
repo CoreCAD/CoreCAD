@@ -162,6 +162,14 @@ public:
 
     /// A property that controls the visibility status in App name space.
     PropertyBool Visibility;
+
+    /// A durable, per-object identity minted once at creation and persisted for the
+    /// life of the object. Unlike the internal name or session id, this survives
+    /// save/load and reorder, giving the feature tree the same stable authored
+    /// identity that sketch geometry carries in its tag. It is the bedrock the
+    /// version-control (diff/merge) story stands on: features are lined up by this
+    /// id, never by position or name.
+    PropertyUUID Uid;
     /// @}
 
     /**

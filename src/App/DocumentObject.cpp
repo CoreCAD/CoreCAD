@@ -75,6 +75,14 @@ DocumentObject::DocumentObject()
 
     ADD_PROPERTY(Visibility, (true));
 
+    // Mint the durable identity once, here at construction. On restore the saved
+    // value overwrites this, so an object keeps the same id across save/load; a
+    // freshly created object gets a brand-new one. Output+Hidden: it must never
+    // touch/recompute the object and it is machinery, not a user-facing field.
+    ADD_PROPERTY_TYPE(Uid, (Base::Uuid::createUuid()), "Base", Prop_Output, "Durable object identity");
+    Uid.setStatus(Property::Hidden, true);
+    Uid.setStatus(Property::NoModify, true);
+
     // default set Visibility status to hidden and output (no touch) for
     // compatibitily reason. We use setStatus instead of PropertyType to
     // allow user to change its status later
