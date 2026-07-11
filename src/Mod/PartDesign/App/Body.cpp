@@ -1945,6 +1945,19 @@ App::DocumentObject* Body::getSubObject(
                 }
                 return feat->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
             }
+            // The shared document Origin is claimed as a child of the Body in the tree/3D
+            // (ViewProviderBody::claimChildren, so the base planes/axes are pickable for a new
+            // sketch), but it is document-owned, not a Group member (Cruth §11 step 5e), so the
+            // base resolver below cannot find it — a click on a base plane failed with
+            // "Sub-object Body.Origin.YZ_Plane not found". Delegate an "<Origin>.…" path to the
+            // document Origin. Its geometry is the world frame, so the Body's own Placement is
+            // not applied (unlike an owned feature above).
+            if (App::Origin* origin = findDocumentOrigin(getDocument())) {
+                const char* oname = origin->getNameInDocument();
+                if (oname && first == oname) {
+                    return origin->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
+                }
+            }
         }
     }
 #if 1
