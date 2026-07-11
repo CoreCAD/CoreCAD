@@ -33,7 +33,6 @@
 
 #include <App/Document.h>
 #include <App/Origin.h>
-#include <App/OriginGroupExtension.h>
 #include <App/Part.h>
 #include <App/VarSet.h>
 #include <Base/Console.h>
@@ -800,12 +799,6 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
         return false;
     }
     else if (obj->isDerivedFrom(Part::BodyBase::getClassTypeId())) {
-        return false;
-    }
-
-    App::Part* actPart = PartDesignGui::getActivePart();
-    App::Part* partOfBaseFeature = App::Part::getPartOfObject(obj);
-    if (partOfBaseFeature && partOfBaseFeature != actPart) {
         return false;
     }
 

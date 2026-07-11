@@ -31,6 +31,11 @@
 #include "PartFeature.h"
 
 
+namespace App
+{
+class PropertyLinkSubList;
+}
+
 namespace Part
 {
 /** Base class of all body objects in FreeCAD
@@ -81,6 +86,28 @@ public:
      * TODO introduce a findBodiesOf() if needed (2015-08-04, Fat-Zer)
      */
     static BodyBase* findBodyOf(const App::DocumentObject* f);
+
+    /**
+     * Re-anchor sub-element references off a Body marker onto the Body's Tip feature.
+     *
+     * ARCHITECTURE §8: a sub-element reference (a picked face/edge/vertex) is
+     * feature-anchored, while only a whole-object Body reference tracks the Tip. A face
+     * pick on a Body's displayed solid resolves the selection to the Body, producing a
+     * malformed "(Body, Face6)" reference that both tracks the Tip and carries a
+     * sub-element. Left as-is it forms a dependency cycle the moment a new feature becomes
+     * the Tip (the profile chases the very feature being built) and it drives the
+     * getFullModel anchor-walk into recursion. This rewrites every "(Body, non-empty-sub)"
+     * entry to "(Body.Tip, same-sub)" — the Tip's shape is the Body's shape, so the element
+     * name is unchanged — while leaving whole-Body entries (empty sub) and non-Body targets
+     * untouched. Every UI site that records an attachment/support reference from a selection
+     * calls this before storing it.
+     */
+    static void rebaseBodySubReferencesToTip(
+        std::vector<App::DocumentObject*>& objs,
+        std::vector<std::string>& subs
+    );
+    static void rebaseBodySubReferencesToTip(App::PropertyLinkSubList& links);
+
     PyObject* getPyObject() override;
 
 protected:

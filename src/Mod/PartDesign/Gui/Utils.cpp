@@ -72,41 +72,27 @@ App::DocumentObject* getParent(App::DocumentObject* obj, std::string& subname)
     return obj;
 }
 
-bool setEdit(App::DocumentObject* obj, PartDesign::Body* body)
+bool setEdit(App::DocumentObject* obj, PartDesign::Body* /*body*/)
 {
     if (!obj || !obj->isAttachedToDocument()) {
         FC_ERR("invalid object");
         return false;
     }
-    if (!body) {
-        // Marker model: an object may legitimately have no owning body yet — a
-        // global-plane sketch lives at document level until a solid-producing feature
-        // emerges a body (ARCHITECTURE §4.6). That is not an error; we simply edit the
-        // object directly, with no body context, instead of demanding one.
-        body = getBodyFor(obj, false);
-    }
-    auto* activeView = Gui::Application::Instance->activeView();
-    if (!activeView) {
+    if (!Gui::Application::Instance->activeView()) {
         return false;
     }
-    App::DocumentObject* parent = obj;
-    std::string subname;
-    if (body) {
-        auto activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY, &parent, &subname);
-        if (activeBody != body) {
-            parent = obj;
-            subname.clear();
-        }
-        else {
-            subname += obj->getNameInDocument();
-            subname += '.';
-        }
-    }
 
+    // Marker model (ARCHITECTURE §4.6): features are document-level objects, not
+    // GeoFeatureGroup children of their Body — the Body is a
+    // marker, not a container. So we must not fabricate a body-relative edit path such as
+    // "Body.Sketch.": that sub-object no longer exists, and Gui::Document::trySetEdit would
+    // reject it and open no editor (while this function still returned true, so the failure
+    // was silent — the New-Sketch "doesn't drop into the editor" bug). Edit the object
+    // directly; trySetEdit's ParentFinder resolves any genuine group parent from the
+    // object's actual membership.
     Gui::cmdGuiDocument(
-        parent,
-        std::ostringstream() << "setEdit(" << Gui::Command::getObjectCmd(parent) << ", 0, '"
-                             << subname << "')"
+        obj,
+        std::ostringstream() << "setEdit(" << Gui::Command::getObjectCmd(obj) << ", 0, '')"
     );
     return true;
 }
@@ -267,21 +253,6 @@ PartDesign::Body* getBodyFor(
     }
 
     return nullptr;
-}
-
-App::Part* getActivePart()
-{
-    Gui::MDIView* activeView = Gui::Application::Instance->activeView();
-    if (activeView) {
-        auto* obj = activeView->getActiveObject<App::Part*>(PARTKEY);
-        if (!obj) {
-            obj = activeView->getActiveObject<App::Part*>(ASSEMBLYKEY);
-        }
-        return obj;
-    }
-    else {
-        return nullptr;
-    }
 }
 
 App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, const std::string& name)
@@ -575,44 +546,6 @@ std::vector<App::DocumentObject*> collectMovableDependencies(std::vector<App::Do
     result.insert(result.begin(), unique_objs.begin(), unique_objs.end());
 
     return result;
-}
-
-void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
-{
-    if (feat->hasExtension(Part::AttachExtension::getExtensionClassTypeId())) {
-        auto attachable = feat->getExtensionByType<Part::AttachExtension>();
-        App::DocumentObject* support = attachable->AttachmentSupport.getValue();
-        if (support && support->isDerivedFrom<App::DatumElement>()) {
-            auto originfeat = static_cast<App::DatumElement*>(support);
-            App::DatumElement* targetOriginFeature = targetbody->getOrigin()->getDatumElement(
-                originfeat->Role.getValue()
-            );
-            if (targetOriginFeature) {
-                attachable->AttachmentSupport.setValue(
-                    static_cast<App::DocumentObject*>(targetOriginFeature),
-                    ""
-                );
-            }
-        }
-    }
-    else if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
-        auto prim = static_cast<PartDesign::ProfileBased*>(feat);
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
-            App::DocumentObject* axis = prop->getValue();
-            if (axis && axis->isDerivedFrom<App::DatumElement>()) {
-                auto originfeat = static_cast<App::DatumElement*>(axis);
-                App::DatumElement* targetOriginFeature = targetbody->getOrigin()->getDatumElement(
-                    originfeat->Role.getValue()
-                );
-                if (targetOriginFeature) {
-                    prop->setValue(
-                        static_cast<App::DocumentObject*>(targetOriginFeature),
-                        std::vector<std::string>(0)
-                    );
-                }
-            }
-        }
-    }
 }
 
 }  // namespace PartDesignGui

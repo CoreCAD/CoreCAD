@@ -34,7 +34,6 @@
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Base/Tools.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
@@ -63,16 +62,15 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
         return false;
     }
     PartDesign::Body* body = getBody();
-    App::OriginGroupExtension* originGroup = getOriginGroupExtension(body);
 
     // Don't allow selection in other document
     if (support && pDoc != support->getDocument()) {
         return false;
     }
 
-    // Enable selection from origin of current part/
+    // Enable selection of the document's shared world-frame base planes/axes
     if (pObj->isDerivedFrom<App::DatumElement>()) {
-        return allowOrigin(body, originGroup, pObj);
+        return allowOrigin(body, pObj);
     }
 
     if (pObj->isDerivedFrom<Part::Datum>()) {
@@ -116,33 +114,7 @@ PartDesign::Body* ReferenceSelection::getBody() const
     return body;
 }
 
-App::OriginGroupExtension* ReferenceSelection::getOriginGroupExtension(PartDesign::Body* body) const
-{
-    App::DocumentObject* originGroupObject = nullptr;
-
-    if (body) {  // Search for Part of the body
-        originGroupObject = App::OriginGroupExtension::getGroupOfObject(body);
-    }
-    else if (support) {  // if no body search part for support
-        originGroupObject = App::OriginGroupExtension::getGroupOfObject(support);
-    }
-    else {  // fallback to active part
-        originGroupObject = PartDesignGui::getActivePart();
-    }
-
-    App::OriginGroupExtension* originGroup = nullptr;
-    if (originGroupObject) {
-        originGroup = originGroupObject->getExtensionByType<App::OriginGroupExtension>();
-    }
-
-    return originGroup;
-}
-
-bool ReferenceSelection::allowOrigin(
-    PartDesign::Body* body,
-    App::OriginGroupExtension* originGroup,
-    App::DocumentObject* pObj
-) const
+bool ReferenceSelection::allowOrigin(PartDesign::Body* body, App::DocumentObject* pObj) const
 {
     bool fits = false;
     if (type.testFlag(AllowSelection::FACE) && pObj->isDerivedFrom<App::Plane>()) {
@@ -152,28 +124,27 @@ bool ReferenceSelection::allowOrigin(
         fits = true;
     }
 
-    if (fits) {  // check that it actually belongs to the chosen body or part
-        try {    // here are some throwers
-            if (body) {
-                // A datum belongs to the body if it derives to the body's Tip; a world-frame
-                // base plane/axis lives in the single shared document Origin and is valid for
-                // every body (Cruth §11 step 5e shared-Origin).
-                if (PartDesign::Body::backsBody(pObj, body)
-                    || (pObj->isDerivedFrom<App::DatumElement>()
-                        && static_cast<App::DatumElement*>(pObj)->isOriginFeature())) {
-                    return true;
-                }
-            }
-            else if (originGroup) {
-                if (originGroup->hasObject(pObj, true)) {
-                    return true;
-                }
-            }
+    if (!fits) {
+        return false;  // The Plane/Axis doesn't fit our needs
+    }
+
+    try {  // membership queries can throw
+        // The world-frame base planes and axes live in the single shared document Origin
+        // (Cruth §11 step 5e). Resolve the frame straight from the document that owns the
+        // candidate — no walking up to the retired App::Part container. A base plane is valid
+        // for every body, and for a bare document that has no body yet.
+        App::Origin* origin = PartDesign::Body::findDocumentOrigin(pObj->getDocument());
+        if (origin && origin->hasObject(pObj, true)) {
+            return true;
         }
-        catch (const Base::Exception&) {
+        // Belt-and-braces for a legacy per-body Origin still referenced by a Body's Tip.
+        if (body && PartDesign::Body::backsBody(pObj, body)) {
+            return true;
         }
     }
-    return false;  // The Plane/Axis doesn't fits our needs
+    catch (const Base::Exception&) {
+    }
+    return false;
 }
 
 bool ReferenceSelection::allowDatum(PartDesign::Body* body, App::DocumentObject* pObj) const

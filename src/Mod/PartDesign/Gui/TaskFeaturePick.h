@@ -53,7 +53,6 @@ public:
         noWire,
         isUsed,
         otherBody,
-        otherPart,
         notInBody,
         basePlane,
         afterTip

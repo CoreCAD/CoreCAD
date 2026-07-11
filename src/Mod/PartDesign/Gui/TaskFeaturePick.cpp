@@ -66,8 +66,6 @@ const QString TaskFeaturePick::getFeatureStatusString(const featureStatus st)
             return tr("Sketch already used by other feature");
         case otherBody:
             return tr("Belongs to another body");
-        case otherPart:
-            return tr("Belongs to another part");
         case notInBody:
             return tr("Doesn't belong to any body");
         case basePlane:
@@ -202,7 +200,6 @@ void TaskFeaturePick::updateList()
                 item->setHidden(true);
                 break;
             case otherBody:  // Phase 2: cross-body always visible
-            case otherPart:  // Phase 2: cross-part always visible
             case notInBody:  // Phase 2: free features always visible
                 item->setHidden(false);
                 break;

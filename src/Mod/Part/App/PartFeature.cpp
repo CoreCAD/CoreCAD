@@ -1537,6 +1537,21 @@ void ShapeFeature::onChanged(const App::Property* prop)
     // the placement extension). A derived feature holds no authored placement:
     // its geometry already lives in the world frame, so there is nothing to
     // lift by, and nothing to back-sync into. See Amendment 4, Clause 4.3.
+    //
+    // Resolving the placement (getPlacementProperty) is a by-name lookup, and a
+    // by-name lookup seals this object's static property table. onChanged also
+    // fires as each property is initialised during construction. Doing the lookup
+    // for an unrelated change would seal the table mid-constructor and silently
+    // drop every property registered afterwards (e.g. Pad's Offset/TaperAngle).
+    // So only resolve the placement when the change is one this sync cares about:
+    // the Shape (a cheap direct-member compare) or the Placement (matched by name,
+    // which needs no lookup). Everything else exits before touching the table.
+    const bool shapeChanged = (prop == &this->Shape);
+    const bool placementChanged = prop && std::string_view(prop->getName()) == "Placement";
+    if (!shapeChanged && !placementChanged) {
+        GeoFeature::onChanged(prop);
+        return;
+    }
     auto* plProp = getPlacementProperty();
     // if the placement has changed apply the change to the point data as well
     if (plProp && prop == plProp) {

@@ -98,7 +98,6 @@ PartDesign::Body* getBodyFor(
 );
 
 App::Part* getPartFor(const App::DocumentObject*, bool messageIfNot);
-App::Part* getActivePart();
 
 /// Fix sketch support after moving a free sketch into a body
 void fixSketchSupport(Sketcher::SketchObject* sketch);
@@ -109,8 +108,6 @@ bool isFeatureMovable(App::DocumentObject* feature);
 std::vector<App::DocumentObject*> collectMovableDependencies(
     std::vector<App::DocumentObject*>& features
 );
-/// Relink sketches and datums to target body's origin
-void relinkToOrigin(App::DocumentObject* feature, PartDesign::Body* body);
 
 /**
  * Cruth §11 step 5e: author a new feature under de-ownership. Creates the object at the

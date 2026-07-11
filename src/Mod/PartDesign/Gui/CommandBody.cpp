@@ -30,7 +30,6 @@
 
 #include <App/Datums.h>
 #include <App/Document.h>
-#include <App/GeoFeatureGroupExtension.h>
 #include <App/Origin.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
@@ -190,9 +189,10 @@ void CmdPartDesignDuplicateSelection::activated(int iMsg)
 
         for (auto feature : newFeatures) {
             if (PartDesign::Body::isAllowed(feature)) {
-                // if feature already is in a body, then we don't put it into the active body issue #6278
-                auto body = App::GeoFeatureGroupExtension::getGroupOfObject(feature);
-                if (!body) {
+                // If the feature already belongs to a body, don't re-home it into the active
+                // body (issue #6278). Body membership is derived from the feature chain, not
+                // Body.Group, so ask the reverse lookup rather than probing the dormant group.
+                if (!PartDesign::Body::inAnyBody(feature)) {
                     FCMD_OBJ_CMD(pcActiveBody, "addFeature(" << getObjectCmd(feature) << ")");
                     FCMD_OBJ_HIDE(feature);
                 }

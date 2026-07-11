@@ -2634,16 +2634,14 @@ bool CmdPartSectionCut::isActive()
 namespace
 {
 QString getAutoGroupCommandStr()
-// Helper function to get the python code to add the newly created object to the active Part/Body
-// object if present
+// Helper function to get the python code to add the newly created object to the active App::Part
+// container if present. A Body is a marker, not a container (Cruth de-ownership): a datum's body
+// membership is derived from its attachment, never stored, so we never file into an active Body —
+// those objects are created at the document root. Filing into a Body here also crashed, since a
+// de-owned Body no longer exposes addObject.
 {
     App::GeoFeature* activeObj
-        = Gui::Application::Instance->activeView()->getActiveObject<App::GeoFeature*>(PDBODYKEY);
-    if (!activeObj) {
-        activeObj = Gui::Application::Instance->activeView()->getActiveObject<App::GeoFeature*>(
-            PARTKEY
-        );
-    }
+        = Gui::Application::Instance->activeView()->getActiveObject<App::GeoFeature*>(PARTKEY);
 
     if (activeObj) {
         QString activeName = QString::fromLatin1(activeObj->getNameInDocument());

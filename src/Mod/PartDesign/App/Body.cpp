@@ -210,6 +210,16 @@ bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodi
     }
 
     if (obj->isDerivedFrom(Part::ShapeFeature::getClassTypeId())) {
+        // A Body is itself a ShapeFeature (via BodyBase) and provides the displayed
+        // solid, so a datum/sketch attached to a face of its own Body anchors onto the
+        // Body object. It is its own answer: never findBodyOf a Body, which re-enters
+        // getFullModel and recurses without bound (getFullModel → walkAnchorChain →
+        // findBodyOf → BodyBase::findBodyOf → getFullModel), SIGSEGV on create and on
+        // document load (#46).
+        if (auto* body = freecad_cast<Body*>(obj)) {
+            bodies.insert(body);
+            return false;
+        }
         if (auto* body = PartDesign::Body::findBodyOf(obj)) {
             bodies.insert(body);
             return false;
@@ -1228,6 +1238,30 @@ std::vector<App::DocumentObject*> Body::getFullModel()
         return rv;
     }
 
+    // Re-entrancy guard (#46). Part 2 below walks each loose feature's attachment chain and
+    // calls findBodyOf on the anchor solid; when that anchor is not a PartDesign::Feature the
+    // query routes through BodyBase::findBodyOf, which calls getFullModel on every Body —
+    // re-entering this one. A datum/sketch attached to a face of its own Body closes that loop
+    // (getFullModel → walkAnchorChain → findBodyOf → BodyBase::findBodyOf → getFullModel) and it
+    // recurses without bound, SIGSEGV on sketch-create and on document load. The solid chain
+    // (part 1) is recursion-free, so on re-entry we compute only the solids and skip the
+    // anchor-walk: an anchor that is a member solid is still found there, which is all the
+    // findBodyOf that re-entered us needs to resolve membership.
+    static thread_local std::set<const Body*> inProgress;
+    const bool reentrant = !inProgress.insert(this).second;
+    struct ProgressGuard
+    {
+        std::set<const Body*>& set;
+        const Body* body;
+        bool owns;
+        ~ProgressGuard()
+        {
+            if (owns) {
+                set.erase(body);
+            }
+        }
+    } progressGuard {inProgress, this, !reentrant};
+
     // 1) Solid chain, Tip → base, including only members (backsBody(cursor, this)); the
     //    membership test is what halts the walk at a seam. backsBody, not the scalar
     //    findBodyOf: a multi-output straddler backs several Bodies at once, and first-match
@@ -1244,6 +1278,10 @@ std::vector<App::DocumentObject*> Body::getFullModel()
     }
     std::reverse(rv.begin(), rv.end());
     const std::set<App::DocumentObject*> solidMembers(rv.begin(), rv.end());
+
+    if (reentrant) {
+        return rv;  // solids only — breaks the getFullModel↔findBodyOf cycle (#46)
+    }
 
     // 2) Loose features (sketches, datums, shapebinders) that are not part of the solid
     //    chain. One belongs to this Body when either:
@@ -1295,8 +1333,13 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     // the latter case the displaced successor is rerouted onto the new feature so the
     // chain stays linear instead of forking.
 
-    // Detach from any prior owning group, mirroring the legacy path. A freshly
-    // created feature is normally group-less, but a moved feature may not be.
+    // Detach from any prior owning group. This is NOT the body-to-body move path
+    // (that heals the source chain via Body::removeFeatures); the live case here is a
+    // feature the user parked in a plain tree folder (App::DocumentObjectGroup) and
+    // then homed into this body — without this it would stay double-filed (in the
+    // folder AND referenced by the body). Whether that single-home rule is still right
+    // under de-ownership (folder = organization vs body = derived reference, arguably
+    // orthogonal) is an open design question tracked in #37 — keep as-is until settled.
     auto* group = App::GroupExtension::getGroupOfObject(feature);
     if (group) {
         group->getExtensionByType<App::GroupExtension>()->removeObject(feature);
@@ -1636,7 +1679,19 @@ App::DocumentObjectExecReturn* Body::execute()
         tipShape.transformShape(tipShape.getTransform(), true);
     }
     else {
-        tipShape = Part::TopoShape();
+        // Cruth §4.6/§4.8: a Body is the system's accounting of a connected solid — it
+        // exists only because a feature's recompute produced one, and its identity IS
+        // its Tip. A Body that reaches recompute with no Tip has no such component: it
+        // is the illegal authored-empty-Body state (a raw addObject('PartDesign::Body')
+        // with nothing spliced in, or a spawn whose feature never arrived). Fail loudly
+        // rather than sit in the tree looking healthy with an empty shape. Legitimate
+        // emptying — the last feature removed — retires the Body by deleting it in
+        // removeFeature() within the same synchronous call, so execute() never observes
+        // a *live* Tipless Body except this never-populated case.
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
+            "Exception",
+            "A Body must have at least one feature; empty bodies are not allowed"
+        ));
     }
 
     Shape.setValue(tipShape);
@@ -1889,6 +1944,19 @@ App::DocumentObject* Body::getSubObject(
                     *pmat *= Placement.getValue().toMatrix();
                 }
                 return feat->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
+            }
+            // The shared document Origin is claimed as a child of the Body in the tree/3D
+            // (ViewProviderBody::claimChildren, so the base planes/axes are pickable for a new
+            // sketch), but it is document-owned, not a Group member (Cruth §11 step 5e), so the
+            // base resolver below cannot find it — a click on a base plane failed with
+            // "Sub-object Body.Origin.YZ_Plane not found". Delegate an "<Origin>.…" path to the
+            // document Origin. Its geometry is the world frame, so the Body's own Placement is
+            // not applied (unlike an owned feature above).
+            if (App::Origin* origin = findDocumentOrigin(getDocument())) {
+                const char* oname = origin->getNameInDocument();
+                if (oname && first == oname) {
+                    return origin->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
+                }
             }
         }
     }

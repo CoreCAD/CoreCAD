@@ -28,10 +28,6 @@
 #include <Gui/Selection/SelectionFilter.h>
 #include <Mod/PartDesign/Gui/EnumFlags.h>
 
-namespace App
-{
-class OriginGroupExtension;
-}
 namespace PartDesign
 {
 class Body;
@@ -58,12 +54,7 @@ public:
 
 private:
     PartDesign::Body* getBody() const;
-    App::OriginGroupExtension* getOriginGroupExtension(PartDesign::Body* body) const;
-    bool allowOrigin(
-        PartDesign::Body* body,
-        App::OriginGroupExtension* originGroup,
-        App::DocumentObject* pObj
-    ) const;
+    bool allowOrigin(PartDesign::Body* body, App::DocumentObject* pObj) const;
     bool allowDatum(PartDesign::Body* body, App::DocumentObject* pObj) const;
     bool allowPartFeature(App::DocumentObject* pObj, const char* sSubName) const;
     bool isEdge(App::DocumentObject* pObj, const char* sSubName) const;

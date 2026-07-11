@@ -55,7 +55,7 @@ TaskPreviewParameters::TaskPreviewParameters(ViewProvider* vp, QWidget* parent)
     , vp(vp)
     , ui(std::make_unique<Ui_TaskPreviewParameters>())
 {
-    vp->showPreviousFeature(!hGrp->GetBool("ShowFinal", false));
+    vp->showPreviousFeature(!hGrp->GetBool("ShowFinal", true));
     vp->showPreview(hGrp->GetBool("ShowTransparentPreview", true));
 
     auto* proxy = new QWidget(this);
