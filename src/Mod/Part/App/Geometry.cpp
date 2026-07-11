@@ -113,6 +113,8 @@
 #endif
 
 #include <boost/random.hpp>
+#include <boost/uuid/string_generator.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <cmath>
 #include <ctime>
 #include <fstream>
@@ -325,7 +327,11 @@ void Geometry::Save(Base::Writer& writer) const
         }
     }
 
-    writer.Stream() << writer.ind() << "<GeoExtensions count=\"" << counter << "\">" << std::endl;
+    // The tag is the geometry's durable per-entity identity. It is written here so it
+    // survives a save/load round-trip: without it, every geometry is reborn with a fresh
+    // tag on load and cross-version identity (diff/merge) cannot line entities up.
+    writer.Stream() << writer.ind() << "<GeoExtensions count=\"" << counter << "\" tag=\""
+                    << boost::uuids::to_string(tag) << "\">" << std::endl;
 
     writer.incInd();
 
@@ -346,6 +352,18 @@ void Geometry::Restore(Base::XMLReader& reader)
     reader.readElement();
 
     if (strcmp(reader.localName(), "GeoExtensions") == 0) {  // new format
+
+        // Restore the durable tag if the file carries one. Files written before tag
+        // persistence have no attribute; those geometries keep the fresh tag minted by
+        // the constructor (best we can do — they never had a stored identity).
+        if (reader.hasAttribute("tag")) {
+            try {
+                tag = boost::uuids::string_generator()(reader.getAttribute<const char*>("tag"));
+            }
+            catch (const std::exception&) {
+                // Malformed tag: keep the constructor-minted one rather than fail the load.
+            }
+        }
 
         long count = reader.getAttribute<long>("count");
 
