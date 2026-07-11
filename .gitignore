@@ -80,3 +80,7 @@ tsupdate_stdout.log
 
 # Claude/dev scratch files (throwaway test scripts, docs; never commit)
 /.scratch/
+
+# Scratch CAD files saved at repo root during testing (real fixtures live in tests/)
+/test*.FCStd
+/test*.FCBak
