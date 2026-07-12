@@ -1076,6 +1076,16 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
         transferConstraints(GeoId, PointPos::mid, newIds.front(), PointPos::mid);
     }
 
+    // Amendment 6 (Clause 6.3): splitting a closed curve (circle/ellipse) at one point yields a
+    // single open arc — the entity stays one entity, so it keeps its durable id
+    // (paramsOfNewGeos.size() == 1). Splitting an open curve is a 1->2 count-changing event: the
+    // parent tag retires and both children mint fresh (the constructor already does this, and
+    // replaceGeometries carries only the solver-local integer id to child-0), so we leave the tag
+    // alone in that case.
+    if (paramsOfNewGeos.size() == 1) {
+        newGeos.front()->copyTagFrom(geoAsCurve);
+    }
+
     delConstraints(std::move(idsOfOldConstraints), DeleteOption::NoSolve);
     replaceGeometries({GeoId}, newGeos);
     addConstraints(newConstraints);
