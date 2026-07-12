@@ -47,10 +47,9 @@ Part::Part()
     ADD_PROPERTY_TYPE(Material, (nullptr), 0, App::Prop_None, "The Material for this Part");
     ADD_PROPERTY_TYPE(Meta, (), 0, App::Prop_None, "Map with additional meta information");
 
-    // create the uuid for the document
-    Base::Uuid id;
     ADD_PROPERTY_TYPE(Id, (""), 0, App::Prop_None, "ID (Part-Number) of the Item");
-    ADD_PROPERTY_TYPE(Uid, (id), 0, App::Prop_None, "UUID of the Item");
+    // The durable Uid now lives on the App::DocumentObject base class
+    // (Amendment 3, Clause 3.1); Part no longer declares its own.
 
     // license stuff (leave them empty to avoid confusion with imported 3rd party STEP/IGES files)
     ADD_PROPERTY_TYPE(License, (""), 0, App::Prop_None, "License string of the Item");

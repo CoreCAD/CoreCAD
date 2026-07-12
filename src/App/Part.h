@@ -52,8 +52,6 @@ public:
     //@{
     /// Id e.g. Part number
     App::PropertyString Id;
-    /// unique identifier of the Item
-    App::PropertyUUID Uid;
     /// material descriptions
     App::PropertyLink Material;
     /// Meta descriptions
