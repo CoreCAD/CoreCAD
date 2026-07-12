@@ -1805,6 +1805,14 @@ std::vector<DocumentObject*> Document::importObjects(Base::XMLReader& reader)
         if (o && o->isAttachedToDocument()) {
             o->setStatus(ObjImporting, true);
             FC_LOG("importing " << o->getFullName());
+            // Import is the copy path (copy-paste, insert-as-copy,
+            // drag-duplicate): it drops a NEW authored object into a document,
+            // so it must not inherit the source's durable identity (Clause
+            // 3.4) — two coexisting objects sharing one id would break the
+            // "same id means the same object" invariant. Mint a fresh one. A
+            // genuine relocation (Document::moveObject) is not duplication and
+            // restores the original id afterward.
+            o->Uid.setValue(Base::Uuid::createUuid());
             if (const auto propUUID =
                     freecad_cast<PropertyUUID*>(o->getPropertyByName("_ObjectUUID"))) {
                 auto propSource =
@@ -3815,6 +3823,15 @@ DocumentObject* Document::moveObject(DocumentObject* obj, const bool recursive)
     const auto objs = copyObject(deps, false);
     if (objs.empty()) {
         return nullptr;
+    }
+    // A move is relocation, not duplication (Clause 3.4): the object keeps its
+    // durable identity. copyObject went through the import path, which minted
+    // fresh ids; restore each original's id onto its moved counterpart before
+    // the originals are removed. copyObject returns results in deps order.
+    for (std::size_t i = 0; i < objs.size() && i < deps.size(); ++i) {
+        if (objs[i] && deps[i]) {
+            objs[i]->Uid.setValue(deps[i]->Uid.getValue());
+        }
     }
     // Some object may delete its children if deleted, so we collect the IDs
     // or all depending objects for safety reason.
