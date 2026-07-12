@@ -1,19 +1,24 @@
-"""Git-for-CAD spine, stage 3 (crude): diff two sketch recipes by id.
+"""Git-for-CAD spine, stage 5 (crude): diff two whole-part recipes by id.
 
-Given two saved versions of a part, line their sketches up *by durable id* (never by
-position) and report what changed: geometry added / removed / changed, constraints
-added / removed. This is the deliberately-dumb structural diff -- no face matching, no
-cleverness. It is the first place the spine visibly behaves like git.
+Given two saved versions of a part, line their objects up *by durable UUID* (never by
+position) and report what changed: features added / removed / changed. A changed feature
+is diffed field-by-field (params, refs, expressions); a changed sketch additionally
+recurses into the stage-3 sketch diff for its interior geometry and constraints. This is
+the deliberately-dumb structural diff -- no face matching, no cleverness. It is the first
+place the spine visibly behaves like git.
 
-- Geometry is keyed by its durable tag (stage 1), so add/remove/change is an exact,
-  order-independent set comparison. A moved-but-unedited line is *unchanged* here even
-  if it shifted position in the list -- which is the whole point of keying by id.
-- Constraints carry no Python-exposed durable id yet (see recipe.py), so they are
-  content-identified: a genuinely edited constraint shows as one removed + one added.
-  Honest for the crude pass; durable constraint identity is a later refinement.
+- Objects are keyed by durable UUID (Amendment 3, Clause 3.1), so add/remove/change is an
+  exact, order-independent set comparison. A reordered-but-unedited feature is *unchanged*
+  here -- which is the whole point of keying by id, not position.
+- References resolve to target UUIDs, so a downstream feature whose upstream was merely
+  renamed shows no change -- name is a display handle, not identity.
+- Sub-shape link sub-names ("Face6") are compared verbatim; they are the emergent #10
+  layer and not yet durable, so a regen that reshuffles them can show false ref changes.
+- Sketch interiors keep the stage-3 limits (constraints content-identified, etc.).
 
 Usage:
-    FreeCADCmd diff.py <old.FCStd> <new.FCStd> [SketchName]
+    FreeCADCmd diff.py <old.FCStd> <new.FCStd>              # whole-part diff
+    FreeCADCmd diff.py <old.FCStd> <new.FCStd> sketch [Name]     # one sketch (stage-3)
 """
 
 import json
@@ -21,7 +26,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from recipe import sketch_recipe  # noqa: E402  (path set above)
+from recipe import sketch_recipe, part_recipe  # noqa: E402  (path set above)
 
 
 def _con_sig(con):
@@ -83,6 +88,58 @@ def diff_recipes(rec_a, rec_b):
     }
 
 
+def _dict_field_changes(old, new):
+    """Per-key [old, new] differences between two flat dicts (params or refs)."""
+    changes = {}
+    for key in sorted(set(old) | set(new)):
+        if old.get(key) != new.get(key):
+            changes[key] = [old.get(key), new.get(key)]
+    return changes
+
+
+def _node_changes(old, new):
+    """Field-by-field diff of one feature node. {} if identical.
+
+    For a sketch, the interior (geometry/constraints) is diffed with the stage-3 sketch
+    diff and attached under "sketch"; a change there counts as a change to the node.
+    """
+    changes = {}
+    if old["type"] != new["type"]:
+        changes["type"] = [old["type"], new["type"]]
+    param_changes = _dict_field_changes(old.get("params", {}), new.get("params", {}))
+    if param_changes:
+        changes["params"] = param_changes
+    ref_changes = _dict_field_changes(old.get("refs", {}), new.get("refs", {}))
+    if ref_changes:
+        changes["refs"] = ref_changes
+    if old.get("expressions", []) != new.get("expressions", []):
+        changes["expressions"] = [old.get("expressions", []), new.get("expressions", [])]
+    if "sketch" in old and "sketch" in new:
+        sk = diff_recipes(old["sketch"], new["sketch"])
+        g, c = sk["geometry"], sk["constraints"]
+        if g["added"] or g["removed"] or g["changed"] or c["added"] or c["removed"]:
+            changes["sketch"] = sk
+    return changes
+
+
+def diff_parts(rec_a, rec_b):
+    """Structural, id-keyed diff of two whole-part recipes. Pure -- no FreeCAD needed."""
+    feat_a, feat_b = rec_a["features"], rec_b["features"]
+    ids_a, ids_b = set(feat_a), set(feat_b)
+
+    added = {i: feat_b[i] for i in sorted(ids_b - ids_a)}
+    removed = {i: feat_a[i] for i in sorted(ids_a - ids_b)}
+    changed = {}
+    for i in sorted(ids_a & ids_b):
+        node_changes = _node_changes(feat_a[i], feat_b[i])
+        if node_changes:
+            changed[i] = node_changes
+
+    reordered = rec_a.get("order", []) != rec_b.get("order", [])
+    return {"added": added, "removed": removed, "changed": changed,
+            "reordered": reordered}
+
+
 def _short(tag):
     return tag[:8]
 
@@ -122,11 +179,33 @@ def format_diff(diff, name_a, name_b):
     return "\n".join(lines)
 
 
-def _first_sketch(doc, want):
-    sketches = [o for o in doc.Objects if o.TypeId == "Sketcher::SketchObject"]
-    if want:
-        sketches = [o for o in sketches if o.Name == want or o.Label == want]
-    return sketches[0] if sketches else None
+def format_part_diff(diff, name_a, name_b):
+    """Human-readable rendering of a whole-part structural diff."""
+    lines = [f"part diff: {name_a} -> {name_b}"]
+    if not (diff["added"] or diff["removed"] or diff["changed"] or diff["reordered"]):
+        lines.append("  (no change)")
+        return "\n".join(lines)
+
+    for i, node in diff["added"].items():
+        lines.append(f"  + {_short(i)} {node['name']} [{node['type'].split('::')[-1]}]")
+    for i, node in diff["removed"].items():
+        lines.append(f"  - {_short(i)} {node['name']} [{node['type'].split('::')[-1]}]")
+    for i, changes in diff["changed"].items():
+        lines.append(f"  ~ {_short(i)}")
+        for field in ("type", "params", "refs", "expressions"):
+            if field not in changes:
+                continue
+            if field in ("params", "refs"):
+                for key, (old, new) in changes[field].items():
+                    lines.append(f"      {field}.{key}: {old} -> {new}")
+            else:
+                lines.append(f"      {field}: {changes[field][0]} -> {changes[field][1]}")
+        if "sketch" in changes:
+            for sub in format_diff(changes["sketch"], "", "").splitlines()[1:]:
+                lines.append(f"    {sub}")
+    if diff["reordered"]:
+        lines.append("  (feature order changed)")
+    return "\n".join(lines)
 
 
 def _main():
@@ -134,23 +213,33 @@ def _main():
 
     files = [a for a in sys.argv if a.endswith(".FCStd")]
     if len(files) < 2:
-        print("usage: FreeCADCmd diff.py <old.FCStd> <new.FCStd> [SketchName]")
+        print("usage: FreeCADCmd diff.py <old.FCStd> <new.FCStd> [sketch [Name]]")
         return
-    want = next(
-        (a for a in sys.argv[1:] if not a.endswith(".FCStd") and not a.endswith(".py")),
-        None,
-    )
 
     doc_a = App.openDocument(files[0])
-    sk_a = _first_sketch(doc_a, want)
     doc_b = App.openDocument(files[1])
+
+    if "sketch" not in sys.argv:
+        diff = diff_parts(part_recipe(doc_a), part_recipe(doc_b))
+        print(format_part_diff(diff, os.path.basename(files[0]), os.path.basename(files[1])))
+        return
+
+    want = next((a for a in sys.argv[1:] if not a.endswith(".FCStd")
+                 and not a.endswith(".py") and a != "sketch"), None)
+    sk_a = _first_sketch(doc_a, want)
     sk_b = _first_sketch(doc_b, want)
     if not sk_a or not sk_b:
         print("no sketch found in one of the files")
         return
-
     diff = diff_recipes(sketch_recipe(sk_a), sketch_recipe(sk_b))
     print(format_diff(diff, os.path.basename(files[0]), os.path.basename(files[1])))
+
+
+def _first_sketch(doc, want):
+    sketches = [o for o in doc.Objects if o.TypeId == "Sketcher::SketchObject"]
+    if want:
+        sketches = [o for o in sketches if o.Name == want or o.Label == want]
+    return sketches[0] if sketches else None
 
 
 if len(sys.argv) > 1 and os.path.basename(sys.argv[1]) == "diff.py":
