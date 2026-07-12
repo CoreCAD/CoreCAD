@@ -111,6 +111,12 @@ public:
     Geometry* clone() const;
     /// returns the tag of the geometry object
     boost::uuids::uuid getTag() const;
+    /// carries the durable tag from \a src onto this object, regardless of geometry type. Unlike
+    /// assignTag(), this never checks types: the tag is a type-independent durable identity. Use
+    /// only when this object *replaces* \a src (e.g. a 1->1 reshape or reparametrise, including a
+    /// convert-to-B-spline that changes the concrete type), so the tag stays unique — \a src must
+    /// be discarded by the caller.
+    void copyTagFrom(const Part::Geometry* src);
 
     virtual bool isSame(const Geometry& other, double tol, double atol) const = 0;
     bool hasSameExtensions(const Geometry& other) const;

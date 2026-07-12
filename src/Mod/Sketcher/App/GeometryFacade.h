@@ -124,6 +124,11 @@ public:  // Factory methods
 public:  // Utility methods
     static void ensureSketchGeometryExtension(Part::Geometry* geometry);
     static void copyId(const Part::Geometry* src, Part::Geometry* dst);
+    /// carries the durable tag (the cross-version identity of Amendment 6, Clause 6.4) from \a src
+    /// onto \a dst. Distinct from copyId(), which carries only the solver-local integer id. Use at
+    /// 1->1 survivor sites where \a dst replaces \a src (reshape, reparametrise) so \a dst stays
+    /// the *same* sketch entity across the edit.
+    static void copyTag(const Part::Geometry* src, Part::Geometry* dst);
     static bool getConstruction(const Part::Geometry* geometry);
     static void setConstruction(Part::Geometry* geometry, bool construction);
     static bool isInternalType(const Part::Geometry* geometry, InternalType::InternalType type);

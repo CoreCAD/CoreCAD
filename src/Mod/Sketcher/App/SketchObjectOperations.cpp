@@ -2651,6 +2651,9 @@ bool SketchObject::convertToNURBS(int GeoId)
 
             newVals[GeoId] = bspline;
             GeometryFacade::copyId(geo, bspline);
+            // 1->1 reparametrise: the B-spline is the same sketch entity, so it keeps its durable
+            // tag as well as its solver-local id (Amendment 6, Clause 6.3).
+            GeometryFacade::copyTag(geo, bspline);
 
             const std::vector<Sketcher::Constraint*>& cvals = Constraints.getValues();
 
@@ -2721,6 +2724,8 @@ bool SketchObject::increaseBSplineDegree(int GeoId, int degreeincrement /*= 1*/)
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
     // AcceptGeometry called from onChanged
@@ -2774,8 +2779,14 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
     // AcceptGeometry called from onChanged
     Geometry.setValues(newVals);
 #else
+    // Decrease-degree re-fits the curve and (unlike the sibling ops) rebuilds via delete + re-add,
+    // so carry the durable tag onto the new curve before the old one is destroyed (Amendment 6,
+    // Clause 6.3: a 1->1 edit keeps its id). Hand the curve to the unique_ptr overload of
+    // addGeometry so the stamped tag is stored as-is; the raw-pointer overload would copy() it to a
+    // fresh tag. (The local integer id and constraints are still dropped here — see #54.)
+    bspline->copyTagFrom(geo);
     delGeometry(GeoId);
-    int newId = addGeometry(bspline.release());
+    int newId = addGeometry(std::move(bspline));
     exposeInternalGeometry(newId);
 #endif
 
@@ -2937,6 +2948,8 @@ bool SketchObject::modifyBSplineKnotMultiplicity(int GeoId, int knotIndex, int m
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
     // Block acceptGeometry in OnChanged to avoid unnecessary checks and updates
@@ -3090,6 +3103,8 @@ bool SketchObject::insertBSplineKnot(int GeoId, double param, int multiplicity)
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
     // Block acceptGeometry in OnChanged to avoid unnecessary checks and updates

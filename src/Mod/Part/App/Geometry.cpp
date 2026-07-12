@@ -542,6 +542,11 @@ void Geometry::assignTag(const Part::Geometry* geo)
     }
 }
 
+void Geometry::copyTagFrom(const Part::Geometry* src)
+{
+    this->tag = src->tag;
+}
+
 void Geometry::copyNonTag(const Part::Geometry* src)
 {
     for (auto& ext : src->extensions) {

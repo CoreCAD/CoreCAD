@@ -133,6 +133,14 @@ void GeometryFacade::copyId(const Part::Geometry* src, Part::Geometry* dst)
     gfdst->setId(gfsrc->getId());
 }
 
+void GeometryFacade::copyTag(const Part::Geometry* src, Part::Geometry* dst)
+{
+    throwOnNullPtr(src);
+    throwOnNullPtr(dst);
+
+    dst->copyTagFrom(src);
+}
+
 int GeometryFacade::getId(const Part::Geometry* geometry)
 {
     auto gf = GeometryFacade::getFacade(geometry);
