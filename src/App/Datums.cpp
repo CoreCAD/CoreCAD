@@ -40,6 +40,51 @@ PROPERTY_SOURCE(App::Line, App::DatumElement)
 PROPERTY_SOURCE(App::Point, App::DatumElement)
 PROPERTY_SOURCE_WITH_EXTENSIONS(App::LocalCoordinateSystem, App::GeoFeature)
 
+namespace
+{
+// ---------------------------------------------------------------------------
+// Reserved identity sentinels for the built-in world origin (Amendment 3,
+// Clause 3.5).
+//
+// The world origin and its base planes/axes are not authored objects — they
+// are a fixed fixture generated identically in every document. So a reference
+// like "attached to the XY plane" resolves to the *same* durable identity in
+// two independently created files, these objects carry hardcoded UUIDs
+// instead of the random one minted at construction; that is what lets fork
+// and merge line them up. The values below were rolled once and must never
+// change — they are reserved sentinels, not live-generated ids. Only the
+// world origin (App::Origin, where isOrigin() is true) stamps them; a
+// user-created coordinate system keeps the real minted id on each element.
+// ---------------------------------------------------------------------------
+constexpr const char* kOriginUid = "21798959-82dd-4761-b5dd-fcdcd2115a6c";
+
+struct ReservedUid
+{
+    const char* role;
+    const char* uid;
+};
+
+constexpr ReservedUid kReservedChildUids[] = {
+    {LocalCoordinateSystem::AxisRoles[0],  "fa0d1b02-2ccd-4d65-9b46-c11f37fa5c80"},
+    {LocalCoordinateSystem::AxisRoles[1],  "5dba3cca-5e11-47f0-8266-15ddc571fa14"},
+    {LocalCoordinateSystem::AxisRoles[2],  "d72da02c-f924-4de2-8382-1e70d75f4bc7"},
+    {LocalCoordinateSystem::PlaneRoles[0], "25d35639-3f10-4abf-b00d-ee96713f2046"},
+    {LocalCoordinateSystem::PlaneRoles[1], "362fa29a-5949-418c-8635-c70a3c7a8d12"},
+    {LocalCoordinateSystem::PlaneRoles[2], "6055ce54-2dbc-4047-89c8-9640cc91194d"},
+    {LocalCoordinateSystem::PointRoles[0], "c3490be1-a2ae-4345-9f0d-8d2f52f77cd1"},
+};
+
+const char* reservedChildUid(const char* role)
+{
+    for (const auto& entry : kReservedChildUids) {
+        if (std::strcmp(role, entry.role) == 0) {
+            return entry.uid;
+        }
+    }
+    return nullptr;
+}
+}  // namespace
+
 DatumElement::DatumElement(bool hideRole)
     : baseDir{0.0, 0.0, 1.0}
 {
@@ -293,6 +338,15 @@ DatumElement* LocalCoordinateSystem::createDatum(const SetupData& data)
     feature->Placement.setValue(Base::Placement(Base::Vector3d(), data.rot));
     feature->Role.setValue(data.role);
 
+    // The world origin's base elements carry reserved, constant identities
+    // (Clause 3.5) so references to them line up across documents. A user LCS
+    // keeps the random id minted at construction.
+    if (isOrigin()) {
+        if (const char* uid = reservedChildUid(data.role)) {
+            feature->Uid.setValue(uid);
+        }
+    }
+
     feature->Placement.setStatus(Property::Hidden, true);
     return feature;
 }
@@ -310,6 +364,12 @@ LocalCoordinateSystem::SetupData LocalCoordinateSystem::getData(const char* role
 
 void LocalCoordinateSystem::setupObject()
 {
+    // The world origin object itself is a reserved sentinel identity (Clause
+    // 3.5), overwriting the random id minted at construction.
+    if (isOrigin()) {
+        Uid.setValue(kOriginUid);
+    }
+
     std::vector<App::DocumentObject*> links;
     const auto& setupData = getSetupData();
     for (auto data : setupData) {
