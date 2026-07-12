@@ -921,6 +921,15 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         }
     }
 
+    // Amendment 6 (Clause 6.3): a shorten-only trim keeps the entity as one entity, so it keeps
+    // its durable id. replaceGeometries already carries the solver-local integer id (copyId); the
+    // durable tag must ride along too, but only in the 1->1 case. A middle-removal trim
+    // (paramsOfNewGeos.size() == 2) is a 1->2 split: the parent tag retires and both children mint
+    // fresh, so we leave the tag alone there (Step B).
+    if (paramsOfNewGeos.size() == 1) {
+        newGeos.front()->copyTagFrom(geoAsCurve);
+    }
+
     replaceGeometries({GeoId}, newGeos);
     for (auto newId : newIds) {
         setConstruction(newId, isOriginalCurveConstruction);
