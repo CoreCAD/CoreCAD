@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CoreCAD is an open-source mechanical CAD platform forked from FreeCAD. The project name in CMake and code remains `FreeCAD` (the upstream name); branding to `CoreCAD` is an ongoing effort tracked in `.local/BRANDING_CHECKLIST.md`. The internal executable names are `FreeCAD` (GUI) and `FreeCADCmd` (CLI).
+CoreCAD is an open-source mechanical CAD platform forked from FreeCAD. The project name in CMake and code remains `FreeCAD` (the upstream name); branding is an ongoing effort. The internal executable names are `FreeCAD` (GUI) and `FreeCADCmd` (CLI).
 
 ## Build System
 
