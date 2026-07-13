@@ -197,6 +197,71 @@ TEST_F(ApplicationTest, xLinkResolvesByUuidWhenNameIsWrong)
     Base::FileInfo(targetPath).deleteFile();
 };
 
+// A target file that has moved (renamed on disk) within the referring
+// document's directory is recovered by its durable UUID: the stored path is a
+// locator hint, so resolution scans the directory for the file carrying the
+// expected document UUID, binds through it, and adopts the new path (Amendment
+// 3, Clause 3.7 step 3b; ARCHITECTURE §7.2).
+TEST_F(ApplicationTest, xLinkRecoversMovedTargetByUuid)
+{
+    auto& app = App::GetApplication();
+    // An isolated directory so the UUID scan only sees this test's files.
+    const std::string dir = Base::FileInfo::getTempFileName();
+    ASSERT_TRUE(Base::FileInfo(dir).createDirectory());
+    const std::string targetPath = dir + "/target.FCStd";
+    const std::string movedPath = dir + "/moved.FCStd";
+    const std::string hostPath = dir + "/host.FCStd";
+
+    // Target document with an object, saved to disk in the shared directory.
+    App::Document* tdoc = app.newDocument(app.getUniqueDocumentName("xlinkTarget").c_str(), "testUser");
+    App::DocumentObject* box = tdoc->addObject("App::VarSet", "TheBox");
+    const std::string objUuid = box->Uid.getValueStr();
+    ASSERT_TRUE(tdoc->saveAs(targetPath.c_str()));
+    const std::string docUuid = tdoc->Uid.getValueStr();
+
+    // Host document with a cross-document XLink into the target, saved.
+    App::Document* hdoc = app.newDocument(app.getUniqueDocumentName("xlinkHost").c_str(), "testUser");
+    App::DocumentObject* ref = hdoc->addObject("App::VarSet", "Referrer");
+    auto* link = dynamic_cast<App::PropertyXLink*>(
+        ref->addDynamicProperty("App::PropertyXLink", "Link")
+    );
+    ASSERT_NE(link, nullptr);
+    ASSERT_TRUE(hdoc->saveAs(hostPath.c_str()));
+    link->setValue(box);
+    ASSERT_EQ(link->getValue(), box);
+    hdoc->save();
+
+    const std::string hostName = hdoc->getName();
+    const std::string targetName = tdoc->getName();
+    app.closeDocument(hostName.c_str());
+    app.closeDocument(targetName.c_str());
+
+    // The target file is renamed within the same directory: the stored path is
+    // now stale, but the file (and its UUID) still exists as a sibling.
+    ASSERT_TRUE(Base::FileInfo(targetPath).renameFile(movedPath.c_str()));
+    ASSERT_FALSE(Base::FileInfo(targetPath).exists());
+
+    // Reopen the host alone: the stored path is gone, so resolution recovers the
+    // moved target by UUID from the host's directory and binds through it.
+    App::Document* hdoc2 = app.openDocument(hostPath.c_str());
+    ASSERT_NE(hdoc2, nullptr);
+    App::DocumentObject* ref2 = hdoc2->getObject("Referrer");
+    ASSERT_NE(ref2, nullptr);
+    auto* link2 = dynamic_cast<App::PropertyXLink*>(ref2->getPropertyByName("Link"));
+    ASSERT_NE(link2, nullptr);
+    App::DocumentObject* bound = link2->getValue();
+    ASSERT_NE(bound, nullptr);
+    EXPECT_EQ(bound->Uid.getValueStr(), objUuid);
+    EXPECT_EQ(bound->getDocument()->Uid.getValueStr(), docUuid);
+
+    for (auto* d : app.getDocuments()) {
+        app.closeDocument(d->getName());
+    }
+    Base::FileInfo(hostPath).deleteFile();
+    Base::FileInfo(movedPath).deleteFile();
+    Base::FileInfo(dir).deleteDirectory();
+};
+
 // A file that has been replaced at the stored path by a DIFFERENT document must
 // not bind the reference: the stored document UUID is the real identity, so a
 // path resolving to the wrong UUID is treated as unresolved (Amendment 3, Clause

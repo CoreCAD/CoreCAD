@@ -25,10 +25,14 @@
 #include <QDir>
 #include <QFileInfo>
 #include <boost/algorithm/string/predicate.hpp>
+#include <array>
+#include <zipios++/zipinputstream.h>
 
 #include <Base/Console.h>
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Reader.h>
+#include <Base/Stream.h>
 #include <Base/Writer.h>
 #include <Base/Tools.h>
 #include <Base/Uuid.h>
@@ -4011,6 +4015,104 @@ void PropertyXLink::setValue(App::DocumentObject* lValue,
     hasSetValue();
 }
 
+namespace
+{
+// Read a project file's document-level durable UUID (Clause 3.7 step 3b) without
+// opening the whole document: crack the zip, read the head of Document.xml, and
+// pull the first name="Uid" PropertyUUID value -- the document's own, which
+// precedes any object data. Returns an empty string if the file cannot be read
+// or carries no UUID.
+std::string peekDocumentUuid(const QString& filePath)
+{
+    try {
+        Base::FileInfo fi(filePath.toUtf8().constData());
+        if (!fi.exists() || !fi.isFile()) {
+            return {};
+        }
+        Base::ifstream file(fi, std::ios::in | std::ios::binary);
+        if (!file) {
+            return {};
+        }
+        zipios::ZipInputStream zip(file);  // positioned at the first entry, Document.xml
+        const std::string uidTag = "name=\"Uid\"";
+        const std::string valueTag = "<Uuid value=\"";
+        std::string content;
+        constexpr std::string::size_type cap = 1u << 20;  // 1 MiB safety cap
+        std::array<char, 4096> buf {};
+        while (zip.good() && content.size() < cap) {
+            zip.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+            content.append(buf.data(), static_cast<std::size_t>(zip.gcount()));
+            auto uidPos = content.find(uidTag);
+            if (uidPos != std::string::npos
+                && content.find(valueTag, uidPos) != std::string::npos) {
+                break;  // enough read to extract the document UUID
+            }
+        }
+        auto pos = content.find(uidTag);
+        if (pos == std::string::npos) {
+            return {};
+        }
+        pos = content.find(valueTag, pos);
+        if (pos == std::string::npos) {
+            return {};
+        }
+        pos += valueTag.size();
+        auto end = content.find('"', pos);
+        if (end == std::string::npos) {
+            return {};
+        }
+        return content.substr(pos, end - pos);
+    }
+    catch (...) {
+        return {};
+    }
+}
+
+// Recover the path of a cross-document reference target that has moved
+// (Clause 3.7 step 3b). If the file at the stored path is absent or now carries
+// a different document UUID, scan the referring document's directory for a file
+// whose document UUID matches docUuid; on a hit return its absolute path (the
+// caller adopts it and the stored path locator refreshes). Returns empty when no
+// recovery is needed or none is found. Search scope is the referring document's
+// directory only; wider search paths are tracked as a follow-on (#57).
+std::string recoverXLinkPath(App::Document* ownerDoc,
+                             const std::string& filename,
+                             const std::string& docUuid)
+{
+    if (docUuid.empty() || !ownerDoc) {
+        return {};
+    }
+    // Resolve the stored path to absolute; if it already carries the right UUID
+    // there is nothing to recover.
+    QString stored;
+    try {
+        App::DocInfo::getDocPath(filename.c_str(), ownerDoc, false, &stored);
+    }
+    catch (const Base::Exception&) {
+        stored.clear();
+    }
+    if (!stored.isEmpty() && peekDocumentUuid(stored) == docUuid) {
+        return {};
+    }
+    const char* ownerFile = ownerDoc->getFileName();
+    if (Base::Tools::isNullOrEmpty(ownerFile)) {
+        return {};
+    }
+    QDir dir = QFileInfo(QString::fromUtf8(ownerFile)).absoluteDir();
+    const QStringList filters {QStringLiteral("*.FCStd"), QStringLiteral("*.cpart")};
+    for (const QFileInfo& cand : dir.entryInfoList(filters, QDir::Files)) {
+        const QString candPath = cand.absoluteFilePath();
+        if (candPath == stored) {
+            continue;  // already ruled out above
+        }
+        if (peekDocumentUuid(candPath) == docUuid) {
+            return std::string(candPath.toUtf8().constData());
+        }
+    }
+    return {};
+}
+}  // namespace
+
 void PropertyXLink::setValue(std::string&& filename,
                              std::string&& name,
                              std::string&& docUuid,
@@ -4050,6 +4152,22 @@ void PropertyXLink::setValue(std::string&& filename,
             Base::Uuid targetDocUuid;
             targetDocUuid.setValue(docUuid);
             targetDoc = App::GetApplication().getDocumentByUuid(targetDocUuid);
+        }
+        // Path recovery (Clause 3.7 step 3b): the stored path is gone or now
+        // holds a different document, and no open document carries the target
+        // UUID. Search the referring document's directory for the moved target
+        // by UUID and adopt its path, so the correct file is opened and the
+        // stored path locator is refreshed. Runs only on the cold path -- a
+        // valid, matching stored path never reaches here.
+        if (!targetDoc && !docUuid.empty()) {
+            std::string recovered = recoverXLinkPath(owner->getDocument(), filename, docUuid);
+            if (!recovered.empty()) {
+                FC_WARN("cross-document reference target moved; recovered by UUID at '" << recovered
+                                                                                        << "'");
+                filename = std::move(recovered);
+                info = DocInfo::get(filename.c_str(), owner->getDocument(), this, name.c_str());
+                targetDoc = info->pcDoc;
+            }
         }
         if (targetDoc) {
             pObject = resolveLinkTarget(targetDoc, objUuid, name);
