@@ -1278,6 +1278,8 @@ public:
 
     void setValue(std::string&& filePath,
                   std::string&& objectName,
+                  std::string&& documentUuid,
+                  std::string&& objectUuid,
                   std::vector<std::string>&& SubList,
                   std::vector<ShadowSub>&& ShadowSubList = {});
 

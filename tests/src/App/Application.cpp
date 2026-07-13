@@ -4,7 +4,11 @@
 #define FC_OS_MACOSX 1
 #include "App/ProgramOptionsUtilities.h"
 
+#include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <App/PropertyLinks.h>
+#include <Base/FileInfo.h>
 #include <Base/Uuid.h>
 
 #include <src/App/InitApplication.h>
@@ -92,4 +96,103 @@ TEST_F(ApplicationTest, getDocumentByUuidResolvesOpenDocument)
     EXPECT_EQ(app.getDocumentByUuid(uidA), docA);
 
     app.closeDocument(nameA.c_str());
+};
+
+// A cross-document PropertyXLink persists and resolves the durable
+// (document UUID, object UUID) pair across a save/close/reopen cycle. The stored
+// file path and object name are locator hints; the UUID pair is the real binding
+// (Amendment 3, Clause 3.7; ARCHITECTURE §7.2).
+TEST_F(ApplicationTest, xLinkPersistsAndResolvesUuidPair)
+{
+    auto& app = App::GetApplication();
+    const std::string targetPath = Base::FileInfo::getTempFileName() + ".FCStd";
+    const std::string hostPath = Base::FileInfo::getTempFileName() + ".FCStd";
+
+    // Target document with an object to link to, saved to disk.
+    App::Document* tdoc = app.newDocument(app.getUniqueDocumentName("xlinkTarget").c_str(), "testUser");
+    App::DocumentObject* box = tdoc->addObject("App::VarSet", "TheBox");
+    const std::string objUuid = box->Uid.getValueStr();
+    ASSERT_TRUE(tdoc->saveAs(targetPath.c_str()));
+    const std::string docUuid = tdoc->Uid.getValueStr();
+
+    // Host document with a cross-document XLink into the target.
+    App::Document* hdoc = app.newDocument(app.getUniqueDocumentName("xlinkHost").c_str(), "testUser");
+    App::DocumentObject* ref = hdoc->addObject("App::VarSet", "Referrer");
+    auto* link = dynamic_cast<App::PropertyXLink*>(
+        ref->addDynamicProperty("App::PropertyXLink", "Link")
+    );
+    ASSERT_NE(link, nullptr);
+    ASSERT_TRUE(hdoc->saveAs(hostPath.c_str()));  // save first: the XLink needs a base path
+    link->setValue(box);
+    ASSERT_EQ(link->getValue(), box);
+    hdoc->save();
+
+    const std::string hostName = hdoc->getName();
+    const std::string targetName = tdoc->getName();
+    app.closeDocument(hostName.c_str());
+    app.closeDocument(targetName.c_str());
+
+    // Reopen both: the link resolves to the object carrying the durable UUID.
+    App::Document* tdoc2 = app.openDocument(targetPath.c_str());
+    App::Document* hdoc2 = app.openDocument(hostPath.c_str());
+    ASSERT_NE(tdoc2, nullptr);
+    ASSERT_NE(hdoc2, nullptr);
+    App::DocumentObject* box2 = tdoc2->getObject("TheBox");
+    App::DocumentObject* ref2 = hdoc2->getObject("Referrer");
+    ASSERT_NE(box2, nullptr);
+    ASSERT_NE(ref2, nullptr);
+    EXPECT_EQ(box2->Uid.getValueStr(), objUuid);
+    EXPECT_EQ(tdoc2->Uid.getValueStr(), docUuid);
+    auto* link2 = dynamic_cast<App::PropertyXLink*>(ref2->getPropertyByName("Link"));
+    ASSERT_NE(link2, nullptr);
+    EXPECT_EQ(link2->getValue(), box2);
+
+    const std::string hostName2 = hdoc2->getName();
+    const std::string targetName2 = tdoc2->getName();
+    app.closeDocument(hostName2.c_str());
+    app.closeDocument(targetName2.c_str());
+    Base::FileInfo(hostPath).deleteFile();
+    Base::FileInfo(targetPath).deleteFile();
+};
+
+// Resolution prefers the durable object UUID over the stored name: when the name
+// locator is wrong but the UUID pair is intact, the link still binds correctly.
+// This drives the restore path directly, exactly as PropertyXLink::Restore feeds it.
+TEST_F(ApplicationTest, xLinkResolvesByUuidWhenNameIsWrong)
+{
+    auto& app = App::GetApplication();
+    const std::string targetPath = Base::FileInfo::getTempFileName() + ".FCStd";
+    const std::string hostPath = Base::FileInfo::getTempFileName() + ".FCStd";
+
+    App::Document* tdoc = app.newDocument(app.getUniqueDocumentName("xlinkTarget").c_str(), "testUser");
+    App::DocumentObject* box = tdoc->addObject("App::VarSet", "TheBox");
+    const std::string objUuid = box->Uid.getValueStr();
+    ASSERT_TRUE(tdoc->saveAs(targetPath.c_str()));
+    const std::string docUuid = tdoc->Uid.getValueStr();
+
+    App::Document* hdoc = app.newDocument(app.getUniqueDocumentName("xlinkHost").c_str(), "testUser");
+    App::DocumentObject* ref = hdoc->addObject("App::VarSet", "Referrer");
+    auto* link = dynamic_cast<App::PropertyXLink*>(
+        ref->addDynamicProperty("App::PropertyXLink", "Link")
+    );
+    ASSERT_NE(link, nullptr);
+    ASSERT_TRUE(hdoc->saveAs(hostPath.c_str()));
+
+    // Wrong name, correct UUID pair — the deferred restore must bind by UUID.
+    link->setValue(
+        std::string(targetPath),
+        std::string("NoSuchObject"),
+        std::string(docUuid),
+        std::string(objUuid),
+        {},
+        {}
+    );
+    EXPECT_EQ(link->getValue(), box);
+
+    const std::string hostName = hdoc->getName();
+    const std::string targetName = tdoc->getName();
+    app.closeDocument(hostName.c_str());
+    app.closeDocument(targetName.c_str());
+    Base::FileInfo(hostPath).deleteFile();
+    Base::FileInfo(targetPath).deleteFile();
 };

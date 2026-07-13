@@ -4001,6 +4001,8 @@ void PropertyXLink::setValue(App::DocumentObject* lValue,
 
 void PropertyXLink::setValue(std::string&& filename,
                              std::string&& name,
+                             std::string&& docUuid,
+                             std::string&& objUuid,
                              std::vector<std::string>&& subs,
                              std::vector<ShadowSub>&& shadows)
 {
@@ -4018,8 +4020,20 @@ void PropertyXLink::setValue(std::string&& filename,
     if (!filename.empty()) {
         owner->getDocument()->signalLinkXsetValue(filename);
         info = DocInfo::get(filename.c_str(), owner->getDocument(), this, name.c_str());
-        if (info->pcDoc) {
-            pObject = info->pcDoc->getObject(name.c_str());
+        // Durable resolution (Clause 3.7): bind the object through its UUID
+        // within the target document, name as fallback. Prefer the document
+        // opened via the stored path; when that path yields nothing, fall back
+        // to a document already open under the target UUID. (Promoting the UUID
+        // over a conflicting open document and filesystem path recovery are the
+        // next build step.)
+        App::Document* targetDoc = info->pcDoc;
+        if (!targetDoc && !docUuid.empty()) {
+            Base::Uuid targetDocUuid;
+            targetDocUuid.setValue(docUuid);
+            targetDoc = App::GetApplication().getDocumentByUuid(targetDocUuid);
+        }
+        if (targetDoc) {
+            pObject = resolveLinkTarget(targetDoc, objUuid, name);
         }
     }
     else {
@@ -4233,6 +4247,18 @@ void PropertyXLink::Save(Base::Writer& writer) const
                         << (docInfo && docInfo->pcDoc ? docInfo->pcDoc->LastModifiedDate.getValue()
                                                       : "")
                         << "\" name=\"" << objectName;
+
+        // Durable identity (Clause 3.7): persist the target document's and
+        // object's UUIDs as the real binding; file/name stay locator hints.
+        std::string docUuid;
+        std::string objUuid;
+        if (_pcLink && _pcLink->isAttachedToDocument()) {
+            objUuid = _pcLink->Uid.getValueStr();
+            if (auto* linkedDoc = _pcLink->getDocument()) {
+                docUuid = linkedDoc->Uid.getValueStr();
+            }
+        }
+        writer.Stream() << "\" docUuid=\"" << docUuid << "\" uuid=\"" << objUuid;
     }
 
     if (testFlag(LinkAllowPartial)) {
@@ -4316,6 +4342,10 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
     if (reader.hasAttribute("file")) {
         file = reader.getAttribute<const char*>("file");
     }
+    // Durable identity (Clause 3.7): the target document / object UUIDs are the
+    // real binding, resolved ahead of the path / name locator hints below.
+    std::string docUuid = reader.getAttribute<const char*>("docUuid", "");
+    std::string objUuid = reader.getAttribute<const char*>("uuid", "");
 
     setFlag(LinkAllowPartial,
             reader.hasAttribute("partial") && reader.getAttribute<bool>("partial"));
@@ -4398,7 +4428,12 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
 
     if (!file.empty() || (!object && !name.empty())) {
         this->stamp = stampAttr;
-        setValue(std::move(file), std::move(name), std::move(subs), std::move(shadows));
+        setValue(std::move(file),
+                 std::move(name),
+                 std::move(docUuid),
+                 std::move(objUuid),
+                 std::move(subs),
+                 std::move(shadows));
     }
     else {
         setValue(object, std::move(subs), std::move(shadows));
@@ -4514,8 +4549,18 @@ void PropertyXLink::Paste(const Property& from)
                  std::vector<ShadowSub>(other._ShadowSubList));
     }
     else {
+        std::string docUuid;
+        std::string objUuid;
+        if (other._pcLink && other._pcLink->isAttachedToDocument()) {
+            objUuid = other._pcLink->Uid.getValueStr();
+            if (auto* linkedDoc = other._pcLink->getDocument()) {
+                docUuid = linkedDoc->Uid.getValueStr();
+            }
+        }
         setValue(std::string(other.filePath),
                  std::string(other.objectName),
+                 std::move(docUuid),
+                 std::move(objUuid),
                  std::vector<std::string>(other._SubList),
                  std::vector<ShadowSub>(other._ShadowSubList));
     }
