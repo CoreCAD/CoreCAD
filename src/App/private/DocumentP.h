@@ -78,6 +78,12 @@ struct DocumentP
     Base::UniqueNameManager objectNameManager;
     Base::UniqueNameManager objectLabelManager;
     std::unordered_map<long, DocumentObject*> objectIdMap;
+    // Durable-UUID -> object index (Amendment 3, Clause 3.6). Lazily rebuilt: an
+    // object's Uid is minted at construction and overwritten on restore, so the
+    // index is marked dirty on add/remove and on any Uid change, then rebuilt on
+    // the next lookup rather than tracked incrementally.
+    mutable std::unordered_map<std::string, DocumentObject*> objectUuidMap;
+    mutable bool objectUuidMapDirty {true};
     std::unordered_map<std::string, bool> partialLoadObjects;
     std::vector<DocumentObjectT> pendingRemove;
     long lastObjectId {};
@@ -152,6 +158,8 @@ struct DocumentP
         objectMap.clear();
         objectNameManager.clear();
         objectIdMap.clear();
+        objectUuidMap.clear();
+        objectUuidMapDirty = true;
     }
 
     const char* findRecomputeLog(const App::DocumentObject* obj)

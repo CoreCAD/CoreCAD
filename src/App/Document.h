@@ -47,6 +47,7 @@
 namespace Base
 {
 class Writer;
+class Uuid;
 }
 
 namespace App
@@ -621,6 +622,17 @@ public:
      * object exists.
      */
     DocumentObject* getObjectByID(long id) const;
+
+    /**
+     * @brief Resolve an object by its durable UUID (Amendment 3, Clause 3.6).
+     *
+     * The UUID is the durable binding a reference resolves through; the object's
+     * name is display/diagnostic only. Resolution is document-scoped.
+     *
+     * @param[in] uuid The durable UUID of the object to get.
+     * @return The document object with the given UUID or `nullptr` if none.
+     */
+    DocumentObject* getObjectByUuid(const Base::Uuid& uuid) const;
 
     /**
      * @brief Check whether the object is in this document.

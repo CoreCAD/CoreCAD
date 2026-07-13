@@ -5,7 +5,9 @@
 
 #include "App/Application.h"
 #include "App/Document.h"
+#include "App/DocumentObject.h"
 #include "App/StringHasher.h"
+#include "Base/Uuid.h"
 #include "Base/Writer.h"
 #include <src/App/InitApplication.h>
 
@@ -92,6 +94,59 @@ TEST_F(DocumentTest, getStringHasherGivesExpectedHasher)
 
     // Assert
     EXPECT_EQ(hasher, foundHasher);
+}
+
+// --- Durable-UUID resolution (Amendment 3, Clause 3.6 foundation) ---
+
+TEST_F(DocumentTest, getObjectByUuidResolvesEachObject)
+{
+    // Arrange
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    auto* b = doc()->addObject("App::DocumentObjectGroup");
+
+    // Act / Assert — each object resolves through its own durable UUID
+    EXPECT_EQ(doc()->getObjectByUuid(a->Uid.getValue()), a);
+    EXPECT_EQ(doc()->getObjectByUuid(b->Uid.getValue()), b);
+}
+
+TEST_F(DocumentTest, getObjectByUuidReturnsNullForUnknownUuid)
+{
+    // Arrange
+    doc()->addObject("App::DocumentObjectGroup");
+
+    // Act / Assert — a UUID no object carries resolves to nothing
+    EXPECT_EQ(doc()->getObjectByUuid(Base::Uuid()), nullptr);
+}
+
+TEST_F(DocumentTest, getObjectByUuidEvictsRemovedObject)
+{
+    // Arrange
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    auto* b = doc()->addObject("App::DocumentObjectGroup");
+    const Base::Uuid aUuid = a->Uid.getValue();
+
+    // Act
+    doc()->removeObject(a->getNameInDocument());
+
+    // Assert — the removed object no longer resolves; the survivor still does
+    EXPECT_EQ(doc()->getObjectByUuid(aUuid), nullptr);
+    EXPECT_EQ(doc()->getObjectByUuid(b->Uid.getValue()), b);
+}
+
+TEST_F(DocumentTest, getObjectByUuidTracksUuidChange)
+{
+    // Arrange — mirrors restore, where the minted Uid is overwritten from file
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    const Base::Uuid minted = a->Uid.getValue();
+
+    // Act — assign a fresh UUID, as a restore would
+    Base::Uuid replacement;
+    replacement.setValue(Base::Uuid::createUuid());
+    a->Uid.setValue(replacement);
+
+    // Assert — the stale key is gone, the new one resolves
+    EXPECT_EQ(doc()->getObjectByUuid(minted), nullptr);
+    EXPECT_EQ(doc()->getObjectByUuid(replacement), a);
 }
 
 // NOLINTEND(readability-magic-numbers)

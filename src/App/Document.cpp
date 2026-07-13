@@ -745,6 +745,8 @@ void Document::clearDocument() // NOLINT
     d->objectMap.clear();
     d->objectNameManager.clear();
     d->objectIdMap.clear();
+    d->objectUuidMap.clear();
+    d->objectUuidMapDirty = true;
     d->lastObjectId = 0;
 }
 
@@ -943,6 +945,11 @@ void Document::onBeforeChangeProperty(const TransactionalObject* Who, const Prop
 
 void Document::onChangedProperty(const DocumentObject* Who, const Property* What)
 {
+    // The durable-UUID index (Clause 3.6) keys on Uid, which is overwritten when
+    // it is restored from file; mark the index stale so the next lookup rebuilds.
+    if (What == &Who->Uid) {
+        d->objectUuidMapDirty = true;
+    }
     signalChangedObject(*Who, *What);
 }
 
@@ -2218,6 +2225,8 @@ void Document::restore(const char* filename,
     d->objectNameManager.clear();
     d->objectMap.clear();
     d->objectIdMap.clear();
+    d->objectUuidMap.clear();
+    d->objectUuidMapDirty = true;
     d->lastObjectId = 0;
 
     if (signal) {
@@ -3450,6 +3459,7 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, Add
         pcObject->_Id = ++d->lastObjectId;
     }
     d->objectIdMap[pcObject->_Id] = pcObject;
+    d->objectUuidMapDirty = true;
     d->objectArray.push_back(pcObject);
 
      // do no transactions if we do a rollback!
@@ -3603,6 +3613,7 @@ void Document::_removeObject(DocumentObject* pcObject, RemoveObjectOptions optio
     // remove from map
     pcObject->setStatus(ObjectStatus::Remove, false);  // Unset the bit to be on the safe side
     d->objectIdMap.erase(pcObject->_Id);
+    d->objectUuidMapDirty = true;
     d->objectNameManager.removeExactName(pos->first);
     unregisterLabel(pcObject->Label.getStrValue());
 
@@ -3873,6 +3884,23 @@ DocumentObject* Document::getObjectByID(const long id) const
     const auto it = d->objectIdMap.find(id);
 
     return it != d->objectIdMap.end() ?it->second:nullptr;
+}
+
+DocumentObject* Document::getObjectByUuid(const Base::Uuid& uuid) const
+{
+    if (d->objectUuidMapDirty) {
+        d->objectUuidMap.clear();
+        for (auto* obj : d->objectArray) {
+            const std::string& key = obj->Uid.getValueStr();
+            if (!key.empty()) {
+                d->objectUuidMap[key] = obj;
+            }
+        }
+        d->objectUuidMapDirty = false;
+    }
+
+    const auto it = d->objectUuidMap.find(uuid.getValue());
+    return it != d->objectUuidMap.end() ? it->second : nullptr;
 }
 
 
