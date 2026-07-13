@@ -614,6 +614,10 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
     if (!doc) {
         return siblings;
     }
+    // One gesture, one shared inert tag (Clause 5.3). Every sibling of this fan-out carries the
+    // same GestureId so a later Scope edit can rediscover the whole gesture; nothing derives
+    // recompute or membership from it.
+    const std::string gestureId = Base::Uuid::createUuid();
     siblings.reserve(targets.size());
     for (Body* body : targets) {
         if (!body) {
@@ -626,6 +630,7 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
         auto* cut = static_cast<PartDesign::Boolean*>(doc->addObject("PartDesign::Boolean"));
         cut->Type.setValue(booleanType);
         cut->Tools.setValue(tool);
+        cut->GestureId.setValue(gestureId);
         body->addFeature(cut);
         siblings.push_back(cut);
     }

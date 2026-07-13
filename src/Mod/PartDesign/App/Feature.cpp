@@ -83,6 +83,14 @@ Feature::Feature()
         0
     );
     ADD_PROPERTY(SuppressedShape, (TopoShape()));
+    ADD_PROPERTY_TYPE(
+        GestureId,
+        (""),
+        "Base",
+        App::Prop_NoRecompute,
+        "Shared tag for the sibling features of one multi-body cut/common gesture (Amendment 5 "
+        "§5.3). Inert: changing it touches nothing for recompute and no membership derives from it."
+    );
     BaseFeature.setStatus(App::Property::Hidden, true);
 
     App::SuppressibleExtension::initExtension(this);

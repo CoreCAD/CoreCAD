@@ -68,6 +68,17 @@ public:
     /// Keep a copy of suppressed shapes so that we can restore them (and maybe display them)
     Part::PropertyPartShape SuppressedShape;
 
+    /// Cruth Amendment 5 §5.3 gesture tag. The siblings spawned by one multi-body cut/common
+    /// gesture (one per reached Body) all carry the same non-empty GestureId; a feature born of an
+    /// ordinary single-body edit leaves it empty. It is inert: nothing reads it during recompute,
+    /// mustExecute ignores it, and membership is never derived from it. It exists only so a later
+    /// "edit the scope of this gesture" action can find every sibling of a gesture without storing
+    /// any body-membership list — it is NOT a membership store (that would be the forbidden
+    /// UUID-as-membership move); ownership still derives from the BaseFeature chain.
+    /// Prop_NoRecompute so editing it touches nothing for recompute, yet it still persists and
+    /// round-trips save/reopen.
+    App::PropertyString GestureId;
+
     App::DocumentObjectExecReturn* recompute() override;
     App::DocumentObjectExecReturn* recomputePreview() override;
 

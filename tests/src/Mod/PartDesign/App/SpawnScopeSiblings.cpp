@@ -12,7 +12,11 @@
 #include <gtest/gtest.h>
 #include "src/App/InitApplication.h"
 
+#include <cstdio>
+#include <string>
 #include <vector>
+
+#include <App/Application.h>
 
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
@@ -44,7 +48,9 @@ protected:
 
     void TearDown() override
     {
-        App::GetApplication().closeDocument(_doc->getName());
+        if (_doc) {
+            App::GetApplication().closeDocument(_doc->getName());
+        }
     }
 
     static void addRect(Sketcher::SketchObject* sk, double x0, double y0, double x1, double y1)
@@ -158,6 +164,85 @@ TEST_F(SpawnScopeSiblingsTest, EmptyTargetsIsNoOp)
     _doc->recompute();
     EXPECT_TRUE(PartDesign::Body::spawnScopeSiblings(tool, {}, "Cut").empty());
     EXPECT_TRUE(PartDesign::Body::spawnScopeSiblings(nullptr, {}, "Cut").empty());
+}
+
+// Clause 5.3 gesture tag: every sibling of one fan-out shares one non-empty GestureId, a distinct
+// gesture gets a distinct tag, and an ordinary single-body feature carries none.
+TEST_F(SpawnScopeSiblingsTest, SiblingsShareOneGestureId)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    // An ordinary single-body feature (the tool's own Pad) has no gesture tag.
+    auto* pad = dynamic_cast<PartDesign::Feature*>(tool->Tip.getValue());
+    ASSERT_NE(pad, nullptr);
+    EXPECT_TRUE(std::string(pad->GestureId.getValue()).empty())
+        << "a plain feature carries no gesture tag";
+
+    auto first = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    ASSERT_EQ(first.size(), 2U);
+    const std::string id = static_cast<PartDesign::Boolean*>(first[0])->GestureId.getValue();
+    EXPECT_FALSE(id.empty()) << "a spawned sibling must carry a gesture tag";
+    EXPECT_EQ(static_cast<PartDesign::Boolean*>(first[1])->GestureId.getValue(), id)
+        << "siblings of one gesture share one tag";
+
+    // A second, independent gesture gets its own distinct tag.
+    auto second = PartDesign::Body::spawnScopeSiblings(tool, {bodyA}, "Common");
+    ASSERT_EQ(second.size(), 1U);
+    EXPECT_NE(static_cast<PartDesign::Boolean*>(second[0])->GestureId.getValue(), id)
+        << "a distinct gesture gets a distinct tag";
+}
+
+// The gesture tag is inert (Prop_NoRecompute): hand-editing it schedules no recompute of the
+// feature, because nothing derives geometry or membership from it.
+TEST_F(SpawnScopeSiblingsTest, GestureIdIsInert)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA}, "Cut");
+    ASSERT_EQ(siblings.size(), 1U);
+    auto* cut = static_cast<PartDesign::Boolean*>(siblings[0]);
+    _doc->recompute();
+    ASSERT_FALSE(cut->mustRecompute()) << "baseline: a freshly recomputed feature is settled";
+
+    cut->GestureId.setValue("hand-edited");
+    EXPECT_EQ(cut->GestureId.getValue(), std::string("hand-edited"));
+    EXPECT_FALSE(cut->mustRecompute()) << "editing the inert tag must not schedule a recompute";
+}
+
+// The gesture tag persists across save and reopen.
+TEST_F(SpawnScopeSiblingsTest, GestureIdRoundTripsSaveReopen)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    _doc->recompute();
+    ASSERT_EQ(siblings.size(), 2U);
+    const std::string cutName = siblings[0]->getNameInDocument();
+    const std::string id = static_cast<PartDesign::Boolean*>(siblings[0])->GestureId.getValue();
+    ASSERT_FALSE(id.empty());
+
+    const std::string path = "scope_gestureid_roundtrip.FCStd";
+    _doc->saveAs(path.c_str());
+    const std::string docName = _doc->getName();
+    App::GetApplication().closeDocument(docName.c_str());
+    _doc = nullptr;
+
+    App::Document* reopened = App::GetApplication().openDocument(path.c_str());
+    _doc = reopened;  // hand ownership to TearDown
+    ASSERT_NE(reopened, nullptr);
+    auto* cut = dynamic_cast<PartDesign::Boolean*>(reopened->getObject(cutName.c_str()));
+    ASSERT_NE(cut, nullptr);
+    EXPECT_EQ(cut->GestureId.getValue(), id) << "the gesture tag must survive save/reopen";
+
+    std::remove(path.c_str());
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
