@@ -164,6 +164,18 @@ App::DocumentObjectExecReturn* Boolean::execute()
 
     result = refineShapeIfActive(result);
 
+    // Cruth Amendment 5 §5.3 / P7: a PartDesign feature yields a solid or fails — it never silently
+    // emits an empty body. OCCT reports a degenerate boolean (a Common whose operands miss, or a
+    // Cut that consumes the whole base) as a *successful* empty compound rather than an exception,
+    // so the makeElementBoolean try/catch above does not see it. Guard on solid count so the
+    // emptied-body corner of a multi-body gesture fails loud instead of leaving a phantom
+    // zero-volume Tip. A legitimate severing Cut still yields >= 1 solid (a multi-solid body) and
+    // passes.
+    if (countSolids(result.getShape()) == 0) {
+        return new App::DocumentObjectExecReturn(
+            QT_TRANSLATE_NOOP("Exception", "Boolean operation produced an empty shape (no solid)")
+        );
+    }
 
     this->Shape.setValue(result);
 

@@ -95,6 +95,15 @@ protected:
         return props.Mass();
     }
 
+    static unsigned solidCount(App::DocumentObject* feat)
+    {
+        auto* pf = dynamic_cast<Part::ShapeFeature*>(feat);
+        if (!pf) {
+            return 0;
+        }
+        return pf->Shape.getShape().countSubShapes(TopAbs_SOLID);
+    }
+
     App::Document* _doc = nullptr;
 };
 
@@ -243,6 +252,85 @@ TEST_F(SpawnScopeSiblingsTest, GestureIdRoundTripsSaveReopen)
     EXPECT_EQ(cut->GestureId.getValue(), id) << "the gesture tag must survive save/reopen";
 
     std::remove(path.c_str());
+}
+
+// Step D — Common (intersective) fan-out: a tool overlapping two Bodies, intersected with both,
+// yields one Common sibling per Body, each reduced to its overlap with the tool.
+TEST_F(SpawnScopeSiblingsTest, CommonFansOutOneSiblingPerBody)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);   // X 0..20
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);  // X 30..50
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);   // X 10..40 — overlaps both
+    _doc->recompute();
+
+    const double volA = volumeOf(bodyA->Tip.getValue());
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Common");
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 2U);
+    auto* comA = static_cast<PartDesign::Boolean*>(siblings[0]);
+    auto* comB = static_cast<PartDesign::Boolean*>(siblings[1]);
+    EXPECT_TRUE(comA->isValid());
+    EXPECT_TRUE(comB->isValid());
+    EXPECT_EQ(comA->Type.getValueAsString(), std::string("Common"));
+
+    // Each Body is reduced to its intersection with the tool: positive, less than the original, and
+    // exactly the overlap box (X[10,20]xY[5,15]xZ[0,10] = 1000, likewise X[30,40] for B).
+    EXPECT_GT(volumeOf(comA), 0.0);
+    EXPECT_LT(volumeOf(comA), volA);
+    EXPECT_NEAR(volumeOf(comA), 1000.0, 1e-6);
+    EXPECT_NEAR(volumeOf(comB), 1000.0, 1e-6);
+}
+
+// Step D degenerate (intersective): a Common scoped onto a Body the tool MISSES empties that Body.
+// Per P7 this fails loud — the sibling errors — rather than silently leaving a zero-volume Tip.
+// (Retirement of the emptied Body is the separate §4.7/#40 contract, deliberately not done here.)
+TEST_F(SpawnScopeSiblingsTest, CommonMissEmptiesBodyAndFailsLoud)
+{
+    PartDesign::Body* bodyFar = padBody(100, 0, 120, 20);  // disjoint from the tool
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyFar}, "Common");
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 1U);
+    EXPECT_TRUE(siblings[0]->isError())
+        << "a Common that misses its Body must fail loud, not emit an empty body";
+}
+
+// Step D degenerate (subtractive): a Cut whose tool fully CONTAINS a Body empties it — same
+// fail-loud contract, distinct corner from the intersective miss above.
+TEST_F(SpawnScopeSiblingsTest, CutContainingBodyFailsLoud)
+{
+    PartDesign::Body* small = padBody(12, 8, 15, 12);  // wholly inside the tool's XY footprint
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {small}, "Cut");
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 1U);
+    EXPECT_TRUE(siblings[0]->isError())
+        << "a Cut that consumes the whole Body must fail loud, not emit an empty body";
+}
+
+// Step D composition (§4.7): a Cut whose tool SEVERS a Body into two disjoint lumps is NOT empty —
+// it is a legitimate multi-solid body. The fail-loud guard must let it through (>= 1 solid). This
+// also documents the still-open split-body gap: one Body carrying a two-solid compound.
+TEST_F(SpawnScopeSiblingsTest, SeveringCutYieldsMultiSolidBody)
+{
+    PartDesign::Body* bar = padBody(0, 0, 50, 20);      // X 0..50
+    PartDesign::Body* knife = padBody(20, -5, 30, 25);  // full-Y slab across X 20..30
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(knife, {bar}, "Cut");
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 1U);
+    EXPECT_TRUE(siblings[0]->isValid()) << "a severing Cut is valid, not empty";
+    EXPECT_EQ(solidCount(siblings[0]), 2U) << "the severed Body is a two-solid compound (§4.7 gap)";
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
