@@ -197,6 +197,65 @@ TEST_F(ApplicationTest, xLinkResolvesByUuidWhenNameIsWrong)
     Base::FileInfo(targetPath).deleteFile();
 };
 
+// When neither the UUID nor the path resolves -- the target file is gone
+// entirely -- the reference must fail loud per P7: the link stays unbound, and
+// checkRestore reports the missing reference naming the object and the
+// last-known path (not a silent null) (Amendment 3, Clause 3.7 step 4;
+// ARCHITECTURE §7.2 step 4).
+TEST_F(ApplicationTest, xLinkMissingTargetFailsLoud)
+{
+    auto& app = App::GetApplication();
+    const std::string dir = Base::FileInfo::getTempFileName();
+    ASSERT_TRUE(Base::FileInfo(dir).createDirectory());
+    const std::string targetPath = dir + "/target.FCStd";
+    const std::string hostPath = dir + "/host.FCStd";
+
+    App::Document* tdoc = app.newDocument(app.getUniqueDocumentName("xlinkTarget").c_str(), "testUser");
+    App::DocumentObject* box = tdoc->addObject("App::VarSet", "TheBox");
+    ASSERT_TRUE(tdoc->saveAs(targetPath.c_str()));
+
+    App::Document* hdoc = app.newDocument(app.getUniqueDocumentName("xlinkHost").c_str(), "testUser");
+    App::DocumentObject* ref = hdoc->addObject("App::VarSet", "Referrer");
+    auto* link = dynamic_cast<App::PropertyXLink*>(
+        ref->addDynamicProperty("App::PropertyXLink", "Link")
+    );
+    ASSERT_NE(link, nullptr);
+    ASSERT_TRUE(hdoc->saveAs(hostPath.c_str()));
+    link->setValue(box);
+    ASSERT_EQ(link->getValue(), box);
+    hdoc->save();
+
+    const std::string hostName = hdoc->getName();
+    const std::string targetName = tdoc->getName();
+    app.closeDocument(hostName.c_str());
+    app.closeDocument(targetName.c_str());
+
+    // Delete the target entirely: no UUID match and no file to recover.
+    ASSERT_TRUE(Base::FileInfo(targetPath).deleteFile());
+
+    App::Document* hdoc2 = app.openDocument(hostPath.c_str());
+    ASSERT_NE(hdoc2, nullptr);
+    App::DocumentObject* ref2 = hdoc2->getObject("Referrer");
+    ASSERT_NE(ref2, nullptr);
+    auto* link2 = dynamic_cast<App::PropertyXLink*>(ref2->getPropertyByName("Link"));
+    ASSERT_NE(link2, nullptr);
+
+    // The link is unresolved, and the missing reference is reported loud with
+    // the object name and the last-known path -- not silently nulled.
+    EXPECT_EQ(link2->getValue(), nullptr);
+    std::string msg;
+    const int restoreState = link2->checkRestore(&msg);
+    EXPECT_NE(restoreState, 0);
+    EXPECT_NE(msg.find("TheBox"), std::string::npos);
+    EXPECT_NE(msg.find("target"), std::string::npos);
+
+    for (auto* d : app.getDocuments()) {
+        app.closeDocument(d->getName());
+    }
+    Base::FileInfo(hostPath).deleteFile();
+    Base::FileInfo(dir).deleteDirectory();
+};
+
 // A target file that has moved (renamed on disk) within the referring
 // document's directory is recovered by its durable UUID: the stored path is a
 // locator hint, so resolution scans the directory for the file carrying the
