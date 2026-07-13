@@ -549,4 +549,108 @@ TEST_F(SpawnScopeSiblingsTest, ToolGeometryEditDoesNotChangeScope)
     EXPECT_EQ(after, before) << "the same siblings, in the same order — scope is explicit-only";
 }
 
+// Step G — undo/redo grouping: the whole N-sibling fan-out is ONE undoable act. The primitive does
+// plain addObject/addFeature calls (no internal transaction, matching FreeCAD's command-owns-the-
+// transaction idiom), so a single caller-opened transaction groups all N spawns + every Tip advance.
+// Undo removes all N siblings and restores every Body's prior Tip; redo re-applies the whole gesture.
+TEST_F(SpawnScopeSiblingsTest, FanOutIsOneUndoableStep)
+{
+    _doc->setUndoMode(1);
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    App::DocumentObject* padA = bodyA->Tip.getValue();  // each Body's chain before the gesture
+    App::DocumentObject* padB = bodyB->Tip.getValue();
+
+    // The gesture is one transaction: both spawns and both Tip advances fall inside it.
+    _doc->openTransaction("Cut both bodies");
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    _doc->commitTransaction();
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 2U);
+    const std::string nameA = siblings[0]->getNameInDocument();
+    const std::string nameB = siblings[1]->getNameInDocument();
+    ASSERT_EQ(_doc->getAvailableUndos(), 1) << "the fan-out is a single undo step, not two";
+
+    // Undo: the whole gesture disappears in one act — both siblings gone, both Tips restored.
+    ASSERT_TRUE(_doc->undo());
+    EXPECT_EQ(_doc->getObject(nameA.c_str()), nullptr) << "sibling A removed by the one undo";
+    EXPECT_EQ(_doc->getObject(nameB.c_str()), nullptr) << "sibling B removed by the same undo";
+    EXPECT_EQ(bodyA->Tip.getValue(), padA) << "Body A's Tip retreated to its pad";
+    EXPECT_EQ(bodyB->Tip.getValue(), padB) << "Body B's Tip retreated to its pad";
+
+    // Redo: the whole gesture returns — both siblings back, each again its Body's Tip.
+    ASSERT_TRUE(_doc->redo());
+    auto* cutA = _doc->getObject(nameA.c_str());
+    auto* cutB = _doc->getObject(nameB.c_str());
+    ASSERT_NE(cutA, nullptr) << "redo re-adds sibling A";
+    ASSERT_NE(cutB, nullptr) << "redo re-adds sibling B";
+    EXPECT_EQ(bodyA->Tip.getValue(), cutA);
+    EXPECT_EQ(bodyB->Tip.getValue(), cutB);
+    _doc->recompute();
+    EXPECT_LT(volumeOf(cutA), volumeOf(padA)) << "the redone cut removed the overlap again";
+}
+
+// Step G — the resolved gesture survives save/reopen whole: both siblings, each still on its own
+// Body's chain, and the ONE shared tool referenced by both (not duplicated). This is the structural
+// counterpart of the earlier gesture-tag round-trip — it proves the sibling set + shared-tool
+// reference persist, so a reopened document can still re-collect and Scope-edit the gesture.
+TEST_F(SpawnScopeSiblingsTest, SiblingSetAndSharedToolSurviveReopen)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    _doc->recompute();
+    ASSERT_EQ(siblings.size(), 2U);
+    const std::string nameA = siblings[0]->getNameInDocument();
+    const std::string nameB = siblings[1]->getNameInDocument();
+    const std::string toolName = tool->getNameInDocument();  // Tools references the Body itself
+    const std::string bodyAName = bodyA->getNameInDocument();
+    const std::string bodyBName = bodyB->getNameInDocument();
+    const std::string id = static_cast<PartDesign::Boolean*>(siblings[0])->GestureId.getValue();
+
+    const std::string path = "scope_siblingset_roundtrip.FCStd";
+    _doc->saveAs(path.c_str());
+    const std::string docName = _doc->getName();
+    App::GetApplication().closeDocument(docName.c_str());
+    _doc = nullptr;
+
+    App::Document* re = App::GetApplication().openDocument(path.c_str());
+    _doc = re;  // hand ownership to TearDown
+    ASSERT_NE(re, nullptr);
+
+    auto* cutA = dynamic_cast<PartDesign::Boolean*>(re->getObject(nameA.c_str()));
+    auto* cutB = dynamic_cast<PartDesign::Boolean*>(re->getObject(nameB.c_str()));
+    ASSERT_NE(cutA, nullptr);
+    ASSERT_NE(cutB, nullptr);
+
+    // Each sibling is still on its own Body's chain (Body -> Tip is the only stored edge).
+    auto* reBodyA = dynamic_cast<PartDesign::Body*>(re->getObject(bodyAName.c_str()));
+    auto* reBodyB = dynamic_cast<PartDesign::Body*>(re->getObject(bodyBName.c_str()));
+    ASSERT_NE(reBodyA, nullptr);
+    ASSERT_NE(reBodyB, nullptr);
+    EXPECT_EQ(reBodyA->Tip.getValue(), cutA);
+    EXPECT_EQ(reBodyB->Tip.getValue(), cutB);
+
+    // The tool is still shared by reference: both siblings' one Tool is the same one object.
+    App::DocumentObject* reTool = re->getObject(toolName.c_str());
+    ASSERT_NE(reTool, nullptr);
+    ASSERT_EQ(cutA->Tools.getValues().size(), 1U);
+    ASSERT_EQ(cutB->Tools.getValues().size(), 1U);
+    EXPECT_EQ(cutA->Tools.getValues().front(), reTool);
+    EXPECT_EQ(cutB->Tools.getValues().front(), reTool)
+        << "both reopened siblings reference the one shared tool, not a duplicate";
+
+    // The gesture is re-collectable after reopen — the Scope-edit path still works cold.
+    EXPECT_EQ(PartDesign::Body::gestureSiblings(re, id).size(), 2U);
+
+    std::remove(path.c_str());
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
