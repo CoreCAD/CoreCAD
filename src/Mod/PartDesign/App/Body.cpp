@@ -29,9 +29,14 @@
 
 #include <map>
 
+#include <cmath>
+
+#include <BRepBndLib.hxx>
 #include <BRepGProp.hxx>
+#include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <Precision.hxx>
+#include <gp_Vec.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopoDS_Shape.hxx>
@@ -56,7 +61,10 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 
+#include <App/GeoFeature.h>
+
 #include "Feature.h"
+#include "FeaturePocket.h"
 
 #include "Body.h"
 #include "BodyPy.h"
@@ -633,6 +641,95 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
         cut->GestureId.setValue(gestureId);
         body->addFeature(cut);
         siblings.push_back(cut);
+    }
+    return siblings;
+}
+
+bool Body::profileReaches(App::DocumentObject* profile, const Part::TopoShape& bodyShape)
+{
+    if (!profile || bodyShape.isNull()) {
+        return false;
+    }
+    // Build the profile face (in world coords) and its plane normal.
+    Part::TopoShape face;
+    Base::Vector3d normal(0, 0, 1);
+    try {
+        Part::TopoShape wires = Part::Feature::getTopoShape(
+            profile,
+            Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform
+        );
+        if (wires.isNull()) {
+            return false;
+        }
+        face = wires.makeElementFace();
+        if (face.isNull()) {
+            return false;
+        }
+        // Normal = the sketch plane's Z axis, taken to world coords like the face above.
+        auto* geo = freecad_cast<App::GeoFeature*>(profile);
+        if (geo) {
+            geo->getPlacement().getRotation().multVec(Base::Vector3d(0, 0, 1), normal);
+        }
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+    // Size the swept column to the body so it spans it either way along the normal.
+    Bnd_Box box;
+    BRepBndLib::Add(bodyShape.getShape(), box);
+    if (box.IsVoid()) {
+        return false;
+    }
+    const double span = std::sqrt(box.SquareExtent());
+    if (span <= Precision::Confusion()) {
+        return false;
+    }
+    const gp_Vec dir(normal.x, normal.y, normal.z);
+    try {
+        // Direction-agnostic: the profile reaches the body if its column hits it either way. The
+        // cut depth (Length vs ThroughAll) is a property of the spawned Pocket, not of reaching.
+        if (toolReaches(face.makeElementPrism(span * dir), bodyShape)) {
+            return true;
+        }
+        return toolReaches(face.makeElementPrism(-span * dir), bodyShape);
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+}
+
+std::vector<App::DocumentObject*> Body::spawnScopeSiblingsFromProfile(
+    App::DocumentObject* profile,
+    const std::vector<Body*>& targets,
+    const char* pocketType,
+    double length
+)
+{
+    std::vector<App::DocumentObject*> siblings;
+    if (!profile || targets.empty()) {
+        return siblings;
+    }
+    App::Document* doc = profile->getDocument();
+    if (!doc) {
+        return siblings;
+    }
+    // One gesture, one shared inert tag (Clause 5.3), exactly as the boolean fan-out.
+    const std::string gestureId = Base::Uuid::createUuid();
+    siblings.reserve(targets.size());
+    for (Body* body : targets) {
+        if (!body) {
+            continue;
+        }
+        // Each sibling is an ordinary Pocket subtracting the one shared profile from this Body's
+        // Tip. addFeature owns the BaseFeature + Tip wiring; the only edge written is Body -> Tip,
+        // and the profile is referenced (Profile link), never owned.
+        auto* pocket = static_cast<PartDesign::Pocket*>(doc->addObject("PartDesign::Pocket"));
+        pocket->Profile.setValue(profile, std::vector<std::string> {""});
+        pocket->Type.setValue(pocketType);
+        pocket->Length.setValue(length);
+        pocket->GestureId.setValue(gestureId);
+        body->addFeature(pocket);
+        siblings.push_back(pocket);
     }
     return siblings;
 }

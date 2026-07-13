@@ -201,6 +201,28 @@ public:
         const char* booleanType
     );
 
+    /// Cruth Amendment 5 §5.1 sketch-tooled reach test: does @p profile — a sketch swept
+    /// perpendicular to its own plane — pass through @p bodyShape? The profile-tool counterpart of
+    /// toolReaches. The reach question for a sketch tool is "does the profile's column hit the
+    /// body," independent of how deep the cut runs (Length vs ThroughAll changes only the spawned
+    /// Pocket's extent, never whether it reaches). Direction-agnostic — the column is tested both
+    /// ways along the plane normal, sized to the body's bounding box. Robust to a null/empty
+    /// profile or a non-planar wire (returns false, never throws).
+    static bool profileReaches(App::DocumentObject* profile, const Part::TopoShape& bodyShape);
+
+    /// Cruth Amendment 5 §5.1 sketch-tooled fan-out: the profile-tool sibling of spawnScopeSiblings.
+    /// Spawn one ordinary PartDesign::Pocket per target Body, each subtracting the one shared
+    /// @p profile (referenced, never owned) from that Body's Tip via addFeature, of extent
+    /// @p pocketType ("Length" | "ThroughAll"); @p length applies to the Length flavour. Same
+    /// invariants as the boolean fan-out: the only edge written is Body -> Tip, membership stays
+    /// derived, and all siblings of the gesture carry the shared inert GestureId (Clause 5.3).
+    static std::vector<App::DocumentObject*> spawnScopeSiblingsFromProfile(
+        App::DocumentObject* profile,
+        const std::vector<Body*>& targets,
+        const char* pocketType,
+        double length
+    );
+
     /**
      * Checks if the given document object lays after the current insert point
      * (place before next solid after the Tip)

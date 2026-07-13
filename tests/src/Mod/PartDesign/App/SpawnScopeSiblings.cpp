@@ -23,12 +23,15 @@
 #include <TopAbs_ShapeEnum.hxx>
 
 #include <App/Document.h>
+#include <Base/Placement.h>
+#include <Base/Rotation.h>
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureBoolean.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
+#include <Mod/PartDesign/App/FeaturePocket.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 // NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
@@ -102,6 +105,22 @@ protected:
             return 0;
         }
         return pf->Shape.getShape().countSubShapes(TopAbs_SOLID);
+    }
+
+    static Part::TopoShape shapeOf(App::DocumentObject* feat)
+    {
+        auto* pf = dynamic_cast<Part::ShapeFeature*>(feat);
+        return pf ? pf->Shape.getShape() : Part::TopoShape();
+    }
+
+    // A standalone sketch profile (a rectangle) placed at height z with +Z normal, usable as a
+    // shared Pocket tool. Placed mid-body so a Pocket cuts material whichever way it runs.
+    Sketcher::SketchObject* profileSketch(double x0, double y0, double x1, double y1, double z)
+    {
+        auto* sk = _doc->addObject<Sketcher::SketchObject>();
+        sk->Placement.setValue(Base::Placement(Base::Vector3d(0, 0, z), Base::Rotation()));
+        addRect(sk, x0, y0, x1, y1);
+        return sk;
     }
 
     App::Document* _doc = nullptr;
@@ -331,6 +350,85 @@ TEST_F(SpawnScopeSiblingsTest, SeveringCutYieldsMultiSolidBody)
     ASSERT_EQ(siblings.size(), 1U);
     EXPECT_TRUE(siblings[0]->isValid()) << "a severing Cut is valid, not empty";
     EXPECT_EQ(solidCount(siblings[0]), 2U) << "the severed Body is a two-solid compound (§4.7 gap)";
+}
+
+// Step E — sketch-tool reach: the profile's perpendicular column reaches exactly the Bodies whose
+// footprint it overlaps, independent of extent.
+TEST_F(SpawnScopeSiblingsTest, ProfileReachesOnlyOverlappingBodies)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);   // X 0..20
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);  // X 30..50
+    _doc->recompute();
+
+    Sketcher::SketchObject* spanning = profileSketch(5, 5, 45, 15, 5);  // over both footprints
+    Sketcher::SketchObject* onlyA = profileSketch(5, 5, 15, 15, 5);     // over A only
+    _doc->recompute();
+
+    EXPECT_TRUE(PartDesign::Body::profileReaches(spanning, shapeOf(bodyA->Tip.getValue())));
+    EXPECT_TRUE(PartDesign::Body::profileReaches(spanning, shapeOf(bodyB->Tip.getValue())));
+    EXPECT_TRUE(PartDesign::Body::profileReaches(onlyA, shapeOf(bodyA->Tip.getValue())));
+    EXPECT_FALSE(PartDesign::Body::profileReaches(onlyA, shapeOf(bodyB->Tip.getValue())))
+        << "a profile that misses a Body's footprint does not reach it";
+}
+
+// Step E — sketch-tool fan-out (ThroughAll): one shared profile cutting two Bodies yields one
+// Pocket per Body, each on its own chain, sharing the one profile and the gesture tag.
+TEST_F(SpawnScopeSiblingsTest, ProfileThroughAllFansOutPocketPerBody)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    _doc->recompute();
+    Sketcher::SketchObject* profile = profileSketch(5, 5, 45, 15, 5);  // spans both
+    _doc->recompute();
+
+    const double volA = volumeOf(bodyA->Tip.getValue());
+    const double volB = volumeOf(bodyB->Tip.getValue());
+
+    auto siblings
+        = PartDesign::Body::spawnScopeSiblingsFromProfile(profile, {bodyA, bodyB}, "ThroughAll", 0.0);
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 2U);
+    auto* pocA = static_cast<PartDesign::Pocket*>(siblings[0]);
+    auto* pocB = static_cast<PartDesign::Pocket*>(siblings[1]);
+    EXPECT_TRUE(pocA->isValid());
+    EXPECT_TRUE(pocB->isValid());
+    EXPECT_EQ(pocA->Type.getValueAsString(), std::string("ThroughAll"));
+
+    // Each Pocket advances its own Body's chain and the tool is the one shared profile by reference.
+    EXPECT_EQ(bodyA->Tip.getValue(), pocA);
+    EXPECT_EQ(bodyB->Tip.getValue(), pocB);
+    EXPECT_EQ(pocA->Profile.getValue(), profile);
+    EXPECT_EQ(pocB->Profile.getValue(), profile);
+
+    // Each Body loses the cut volume, and the gesture tag is shared (Clause 5.3).
+    EXPECT_LT(volumeOf(pocA), volA);
+    EXPECT_LT(volumeOf(pocB), volB);
+    const std::string id = pocA->GestureId.getValue();
+    EXPECT_FALSE(id.empty());
+    EXPECT_EQ(std::string(pocB->GestureId.getValue()), id);
+}
+
+// Step E — sketch-tool fan-out (Length): the finite flavour removes a bounded pocket, not the whole
+// Body, confirming the extent is honoured (Clause 5.1 "both tool kinds", both extents).
+TEST_F(SpawnScopeSiblingsTest, ProfileLengthFansOutFiniteCut)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    _doc->recompute();
+    Sketcher::SketchObject* profile = profileSketch(5, 5, 15, 15, 5);  // over A, mid-height
+    _doc->recompute();
+
+    const double volA = volumeOf(bodyA->Tip.getValue());
+
+    auto siblings = PartDesign::Body::spawnScopeSiblingsFromProfile(profile, {bodyA}, "Length", 4.0);
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 1U);
+    auto* pocA = static_cast<PartDesign::Pocket*>(siblings[0]);
+    EXPECT_TRUE(pocA->isValid());
+    EXPECT_EQ(pocA->Type.getValueAsString(), std::string("Length"));
+    EXPECT_LT(volumeOf(pocA), volA) << "a Length pocket removes some material";
+    EXPECT_GT(volumeOf(pocA), 0.0) << "but not the whole Body";
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
