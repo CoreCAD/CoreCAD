@@ -1611,6 +1611,17 @@ private:
     static App::DocumentObject*
     getDocumentObject(const App::Document* doc, const String& name, std::bitset<32>& flags);
 
+    /**
+     * @brief Re-derive the object component's displayed name from its bound UUID.
+     *
+     * When the object component carries a durable UUID (Amendment 3, Clause 3.8),
+     * the name text is only a display cache. This refreshes that cache from the
+     * current name/label of the UUID-bound object so a rename propagates to the
+     * rendered formula with no rewriting pass. A no-op when no UUID is bound or
+     * the target is unresolvable (last-known name kept as diagnostic, P7).
+     */
+    void refreshDocumentObjectName() const;
+
 private:
     std::string _cache;  // Cached string represstation of this identifier
     std::size_t _hash;   // Cached hash of this string

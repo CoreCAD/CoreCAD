@@ -280,8 +280,38 @@ bool ObjectIdentifier::verify(const App::Property& prop, bool silent) const
     return true;
 }
 
+void ObjectIdentifier::refreshDocumentObjectName() const
+{
+    // Render side of Amendment 3, Clause 3.8 (Step F): the object component's
+    // name is a display cache over its durable UUID binding. Re-derive it from
+    // the current name/label of the UUID-bound object so a rename shows through
+    // to the rendered formula without any name-rewriting pass.
+    if (documentObjectName.getUuid().empty() || !owner || !owner->getDocument()) {
+        return;
+    }
+
+    Base::Uuid targetUuid;
+    targetUuid.setValue(documentObjectName.getUuid());
+    DocumentObject* obj = owner->getDocument()->getObjectByUuid(targetUuid);
+    if (!obj) {
+        // Unresolvable target: keep the last-known name as a diagnostic (P7),
+        // never silently blank it.
+        return;
+    }
+
+    const char* current =
+        documentObjectName.isRealString() ? obj->Label.getValue() : obj->getNameInDocument();
+    if (documentObjectName.getString() != current) {
+        auto* self = const_cast<ObjectIdentifier*>(this);
+        self->documentObjectName.str = current;
+        self->_cache.clear();
+    }
+}
+
 const std::string& ObjectIdentifier::toString() const
 {
+    refreshDocumentObjectName();
+
     if (!_cache.empty() || !owner) {
         return _cache;
     }
@@ -327,6 +357,7 @@ const std::string& ObjectIdentifier::toString() const
 
 std::string ObjectIdentifier::toPersistentString() const
 {
+    refreshDocumentObjectName();
 
     if (!owner) {
         return {};
@@ -1394,6 +1425,10 @@ void ObjectIdentifier::setDocumentObjectName(const App::DocumentObject* obj,
 
     documentObjectNameSet = force;
     documentObjectName = String(obj->getNameInDocument(), false, true);
+    // Author-time capture (Amendment 3, Clause 3.8, Step F): stamp the durable
+    // UUID beneath the name so the binding survives a later rename; the name
+    // becomes a pure display/authoring surface re-derived from this UUID.
+    documentObjectName.setUuid(obj->Uid.getValueStr());
     subObjectName = std::move(subname);
 
     _cache.clear();
@@ -1910,10 +1945,11 @@ void ObjectIdentifier::resolveAmbiguity(const ResolveResults& result)
         setDocumentObjectName(result.resolvedDocumentObject, true, std::move(subname));
     }
     else {
-        setDocumentObjectName(
-            String(result.resolvedDocumentObject->Label.getStrValue(), true, false),
-            true,
-            std::move(subname));
+        // Label reference: still stamp the durable UUID beneath the label so the
+        // binding is name-independent (Amendment 3, Clause 3.8, Step F).
+        String label(result.resolvedDocumentObject->Label.getStrValue(), true, false);
+        label.setUuid(result.resolvedDocumentObject->Uid.getValueStr());
+        setDocumentObjectName(std::move(label), true, std::move(subname));
     }
 
     if (result.resolvedDocumentObject->getDocument() == owner->getDocument()) {

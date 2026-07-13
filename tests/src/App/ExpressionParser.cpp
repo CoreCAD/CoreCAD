@@ -363,4 +363,43 @@ TEST_F(ExpressionParserTest, objectIdentifierBindsObjectByUuid)
         << "UUID binding survives a rename of the target";
 }
 
+// Amendment 3, Clause 3.8 (Step F): the object component's rendered name is
+// re-derived from its durable UUID at toString() time, so it always reflects the
+// bound object's CURRENT name/label -- independent of whatever name text was
+// stored, and with no name-rewriting pass. Proven by rendering an identifier
+// whose stored name is deliberately wrong.
+TEST_F(ExpressionParserTest, objectIdentifierRendersNameFromUuid)
+{
+    // Arrange: a target object carrying the property we path to.
+    auto* target = this_doc()->addObject("App::DocumentObjectGroup", "Target");
+    target->addDynamicProperty("App::PropertyFloat", "Bar");
+
+    // Internal-name style: stored name is bogus, UUID is the target's.
+    ObjectIdentifier byName(this_obj());
+    ObjectIdentifier::String wrongName("ZZZ_WRONG_NAME", false, true);
+    wrongName.setUuid(target->Uid.getValueStr());
+    byName.setDocumentObjectName(std::move(wrongName), true);
+    byName << ObjectIdentifier::SimpleComponent("Bar");
+
+    EXPECT_EQ(byName.toString(), "Target.Bar")
+        << "render re-derives the current internal name from the UUID, not the stored wrong name";
+
+    // Label style: stored label is bogus, UUID is the target's. Render must
+    // follow the object's CURRENT label, including across a rename -- with no
+    // rewriting pass touching this hand-built identifier.
+    ObjectIdentifier byLabel(this_obj());
+    ObjectIdentifier::String wrongLabel("ZZZ_WRONG_LABEL", true);
+    wrongLabel.setUuid(target->Uid.getValueStr());
+    byLabel.setDocumentObjectName(std::move(wrongLabel), true);
+    byLabel << ObjectIdentifier::SimpleComponent("Bar");
+
+    target->Label.setValue("Alpha");
+    EXPECT_EQ(byLabel.toString(), "<<Alpha>>.Bar")
+        << "render re-derives the current label from the UUID";
+
+    target->Label.setValue("Beta");
+    EXPECT_EQ(byLabel.toString(), "<<Beta>>.Bar")
+        << "a later rename shows through the re-render with no rewriting pass";
+}
+
 }  // namespace App::ExpressionParser::Test
