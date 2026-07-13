@@ -1278,6 +1278,8 @@ public:
 
     void setValue(std::string&& filePath,
                   std::string&& objectName,
+                  std::string&& documentUuid,
+                  std::string&& objectUuid,
                   std::vector<std::string>&& SubList,
                   std::vector<ShadowSub>&& ShadowSubList = {});
 
@@ -1400,6 +1402,9 @@ protected:
     std::string filePath;
     std::string docName;
     std::string objectName;
+    // Durable target-document UUID (Clause 3.7): the real binding for the
+    // external document; filePath is a locator hint validated against this.
+    std::string docUuid;
     std::string stamp;
     std::vector<std::string> _SubList;
     std::vector<ShadowSub> _ShadowSubList;
