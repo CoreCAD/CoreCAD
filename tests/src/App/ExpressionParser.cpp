@@ -456,4 +456,51 @@ TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
     EXPECT_NE(ids.begin()->first.getDocumentObject(), dcy);
 }
 
+// Amendment 3, Clause 3.8, Step H: object references no longer depend on the
+// rename-rewriting pass. Renaming a referenced object -- and even handing its old
+// name to a *different* object -- leaves a live expression bound to the original by
+// UUID and re-rendered to the new name, with renameObjectIdentifiers never invoked.
+// (The pass itself survives only for the deferred inner-grain renames -- property,
+// alias, cell -- which are out of scope here per Clause 3.8 sec 0.1 / issue #10.)
+TEST_F(ExpressionParserTest, objectRenameNeedsNoRewritingPass)
+{
+    // A referenced object with the property we path to.
+    auto* target = this_doc()->addObject("App::DocumentObjectGroup", "Target");
+    target->Label.setValue("Alpha");
+    freecad_cast<PropertyFloat*>(target->addDynamicProperty("App::PropertyFloat", "Width"))
+        ->setValue(5.0);
+
+    // Author a live expression by the normal path (parse + setExpression), addressing
+    // the target by its current label. This stamps the durable UUID under the label.
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alpha>>.Width * 2"))
+    );
+
+    auto ref = [&]() {
+        return this_obj()->getExpression(resultPath).expression->getIdentifiers().begin()->first;
+    };
+    ASSERT_EQ(ref().getDocumentObject(), target) << "authored reference binds the target";
+    EXPECT_EQ(ref().toString(), "<<Alpha>>.Width");
+
+    // Rename the target. We call ONLY Label.setValue -- never renameObjectIdentifiers.
+    target->Label.setValue("Gamma");
+
+    // Collision: hand the old label to a brand-new object carrying the same property.
+    auto* decoy = this_doc()->addObject("App::DocumentObjectGroup", "Decoy");
+    decoy->Label.setValue("Alpha");
+    decoy->addDynamicProperty("App::PropertyFloat", "Width");
+
+    // The reference still binds the original by UUID -- not the decoy that now owns the
+    // old name -- and re-renders to the target's current label with no rewriting pass.
+    EXPECT_EQ(ref().getDocumentObject(), target)
+        << "binding follows the durable UUID, not the reused label";
+    EXPECT_NE(ref().getDocumentObject(), decoy);
+    EXPECT_EQ(ref().toString(), "<<Gamma>>.Width")
+        << "render re-derives the current label from the UUID, no renameObjectIdentifiers needed";
+}
+
 }  // namespace App::ExpressionParser::Test
