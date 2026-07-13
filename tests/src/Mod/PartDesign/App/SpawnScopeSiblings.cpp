@@ -431,4 +431,23 @@ TEST_F(SpawnScopeSiblingsTest, ProfileLengthFansOutFiniteCut)
     EXPECT_GT(volumeOf(pocA), 0.0) << "but not the whole Body";
 }
 
+// Step E follow-up: the full-consume Pocket. A ThroughAll profile covering a whole Body empties it;
+// with the FeatureExtrude guard now matching Boolean::execute, that fails loud (P7) rather than
+// leaving a phantom zero-solid Tip. (Retirement of the emptied Body remains the §4.7/#40 contract.)
+TEST_F(SpawnScopeSiblingsTest, FullConsumePocketFailsLoud)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    _doc->recompute();
+    // At the top face (Z=10); the default downward ThroughAll then runs through the whole Body.
+    Sketcher::SketchObject* cover = profileSketch(-5, -5, 25, 25, 10);  // covers the whole footprint
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblingsFromProfile(cover, {bodyA}, "ThroughAll", 0.0);
+    _doc->recompute();
+
+    ASSERT_EQ(siblings.size(), 1U);
+    EXPECT_TRUE(siblings[0]->isError())
+        << "a Pocket that consumes the whole Body must fail loud, not emit an empty body";
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
