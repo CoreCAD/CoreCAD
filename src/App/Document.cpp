@@ -1453,7 +1453,11 @@ void Document::writeObjectType(const std::vector<DocumentObject*>& objs,
         writer.Stream() << writer.ind() << "<Object "
                         << "type=\"" << it->getTypeId().getName() << "\" "
                         << "name=\"" << it->getExportName() << "\" "
-                        << "id=\"" << it->getID() << "\" ";
+                        << "id=\"" << it->getID() << "\" "
+                        // Durable UUID (Amendment 3, Clause 3.6) written in phase 1 so the
+                        // document's UUID index is populated before any property (phase 2)
+                        // restores, letting a forward reference resolve by UUID on load.
+                        << "uuid=\"" << it->Uid.getValueStr() << "\" ";
 
         // Only write out custom view provider types
         std::string viewType = it->getViewProviderNameStored();
@@ -1694,6 +1698,16 @@ std::vector<DocumentObject*> Document::readObjects(Base::XMLReader& reader)
                 // use this name for the later access because an object with
                 // the given name may already exist
                 reader.addName(name.c_str(), obj->getNameInDocument());
+
+                // Stamp the durable UUID now (phase 1) so getObjectByUuid resolves
+                // during phase-2 property restore, even for forward references
+                // (Amendment 3, Clause 3.6). The phase-2 Uid property re-sets the
+                // same value harmlessly.
+                if (reader.hasAttribute("uuid")) {
+                    Base::Uuid uuid;
+                    uuid.setValue(reader.getAttribute<const char*>("uuid"));
+                    obj->Uid.setValue(uuid);
+                }
 
                 // restore touch/error status flags
                 if (reader.hasAttribute("Touched")) {

@@ -31,6 +31,7 @@
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 #include <Base/Tools.h>
+#include <Base/Uuid.h>
 
 #include "PropertyLinks.h"
 #include "Application.h"
@@ -791,8 +792,11 @@ void PropertyLink::setPyObject(PyObject* value)
 
 void PropertyLink::Save(Base::Writer& writer) const
 {
+    // The durable binding is the target's UUID (Amendment 3, Clause 3.2); the
+    // name is written as display/diagnostic and as a resolution fallback.
     writer.Stream() << writer.ind() << "<Link value=\"" << (_pcLink ? _pcLink->getExportName() : "")
-                    << "\"/>" << std::endl;
+                    << "\" uuid=\"" << (_pcLink ? _pcLink->Uid.getValueStr() : "") << "\"/>"
+                    << std::endl;
 }
 
 void PropertyLink::Restore(Base::XMLReader& reader)
@@ -801,15 +805,26 @@ void PropertyLink::Restore(Base::XMLReader& reader)
     reader.readElement("Link");
     // get the value of my attribute
     std::string name = reader.getName(reader.getAttribute<const char*>("value"));
+    std::string uuid = reader.getAttribute<const char*>("uuid", "");
 
     // Property not in a DocumentObject!
     assert(getContainer()->isDerivedFrom<App::DocumentObject>());
 
-    if (!name.empty()) {
+    if (!name.empty() || !uuid.empty()) {
         DocumentObject* parent = static_cast<DocumentObject*>(getContainer());
 
         App::Document* document = parent->getDocument();
-        DocumentObject* object = document ? document->getObject(name.c_str()) : nullptr;
+        // Resolve by UUID first (durable binding); fall back to the name only
+        // when no UUID was stored (forward interop, not legacy migration).
+        DocumentObject* object = nullptr;
+        if (document && !uuid.empty()) {
+            Base::Uuid targetUuid;
+            targetUuid.setValue(uuid);
+            object = document->getObjectByUuid(targetUuid);
+        }
+        if (!object && document && !name.empty()) {
+            object = document->getObject(name.c_str());
+        }
         if (!object) {
             if (reader.isVerbose()) {
                 Base::Console().warning("Lost link to '%s' while loading, maybe "
