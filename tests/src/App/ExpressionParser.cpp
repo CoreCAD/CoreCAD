@@ -4,6 +4,8 @@
 #include <gmock/gmock.h>
 
 #include "Base/Quantity.h"
+#include "Base/Reader.h"
+#include "Base/Writer.h"
 
 #include "App/Application.h"
 #include "App/Document.h"
@@ -11,6 +13,9 @@
 #include "App/Expression.h"
 #include "App/ExpressionParser.h"
 #include "App/ObjectIdentifier.h"
+#include "App/PropertyStandard.h"
+
+#include <sstream>
 
 #include "src/App/InitApplication.h"
 
@@ -400,6 +405,55 @@ TEST_F(ExpressionParserTest, objectIdentifierRendersNameFromUuid)
     target->Label.setValue("Beta");
     EXPECT_EQ(byLabel.toString(), "<<Beta>>.Bar")
         << "a later rename shows through the re-render with no rewriting pass";
+}
+
+// Amendment 3, Clause 3.8, Step G: an expression persists its object references as
+// durable UUIDs beside the human formula text, and rebinds by UUID on reload -- so a
+// formula survives even when the on-disk name is made to point at the wrong object.
+TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
+{
+    // Src is the real target; Dcy is a decoy carrying the same property.
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
+    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(resultPath, std::shared_ptr<Expression>(parse(this_obj(), "Src.Bar * 2")));
+
+    // Save the engine and confirm the durable UUID rode along on disk.
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+    EXPECT_NE(xml.find("<ObjectRef"), std::string::npos) << "engine did not persist an ObjectRef";
+    EXPECT_NE(xml.find(src->Uid.getValueStr()), std::string::npos)
+        << "the durable Src UUID was not written to disk";
+
+    // Tamper: swap the on-disk formula NAME to the decoy. The UUID still names Src,
+    // so name-binding would resolve Dcy (wrong) and UUID-binding resolves Src (right).
+    auto pos = xml.find("Src.Bar");
+    ASSERT_NE(pos, std::string::npos);
+    xml.replace(pos, std::string("Src.Bar").size(), "Dcy.Bar");
+
+    // Restore into the same-container engine and finish the load.
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    // The reference must resolve to Src by UUID, never to the decoy by name.
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the tampered expression failed to restore";
+    auto ids = info.expression->getIdentifiers();
+    ASSERT_EQ(ids.size(), 1U);
+    EXPECT_EQ(ids.begin()->first.getDocumentObject(), src)
+        << "reference bound by the on-disk name (decoy) instead of the durable UUID";
+    EXPECT_NE(ids.begin()->first.getDocumentObject(), dcy);
 }
 
 }  // namespace App::ExpressionParser::Test

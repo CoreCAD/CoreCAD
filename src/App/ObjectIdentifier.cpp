@@ -1442,6 +1442,31 @@ ObjectIdentifier::String ObjectIdentifier::getDocumentObjectName() const
     return result.resolvedDocumentObjectName;
 }
 
+std::string ObjectIdentifier::getBoundObjectUuid() const
+{
+    // The object component is either the forced document-object name or, for a
+    // path-form identifier, the leading component (mirrors the two getDocumentObject
+    // call sites in resolve()).
+    if (!documentObjectName.getString().empty()) {
+        return documentObjectName.getUuid();
+    }
+    if (!components.empty()) {
+        return components[0].name.getUuid();
+    }
+    return {};
+}
+
+void ObjectIdentifier::setBoundObjectUuid(const std::string& uuid)
+{
+    if (!documentObjectName.getString().empty()) {
+        documentObjectName.setUuid(uuid);
+    }
+    else if (!components.empty()) {
+        components[0].name.setUuid(uuid);
+    }
+    _cache.clear();
+}
+
 bool ObjectIdentifier::hasDocumentObjectName(bool forced) const
 {
     return !documentObjectName.getString().empty() && (!forced || documentObjectNameSet);

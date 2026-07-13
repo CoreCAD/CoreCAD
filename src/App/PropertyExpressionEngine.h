@@ -355,11 +355,17 @@ private:
 
     ValidatorFunc validator; /**< Valdiator functor */
 
+    struct RestoredObjectRef
+    {
+        int index;
+        std::string uuid;
+    };
     struct RestoredExpression
     {
         std::string path;
         std::string expr;
         std::string comment;
+        std::vector<RestoredObjectRef> refs;
     };
     /**< Expressions are read from file to this map first before they are validated and inserted
      * into the actual map */

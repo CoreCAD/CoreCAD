@@ -37,6 +37,8 @@
 
 #include "PropertyExpressionEngine.h"
 #include "ExpressionVisitors.h"
+#include "ExpressionParser.h"
+#include "DocumentObject.h"
 
 
 FC_LOG_LEVEL_INIT("App", true);
@@ -45,6 +47,25 @@ using namespace App;
 using namespace Base;
 using namespace boost;
 namespace sp = std::placeholders;
+
+namespace
+{
+// Collects the object-referencing variable nodes of an expression in the
+// deterministic post-order the parser reproduces on load, so a UUID list saved
+// in this order re-binds positionally without matching by name (Amendment 3,
+// Clause 3.8). Read-only visitor; it never mutates the tree.
+class VariableNodeCollector: public App::ExpressionVisitor
+{
+public:
+    void visit(App::Expression& node) override
+    {
+        if (auto* var = freecad_cast<App::VariableExpression*>(&node)) {
+            nodes.push_back(var);
+        }
+    }
+    std::vector<App::VariableExpression*> nodes;
+};
+}  // namespace
 
 TYPESYSTEM_SOURCE_ABSTRACT(App::PropertyExpressionContainer, App::PropertyXLinkContainer)
 
@@ -432,13 +453,67 @@ void PropertyExpressionEngine::Save(Base::Writer& writer) const
             comment = it.second.expression->comment;
         }
 
+        // Durable UUID bindings for the object references, in the deterministic
+        // order the parser reproduces on load (Amendment 3, Clause 3.8). The UUID
+        // is the binding; the human-readable formula text and the name attribute
+        // are display/diagnostic only. Cross-document references are left name-based
+        // (reserved for the PropertyXLink step).
+        struct ObjectRefOut
+        {
+            int index;
+            std::string name;
+            std::string uuid;
+        };
+        std::vector<ObjectRefOut> refs;
+        if (it.second.expression) {
+            DocumentObject* ownerObj = freecad_cast<DocumentObject*>(getContainer());
+            Document* ownerDoc = ownerObj ? ownerObj->getDocument() : nullptr;
+            VariableNodeCollector collector;
+            it.second.expression->visit(collector);
+            int index = 0;
+            for (auto* var : collector.nodes) {
+                ObjectIdentifier oid = var->getPath();
+                std::string uuid = oid.getBoundObjectUuid();
+                std::string name;
+                if (DocumentObject* obj = oid.getDocumentObject()) {
+                    // Cross-document references stay name-based (reserved for the
+                    // PropertyXLink step); persist a UUID only for intra-document refs.
+                    if (ownerDoc && obj->getDocument() != ownerDoc) {
+                        ++index;
+                        continue;
+                    }
+                    if (uuid.empty()) {
+                        uuid = obj->Uid.getValueStr();
+                    }
+                    name = obj->getNameInDocument();
+                }
+                if (!uuid.empty()) {
+                    refs.push_back({index, name, uuid});
+                }
+                ++index;
+            }
+        }
+
         writer.Stream() << writer.ind() << "<Expression path=\""
                         << Property::encodeAttribute(it.first.toString()) << "\" expression=\""
                         << Property::encodeAttribute(expression) << "\"";
         if (!comment.empty()) {
             writer.Stream() << " comment=\"" << Property::encodeAttribute(comment) << "\"";
         }
-        writer.Stream() << "/>" << std::endl;
+        if (refs.empty()) {
+            writer.Stream() << "/>" << std::endl;
+        }
+        else {
+            writer.Stream() << " refcount=\"" << refs.size() << "\">" << std::endl;
+            writer.incInd();
+            for (const auto& ref : refs) {
+                writer.Stream() << writer.ind() << "<ObjectRef index=\"" << ref.index
+                                << "\" name=\"" << Property::encodeAttribute(ref.name)
+                                << "\" uuid=\"" << ref.uuid << "\"/>" << std::endl;
+            }
+            writer.decInd();
+            writer.Stream() << writer.ind() << "</Expression>" << std::endl;
+        }
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</ExpressionEngine>" << std::endl;
@@ -464,6 +539,16 @@ void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
         info.expr = reader.getAttribute<const char*>("expression");
         if (reader.hasAttribute("comment")) {
             info.comment = reader.getAttribute<const char*>("comment");
+        }
+        if (reader.hasAttribute("refcount")) {
+            long refcount = reader.getAttribute<long>("refcount");
+            info.refs.reserve(refcount);
+            for (long r = 0; r < refcount; ++r) {
+                reader.readElement("ObjectRef");
+                info.refs.push_back({static_cast<int>(reader.getAttribute<long>("index")),
+                                     reader.getAttribute<const char*>("uuid")});
+            }
+            reader.readEndElement("Expression");
         }
     }
 
@@ -533,6 +618,29 @@ void PropertyExpressionEngine::tryRestoreExpression(DocumentObject* docObj,
                 Expression::parse(docObj, info.expr));
             if (expression) {
                 expression->comment = info.comment;
+
+                // Re-bind each object reference to its durable UUID (Amendment 3,
+                // Clause 3.8). The parsed formula gives back the same node order it
+                // was saved in, so the saved UUIDs stamp on positionally — the name
+                // in the text is never used as a resolution key.
+                if (!info.refs.empty()) {
+                    VariableNodeCollector collector;
+                    expression->visit(collector);
+                    for (const auto& ref : info.refs) {
+                        if (ref.index >= 0 && ref.index < static_cast<int>(collector.nodes.size())
+                            && !ref.uuid.empty()) {
+                            VariableExpression* var = collector.nodes[ref.index];
+                            ObjectIdentifier oid = var->getPath();
+                            // Bind by UUID, then canonicalize to the same
+                            // forced-document-object-name form authoring produces, so
+                            // resolution, display re-render and dependency tracking all
+                            // agree (Amendment 3, Clause 3.8). A dead UUID leaves the
+                            // parsed name in place as the P7 diagnostic.
+                            oid.setBoundObjectUuid(ref.uuid);
+                            var->setPath(oid);
+                        }
+                    }
+                }
             }
             setValue(path, expression);
         }

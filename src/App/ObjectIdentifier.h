@@ -1117,6 +1117,31 @@ public:
     String getDocumentObjectName() const;
 
     /**
+     * @brief Get the durable UUID bound to this identifier's object component.
+     *
+     * The referenced object is bound by durable UUID (Amendment 3, Clause 3.8);
+     * this returns that UUID as a string, or empty when none is bound. Used to
+     * persist the binding alongside the human-name surface.
+     *
+     * @return The bound object UUID, or empty.
+     * @see setBoundObjectUuid
+     */
+    std::string getBoundObjectUuid() const;
+
+    /**
+     * @brief Bind this identifier's object component to a durable UUID.
+     *
+     * Stamps @p uuid onto the object component — whichever of the forced
+     * document-object name or the leading path component names the object — so
+     * resolution binds through the UUID. The name stays as display/diagnostic
+     * only, never a resolution key (Amendment 3, Clause 3.2).
+     *
+     * @param[in] uuid The referenced object's UUID string.
+     * @see getBoundObjectUuid
+     */
+    void setBoundObjectUuid(const std::string& uuid);
+
+    /**
      * @brief Get the subobject name.
      *
      * @param[in] newStyle If true, use the new style of subobject name.
