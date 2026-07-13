@@ -23,10 +23,17 @@
  ***************************************************************************/
 
 
+#include <algorithm>
+
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <GeomLib_IsPlanarSurface.hxx>
+#include <QCheckBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLabel>
 #include <QMessageBox>
+#include <QVBoxLayout>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
@@ -2713,6 +2720,47 @@ bool CmdPartDesignMultiTransform::isActive()
 //===========================================================================
 
 /* Boolean commands =======================================================*/
+
+// Cruth Amendment 5 §8.3 / Clause 5.3 — the "Apply to: A / B / Both" prompt. Given the bodies a
+// single tool reaches (always including the active body, the user's explicit target), let the user
+// choose which to cut. One checkbox per body, all checked by default; returns the chosen bodies in
+// the same order, or an empty vector if the user cancels. The reach set is computed once, at
+// creation time — the choice is then resolved to sibling features and never re-queried (Clause 5.3).
+static std::vector<PartDesign::Body*> chooseBodiesToAffect(const std::vector<PartDesign::Body*>& reached)
+{
+    QDialog dlg(Gui::getMainWindow());
+    dlg.setWindowTitle(QObject::tr("Apply to multiple bodies"));
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->addWidget(
+        new QLabel(QObject::tr("This cut reaches %1 bodies. Apply it to:").arg(reached.size()), &dlg)
+    );
+
+    std::vector<QCheckBox*> boxes;
+    boxes.reserve(reached.size());
+    for (auto* body : reached) {
+        auto* box = new QCheckBox(QString::fromUtf8(body->Label.getValue()), &dlg);
+        box->setChecked(true);
+        layout->addWidget(box);
+        boxes.push_back(box);
+    }
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    std::vector<PartDesign::Body*> chosen;
+    if (dlg.exec() != QDialog::Accepted) {
+        return chosen;  // cancelled
+    }
+    for (std::size_t i = 0; i < reached.size(); ++i) {
+        if (boxes[i]->isChecked()) {
+            chosen.push_back(reached[i]);
+        }
+    }
+    return chosen;
+}
+
 DEF_STD_CMD_A(CmdPartDesignBoolean)
 
 CmdPartDesignBoolean::CmdPartDesignBoolean()
@@ -2739,6 +2787,56 @@ void CmdPartDesignBoolean::activated(int iMsg)
     }
 
     Gui::SelectionFilter BodyFilter("SELECT Part::Feature COUNT 1..");
+
+    // Cruth Amendment 5 §8.3 — multi-body scope. If the selection resolves to exactly one tool
+    // body, ask which bodies its cut reaches (tool ∩ Body ≠ ∅); when it reaches more than just the
+    // active one, prompt "Apply to: A / B / Both" and fan the cut out to one sibling per chosen
+    // body (each advancing its own chain, sharing the one tool). Anything else falls through to the
+    // classic single-Boolean-on-active path below.
+    if (BodyFilter.match() && !BodyFilter.Result.empty()) {
+        std::vector<PartDesign::Body*> toolBodies;
+        for (auto& results : BodyFilter.Result) {
+            for (auto& result : results) {
+                App::DocumentObject* obj = result.getObject();
+                // The selection may be a Body itself (tree pick), or a feature whose Body is
+                // *derived* by walking its BaseShape chain (findBodyOf) — never a stored edge.
+                auto* b = freecad_cast<PartDesign::Body*>(obj);
+                if (!b) {
+                    b = PartDesignGui::getBodyFor(obj, /*messageIfNot=*/false);
+                }
+                if (b && b != pcActiveBody
+                    && std::find(toolBodies.begin(), toolBodies.end(), b) == toolBodies.end()) {
+                    toolBodies.push_back(b);
+                }
+            }
+        }
+        if (toolBodies.size() == 1) {
+            PartDesign::Body* tool = toolBodies.front();
+            const Part::TopoShape toolShape = tool->Shape.getShape();
+            // Candidate targets: the active body (explicit intent) plus every other body the tool
+            // reaches. Order: active first, then document order.
+            std::vector<PartDesign::Body*> reached {pcActiveBody};
+            for (auto* obj : getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
+                auto* cand = static_cast<PartDesign::Body*>(obj);
+                if (cand != pcActiveBody && cand != tool
+                    && PartDesign::Body::toolReaches(toolShape, cand->Shape.getShape())) {
+                    reached.push_back(cand);
+                }
+            }
+            if (reached.size() > 1) {
+                std::vector<PartDesign::Body*> chosen = chooseBodiesToAffect(reached);
+                if (chosen.empty()) {
+                    return;  // user cancelled the gesture
+                }
+                openCommand(QT_TRANSLATE_NOOP("Command", "Cut through bodies"));
+                PartDesign::Body::spawnScopeSiblings(tool, chosen, "Cut");
+                commitCommand();
+                updateActive();
+                doCommand(Gui, "Gui.Selection.clearSelection()");
+                return;
+            }
+        }
+    }
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Boolean"));
     std::string FeatName = getUniqueObjectName("Boolean", pcActiveBody);
