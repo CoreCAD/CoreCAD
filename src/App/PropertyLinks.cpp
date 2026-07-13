@@ -51,6 +51,28 @@ using namespace Base;
 using namespace std;
 namespace sp = std::placeholders;
 
+// Resolve a link target the durable way (Amendment 3, Clause 3.2/3.6): by UUID
+// first, falling back to the cached name only when no UUID was stored (forward
+// interop, not legacy migration). The name remains display/diagnostic.
+static App::DocumentObject*
+resolveLinkTarget(App::Document* document, const std::string& uuid, const std::string& name)
+{
+    if (!document) {
+        return nullptr;
+    }
+    if (!uuid.empty()) {
+        Base::Uuid targetUuid;
+        targetUuid.setValue(uuid);
+        if (auto* object = document->getObjectByUuid(targetUuid)) {
+            return object;
+        }
+    }
+    if (!name.empty()) {
+        return document->getObject(name.c_str());
+    }
+    return nullptr;
+}
+
 //**************************************************************************
 //**************************************************************************
 // PropertyLinkBase
@@ -1082,8 +1104,8 @@ void PropertyLinkList::Save(Base::Writer& writer) const
     for (int i = 0; i < getSize(); i++) {
         DocumentObject* obj = _lValueList[i];
         if (obj) {
-            writer.Stream() << writer.ind() << "<Link value=\"" << obj->getExportName() << "\"/>"
-                            << endl;
+            writer.Stream() << writer.ind() << "<Link value=\"" << obj->getExportName()
+                            << "\" uuid=\"" << obj->Uid.getValueStr() << "\"/>" << endl;
         }
         else {
             writer.Stream() << writer.ind() << "<Link value=\"\"/>" << endl;
@@ -1115,13 +1137,14 @@ void PropertyLinkList::Restore(Base::XMLReader& reader)
     for (int i = 0; i < count; i++) {
         reader.readElement("Link");
         std::string name = reader.getName(reader.getAttribute<const char*>("value"));
+        std::string uuid = reader.getAttribute<const char*>("uuid", "");
         // In order to do copy/paste it must be allowed to have defined some
         // referenced objects in XML which do not exist anymore in the new
         // document. Thus, we should silently ignore this.
         // Property not in an object!
         DocumentObject* father = static_cast<DocumentObject*>(getContainer());
         App::Document* document = father->getDocument();
-        DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
+        DocumentObject* child = resolveLinkTarget(document, uuid, name);
         if (child) {
             values.push_back(child);
         }
@@ -1876,13 +1899,17 @@ void PropertyLinkSub::Save(Base::Writer& writer) const
     assert(_cSubList.size() == _ShadowSubList.size());
 
     std::string internal_name;
+    std::string uuid;
     // it can happen that the object is still alive but is not part of the document anymore and thus
     // returns 0
     if (_pcLinkSub && _pcLinkSub->isAttachedToDocument()) {
         internal_name = _pcLinkSub->getExportName();
+        uuid = _pcLinkSub->Uid.getValueStr();
     }
-    writer.Stream() << writer.ind() << "<LinkSub value=\"" << internal_name << "\" count=\""
-                    << _cSubList.size();
+    // The durable binding is the object's UUID (Clause 3.2); the subname text
+    // stays a name (element identity, scope fence 0.1).
+    writer.Stream() << writer.ind() << "<LinkSub value=\"" << internal_name << "\" uuid=\"" << uuid
+                    << "\" count=\"" << _cSubList.size();
     writer.Stream() << "\">" << std::endl;
     writer.incInd();
     auto owner = freecad_cast<DocumentObject*>(getContainer());
@@ -1928,6 +1955,7 @@ void PropertyLinkSub::Restore(Base::XMLReader& reader)
     reader.readElement("LinkSub");
     // get the values of my attributes
     std::string name = reader.getName(reader.getAttribute<const char*>("value"));
+    std::string uuid = reader.getAttribute<const char*>("uuid", "");
     int count = reader.getAttribute<long>("count");
 
     // Property not in a DocumentObject!
@@ -1935,8 +1963,8 @@ void PropertyLinkSub::Restore(Base::XMLReader& reader)
     App::Document* document = static_cast<DocumentObject*>(getContainer())->getDocument();
 
     DocumentObject* pcObject = nullptr;
-    if (!name.empty()) {
-        pcObject = document ? document->getObject(name.c_str()) : nullptr;
+    if (!name.empty() || !uuid.empty()) {
+        pcObject = resolveLinkTarget(document, uuid, name);
         if (!pcObject) {
             if (reader.isVerbose()) {
                 FC_WARN("Lost link to "
@@ -2844,7 +2872,8 @@ void PropertyLinkSubList::Save(Base::Writer& writer) const
         // 'value' whenever possible.
         const auto& sub = shadow.oldName.empty() ? _lSubList[i] : shadow.oldName;
 
-        writer.Stream() << writer.ind() << "<Link obj=\"" << obj->getExportName() << "\" sub=\"";
+        writer.Stream() << writer.ind() << "<Link obj=\"" << obj->getExportName() << "\" uuid=\""
+                        << obj->Uid.getValueStr() << "\" sub=\"";
         if (exporting) {
             std::string exportName;
             writer.Stream() << encodeAttribute(exportSubName(exportName, obj, sub.c_str()));
@@ -2894,11 +2923,12 @@ void PropertyLinkSubList::Restore(Base::XMLReader& reader)
     for (int i = 0; i < count; i++) {
         reader.readElement("Link");
         std::string name = reader.getName(reader.getAttribute<const char*>("obj"));
+        std::string uuid = reader.getAttribute<const char*>("uuid", "");
         // In order to do copy/paste it must be allowed to have defined some
         // referenced objects in XML which do not exist anymore in the new
         // document. Thus, we should silently ignore this.
         // Property not in an object!
-        DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
+        DocumentObject* child = resolveLinkTarget(document, uuid, name);
         if (child) {
             values.push_back(child);
             shadows.emplace_back();
