@@ -58,6 +58,7 @@ namespace Base
 {
 class ConsoleObserverStd;
 class ConsoleObserverFile;
+class Uuid;
 }
 
 namespace App
@@ -298,6 +299,18 @@ public:
      */
     App::Document* getDocumentByPath(const char *path,
                                      PathMatchMode checkCanonical = PathMatchMode::MatchAbsolute) const;
+
+    /**
+     * @brief Retrieve an open document by its durable UUID.
+     *
+     * The document UUID is the namespace half of a cross-document reference's
+     * (document UUID, object UUID) address (Amendment 3, Clause 3.7; ARCHITECTURE
+     * §7.2). Unlike the file path, it survives rename and relocation.
+     *
+     * @param[in] uuid: the document's durable @ref Document::Uid.
+     * @return The open document carrying that UUID, or `nullptr` if none does.
+     */
+    App::Document* getDocumentByUuid(const Base::Uuid& uuid) const;
 
     /// Gets the (internal) name of a given document.
     const char* getDocumentName(const App::Document*) const;

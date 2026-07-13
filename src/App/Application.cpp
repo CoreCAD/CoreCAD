@@ -95,6 +95,7 @@
 #include <Base/ProgressIndicatorPy.h>
 #include <Base/RotationPy.h>
 #include <Base/UniqueNameManager.h>
+#include <Base/Uuid.h>
 #include <Base/TimeInfo.h>
 #include <Base/SystemHandler.h>
 #include <Base/Tools.h>
@@ -764,6 +765,23 @@ std::vector<Document*> Application::getDocuments() const
     for (const auto & it : DocMap)
         docs.push_back(it.second);
     return docs;
+}
+
+Document* Application::getDocumentByUuid(const Base::Uuid& uuid) const
+{
+    const std::string& key = uuid.getValue();
+    if (key.empty()) {
+        return nullptr;
+    }
+    // Documents in one session are few; a linear scan over the durable UUID is
+    // cheap enough. (If this ever becomes hot, mirror Document::getObjectByUuid
+    // and maintain a UUID -> document map invalidated on open/close.)
+    for (const auto& it : DocMap) {
+        if (it.second->Uid.getValueStr() == key) {
+            return it.second;
+        }
+    }
+    return nullptr;
 }
 
 std::string Application::getUniqueDocumentName(const char* Name, bool tempDoc) const
