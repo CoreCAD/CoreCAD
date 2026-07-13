@@ -8,6 +8,8 @@ add_executable(PartDesign_tests_run
         MoveFeatureToBody.cpp
         AddFeature.cpp
         ReconcileMultiOutput.cpp
+        SpawnScopeSiblings.cpp
+        ToolReaches.cpp
         WorldFrame.cpp
 )
 

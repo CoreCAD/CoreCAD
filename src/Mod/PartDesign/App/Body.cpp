@@ -29,8 +29,12 @@
 
 #include <map>
 
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
+#include <Precision.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
+#include <TopoDS_Shape.hxx>
 
 #include <App/Application.h>
 #include <App/Datums.h>
@@ -58,6 +62,7 @@
 #include "BodyPy.h"
 #include "FeatureBakedShape.h"
 #include "FeatureBase.h"
+#include "FeatureBoolean.h"
 #include "FeatureSketchBased.h"
 #include "FeatureSolid.h"
 #include "FeatureTransformed.h"
@@ -568,6 +573,63 @@ std::string Body::componentKeyOfSolid(
         }
     }
     return componentIdOfSolid(shape, index);
+}
+
+bool Body::toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyShape)
+{
+    if (tool.isNull() || bodyShape.isNull()) {
+        return false;
+    }
+    // The reach test is set intersection of the two solids: they are "reached" only if they share
+    // positive volume, so cutting the tool would actually change the Body. A boolean common yields
+    // an empty compound (mass 0) for disjoint solids and a zero-volume face/edge for mere surface
+    // contact — both correctly read as "not reached". A boolean failure is treated as "not reached"
+    // rather than propagated: the reach test is a pre-flight for the gesture, not the cut itself.
+    TopoDS_Shape inter;
+    try {
+        inter = tool.common(bodyShape.getShape());
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+    if (inter.IsNull()) {
+        return false;
+    }
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(inter, props);
+    return props.Mass() > Precision::Confusion();
+}
+
+std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
+    App::DocumentObject* tool,
+    const std::vector<Body*>& targets,
+    const char* booleanType
+)
+{
+    std::vector<App::DocumentObject*> siblings;
+    if (!tool || targets.empty()) {
+        return siblings;
+    }
+    App::Document* doc = tool->getDocument();
+    if (!doc) {
+        return siblings;
+    }
+    siblings.reserve(targets.size());
+    for (Body* body : targets) {
+        if (!body) {
+            continue;
+        }
+        // Each sibling is an ordinary single-BaseShape Boolean of the gesture's kind (Clause 5.1):
+        // its BaseFeature is set to this Body's current Tip by addFeature, and its Tools references
+        // the one shared tool. addFeature owns the chain wiring (BaseFeature + Tip advance) — we
+        // never write a feature -> Body edge; membership stays derived from the chain.
+        auto* cut = static_cast<PartDesign::Boolean*>(doc->addObject("PartDesign::Boolean"));
+        cut->Type.setValue(booleanType);
+        cut->Tools.setValue(tool);
+        body->addFeature(cut);
+        siblings.push_back(cut);
+    }
+    return siblings;
 }
 
 void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)

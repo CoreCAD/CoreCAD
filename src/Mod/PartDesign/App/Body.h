@@ -178,6 +178,29 @@ public:
         int index
     );
 
+    /// Cruth Amendment 5 §5.1 reach test: does @p tool's solid share positive volume with
+    /// @p bodyShape? A Body is *reached* by a multi-body subtractive/intersective tool when the two
+    /// solids intersect (`tool ∩ Body ≠ ∅`) — i.e. cutting the tool would actually change the Body.
+    /// Bare surface contact (a shared face, zero shared volume) does not count as a reach: it changes
+    /// nothing. Robust to disjoint inputs (returns false, never throws). This is a pure geometry
+    /// predicate on two shapes; the caller gathers each Body's Tip shape and asks per Body.
+    static bool toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyShape);
+
+    /// Cruth Amendment 5 §5.1 multi-body scope fan-out: given one shared @p tool and the set of
+    /// @p targets the user chose to affect, spawn one ordinary single-`BaseShape` Boolean feature
+    /// of kind @p booleanType (`"Cut"` or `"Common"`) per target Body, each advancing that Body's
+    /// own chain (spliced at its Tip via addFeature) and referencing the one @p tool by reference —
+    /// the tool is shared, never owned or consumed. No feature ever extends two chains; the only
+    /// edge written is `Body → Tip`, never `feature → Body` (ownership stays derived). Returns the
+    /// spawned siblings in @p targets order. The reach decision (which Bodies are in @p targets) is
+    /// the caller's — this fan-out does not re-run toolReaches. The inert shared gesture-id that
+    /// ties the siblings together for a later Scope edit is applied separately (Clause 5.3).
+    static std::vector<App::DocumentObject*> spawnScopeSiblings(
+        App::DocumentObject* tool,
+        const std::vector<Body*>& targets,
+        const char* booleanType
+    );
+
     /**
      * Checks if the given document object lays after the current insert point
      * (place before next solid after the Tip)
