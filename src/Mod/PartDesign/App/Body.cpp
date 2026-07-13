@@ -614,6 +614,18 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
     const char* booleanType
 )
 {
+    // One gesture, one freshly minted shared inert tag (Clause 5.3). The tagged overload does the
+    // work; a Scope edit calls it directly to extend an existing gesture.
+    return spawnScopeSiblings(tool, targets, booleanType, Base::Uuid::createUuid());
+}
+
+std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
+    App::DocumentObject* tool,
+    const std::vector<Body*>& targets,
+    const char* booleanType,
+    const std::string& gestureId
+)
+{
     std::vector<App::DocumentObject*> siblings;
     if (!tool || targets.empty()) {
         return siblings;
@@ -622,10 +634,6 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
     if (!doc) {
         return siblings;
     }
-    // One gesture, one shared inert tag (Clause 5.3). Every sibling of this fan-out carries the
-    // same GestureId so a later Scope edit can rediscover the whole gesture; nothing derives
-    // recompute or membership from it.
-    const std::string gestureId = Base::Uuid::createUuid();
     siblings.reserve(targets.size());
     for (Body* body : targets) {
         if (!body) {
@@ -705,6 +713,18 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblingsFromProfile(
     double length
 )
 {
+    // One gesture, one freshly minted shared inert tag (Clause 5.3); tagged overload does the work.
+    return spawnScopeSiblingsFromProfile(profile, targets, pocketType, length, Base::Uuid::createUuid());
+}
+
+std::vector<App::DocumentObject*> Body::spawnScopeSiblingsFromProfile(
+    App::DocumentObject* profile,
+    const std::vector<Body*>& targets,
+    const char* pocketType,
+    double length,
+    const std::string& gestureId
+)
+{
     std::vector<App::DocumentObject*> siblings;
     if (!profile || targets.empty()) {
         return siblings;
@@ -713,8 +733,6 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblingsFromProfile(
     if (!doc) {
         return siblings;
     }
-    // One gesture, one shared inert tag (Clause 5.3), exactly as the boolean fan-out.
-    const std::string gestureId = Base::Uuid::createUuid();
     siblings.reserve(targets.size());
     for (Body* body : targets) {
         if (!body) {
@@ -732,6 +750,24 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblingsFromProfile(
         siblings.push_back(pocket);
     }
     return siblings;
+}
+
+std::vector<App::DocumentObject*> Body::gestureSiblings(App::Document* doc, const std::string& gestureId)
+{
+    std::vector<App::DocumentObject*> out;
+    if (!doc || gestureId.empty()) {
+        return out;
+    }
+    // The shared inert tag is the only link between a gesture's siblings — there is no membership
+    // list to consult. Rediscover them by scanning for the tag; each sibling's ownership still
+    // derives from its own Body chain, untouched here.
+    for (auto* obj : doc->getObjects()) {
+        auto* feat = freecad_cast<PartDesign::Feature*>(obj);
+        if (feat && gestureId == feat->GestureId.getValue()) {
+            out.push_back(feat);
+        }
+    }
+    return out;
 }
 
 void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)

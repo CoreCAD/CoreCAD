@@ -201,6 +201,16 @@ public:
         const char* booleanType
     );
 
+    /// Tagged overload (Clause 5.3 scope edit): fan out siblings carrying the given @p gestureId
+    /// instead of minting a fresh one, so a Scope edit can *extend an existing gesture* onto newly
+    /// included Bodies. The 3-arg form is exactly this with a freshly minted id.
+    static std::vector<App::DocumentObject*> spawnScopeSiblings(
+        App::DocumentObject* tool,
+        const std::vector<Body*>& targets,
+        const char* booleanType,
+        const std::string& gestureId
+    );
+
     /// Cruth Amendment 5 §5.1 sketch-tooled reach test: does @p profile — a sketch swept
     /// perpendicular to its own plane — pass through @p bodyShape? The profile-tool counterpart of
     /// toolReaches. The reach question for a sketch tool is "does the profile's column hit the
@@ -221,6 +231,26 @@ public:
         const std::vector<Body*>& targets,
         const char* pocketType,
         double length
+    );
+
+    /// Tagged overload (Clause 5.3 scope edit): as above but carrying the given @p gestureId rather
+    /// than a freshly minted one, so a Scope edit can extend an existing sketch-tooled gesture.
+    static std::vector<App::DocumentObject*> spawnScopeSiblingsFromProfile(
+        App::DocumentObject* profile,
+        const std::vector<Body*>& targets,
+        const char* pocketType,
+        double length,
+        const std::string& gestureId
+    );
+
+    /// Cruth Amendment 5 §5.3 scope re-collection: every PartDesign feature in @p doc carrying the
+    /// given non-empty @p gestureId, in document order — the siblings born of one multi-body gesture.
+    /// This is how a Scope edit rediscovers a gesture's members without any stored membership list:
+    /// the shared inert tag is the only link, and ownership of each sibling still derives from its
+    /// own Body chain. An empty @p gestureId returns nothing (a plain feature is not a gesture).
+    static std::vector<App::DocumentObject*> gestureSiblings(
+        App::Document* doc,
+        const std::string& gestureId
     );
 
     /**

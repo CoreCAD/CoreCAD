@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 #include "src/App/InitApplication.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -448,6 +449,104 @@ TEST_F(SpawnScopeSiblingsTest, FullConsumePocketFailsLoud)
     ASSERT_EQ(siblings.size(), 1U);
     EXPECT_TRUE(siblings[0]->isError())
         << "a Pocket that consumes the whole Body must fail loud, not emit an empty body";
+}
+
+// Step F — the shared tag re-collects a gesture's siblings, with no membership list anywhere.
+TEST_F(SpawnScopeSiblingsTest, GestureSiblingsRecollectsByTag)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    _doc->recompute();
+    ASSERT_EQ(siblings.size(), 2U);
+    const std::string id = static_cast<PartDesign::Boolean*>(siblings[0])->GestureId.getValue();
+
+    auto found = PartDesign::Body::gestureSiblings(_doc, id);
+    EXPECT_EQ(found.size(), 2U);
+    for (auto* s : siblings) {
+        EXPECT_NE(std::find(found.begin(), found.end(), s), found.end());
+    }
+    EXPECT_TRUE(PartDesign::Body::gestureSiblings(_doc, "").empty())
+        << "empty tag is not a gesture";
+    EXPECT_TRUE(PartDesign::Body::gestureSiblings(_doc, "no-such-id").empty());
+}
+
+// Step F — extending a gesture's scope onto a newly included Body spawns exactly one more sibling,
+// carrying the same tag, on that Body's own chain.
+TEST_F(SpawnScopeSiblingsTest, AddingABodyToScopeSpawnsOneSibling)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* bodyC = padBody(60, 0, 80, 20);
+    PartDesign::Body* tool = padBody(10, 5, 70, 15);  // reaches all three
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    _doc->recompute();
+    const std::string id = static_cast<PartDesign::Boolean*>(siblings[0])->GestureId.getValue();
+
+    // The Scope edit: include bodyC, reusing the gesture's own id (tagged overload).
+    auto added = PartDesign::Body::spawnScopeSiblings(tool, {bodyC}, "Cut", id);
+    _doc->recompute();
+
+    ASSERT_EQ(added.size(), 1U);
+    EXPECT_EQ(PartDesign::Body::gestureSiblings(_doc, id).size(), 3U);
+    EXPECT_EQ(bodyC->Tip.getValue(), added[0]);
+    EXPECT_EQ(std::string(static_cast<PartDesign::Boolean*>(added[0])->GestureId.getValue()), id);
+}
+
+// Step F — dropping a Body from scope prunes its sibling and retreats that Body's chain; the rest
+// of the gesture is untouched.
+TEST_F(SpawnScopeSiblingsTest, RemovingABodyFromScopePrunesItsSibling)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    App::DocumentObject* padA = bodyA->Tip.getValue();  // bodyA's chain before the cut
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    _doc->recompute();
+    const std::string id = static_cast<PartDesign::Boolean*>(siblings[0])->GestureId.getValue();
+    App::DocumentObject* sibA = siblings[0];  // on bodyA
+
+    // The Scope edit: exclude bodyA. Rewire its chain, then delete the sibling.
+    bodyA->removeFeature(sibA);
+    _doc->removeObject(sibA->getNameInDocument());
+    _doc->recompute();
+
+    EXPECT_EQ(PartDesign::Body::gestureSiblings(_doc, id).size(), 1U)
+        << "only bodyB's sibling remains";
+    EXPECT_EQ(bodyA->Tip.getValue(), padA) << "bodyA's chain retreated to its pad";
+    EXPECT_EQ(bodyB->Tip.getValue(), siblings[1]) << "bodyB's sibling is untouched";
+}
+
+// Step F — the Clause 5.3 invariant: the reach set is fixed at resolve time. Editing the TOOL
+// geometry alone recomputes the cuts but neither spawns nor prunes a sibling.
+TEST_F(SpawnScopeSiblingsTest, ToolGeometryEditDoesNotChangeScope)
+{
+    PartDesign::Body* bodyA = padBody(0, 0, 20, 20);
+    PartDesign::Body* bodyB = padBody(30, 0, 50, 20);
+    PartDesign::Body* tool = padBody(10, 5, 40, 15);
+    _doc->recompute();
+
+    auto siblings = PartDesign::Body::spawnScopeSiblings(tool, {bodyA, bodyB}, "Cut");
+    _doc->recompute();
+    const std::string id = static_cast<PartDesign::Boolean*>(siblings[0])->GestureId.getValue();
+    auto before = PartDesign::Body::gestureSiblings(_doc, id);
+
+    // Edit the tool's own geometry (taller pad) and recompute.
+    auto* toolPad = dynamic_cast<PartDesign::Pad*>(tool->Tip.getValue());
+    ASSERT_NE(toolPad, nullptr);
+    toolPad->Length.setValue(20.0);
+    _doc->recompute();
+
+    auto after = PartDesign::Body::gestureSiblings(_doc, id);
+    EXPECT_EQ(after.size(), before.size()) << "editing the tool must not change the sibling count";
+    EXPECT_EQ(after, before) << "the same siblings, in the same order — scope is explicit-only";
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
