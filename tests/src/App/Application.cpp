@@ -196,3 +196,67 @@ TEST_F(ApplicationTest, xLinkResolvesByUuidWhenNameIsWrong)
     Base::FileInfo(hostPath).deleteFile();
     Base::FileInfo(targetPath).deleteFile();
 };
+
+// A file that has been replaced at the stored path by a DIFFERENT document must
+// not bind the reference: the stored document UUID is the real identity, so a
+// path resolving to the wrong UUID is treated as unresolved (Amendment 3, Clause
+// 3.7 step 3). The old name/path-based code would have bound the same-named
+// object in the impostor document.
+TEST_F(ApplicationTest, xLinkRejectsWrongUuidAtPath)
+{
+    auto& app = App::GetApplication();
+    const std::string targetPath = Base::FileInfo::getTempFileName() + ".FCStd";
+    const std::string hostPath = Base::FileInfo::getTempFileName() + ".FCStd";
+
+    // Target document with an object to link to, saved to disk.
+    App::Document* tdoc = app.newDocument(app.getUniqueDocumentName("xlinkTarget").c_str(), "testUser");
+    App::DocumentObject* box = tdoc->addObject("App::VarSet", "TheBox");
+    const std::string objUuid = box->Uid.getValueStr();
+    ASSERT_TRUE(tdoc->saveAs(targetPath.c_str()));
+    const std::string docUuid = tdoc->Uid.getValueStr();
+
+    // Host document with a cross-document XLink into the target, saved.
+    App::Document* hdoc = app.newDocument(app.getUniqueDocumentName("xlinkHost").c_str(), "testUser");
+    App::DocumentObject* ref = hdoc->addObject("App::VarSet", "Referrer");
+    auto* link = dynamic_cast<App::PropertyXLink*>(
+        ref->addDynamicProperty("App::PropertyXLink", "Link")
+    );
+    ASSERT_NE(link, nullptr);
+    ASSERT_TRUE(hdoc->saveAs(hostPath.c_str()));
+    link->setValue(box);
+    ASSERT_EQ(link->getValue(), box);
+    hdoc->save();
+
+    const std::string hostName = hdoc->getName();
+    const std::string targetName = tdoc->getName();
+    app.closeDocument(hostName.c_str());
+    app.closeDocument(targetName.c_str());
+
+    // Overwrite the target path with a DIFFERENT document (fresh UUID) that
+    // happens to carry a same-named object — the classic file-manager copy or
+    // an unrelated file dropped in place.
+    App::Document* impostor
+        = app.newDocument(app.getUniqueDocumentName("xlinkImpostor").c_str(), "testUser");
+    impostor->addObject("App::VarSet", "TheBox");
+    ASSERT_NE(impostor->Uid.getValueStr(), docUuid);
+    ASSERT_TRUE(impostor->saveAs(targetPath.c_str()));
+    app.closeDocument(impostor->getName());
+
+    // Reopen the host: the path now yields the wrong document UUID, so the link
+    // must NOT bind to the impostor's same-named object — it stays unresolved.
+    App::Document* hdoc2 = app.openDocument(hostPath.c_str());
+    ASSERT_NE(hdoc2, nullptr);
+    App::DocumentObject* ref2 = hdoc2->getObject("Referrer");
+    ASSERT_NE(ref2, nullptr);
+    auto* link2 = dynamic_cast<App::PropertyXLink*>(ref2->getPropertyByName("Link"));
+    ASSERT_NE(link2, nullptr);
+    EXPECT_EQ(link2->getValue(), nullptr);
+
+    app.closeDocument(hdoc2->getName());
+    // The impostor may have been opened as a pending dependency; close if so.
+    for (auto* d : app.getDocuments()) {
+        app.closeDocument(d->getName());
+    }
+    Base::FileInfo(hostPath).deleteFile();
+    Base::FileInfo(targetPath).deleteFile();
+};

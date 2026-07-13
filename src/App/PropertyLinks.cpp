@@ -3546,6 +3546,18 @@ public:
     void attach(Document* doc)
     {
         assert(!pcDoc);
+        // Durable validation (Clause 3.7 step 3): when a link at this path
+        // expects a specific target-document UUID, refuse to bind a file that
+        // carries a different one. Leaving pcDoc unset keeps the info
+        // unresolved so path recovery can locate the right file by UUID.
+        for (auto* link : links) {
+            if (!link->docUuid.empty() && doc->Uid.getValueStr() != link->docUuid) {
+                FC_WARN("document at '" << doc->getFileName() << "' has UUID "
+                                        << doc->Uid.getValueStr() << ", expected " << link->docUuid
+                                        << " -- refusing to bind");
+                return;
+            }
+        }
         pcDoc = doc;
         FC_LOG("attaching " << doc->getName() << ", " << doc->getFileName());
         std::map<App::PropertyLinkBase*, std::vector<App::PropertyXLink*>> parentLinks;
@@ -4015,6 +4027,10 @@ void PropertyXLink::setValue(std::string&& filename,
         throw Base::RuntimeError("invalid container");
     }
 
+    // Remember the durable target-document UUID (Clause 3.7): it is the real
+    // binding, validated against the file the path locator resolves to.
+    this->docUuid = docUuid;
+
     DocumentObject* pObject = nullptr;
     DocInfoPtr info;
     if (!filename.empty()) {
@@ -4023,10 +4039,13 @@ void PropertyXLink::setValue(std::string&& filename,
         // Durable resolution (Clause 3.7): bind the object through its UUID
         // within the target document, name as fallback. Prefer the document
         // opened via the stored path; when that path yields nothing, fall back
-        // to a document already open under the target UUID. (Promoting the UUID
-        // over a conflicting open document and filesystem path recovery are the
-        // next build step.)
+        // to a document already open under the target UUID.
         App::Document* targetDoc = info->pcDoc;
+        // A path that resolves to the WRONG document UUID must not bind
+        // (Clause 3.7 step 3): treat it as unresolved and defer to the UUID.
+        if (targetDoc && !docUuid.empty() && targetDoc->Uid.getValueStr() != docUuid) {
+            targetDoc = nullptr;
+        }
         if (!targetDoc && !docUuid.empty()) {
             Base::Uuid targetDocUuid;
             targetDocUuid.setValue(docUuid);
