@@ -34,6 +34,7 @@
 #include <Base/QuantityPy.h>
 #include <Base/Console.h>
 #include <Base/Reader.h>
+#include <Base/Uuid.h>
 #include <Base/ServiceProvider.h>
 #include <CXX/Objects.hxx>
 
@@ -794,6 +795,18 @@ App::DocumentObject* ObjectIdentifier::getDocumentObject(const App::Document* do
 {
     DocumentObject* objectById = nullptr;
     DocumentObject* objectByLabel = nullptr;
+
+    // Durable binding first (Amendment 3, Clause 3.8): if the object component
+    // carries a UUID, resolve through it. The name below is only the
+    // authoring/display surface and a fallback when no UUID is bound.
+    if (!name.getUuid().empty()) {
+        Base::Uuid targetUuid;
+        targetUuid.setValue(name.getUuid());
+        if (DocumentObject* objectByUuid = doc->getObjectByUuid(targetUuid)) {
+            flags.set(ResolveByIdentifier);
+            return objectByUuid;
+        }
+    }
 
     if (!name.isRealString()) {
         // No object found with matching label, try using name directly

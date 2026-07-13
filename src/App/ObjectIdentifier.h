@@ -202,6 +202,7 @@ public:
             str = std::move(other.str);
             isString = other.isString;
             forceIdentifier = other.forceIdentifier;
+            uuid = std::move(other.uuid);
             return *this;
         }
 
@@ -241,6 +242,31 @@ public:
         bool isForceIdentifier() const
         {
             return forceIdentifier;
+        }
+
+        /**
+         * @brief Get the durable UUID this string is bound to, if any.
+         *
+         * For the object component of an identifier, the UUID is the durable
+         * binding to the referenced object (Amendment 3, Clause 3.8); the string
+         * text is the human-readable/authoring surface. Empty when no UUID is
+         * bound (name-only, legacy-free forward interop).
+         *
+         * @return The bound object UUID as a string, or empty.
+         */
+        const std::string& getUuid() const
+        {
+            return uuid;
+        }
+
+        /**
+         * @brief Bind this string to a durable object UUID.
+         *
+         * @param[in] _uuid The referenced object's UUID string.
+         */
+        void setUuid(const std::string& _uuid)
+        {
+            uuid = _uuid;
         }
 
         /**
@@ -372,6 +398,10 @@ public:
         std::string str;
         bool isString;
         bool forceIdentifier;
+        // Optional durable binding to the referenced object (Amendment 3,
+        // Clause 3.8). Only the object component of an identifier populates it;
+        // for all other Strings (property names, keys, subnames) it stays empty.
+        std::string uuid;
     };
 
     /**

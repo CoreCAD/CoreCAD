@@ -10,6 +10,7 @@
 #include "App/DocumentObject.h"
 #include "App/Expression.h"
 #include "App/ExpressionParser.h"
+#include "App/ObjectIdentifier.h"
 
 #include "src/App/InitApplication.h"
 
@@ -325,6 +326,41 @@ TEST_F(ExpressionParserTest, canParseProperties)
     this_obj()->addDynamicProperty("App::PropertyQuantity", "Bar");
     EXPECT_THAT(parseExpr("Sketch.Bar"), IsQuantity(Base::Quantity()))
         << "PropertyQuantity on object";
+}
+
+// Amendment 3, Clause 3.8 (Step E): the object component of an ObjectIdentifier
+// binds by durable UUID when one is present; the name is only the authoring /
+// display surface and a fallback. Proven by binding a deliberately WRONG name
+// with the right UUID and confirming it still resolves the correct object.
+TEST_F(ExpressionParserTest, objectIdentifierBindsObjectByUuid)
+{
+    // Arrange: a target object in the same document, and a property to path to.
+    auto* target = this_doc()->addObject("App::DocumentObjectGroup", "Target");
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Foo");
+
+    // An identifier whose object component names a bogus object but carries the
+    // target's durable UUID.
+    ObjectIdentifier withUuid(this_obj());
+    ObjectIdentifier::String objName("ZZZ_WRONG_NAME", false, true);
+    objName.setUuid(target->Uid.getValueStr());
+    withUuid.setDocumentObjectName(std::move(objName), true);
+    withUuid << ObjectIdentifier::SimpleComponent("Foo");
+
+    // Act / Assert: the UUID resolves the object despite the wrong name.
+    EXPECT_EQ(withUuid.getDocumentObject(), target)
+        << "object component resolves through its durable UUID, not the wrong name";
+
+    // Control: same bogus name, NO uuid -> the name cannot resolve anything.
+    ObjectIdentifier nameOnly(this_obj());
+    nameOnly.setDocumentObjectName(ObjectIdentifier::String("ZZZ_WRONG_NAME", false, true), true);
+    nameOnly << ObjectIdentifier::SimpleComponent("Foo");
+    EXPECT_EQ(nameOnly.getDocumentObject(), nullptr)
+        << "without a UUID the bogus name resolves to nothing";
+
+    // The UUID binding is stable across a rename of the target.
+    target->Label.setValue("RenamedTarget");
+    EXPECT_EQ(withUuid.getDocumentObject(), target)
+        << "UUID binding survives a rename of the target";
 }
 
 }  // namespace App::ExpressionParser::Test
