@@ -294,6 +294,16 @@ public:
      * @{
      */
 
+    /// Canonical DocumentType marker values (§7.1 / §10.4). The marker is a string for
+    /// open extensibility (§7.4) and to match the on-disk format; these constants name
+    /// the four types defined now so no bare literal is duplicated across the code. A
+    /// future type (CAM, Simulation) adds a value here and a policy row in
+    /// admitsContentScope() — not a new enum, not a recompile of every consumer.
+    static constexpr const char* DocTypePart = "Part";
+    static constexpr const char* DocTypeAssembly = "Assembly";
+    static constexpr const char* DocTypeDrawing = "Drawing";
+    static constexpr const char* DocTypeSpreadsheet = "Spreadsheet";
+
     /// Cruth: stamp the document-type marker and set up type-specific content at creation.
     /// A "Part" document mints its shared world frame (App::Origin) so the coordinate
     /// system exists from the moment the document is born, owned by the document itself.

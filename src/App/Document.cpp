@@ -1948,7 +1948,7 @@ void Document::applyDocumentType(const char* type)
     // A Part document owns its coordinate frame and mints it eagerly at creation
     // (Cruth origin-lifecycle amendment). Bodies only ever look this up — they never
     // create it. The shared App::Origin carries the world-frame datum planes/axes.
-    if (DocumentType.getStrValue() == "Part") {
+    if (DocumentType.getStrValue() == DocTypePart) {
         auto* origin = addObject<App::Origin>("Origin");
         if (origin) {
             origin->Label.setValue("Origin");
@@ -1969,21 +1969,21 @@ bool Document::admitsContentScope(DocumentObject::ContentScope scope) const
         return true;
     }
     // Per-type content scope, authored once here from the §7.1/§7.5 scopes.
-    if (type == "Part") {
+    if (type == DocTypePart) {
         // Sketches, features, bodies (§7.1); a local Spreadsheet driver (§7.5). The
         // world frame and datums are Generic and pass above without a listing.
         return scope == CS::Sketch || scope == CS::Feature || scope == CS::Body
             || scope == CS::Spreadsheet;
     }
-    if (type == "Assembly") {
+    if (type == DocTypeAssembly) {
         // Component instances and mates (§7.1); a local Spreadsheet driver (§7.5).
         return scope == CS::AssemblyItem || scope == CS::Spreadsheet;
     }
-    if (type == "Drawing") {
+    if (type == DocTypeDrawing) {
         // Views, dimensions, annotations, sheets (§7.1); a local Spreadsheet (§7.5).
         return scope == CS::DrawingView || scope == CS::Spreadsheet;
     }
-    if (type == "Spreadsheet") {
+    if (type == DocTypeSpreadsheet) {
         // Sole content type (§7.1/§7.5).
         return scope == CS::Spreadsheet;
     }
@@ -1995,7 +1995,7 @@ bool Document::admitsContentScope(DocumentObject::ContentScope scope) const
 
 std::string Document::fileExtensionForType(const char* type)
 {
-    if (!Base::Tools::isNullOrEmpty(type) && boost::iequals(type, "Part")) {
+    if (!Base::Tools::isNullOrEmpty(type) && boost::iequals(type, DocTypePart)) {
         return "cpart";
     }
     return "FCStd";
