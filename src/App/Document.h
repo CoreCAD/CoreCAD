@@ -25,6 +25,7 @@
 #pragma once
 
 #include <CXX/Objects.hxx>
+#include <Base/Exception.h>
 #include <Base/Observer.h>
 #include <Base/Persistence.h>
 #include <Base/Type.h>
@@ -88,6 +89,22 @@ class Application;
 class Transaction;
 class StringHasher;
 using StringHasherRef = Base::Reference<StringHasher>;
+
+/**
+ * @brief Thrown when a typed document refuses an out-of-scope object at its
+ * admission door (ARCHITECTURE §7.1, Amendment 8 Clause 8.1).
+ *
+ * A distinct type so the load door can tell a scope violation apart from an
+ * ordinary object-creation failure (a missing module, a corrupt object) and
+ * fail the whole open loudly, rather than logging and dropping the object the
+ * way it leniently does for recoverable per-object failures. Reaches Python as
+ * a catchable RuntimeError (P7).
+ */
+class DocumentContentScopeError: public Base::RuntimeError
+{
+public:
+    using Base::RuntimeError::RuntimeError;
+};
 
 /**
  * @brief A class that represents a FreeCAD document.

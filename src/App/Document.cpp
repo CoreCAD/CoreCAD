@@ -1729,6 +1729,13 @@ std::vector<DocumentObject*> Document::readObjects(Base::XMLReader& reader)
                 }
             }
         }
+        catch (const DocumentContentScopeError&) {
+            // A content-scope violation is fatal to the load (Amendment 8 Clause 8.1):
+            // the offending object exists on disk, so "fail loud" here means the load
+            // itself fails — surfacing the violation — never the silent drop the generic
+            // catch below performs for recoverable per-object failures. Rethrow past it.
+            throw;
+        }
         catch (const Base::Exception& e) {
             Base::Console().error("Cannot create object '%s': (%s)\n", name.c_str(), e.what());
         }
@@ -2315,6 +2322,13 @@ void Document::restore(const char* filename,
     }
     try {
         Document::Restore(reader);
+    }
+    catch (const DocumentContentScopeError&) {
+        // Fatal: a typed document on disk carries out-of-scope content (Amendment 8
+        // Clause 8.1). The load fails loudly rather than opening a half-document with
+        // the offending object silently dropped. Propagate to the opener, which
+        // discards the partially built document.
+        throw;
     }
     catch (const Base::Exception& e) {
         Base::Console().error("Invalid Document.xml: %s\n", e.what());
@@ -3513,7 +3527,7 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, Add
     // and load (readObjects) all funnel through here.
     const DocumentObject::ContentScope scope = pcObject->getContentScope();
     if (!admitsContentScope(scope)) {
-        throw Base::RuntimeError(
+        throw DocumentContentScopeError(
             "Document type '" + DocumentType.getStrValue() + "' refuses object '"
             + pcObject->getTypeId().getName() + "' (content scope " + contentScopeName(scope)
             + "): it lies outside this document's content scope.");
