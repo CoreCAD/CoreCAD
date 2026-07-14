@@ -192,7 +192,9 @@ public:
     /// A unique identifier of the document.
     PropertyUUID Uid;
     /// Cruth document-type marker (e.g. "Part"); drives content scoping and workbench
-    /// selection. Empty on legacy/untyped documents. (CPART_DESIGN §8.2 / ARCHITECTURE §7.4)
+    /// selection. Empty on legacy/untyped documents. Set-once: writable while empty,
+    /// frozen the moment it is stamped (enforced in onBeforeChange, Amendment 8 Clause 8.2).
+    /// (CPART_DESIGN §8.2 / ARCHITECTURE §7.4)
     PropertyString DocumentType;
     /// The full name of the licence e.g. "Creative Commons Attribution". See https://spdx.org/licenses/.
     PropertyString License;

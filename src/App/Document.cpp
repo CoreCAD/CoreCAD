@@ -865,6 +865,19 @@ void Document::onBeforeChange(const Property* prop)
     if (prop == &Label) {
         oldLabel = Label.getValue();
     }
+    // Content-scope marker is set-once (ARCHITECTURE §7.1, Amendment 8 Clause 8.2):
+    // writable while the document is untyped (empty marker), frozen the moment it is
+    // stamped. onBeforeChange still sees the pre-change value, so a non-empty current
+    // value means this is a re-stamp — refuse it loud. The first stamp (from empty, via
+    // applyDocumentType at creation) passes untouched. Restore is exempt: the on-disk
+    // file is authoritative and re-restores the marker onto the same in-memory Document
+    // on reload; the load door already validates that file's content scope.
+    else if (prop == &DocumentType && !globalIsRestoring
+             && !DocumentType.getStrValue().empty()) {
+        throw Base::RuntimeError(
+            "DocumentType marker is set-once and cannot be changed once stamped (current '"
+            + DocumentType.getStrValue() + "').");
+    }
     signalBeforeChange(*this, *prop);
 }
 
