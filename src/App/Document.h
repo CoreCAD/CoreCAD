@@ -530,6 +530,17 @@ public:
     addObjects(const char* sType, const std::vector<std::string>& objectNames, bool isNew = true);
 
     /**
+     * @brief Whether this document's type accepts an object of the given content scope.
+     *
+     * The host half of Cruth content-scoping (ARCHITECTURE §7.1/§7.4, Amendment 8):
+     * a typed document accepts only the kinds its type admits. A Generic object is
+     * accepted by every document, and an untyped/legacy document (empty DocumentType,
+     * or a type carrying no policy yet) stays deliberately fluid and accepts every
+     * kind. The admission door (_addObject) consults this and fails loud on refusal.
+     */
+    bool admitsContentScope(DocumentObject::ContentScope scope) const;
+
+    /**
      * @brief Remove an object from the document.
      *
      * @param[in] object The object to remove.

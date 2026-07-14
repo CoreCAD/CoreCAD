@@ -121,6 +121,12 @@ public:
     {
         return "SketcherGui::ViewProviderSketch";
     }
+    /// A sketch is Part-scoped content (ARCHITECTURE §7.1, Amendment 8): a typed
+    /// Assembly, Drawing, or Spreadsheet document refuses it at the admission door.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::Sketch;
+    }
     void setupObject() override;
     //@}
 

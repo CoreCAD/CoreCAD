@@ -1956,6 +1956,43 @@ void Document::applyDocumentType(const char* type)
     }
 }
 
+bool Document::admitsContentScope(DocumentObject::ContentScope scope) const
+{
+    using CS = DocumentObject::ContentScope;
+    // A Generic object carries no document-scoped nature and is admitted everywhere.
+    if (scope == CS::Generic) {
+        return true;
+    }
+    const std::string& type = DocumentType.getStrValue();
+    // Untyped/legacy document: deliberately fluid, admits every kind (Clause 8.2).
+    if (type.empty()) {
+        return true;
+    }
+    // Per-type content scope, authored once here from the §7.1/§7.5 scopes.
+    if (type == "Part") {
+        // Sketches, features, bodies (§7.1); a local Spreadsheet driver (§7.5). The
+        // world frame and datums are Generic and pass above without a listing.
+        return scope == CS::Sketch || scope == CS::Feature || scope == CS::Body
+            || scope == CS::Spreadsheet;
+    }
+    if (type == "Assembly") {
+        // Component instances and mates (§7.1); a local Spreadsheet driver (§7.5).
+        return scope == CS::AssemblyItem || scope == CS::Spreadsheet;
+    }
+    if (type == "Drawing") {
+        // Views, dimensions, annotations, sheets (§7.1); a local Spreadsheet (§7.5).
+        return scope == CS::DrawingView || scope == CS::Spreadsheet;
+    }
+    if (type == "Spreadsheet") {
+        // Sole content type (§7.1/§7.5).
+        return scope == CS::Spreadsheet;
+    }
+    // A future type introduced under §7.1 that carries no policy row yet: stay fluid
+    // rather than refuse everything (a document that can hold nothing is worse than
+    // one that holds too much until its policy lands).
+    return true;
+}
+
 std::string Document::fileExtensionForType(const char* type)
 {
     if (!Base::Tools::isNullOrEmpty(type) && boost::iequals(type, "Part")) {
@@ -3448,8 +3485,40 @@ void Document::addObject(DocumentObject* obj, const char* name)
     _addObject(obj, name, AddObjectOption::SetNewStatus | AddObjectOption::ActivateObject);
 }
 
+namespace
+{
+const char* contentScopeName(DocumentObject::ContentScope scope)
+{
+    using CS = DocumentObject::ContentScope;
+    switch (scope) {
+        case CS::Sketch: return "Sketch";
+        case CS::Feature: return "Feature";
+        case CS::Body: return "Body";
+        case CS::AssemblyItem: return "AssemblyItem";
+        case CS::DrawingView: return "DrawingView";
+        case CS::Spreadsheet: return "Spreadsheet";
+        case CS::Generic: return "Generic";
+    }
+    return "Generic";
+}
+}  // namespace
+
 void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, AddObjectOptions options, const char* viewType)
 {
+    // Content-scope admission door (ARCHITECTURE §7.1/§7.4, Amendment 8 Clause 8.1):
+    // a typed document refuses an object whose declared kind its type does not admit,
+    // failing loud before the object is woven into the document — never a silent drop,
+    // never a partial admit + rollback. Untyped documents and Generic objects pass.
+    // This one guard covers all three doors, since creation, transfer (moveObject),
+    // and load (readObjects) all funnel through here.
+    const DocumentObject::ContentScope scope = pcObject->getContentScope();
+    if (!admitsContentScope(scope)) {
+        throw Base::RuntimeError(
+            "Document type '" + DocumentType.getStrValue() + "' refuses object '"
+            + pcObject->getTypeId().getName() + "' (content scope " + contentScopeName(scope)
+            + "): it lies outside this document's content scope.");
+    }
+
     // get unique name
     string ObjectName;
     if (!Base::Tools::isNullOrEmpty(pObjectName)) {
