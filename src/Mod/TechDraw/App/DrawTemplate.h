@@ -63,6 +63,10 @@ public:
     const char* getViewProviderName(void) const override{
         return "TechDrawGui::ViewProviderTemplate";
     }
+    /// A drawing template (the sheet frame) is Drawing-scoped content (Amendment 8, §7.1).
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
+    }
 
     // from base class
     PyObject *getPyObject(void) override;

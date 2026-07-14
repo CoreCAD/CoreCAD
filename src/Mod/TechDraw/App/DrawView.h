@@ -82,6 +82,12 @@ public:
     const char* getViewProviderName() const override {
         return "TechDrawGui::ViewProviderDrawingView";
     }
+    /// A drawing view (and every dimension, annotation, and balloon derived from it) is
+    /// Drawing-scoped content (ARCHITECTURE §7.1, Amendment 8): only a Drawing document
+    /// admits it; Part, Assembly, and Spreadsheet documents refuse it at the door.
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
+    }
     //return PyObject as DrawViewPy
     PyObject *getPyObject() override;
 

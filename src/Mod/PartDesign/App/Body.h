@@ -85,6 +85,12 @@ public:
     {
         return "PartDesignGui::ViewProviderBody";
     }
+    /// A Body is Part-scoped content (ARCHITECTURE §7.1, Amendment 8): only a Part document
+    /// admits it. Narrows the Feature scope it would otherwise inherit as a Part::Feature.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::Body;
+    }
     //@}
 
     /**

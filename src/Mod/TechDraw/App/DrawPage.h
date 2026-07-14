@@ -66,6 +66,10 @@ public:
 
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override { return "TechDrawGui::ViewProviderPage"; }
+    /// A drawing page (the sheet) is Drawing-scoped content (Amendment 8, ARCHITECTURE §7.1).
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
+    }
 
     PyObject* getPyObject() override;
 
