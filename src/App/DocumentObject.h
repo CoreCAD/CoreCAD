@@ -247,6 +247,41 @@ public:
         return getViewProviderName();
     }
 
+    /**
+     * @brief The content-scope kind an object declares itself to be.
+     *
+     * The self-declared half of Cruth content-scoping (ARCHITECTURE §7.1/§7.4,
+     * Amendment 8): the document's admission door consults this to decide whether
+     * a typed document accepts the object. Every scoped nature the four document
+     * types sort on has a value; the default is Generic.
+     */
+    enum class ContentScope
+    {
+        Generic,       ///< admitted by every document (world frame, datums, groups, links)
+        Sketch,        ///< a 2D sketch
+        Feature,       ///< a geometric feature
+        Body,          ///< a solid body
+        AssemblyItem,  ///< an assembly component instance or mate constraint
+        DrawingView,   ///< a drawing view, dimension, annotation, or sheet
+        Spreadsheet,   ///< a parametric spreadsheet
+    };
+
+    /**
+     * @brief Declare this object's content-scope kind.
+     *
+     * The default is Generic: an object that declares nothing is admitted by every
+     * document, keeping untyped/App-native objects (the world frame, datums, groups,
+     * links) fluid. Only objects carrying a document-scoped nature — a sketch, body,
+     * geometric feature, assembly component/mate, drawing view, or spreadsheet —
+     * override this, so a typed document can refuse them at the admission door
+     * (Amendment 8 Clause 8.1). This is the boundary between App and the modules:
+     * App never names the concrete types, it reads the kind each object reports.
+     */
+    virtual ContentScope getContentScope() const
+    {
+        return ContentScope::Generic;
+    }
+
     DocumentObject();
 
     ~DocumentObject() override;

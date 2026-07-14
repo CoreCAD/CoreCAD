@@ -94,6 +94,14 @@ public:
     const char* getViewProviderName() const override;
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
 
+    /// A shape-carrying feature is Part-scoped geometry (ARCHITECTURE §7.1, Amendment 8):
+    /// only a Part document admits it; Assembly, Drawing, and Spreadsheet documents refuse
+    /// it at the admission door. Bodies and sketches narrow this to their own kind.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::Feature;
+    }
+
     PyObject* getPyObject() override;
 
     App::ElementNamePair getElementName(const char* name, ElementNameType type = Normal) const override;

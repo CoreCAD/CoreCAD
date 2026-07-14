@@ -865,6 +865,19 @@ void Document::onBeforeChange(const Property* prop)
     if (prop == &Label) {
         oldLabel = Label.getValue();
     }
+    // Content-scope marker is set-once (ARCHITECTURE §7.1, Amendment 8 Clause 8.2):
+    // writable while the document is untyped (empty marker), frozen the moment it is
+    // stamped. onBeforeChange still sees the pre-change value, so a non-empty current
+    // value means this is a re-stamp — refuse it loud. The first stamp (from empty, via
+    // applyDocumentType at creation) passes untouched. Restore is exempt: the on-disk
+    // file is authoritative and re-restores the marker onto the same in-memory Document
+    // on reload; the load door already validates that file's content scope.
+    else if (prop == &DocumentType && !globalIsRestoring
+             && !DocumentType.getStrValue().empty()) {
+        throw Base::RuntimeError(
+            "DocumentType marker is set-once and cannot be changed once stamped (current '"
+            + DocumentType.getStrValue() + "').");
+    }
     signalBeforeChange(*this, *prop);
 }
 
@@ -1729,6 +1742,13 @@ std::vector<DocumentObject*> Document::readObjects(Base::XMLReader& reader)
                 }
             }
         }
+        catch (const DocumentContentScopeError&) {
+            // A content-scope violation is fatal to the load (Amendment 8 Clause 8.1):
+            // the offending object exists on disk, so "fail loud" here means the load
+            // itself fails — surfacing the violation — never the silent drop the generic
+            // catch below performs for recoverable per-object failures. Rethrow past it.
+            throw;
+        }
         catch (const Base::Exception& e) {
             Base::Console().error("Cannot create object '%s': (%s)\n", name.c_str(), e.what());
         }
@@ -1948,7 +1968,7 @@ void Document::applyDocumentType(const char* type)
     // A Part document owns its coordinate frame and mints it eagerly at creation
     // (Cruth origin-lifecycle amendment). Bodies only ever look this up — they never
     // create it. The shared App::Origin carries the world-frame datum planes/axes.
-    if (DocumentType.getStrValue() == "Part") {
+    if (DocumentType.getStrValue() == DocTypePart) {
         auto* origin = addObject<App::Origin>("Origin");
         if (origin) {
             origin->Label.setValue("Origin");
@@ -1956,9 +1976,46 @@ void Document::applyDocumentType(const char* type)
     }
 }
 
+bool Document::admitsContentScope(DocumentObject::ContentScope scope) const
+{
+    using CS = DocumentObject::ContentScope;
+    // A Generic object carries no document-scoped nature and is admitted everywhere.
+    if (scope == CS::Generic) {
+        return true;
+    }
+    const std::string& type = DocumentType.getStrValue();
+    // Untyped/legacy document: deliberately fluid, admits every kind (Clause 8.2).
+    if (type.empty()) {
+        return true;
+    }
+    // Per-type content scope, authored once here from the §7.1/§7.5 scopes.
+    if (type == DocTypePart) {
+        // Sketches, features, bodies (§7.1); a local Spreadsheet driver (§7.5). The
+        // world frame and datums are Generic and pass above without a listing.
+        return scope == CS::Sketch || scope == CS::Feature || scope == CS::Body
+            || scope == CS::Spreadsheet;
+    }
+    if (type == DocTypeAssembly) {
+        // Component instances and mates (§7.1); a local Spreadsheet driver (§7.5).
+        return scope == CS::AssemblyItem || scope == CS::Spreadsheet;
+    }
+    if (type == DocTypeDrawing) {
+        // Views, dimensions, annotations, sheets (§7.1); a local Spreadsheet (§7.5).
+        return scope == CS::DrawingView || scope == CS::Spreadsheet;
+    }
+    if (type == DocTypeSpreadsheet) {
+        // Sole content type (§7.1/§7.5).
+        return scope == CS::Spreadsheet;
+    }
+    // A future type introduced under §7.1 that carries no policy row yet: stay fluid
+    // rather than refuse everything (a document that can hold nothing is worse than
+    // one that holds too much until its policy lands).
+    return true;
+}
+
 std::string Document::fileExtensionForType(const char* type)
 {
-    if (!Base::Tools::isNullOrEmpty(type) && boost::iequals(type, "Part")) {
+    if (!Base::Tools::isNullOrEmpty(type) && boost::iequals(type, DocTypePart)) {
         return "cpart";
     }
     return "FCStd";
@@ -2278,6 +2335,13 @@ void Document::restore(const char* filename,
     }
     try {
         Document::Restore(reader);
+    }
+    catch (const DocumentContentScopeError&) {
+        // Fatal: a typed document on disk carries out-of-scope content (Amendment 8
+        // Clause 8.1). The load fails loudly rather than opening a half-document with
+        // the offending object silently dropped. Propagate to the opener, which
+        // discards the partially built document.
+        throw;
     }
     catch (const Base::Exception& e) {
         Base::Console().error("Invalid Document.xml: %s\n", e.what());
@@ -3448,8 +3512,40 @@ void Document::addObject(DocumentObject* obj, const char* name)
     _addObject(obj, name, AddObjectOption::SetNewStatus | AddObjectOption::ActivateObject);
 }
 
+namespace
+{
+const char* contentScopeName(DocumentObject::ContentScope scope)
+{
+    using CS = DocumentObject::ContentScope;
+    switch (scope) {
+        case CS::Sketch: return "Sketch";
+        case CS::Feature: return "Feature";
+        case CS::Body: return "Body";
+        case CS::AssemblyItem: return "AssemblyItem";
+        case CS::DrawingView: return "DrawingView";
+        case CS::Spreadsheet: return "Spreadsheet";
+        case CS::Generic: return "Generic";
+    }
+    return "Generic";
+}
+}  // namespace
+
 void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, AddObjectOptions options, const char* viewType)
 {
+    // Content-scope admission door (ARCHITECTURE §7.1/§7.4, Amendment 8 Clause 8.1):
+    // a typed document refuses an object whose declared kind its type does not admit,
+    // failing loud before the object is woven into the document — never a silent drop,
+    // never a partial admit + rollback. Untyped documents and Generic objects pass.
+    // This one guard covers all three doors, since creation, transfer (moveObject),
+    // and load (readObjects) all funnel through here.
+    const DocumentObject::ContentScope scope = pcObject->getContentScope();
+    if (!admitsContentScope(scope)) {
+        throw DocumentContentScopeError(
+            "Document type '" + DocumentType.getStrValue() + "' refuses object '"
+            + pcObject->getTypeId().getName() + "' (content scope " + contentScopeName(scope)
+            + "): it lies outside this document's content scope.");
+    }
+
     // get unique name
     string ObjectName;
     if (!Base::Tools::isNullOrEmpty(pObjectName)) {

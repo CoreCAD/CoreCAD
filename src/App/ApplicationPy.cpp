@@ -380,6 +380,13 @@ PyObject* ApplicationPy::sOpenDocument(PyObject* /*self*/, PyObject* args, PyObj
                     .openDocument(EncodedName.c_str(), initFlags)
                     ->getPyObject());
     }
+    catch (const DocumentContentScopeError& e) {
+        // A content-scope violation is not an I/O error: surface it as the same
+        // catchable RuntimeError the creation door raises (Amendment 8 Clause 8.1, P7),
+        // not the generic IOError the open path uses for corrupt/missing files.
+        e.setPyException();
+        return nullptr;
+    }
     catch (const Base::Exception& e) {
         PyErr_SetString(PyExc_IOError, e.what());
         return nullptr;

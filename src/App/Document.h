@@ -25,6 +25,7 @@
 #pragma once
 
 #include <CXX/Objects.hxx>
+#include <Base/Exception.h>
 #include <Base/Observer.h>
 #include <Base/Persistence.h>
 #include <Base/Type.h>
@@ -88,6 +89,22 @@ class Application;
 class Transaction;
 class StringHasher;
 using StringHasherRef = Base::Reference<StringHasher>;
+
+/**
+ * @brief Thrown when a typed document refuses an out-of-scope object at its
+ * admission door (ARCHITECTURE §7.1, Amendment 8 Clause 8.1).
+ *
+ * A distinct type so the load door can tell a scope violation apart from an
+ * ordinary object-creation failure (a missing module, a corrupt object) and
+ * fail the whole open loudly, rather than logging and dropping the object the
+ * way it leniently does for recoverable per-object failures. Reaches Python as
+ * a catchable RuntimeError (P7).
+ */
+class DocumentContentScopeError: public Base::RuntimeError
+{
+public:
+    using Base::RuntimeError::RuntimeError;
+};
 
 /**
  * @brief A class that represents a FreeCAD document.
@@ -175,7 +192,9 @@ public:
     /// A unique identifier of the document.
     PropertyUUID Uid;
     /// Cruth document-type marker (e.g. "Part"); drives content scoping and workbench
-    /// selection. Empty on legacy/untyped documents. (CPART_DESIGN §8.2 / ARCHITECTURE §7.4)
+    /// selection. Empty on legacy/untyped documents. Set-once: writable while empty,
+    /// frozen the moment it is stamped (enforced in onBeforeChange, Amendment 8 Clause 8.2).
+    /// (CPART_DESIGN §8.2 / ARCHITECTURE §7.4)
     PropertyString DocumentType;
     /// The full name of the licence e.g. "Creative Commons Attribution". See https://spdx.org/licenses/.
     PropertyString License;
@@ -293,6 +312,16 @@ public:
     /** @name File handling of the document
      * @{
      */
+
+    /// Canonical DocumentType marker values (§7.1 / §10.4). The marker is a string for
+    /// open extensibility (§7.4) and to match the on-disk format; these constants name
+    /// the four types defined now so no bare literal is duplicated across the code. A
+    /// future type (CAM, Simulation) adds a value here and a policy row in
+    /// admitsContentScope() — not a new enum, not a recompile of every consumer.
+    static constexpr const char* DocTypePart = "Part";
+    static constexpr const char* DocTypeAssembly = "Assembly";
+    static constexpr const char* DocTypeDrawing = "Drawing";
+    static constexpr const char* DocTypeSpreadsheet = "Spreadsheet";
 
     /// Cruth: stamp the document-type marker and set up type-specific content at creation.
     /// A "Part" document mints its shared world frame (App::Origin) so the coordinate
@@ -528,6 +557,17 @@ public:
      */
     std::vector<DocumentObject*>
     addObjects(const char* sType, const std::vector<std::string>& objectNames, bool isNew = true);
+
+    /**
+     * @brief Whether this document's type accepts an object of the given content scope.
+     *
+     * The host half of Cruth content-scoping (ARCHITECTURE §7.1/§7.4, Amendment 8):
+     * a typed document accepts only the kinds its type admits. A Generic object is
+     * accepted by every document, and an untyped/legacy document (empty DocumentType,
+     * or a type carrying no policy yet) stays deliberately fluid and accepts every
+     * kind. The admission door (_addObject) consults this and fails loud on refusal.
+     */
+    bool admitsContentScope(DocumentObject::ContentScope scope) const;
 
     /**
      * @brief Remove an object from the document.

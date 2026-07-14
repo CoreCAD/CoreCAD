@@ -1289,6 +1289,13 @@ Document* Application::openDocumentPrivate(const char * FileName,
         closeDocument(newDoc->getName());
         throw;
     }
+    // A typed document carrying out-of-scope content refuses to open (Amendment 8
+    // Clause 8.1): discard the partially built document and fail loud, rather than
+    // leaving a half-loaded document with the offending object silently dropped.
+    catch (const DocumentContentScopeError&) {
+        closeDocument(newDoc->getName());
+        throw;
+    }
     // but for any other exceptions leave it open to give the
     // user a chance to fix it
     catch (...) {
