@@ -113,6 +113,16 @@ public:
 
     PyObject* getPyObject() override;
 
+    /// Host the (still-Python) ViewProviderJoint over the FeaturePython view
+    /// provider shell, exactly as the transitional JointPython variant did. The
+    /// bare typed object is not a FeaturePython, but the view provider need not
+    /// match: the creation command attaches the Python ViewProviderJoint proxy
+    /// to this shell. Ported to a C++ view provider with #60.
+    const char* getViewProviderName() const override
+    {
+        return "Gui::ViewProviderFeaturePython";
+    }
+
     /// A mate is assembly-scoped content: only an Assembly document admits it.
     App::DocumentObject::ContentScope getContentScope() const override
     {

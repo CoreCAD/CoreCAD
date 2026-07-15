@@ -63,6 +63,14 @@ public:
 
     PyObject* getPyObject() override;
 
+    /// Host the (still-Python) ViewProviderJoint over the FeaturePython view
+    /// provider shell; see Assembly::Joint::getViewProviderName. Ported to a
+    /// C++ view provider with #60.
+    const char* getViewProviderName() const override
+    {
+        return "Gui::ViewProviderFeaturePython";
+    }
+
     /// A grounded joint is assembly-scoped content: only an Assembly document admits it.
     App::DocumentObject::ContentScope getContentScope() const override
     {
