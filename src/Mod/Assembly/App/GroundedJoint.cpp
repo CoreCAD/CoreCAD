@@ -25,6 +25,8 @@
 
 #include "PreCompiled.h"
 
+#include <App/FeaturePythonPyImp.h>
+
 #include "GroundedJoint.h"
 #include "GroundedJointPy.h"
 
@@ -56,3 +58,28 @@ PyObject* GroundedJoint::getPyObject()
     }
     return Py::new_reference_to(PythonObject);
 }
+
+// Transitional Python-proxy variant (#59); see JointPython.
+namespace App
+{
+/// @cond DOXERR
+PROPERTY_SOURCE_TEMPLATE(Assembly::GroundedJointPython, Assembly::GroundedJoint)
+template<>
+const char* Assembly::GroundedJointPython::getViewProviderName() const
+{
+    return "Gui::ViewProviderFeaturePython";
+}
+template<>
+PyObject* Assembly::GroundedJointPython::getPyObject()
+{
+    if (PythonObject.is(Py::_None())) {
+        // ref counter is set to 1
+        PythonObject = Py::Object(new FeaturePythonPyT<Assembly::GroundedJointPy>(this), true);
+    }
+    return Py::new_reference_to(PythonObject);
+}
+/// @endcond
+
+// explicit template instantiation
+template class AssemblyExport FeaturePythonT<Assembly::GroundedJoint>;
+}  // namespace App

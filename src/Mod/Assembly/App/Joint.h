@@ -29,6 +29,7 @@
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <App/DocumentObject.h>
+#include <App/FeaturePython.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
@@ -115,6 +116,19 @@ private:
     /// Enumeration values for JointType, in the historical order.
     static const char* JointTypeEnums[];
 };
+
+/**
+ * Python-proxy-enabled variant of Joint (transitional bridge, #59).
+ *
+ * The typed Joint above owns the data and declares the content scope. Joint
+ * behaviour (JCS recompute in execute, interactive onChanged, the solver's
+ * mid-solve call-ins) still lives in the Python `Joint` helper for now. This
+ * variant carries that helper via a `Proxy` and dispatches execute/onChanged
+ * to it, so the flip to a typed object changes no behaviour. As the behaviour
+ * is ported to C++ across later stages, the dispatch is retired and creation
+ * moves to the bare typed Joint; this alias is then removed.
+ */
+using JointPython = App::FeaturePythonT<Joint>;
 
 
 }  // namespace Assembly

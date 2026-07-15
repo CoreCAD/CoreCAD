@@ -25,6 +25,8 @@
 
 #include "PreCompiled.h"
 
+#include <App/FeaturePythonPyImp.h>
+
 #include "Joint.h"
 #include "JointPy.h"
 
@@ -224,3 +226,28 @@ PyObject* Joint::getPyObject()
     }
     return Py::new_reference_to(PythonObject);
 }
+
+// Transitional Python-proxy variant (#59): typed Joint data + Python behaviour.
+namespace App
+{
+/// @cond DOXERR
+PROPERTY_SOURCE_TEMPLATE(Assembly::JointPython, Assembly::Joint)
+template<>
+const char* Assembly::JointPython::getViewProviderName() const
+{
+    return "Gui::ViewProviderFeaturePython";
+}
+template<>
+PyObject* Assembly::JointPython::getPyObject()
+{
+    if (PythonObject.is(Py::_None())) {
+        // ref counter is set to 1
+        PythonObject = Py::Object(new FeaturePythonPyT<Assembly::JointPy>(this), true);
+    }
+    return Py::new_reference_to(PythonObject);
+}
+/// @endcond
+
+// explicit template instantiation
+template class AssemblyExport FeaturePythonT<Assembly::Joint>;
+}  // namespace App
