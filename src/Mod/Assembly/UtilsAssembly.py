@@ -929,6 +929,29 @@ def arePlacementZParallel(plc1, plc2):
     return zAxis1.cross(zAxis2).Length < 1e-06
 
 
+def getAssembly(obj):
+    """Return the assembly (possibly through a nested AssemblyLink) that owns obj."""
+    for parent in obj.InList:
+        if parent.isDerivedFrom("Assembly::AssemblyObject"):
+            return parent
+        elif parent.isDerivedFrom("Assembly::AssemblyLink"):
+            return getAssembly(parent)
+
+    return None
+
+
+def areJcsSameDir(joint):
+    globalJcsPlc1 = getJcsGlobalPlc(joint.Placement1, joint.Reference1)
+    globalJcsPlc2 = getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+    return arePlacementSameDir(globalJcsPlc1, globalJcsPlc2)
+
+
+def areJcsZParallel(joint):
+    globalJcsPlc1 = getJcsGlobalPlc(joint.Placement1, joint.Reference1)
+    globalJcsPlc2 = getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+    return arePlacementZParallel(globalJcsPlc1, globalJcsPlc2)
+
+
 def removeTNPFromSubname(doc_name, obj_name, sub_name):
     rootObj = App.getDocument(doc_name).getObject(obj_name)
     resolved = rootObj.resolveSubElement(sub_name)

@@ -725,7 +725,7 @@ class Joint:
 
                         setattr(joint, prop_name, [comp, new_subs])
 
-        assembly = self.getAssembly(joint)
+        assembly = UtilsAssembly.getAssembly(joint)
         migrate_prop("Reference1", self.addReference1Property, assembly)
         migrate_prop("Reference2", self.addReference2Property, assembly)
 
@@ -733,15 +733,6 @@ class Joint:
         return None
 
     def loads(self, state):
-        return None
-
-    def getAssembly(self, joint):
-        for obj in joint.InList:
-            if obj.isDerivedFrom("Assembly::AssemblyObject"):
-                return obj
-            elif obj.isDerivedFrom("Assembly::AssemblyLink"):
-                return self.getAssembly(obj)
-
         return None
 
     def setJointType(self, joint, newType):
@@ -786,19 +777,19 @@ class Joint:
 
             presolved = joint.usesPreSolve() and self.preSolve(joint, False)
 
-            isAssembly = self.getAssembly(joint).Type == "Assembly"
+            isAssembly = UtilsAssembly.getAssembly(joint).Type == "Assembly"
             if isAssembly and not presolved:
-                solveIfAllowed(self.getAssembly(joint))
+                solveIfAllowed(UtilsAssembly.getAssembly(joint))
             else:
                 joint.updateJCSPlacements()
 
         if prop == "Distance" and joint.JointType == "Distance":
-            solveIfAllowed(self.getAssembly(joint))
+            solveIfAllowed(UtilsAssembly.getAssembly(joint))
 
         if prop == "Angle" and joint.JointType == "Angle":
             if joint.Angle != 0.0:
                 self.preventParallel(joint)
-            solveIfAllowed(self.getAssembly(joint))
+            solveIfAllowed(UtilsAssembly.getAssembly(joint))
 
     # execute() is now the typed C++ Assembly::Joint::execute (#59 stage 3): it
     # validates the references and recomputes the JCS placements entirely in C++
@@ -807,7 +798,7 @@ class Joint:
 
     def setJointConnectors(self, joint, refs):
         # current selection is a vector of strings like "Assembly.Assembly1.Assembly2.Body.Pad.Edge16" including both what selection return as obj_name and obj_sub
-        assembly = self.getAssembly(joint)
+        assembly = UtilsAssembly.getAssembly(joint)
         isAssembly = assembly.Type == "Assembly"
 
         if len(refs) >= 1:
@@ -861,8 +852,8 @@ class Joint:
         self.matchJCS(joint, savePlc)
 
     def matchJCS(self, joint, savePlc=True, reverse=False):
-        assembly = self.getAssembly(joint)
-        sameDir = self.areJcsSameDir(joint)
+        assembly = UtilsAssembly.getAssembly(joint)
+        sameDir = UtilsAssembly.areJcsSameDir(joint)
         if reverse:
             sameDir = not sameDir
 
@@ -936,11 +927,11 @@ class Joint:
 
     def preventParallel(self, joint):
         # Angle and perpendicular joints in the solver cannot handle the situation where both JCS are Parallel
-        parallel = self.areJcsZParallel(joint)
+        parallel = UtilsAssembly.areJcsZParallel(joint)
         if not parallel:
             return
 
-        assembly = self.getAssembly(joint)
+        assembly = UtilsAssembly.getAssembly(joint)
 
         part1 = UtilsAssembly.getMovingPart(joint.Reference1)
         part2 = UtilsAssembly.getMovingPart(joint.Reference2)
@@ -983,7 +974,7 @@ class Joint:
         # Several joints are not solving properly if the part connected to ground is not the first.
         # See https://github.com/FreeCAD/FreeCAD/issues/29355 for instance.
         # This function swap the references if possible to avoid those issues.
-        assembly = self.getAssembly(joint)
+        assembly = UtilsAssembly.getAssembly(joint)
         if not assembly or assembly.Type != "Assembly":
             return
 
@@ -1020,18 +1011,6 @@ class Joint:
 
             if activeTask and activeTask.joint == joint:
                 activeTask.updateTaskboxFromJoint()
-
-    def areJcsSameDir(self, joint):
-        globalJcsPlc1 = UtilsAssembly.getJcsGlobalPlc(joint.Placement1, joint.Reference1)
-        globalJcsPlc2 = UtilsAssembly.getJcsGlobalPlc(joint.Placement2, joint.Reference2)
-
-        return UtilsAssembly.arePlacementSameDir(globalJcsPlc1, globalJcsPlc2)
-
-    def areJcsZParallel(self, joint):
-        globalJcsPlc1 = UtilsAssembly.getJcsGlobalPlc(joint.Placement1, joint.Reference1)
-        globalJcsPlc2 = UtilsAssembly.getJcsGlobalPlc(joint.Placement2, joint.Reference2)
-
-        return UtilsAssembly.arePlacementZParallel(globalJcsPlc1, globalJcsPlc2)
 
 
 class ViewProviderJoint:
@@ -1086,7 +1065,7 @@ class ViewProviderJoint:
             self.switch_JCS_preview.whichChild = coin.SO_SWITCH_NONE
 
     def setJCSPosition(self, jcs, plc, ref):
-        assembly = self.app_obj.Proxy.getAssembly(self.app_obj)
+        assembly = UtilsAssembly.getAssembly(self.app_obj)
         if assembly and ref and plc:
             asm_global_plc = assembly.getGlobalPlacement()
             if asm_global_plc != App.Placement():
@@ -1158,7 +1137,7 @@ class ViewProviderJoint:
 
         overlays = {}
 
-        assembly = self.app_obj.Proxy.getAssembly(self.app_obj)
+        assembly = UtilsAssembly.getAssembly(self.app_obj)
         # Assuming Reference1 corresponds to the first part link
         if hasattr(self.app_obj, "Reference1"):
             part = UtilsAssembly.getMovingPart(self.app_obj.Reference1)
@@ -1185,7 +1164,7 @@ class ViewProviderJoint:
         if task:
             task.reject()
 
-        assembly = vobj.Object.Proxy.getAssembly(vobj.Object)
+        assembly = UtilsAssembly.getAssembly(vobj.Object)
 
         if assembly is None:
             return False
