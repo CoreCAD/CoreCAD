@@ -129,18 +129,12 @@ JointUsingLimitAngle = [
     "Cylindrical",
 ]
 
-JointUsingPreSolve = [
-    "Fixed",
-    "Revolute",
-    "Cylindrical",
-    "Slider",
-    "Ball",
-]
-
-JointParallelForbidden = [
-    "Angle",
-    "Perpendicular",
-]
+# The per-kind behaviour capabilities (pre-solve, parallel handling, vertex
+# handling) now live on the typed C++ Assembly::Joint (see JointKind): the joint
+# answers joint.usesPreSolve() / joint.forbidsParallel() / joint.ignoresVertex()
+# directly, replacing the former JointUsingPreSolve / JointParallelForbidden
+# membership lists. The remaining JointUsing* lists below still drive the Python
+# task dialog and move to JointKind when the dialog is ported.
 
 
 def solveIfAllowed(assembly, storePrev=False):
@@ -789,7 +783,7 @@ class Joint:
         if prop == "Offset1" or prop == "Offset2":
             self.updateJCSPlacements(joint)
 
-            presolved = joint.JointType in JointUsingPreSolve and self.preSolve(joint, False)
+            presolved = joint.usesPreSolve() and self.preSolve(joint, False)
 
             isAssembly = self.getAssembly(joint).Type == "Assembly"
             if isAssembly and not presolved:
@@ -827,9 +821,9 @@ class Joint:
 
             self.ensureUnconnectedIsSecondRef(joint)
 
-            if joint.JointType in JointUsingPreSolve:
+            if joint.usesPreSolve():
                 self.preSolve(joint)
-            elif joint.JointType in JointParallelForbidden:
+            elif joint.forbidsParallel():
                 self.preventParallel(joint)
 
             if isAssembly:
@@ -870,7 +864,7 @@ class Joint:
     """
 
     def findPlacement(self, joint, ref, index=0):
-        ignoreVertex = joint.JointType == "Distance"
+        ignoreVertex = joint.ignoresVertex()
         plc = UtilsAssembly.findPlacement(ref, ignoreVertex)
 
         # We apply the attachment offsets.

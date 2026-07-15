@@ -243,6 +243,11 @@ App::DocumentObjectExecReturn* Joint::execute()
     return App::DocumentObject::StdReturn;
 }
 
+const JointKind& Joint::getKind() const
+{
+    return jointKindForType(static_cast<int>(JointType.getValue()));
+}
+
 void Joint::updateJointCoordinateSystems()
 {
     Base::PyGILStateLocker lock;

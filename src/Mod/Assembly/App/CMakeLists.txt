@@ -61,6 +61,8 @@ SET(Assembly_SRCS
     BomGroup.h
     Joint.cpp
     Joint.h
+    JointKind.cpp
+    JointKind.h
     GroundedJoint.cpp
     GroundedJoint.h
     JointGroup.cpp

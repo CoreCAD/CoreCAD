@@ -36,6 +36,8 @@
 #include <App/PropertyUnits.h>
 #include <App/SuppressibleExtension.h>
 
+#include "JointKind.h"
+
 
 namespace Assembly
 {
@@ -103,6 +105,11 @@ public:
     //@}
 
     App::DocumentObjectExecReturn* execute() override;
+
+    /// The behavioural capabilities of this joint's current kind (JointType).
+    /// The single source of truth for per-kind decisions (pre-solve, parallel
+    /// handling, vertex handling) that used to be `JointType in [...]` tests.
+    const JointKind& getKind() const;
 
     PyObject* getPyObject() override;
 

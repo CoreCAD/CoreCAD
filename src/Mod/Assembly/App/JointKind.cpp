@@ -25,44 +25,43 @@
 
 #include "PreCompiled.h"
 
-#include "Joint.h"
-
-// inclusion of the generated files (generated out of Joint.pyi)
-#include "JointPy.h"
-#include "JointPy.cpp"
+#include "JointKind.h"
 
 using namespace Assembly;
 
-// returns a string which represents the object e.g. when printed in python
-std::string JointPy::representation() const
+namespace
 {
-    return {"<Joint>"};
-}
+// One row per joint kind, in the exact order of Assembly::Joint::JointTypeEnums:
+//   0 Fixed  1 Revolute  2 Cylindrical  3 Slider  4 Ball  5 Distance
+//   6 Parallel  7 Perpendicular  8 Angle  9 RackPinion  10 Screw
+//   11 Gears  12 Belt
+// Columns: {usesPreSolve, forbidsParallel, ignoresVertex}.
+constexpr JointKind kindTable[] = {
+    /* Fixed         */ {true, false, false},
+    /* Revolute      */ {true, false, false},
+    /* Cylindrical   */ {true, false, false},
+    /* Slider        */ {true, false, false},
+    /* Ball          */ {true, false, false},
+    /* Distance      */ {false, false, true},
+    /* Parallel      */ {false, false, false},
+    /* Perpendicular */ {false, true, false},
+    /* Angle         */ {false, true, false},
+    /* RackPinion    */ {false, false, false},
+    /* Screw         */ {false, false, false},
+    /* Gears         */ {false, false, false},
+    /* Belt          */ {false, false, false},
+};
 
-PyObject* JointPy::usesPreSolve(PyObject* /*args*/) const
-{
-    bool value = this->getJointPtr()->getKind().usesPreSolve;
-    return Py_BuildValue("O", (value ? Py_True : Py_False));
-}
+constexpr int kindCount = static_cast<int>(sizeof(kindTable) / sizeof(kindTable[0]));
+static_assert(kindCount == 13, "kindTable must stay in sync with Joint::JointTypeEnums");
 
-PyObject* JointPy::forbidsParallel(PyObject* /*args*/) const
-{
-    bool value = this->getJointPtr()->getKind().forbidsParallel;
-    return Py_BuildValue("O", (value ? Py_True : Py_False));
-}
+constexpr JointKind defaultKind {};
+}  // namespace
 
-PyObject* JointPy::ignoresVertex(PyObject* /*args*/) const
+const JointKind& Assembly::jointKindForType(int typeIndex)
 {
-    bool value = this->getJointPtr()->getKind().ignoresVertex;
-    return Py_BuildValue("O", (value ? Py_True : Py_False));
-}
-
-PyObject* JointPy::getCustomAttributes(const char* /*attr*/) const
-{
-    return nullptr;
-}
-
-int JointPy::setCustomAttributes(const char* /*attr*/, PyObject* /*obj*/)
-{
-    return 0;
+    if (typeIndex < 0 || typeIndex >= kindCount) {
+        return defaultKind;
+    }
+    return kindTable[typeIndex];
 }
