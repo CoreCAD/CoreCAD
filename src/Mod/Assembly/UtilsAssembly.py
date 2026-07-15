@@ -916,7 +916,7 @@ def setPickableState(obj, state: bool):
 def setJointsPickableState(doc, state: bool):
     """Make all joints in document selectable (True) or unselectable (False) in 3D view"""
     for obj in doc.Objects:
-        if obj.TypeId == "App::FeaturePython" and hasattr(obj, "JointType"):
+        if obj.isDerivedFrom("Assembly::Joint"):
             setPickableState(obj, state)
 
 

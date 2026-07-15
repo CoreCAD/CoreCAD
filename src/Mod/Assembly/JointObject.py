@@ -175,17 +175,9 @@ class Joint:
     def __init__(self, joint, type_index):
         joint.Proxy = self
 
-        joint.addExtension("App::SuppressibleExtensionPython")
-
-        joint.addProperty(
-            "App::PropertyEnumeration",
-            "JointType",
-            "Joint",
-            QT_TRANSLATE_NOOP("App::Property", "The type of the joint"),
-            locked=True,
-        )
-        joint.JointType = JointTypes  # sets the list
-        joint.JointType = JointTypes[type_index]  # set the initial value
+        # JointType and the SuppressibleExtension are owned by the C++
+        # Assembly::Joint type now; here we only set the chosen initial value.
+        joint.JointType = JointTypes[type_index]
 
         self.createProperties(joint)
 
@@ -1273,13 +1265,17 @@ class GroundedJoint:
         self.createObjectToGroundProperty(joint, obj_to_ground)
 
     def createObjectToGroundProperty(self, joint, obj_to_ground):
-        joint.addProperty(
-            "App::PropertyLinkGlobal",
-            "ObjectToGround",
-            "Ground",
-            QT_TRANSLATE_NOOP("App::Property", "The object to ground"),
-            locked=True,
-        )
+        # ObjectToGround is owned by the C++ Assembly::GroundedJoint type; the
+        # add path remains only for the legacy migration that drops an old
+        # App::PropertyLink variant and re-adds it.
+        if not hasattr(joint, "ObjectToGround"):
+            joint.addProperty(
+                "App::PropertyLinkGlobal",
+                "ObjectToGround",
+                "Ground",
+                QT_TRANSLATE_NOOP("App::Property", "The object to ground"),
+                locked=True,
+            )
         joint.ObjectToGround = obj_to_ground
 
     def onDocumentRestored(self, joint):
@@ -1772,10 +1768,10 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         type_index = self.jForm.jointType.currentIndex()
 
         if self.activeType == "Part":
-            self.joint = self.assembly.newObject("App::FeaturePython", "Temporary joint")
+            self.joint = self.assembly.newObject("Assembly::JointPython", "Temporary joint")
         else:
             joint_group = UtilsAssembly.getJointGroup(self.assembly)
-            self.joint = joint_group.newObject("App::FeaturePython", "Joint")
+            self.joint = joint_group.newObject("Assembly::JointPython", "Joint")
             self.joint.Label = self.jointName
             joint_group.purgeTouched()
             self.assembly.purgeTouched()

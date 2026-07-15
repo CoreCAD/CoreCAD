@@ -411,7 +411,7 @@ def createGroundedJoint(obj):
         f'obj = App.ActiveDocument.getObject("{obj.Name}")\n'
         "assembly = UtilsAssembly.activeAssembly()\n"
         "joint_group = UtilsAssembly.getJointGroup(assembly)\n"
-        'ground = joint_group.newObject("App::FeaturePython", "GroundedJoint")\n'
+        'ground = joint_group.newObject("Assembly::GroundedJointPython", "GroundedJoint")\n'
         "JointObject.GroundedJoint(ground, obj)"
     )
     Gui.doCommand(commands)
