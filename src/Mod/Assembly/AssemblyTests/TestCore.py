@@ -251,6 +251,6 @@ class TestCore(unittest.TestCase):
             [box, ["Face6", "Vertex7"]],
         ]
 
-        joint.Proxy.setJointConnectors(joint, refs)
+        JointObject.setJointConnectors(joint, refs)
 
         self.assertTrue(box.Placement.isSame(box2.Placement, 1e-6), "'{}'".format(operation))
