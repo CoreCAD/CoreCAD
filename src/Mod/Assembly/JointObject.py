@@ -735,56 +735,11 @@ class Joint:
     def loads(self, state):
         return None
 
-    def onChanged(self, joint, prop):
-        """Do something when a property has changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-
-        # during loading the onchanged may be triggered before full init.
-        if App.isRestoring():
-            return
-
-        if prop == "JointType":
-            newType = joint.JointType
-            tr_new_type = TranslatedJointTypes[JointTypes.index(newType)]
-
-            # Find the old joint type in the label and replace it
-            for i, old_type_name in enumerate(JointTypes):
-                if old_type_name == newType:
-                    continue
-                tr_old_type = TranslatedJointTypes[i]
-                if tr_old_type in joint.Label:
-                    joint.Label = joint.Label.replace(tr_old_type, tr_new_type)
-                    break
-
-        if prop == "Reference1" or prop == "Reference2":
-            joint.recompute()
-
-        if (
-            not hasattr(joint, "Reference1")
-            or not hasattr(joint, "Reference2")
-            or joint.Reference1 is None
-            or joint.Reference2 is None
-        ):
-            return
-
-        if prop == "Offset1" or prop == "Offset2":
-            joint.updateJCSPlacements()
-
-            presolved = joint.usesPreSolve() and preSolve(joint, False)
-
-            isAssembly = UtilsAssembly.getAssembly(joint).Type == "Assembly"
-            if isAssembly and not presolved:
-                solveIfAllowed(UtilsAssembly.getAssembly(joint))
-            else:
-                joint.updateJCSPlacements()
-
-        if prop == "Distance" and joint.JointType == "Distance":
-            solveIfAllowed(UtilsAssembly.getAssembly(joint))
-
-        if prop == "Angle" and joint.JointType == "Angle":
-            if joint.Angle != 0.0:
-                preventParallel(joint)
-            solveIfAllowed(UtilsAssembly.getAssembly(joint))
+    # Property reactions that used to live in a Python onChanged now run from the
+    # create/edit dialog handlers (relabel on type change; re-solve on offset /
+    # distance / angle edits) so nothing depends on the proxy once creation flips
+    # to the bare typed Assembly::Joint (#59 stage 5c). Object correctness on
+    # recompute is owned by the C++ Joint::execute.
 
     # execute() is now the typed C++ Assembly::Joint::execute (#59 stage 3): it
     # validates the references and recomputes the JCS placements entirely in C++
@@ -825,7 +780,15 @@ def setJointConnectors(joint, refs):
 
     if len(refs) >= 2:
         joint.Reference2 = refs[1]
+    else:
+        joint.Reference2 = None
+        joint.Placement2 = App.Placement()
 
+    # References changed: refresh Placement1/2 from the new references before any
+    # pre-solve reads them (this recompute used to be driven by the proxy onChanged).
+    joint.recompute()
+
+    if len(refs) >= 2:
         ensureUnconnectedIsSecondRef(joint)
 
         if joint.usesPreSolve():
@@ -839,11 +802,23 @@ def setJointConnectors(joint, refs):
             joint.updateJCSPlacements()
 
     else:
-        joint.Reference2 = None
-        joint.Placement2 = App.Placement()
         if isAssembly:
             assembly.undoSolve()
         undoPreSolve(joint)
+
+
+def relabelForJointType(joint):
+    # Replace the previous joint-type word in the (translated) label with the new
+    # one, so a "Fixed" joint renamed to "Revolute" tracks its label.
+    newType = joint.JointType
+    tr_new_type = TranslatedJointTypes[JointTypes.index(newType)]
+    for i, old_type_name in enumerate(JointTypes):
+        if old_type_name == newType:
+            continue
+        tr_old_type = TranslatedJointTypes[i]
+        if tr_old_type in joint.Label:
+            joint.Label = joint.Label.replace(tr_old_type, tr_new_type)
+            break
 
 
 def flipOnePart(joint):
@@ -1721,13 +1696,44 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
     def onJointTypeChanged(self, index):
         self.jType = JointTypes[self.jForm.jointType.currentIndex()]
         self.joint.JointType = self.jType
+        relabelForJointType(self.joint)
         self.adaptUi()
+
+    def refsAreSet(self):
+        joint = self.joint
+        return (
+            hasattr(joint, "Reference1")
+            and hasattr(joint, "Reference2")
+            and joint.Reference1 is not None
+            and joint.Reference2 is not None
+        )
+
+    def solveAfterOffsetChange(self):
+        # Re-solve after an offset edit (previously driven by the proxy onChanged
+        # reacting to Offset1/Offset2).
+        if not self.refsAreSet():
+            return
+
+        joint = self.joint
+        joint.updateJCSPlacements()
+        presolved = joint.usesPreSolve() and preSolve(joint, False)
+        assembly = UtilsAssembly.getAssembly(joint)
+        if assembly.Type == "Assembly" and not presolved:
+            solveIfAllowed(assembly)
+        else:
+            joint.updateJCSPlacements()
 
     def onAngleChanged(self, quantity):
         self.joint.Angle = self.jForm.angleSpinbox.property("rawValue")
+        if self.joint.JointType == "Angle" and self.refsAreSet():
+            if self.joint.Angle != 0.0:
+                preventParallel(self.joint)
+            solveIfAllowed(UtilsAssembly.getAssembly(self.joint))
 
     def onDistanceChanged(self, quantity):
         self.joint.Distance = self.jForm.distanceSpinbox.property("rawValue")
+        if self.joint.JointType == "Distance" and self.refsAreSet():
+            solveIfAllowed(UtilsAssembly.getAssembly(self.joint))
 
     def onDistance2Changed(self, quantity):
         self.joint.Distance2 = self.jForm.distanceSpinbox2.property("rawValue")
@@ -1737,6 +1743,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
             return
 
         self.joint.Offset2.Base = App.Vector(0, 0, self.jForm.offsetSpinbox.property("rawValue"))
+        self.solveAfterOffsetChange()
 
     def onRotationChanged(self, quantity):
         if self.blockOffsetRotation:
@@ -1745,6 +1752,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         yaw = self.jForm.rotationSpinbox.property("rawValue")
         ypr = self.joint.Offset2.Rotation.getYawPitchRoll()
         self.joint.Offset2.Rotation.setYawPitchRoll(yaw, ypr[1], ypr[2])
+        self.solveAfterOffsetChange()
 
     def onLimitLenMinChanged(self, quantity):
         if self.jForm.limitCheckbox1.isChecked():
@@ -1880,10 +1888,12 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
 
     def onOffset1Clicked(self):
         UtilsAssembly.openEditingPlacementDialog(self.joint, "Offset1")
+        self.solveAfterOffsetChange()
         self.updateOffsetWidgets()
 
     def onOffset2Clicked(self):
         UtilsAssembly.openEditingPlacementDialog(self.joint, "Offset2")
+        self.solveAfterOffsetChange()
         self.updateOffsetWidgets()
 
     def updateIsolation(self):
