@@ -464,7 +464,7 @@ class CommandToggleGrounded:
                 resolved = sel.Object.resolveSubElement(sub)
                 if resolved:
                     obj = resolved[0]
-                    if hasattr(obj, "ObjectToGround"):
+                    if obj.isDerivedFrom("Assembly::GroundedJoint"):
                         commands = (
                             "doc = App.ActiveDocument\n"
                             f'doc.removeObject("{obj.Name}")\n'
@@ -486,7 +486,10 @@ class CommandToggleGrounded:
                 # Check if part is grounded and if so delete the joint.
                 ungrounded = False
                 for joint in joint_group.Group:
-                    if hasattr(joint, "ObjectToGround") and joint.ObjectToGround == moving_part:
+                    if (
+                        joint.isDerivedFrom("Assembly::GroundedJoint")
+                        and joint.ObjectToGround == moving_part
+                    ):
                         commands = (
                             "doc = App.ActiveDocument\n"
                             f'doc.removeObject("{joint.Name}")\n'

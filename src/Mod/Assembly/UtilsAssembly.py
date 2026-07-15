@@ -694,7 +694,7 @@ def isAssemblyGrounded():
     jointGroup = getJointGroup(assembly)
 
     for joint in jointGroup.Group:
-        if hasattr(joint, "ObjectToGround"):
+        if joint.isDerivedFrom("Assembly::GroundedJoint"):
             return True
 
     return False
