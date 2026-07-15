@@ -805,27 +805,10 @@ class Joint:
                 self.preventParallel(joint)
             solveIfAllowed(self.getAssembly(joint))
 
-    def execute(self, joint):
-        errStr = joint.Label + ": " + QT_TRANSLATE_NOOP("Assembly", "Broken link in: ")
-        if (
-            hasattr(joint, "Reference1")
-            and joint.Reference1 is not None
-            and len(joint.Reference1) == 2
-            and len(joint.Reference1[1]) != 0
-            and (joint.Reference1[1][0].find("?") != -1)
-        ):
-            raise Exception(errStr + "Reference1")
-
-        if (
-            hasattr(joint, "Reference2")
-            and joint.Reference2 is not None
-            and len(joint.Reference2) == 2
-            and len(joint.Reference2[1]) != 0
-            and (joint.Reference2[1][0].find("?") != -1)
-        ):
-            raise Exception(errStr + "Reference2")
-
-        self.updateJCSPlacements(joint)
+    # execute() is now the typed C++ Assembly::Joint::execute (#59 stage 3): it
+    # validates the references and calls updateJCSPlacements below through the
+    # transitional Proxy. With no execute here, FeaturePythonT falls back to the
+    # C++ implementation.
 
     def setJointConnectors(self, joint, refs):
         # current selection is a vector of strings like "Assembly.Assembly1.Assembly2.Body.Pad.Edge16" including both what selection return as obj_name and obj_sub

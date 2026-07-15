@@ -115,6 +115,17 @@ public:
 private:
     /// Enumeration values for JointType, in the historical order.
     static const char* JointTypeEnums[];
+
+    /**
+     * Recompute the joint-coordinate-system placements (Placement1/Placement2).
+     *
+     * The reference-to-frame geometry (resolving a face/edge/vertex to a local
+     * coordinate system) still lives in the Python helper during the #59 bridge;
+     * this invokes it through the transitional `Proxy`. It is a no-op on a bare
+     * typed Joint that carries no Proxy — that path arrives once the geometry is
+     * ported to C++ in a later sub-stage.
+     */
+    void updateJointCoordinateSystems();
 };
 
 /**

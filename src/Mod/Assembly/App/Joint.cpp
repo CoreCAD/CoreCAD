@@ -26,11 +26,27 @@
 #include "PreCompiled.h"
 
 #include <App/FeaturePythonPyImp.h>
+#include <App/PropertyPythonObject.h>
+#include <Base/Interpreter.h>
 
 #include "Joint.h"
 #include "JointPy.h"
 
 using namespace Assembly;
+
+namespace
+{
+/// A "?" in the first sub-element name marks a reference the topological-naming
+/// layer could not resolve after an edit — the joint's link is broken.
+bool hasBrokenReference(const App::PropertyXLinkSub& ref)
+{
+    if (!ref.getValue()) {
+        return false;
+    }
+    const std::vector<std::string>& subs = ref.getSubValues();
+    return !subs.empty() && subs.front().find('?') != std::string::npos;
+}
+}  // namespace
 
 
 const char* Joint::JointTypeEnums[] = {
@@ -212,10 +228,41 @@ Joint::~Joint() = default;
 
 App::DocumentObjectExecReturn* Joint::execute()
 {
-    // The solve is driven at the AssemblyObject level, which reads this joint's
-    // properties by name. Per-joint execute (joint-coordinate-system geometry)
-    // is ported in a later stage; for now recompute is a no-op.
+    // Refuse to recompute over a broken reference, matching the former Python
+    // execute. The solve itself is driven at the AssemblyObject level, which
+    // reads this joint's properties by name.
+    if (hasBrokenReference(Reference1)) {
+        return new App::DocumentObjectExecReturn("Broken link in: Reference1", this);
+    }
+    if (hasBrokenReference(Reference2)) {
+        return new App::DocumentObjectExecReturn("Broken link in: Reference2", this);
+    }
+
+    updateJointCoordinateSystems();
+
     return App::DocumentObject::StdReturn;
+}
+
+void Joint::updateJointCoordinateSystems()
+{
+    Base::PyGILStateLocker lock;
+
+    auto* proxy = dynamic_cast<App::PropertyPythonObject*>(getPropertyByName("Proxy"));
+    if (!proxy) {
+        return;
+    }
+
+    Py::Object self = proxy->getValue();
+    if (!self.hasAttr("updateJCSPlacements")) {
+        return;
+    }
+
+    Py::Object attr = self.getAttr("updateJCSPlacements");
+    if (attr.ptr() && attr.isCallable()) {
+        Py::Tuple args(1);
+        args.setItem(0, Py::asObject(getPyObject()));
+        Py::Callable(attr).apply(args);
+    }
 }
 
 PyObject* Joint::getPyObject()
