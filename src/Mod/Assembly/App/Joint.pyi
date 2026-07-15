@@ -32,3 +32,12 @@ class Joint(DocumentObject):
         """
         Whether reference-to-frame resolution ignores a picked vertex for this kind.
         """
+
+    def updateJCSPlacements(self) -> None:
+        """
+        Recompute Placement1/Placement2 from the references (C++ geometry) and redraw.
+
+        The interactive Python code (onChanged, setJointConnectors) calls this after
+        editing offsets/references, outside a full recompute; it is the same work
+        Joint.execute() does. Retired once that Python behaviour is ported to C++.
+        """

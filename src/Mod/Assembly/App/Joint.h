@@ -119,20 +119,28 @@ public:
         return App::DocumentObject::ContentScope::AssemblyItem;
     }
 
+    /**
+     * Recompute the joint-coordinate-system placements (Placement1/Placement2).
+     *
+     * Resolves each reference to a local coordinate system in C++
+     * (Assembly::findPlacement) and applies the attachment offset, then asks the
+     * ViewProvider to redraw. Detached connectors keep their custom placement.
+     * Called by execute() and, during the #59 bridge, by the interactive Python
+     * code (via JointPy) after editing offsets/references outside a recompute.
+     */
+    void updateJointCoordinateSystems();
+
 private:
     /// Enumeration values for JointType, in the historical order.
     static const char* JointTypeEnums[];
 
     /**
-     * Recompute the joint-coordinate-system placements (Placement1/Placement2).
+     * Ask the (still-Python) ViewProvider to redraw the joint-connector glyphs.
      *
-     * The reference-to-frame geometry (resolving a face/edge/vertex to a local
-     * coordinate system) still lives in the Python helper during the #59 bridge;
-     * this invokes it through the transitional `Proxy`. It is a no-op on a bare
-     * typed Joint that carries no Proxy — that path arrives once the geometry is
-     * ported to C++ in a later sub-stage.
+     * Routed through the transitional `Proxy`; a no-op on a bare typed Joint or a
+     * headless run. Retired once the ViewProvider is ported to C++ (#60).
      */
-    void updateJointCoordinateSystems();
+    void redrawJointPlacements();
 };
 
 /**

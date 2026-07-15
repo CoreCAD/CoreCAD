@@ -29,6 +29,7 @@
 #include <App/PropertyPythonObject.h>
 #include <Base/Interpreter.h>
 
+#include "AssemblyUtils.h"
 #include "Joint.h"
 #include "JointPy.h"
 
@@ -250,6 +251,26 @@ const JointKind& Joint::getKind() const
 
 void Joint::updateJointCoordinateSystems()
 {
+    // Resolve each reference to a local coordinate system (C++ geometry) and apply
+    // the user's attachment offset. Detached connectors keep their custom placement.
+    // The whole kind shares one ignore-vertex decision (JointKind capability).
+    const bool ignoreVertex = getKind().ignoresVertex;
+
+    if (!Detach1.getValue()) {
+        Placement1.setValue(findPlacement(&Reference1, ignoreVertex) * Offset1.getValue());
+    }
+    if (!Detach2.getValue()) {
+        Placement2.setValue(findPlacement(&Reference2, ignoreVertex) * Offset2.getValue());
+    }
+
+    redrawJointPlacements();
+}
+
+void Joint::redrawJointPlacements()
+{
+    // The Coin3D joint-connector glyphs are still drawn by the Python ViewProvider
+    // (kept over the typed object until #60). Forward through the transitional Proxy
+    // when one is present; a bare typed Joint or a headless run simply skips it.
     Base::PyGILStateLocker lock;
 
     auto* proxy = dynamic_cast<App::PropertyPythonObject*>(getPropertyByName("Proxy"));
@@ -258,11 +279,11 @@ void Joint::updateJointCoordinateSystems()
     }
 
     Py::Object self = proxy->getValue();
-    if (!self.hasAttr("updateJCSPlacements")) {
+    if (!self.hasAttr("redrawJointPlacements")) {
         return;
     }
 
-    Py::Object attr = self.getAttr("updateJCSPlacements");
+    Py::Object attr = self.getAttr("redrawJointPlacements");
     if (attr.ptr() && attr.isCallable()) {
         Py::Tuple args(1);
         args.setItem(0, Py::asObject(getPyObject()));

@@ -57,6 +57,12 @@ PyObject* JointPy::ignoresVertex(PyObject* /*args*/) const
     return Py_BuildValue("O", (value ? Py_True : Py_False));
 }
 
+PyObject* JointPy::updateJCSPlacements(PyObject* /*args*/)
+{
+    this->getJointPtr()->updateJointCoordinateSystems();
+    Py_RETURN_NONE;
+}
+
 PyObject* JointPy::getCustomAttributes(const char* /*attr*/) const
 {
     return nullptr;

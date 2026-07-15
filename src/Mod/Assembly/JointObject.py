@@ -781,7 +781,7 @@ class Joint:
             return
 
         if prop == "Offset1" or prop == "Offset2":
-            self.updateJCSPlacements(joint)
+            joint.updateJCSPlacements()
 
             presolved = joint.usesPreSolve() and self.preSolve(joint, False)
 
@@ -789,7 +789,7 @@ class Joint:
             if isAssembly and not presolved:
                 solveIfAllowed(self.getAssembly(joint))
             else:
-                self.updateJCSPlacements(joint)
+                joint.updateJCSPlacements()
 
         if prop == "Distance" and joint.JointType == "Distance":
             solveIfAllowed(self.getAssembly(joint))
@@ -800,9 +800,9 @@ class Joint:
             solveIfAllowed(self.getAssembly(joint))
 
     # execute() is now the typed C++ Assembly::Joint::execute (#59 stage 3): it
-    # validates the references and calls updateJCSPlacements below through the
-    # transitional Proxy. With no execute here, FeaturePythonT falls back to the
-    # C++ implementation.
+    # validates the references and recomputes the JCS placements entirely in C++
+    # (Assembly::findPlacement). With no execute here, FeaturePythonT falls back to
+    # the C++ implementation.
 
     def setJointConnectors(self, joint, refs):
         # current selection is a vector of strings like "Assembly.Assembly1.Assembly2.Body.Pad.Edge16" including both what selection return as obj_name and obj_sub
@@ -829,7 +829,7 @@ class Joint:
             if isAssembly:
                 solveIfAllowed(assembly, True)
             else:
-                self.updateJCSPlacements(joint)
+                joint.updateJCSPlacements()
 
         else:
             joint.Reference2 = None
@@ -838,42 +838,16 @@ class Joint:
                 assembly.undoSolve()
             self.undoPreSolve(joint)
 
-    def updateJCSPlacements(self, joint):
-        if not joint.Detach1:
-            joint.Placement1 = self.findPlacement(joint, joint.Reference1, 0)
-
-        if not joint.Detach2:
-            joint.Placement2 = self.findPlacement(joint, joint.Reference2, 1)
-
-        self.redrawJointPlacements(joint)
+    # updateJCSPlacements / findPlacement are now the typed C++ path (#59 stage 3d):
+    # joint.updateJCSPlacements() recomputes Placement1/2 via Assembly::findPlacement
+    # and redraws. The App-object Proxy still forwards the redraw to the (Python)
+    # ViewProvider until the VP is ported (#60).
 
     def redrawJointPlacements(self, joint):
         if joint.ViewObject:
             proxy = joint.ViewObject.Proxy
             if proxy:
                 proxy.redrawJointPlacements(joint)
-
-    """
-    So here we want to find a placement that corresponds to a local coordinate system that would be placed at the selected vertex.
-    - obj is usually a App::Link to a PartDesign::Body, or primitive, fasteners. But can also be directly the object.1
-    - elt can be a face, an edge or a vertex.
-    - If elt is a vertex, then vtx = elt And placement is vtx coordinates without rotation.
-    - if elt is an edge, then vtx = edge start/end vertex depending on which is closer. If elt is an arc or circle, vtx can also be the center. The rotation is the plane normal to the line positioned at vtx. Or for arcs/circle, the plane of the arc.
-    - if elt is a plane face, vtx is the face vertex (to the list of vertex we need to add arc/circle centers) the closer to the mouse. The placement is the plane rotation positioned at vtx
-    - if elt is a cylindrical face, vtx can also be the center of the arcs of the cylindrical face.
-    """
-
-    def findPlacement(self, joint, ref, index=0):
-        ignoreVertex = joint.ignoresVertex()
-        plc = UtilsAssembly.findPlacement(ref, ignoreVertex)
-
-        # We apply the attachment offsets.
-        if index == 0:
-            plc = plc * joint.Offset1
-        else:
-            plc = plc * joint.Offset2
-
-        return plc
 
     def flipOnePart(self, joint):
         self.matchJCS(joint, False, True)
@@ -2078,7 +2052,10 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
 
         ref = UtilsAssembly.addVertexToReference(ref, vertex_name)
 
-        placement = self.joint.Proxy.findPlacement(self.joint, ref, 0)
+        # Preview uses an arbitrary hover reference (not the joint's stored ones),
+        # so it computes the frame directly rather than via joint.updateJCSPlacements.
+        placement = UtilsAssembly.findPlacement(ref, self.joint.ignoresVertex())
+        placement = placement * self.joint.Offset1
         self.joint.ViewObject.Proxy.showPreviewJCS(True, placement, ref)
         self.previewJCSVisible = True
 
