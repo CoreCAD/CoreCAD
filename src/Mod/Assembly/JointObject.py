@@ -160,7 +160,7 @@ def getContext(obj):
 
 
 # The joint object consists of 2 JCS (joint coordinate systems) and a Joint Type.
-# A JCS is a placement that is computed (unless it is detached) from references (PropertyXLinkSubHidden) that links to :
+# A JCS is a placement that is computed (unless it is detached) from references (PropertyXLinkSub) that links to :
 # - An object: this can be any Part::Feature solid. Or a PartDesign Body. Or a App::Link to those.
 # - An element name: This can be either a face, an edge, a vertex or empty. Empty means that the Object placement will be used
 # - A vertex name: For faces and edges, we need to specify which vertex of said face/edge to use
