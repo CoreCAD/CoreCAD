@@ -190,4 +190,9 @@ AssemblyExport std::vector<std::string> getSubAsList(
 AssemblyExport void syncPlacements(App::DocumentObject* src, App::DocumentObject* to);
 AssemblyExport double getJointCurrentValue(App::DocumentObject* joint, bool isAngle);
 
+// Local coordinate system a joint connector sits at, for a reference to a sub-shape.
+// Split internally into an identity-resolution boundary and pure geometry (see the
+// .cpp). Ports UtilsAssembly.findPlacement (#59).
+AssemblyExport Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex);
+
 }  // namespace Assembly

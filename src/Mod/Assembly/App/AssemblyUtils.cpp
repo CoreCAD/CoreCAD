@@ -23,11 +23,26 @@
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepGProp.hxx>
+#include <BRep_Tool.hxx>
+#include <GC_MakePlane.hxx>
+#include <GProp_GProps.hxx>
+#include <Geom_Conic.hxx>
+#include <Geom_ElementarySurface.hxx>
+#include <Geom_Plane.hxx>
+#include <TopExp.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <gp_Circ.hxx>
+#include <gp_Cone.hxx>
 #include <gp_Cylinder.hxx>
+#include <gp_Pln.hxx>
+#include <gp_Quaternion.hxx>
 #include <gp_Sphere.hxx>
+#include <gp_Torus.hxx>
+#include <Precision.hxx>
 
 
 #include <App/Application.h>
@@ -37,9 +52,13 @@
 #include <App/PropertyStandard.h>
 #include <App/Link.h>
 
+#include <Base/Console.h>
 #include <Base/Placement.h>
 #include <Base/Tools.h>
 #include <Base/Interpreter.h>
+
+#include <cmath>
+#include <set>
 
 #include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -806,6 +825,412 @@ std::vector<App::DocumentObject*> getAssemblyComponents(const AssemblyObject* as
     std::vector<App::DocumentObject*> components;
     collectComponentsRecursively(assembly->Group.getValues(), components);
     return components;
+}
+
+// ============================ Joint coordinate systems ============================
+//
+// findPlacement() computes the local coordinate system a joint connector sits at,
+// given a stored reference to a sub-shape on some part. It is deliberately split into
+// two halves that never interleave (#59 three-layer template):
+//
+//   * The identity boundary: resolveReference() plus the single subShape() helper own
+//     every reference / sub-element-*name* lookup. This is the one place a future
+//     durable sub-shape-id scheme will slot in; today it resolves by the current
+//     sub-element name (topological naming as-is). Geometry code never open-codes a
+//     name lookup -- it calls subShape() so the mechanism stays swappable.
+//   * Pure geometry: computePlacement() consumes resolved sub-shapes and produces a
+//     placement. It reads no names and no references, only OCCT geometry.
+//
+// Ported from UtilsAssembly.findPlacement (#59). Keep the two halves separate.
+
+namespace
+{
+struct ResolvedReference
+{
+    App::DocumentObject* obj = nullptr;  // resolved object owning the geometry
+    TopoDS_Shape eltShape;               // primary sub-shape (null for whole-part datums)
+    std::string eltType;                 // "Vertex" | "Edge" | "Face" | ""
+    int eltIndex = 0;                    // trailing number of the primary sub-element
+    std::string vtxName;                 // secondary sub-name; resolved contextually via subShape()
+    std::string vtxType;                 // "" when there is no second sub
+    bool wholePart = false;              // elt or vtx empty -> datum-axis / whole-part case
+    bool valid = false;
+};
+
+// The single name->shape lookup, funnelling every resolution through one seam so a
+// durable-id scheme can later replace just this. Returns a null shape on miss.
+TopoDS_Shape subShape(const Part::TopoShape& parent, const std::string& name)
+{
+    try {
+        return parent.getSubShape(name.c_str());
+    }
+    catch (const Base::Exception&) {
+        Base::Console().warning("Assembly: unable to find element %s.\n", name.c_str());
+        return {};
+    }
+}
+
+// Trailing element token of a dotted sub-name, e.g. "Asm.Box.Edge16" -> "Edge16".
+// Datum roles (X/Y/Z/Point/Line/Plane) resolve to "" so the whole-part branch handles
+// them; mirrors UtilsAssembly.getElementName.
+std::string elementName(const std::string& sub)
+{
+    const auto pos = sub.rfind('.');
+    const std::string last = pos == std::string::npos ? sub : sub.substr(pos + 1);
+    static const std::set<std::string> datumRoles = {"X", "Y", "Z", "Point", "Line", "Plane"};
+    return datumRoles.count(last) != 0U ? std::string() : last;
+}
+
+// Split "Face7" into ("Face", 7); mirrors UtilsAssembly.extract_type_and_number.
+void splitTypeAndNumber(const std::string& name, std::string& type, int& number)
+{
+    type.clear();
+    number = 0;
+    std::string digits;
+    for (const char ch : name) {
+        if (std::isalpha(static_cast<unsigned char>(ch)) != 0) {
+            type += ch;
+        }
+        else if (std::isdigit(static_cast<unsigned char>(ch)) != 0) {
+            digits += ch;
+        }
+        else {
+            break;
+        }
+    }
+    if (!type.empty() && !digits.empty()) {
+        number = std::stoi(digits);
+    }
+    else {
+        type.clear();
+        number = 0;
+    }
+}
+
+bool refIsValid(const App::PropertyXLinkSub* ref)
+{
+    if (!ref || !ref->getValue()) {
+        return false;
+    }
+    const auto subs = ref->getSubValues();
+    if (subs.empty()) {
+        return false;
+    }
+    return subs.front().find('?') == std::string::npos;
+}
+
+// Identity boundary: turn a stored reference into a resolved object + primary sub-shape.
+ResolvedReference resolveReference(const App::PropertyXLinkSub* ref)
+{
+    ResolvedReference r;
+    if (!refIsValid(ref)) {
+        return r;
+    }
+    r.obj = getObjFromRef(ref);
+    if (!r.obj) {
+        return r;
+    }
+    r.valid = true;
+
+    const auto subs = ref->getSubValues();
+    const std::string eltName = elementName(subs[0]);
+    r.vtxName = subs.size() > 1 ? elementName(subs[1]) : std::string();
+
+    if (eltName.empty() || r.vtxName.empty()) {
+        // Whole-part reference (PartDesign datum axis / origin element).
+        r.wholePart = true;
+        return r;
+    }
+
+    int dummy = 0;
+    splitTypeAndNumber(eltName, r.eltType, r.eltIndex);
+    splitTypeAndNumber(r.vtxName, r.vtxType, dummy);
+
+    auto* base = dynamic_cast<const Part::Feature*>(r.obj);
+    if (!base) {
+        r.valid = false;
+        return r;
+    }
+    r.eltShape = subShape(base->Shape.getShape(), eltName);
+    if (r.eltShape.IsNull()) {
+        r.valid = false;
+    }
+    return r;
+}
+
+// --- pure-geometry helpers (no name lookups) ---
+
+Base::Vector3d toVec(const gp_Pnt& p)
+{
+    return Base::Vector3d(p.X(), p.Y(), p.Z());
+}
+
+Base::Vector3d toVec(const gp_Dir& d)
+{
+    return Base::Vector3d(d.X(), d.Y(), d.Z());
+}
+
+double round10(double v)
+{
+    return std::round(v * 1e10) / 1e10;
+}
+
+Base::Vector3d round10(const Base::Vector3d& v)
+{
+    return Base::Vector3d(round10(v.x), round10(v.y), round10(v.z));
+}
+
+// Rotation of a coordinate system relative to the global one, matching the
+// GeometryCurvePy/GeometrySurfacePy `.Rotation` getters used by the former Python.
+Base::Rotation rotationFromAx2(const gp_Ax2& ax2)
+{
+    gp_Trsf trsf;
+    trsf.SetTransformation(gp_Ax3(ax2), gp_Ax3());
+    const gp_Quaternion q = trsf.GetRotation();
+    return {q.X(), q.Y(), q.Z(), q.W()};
+}
+
+// Part.Plane(origin, normal).Rotation -- the frame whose z-axis is `normal`.
+Base::Rotation planeRotationFromNormal(const gp_Dir& normal)
+{
+    const GC_MakePlane mk(gp_Pnt(0, 0, 0), normal);
+    const Handle(Geom_Plane) plane = mk.Value();
+    return rotationFromAx2(plane->Position().Ax2());
+}
+
+gp_Pnt faceCenterOfMass(const TopoDS_Face& face)
+{
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(face, props);
+    return props.CentreOfMass();
+}
+
+// Intersection of two known-intersecting cylinder axes; falls back to `fallback`
+// (the primary cylinder centre) when the axes are parallel/skew. Ports the geometric
+// core of UtilsAssembly.findCylindersIntersection.
+Base::Vector3d axisIntersection(
+    const gp_Pnt& p1,
+    const gp_Dir& d1,
+    const gp_Pnt& p2,
+    const gp_Dir& d2,
+    const Base::Vector3d& fallback
+)
+{
+    const gp_Vec v1(d1);
+    const gp_Vec v2(d2);
+    const gp_Vec cross = v1.Crossed(v2);
+    const double denom = cross.SquareMagnitude();
+    if (denom < Precision::SquareConfusion()) {
+        return fallback;  // parallel axes
+    }
+    const gp_Vec r(p1, p2);
+    const double t = gp_Vec(r.Crossed(v2)).Dot(cross) / denom;
+    const gp_Pnt hit = p1.Translated(v1.Scaled(t));
+    return toVec(hit);
+}
+
+const Part::TopoShape* objTopoShape(const App::DocumentObject* obj)
+{
+    const auto* base = dynamic_cast<const Part::Feature*>(obj);
+    return base ? &base->Shape.getShape() : nullptr;
+}
+
+Base::Placement objPlacement(const App::DocumentObject* obj)
+{
+    if (const auto* p = obj->getPropertyByName<App::PropertyPlacement>("Placement")) {
+        return p->getValue();
+    }
+    return {};
+}
+
+// Whole-part references (a PartDesign datum axis picked as a whole) map to fixed frames.
+Base::Placement datumAxisPlacement(const App::DocumentObject* obj)
+{
+    const auto* line = dynamic_cast<const App::Line*>(obj);
+    if (!line) {
+        return {};
+    }
+    const std::string role = line->Role.getValue();
+    if (role == "X_Axis" || role == "Y_Axis") {
+        return Base::Placement(Base::Vector3d(), Base::Rotation(0.5, 0.5, 0.5, 0.5));
+    }
+    if (role == "Z_Axis") {
+        return Base::Placement(Base::Vector3d(), Base::Rotation(-0.5, 0.5, -0.5, 0.5));
+    }
+    return {};
+}
+
+// Pure geometry: resolved sub-shapes in, local placement out. Name lookups (for the
+// contextual secondary sub-element) go through subShape(), never open-coded here.
+Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
+{
+    if (r.wholePart) {
+        return datumAxisPlacement(r.obj);
+    }
+
+    Base::Placement plc;
+    bool isLine = false;
+
+    if (r.eltType == "Vertex") {
+        plc.setPosition(toVec(BRep_Tool::Pnt(TopoDS::Vertex(r.eltShape))));
+    }
+    else if (r.eltType == "Edge") {
+        const TopoDS_Edge edge = TopoDS::Edge(r.eltShape);
+        BRepAdaptor_Curve adapt(edge);
+        const GeomAbs_CurveType ctype = adapt.GetType();
+
+        // translation
+        if (r.vtxType == "Edge" || ignoreVertex) {
+            if (ctype == GeomAbs_Circle) {
+                plc.setPosition(toVec(adapt.Circle().Location()));
+            }
+            else if (ctype == GeomAbs_Line) {
+                const gp_Pnt a = BRep_Tool::Pnt(TopExp::FirstVertex(edge));
+                const gp_Pnt b = BRep_Tool::Pnt(TopExp::LastVertex(edge));
+                plc.setPosition((toVec(a) + toVec(b)) * 0.5);
+            }
+        }
+        else {
+            const Part::TopoShape* shape = objTopoShape(r.obj);
+            const TopoDS_Shape vtx = shape ? subShape(*shape, r.vtxName) : TopoDS_Shape();
+            if (vtx.IsNull()) {
+                return {};
+            }
+            plc.setPosition(toVec(BRep_Tool::Pnt(TopoDS::Vertex(vtx))));
+        }
+
+        // rotation
+        if (ctype == GeomAbs_Circle) {
+            plc.setRotation(rotationFromAx2(adapt.Circle().Position()));
+        }
+        else if (ctype == GeomAbs_Line) {
+            isLine = true;
+            const Base::Vector3d n = round10(toVec(adapt.Line().Direction()));
+            plc.setRotation(planeRotationFromNormal(gp_Dir(n.x, n.y, n.z)));
+        }
+    }
+    else if (r.eltType == "Face") {
+        const TopoDS_Face face = TopoDS::Face(r.eltShape);
+        BRepAdaptor_Surface adapt(face);
+        const GeomAbs_SurfaceType stype = adapt.GetType();
+
+        // translation
+        if (r.vtxType == "Face" || ignoreVertex) {
+            if (stype == GeomAbs_Cylinder) {
+                const gp_Cylinder cyl = adapt.Cylinder();
+                const Base::Vector3d center = toVec(cyl.Location());
+                const Base::Vector3d centerOfG = toVec(faceCenterOfMass(face)) - center;
+                Base::Vector3d proj;
+                proj.ProjectToLine(centerOfG, toVec(cyl.Axis().Direction()));
+                plc.setPosition(center + centerOfG + proj);
+            }
+            else if (stype == GeomAbs_Torus) {
+                plc.setPosition(toVec(adapt.Torus().Location()));
+            }
+            else if (stype == GeomAbs_Sphere) {
+                plc.setPosition(toVec(adapt.Sphere().Location()));
+            }
+            else if (stype == GeomAbs_Cone) {
+                plc.setPosition(toVec(adapt.Cone().Apex()));
+            }
+            else {
+                plc.setPosition(toVec(faceCenterOfMass(face)));
+            }
+        }
+        else if (r.vtxType == "Edge") {
+            // Secondary edge is resolved *within the face* (its center is wanted).
+            const TopoDS_Shape sub = subShape(Part::TopoShape(face), r.vtxName);
+            if (!sub.IsNull()) {
+                BRepAdaptor_Curve cadapt(TopoDS::Edge(sub));
+                if (cadapt.GetType() == GeomAbs_Circle) {
+                    plc.setPosition(toVec(cadapt.Circle().Location()));
+                }
+                else if (stype == GeomAbs_Cylinder && cadapt.GetType() == GeomAbs_BSplineCurve) {
+                    // Two intersecting cylinders: sit at their axes' intersection.
+                    const gp_Cylinder cyl = adapt.Cylinder();
+                    Base::Vector3d hit(toVec(cyl.Location()));
+                    for (int i = 1;; ++i) {
+                        const std::string name = "Face" + std::to_string(i);
+                        const Part::TopoShape* shp = objTopoShape(r.obj);
+                        if (!shp) {
+                            break;
+                        }
+                        TopoDS_Shape fj;
+                        try {
+                            fj = shp->getSubShape(name.c_str());
+                        }
+                        catch (const Base::Exception&) {
+                            break;  // ran past the last face
+                        }
+                        if (i == r.eltIndex || fj.IsNull() || fj.ShapeType() != TopAbs_FACE) {
+                            continue;
+                        }
+                        BRepAdaptor_Surface sj(TopoDS::Face(fj));
+                        if (sj.GetType() != GeomAbs_Cylinder) {
+                            continue;
+                        }
+                        const gp_Cylinder cj = sj.Cylinder();
+                        hit = axisIntersection(
+                            cyl.Location(),
+                            cyl.Axis().Direction(),
+                            cj.Location(),
+                            cj.Axis().Direction(),
+                            hit
+                        );
+                        break;
+                    }
+                    plc.setPosition(hit);
+                }
+            }
+        }
+        else {
+            const Part::TopoShape* shape = objTopoShape(r.obj);
+            const TopoDS_Shape vtx = shape ? subShape(*shape, r.vtxName) : TopoDS_Shape();
+            if (vtx.IsNull()) {
+                return {};
+            }
+            plc.setPosition(toVec(BRep_Tool::Pnt(TopoDS::Vertex(vtx))));
+        }
+
+        // rotation: any elementary surface exposes a frame; free-form ones do not.
+        const Handle(Geom_ElementarySurface)
+            es = Handle(Geom_ElementarySurface)::DownCast(BRep_Tool::Surface(face));
+        if (!es.IsNull()) {
+            plc.setRotation(rotationFromAx2(es->Position().Ax2()));
+        }
+    }
+
+    // Draft arrays carry the array placement on the Shape; strip it back out.
+    if (r.obj->getPropertyByName("ExpandArray") != nullptr) {
+        if (const auto* baseProp = r.obj->getPropertyByName<App::PropertyLink>("Base")) {
+            if (const App::DocumentObject* baseObj = baseProp->getValue()) {
+                plc = objPlacement(baseObj).inverse() * plc;
+            }
+        }
+    }
+
+    // Everything above is in the object's global frame; make it object-relative.
+    plc = objPlacement(r.obj).inverse() * plc;
+
+    if (r.eltType == "Vertex") {
+        plc.setRotation(Base::Rotation());
+    }
+    else if (isLine) {
+        const Base::Vector3d n = round10(plc.getRotation().multVec(Base::Vector3d(0, 0, 1)));
+        plc.setRotation(planeRotationFromNormal(gp_Dir(n.x, n.y, n.z)));
+    }
+
+    return plc;
+}
+}  // namespace
+
+Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex)
+{
+    const ResolvedReference resolved = resolveReference(ref);
+    if (!resolved.valid) {
+        return {};
+    }
+    return computePlacement(resolved, ignoreVertex);
 }
 
 double getJointCurrentValue(App::DocumentObject* joint, bool isAngle)
