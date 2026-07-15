@@ -867,29 +867,6 @@ def getCenterOfBoundingBox(objs, refs):
     return center
 
 
-def findCylindersIntersection(obj, surface, edge, elt_index):
-    for j, facej in enumerate(obj.Shape.Faces):
-        surfacej = facej.Surface
-        if (elt_index - 1) == j or surfacej.TypeId != "Part::GeomCylinder":
-            continue
-
-        for edgej in facej.Edges:
-            if (
-                edgej.Curve.TypeId == "Part::GeomBSplineCurve"
-                and edgej.CenterOfGravity == edge.CenterOfGravity
-                and edgej.Length == edge.Length
-            ):
-                # we need intersection between the 2 cylinder axis.
-                line1 = Part.Line(surface.Center, surface.Center + surface.Axis)
-                line2 = Part.Line(surfacej.Center, surfacej.Center + surfacej.Axis)
-
-                res = line1.intersect(line2, Part.Precision.confusion())
-
-                if res:
-                    return App.Vector(res[0].X, res[0].Y, res[0].Z)
-    return surface.Center
-
-
 def openEditingPlacementDialog(obj, propName):
     task_placement = Gui.TaskPlacement()
     dialog = task_placement.form
@@ -969,158 +946,6 @@ def removeTNPFromSubname(doc_name, obj_name, sub_name):
     return sub_name
 
 
-"""
-So here we want to find a placement that corresponds to a local coordinate system that would be placed at the selected vertex.
-- obj is usually a App::Link to a PartDesign::Body, or primitive, fasteners. But can also be directly the object.1
-- elt can be a face, an edge or a vertex.
-- If elt is a vertex, then vtx = elt And placement is vtx coordinates without rotation.
-- if elt is an edge, then vtx = edge start/end vertex depending on which is closer. If elt is an arc or circle, vtx can also be the center. The rotation is the plane normal to the line positioned at vtx. Or for arcs/circle, the plane of the arc.
-- if elt is a plane face, vtx is the face vertex (to the list of vertex we need to add arc/circle centers) the closer to the mouse. The placement is the plane rotation positioned at vtx
-- if elt is a cylindrical face, vtx can also be the center of the arcs of the cylindrical face.
-"""
-
-
-def findPlacement(ref, ignoreVertex=False):
-    if not isRefValid(ref, 2):
-        return App.Placement()
-    obj = getObject(ref)
-    if not obj:
-        return App.Placement()
-
-    elt = getElementName(ref[1][0])
-    vtx = getElementName(ref[1][1])
-
-    if not elt or not vtx:
-        # case of whole parts such as PartDesign::Body or App/PartDesign::CordinateSystem/Point/Line/Plane.
-        if obj.TypeId == "App::Line":
-            if obj.Role == "X_Axis":
-                return App.Placement(App.Vector(), App.Rotation(0.5, 0.5, 0.5, 0.5))
-            if obj.Role == "Y_Axis":
-                return App.Placement(App.Vector(), App.Rotation(0.5, 0.5, 0.5, 0.5))
-            if obj.Role == "Z_Axis":
-                return App.Placement(App.Vector(), App.Rotation(-0.5, 0.5, -0.5, 0.5))
-        return App.Placement()
-
-    plc = App.Placement()
-
-    elt_type, elt_index = extract_type_and_number(elt)
-    vtx_type, _ = extract_type_and_number(vtx)
-
-    isLine = False
-
-    if elt_type == "Vertex":
-        vertex = get_element(obj.Shape, elt)
-        if vertex is None:
-            return App.Placement()
-        plc.Base = (vertex.X, vertex.Y, vertex.Z)
-    elif elt_type == "Edge":
-        edge = get_element(obj.Shape, elt)
-        if edge is None:
-            return App.Placement()
-
-        curve = edge.Curve
-
-        # First we find the translation
-        if vtx_type == "Edge" or ignoreVertex:
-            # In this case the wanted vertex is the center.
-            if curve.TypeId == "Part::GeomCircle":
-                center_point = curve.Location
-                plc.Base = (center_point.x, center_point.y, center_point.z)
-            elif curve.TypeId == "Part::GeomLine":
-                edge_points = getPointsFromVertexes(edge.Vertexes)
-                line_middle = (edge_points[0] + edge_points[1]) * 0.5
-                plc.Base = line_middle
-        else:
-            vertex = get_element(obj.Shape, vtx)
-            if vertex is None:
-                return App.Placement()
-
-            plc.Base = (vertex.X, vertex.Y, vertex.Z)
-
-        # Then we find the Rotation
-        if curve.TypeId == "Part::GeomCircle":
-            plc.Rotation = App.Rotation(curve.Rotation)
-
-        if curve.TypeId == "Part::GeomLine":
-            isLine = True
-            plane_normal = round_vector(curve.Direction)
-            plane_origin = App.Vector(0, 0, 0)
-            plane = Part.Plane(plane_origin, plane_normal)
-            plc.Rotation = App.Rotation(plane.Rotation)
-    elif elt_type == "Face":
-        face = get_element(obj.Shape, elt)
-        if face is None:
-            return App.Placement()
-
-        surface = face.Surface
-
-        # First we find the translation
-        if vtx_type == "Face" or ignoreVertex:
-            if surface.TypeId == "Part::GeomCylinder":
-                centerOfG = face.CenterOfGravity - surface.Center
-                centerPoint = surface.Center + centerOfG
-                centerPoint = centerPoint + App.Vector().projectToLine(centerOfG, surface.Axis)
-                plc.Base = centerPoint
-            elif surface.TypeId == "Part::GeomTorus" or surface.TypeId == "Part::GeomSphere":
-                plc.Base = surface.Center
-            elif surface.TypeId == "Part::GeomCone":
-                plc.Base = surface.Apex
-            else:
-                plc.Base = face.CenterOfGravity
-        elif vtx_type == "Edge":
-            # In this case the edge is a circle/arc and the wanted vertex is its center.
-            edge = get_element(face, vtx)
-            if edge is None:
-                return App.Placement()
-
-            curve = edge.Curve
-            if curve.TypeId == "Part::GeomCircle":
-                center_point = curve.Location
-                plc.Base = (center_point.x, center_point.y, center_point.z)
-
-            elif (
-                surface.TypeId == "Part::GeomCylinder" and curve.TypeId == "Part::GeomBSplineCurve"
-            ):
-                # handle special case of 2 cylinder intersecting.
-                plc.Base = findCylindersIntersection(obj, surface, edge, elt_index)
-
-        else:
-            vertex = get_element(obj.Shape, vtx)
-            if vertex is None:
-                return App.Placement()
-
-            plc.Base = (vertex.X, vertex.Y, vertex.Z)
-
-        # Then we find the Rotation
-        if hasattr(surface, "Rotation") and surface.Rotation is not None:
-            plc.Rotation = App.Rotation(surface.Rotation)
-
-    if hasattr(obj, "ExpandArray"):
-        # For draft arrays, the Shape has both the array placement and the base placement.
-        plc = obj.Base.Placement.inverse() * plc
-
-    # change plc to be relative to the object placement.
-    plc = obj.Placement.inverse() * plc
-
-    # post-process of plc for some special cases
-    if elt_type == "Vertex":
-        plc.Rotation = App.Rotation()
-    elif isLine:
-        plane_normal = round_vector(plc.Rotation.multVec(App.Vector(0, 0, 1)))
-        plane_origin = App.Vector(0, 0, 0)
-        plane = Part.Plane(plane_origin, plane_normal)
-        plc.Rotation = App.Rotation(plane.Rotation)
-
-    return plc
-
-
-def get_element(shape, name):
-    element = shape.getElement(name)
-    if element is None:
-        App.Console.PrintWarning(f"Unable to find element {name}.")
-    return element
-
-
 def isRefValid(ref, number_sub):
     if ref is None:
         return False
@@ -1132,11 +957,6 @@ def isRefValid(ref, number_sub):
         return False
 
     return True
-
-
-def round_vector(v, decimals=10):
-    """Round each component of the vector to a specified number of decimal places."""
-    return App.Vector(round(v.x, decimals), round(v.y, decimals), round(v.z, decimals))
 
 
 def saveAssemblyPartsPlacements(assembly):

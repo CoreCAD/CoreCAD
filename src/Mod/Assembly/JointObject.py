@@ -39,6 +39,7 @@ __author__ = "Ondsel"
 __url__ = "https://www.freecad.org"
 
 from pivy import coin
+import AssemblyApp
 import UtilsAssembly
 import Preferences
 
@@ -2054,7 +2055,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
 
         # Preview uses an arbitrary hover reference (not the joint's stored ones),
         # so it computes the frame directly rather than via joint.updateJCSPlacements.
-        placement = UtilsAssembly.findPlacement(ref, self.joint.ignoresVertex())
+        placement = AssemblyApp.findPlacement(ref, self.joint.ignoresVertex())
         placement = placement * self.joint.Offset1
         self.joint.ViewObject.Proxy.showPreviewJCS(True, placement, ref)
         self.previewJCSVisible = True

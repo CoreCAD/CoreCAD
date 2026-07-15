@@ -907,32 +907,29 @@ void splitTypeAndNumber(const std::string& name, std::string& type, int& number)
     }
 }
 
-bool refIsValid(const App::PropertyXLinkSub* ref)
+bool refIsValid(const App::DocumentObject* value, const std::vector<std::string>& subs)
 {
-    if (!ref || !ref->getValue()) {
-        return false;
-    }
-    const auto subs = ref->getSubValues();
-    if (subs.empty()) {
+    if (!value || subs.empty()) {
         return false;
     }
     return subs.front().find('?') == std::string::npos;
 }
 
-// Identity boundary: turn a stored reference into a resolved object + primary sub-shape.
-ResolvedReference resolveReference(const App::PropertyXLinkSub* ref)
+// Identity boundary: turn a raw reference (value object + sub-element names) into a
+// resolved object + primary sub-shape. This is the funnel every caller reaches, whether
+// the reference arrives as a stored PropertyXLinkSub or as a raw [obj, subs] pair.
+ResolvedReference resolveReference(App::DocumentObject* value, const std::vector<std::string>& subs)
 {
     ResolvedReference r;
-    if (!refIsValid(ref)) {
+    if (!refIsValid(value, subs)) {
         return r;
     }
-    r.obj = getObjFromRef(ref);
+    r.obj = getObjFromRef(value, subs[0]);
     if (!r.obj) {
         return r;
     }
     r.valid = true;
 
-    const auto subs = ref->getSubValues();
     const std::string eltName = elementName(subs[0]);
     r.vtxName = subs.size() > 1 ? elementName(subs[1]) : std::string();
 
@@ -1224,13 +1221,25 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
 }
 }  // namespace
 
-Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex)
+Base::Placement findPlacement(
+    App::DocumentObject* obj,
+    const std::vector<std::string>& subs,
+    bool ignoreVertex
+)
 {
-    const ResolvedReference resolved = resolveReference(ref);
+    const ResolvedReference resolved = resolveReference(obj, subs);
     if (!resolved.valid) {
         return {};
     }
     return computePlacement(resolved, ignoreVertex);
+}
+
+Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex)
+{
+    if (!ref) {
+        return {};
+    }
+    return findPlacement(ref->getValue(), ref->getSubValues(), ignoreVertex);
 }
 
 double getJointCurrentValue(App::DocumentObject* joint, bool isAngle)

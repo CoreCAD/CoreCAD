@@ -192,7 +192,13 @@ AssemblyExport double getJointCurrentValue(App::DocumentObject* joint, bool isAn
 
 // Local coordinate system a joint connector sits at, for a reference to a sub-shape.
 // Split internally into an identity-resolution boundary and pure geometry (see the
-// .cpp). Ports UtilsAssembly.findPlacement (#59).
+// .cpp). Ports UtilsAssembly.findPlacement (#59). The raw (obj, subs) overload is the
+// primitive; the PropertyXLinkSub overload unwraps a stored reference onto it.
+AssemblyExport Base::Placement findPlacement(
+    App::DocumentObject* obj,
+    const std::vector<std::string>& subs,
+    bool ignoreVertex
+);
 AssemblyExport Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex);
 
 }  // namespace Assembly

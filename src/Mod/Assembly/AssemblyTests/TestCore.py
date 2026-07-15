@@ -25,6 +25,7 @@ import FreeCAD as App
 import Part
 import unittest
 
+import AssemblyApp
 import UtilsAssembly
 import JointObject
 
@@ -190,25 +191,25 @@ class TestCore(unittest.TestCase):
 
         # Step 0 : box with placement. No element selected
         ref = [self.assembly, [box.Name + ".", box.Name + "."]]
-        plc = UtilsAssembly.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(), App.Rotation())
         self.assertTrue(plc.isSame(targetPlc, 1e-6), "'{}' failed - Step 0".format(operation))
 
         # Step 1 : box with placement. Face + Vertex
         ref = [self.assembly, [box.Name + ".Face6", box.Name + ".Vertex7"]]
-        plc = UtilsAssembly.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(L, W, H), App.Rotation())
         self.assertTrue(plc.isSame(targetPlc, 1e-6), "'{}' failed - Step 1".format(operation))
 
         # Step 2 : box with placement. Edge + Vertex
         ref = [self.assembly, [box.Name + ".Edge8", box.Name + ".Vertex8"]]
-        plc = UtilsAssembly.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(L, W, 0), App.Rotation(0, -90, 270))
         self.assertTrue(plc.isSame(targetPlc, 1e-6), "'{}' failed - Step 2".format(operation))
 
         # Step 3 : box with placement. Vertex
         ref = [self.assembly, [box.Name + ".Vertex3", box.Name + ".Vertex3"]]
-        plc = UtilsAssembly.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(0, W, H), App.Rotation())
         _msg("  plc '{}'".format(plc))
         _msg("  targetPlc '{}'".format(targetPlc))
@@ -216,7 +217,7 @@ class TestCore(unittest.TestCase):
 
         # Step 4 : box with placement. Face
         ref = [self.assembly, [box.Name + ".Face2", box.Name + ".Face2"]]
-        plc = UtilsAssembly.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(L, W / 2, H / 2), App.Rotation(0, -90, 180))
         _msg("  plc '{}'".format(plc))
         _msg("  targetPlc '{}'".format(targetPlc))
