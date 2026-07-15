@@ -81,6 +81,7 @@
 #include "AssemblyObject.h"
 #include "AssemblyObjectPy.h"
 #include "AssemblyUtils.h"
+#include "Joint.h"
 #include "JointGroup.h"
 #include "ViewGroup.h"
 
@@ -749,11 +750,10 @@ std::vector<App::DocumentObject*> AssemblyObject::getJoints(bool delBadJoints, b
             continue;
         }
 
-        auto proxy = dynamic_cast<App::PropertyPythonObject*>(joint->getPropertyByName("Proxy"));
-        if (proxy) {
-            if (proxy->getValue().hasAttr("setJointConnectors")) {
-                joints.push_back(joint);
-            }
+        // Mate joints participate in the solve; grounded joints (a distinct type) do
+        // not. Select on the typed class rather than probing the Python proxy (#59).
+        if (joint->isDerivedFrom<Joint>()) {
+            joints.push_back(joint);
         }
     }
 
