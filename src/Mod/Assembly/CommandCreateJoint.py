@@ -411,8 +411,8 @@ def createGroundedJoint(obj):
         f'obj = App.ActiveDocument.getObject("{obj.Name}")\n'
         "assembly = UtilsAssembly.activeAssembly()\n"
         "joint_group = UtilsAssembly.getJointGroup(assembly)\n"
-        'ground = joint_group.newObject("Assembly::GroundedJointPython", "GroundedJoint")\n'
-        "JointObject.GroundedJoint(ground, obj)"
+        'ground = joint_group.newObject("Assembly::GroundedJoint", "GroundedJoint")\n'
+        "ground.ObjectToGround = obj"
     )
     Gui.doCommand(commands)
     Gui.doCommandGui("JointObject.ViewProviderGroundedJoint(ground.ViewObject)")

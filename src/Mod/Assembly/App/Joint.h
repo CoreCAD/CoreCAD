@@ -29,7 +29,6 @@
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <App/DocumentObject.h>
-#include <App/FeaturePython.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
@@ -114,10 +113,8 @@ public:
     PyObject* getPyObject() override;
 
     /// Host the (still-Python) ViewProviderJoint over the FeaturePython view
-    /// provider shell, exactly as the transitional JointPython variant did. The
-    /// bare typed object is not a FeaturePython, but the view provider need not
-    /// match: the creation command attaches the Python ViewProviderJoint proxy
-    /// to this shell. Ported to a C++ view provider with #60.
+    /// provider shell: the creation command attaches the Python ViewProviderJoint
+    /// proxy to this shell. Ported to a C++ view provider with #60.
     const char* getViewProviderName() const override
     {
         return "Gui::ViewProviderFeaturePython";
@@ -143,28 +140,7 @@ public:
 private:
     /// Enumeration values for JointType, in the historical order.
     static const char* JointTypeEnums[];
-
-    /**
-     * Ask the (still-Python) ViewProvider to redraw the joint-connector glyphs.
-     *
-     * Routed through the transitional `Proxy`; a no-op on a bare typed Joint or a
-     * headless run. Retired once the ViewProvider is ported to C++ (#60).
-     */
-    void redrawJointPlacements();
 };
-
-/**
- * Python-proxy-enabled variant of Joint (transitional bridge, #59).
- *
- * The typed Joint above owns the data and declares the content scope. Joint
- * behaviour (JCS recompute in execute, interactive onChanged, the solver's
- * mid-solve call-ins) still lives in the Python `Joint` helper for now. This
- * variant carries that helper via a `Proxy` and dispatches execute/onChanged
- * to it, so the flip to a typed object changes no behaviour. As the behaviour
- * is ported to C++ across later stages, the dispatch is retired and creation
- * moves to the bare typed Joint; this alias is then removed.
- */
-using JointPython = App::FeaturePythonT<Joint>;
 
 
 }  // namespace Assembly

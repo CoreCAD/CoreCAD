@@ -29,7 +29,6 @@
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <App/DocumentObject.h>
-#include <App/FeaturePython.h>
 #include <App/PropertyLinks.h>
 
 
@@ -77,12 +76,6 @@ public:
         return App::DocumentObject::ContentScope::AssemblyItem;
     }
 };
-
-/**
- * Python-proxy-enabled variant of GroundedJoint (transitional bridge, #59).
- * See Assembly::JointPython for the rationale; retired the same way.
- */
-using GroundedJointPython = App::FeaturePythonT<GroundedJoint>;
 
 
 }  // namespace Assembly

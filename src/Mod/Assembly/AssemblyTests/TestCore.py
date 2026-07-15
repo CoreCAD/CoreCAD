@@ -103,9 +103,10 @@ class TestCore(unittest.TestCase):
         operation = "Create Joint Object"
         _msg("  Test '{}'".format(operation))
 
-        joint = self.jointgroup.newObject("Assembly::JointPython", "testJoint")
+        joint = self.jointgroup.newObject("Assembly::Joint", "testJoint")
         self.assertTrue(joint, "'{}' failed (joint creation failed)".format(operation))
-        JointObject.Joint(joint, 0)
+        joint.JointType = JointObject.JointTypes[0]
+        JointObject.setJointConnectors(joint, [])
 
         self.assertTrue(hasattr(joint, "JointType"), "'{}' failed".format(operation))
         self.assertTrue(
@@ -118,14 +119,14 @@ class TestCore(unittest.TestCase):
         operation = "Create Grounded Joint Object"
         _msg("  Test '{}'".format(operation))
 
-        groundedjoint = self.jointgroup.newObject("Assembly::GroundedJointPython", "testJoint")
+        groundedjoint = self.jointgroup.newObject("Assembly::GroundedJoint", "testJoint")
         self.assertTrue(
             groundedjoint, "'{}' failed (grounded joint creation failed)".format(operation)
         )
 
         box = self.assembly.newObject("Part::Box", "Box")
 
-        JointObject.GroundedJoint(groundedjoint, box)
+        groundedjoint.ObjectToGround = box
 
         self.assertTrue(
             hasattr(groundedjoint, "ObjectToGround"),
@@ -144,8 +145,8 @@ class TestCore(unittest.TestCase):
         box = self.assembly.newObject("Part::Box", "Box")
 
         # ground the part
-        groundedjoint = self.jointgroup.newObject("Assembly::GroundedJointPython", "GroundedJoint")
-        JointObject.GroundedJoint(groundedjoint, box)
+        groundedjoint = self.jointgroup.newObject("Assembly::GroundedJoint", "GroundedJoint")
+        groundedjoint.ObjectToGround = box
         self.doc.recompute()
 
         # verify grounded
@@ -177,8 +178,9 @@ class TestCore(unittest.TestCase):
         operation = "Find placement"
         _msg("  Test '{}'".format(operation))
 
-        joint = self.jointgroup.newObject("Assembly::JointPython", "testJoint")
-        JointObject.Joint(joint, 0)
+        joint = self.jointgroup.newObject("Assembly::Joint", "testJoint")
+        joint.JointType = JointObject.JointTypes[0]
+        JointObject.setJointConnectors(joint, [])
 
         L = 2
         W = 3
@@ -240,11 +242,12 @@ class TestCore(unittest.TestCase):
         box2.Height = 10
         box2.Placement = App.Placement(App.Vector(40, 50, 60), App.Rotation(45, 55, 65))
 
-        ground = self.jointgroup.newObject("Assembly::GroundedJointPython", "GroundedJoint")
-        JointObject.GroundedJoint(ground, box2)
+        ground = self.jointgroup.newObject("Assembly::GroundedJoint", "GroundedJoint")
+        ground.ObjectToGround = box2
 
-        joint = self.jointgroup.newObject("Assembly::JointPython", "testJoint")
-        JointObject.Joint(joint, 0)
+        joint = self.jointgroup.newObject("Assembly::Joint", "testJoint")
+        joint.JointType = JointObject.JointTypes[0]
+        JointObject.setJointConnectors(joint, [])
 
         refs = [
             [box2, ["Face6", "Vertex7"]],

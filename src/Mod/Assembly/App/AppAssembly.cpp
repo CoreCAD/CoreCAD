@@ -68,9 +68,7 @@ PyMOD_INIT_FUNC(AssemblyApp)
     Assembly::BomObject ::init();
 
     Assembly::Joint ::init();
-    Assembly::JointPython ::init();
     Assembly::GroundedJoint ::init();
-    Assembly::GroundedJointPython ::init();
 
     Assembly::BomGroup ::init();
     Assembly::JointGroup ::init();

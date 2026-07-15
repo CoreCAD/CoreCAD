@@ -25,10 +25,6 @@
 
 #include "PreCompiled.h"
 
-#include <App/FeaturePythonPyImp.h>
-#include <App/PropertyPythonObject.h>
-#include <Base/Interpreter.h>
-
 #include "AssemblyUtils.h"
 #include "Joint.h"
 #include "JointPy.h"
@@ -263,32 +259,7 @@ void Joint::updateJointCoordinateSystems()
         Placement2.setValue(findPlacement(&Reference2, ignoreVertex) * Offset2.getValue());
     }
 
-    redrawJointPlacements();
-}
-
-void Joint::redrawJointPlacements()
-{
-    // The Coin3D joint-connector glyphs are still drawn by the Python ViewProvider
-    // (kept over the typed object until #60). Forward through the transitional Proxy
-    // when one is present; a bare typed Joint or a headless run simply skips it.
-    Base::PyGILStateLocker lock;
-
-    auto* proxy = dynamic_cast<App::PropertyPythonObject*>(getPropertyByName("Proxy"));
-    if (!proxy) {
-        return;
-    }
-
-    Py::Object self = proxy->getValue();
-    if (!self.hasAttr("redrawJointPlacements")) {
-        return;
-    }
-
-    Py::Object attr = self.getAttr("redrawJointPlacements");
-    if (attr.ptr() && attr.isCallable()) {
-        Py::Tuple args(1);
-        args.setItem(0, Py::asObject(getPyObject()));
-        Py::Callable(attr).apply(args);
-    }
+    redrawJointViewProvider(this);
 }
 
 PyObject* Joint::getPyObject()
@@ -299,28 +270,3 @@ PyObject* Joint::getPyObject()
     }
     return Py::new_reference_to(PythonObject);
 }
-
-// Transitional Python-proxy variant (#59): typed Joint data + Python behaviour.
-namespace App
-{
-/// @cond DOXERR
-PROPERTY_SOURCE_TEMPLATE(Assembly::JointPython, Assembly::Joint)
-template<>
-const char* Assembly::JointPython::getViewProviderName() const
-{
-    return "Gui::ViewProviderFeaturePython";
-}
-template<>
-PyObject* Assembly::JointPython::getPyObject()
-{
-    if (PythonObject.is(Py::_None())) {
-        // ref counter is set to 1
-        PythonObject = Py::Object(new FeaturePythonPyT<Assembly::JointPy>(this), true);
-    }
-    return Py::new_reference_to(PythonObject);
-}
-/// @endcond
-
-// explicit template instantiation
-template class AssemblyExport FeaturePythonT<Assembly::Joint>;
-}  // namespace App

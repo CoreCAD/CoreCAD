@@ -1267,4 +1267,34 @@ double getJointCurrentValue(App::DocumentObject* joint, bool isAngle)
     return (plc1.getPosition() - plc2.getPosition()).Length()
         * (plc3.getPosition().z < 0 ? -1.0 : 1.0);
 }
+
+void redrawJointViewProvider(App::DocumentObject* joint)
+{
+    if (!joint) {
+        return;
+    }
+
+    Base::PyGILStateLocker lock;
+
+    // joint.ViewObject.Proxy.redrawJointPlacements(joint) — the same hop the former
+    // Python Joint proxy forwarder made, now that the App object carries no Proxy.
+    Py::Object jointPy(joint->getPyObject(), true);
+    if (!jointPy.hasAttr("ViewObject")) {
+        return;
+    }
+    Py::Object viewObject = jointPy.getAttr("ViewObject");
+    if (viewObject.isNone() || !viewObject.hasAttr("Proxy")) {
+        return;
+    }
+    Py::Object proxy = viewObject.getAttr("Proxy");
+    if (proxy.isNone() || !proxy.hasAttr("redrawJointPlacements")) {
+        return;
+    }
+    Py::Object attr = proxy.getAttr("redrawJointPlacements");
+    if (attr.ptr() && attr.isCallable()) {
+        Py::Tuple args(1);
+        args.setItem(0, jointPy);
+        Py::Callable(attr).apply(args);
+    }
+}
 }  // namespace Assembly

@@ -201,4 +201,11 @@ AssemblyExport Base::Placement findPlacement(
 );
 AssemblyExport Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex);
 
+// Ask a joint's (still-Python) ViewProvider to redraw its Coin3D connector glyphs.
+// Reaches the view provider through the object's ViewObject.Proxy at runtime, so the
+// App layer keeps no compile-time dependency on the Gui layer. A no-op headless (no
+// ViewObject) or when no such view provider is attached. Retired once the joint view
+// provider is ported to C++ (#60).
+AssemblyExport void redrawJointViewProvider(App::DocumentObject* joint);
+
 }  // namespace Assembly
