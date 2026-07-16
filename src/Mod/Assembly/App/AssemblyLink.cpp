@@ -354,6 +354,20 @@ void AssemblyLink::synchronizeComponents()
 
     objLinkMap.clear();
 
+    if (isRigid()) {
+        // Rigid sub-assemblies own nothing: child geometry is resolved through the reference
+        // (see getSubObject) and the whole is folded as a single rigid body at solve time. So
+        // we build no local proxies, and tear down any that a prior flexible state left behind.
+        // Flexible sub-assemblies still materialise an owned proxy graph (#63).
+        for (auto* obj : Group.getValues()) {
+            if (obj->isDerivedFrom<App::Part>() || obj->isDerivedFrom<PartApp::Feature>()
+                || obj->isDerivedFrom<App::Link>()) {
+                doc->removeObject(obj->getNameInDocument());
+            }
+        }
+        return;
+    }
+
     std::vector<App::DocumentObject*> assemblyGroup = assembly->Group.getValues();
     std::vector<App::DocumentObject*> assemblyLinkGroup = Group.getValues();
 
@@ -500,13 +514,6 @@ void AssemblyLink::synchronizeComponents()
         }
 
         objLinkMap[obj] = link;
-    }
-
-    // If the assemblyLink is rigid, then we keep all placements synchronized.
-    if (isRigid()) {
-        for (const auto& [sourceObj, linkObj] : objLinkMap) {
-            syncPlacements(sourceObj, linkObj);
-        }
     }
 
     // We check if a component needs to be removed from the AssemblyLink
