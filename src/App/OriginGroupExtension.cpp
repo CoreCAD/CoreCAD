@@ -146,6 +146,12 @@ short OriginGroupExtension::extensionMustExecute()
 
 App::DocumentObjectExecReturn* OriginGroupExtension::extensionExecute()
 {
+    // A reference/instance object (e.g. an assembly link) opts out of owning an Origin,
+    // so there is nothing to validate here.
+    if (!getExtendedObject()->hasOwnOrigin()) {
+        return GeoFeatureGroupExtension::extensionExecute();
+    }
+
     try {  // try to find all base axis and planes in the origin
         getOrigin();
     }
@@ -167,6 +173,13 @@ App::DocumentObject* OriginGroupExtension::getLocalizedOrigin(App::Document* doc
 
 void OriginGroupExtension::onExtendedSetupObject()
 {
+    // A reference/instance object (e.g. an assembly link) does not own its own frame,
+    // so we must not mint an Origin for it.
+    if (!getExtendedObject()->hasOwnOrigin()) {
+        GeoFeatureGroupExtension::onExtendedSetupObject();
+        return;
+    }
+
     App::Document* doc = getExtendedObject()->getDocument();
 
     App::DocumentObject* originObj = getLocalizedOrigin(doc);

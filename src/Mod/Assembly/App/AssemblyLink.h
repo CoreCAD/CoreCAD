@@ -106,6 +106,13 @@ public:
 
     bool allowDuplicateLabel() const override;
 
+    /// An assembly link is a reference into another assembly, not a frame owner: it
+    /// positions the linked content through its Placement and must not own an Origin.
+    bool hasOwnOrigin() const override
+    {
+        return false;
+    }
+
     bool isEmpty() const;
     int numberOfComponents() const;
 
