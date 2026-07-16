@@ -54,6 +54,12 @@ public:
         return "AssemblyGui::ViewProviderAssemblyLink";
     }
 
+    /// A sub-assembly instance is assembly-scoped content: only an Assembly document admits it.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::AssemblyItem;
+    }
+
     App::DocumentObjectExecReturn* execute() override;
 
     /**

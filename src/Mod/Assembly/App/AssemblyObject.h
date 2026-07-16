@@ -86,6 +86,12 @@ public:
         return "AssemblyGui::ViewProviderAssembly";
     }
 
+    /// An assembly is assembly-scoped content: only an Assembly document admits it.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::AssemblyItem;
+    }
+
     App::DocumentObjectExecReturn* execute() override;
     void onChanged(const App::Property* prop) override;
     /* Solve the assembly. It will update first the joints, solve, update placements of the parts
