@@ -12,6 +12,8 @@ generate_from_py(AssemblyObject)
 generate_from_py(AssemblyLink)
 generate_from_py(BomObject)
 generate_from_py(BomGroup)
+generate_from_py(Joint)
+generate_from_py(GroundedJoint)
 generate_from_py(JointGroup)
 generate_from_py(ViewGroup)
 generate_from_py(SimulationGroup)
@@ -26,6 +28,10 @@ SET(Python_SRCS
     BomObjectPyImp.cpp
     BomGroup.pyi
     BomGroupPyImp.cpp
+    Joint.pyi
+    JointPyImp.cpp
+    GroundedJoint.pyi
+    GroundedJointPyImp.cpp
     JointGroup.pyi
     JointGroupPyImp.cpp
     ViewGroup.pyi
@@ -53,6 +59,12 @@ SET(Assembly_SRCS
     BomObject.h
     BomGroup.cpp
     BomGroup.h
+    Joint.cpp
+    Joint.h
+    JointKind.cpp
+    JointKind.h
+    GroundedJoint.cpp
+    GroundedJoint.h
     JointGroup.cpp
     JointGroup.h
     ViewGroup.cpp

@@ -39,6 +39,7 @@ __author__ = "Ondsel"
 __url__ = "https://www.freecad.org"
 
 from pivy import coin
+import AssemblyApp
 import UtilsAssembly
 import Preferences
 
@@ -129,18 +130,12 @@ JointUsingLimitAngle = [
     "Cylindrical",
 ]
 
-JointUsingPreSolve = [
-    "Fixed",
-    "Revolute",
-    "Cylindrical",
-    "Slider",
-    "Ball",
-]
-
-JointParallelForbidden = [
-    "Angle",
-    "Perpendicular",
-]
+# The per-kind behaviour capabilities (pre-solve, parallel handling, vertex
+# handling) now live on the typed C++ Assembly::Joint (see JointKind): the joint
+# answers joint.usesPreSolve() / joint.forbidsParallel() / joint.ignoresVertex()
+# directly, replacing the former JointUsingPreSolve / JointParallelForbidden
+# membership lists. The remaining JointUsing* lists below still drive the Python
+# task dialog and move to JointKind when the dialog is ported.
 
 
 def solveIfAllowed(assembly, storePrev=False):
@@ -165,929 +160,247 @@ def getContext(obj):
 
 
 # The joint object consists of 2 JCS (joint coordinate systems) and a Joint Type.
-# A JCS is a placement that is computed (unless it is detached) from references (PropertyXLinkSubHidden) that links to :
+# A JCS is a placement that is computed (unless it is detached) from references (PropertyXLinkSub) that links to :
 # - An object: this can be any Part::Feature solid. Or a PartDesign Body. Or a App::Link to those.
 # - An element name: This can be either a face, an edge, a vertex or empty. Empty means that the Object placement will be used
 # - A vertex name: For faces and edges, we need to specify which vertex of said face/edge to use
 # Both element names hold the full path to the object.
 # From these a placement is computed. It is relative to the Object.
-class Joint:
-    def __init__(self, joint, type_index):
-        joint.Proxy = self
 
-        joint.addExtension("App::SuppressibleExtensionPython")
 
-        joint.addProperty(
-            "App::PropertyEnumeration",
-            "JointType",
-            "Joint",
-            QT_TRANSLATE_NOOP("App::Property", "The type of the joint"),
-            locked=True,
-        )
-        joint.JointType = JointTypes  # sets the list
-        joint.JointType = JointTypes[type_index]  # set the initial value
+# ---------------------------------------------------------------------------
+# Interactive joint tooling. These orchestrate reference wiring and pre-solve
+# part positioning for the create/edit dialog. They live at module scope (not on
+# the Python Joint proxy) so they survive the Stage 5 flip to the bare typed
+# Assembly::Joint and stay reachable headless. Transient pre-solve undo state is
+# held on the active task panel (activeTask); it only matters while editing.
+# ---------------------------------------------------------------------------
 
-        self.createProperties(joint)
 
-        self.setJointConnectors(joint, [])
+def setJointConnectors(joint, refs):
+    # refs is a list of [obj, [subelements]] references picked in the dialog.
+    assembly = UtilsAssembly.getAssembly(joint)
+    isAssembly = assembly.Type == "Assembly"
 
-    def onDocumentRestored(self, joint):
-        self.createProperties(joint)
+    if len(refs) >= 1:
+        joint.Reference1 = refs[0]
+    else:
+        joint.Reference1 = None
+        joint.Placement1 = App.Placement()
 
-    def createProperties(self, joint):
-        self.migrationScript(joint)
-        self.migrationScript2(joint)
-        self.migrationScript3(joint)
-        self.migrationScript4(joint)
-        self.migrationScript5(joint)
-        self.migrationScript6(joint)
-        self.migrationScript7(joint)
+    if len(refs) >= 2:
+        joint.Reference2 = refs[1]
+    else:
+        joint.Reference2 = None
+        joint.Placement2 = App.Placement()
 
-        # First Joint Connector
-        if not hasattr(joint, "Reference1"):
-            self.addReference1Property(joint)
+    # References changed: refresh Placement1/2 from the new references before any
+    # pre-solve reads them (this recompute used to be driven by the proxy onChanged).
+    joint.recompute()
 
-        if not hasattr(joint, "Placement1"):
-            joint.addProperty(
-                "App::PropertyPlacement",
-                "Placement1",
-                "Joint Connector 1",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the local coordinate system within Reference1's object that will be used for the joint",
-                ),
-                locked=True,
-            )
+    if len(refs) >= 2:
+        ensureUnconnectedIsSecondRef(joint)
 
-        if not hasattr(joint, "Detach1"):
-            joint.addProperty(
-                "App::PropertyBool",
-                "Detach1",
-                "Joint Connector 1",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This prevents Placement1 from recomputing, enabling custom positioning of the placement",
-                ),
-                locked=True,
-            )
+        if joint.usesPreSolve():
+            preSolve(joint)
+        elif joint.forbidsParallel():
+            preventParallel(joint)
 
-        if not hasattr(joint, "Offset1"):
-            joint.addProperty(
-                "App::PropertyPlacement",
-                "Offset1",
-                "Joint Connector 1",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the attachment offset of the first connector of the joint",
-                ),
-                locked=True,
-            )
-
-        # Second Joint Connector
-        if not hasattr(joint, "Reference2"):
-            self.addReference2Property(joint)
-
-        if not hasattr(joint, "Placement2"):
-            joint.addProperty(
-                "App::PropertyPlacement",
-                "Placement2",
-                "Joint Connector 2",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the local coordinate system within Reference2's object that will be used for the joint",
-                ),
-                locked=True,
-            )
-
-        if not hasattr(joint, "Detach2"):
-            joint.addProperty(
-                "App::PropertyBool",
-                "Detach2",
-                "Joint Connector 2",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This prevents Placement2 from recomputing, enabling custom positioning of the placement",
-                ),
-                locked=True,
-            )
-
-        if not hasattr(joint, "Offset2"):
-            joint.addProperty(
-                "App::PropertyPlacement",
-                "Offset2",
-                "Joint Connector 2",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the attachment offset of the second connector of the joint",
-                ),
-                locked=True,
-            )
-
-        # Other properties
-        if not hasattr(joint, "Angle"):
-            self.addAngleProperty(joint)
-
-        if not hasattr(joint, "Distance"):
-            self.addDistanceProperty(joint)
-
-        if not hasattr(joint, "Distance2"):
-            self.addDistance2Property(joint)
-
-        if not hasattr(joint, "EnableLengthMin"):
-            joint.addProperty(
-                "App::PropertyBool",
-                "EnableLengthMin",
-                "Limits",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Enable the minimum length limit of the joint",
-                ),
-                locked=True,
-            )
-            joint.EnableLengthMin = False
-
-        if not hasattr(joint, "EnableLengthMax"):
-            joint.addProperty(
-                "App::PropertyBool",
-                "EnableLengthMax",
-                "Limits",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Enable the maximum length limit of the joint",
-                ),
-                locked=True,
-            )
-            joint.EnableLengthMax = False
-
-        if not hasattr(joint, "EnableAngleMin"):
-            joint.addProperty(
-                "App::PropertyBool",
-                "EnableAngleMin",
-                "Limits",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Enable the minimum angle limit of the joint",
-                ),
-                locked=True,
-            )
-            joint.EnableAngleMin = False
-
-        if not hasattr(joint, "EnableAngleMax"):
-            joint.addProperty(
-                "App::PropertyBool",
-                "EnableAngleMax",
-                "Limits",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Enable the maximum angle limit of the joint",
-                ),
-                locked=True,
-            )
-            joint.EnableAngleMax = False
-
-        if not hasattr(joint, "LengthMin"):
-            self.addLengthMinProperty(joint)
-
-        if not hasattr(joint, "LengthMax"):
-            self.addLengthMaxProperty(joint)
-
-        if not hasattr(joint, "AngleMin"):
-            self.addAngleMinProperty(joint)
-
-        if not hasattr(joint, "AngleMax"):
-            self.addAngleMaxProperty(joint)
-
-        joint.setPropertyStatus("Distance", "AllowNegativeValues")
-        joint.setPropertyStatus("Distance2", "AllowNegativeValues")
-        joint.setPropertyStatus("LengthMin", "AllowNegativeValues")
-        joint.setPropertyStatus("LengthMax", "AllowNegativeValues")
-
-    def addReference1Property(self, joint):
-        joint.addProperty(
-            "App::PropertyXLinkSub",
-            "Reference1",
-            "Joint Connector 1",
-            QT_TRANSLATE_NOOP("App::Property", "The first reference of the joint"),
-            locked=True,
-        )
-
-    def addReference2Property(self, joint):
-        joint.addProperty(
-            "App::PropertyXLinkSub",
-            "Reference2",
-            "Joint Connector 2",
-            QT_TRANSLATE_NOOP("App::Property", "The second reference of the joint"),
-            locked=True,
-        )
-
-    def addAngleProperty(self, joint):
-        joint.addProperty(
-            "App::PropertyAngle",
-            "Angle",
-            "Joint",
-            QT_TRANSLATE_NOOP(
-                "App::Property",
-                "This is the angle of the joint. It is used only by the Angle joint.",
-            ),
-            locked=True,
-        )
-
-    def addDistanceProperty(self, joint):
-        joint.addProperty(
-            "App::PropertyLength",
-            "Distance",
-            "Joint",
-            QT_TRANSLATE_NOOP(
-                "App::Property",
-                "This is the distance of the joint. It is used only by the Distance joint and Rack and Pinion (pitch radius), Screw and Gears and Belt (radius1)",
-            ),
-            locked=True,
-        )
-
-    def addDistance2Property(self, joint):
-        joint.addProperty(
-            "App::PropertyLength",
-            "Distance2",
-            "Joint",
-            QT_TRANSLATE_NOOP(
-                "App::Property",
-                "This is the second distance of the joint. It is used only by the gear joint to store the second radius.",
-            ),
-            locked=True,
-        )
-
-    def addLengthMinProperty(self, joint):
-        joint.addProperty(
-            "App::PropertyLength",
-            "LengthMin",
-            "Limits",
-            QT_TRANSLATE_NOOP(
-                "App::Property",
-                "This is the minimum limit for the length between both coordinate systems (along their z-axis)",
-            ),
-            locked=True,
-        )
-
-    def addLengthMaxProperty(self, joint):
-        joint.addProperty(
-            "App::PropertyLength",
-            "LengthMax",
-            "Limits",
-            QT_TRANSLATE_NOOP(
-                "App::Property",
-                "This is the maximum limit for the length between both coordinate systems (along their z-axis)",
-            ),
-            locked=True,
-        )
-
-    def addAngleMinProperty(self, joint):
-        joint.addProperty(
-            "App::PropertyAngle",
-            "AngleMin",
-            "Limits",
-            QT_TRANSLATE_NOOP(
-                "App::Property",
-                "This is the minimum limit for the angle between both coordinate systems (between their x-axis)",
-            ),
-            locked=True,
-        )
-
-    def addAngleMaxProperty(self, joint):
-        joint.addProperty(
-            "App::PropertyAngle",
-            "AngleMax",
-            "Limits",
-            QT_TRANSLATE_NOOP(
-                "App::Property",
-                "This is the maximum limit for the angle between both coordinate systems (between their x-axis)",
-            ),
-            locked=True,
-        )
-
-    def migrationScript(self, joint):
-        if hasattr(joint, "Object1") and isinstance(joint.Object1, str):
-            objName = joint.Object1
-            obj1 = UtilsAssembly.getObjectInPart(objName, joint.Part1)
-            el1 = joint.Element1
-            vtx1 = joint.Vertex1
-
-            joint.removeProperty("Object1")
-            joint.removeProperty("Element1")
-            joint.removeProperty("Vertex1")
-
-            joint.addProperty(
-                "App::PropertyXLinkSub",
-                "Object1",
-                "Joint Connector 1",
-                QT_TRANSLATE_NOOP("App::Property", "The first object of the joint"),
-                locked=True,
-            )
-
-            joint.Object1 = [obj1, [el1, vtx1]]
-
-        if hasattr(joint, "Object2") and isinstance(joint.Object2, str):
-            objName = joint.Object2
-            obj2 = UtilsAssembly.getObjectInPart(objName, joint.Part2)
-            el2 = joint.Element2
-            vtx2 = joint.Vertex2
-
-            joint.removeProperty("Object2")
-            joint.removeProperty("Element2")
-            joint.removeProperty("Vertex2")
-
-            joint.addProperty(
-                "App::PropertyXLinkSub",
-                "Object2",
-                "Joint Connector 2",
-                QT_TRANSLATE_NOOP("App::Property", "The second object of the joint"),
-                locked=True,
-            )
-
-            joint.Object2 = [obj2, [el2, vtx2]]
-
-    def migrationScript2(self, joint):
-        def processObject(object_attr, reference_attr, part_attr, connector_label, order):
-            try:
-                if hasattr(joint, object_attr):
-                    joint.addProperty(
-                        "App::PropertyXLinkSubHidden",
-                        reference_attr,
-                        connector_label,
-                        QT_TRANSLATE_NOOP("App::Property", f"The {order} reference of the joint"),
-                        locked=True,
-                    )
-
-                    obj = getattr(joint, object_attr)
-
-                    base_obj = obj[0]
-                    part = getattr(joint, part_attr)
-                    elt = obj[1][0]
-                    vtx = obj[1][1]
-
-                    # Get the 'selection-root-obj' and the global path
-                    root_obj, path = UtilsAssembly.getRootPath(base_obj, part)
-                    base_obj = root_obj
-                    elt = path + elt
-                    vtx = path + vtx
-
-                    setattr(joint, reference_attr, [base_obj, [elt, vtx]])
-
-                    joint.removeProperty(object_attr)
-                    joint.removeProperty(part_attr)
-
-            except (AttributeError, IndexError, TypeError) as e:
-                App.Console.PrintWarning(
-                    f"{translate('Assembly', 'Assembly joint')} '{getContext(joint)}' "
-                    f"{translate('Assembly', 'has an invalid')} '{object_attr}' "
-                    f"{translate('Assembly', 'or related attributes')}. {str(e)}\n"
-                )
-
-        processObject("Object1", "Reference1", "Part1", "Joint Connector 1", "first")
-        processObject("Object2", "Reference2", "Part2", "Joint Connector 2", "second")
-
-    def migrationScript3(self, joint):
-        if hasattr(joint, "Offset"):
-            current_offset = joint.Offset  # App.Vector
-            current_rotation = joint.Rotation  # float
-
-            joint.removeProperty("Offset")
-            joint.removeProperty("Rotation")
-
-            joint.addProperty(
-                "App::PropertyPlacement",
-                "Offset1",
-                "Joint Connector 1",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the attachment offset of the first connector of the joint",
-                ),
-                locked=True,
-            )
-
-            joint.addProperty(
-                "App::PropertyPlacement",
-                "Offset2",
-                "Joint Connector 2",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the attachment offset of the second connector of the joint",
-                ),
-                locked=True,
-            )
-
-            joint.Offset2 = App.Placement(current_offset, App.Rotation(current_rotation, 0, 0))
-
-    def migrationScript4(self, joint):
-        def processReference(reference_attr):
-            try:
-                if hasattr(joint, reference_attr):
-                    ref = getattr(joint, reference_attr)
-
-                    refObj = ref[0]
-                    if refObj is None:
-                        return
-
-                    refObj = refObj.getLinkedObject(False)
-
-                    doc_name = refObj.Document.Name
-                    sub1 = UtilsAssembly.fixBodyExtraFeatureInSub(doc_name, ref[1][0])
-                    sub2 = UtilsAssembly.fixBodyExtraFeatureInSub(doc_name, ref[1][1])
-
-                    if sub1 != ref[1][0] or sub2 != ref[1][1]:
-                        setattr(joint, reference_attr, (ref[0], [sub1, sub2]))
-
-            except (AttributeError, IndexError, TypeError) as e:
-                App.Console.PrintWarning(
-                    f"{translate('Assembly', 'Assembly joint')} '{getContext(joint)}' "
-                    f"{translate('Assembly', 'has an invalid')} '{reference_attr}' "
-                    f"{translate('Assembly', 'or related attributes')}. {str(e)}\n"
-                )
-
-        processReference("Reference1")
-        processReference("Reference2")
-
-    def migrationScript5(self, joint):
-        if not joint.hasExtension("App::SuppressibleExtensionPython"):
-            joint.addExtension("App::SuppressibleExtensionPython")
-
-        if App.GuiUp:
-            if not joint.ViewObject.hasExtension("Gui::ViewProviderSuppressibleExtensionPython"):
-                joint.ViewObject.addExtension("Gui::ViewProviderSuppressibleExtensionPython")
-
-        if hasattr(joint, "Activated"):
-            activated = joint.Activated
-            if not activated:
-                print(
-                    "The 'Activated' property has been replaced by the 'Suppressed' property. The file has a deactivated joint that is being migrated. If you open this file in an older version, it will not be deactivated anymore."
-                )
-            joint.removeProperty("Activated")
-            joint.Suppressed = not activated
-
-    def migrationScript6(self, joint):
-        """
-        This script migrates properties with fixed types from PropertyFloat to the
-        correct PropertyLength or PropertyAngle type.
-        """
-        if (
-            hasattr(joint, "Distance")
-            and joint.getTypeIdOfProperty("Distance") == "App::PropertyFloat"
-        ):
-            old_value = joint.Distance
-            joint.setPropertyStatus("Distance", "-LockDynamic")
-            joint.removeProperty("Distance")
-            self.addDistanceProperty(joint)
-
-            # Additionally "Angle" joint is now using Angle property instead of Distance as it did
-            if joint.JointType == "Angle":
-                self.addAngleProperty(joint)
-                joint.Angle = old_value
-            else:
-                joint.Distance = old_value
-
-        if (
-            hasattr(joint, "Distance2")
-            and joint.getTypeIdOfProperty("Distance2") == "App::PropertyFloat"
-        ):
-            old_value = joint.Distance2
-            joint.setPropertyStatus("Distance2", "-LockDynamic")
-            joint.removeProperty("Distance2")
-            self.addDistance2Property(joint)
-            joint.Distance2 = old_value
-
-        if (
-            hasattr(joint, "LengthMin")
-            and joint.getTypeIdOfProperty("LengthMin") == "App::PropertyFloat"
-        ):
-            old_value = joint.LengthMin
-            joint.setPropertyStatus("LengthMin", "-LockDynamic")
-            joint.removeProperty("LengthMin")
-            self.addLengthMinProperty(joint)
-            joint.LengthMin = old_value
-
-        if (
-            hasattr(joint, "LengthMax")
-            and joint.getTypeIdOfProperty("LengthMax") == "App::PropertyFloat"
-        ):
-            old_value = joint.LengthMax
-            joint.setPropertyStatus("LengthMax", "-LockDynamic")
-            joint.removeProperty("LengthMax")
-            self.addLengthMaxProperty(joint)
-            joint.LengthMax = old_value
-
-        if (
-            hasattr(joint, "AngleMin")
-            and joint.getTypeIdOfProperty("AngleMin") == "App::PropertyFloat"
-        ):
-            old_value = joint.AngleMin
-            joint.setPropertyStatus("AngleMin", "-LockDynamic")
-            joint.removeProperty("AngleMin")
-            self.addAngleMinProperty(joint)
-            joint.AngleMin = old_value
-
-        if (
-            hasattr(joint, "AngleMax")
-            and joint.getTypeIdOfProperty("AngleMax") == "App::PropertyFloat"
-        ):
-            old_value = joint.AngleMax
-            joint.setPropertyStatus("AngleMax", "-LockDynamic")
-            joint.removeProperty("AngleMax")
-            self.addAngleMaxProperty(joint)
-            joint.AngleMax = old_value
-
-    def migrationScript7(self, joint):
-        """
-        Migrates PropertyXLinkSubHidden (Assembly-rooted) to PropertyXLinkSub (Component-rooted).
-        """
-
-        def migrate_prop(prop_name, add_method, assembly):
-            if not hasattr(joint, prop_name):
-                return
-
-            # Only migrate if it's the old type
-            if joint.getTypeIdOfProperty(prop_name) != "App::PropertyXLinkSubHidden":
-                return
-
-            old_ref = getattr(joint, prop_name)
-
-            joint.setPropertyStatus(prop_name, "-LockDynamic")
-            joint.removeProperty(prop_name)
-
-            add_method(joint)
-
-            if old_ref:
-                root = old_ref[0]
-                old_subs = old_ref[1]
-                if old_subs:
-                    comp, first_new_sub = UtilsAssembly.getComponentReference(
-                        assembly, root, old_subs[0]
-                    )
-
-                    if comp:
-                        new_subs = [first_new_sub]
-
-                        # We can deduce the prefix length from the difference
-                        # between old and new of the first item.
-                        prefix_len = len(old_subs[0]) - len(first_new_sub)
-
-                        for i in range(1, len(old_subs)):
-                            sub = old_subs[i]
-                            if len(sub) >= prefix_len:
-                                new_subs.append(sub[prefix_len:])
-                            else:
-                                new_subs.append(sub)
-
-                        setattr(joint, prop_name, [comp, new_subs])
-
-        assembly = self.getAssembly(joint)
-        migrate_prop("Reference1", self.addReference1Property, assembly)
-        migrate_prop("Reference2", self.addReference2Property, assembly)
-
-    def dumps(self):
-        return None
-
-    def loads(self, state):
-        return None
-
-    def getAssembly(self, joint):
-        for obj in joint.InList:
-            if obj.isDerivedFrom("Assembly::AssemblyObject"):
-                return obj
-            elif obj.isDerivedFrom("Assembly::AssemblyLink"):
-                return self.getAssembly(obj)
-
-        return None
-
-    def setJointType(self, joint, newType):
-        oldType = joint.JointType
-        if newType != oldType:
-            joint.JointType = newType
-
-    def onChanged(self, joint, prop):
-        """Do something when a property has changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-
-        # during loading the onchanged may be triggered before full init.
-        if App.isRestoring():
-            return
-
-        if prop == "JointType":
-            newType = joint.JointType
-            tr_new_type = TranslatedJointTypes[JointTypes.index(newType)]
-
-            # Find the old joint type in the label and replace it
-            for i, old_type_name in enumerate(JointTypes):
-                if old_type_name == newType:
-                    continue
-                tr_old_type = TranslatedJointTypes[i]
-                if tr_old_type in joint.Label:
-                    joint.Label = joint.Label.replace(tr_old_type, tr_new_type)
-                    break
-
-        if prop == "Reference1" or prop == "Reference2":
-            joint.recompute()
-
-        if (
-            not hasattr(joint, "Reference1")
-            or not hasattr(joint, "Reference2")
-            or joint.Reference1 is None
-            or joint.Reference2 is None
-        ):
-            return
-
-        if prop == "Offset1" or prop == "Offset2":
-            self.updateJCSPlacements(joint)
-
-            presolved = joint.JointType in JointUsingPreSolve and self.preSolve(joint, False)
-
-            isAssembly = self.getAssembly(joint).Type == "Assembly"
-            if isAssembly and not presolved:
-                solveIfAllowed(self.getAssembly(joint))
-            else:
-                self.updateJCSPlacements(joint)
-
-        if prop == "Distance" and joint.JointType == "Distance":
-            solveIfAllowed(self.getAssembly(joint))
-
-        if prop == "Angle" and joint.JointType == "Angle":
-            if joint.Angle != 0.0:
-                self.preventParallel(joint)
-            solveIfAllowed(self.getAssembly(joint))
-
-    def execute(self, joint):
-        errStr = joint.Label + ": " + QT_TRANSLATE_NOOP("Assembly", "Broken link in: ")
-        if (
-            hasattr(joint, "Reference1")
-            and joint.Reference1 is not None
-            and len(joint.Reference1) == 2
-            and len(joint.Reference1[1]) != 0
-            and (joint.Reference1[1][0].find("?") != -1)
-        ):
-            raise Exception(errStr + "Reference1")
-
-        if (
-            hasattr(joint, "Reference2")
-            and joint.Reference2 is not None
-            and len(joint.Reference2) == 2
-            and len(joint.Reference2[1]) != 0
-            and (joint.Reference2[1][0].find("?") != -1)
-        ):
-            raise Exception(errStr + "Reference2")
-
-        self.updateJCSPlacements(joint)
-
-    def setJointConnectors(self, joint, refs):
-        # current selection is a vector of strings like "Assembly.Assembly1.Assembly2.Body.Pad.Edge16" including both what selection return as obj_name and obj_sub
-        assembly = self.getAssembly(joint)
-        isAssembly = assembly.Type == "Assembly"
-
-        if len(refs) >= 1:
-            joint.Reference1 = refs[0]
-        else:
-            joint.Reference1 = None
-            joint.Placement1 = App.Placement()
-            self.partMovedByPresolved = None
-
-        if len(refs) >= 2:
-            joint.Reference2 = refs[1]
-
-            self.ensureUnconnectedIsSecondRef(joint)
-
-            if joint.JointType in JointUsingPreSolve:
-                self.preSolve(joint)
-            elif joint.JointType in JointParallelForbidden:
-                self.preventParallel(joint)
-
-            if isAssembly:
-                solveIfAllowed(assembly, True)
-            else:
-                self.updateJCSPlacements(joint)
-
-        else:
-            joint.Reference2 = None
-            joint.Placement2 = App.Placement()
-            if isAssembly:
-                assembly.undoSolve()
-            self.undoPreSolve(joint)
-
-    def updateJCSPlacements(self, joint):
-        if not joint.Detach1:
-            joint.Placement1 = self.findPlacement(joint, joint.Reference1, 0)
-
-        if not joint.Detach2:
-            joint.Placement2 = self.findPlacement(joint, joint.Reference2, 1)
-
-        self.redrawJointPlacements(joint)
-
-    def redrawJointPlacements(self, joint):
-        if joint.ViewObject:
-            proxy = joint.ViewObject.Proxy
-            if proxy:
-                proxy.redrawJointPlacements(joint)
-
-    """
-    So here we want to find a placement that corresponds to a local coordinate system that would be placed at the selected vertex.
-    - obj is usually a App::Link to a PartDesign::Body, or primitive, fasteners. But can also be directly the object.1
-    - elt can be a face, an edge or a vertex.
-    - If elt is a vertex, then vtx = elt And placement is vtx coordinates without rotation.
-    - if elt is an edge, then vtx = edge start/end vertex depending on which is closer. If elt is an arc or circle, vtx can also be the center. The rotation is the plane normal to the line positioned at vtx. Or for arcs/circle, the plane of the arc.
-    - if elt is a plane face, vtx is the face vertex (to the list of vertex we need to add arc/circle centers) the closer to the mouse. The placement is the plane rotation positioned at vtx
-    - if elt is a cylindrical face, vtx can also be the center of the arcs of the cylindrical face.
-    """
-
-    def findPlacement(self, joint, ref, index=0):
-        ignoreVertex = joint.JointType == "Distance"
-        plc = UtilsAssembly.findPlacement(ref, ignoreVertex)
-
-        # We apply the attachment offsets.
-        if index == 0:
-            plc = plc * joint.Offset1
-        else:
-            plc = plc * joint.Offset2
-
-        return plc
-
-    def flipOnePart(self, joint):
-        self.matchJCS(joint, False, True)
-
-    def preSolve(self, joint, savePlc=True):
-        # The goal of this is to put the part in the correct position to avoid wrong placement by the solve.
-
-        # we actually don't want to match perfectly the JCS, it is best to match them
-        # in the current closest direction, ie either matched or flipped.
-        self.matchJCS(joint, savePlc)
-
-    def matchJCS(self, joint, savePlc=True, reverse=False):
-        assembly = self.getAssembly(joint)
-        sameDir = self.areJcsSameDir(joint)
-        if reverse:
-            sameDir = not sameDir
-
-        part1 = UtilsAssembly.getMovingPart(joint.Reference1)
-        part2 = UtilsAssembly.getMovingPart(joint.Reference2)
-
-        if not part1 or not part2:
-            return False
-
-        isAssembly = assembly.Type == "Assembly"
         if isAssembly:
-            joint.Suppressed = True
-            part1Connected = assembly.isPartConnected(part1)
-            part2Connected = assembly.isPartConnected(part2)
-            joint.Suppressed = False
+            solveIfAllowed(assembly, True)
         else:
-            part1Connected = True
-            part2Connected = False
+            joint.updateJCSPlacements()
 
-        moving_part = None
-        moving_part_ref = None
-        fixed_part_ref = None
-        moving_placement = None
-        fixed_placement = None
-
-        if not part1Connected and part1:
-            moving_part = part1
-            moving_part_ref = joint.Reference1
-            fixed_part_ref = joint.Reference2
-            moving_placement = joint.Placement1
-            fixed_placement = joint.Placement2
-        elif not part2Connected and part2:
-            moving_part = part2
-            moving_part_ref = joint.Reference2
-            fixed_part_ref = joint.Reference1
-            moving_placement = joint.Placement2
-            fixed_placement = joint.Placement1
-        else:
-            # Both parts are constrained, or something is invalid. Nothing to pre-solve.
-            return False
-
-        parts_to_move = [moving_part]
+    else:
         if isAssembly:
-            parts_to_move = parts_to_move + assembly.getDownstreamParts(moving_part, joint)
+            assembly.undoSolve()
+        undoPreSolve(joint)
 
-        if savePlc:
-            self.partsMovedByPresolved = {p: p.Placement for p in parts_to_move}
 
-        moving_part_global_jcs = UtilsAssembly.getJcsGlobalPlc(moving_placement, moving_part_ref)
-        fixed_part_global_jcs = UtilsAssembly.getJcsGlobalPlc(fixed_placement, fixed_part_ref)
+def relabelForJointType(joint):
+    # Replace the previous joint-type word in the (translated) label with the new
+    # one, so a "Fixed" joint renamed to "Revolute" tracks its label.
+    newType = joint.JointType
+    tr_new_type = TranslatedJointTypes[JointTypes.index(newType)]
+    for i, old_type_name in enumerate(JointTypes):
+        if old_type_name == newType:
+            continue
+        tr_old_type = TranslatedJointTypes[i]
+        if tr_old_type in joint.Label:
+            joint.Label = joint.Label.replace(tr_old_type, tr_new_type)
+            break
 
-        if not sameDir:
-            moving_part_global_jcs = UtilsAssembly.flipPlacement(moving_part_global_jcs)
 
-        transform_plc = fixed_part_global_jcs * moving_part_global_jcs.inverse()
+def flipOnePart(joint):
+    matchJCS(joint, False, True)
 
-        for part in parts_to_move:
-            part.Placement = transform_plc * part.Placement
 
-        return True
+def preSolve(joint, savePlc=True):
+    # Put the part in the correct position to avoid a wrong placement by the solve.
+    # We don't want to match the JCS perfectly, only in the current closest
+    # direction (either matched or flipped).
+    matchJCS(joint, savePlc)
 
-    def undoPreSolve(self, joint):
-        if hasattr(self, "partsMovedByPresolved") and self.partsMovedByPresolved:
-            for part, plc in self.partsMovedByPresolved.items():
-                if part and hasattr(part, "Placement"):
-                    part.Placement = plc
-            self.partsMovedByPresolved = {}
 
-            if joint.ViewObject:
-                joint.ViewObject.Proxy.redrawJointPlacements(joint)
+def matchJCS(joint, savePlc=True, reverse=False):
+    assembly = UtilsAssembly.getAssembly(joint)
+    sameDir = UtilsAssembly.areJcsSameDir(joint)
+    if reverse:
+        sameDir = not sameDir
 
-    def preventParallel(self, joint):
-        # Angle and perpendicular joints in the solver cannot handle the situation where both JCS are Parallel
-        parallel = self.areJcsZParallel(joint)
-        if not parallel:
-            return
+    part1 = UtilsAssembly.getMovingPart(joint.Reference1)
+    part2 = UtilsAssembly.getMovingPart(joint.Reference2)
 
-        assembly = self.getAssembly(joint)
+    if not part1 or not part2:
+        return False
 
-        part1 = UtilsAssembly.getMovingPart(joint.Reference1)
-        part2 = UtilsAssembly.getMovingPart(joint.Reference2)
-
-        isAssembly = assembly.Type == "Assembly"
-        if isAssembly:
-            part1ConnectedByJoint = assembly.isJointConnectingPartToGround(joint, "Reference1")
-            part2ConnectedByJoint = assembly.isJointConnectingPartToGround(joint, "Reference2")
-        else:
-            part1ConnectedByJoint = False
-            part2ConnectedByJoint = True
-
-        if part2ConnectedByJoint:
-            self.partMovedByPresolved = part2
-            self.presolveBackupPlc = part2.Placement
-
-            # Get the global JCS placement to find a suitable rotation axis (its own X-axis)
-            globalJcsPlc = UtilsAssembly.getJcsGlobalPlc(joint.Placement2, joint.Reference2)
-            # Transform the local X-axis vector (1,0,0) into the global coordinate system
-            rotation_axis = globalJcsPlc.Rotation.multVec(App.Vector(1, 0, 0))
-
-            part2.Placement = UtilsAssembly.applyRotationToPlacementAlongAxis(
-                part2.Placement, 10, rotation_axis
-            )
-
-        elif part1ConnectedByJoint:
-            self.partMovedByPresolved = part1
-            self.presolveBackupPlc = part1.Placement
-
-            # Get the global JCS placement to find a suitable rotation axis (its own X-axis)
-            globalJcsPlc = UtilsAssembly.getJcsGlobalPlc(joint.Placement1, joint.Reference1)
-            # Transform the local X-axis vector (1,0,0) into the global coordinate system
-            rotation_axis = globalJcsPlc.Rotation.multVec(App.Vector(1, 0, 0))
-
-            part1.Placement = UtilsAssembly.applyRotationToPlacementAlongAxis(
-                part1.Placement, 10, rotation_axis
-            )
-
-    def ensureUnconnectedIsSecondRef(self, joint):
-        # Several joints are not solving properly if the part connected to ground is not the first.
-        # See https://github.com/FreeCAD/FreeCAD/issues/29355 for instance.
-        # This function swap the references if possible to avoid those issues.
-        assembly = self.getAssembly(joint)
-        if not assembly or assembly.Type != "Assembly":
-            return
-
-        part1 = UtilsAssembly.getMovingPart(joint.Reference1)
-        part2 = UtilsAssembly.getMovingPart(joint.Reference2)
-
-        if not part1 or not part2:
-            return
-
-        # Temporarily suppress the joint to avoid evaluating it as a valid connection
-        suppressed_backup = joint.Suppressed
+    isAssembly = assembly.Type == "Assembly"
+    if isAssembly:
         joint.Suppressed = True
         part1Connected = assembly.isPartConnected(part1)
         part2Connected = assembly.isPartConnected(part2)
-        joint.Suppressed = suppressed_backup
+        joint.Suppressed = False
+    else:
+        part1Connected = True
+        part2Connected = False
 
-        # If only part1 is unconnected and part2 is connected, swap references and related properties
-        if not part1Connected and part2Connected:
-            ref1 = joint.Reference1
-            joint.Reference1 = joint.Reference2
-            joint.Reference2 = ref1
+    moving_part = None
+    moving_part_ref = None
+    fixed_part_ref = None
+    moving_placement = None
+    fixed_placement = None
 
-            plc1 = joint.Placement1
-            joint.Placement1 = joint.Placement2
-            joint.Placement2 = plc1
+    if not part1Connected and part1:
+        moving_part = part1
+        moving_part_ref = joint.Reference1
+        fixed_part_ref = joint.Reference2
+        moving_placement = joint.Placement1
+        fixed_placement = joint.Placement2
+    elif not part2Connected and part2:
+        moving_part = part2
+        moving_part_ref = joint.Reference2
+        fixed_part_ref = joint.Reference1
+        moving_placement = joint.Placement2
+        fixed_placement = joint.Placement1
+    else:
+        # Both parts are constrained, or something is invalid. Nothing to pre-solve.
+        return False
 
-            off1 = joint.Offset1
-            joint.Offset1 = joint.Offset2
-            joint.Offset2 = off1
+    parts_to_move = [moving_part]
+    if isAssembly:
+        parts_to_move = parts_to_move + assembly.getDownstreamParts(moving_part, joint)
 
-            det1 = joint.Detach1
-            joint.Detach1 = joint.Detach2
-            joint.Detach2 = det1
+    if savePlc and activeTask is not None:
+        activeTask.partsMovedByPresolved = {p: p.Placement for p in parts_to_move}
 
-            if activeTask and activeTask.joint == joint:
-                activeTask.updateTaskboxFromJoint()
+    moving_part_global_jcs = UtilsAssembly.getJcsGlobalPlc(moving_placement, moving_part_ref)
+    fixed_part_global_jcs = UtilsAssembly.getJcsGlobalPlc(fixed_placement, fixed_part_ref)
 
-    def areJcsSameDir(self, joint):
-        globalJcsPlc1 = UtilsAssembly.getJcsGlobalPlc(joint.Placement1, joint.Reference1)
-        globalJcsPlc2 = UtilsAssembly.getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+    if not sameDir:
+        moving_part_global_jcs = UtilsAssembly.flipPlacement(moving_part_global_jcs)
 
-        return UtilsAssembly.arePlacementSameDir(globalJcsPlc1, globalJcsPlc2)
+    transform_plc = fixed_part_global_jcs * moving_part_global_jcs.inverse()
 
-    def areJcsZParallel(self, joint):
-        globalJcsPlc1 = UtilsAssembly.getJcsGlobalPlc(joint.Placement1, joint.Reference1)
-        globalJcsPlc2 = UtilsAssembly.getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+    for part in parts_to_move:
+        part.Placement = transform_plc * part.Placement
 
-        return UtilsAssembly.arePlacementZParallel(globalJcsPlc1, globalJcsPlc2)
+    return True
+
+
+def undoPreSolve(joint):
+    moved = getattr(activeTask, "partsMovedByPresolved", None) if activeTask else None
+    if moved:
+        for part, plc in moved.items():
+            if part and hasattr(part, "Placement"):
+                part.Placement = plc
+        activeTask.partsMovedByPresolved = {}
+
+        if joint.ViewObject:
+            joint.ViewObject.Proxy.redrawJointPlacements(joint)
+
+
+def preventParallel(joint):
+    # Angle and perpendicular joints in the solver cannot handle the situation
+    # where both JCS are parallel.
+    parallel = UtilsAssembly.areJcsZParallel(joint)
+    if not parallel:
+        return
+
+    assembly = UtilsAssembly.getAssembly(joint)
+
+    part1 = UtilsAssembly.getMovingPart(joint.Reference1)
+    part2 = UtilsAssembly.getMovingPart(joint.Reference2)
+
+    isAssembly = assembly.Type == "Assembly"
+    if isAssembly:
+        part1ConnectedByJoint = assembly.isJointConnectingPartToGround(joint, "Reference1")
+        part2ConnectedByJoint = assembly.isJointConnectingPartToGround(joint, "Reference2")
+    else:
+        part1ConnectedByJoint = False
+        part2ConnectedByJoint = True
+
+    if part2ConnectedByJoint:
+        # Get the global JCS placement to find a suitable rotation axis (its own X-axis)
+        globalJcsPlc = UtilsAssembly.getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+        # Transform the local X-axis vector (1,0,0) into the global coordinate system
+        rotation_axis = globalJcsPlc.Rotation.multVec(App.Vector(1, 0, 0))
+
+        part2.Placement = UtilsAssembly.applyRotationToPlacementAlongAxis(
+            part2.Placement, 10, rotation_axis
+        )
+
+    elif part1ConnectedByJoint:
+        # Get the global JCS placement to find a suitable rotation axis (its own X-axis)
+        globalJcsPlc = UtilsAssembly.getJcsGlobalPlc(joint.Placement1, joint.Reference1)
+        # Transform the local X-axis vector (1,0,0) into the global coordinate system
+        rotation_axis = globalJcsPlc.Rotation.multVec(App.Vector(1, 0, 0))
+
+        part1.Placement = UtilsAssembly.applyRotationToPlacementAlongAxis(
+            part1.Placement, 10, rotation_axis
+        )
+
+
+def ensureUnconnectedIsSecondRef(joint):
+    # Several joints do not solve properly if the part connected to ground is not
+    # the first. See github.com/FreeCAD/FreeCAD/issues/29355. This swaps the
+    # references if possible to avoid those issues.
+    assembly = UtilsAssembly.getAssembly(joint)
+    if not assembly or assembly.Type != "Assembly":
+        return
+
+    part1 = UtilsAssembly.getMovingPart(joint.Reference1)
+    part2 = UtilsAssembly.getMovingPart(joint.Reference2)
+
+    if not part1 or not part2:
+        return
+
+    # Temporarily suppress the joint to avoid evaluating it as a valid connection
+    suppressed_backup = joint.Suppressed
+    joint.Suppressed = True
+    part1Connected = assembly.isPartConnected(part1)
+    part2Connected = assembly.isPartConnected(part2)
+    joint.Suppressed = suppressed_backup
+
+    # If only part1 is unconnected and part2 is connected, swap references and related properties
+    if not part1Connected and part2Connected:
+        ref1 = joint.Reference1
+        joint.Reference1 = joint.Reference2
+        joint.Reference2 = ref1
+
+        plc1 = joint.Placement1
+        joint.Placement1 = joint.Placement2
+        joint.Placement2 = plc1
+
+        off1 = joint.Offset1
+        joint.Offset1 = joint.Offset2
+        joint.Offset2 = off1
+
+        det1 = joint.Detach1
+        joint.Detach1 = joint.Detach2
+        joint.Detach2 = det1
+
+        if activeTask and activeTask.joint == joint:
+            activeTask.updateTaskboxFromJoint()
 
 
 class ViewProviderJoint:
@@ -1142,7 +455,7 @@ class ViewProviderJoint:
             self.switch_JCS_preview.whichChild = coin.SO_SWITCH_NONE
 
     def setJCSPosition(self, jcs, plc, ref):
-        assembly = self.app_obj.Proxy.getAssembly(self.app_obj)
+        assembly = UtilsAssembly.getAssembly(self.app_obj)
         if assembly and ref and plc:
             asm_global_plc = assembly.getGlobalPlacement()
             if asm_global_plc != App.Placement():
@@ -1214,7 +527,7 @@ class ViewProviderJoint:
 
         overlays = {}
 
-        assembly = self.app_obj.Proxy.getAssembly(self.app_obj)
+        assembly = UtilsAssembly.getAssembly(self.app_obj)
         # Assuming Reference1 corresponds to the first part link
         if hasattr(self.app_obj, "Reference1"):
             part = UtilsAssembly.getMovingPart(self.app_obj.Reference1)
@@ -1241,7 +554,7 @@ class ViewProviderJoint:
         if task:
             task.reject()
 
-        assembly = vobj.Object.Proxy.getAssembly(vobj.Object)
+        assembly = UtilsAssembly.getAssembly(vobj.Object)
 
         if assembly is None:
             return False
@@ -1263,54 +576,6 @@ class ViewProviderJoint:
 
 
 ################ Grounded Joint object #################
-
-
-class GroundedJoint:
-    def __init__(self, joint, obj_to_ground):
-        joint.Proxy = self
-        self.joint = joint
-
-        self.createObjectToGroundProperty(joint, obj_to_ground)
-
-    def createObjectToGroundProperty(self, joint, obj_to_ground):
-        joint.addProperty(
-            "App::PropertyLinkGlobal",
-            "ObjectToGround",
-            "Ground",
-            QT_TRANSLATE_NOOP("App::Property", "The object to ground"),
-            locked=True,
-        )
-        joint.ObjectToGround = obj_to_ground
-
-    def onDocumentRestored(self, joint):
-        self.migrationScript(joint)
-
-    def migrationScript(self, joint):
-        if (
-            hasattr(joint, "ObjectToGround")
-            and joint.getTypeIdOfProperty("ObjectToGround") == "App::PropertyLink"
-        ):
-            obj_to_ground = joint.ObjectToGround
-            joint.setPropertyStatus("ObjectToGround", "-LockDynamic")
-            joint.removeProperty("ObjectToGround")
-
-            self.createObjectToGroundProperty(joint, obj_to_ground)
-
-    def dumps(self):
-        return None
-
-    def loads(self, state):
-        return None
-
-    def onChanged(self, fp, prop):
-        """Do something when a property has changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-        pass
-
-    def execute(self, fp):
-        """Do something when doing a recomputation, this method is mandatory"""
-        # App.Console.PrintMessage("Recompute Python Box feature\n")
-        pass
 
 
 class ViewProviderGroundedJoint:
@@ -1527,6 +792,8 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         global activeTask
         activeTask = self
         self.blockOffsetRotation = False
+        # Parts moved by the pre-solve, kept so a reference change can undo them.
+        self.partsMovedByPresolved = {}
 
         self.assembly = UtilsAssembly.activeAssembly()
         if not self.assembly:
@@ -1772,28 +1039,63 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         type_index = self.jForm.jointType.currentIndex()
 
         if self.activeType == "Part":
-            self.joint = self.assembly.newObject("App::FeaturePython", "Temporary joint")
+            self.joint = self.assembly.newObject("Assembly::Joint", "Temporary joint")
         else:
             joint_group = UtilsAssembly.getJointGroup(self.assembly)
-            self.joint = joint_group.newObject("App::FeaturePython", "Joint")
+            self.joint = joint_group.newObject("Assembly::Joint", "Joint")
             self.joint.Label = self.jointName
             joint_group.purgeTouched()
             self.assembly.purgeTouched()
 
-        Joint(self.joint, type_index)
+        # The typed Assembly::Joint owns its properties, content scope and the
+        # SuppressibleExtension; creation only picks the initial kind and clears
+        # the connectors (formerly the Python Joint.__init__).
+        self.joint.JointType = JointTypes[type_index]
+        setJointConnectors(self.joint, [])
         ViewProviderJoint(self.joint.ViewObject)
         self.joint.purgeTouched()
 
     def onJointTypeChanged(self, index):
         self.jType = JointTypes[self.jForm.jointType.currentIndex()]
-        self.joint.Proxy.setJointType(self.joint, self.jType)
+        self.joint.JointType = self.jType
+        relabelForJointType(self.joint)
         self.adaptUi()
+
+    def refsAreSet(self):
+        joint = self.joint
+        return (
+            hasattr(joint, "Reference1")
+            and hasattr(joint, "Reference2")
+            and joint.Reference1 is not None
+            and joint.Reference2 is not None
+        )
+
+    def solveAfterOffsetChange(self):
+        # Re-solve after an offset edit (previously driven by the proxy onChanged
+        # reacting to Offset1/Offset2).
+        if not self.refsAreSet():
+            return
+
+        joint = self.joint
+        joint.updateJCSPlacements()
+        presolved = joint.usesPreSolve() and preSolve(joint, False)
+        assembly = UtilsAssembly.getAssembly(joint)
+        if assembly.Type == "Assembly" and not presolved:
+            solveIfAllowed(assembly)
+        else:
+            joint.updateJCSPlacements()
 
     def onAngleChanged(self, quantity):
         self.joint.Angle = self.jForm.angleSpinbox.property("rawValue")
+        if self.joint.JointType == "Angle" and self.refsAreSet():
+            if self.joint.Angle != 0.0:
+                preventParallel(self.joint)
+            solveIfAllowed(UtilsAssembly.getAssembly(self.joint))
 
     def onDistanceChanged(self, quantity):
         self.joint.Distance = self.jForm.distanceSpinbox.property("rawValue")
+        if self.joint.JointType == "Distance" and self.refsAreSet():
+            solveIfAllowed(UtilsAssembly.getAssembly(self.joint))
 
     def onDistance2Changed(self, quantity):
         self.joint.Distance2 = self.jForm.distanceSpinbox2.property("rawValue")
@@ -1803,6 +1105,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
             return
 
         self.joint.Offset2.Base = App.Vector(0, 0, self.jForm.offsetSpinbox.property("rawValue"))
+        self.solveAfterOffsetChange()
 
     def onRotationChanged(self, quantity):
         if self.blockOffsetRotation:
@@ -1811,6 +1114,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         yaw = self.jForm.rotationSpinbox.property("rawValue")
         ypr = self.joint.Offset2.Rotation.getYawPitchRoll()
         self.joint.Offset2.Rotation.setYawPitchRoll(yaw, ypr[1], ypr[2])
+        self.solveAfterOffsetChange()
 
     def onLimitLenMinChanged(self, quantity):
         if self.jForm.limitCheckbox1.isChecked():
@@ -1829,7 +1133,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
             self.joint.AngleMax = self.jForm.limitRotMaxSpinbox.property("rawValue")
 
     def onReverseClicked(self):
-        self.joint.Proxy.flipOnePart(self.joint)
+        flipOnePart(self.joint)
 
     def reverseRotToggled(self, val):
         if val:
@@ -1946,10 +1250,12 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
 
     def onOffset1Clicked(self):
         UtilsAssembly.openEditingPlacementDialog(self.joint, "Offset1")
+        self.solveAfterOffsetChange()
         self.updateOffsetWidgets()
 
     def onOffset2Clicked(self):
         UtilsAssembly.openEditingPlacementDialog(self.joint, "Offset2")
+        self.solveAfterOffsetChange()
         self.updateOffsetWidgets()
 
     def updateIsolation(self):
@@ -2024,7 +1330,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         self.updateJointList()
 
         # Then we pass the new list to the joint object
-        self.joint.Proxy.setJointConnectors(self.joint, self.refs)
+        setJointConnectors(self.joint, self.refs)
 
         self.updateIsolation()
 
@@ -2105,7 +1411,10 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
 
         ref = UtilsAssembly.addVertexToReference(ref, vertex_name)
 
-        placement = self.joint.Proxy.findPlacement(self.joint, ref, 0)
+        # Preview uses an arbitrary hover reference (not the joint's stored ones),
+        # so it computes the frame directly rather than via joint.updateJCSPlacements.
+        placement = AssemblyApp.findPlacement(ref, self.joint.ignoresVertex())
+        placement = placement * self.joint.Offset1
         self.joint.ViewObject.Proxy.showPreviewJCS(True, placement, ref)
         self.previewJCSVisible = True
 

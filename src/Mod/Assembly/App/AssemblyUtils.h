@@ -190,4 +190,22 @@ AssemblyExport std::vector<std::string> getSubAsList(
 AssemblyExport void syncPlacements(App::DocumentObject* src, App::DocumentObject* to);
 AssemblyExport double getJointCurrentValue(App::DocumentObject* joint, bool isAngle);
 
+// Local coordinate system a joint connector sits at, for a reference to a sub-shape.
+// Split internally into an identity-resolution boundary and pure geometry (see the
+// .cpp). Ports UtilsAssembly.findPlacement (#59). The raw (obj, subs) overload is the
+// primitive; the PropertyXLinkSub overload unwraps a stored reference onto it.
+AssemblyExport Base::Placement findPlacement(
+    App::DocumentObject* obj,
+    const std::vector<std::string>& subs,
+    bool ignoreVertex
+);
+AssemblyExport Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex);
+
+// Ask a joint's (still-Python) ViewProvider to redraw its Coin3D connector glyphs.
+// Reaches the view provider through the object's ViewObject.Proxy at runtime, so the
+// App layer keeps no compile-time dependency on the Gui layer. A no-op headless (no
+// ViewObject) or when no such view provider is attached. Retired once the joint view
+// provider is ported to C++ (#60).
+AssemblyExport void redrawJointViewProvider(App::DocumentObject* joint);
+
 }  // namespace Assembly

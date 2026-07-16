@@ -81,6 +81,7 @@
 #include "AssemblyObject.h"
 #include "AssemblyObjectPy.h"
 #include "AssemblyUtils.h"
+#include "Joint.h"
 #include "JointGroup.h"
 #include "ViewGroup.h"
 
@@ -598,32 +599,10 @@ void AssemblyObject::redrawJointPlacements(std::vector<App::DocumentObject*> joi
 
 void AssemblyObject::redrawJointPlacement(App::DocumentObject* joint)
 {
-    if (!joint) {
-        return;
-    }
-
-    Base::PyGILStateLocker lock;
-
-    App::PropertyPythonObject* proxy = joint
-        ? dynamic_cast<App::PropertyPythonObject*>(joint->getPropertyByName("Proxy"))
-        : nullptr;
-
-    if (!proxy) {
-        return;
-    }
-
-    Py::Object jointPy = proxy->getValue();
-
-    if (!jointPy.hasAttr("redrawJointPlacements")) {
-        return;
-    }
-
-    Py::Object attr = jointPy.getAttr("redrawJointPlacements");
-    if (attr.ptr() && attr.isCallable()) {
-        Py::Tuple args(1);
-        args.setItem(0, Py::asObject(joint->getPyObject()));
-        Py::Callable(attr).apply(args);
-    }
+    // The joint's Coin3D connector glyphs are still drawn by the Python
+    // ViewProvider (kept over the typed object until #60); reach it through the
+    // ViewObject's Proxy. A no-op headless.
+    redrawJointViewProvider(joint);
 }
 
 std::shared_ptr<ASMTAssembly> AssemblyObject::makeMbdAssembly()
@@ -749,11 +728,10 @@ std::vector<App::DocumentObject*> AssemblyObject::getJoints(bool delBadJoints, b
             continue;
         }
 
-        auto proxy = dynamic_cast<App::PropertyPythonObject*>(joint->getPropertyByName("Proxy"));
-        if (proxy) {
-            if (proxy->getValue().hasAttr("setJointConnectors")) {
-                joints.push_back(joint);
-            }
+        // Mate joints participate in the solve; grounded joints (a distinct type) do
+        // not. Select on the typed class rather than probing the Python proxy (#59).
+        if (joint->isDerivedFrom<Joint>()) {
+            joints.push_back(joint);
         }
     }
 

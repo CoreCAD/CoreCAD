@@ -25,6 +25,7 @@ import FreeCAD as App
 import Part
 import unittest
 
+import AssemblyApp
 import UtilsAssembly
 import JointObject
 
@@ -102,25 +103,30 @@ class TestCore(unittest.TestCase):
         operation = "Create Joint Object"
         _msg("  Test '{}'".format(operation))
 
-        joint = self.jointgroup.newObject("App::FeaturePython", "testJoint")
-        self.assertTrue(joint, "'{}' failed (FeaturePython creation failed)".format(operation))
-        JointObject.Joint(joint, 0)
+        joint = self.jointgroup.newObject("Assembly::Joint", "testJoint")
+        self.assertTrue(joint, "'{}' failed (joint creation failed)".format(operation))
+        joint.JointType = JointObject.JointTypes[0]
+        JointObject.setJointConnectors(joint, [])
 
         self.assertTrue(hasattr(joint, "JointType"), "'{}' failed".format(operation))
+        self.assertTrue(
+            joint.isDerivedFrom("Assembly::Joint"),
+            "'{}' failed: not a typed joint".format(operation),
+        )
 
     def test_create_grounded_joint(self):
         """Create a grounded joint in an assembly."""
         operation = "Create Grounded Joint Object"
         _msg("  Test '{}'".format(operation))
 
-        groundedjoint = self.jointgroup.newObject("App::FeaturePython", "testJoint")
+        groundedjoint = self.jointgroup.newObject("Assembly::GroundedJoint", "testJoint")
         self.assertTrue(
-            groundedjoint, "'{}' failed (FeaturePython creation failed)".format(operation)
+            groundedjoint, "'{}' failed (grounded joint creation failed)".format(operation)
         )
 
         box = self.assembly.newObject("Part::Box", "Box")
 
-        JointObject.GroundedJoint(groundedjoint, box)
+        groundedjoint.ObjectToGround = box
 
         self.assertTrue(
             hasattr(groundedjoint, "ObjectToGround"),
@@ -139,8 +145,8 @@ class TestCore(unittest.TestCase):
         box = self.assembly.newObject("Part::Box", "Box")
 
         # ground the part
-        groundedjoint = self.jointgroup.newObject("App::FeaturePython", "GroundedJoint")
-        JointObject.GroundedJoint(groundedjoint, box)
+        groundedjoint = self.jointgroup.newObject("Assembly::GroundedJoint", "GroundedJoint")
+        groundedjoint.ObjectToGround = box
         self.doc.recompute()
 
         # verify grounded
@@ -172,8 +178,9 @@ class TestCore(unittest.TestCase):
         operation = "Find placement"
         _msg("  Test '{}'".format(operation))
 
-        joint = self.jointgroup.newObject("App::FeaturePython", "testJoint")
-        JointObject.Joint(joint, 0)
+        joint = self.jointgroup.newObject("Assembly::Joint", "testJoint")
+        joint.JointType = JointObject.JointTypes[0]
+        JointObject.setJointConnectors(joint, [])
 
         L = 2
         W = 3
@@ -186,25 +193,25 @@ class TestCore(unittest.TestCase):
 
         # Step 0 : box with placement. No element selected
         ref = [self.assembly, [box.Name + ".", box.Name + "."]]
-        plc = joint.Proxy.findPlacement(joint, ref)
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(), App.Rotation())
         self.assertTrue(plc.isSame(targetPlc, 1e-6), "'{}' failed - Step 0".format(operation))
 
         # Step 1 : box with placement. Face + Vertex
         ref = [self.assembly, [box.Name + ".Face6", box.Name + ".Vertex7"]]
-        plc = joint.Proxy.findPlacement(joint, ref)
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(L, W, H), App.Rotation())
         self.assertTrue(plc.isSame(targetPlc, 1e-6), "'{}' failed - Step 1".format(operation))
 
         # Step 2 : box with placement. Edge + Vertex
         ref = [self.assembly, [box.Name + ".Edge8", box.Name + ".Vertex8"]]
-        plc = joint.Proxy.findPlacement(joint, ref)
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(L, W, 0), App.Rotation(0, -90, 270))
         self.assertTrue(plc.isSame(targetPlc, 1e-6), "'{}' failed - Step 2".format(operation))
 
         # Step 3 : box with placement. Vertex
         ref = [self.assembly, [box.Name + ".Vertex3", box.Name + ".Vertex3"]]
-        plc = joint.Proxy.findPlacement(joint, ref)
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(0, W, H), App.Rotation())
         _msg("  plc '{}'".format(plc))
         _msg("  targetPlc '{}'".format(targetPlc))
@@ -212,7 +219,7 @@ class TestCore(unittest.TestCase):
 
         # Step 4 : box with placement. Face
         ref = [self.assembly, [box.Name + ".Face2", box.Name + ".Face2"]]
-        plc = joint.Proxy.findPlacement(joint, ref)
+        plc = AssemblyApp.findPlacement(ref, joint.ignoresVertex()) * joint.Offset1
         targetPlc = App.Placement(App.Vector(L, W / 2, H / 2), App.Rotation(0, -90, 180))
         _msg("  plc '{}'".format(plc))
         _msg("  targetPlc '{}'".format(targetPlc))
@@ -235,17 +242,18 @@ class TestCore(unittest.TestCase):
         box2.Height = 10
         box2.Placement = App.Placement(App.Vector(40, 50, 60), App.Rotation(45, 55, 65))
 
-        ground = self.jointgroup.newObject("App::FeaturePython", "GroundedJoint")
-        JointObject.GroundedJoint(ground, box2)
+        ground = self.jointgroup.newObject("Assembly::GroundedJoint", "GroundedJoint")
+        ground.ObjectToGround = box2
 
-        joint = self.jointgroup.newObject("App::FeaturePython", "testJoint")
-        JointObject.Joint(joint, 0)
+        joint = self.jointgroup.newObject("Assembly::Joint", "testJoint")
+        joint.JointType = JointObject.JointTypes[0]
+        JointObject.setJointConnectors(joint, [])
 
         refs = [
             [box2, ["Face6", "Vertex7"]],
             [box, ["Face6", "Vertex7"]],
         ]
 
-        joint.Proxy.setJointConnectors(joint, refs)
+        JointObject.setJointConnectors(joint, refs)
 
         self.assertTrue(box.Placement.isSame(box2.Placement, 1e-6), "'{}'".format(operation))

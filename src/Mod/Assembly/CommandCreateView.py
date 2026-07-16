@@ -35,6 +35,7 @@ if App.GuiUp:
     from PySide import QtCore, QtGui, QtWidgets
     from PySide.QtWidgets import QPushButton, QMenu
 
+import AssemblyApp
 import UtilsAssembly
 import Preferences
 
@@ -957,7 +958,7 @@ class TaskAssemblyCreateView(QtCore.QObject):
 
         ref = UtilsAssembly.addVertexToReference(ref, vertex_name)
 
-        plc = UtilsAssembly.findPlacement(ref)
+        plc = AssemblyApp.findPlacement(ref)
         global_plc = UtilsAssembly.getGlobalPlacement(ref)
         plc = global_plc * plc
 

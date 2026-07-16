@@ -29,6 +29,7 @@
 #include <Base/Console.h>
 #include <Base/Tools.h>
 
+#include "Joint.h"
 #include "JointGroup.h"
 #include "JointGroupPy.h"
 
@@ -68,11 +69,10 @@ std::vector<App::DocumentObject*> JointGroup::getJoints()
             continue;
         }
 
-        auto proxy = dynamic_cast<App::PropertyPythonObject*>(joint->getPropertyByName("Proxy"));
-        if (proxy) {
-            if (proxy->getValue().hasAttr("setJointConnectors")) {
-                joints.push_back(joint);
-            }
+        // Mate joints are the typed Assembly::Joint; grounded joints (a distinct type)
+        // are excluded. Select on the class rather than probing the Python proxy (#59).
+        if (joint->isDerivedFrom<Joint>()) {
+            joints.push_back(joint);
         }
     }
 
