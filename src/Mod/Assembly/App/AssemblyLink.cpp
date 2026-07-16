@@ -95,6 +95,38 @@ App::DocumentObjectExecReturn* AssemblyLink::execute()
     return App::Part::execute();
 }
 
+App::DocumentObject* AssemblyLink::getSubObject(
+    const char* subname,
+    PyObject** pyObj,
+    Base::Matrix4D* mat,
+    bool transform,
+    int depth
+) const
+{
+    // Flexible sub-assemblies still own a proxy graph (#63); defer to the base container.
+    if (!isRigid()) {
+        return App::Part::getSubObject(subname, pyObj, mat, transform, depth);
+    }
+
+    // Rigid: apply our own instance placement, then resolve the remainder across the
+    // document boundary into the linked assembly. Nothing is owned locally.
+    if (mat && transform) {
+        *mat *= Placement.getValue().toMatrix();
+    }
+
+    if (!subname || *subname == '\0') {
+        return const_cast<AssemblyLink*>(this);
+    }
+
+    AssemblyObject* linked = getLinkedAssembly();
+    if (!linked) {
+        return nullptr;
+    }
+    // Delegate with transform=true so the linked assembly composes its own (root) placement
+    // and resolves the named component within its group.
+    return linked->getSubObject(subname, pyObj, mat, true, depth + 1);
+}
+
 void AssemblyLink::onChanged(const App::Property* prop)
 {
     if (App::GetApplication().isRestoring()) {

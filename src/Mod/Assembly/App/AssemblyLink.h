@@ -56,6 +56,20 @@ public:
 
     App::DocumentObjectExecReturn* execute() override;
 
+    /**
+     * A rigid sub-assembly owns nothing: it resolves child geometry across the document
+     * boundary into the linked assembly at query time, composing this instance's Placement,
+     * instead of materialising owned proxies. Flexible sub-assemblies still carry an owned
+     * proxy graph (#63) and defer to the base App::Part resolution.
+     */
+    App::DocumentObject* getSubObject(
+        const char* subname,
+        PyObject** pyObj = nullptr,
+        Base::Matrix4D* mat = nullptr,
+        bool transform = true,
+        int depth = 0
+    ) const override;
+
     // The linked assembly is the AssemblyObject that this AssemblyLink pseudo-links to recursively.
     AssemblyObject* getLinkedAssembly() const;
     // The parent assembly is the main assembly in which the linked assembly is contained
