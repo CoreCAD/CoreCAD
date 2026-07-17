@@ -396,18 +396,12 @@ JointGroup* getJointGroup(const App::Part* part)
         return nullptr;
     }
 
-    const auto* doc = part->getDocument();
-
-    const auto jointGroups = doc->getObjectsOfType(JointGroup::getClassTypeId());
+    // One assembly per document: the sole JointGroup belongs to this assembly.
+    const auto jointGroups = part->getDocument()->getObjectsOfType(JointGroup::getClassTypeId());
     if (jointGroups.empty()) {
         return nullptr;
     }
-    for (auto jointGroup : jointGroups) {
-        if (part->hasObject(jointGroup)) {
-            return freecad_cast<JointGroup*>(jointGroup);
-        }
-    }
-    return nullptr;
+    return freecad_cast<JointGroup*>(jointGroups.front());
 }
 
 void setJointActivated(const App::DocumentObject* joint, bool val)

@@ -661,18 +661,13 @@ App::DocumentObject* AssemblyObject::getJointOfPartConnectingToGround(
 template<typename T>
 T* AssemblyObject::getGroup()
 {
-    App::Document* doc = getDocument();
-
-    std::vector<DocumentObject*> groups = doc->getObjectsOfType(T::getClassTypeId());
+    // One assembly per document: the sole group of type T in the document belongs
+    // to this assembly, so a typed document query needs no membership filter.
+    std::vector<DocumentObject*> groups = getDocument()->getObjectsOfType(T::getClassTypeId());
     if (groups.empty()) {
         return nullptr;
     }
-    for (auto group : groups) {
-        if (hasObject(group)) {
-            return freecad_cast<T*>(group);
-        }
-    }
-    return nullptr;
+    return freecad_cast<T*>(groups.front());
 }
 
 JointGroup* AssemblyObject::getJointGroup() const
@@ -682,18 +677,14 @@ JointGroup* AssemblyObject::getJointGroup() const
 
 ViewGroup* AssemblyObject::getExplodedViewGroup() const
 {
-    App::Document* doc = getDocument();
-
-    std::vector<DocumentObject*> viewGroups = doc->getObjectsOfType(ViewGroup::getClassTypeId());
+    // One assembly per document: the sole ViewGroup belongs to this assembly.
+    std::vector<DocumentObject*> viewGroups = getDocument()->getObjectsOfType(
+        ViewGroup::getClassTypeId()
+    );
     if (viewGroups.empty()) {
         return nullptr;
     }
-    for (auto viewGroup : viewGroups) {
-        if (hasObject(viewGroup)) {
-            return freecad_cast<ViewGroup*>(viewGroup);
-        }
-    }
-    return nullptr;
+    return freecad_cast<ViewGroup*>(viewGroups.front());
 }
 
 std::vector<App::DocumentObject*> AssemblyObject::getJoints(bool delBadJoints, bool subJoints)
@@ -2027,15 +2018,13 @@ std::vector<AssemblyLink*> AssemblyObject::getSubAssemblies()
 {
     std::vector<AssemblyLink*> subAssemblies = {};
 
-    App::Document* doc = getDocument();
-
-    std::vector<DocumentObject*> assemblies = doc->getObjectsOfType(
+    // One assembly per document: every AssemblyLink in the document is a
+    // sub-assembly reference held by this assembly.
+    std::vector<DocumentObject*> assemblies = getDocument()->getObjectsOfType(
         Assembly::AssemblyLink::getClassTypeId()
     );
     for (auto assembly : assemblies) {
-        if (hasObject(assembly)) {
-            subAssemblies.push_back(freecad_cast<AssemblyLink*>(assembly));
-        }
+        subAssemblies.push_back(freecad_cast<AssemblyLink*>(assembly));
     }
 
     return subAssemblies;
