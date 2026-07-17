@@ -2034,7 +2034,7 @@ App::Origin* Body::requireDocumentOrigin(App::Document* doc)
 
     // No shared world frame in this document — a Body only ever LOOKS the frame up; it must
     // never mint one. Under the document-owned world-frame contract (ARCHITECTURE_AMENDMENTS
-    // Amendment 2, GitHub #19) a CAD (Part) document mints its App::Origin at creation
+    // Amendment 2) a CAD (Part) document mints its App::Origin at creation
     // (App.newDocument(type='Part')). Reaching here means a Body was created in a document
     // that has no world frame — a call-site error, not a recoverable state, so fail loudly
     // rather than lazily bootstrapping the coordinate system off the body.
@@ -2052,7 +2052,7 @@ void Body::setupObject()
     // Cruth shared-Origin contract (GitHub #4) / §11 step 5e: a PartDesign Body does NOT own
     // a private coordinate frame, and it does NOT create one either. The world frame is shared
     // at document level (ARCHITECTURE §3.3) and minted by the CAD document at its creation
-    // (ARCHITECTURE_AMENDMENTS Amendment 2, GitHub #19) — every Body's features anchor to that
+    // (ARCHITECTURE_AMENDMENTS Amendment 2) — every Body's features anchor to that
     // one free-standing App::Origin. Resolve it here so the invariant is checked at spawn: a
     // Body born into a document with no world frame fails loudly (getDocumentOrigin throws)
     // rather than lazily bootstrapping the coordinate system off the body.

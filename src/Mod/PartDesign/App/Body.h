@@ -478,7 +478,7 @@ public:
     /// Pure LOOKUP of the single document-level Origin — no side effects, no throw. Returns the
     /// shared free-standing App::Origin (the coordinate root de-owned features anchor to), or
     /// nullptr if the document has none. A Body never mints the world frame: under the
-    /// document-owned world-frame contract (ARCHITECTURE_AMENDMENTS Amendment 2, GitHub #19) a
+    /// document-owned world-frame contract (ARCHITECTURE_AMENDMENTS Amendment 2) a
     /// CAD (Part) document creates it at document creation. Static so body-creation entry points
     /// can check a document up front, before any Body object exists.
     static App::Origin* findDocumentOrigin(App::Document* doc);
