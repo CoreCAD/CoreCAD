@@ -2050,10 +2050,16 @@ std::vector<AssemblyLink*> AssemblyObject::getSubAssemblies()
 
 void AssemblyObject::ensureIdentityPlacements()
 {
-    std::vector<App::DocumentObject*> group = Group.getValues();
-    for (auto* obj : group) {
+    // One assembly per document, and the assembly document holds no geometry of its own, so
+    // every link group in the document is a component of this assembly. Query the document by
+    // type instead of walking the (retiring) App::Part Group.
+    App::Document* doc = getDocument();
+    if (doc == nullptr) {
+        return;
+    }
+    for (auto* obj : doc->getObjects()) {
         // When used in assembly, link groups must have identity placements.
-        if (obj->isLinkGroup()) {
+        if (obj != nullptr && obj->isLinkGroup()) {
             auto* link = dynamic_cast<App::Link*>(obj);
             auto* pPlc = obj->getPlacementProperty();
             if (!pPlc || !link) {
