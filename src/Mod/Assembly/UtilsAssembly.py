@@ -379,15 +379,6 @@ def getGlobalPlacement(ref, targetObj=None):
     return rootObj.getPlacementOf(subName, targetObj)
 
 
-def isThereOneRootAssembly():
-    if Gui.activeDocument() is None:
-        return False
-    for part in Gui.activeDocument().TreeRootObjects:
-        if part.TypeId == "Assembly::AssemblyObject":
-            return True
-    return False
-
-
 def getElementName(full_name):
     # full_name is "Assembly.Assembly1.Assembly2.Assembly3.Box.Edge16"
     # We want either Edge16.
