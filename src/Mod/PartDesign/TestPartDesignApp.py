@@ -60,5 +60,8 @@ from PartDesignTests.TestInvoluteGear import TestInvoluteGear
 from PartDesignTests.TestSketch import TestSketch
 from PartDesignTests.TestSuppressed import TestSuppressed
 
+# scriptable body-emergence path (Cruth §4.6/§8.5)
+from PartDesignTests.TestBodyEmergence import TestBodyEmergence
+
 # Topological naming problem
 from PartDesignTests.TestTopologicalNamingProblem import TestTopologicalNamingProblem

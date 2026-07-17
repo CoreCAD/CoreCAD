@@ -58,6 +58,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestTopologicalNamingProblem.py
     PartDesignTests/TestInvoluteGear.py
     PartDesignTests/TestSketch.py
+    PartDesignTests/TestBodyEmergence.py
 )
 
 if(BUILD_GUI)
