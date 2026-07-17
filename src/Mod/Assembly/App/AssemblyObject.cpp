@@ -826,21 +826,32 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::getGroundedParts()
         }
     }
 
-    // We also need to add all the root-level datums objects that are not attached.
-    std::vector<App::DocumentObject*> objs = Group.getValues();
-    for (auto* obj : objs) {
-        if (obj->isDerivedFrom<App::LocalCoordinateSystem>()
-            || obj->isDerivedFrom<App::DatumElement>()) {
-            auto* pcAttach = obj->getExtensionByType<PartApp::AttachExtension>();
-            if (pcAttach) {
-                // If it's a Part datums, we check if it's attached. If yes then we ignore it.
-                std::string mode = pcAttach->MapMode.getValueAsString();
-                if (mode != "Deactivated") {
-                    continue;
-                }
-            }
-            groundedSet.insert(obj);
+    // Unattached root-level datums / coordinate systems are implicitly grounded (fixed
+    // reference geometry). One assembly per document, no owned geometry: query the document
+    // by type instead of walking the retiring App::Part Group. Exclude the Origin's own
+    // X/Y/Z datum features -- they live in the document (in OriginFeatures, never in the
+    // Group the old scan read), are positioned by the Origin, and the Origin is added
+    // separately below; grounding them individually would double-anchor the frame.
+    for (auto* obj : getDocument()->getObjects()) {
+        const bool isLcs = obj->isDerivedFrom<App::LocalCoordinateSystem>();
+        const bool isDatum = obj->isDerivedFrom<App::DatumElement>();
+        if (!isLcs && !isDatum) {
+            continue;
         }
+        if (isDatum && static_cast<App::DatumElement*>(obj)->isOriginFeature()) {
+            continue;
+        }
+        // no_except: the document scan reaches coordinate systems without an
+        // AttachExtension (e.g. the Origin itself), which the old Group scan never saw.
+        auto* pcAttach = obj->getExtensionByType<PartApp::AttachExtension>(true);
+        if (pcAttach) {
+            // If it's a Part datums, we check if it's attached. If yes then we ignore it.
+            std::string mode = pcAttach->MapMode.getValueAsString();
+            if (mode != "Deactivated") {
+                continue;
+            }
+        }
+        groundedSet.insert(obj);
     }
 
     // Origin is not in Group so we add it separately
