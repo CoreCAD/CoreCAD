@@ -1965,10 +1965,13 @@ void Document::applyDocumentType(const char* type)
     }
     DocumentType.setValue(type);
 
-    // A Part document owns its coordinate frame and mints it eagerly at creation
-    // (Cruth origin-lifecycle amendment). Bodies only ever look this up — they never
-    // create it. The shared App::Origin carries the world-frame datum planes/axes.
-    if (DocumentType.getStrValue() == DocTypePart) {
+    // A frame-owning document owns its world coordinate frame and mints it eagerly at
+    // creation (Amendment 9). The objects inside — bodies in a Part, component instances
+    // and grounded joints in an Assembly — only ever look this up, never create it. The
+    // shared App::Origin carries the world-frame datum planes/axes. Two document types
+    // carry the world-frame flag: Part and Assembly.
+    const std::string& docType = DocumentType.getStrValue();
+    if (docType == DocTypePart || docType == DocTypeAssembly) {
         auto* origin = addObject<App::Origin>("Origin");
         if (origin) {
             origin->Label.setValue("Origin");

@@ -33,6 +33,7 @@
 #include <App/DocumentObjectGroup.h>
 #include <App/FeaturePythonPyImp.h>
 #include <App/Link.h>
+#include <App/Origin.h>
 #include <App/PropertyPythonObject.h>
 #include <Base/Console.h>
 #include <Base/Placement.h>
@@ -854,8 +855,14 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::getGroundedParts()
         groundedSet.insert(obj);
     }
 
-    // Origin is not in Group so we add it separately
-    groundedSet.insert(Origin.getValue());
+    // Ground the document-owned world frame (Amendment 9). The assembly no longer owns an
+    // Origin of its own -- it looks the document's frame up. No object in an assembly
+    // document owns an Origin (assemblies and assembly links both opt out via
+    // hasOwnOrigin), so the sole App::Origin present is the document-minted world frame.
+    // An untyped document owns none; there is then simply nothing to ground.
+    for (auto* origin : getDocument()->getObjectsOfType<App::Origin>()) {
+        groundedSet.insert(origin);
+    }
 
     return groundedSet;
 }

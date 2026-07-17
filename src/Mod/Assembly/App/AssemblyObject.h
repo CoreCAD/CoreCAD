@@ -92,6 +92,15 @@ public:
         return App::DocumentObject::ContentScope::AssemblyItem;
     }
 
+    /// The world frame is owned by the Assembly *document* (minted at creation), not by
+    /// the assembly object -- so the assembly looks its frame up and never mints its own
+    /// (Amendment 9). Opting out here stops OriginGroupExtension minting an object-owned
+    /// Origin as a side effect of setup.
+    bool hasOwnOrigin() const override
+    {
+        return false;
+    }
+
     App::DocumentObjectExecReturn* execute() override;
     void onChanged(const App::Property* prop) override;
     /* Solve the assembly. It will update first the joints, solve, update placements of the parts
