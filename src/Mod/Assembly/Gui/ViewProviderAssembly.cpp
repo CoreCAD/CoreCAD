@@ -107,7 +107,7 @@ void printPlacement(Base::Placement plc, const char* name)
     );
 }
 
-PROPERTY_SOURCE(AssemblyGui::ViewProviderAssembly, Gui::ViewProviderPart)
+PROPERTY_SOURCE(AssemblyGui::ViewProviderAssembly, Gui::ViewProviderDocumentObjectGroup)
 
 ViewProviderAssembly::ViewProviderAssembly()
     : SelectionObserver(false)
@@ -146,10 +146,10 @@ void ViewProviderAssembly::setupContextMenu(QMenu* menu, QObject* receiver, cons
 
     QAction* act = menu->addAction(QObject::tr("Active object"));
     act->setCheckable(true);
-    act->setChecked(isActivePart(ASSEMBLYKEY));
+    act->setChecked(getActivePart() == getObject());
     func->trigger(act, [this]() { this->doubleClicked(); });
 
-    ViewProviderDragger::setupContextMenu(menu, receiver, member);  // NOLINT
+    Gui::ViewProviderDocumentObjectGroup::setupContextMenu(menu, receiver, member);  // NOLINT
 }
 
 bool ViewProviderAssembly::doubleClicked()
@@ -276,7 +276,7 @@ void ViewProviderAssembly::updateData(const App::Property* prop)
         });
     }
     else {
-        Gui::ViewProviderPart::updateData(prop);
+        Gui::ViewProviderDocumentObjectGroup::updateData(prop);
     }
 }
 
@@ -327,7 +327,7 @@ bool ViewProviderAssembly::setEdit(int mode)
 
         return true;
     }
-    return ViewProviderPart::setEdit(mode);
+    return ViewProviderDocumentObjectGroup::setEdit(mode);
 }
 
 void ViewProviderAssembly::unsetEdit(int mode)
@@ -347,7 +347,7 @@ void ViewProviderAssembly::unsetEdit(int mode)
         }
 
         // Set the part as not 'Activated' ie not bold in the tree.
-        if (isActivePart(ASSEMBLYKEY)) {
+        if (getActivePart() == getObject()) {
             Gui::Command::doCommand(
                 Gui::Command::Gui,
                 "appDoc = App.getDocument('%s')\n"
@@ -364,7 +364,7 @@ void ViewProviderAssembly::unsetEdit(int mode)
 
         return;
     }
-    ViewProviderPart::unsetEdit(mode);
+    ViewProviderDocumentObjectGroup::unsetEdit(mode);
 }
 
 void ViewProviderAssembly::slotActivatedVP(const Gui::ViewProviderDocumentObject* vp, const char* name)
@@ -415,7 +415,7 @@ void ViewProviderAssembly::unsetDragger()
 
 void ViewProviderAssembly::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
 {
-    ViewProviderPart::setEditViewer(viewer, ModNum);
+    ViewProviderDocumentObjectGroup::setEditViewer(viewer, ModNum);
 
     if (asmDragger && viewer) {
         asmDragger->setUpAutoScale(viewer->getSoRenderManager()->getCamera());
@@ -1289,12 +1289,12 @@ bool ViewProviderAssembly::onDelete(const std::vector<std::string>& subNames)
         }
     }
 
-    return ViewProviderPart::onDelete(subNames);
+    return ViewProviderDocumentObjectGroup::onDelete(subNames);
 }
 
 bool ViewProviderAssembly::canDelete(App::DocumentObject* objBeingDeleted) const
 {
-    bool res = ViewProviderPart::canDelete(objBeingDeleted);
+    bool res = ViewProviderDocumentObjectGroup::canDelete(objBeingDeleted);
     if (res) {
         // If a component is deleted, then we delete the joints as well.
         auto* assemblyPart = getObject<AssemblyObject>();

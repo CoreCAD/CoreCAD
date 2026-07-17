@@ -390,14 +390,16 @@ DistanceType getDistanceType(App::DocumentObject* joint)
     return DistanceType::Other;
 }
 
-JointGroup* getJointGroup(const App::Part* part)
+JointGroup* getJointGroup(const App::DocumentObject* assemblyOrLink)
 {
-    if (!part) {
+    if (!assemblyOrLink) {
         return nullptr;
     }
 
     // One assembly per document: the sole JointGroup belongs to this assembly.
-    const auto jointGroups = part->getDocument()->getObjectsOfType(JointGroup::getClassTypeId());
+    const auto jointGroups = assemblyOrLink->getDocument()->getObjectsOfType(
+        JointGroup::getClassTypeId()
+    );
     if (jointGroups.empty()) {
         return nullptr;
     }

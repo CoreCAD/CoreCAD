@@ -28,8 +28,8 @@
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
+#include <App/DocumentObjectGroup.h>
 #include <App/FeaturePython.h>
-#include <App/Part.h>
 #include <App/PropertyLinks.h>
 
 #include <OndselSolver/enum.h>
@@ -70,7 +70,7 @@ struct ObjRef
     App::PropertyXLinkSub* ref;
 };
 
-class AssemblyExport AssemblyObject: public App::Part
+class AssemblyExport AssemblyObject: public App::DocumentObjectGroup
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Assembly::AssemblyObject);
 
@@ -90,15 +90,6 @@ public:
     App::DocumentObject::ContentScope getContentScope() const override
     {
         return App::DocumentObject::ContentScope::AssemblyItem;
-    }
-
-    /// The world frame is owned by the Assembly *document* (minted at creation), not by
-    /// the assembly object -- so the assembly looks its frame up and never mints its own
-    /// (Amendment 9). Opting out here stops OriginGroupExtension minting an object-owned
-    /// Origin as a side effect of setup.
-    bool hasOwnOrigin() const override
-    {
-        return false;
     }
 
     App::DocumentObjectExecReturn* execute() override;

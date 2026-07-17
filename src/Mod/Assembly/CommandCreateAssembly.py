@@ -71,7 +71,6 @@ class CommandCreateAssembly:
         Gui.ActiveDocument.openCommand("New assembly")
         commands = (
             'assembly = App.ActiveDocument.addObject("Assembly::AssemblyObject", "Assembly")\n'
-            'assembly.Type = "Assembly"\n'
             'assembly.newObject("Assembly::JointGroup", "Joints")'
         )
 

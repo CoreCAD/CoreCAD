@@ -139,7 +139,7 @@ JointUsingLimitAngle = [
 
 
 def solveIfAllowed(assembly, storePrev=False):
-    if assembly.Type == "Assembly" and Preferences.preferences().GetBool(
+    if assembly.isDerivedFrom("Assembly::AssemblyObject") and Preferences.preferences().GetBool(
         "SolveInJointCreation", True
     ):
         assembly.solve(storePrev)
@@ -180,7 +180,7 @@ def getContext(obj):
 def setJointConnectors(joint, refs):
     # refs is a list of [obj, [subelements]] references picked in the dialog.
     assembly = UtilsAssembly.getAssembly(joint)
-    isAssembly = assembly.Type == "Assembly"
+    isAssembly = assembly.isDerivedFrom("Assembly::AssemblyObject")
 
     if len(refs) >= 1:
         joint.Reference1 = refs[0]
@@ -254,7 +254,7 @@ def matchJCS(joint, savePlc=True, reverse=False):
     if not part1 or not part2:
         return False
 
-    isAssembly = assembly.Type == "Assembly"
+    isAssembly = assembly.isDerivedFrom("Assembly::AssemblyObject")
     if isAssembly:
         joint.Suppressed = True
         part1Connected = assembly.isPartConnected(part1)
@@ -331,7 +331,7 @@ def preventParallel(joint):
     part1 = UtilsAssembly.getMovingPart(joint.Reference1)
     part2 = UtilsAssembly.getMovingPart(joint.Reference2)
 
-    isAssembly = assembly.Type == "Assembly"
+    isAssembly = assembly.isDerivedFrom("Assembly::AssemblyObject")
     if isAssembly:
         part1ConnectedByJoint = assembly.isJointConnectingPartToGround(joint, "Reference1")
         part2ConnectedByJoint = assembly.isJointConnectingPartToGround(joint, "Reference2")
@@ -365,7 +365,7 @@ def ensureUnconnectedIsSecondRef(joint):
     # the first. See github.com/FreeCAD/FreeCAD/issues/29355. This swaps the
     # references if possible to avoid those issues.
     assembly = UtilsAssembly.getAssembly(joint)
-    if not assembly or assembly.Type != "Assembly":
+    if not assembly or not assembly.isDerivedFrom("Assembly::AssemblyObject"):
         return
 
     part1 = UtilsAssembly.getMovingPart(joint.Reference1)
@@ -1080,7 +1080,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         joint.updateJCSPlacements()
         presolved = joint.usesPreSolve() and preSolve(joint, False)
         assembly = UtilsAssembly.getAssembly(joint)
-        if assembly.Type == "Assembly" and not presolved:
+        if assembly.isDerivedFrom("Assembly::AssemblyObject") and not presolved:
             solveIfAllowed(assembly)
         else:
             joint.updateJCSPlacements()
