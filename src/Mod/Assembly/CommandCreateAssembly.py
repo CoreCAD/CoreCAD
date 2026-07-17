@@ -63,7 +63,11 @@ class CommandCreateAssembly:
         # not nested. A sub-assembly enters another assembly only as a cross-document
         # reference, via Insert Link.
         Gui.addModule("UtilsAssembly")
-        App.newDocument()
+        # An assembly document is typed at creation (the single door, per §7.1 / Amendment 9).
+        # Typing it activates the content-scope admission door (Amendment 8): the document then
+        # refuses part geometry from any path, so a component can only be a cross-document
+        # reference, never owned geometry in the assembly file.
+        App.newDocument(type=App.DocTypeAssembly)
         Gui.ActiveDocument.openCommand("New assembly")
         commands = (
             'assembly = App.ActiveDocument.addObject("Assembly::AssemblyObject", "Assembly")\n'

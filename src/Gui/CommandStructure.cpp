@@ -68,7 +68,7 @@ void StdCmdPart::activated(int iMsg)
     // owns its world frame (the origin and datum planes are minted at document creation, see
     // App::Document::applyDocumentType). It no longer drops an App::Part container object into
     // the active document; in this model the document is the container, not a nested object.
-    runCommand(Command::Doc, "App.newDocument(type='Part')");
+    runCommand(Command::Doc, "App.newDocument(type=App.DocTypePart)");
     doCommand(Command::Gui, "Gui.activeDocument().activeView().viewDefaultOrientation()");
 }
 
