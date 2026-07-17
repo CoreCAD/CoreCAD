@@ -390,24 +390,20 @@ DistanceType getDistanceType(App::DocumentObject* joint)
     return DistanceType::Other;
 }
 
-JointGroup* getJointGroup(const App::Part* part)
+JointGroup* getJointGroup(const App::DocumentObject* assemblyOrLink)
 {
-    if (!part) {
+    if (!assemblyOrLink) {
         return nullptr;
     }
 
-    const auto* doc = part->getDocument();
-
-    const auto jointGroups = doc->getObjectsOfType(JointGroup::getClassTypeId());
+    // One assembly per document: the sole JointGroup belongs to this assembly.
+    const auto jointGroups = assemblyOrLink->getDocument()->getObjectsOfType(
+        JointGroup::getClassTypeId()
+    );
     if (jointGroups.empty()) {
         return nullptr;
     }
-    for (auto jointGroup : jointGroups) {
-        if (part->hasObject(jointGroup)) {
-            return freecad_cast<JointGroup*>(jointGroup);
-        }
-    }
-    return nullptr;
+    return freecad_cast<JointGroup*>(jointGroups.front());
 }
 
 void setJointActivated(const App::DocumentObject* joint, bool val)
@@ -763,67 +759,47 @@ void syncPlacements(App::DocumentObject* src, App::DocumentObject* to)
         }
     }
 }
-namespace
+std::vector<App::DocumentObject*> getAssemblyComponents(const AssemblyObject* assembly)
 {
-// Helper function to perform the recursive traversal. Kept in an anonymous
-// namespace as it's an implementation detail of getAssemblyComponents.
-void collectComponentsRecursively(
-    const std::vector<App::DocumentObject*>& objects,
-    std::vector<App::DocumentObject*>& results
-)
-{
-    for (auto* obj : objects) {
+    App::Document* doc = assembly ? assembly->getDocument() : nullptr;
+    if (doc == nullptr) {
+        // No document yet (e.g. mid-construction): nothing to enumerate.
+        return {};
+    }
+
+    // One assembly per document, and an assembly document holds no geometry of its own:
+    // every component arrives as a cross-document reference. So enumerate the document's
+    // reference objects directly instead of walking the (retiring) App::Part Group. No
+    // feature-input filtering is needed -- intermediate feature inputs (boolean Base/Tool,
+    // compound Shapes) live in each part's own document now, never here.
+    std::vector<App::DocumentObject*> components;
+    for (auto* obj : doc->getObjects()) {
         if (!obj) {
             continue;
         }
 
         if (auto* asmLink = freecad_cast<Assembly::AssemblyLink*>(obj)) {
-            // If the sub-assembly is rigid, treat it as a single movable part.
-            // If it's flexible, we need to check its individual components.
-            if (asmLink->isRigid()) {
-                results.push_back(asmLink);
-            }
-            else {
-                collectComponentsRecursively(asmLink->Group.getValues(), results);
-            }
-            continue;
+            // A rigid sub-assembly counts as one movable part. Flexible sub-assemblies
+            // still materialize proxy links via the old machinery; expanding them here
+            // would double-count under a document query, so their finer breakdown is
+            // deferred to the flexible rebuild. Rigid-only for now; see issue #65.
+            components.push_back(asmLink);
         }
         else if (obj->isLinkGroup()) {
+            // A link array is one reference standing in for N occurrences: expand it.
             auto* linkGroup = static_cast<App::Link*>(obj);
             for (auto* elt : linkGroup->ElementList.getValues()) {
-                results.push_back(elt);
+                components.push_back(elt);
             }
-            continue;
-        }
-        else if (auto* group = freecad_cast<App::DocumentObjectGroup*>(obj)) {
-            collectComponentsRecursively(group->Group.getValues(), results);
-            continue;
         }
         else if (auto* link = freecad_cast<App::Link*>(obj)) {
-            obj = link->getLinkedObject();
-            if (obj->isDerivedFrom<App::GeoFeature>()
-                && !obj->isDerivedFrom<App::LocalCoordinateSystem>()) {
-                results.push_back(link);
+            auto* linked = link->getLinkedObject();
+            if (linked != nullptr && linked->isDerivedFrom<App::GeoFeature>()
+                && !linked->isDerivedFrom<App::LocalCoordinateSystem>()) {
+                components.push_back(link);
             }
         }
-
-        else if (
-            obj->isDerivedFrom<App::GeoFeature>() && !obj->isDerivedFrom<App::LocalCoordinateSystem>()
-        ) {
-            results.push_back(obj);
-        }
     }
-}
-}  // namespace
-
-std::vector<App::DocumentObject*> getAssemblyComponents(const AssemblyObject* assembly)
-{
-    if (!assembly) {
-        return {};
-    }
-
-    std::vector<App::DocumentObject*> components;
-    collectComponentsRecursively(assembly->Group.getValues(), components);
     return components;
 }
 

@@ -213,6 +213,11 @@ class TaskAssemblyInsertLink(QtCore.QObject):
             collapse = False
 
         for doc in docList:
+            if doc == self.assembly.Document:
+                # The assembly's own document can never supply a component: components are
+                # cross-document references only. (G1 invariant, ASSEMBLY_AUDIT §9)
+                continue
+
             # Create a new tree item for the document
             docItem = QtGui.QTreeWidgetItem()
             itemName = doc.Label
@@ -360,6 +365,19 @@ class TaskAssemblyInsertLink(QtCore.QObject):
         if not selectedPart:
             # If there's no part associated, toggle the expanded state
             item.setExpanded(not item.isExpanded())
+            return
+
+        # A component is a reference to a part in another document; a target inside the
+        # assembly's own document would be owned geometry, which the model forbids.
+        # (G1 invariant, ASSEMBLY_AUDIT §9. The picker filters this document out, so this
+        # is a defensive net for any other selection path.)
+        if selectedPart.Document == self.doc:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Same document",
+                "A component must be a part from another document. Create one with New "
+                "Part, or open the part's file and insert it.",
+            )
             return
 
         # check that the current document had been saved or that it's the same document as that of the selected part

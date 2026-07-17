@@ -54,7 +54,27 @@ public:
         return "AssemblyGui::ViewProviderAssemblyLink";
     }
 
+    /// A sub-assembly instance is assembly-scoped content: only an Assembly document admits it.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::AssemblyItem;
+    }
+
     App::DocumentObjectExecReturn* execute() override;
+
+    /**
+     * A rigid sub-assembly owns nothing: it resolves child geometry across the document
+     * boundary into the linked assembly at query time, composing this instance's Placement,
+     * instead of materialising owned proxies. Flexible sub-assemblies still carry an owned
+     * proxy graph (#63) and defer to the base App::Part resolution.
+     */
+    App::DocumentObject* getSubObject(
+        const char* subname,
+        PyObject** pyObj = nullptr,
+        Base::Matrix4D* mat = nullptr,
+        bool transform = true,
+        int depth = 0
+    ) const override;
 
     // The linked assembly is the AssemblyObject that this AssemblyLink pseudo-links to recursively.
     AssemblyObject* getLinkedAssembly() const;
@@ -85,6 +105,13 @@ public:
     std::vector<App::DocumentObject*> getJoints();
 
     bool allowDuplicateLabel() const override;
+
+    /// An assembly link is a reference into another assembly, not a frame owner: it
+    /// positions the linked content through its Placement and must not own an Origin.
+    bool hasOwnOrigin() const override
+    {
+        return false;
+    }
 
     bool isEmpty() const;
     int numberOfComponents() const;

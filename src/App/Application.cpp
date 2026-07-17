@@ -550,6 +550,14 @@ void Application::setupPythonTypes()
     Py_INCREF(pUnitsModule);
     PyModule_AddObject(pAppModule, "Units", pUnitsModule);
 
+    // Document-type markers (§7.1 four document types) exposed for Python scripting, so a
+    // creation site writes App.newDocument(type=App.DocTypeAssembly) rather than a bare
+    // "Assembly" literal. The values stay single-sourced from Document's constexpr constants.
+    PyModule_AddStringConstant(pAppModule, "DocTypePart", Document::DocTypePart);
+    PyModule_AddStringConstant(pAppModule, "DocTypeAssembly", Document::DocTypeAssembly);
+    PyModule_AddStringConstant(pAppModule, "DocTypeDrawing", Document::DocTypeDrawing);
+    PyModule_AddStringConstant(pAppModule, "DocTypeSpreadsheet", Document::DocTypeSpreadsheet);
+
     Base::ProgressIndicatorPy::init_type();
     Base::InterpreterSingleton::addType(Base::ProgressIndicatorPy::type_object(),
         pBaseModule,"ProgressIndicator");

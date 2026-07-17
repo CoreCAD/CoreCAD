@@ -40,6 +40,12 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/CommandT.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewProviderLink.h>
+
+#include <Inventor/SoFullPath.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/details/SoDetail.h>
+#include <Inventor/nodes/SoSeparator.h>
 
 #include <Mod/Assembly/App/AssemblyObject.h>
 #include <Mod/Assembly/App/AssemblyLink.h>
@@ -55,9 +61,99 @@ using namespace AssemblyGui;
 PROPERTY_SOURCE(AssemblyGui::ViewProviderAssemblyLink, Gui::ViewProviderPart)
 
 ViewProviderAssemblyLink::ViewProviderAssemblyLink()
-{}
+{
+    linkView = new Gui::LinkView;
+}
 
-ViewProviderAssemblyLink::~ViewProviderAssemblyLink() = default;
+ViewProviderAssemblyLink::~ViewProviderAssemblyLink()
+{
+    linkView->setInvalid();
+}
+
+void ViewProviderAssemblyLink::attach(App::DocumentObject* obj)
+{
+    ViewProviderPart::attach(obj);
+    linkView->setOwner(this);
+    // Render the linked assembly's geometry beneath this instance's root. pcRoot already
+    // carries this AssemblyLink's Placement (via pcTransform), so the linked snapshot is
+    // positioned by the instance placement — matching how getSubObject composes it.
+    pcRoot->addChild(linkView->getLinkRoot());
+    updateLinkView();
+}
+
+void ViewProviderAssemblyLink::updateData(const App::Property* prop)
+{
+    ViewProviderPart::updateData(prop);
+
+    auto* link = freecad_cast<AssemblyLink*>(getObject());
+    if (link && (prop == &link->LinkedObject || prop == &link->Rigid)) {
+        updateLinkView();
+    }
+}
+
+void ViewProviderAssemblyLink::finishRestoring()
+{
+    ViewProviderPart::finishRestoring();
+    // On reload the linked view provider may not have existed when attach() ran; rebuild now.
+    updateLinkView();
+}
+
+void ViewProviderAssemblyLink::updateLinkView()
+{
+    auto* link = freecad_cast<AssemblyLink*>(getObject());
+
+    // A rigid sub-assembly owns no proxy geometry, so we render the linked assembly through the
+    // reference. A flexible one keeps its owned proxy children (#63); leave it to the base class.
+    if (!link || !link->isRigid()) {
+        linkView->setLink(nullptr);
+        return;
+    }
+
+    auto* assembly = link->getLinkedAssembly();
+    if (!assembly) {
+        linkView->setLink(nullptr);
+        return;
+    }
+
+    // SnapshotVisible keeps the linked assembly's internal placements and defers position to our
+    // pcTransform; SnapshotTransform would discard them.
+    linkView->setNodeType(Gui::LinkView::SnapshotVisible);
+    linkView->setLink(assembly);
+}
+
+bool ViewProviderAssemblyLink::getElementPicked(const SoPickedPoint* pp, std::string& subname) const
+{
+    // A pick on the referenced geometry resolves to its sub-shape (e.g. "Body.Face3"); nothing
+    // is linked for a flexible sub-assembly, so defer to the base group behaviour.
+    if (linkView->isLinked() && linkView->linkGetElementPicked(pp, subname)) {
+        return true;
+    }
+    return ViewProviderPart::getElementPicked(pp, subname);
+}
+
+bool ViewProviderAssemblyLink::getDetailPath(
+    const char* subname,
+    SoFullPath* pPath,
+    bool append,
+    SoDetail*& det
+) const
+{
+    // Reverse of getElementPicked: turn a referenced sub-name back into the Coin path under our
+    // linked root, so selection highlighting reaches through the reference.
+    if (linkView->isLinked()) {
+        int len = pPath->getLength();
+        if (append) {
+            // The linked root hangs directly off pcRoot (not pcModeSwitch); LinkView appends the
+            // rest of the path from there.
+            pPath->append(pcRoot);
+        }
+        if (linkView->linkGetDetailPath(subname, pPath, det)) {
+            return true;
+        }
+        pPath->truncate(len);
+    }
+    return ViewProviderPart::getDetailPath(subname, pPath, append, det);
+}
 
 QIcon ViewProviderAssemblyLink::getIcon() const
 {

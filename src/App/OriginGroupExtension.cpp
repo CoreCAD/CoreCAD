@@ -146,6 +146,12 @@ short OriginGroupExtension::extensionMustExecute()
 
 App::DocumentObjectExecReturn* OriginGroupExtension::extensionExecute()
 {
+    // A reference/instance object (e.g. an assembly link) opts out of owning an Origin,
+    // so there is nothing to validate here.
+    if (!getExtendedObject()->hasOwnOrigin()) {
+        return GeoFeatureGroupExtension::extensionExecute();
+    }
+
     try {  // try to find all base axis and planes in the origin
         getOrigin();
     }
@@ -167,6 +173,13 @@ App::DocumentObject* OriginGroupExtension::getLocalizedOrigin(App::Document* doc
 
 void OriginGroupExtension::onExtendedSetupObject()
 {
+    // A reference/instance object (e.g. an assembly link) does not own its own frame,
+    // so we must not mint an Origin for it.
+    if (!getExtendedObject()->hasOwnOrigin()) {
+        GeoFeatureGroupExtension::onExtendedSetupObject();
+        return;
+    }
+
     App::Document* doc = getExtendedObject()->getDocument();
 
     App::DocumentObject* originObj = getLocalizedOrigin(doc);
@@ -218,6 +231,12 @@ void OriginGroupExtension::extensionOnChanged(const Property* p)
 
 void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
 {
+    // A group that opts out of owning an Origin (a reference/instance, or an Assembly
+    // whose world frame is document-owned) has no group Origin to relink members to.
+    // getOrigin() would throw here; mirror the hasOwnOrigin guard used at setup/execute.
+    if (!getExtendedObject()->hasOwnOrigin()) {
+        return;
+    }
     relinkToOrigin(obj, getOrigin());
 }
 

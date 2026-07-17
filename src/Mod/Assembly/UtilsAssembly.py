@@ -379,15 +379,6 @@ def getGlobalPlacement(ref, targetObj=None):
     return rootObj.getPlacementOf(subName, targetObj)
 
 
-def isThereOneRootAssembly():
-    if Gui.activeDocument() is None:
-        return False
-    for part in Gui.activeDocument().TreeRootObjects:
-        if part.TypeId == "Assembly::AssemblyObject":
-            return True
-    return False
-
-
 def getElementName(full_name):
     # full_name is "Assembly.Assembly1.Assembly2.Assembly3.Box.Edge16"
     # We want either Edge16.
@@ -930,12 +921,19 @@ def arePlacementZParallel(plc1, plc2):
 
 
 def getAssembly(obj):
-    """Return the assembly (possibly through a nested AssemblyLink) that owns obj."""
-    for parent in obj.InList:
-        if parent.isDerivedFrom("Assembly::AssemblyObject"):
-            return parent
-        elif parent.isDerivedFrom("Assembly::AssemblyLink"):
-            return getAssembly(parent)
+    """Return the assembly that owns obj.
+
+    One assembly per document, and an assembly document holds no geometry of its own,
+    so the assembly that owns obj is simply the sole AssemblyObject in obj's document.
+    This is a document query, matching the solver's other component/group lookups --
+    it no longer depends on obj appearing in the assembly's InList (the assembly used
+    to be a GeoFeatureGroup, which claimed every nested object; a plain group does not).
+    """
+    if obj is None:
+        return None
+    for candidate in obj.Document.Objects:
+        if candidate.isDerivedFrom("Assembly::AssemblyObject"):
+            return candidate
 
     return None
 

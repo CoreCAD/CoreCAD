@@ -30,7 +30,6 @@ if App.GuiUp:
     from PySide import QtCore, QtGui, QtWidgets
 
 import UtilsAssembly
-import Preferences
 
 translate = App.Qt.translate
 
@@ -50,47 +49,33 @@ class CommandCreateAssembly:
             "Accel": "A",
             "ToolTip": QT_TRANSLATE_NOOP(
                 "Assembly_CreateAssembly",
-                "Creates an assembly object in the current document, or in the current active assembly (if any). Limit of one root assembly per file.",
+                "Creates a new assembly in its own document. Each assembly is its own file; add one assembly to another as a reference with Insert Link.",
             ),
             "CmdType": "ForEdit",
         }
 
     def IsActive(self):
-        if Gui.Control.activeDialog():
-            return False
-
-        if Preferences.preferences().GetBool("EnforceOneAssemblyRule", True):
-            activeAssembly = UtilsAssembly.activeAssembly()
-
-            if UtilsAssembly.isThereOneRootAssembly() and not activeAssembly:
-                return False
-
-        return True
+        return not Gui.Control.activeDialog()
 
     def Activated(self):
-        activeAssembly = UtilsAssembly.activeAssembly()
+        # An assembly always lives in its own document (one assembly per file). Invoking
+        # this while editing another assembly makes a separate, independent one — it is
+        # not nested. A sub-assembly enters another assembly only as a cross-document
+        # reference, via Insert Link.
         Gui.addModule("UtilsAssembly")
-        if activeAssembly:
-            # Sub-assembly nested inside an existing open assembly — stay in current document.
-            Gui.ActiveDocument.openCommand("New assembly")
-            commands = (
-                "activeAssembly = UtilsAssembly.activeAssembly()\n"
-                'assembly = activeAssembly.newObject("Assembly::AssemblyObject", "Assembly")\n'
-            )
-        else:
-            # Root assembly — always lives in its own document.
-            App.newDocument()
-            Gui.ActiveDocument.openCommand("New assembly")
-            commands = (
-                'assembly = App.ActiveDocument.addObject("Assembly::AssemblyObject", "Assembly")\n'
-            )
-
-        commands = commands + 'assembly.Type = "Assembly"\n'
-        commands = commands + 'assembly.newObject("Assembly::JointGroup", "Joints")'
+        # An assembly document is typed at creation (the single door, per §7.1 / Amendment 9).
+        # Typing it activates the content-scope admission door (Amendment 8): the document then
+        # refuses part geometry from any path, so a component can only be a cross-document
+        # reference, never owned geometry in the assembly file.
+        App.newDocument(type=App.DocTypeAssembly)
+        Gui.ActiveDocument.openCommand("New assembly")
+        commands = (
+            'assembly = App.ActiveDocument.addObject("Assembly::AssemblyObject", "Assembly")\n'
+            'assembly.newObject("Assembly::JointGroup", "Joints")'
+        )
 
         Gui.doCommand(commands)
-        if not activeAssembly:
-            Gui.doCommandGui("Gui.ActiveDocument.setEdit(assembly)")
+        Gui.doCommandGui("Gui.ActiveDocument.setEdit(assembly)")
 
         Gui.ActiveDocument.commitCommand()
 

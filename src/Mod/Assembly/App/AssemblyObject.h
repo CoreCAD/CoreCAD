@@ -28,8 +28,8 @@
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
+#include <App/DocumentObjectGroup.h>
 #include <App/FeaturePython.h>
-#include <App/Part.h>
 #include <App/PropertyLinks.h>
 
 #include <OndselSolver/enum.h>
@@ -70,7 +70,7 @@ struct ObjRef
     App::PropertyXLinkSub* ref;
 };
 
-class AssemblyExport AssemblyObject: public App::Part
+class AssemblyExport AssemblyObject: public App::DocumentObjectGroup
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Assembly::AssemblyObject);
 
@@ -84,6 +84,12 @@ public:
     const char* getViewProviderName() const override
     {
         return "AssemblyGui::ViewProviderAssembly";
+    }
+
+    /// An assembly is assembly-scoped content: only an Assembly document admits it.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::AssemblyItem;
     }
 
     App::DocumentObjectExecReturn* execute() override;

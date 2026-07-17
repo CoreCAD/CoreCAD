@@ -987,6 +987,20 @@ public:
     }
 
     /**
+     * Whether this object owns its own coordinate frame (an App::Origin) when it
+     * carries the OriginGroupExtension. Frame-owning containers (App::Part,
+     * Assembly) return true and have an Origin minted for them on creation.
+     * Pure reference/instance objects that merely position content owned elsewhere
+     * (e.g. an assembly link) return false so no Origin is created or required.
+     *
+     * @return true if the object owns an Origin, false otherwise.
+     */
+    virtual bool hasOwnOrigin() const
+    {
+        return true;
+    }
+
+    /**
      * @brief Called when a new label for the document object is proposed.
      *
      * This method is called when a new label is proposed for the document

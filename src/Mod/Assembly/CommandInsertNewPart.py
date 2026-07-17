@@ -34,7 +34,6 @@ if App.GuiUp:
     from PySide.QtCore import QTimer
 
 import UtilsAssembly
-import Preferences
 import JointObject
 
 translate = App.Qt.translate
@@ -112,15 +111,6 @@ class TaskAssemblyNewPart(JointObject.TaskAssemblyCreateJoint):
         mainLayout.addLayout(nameLayout)
         self.nameEdit.setText(translate("Assembly", "Part"))
 
-        # Add a checkbox
-        self.createInNewFileCheck = QtWidgets.QCheckBox(
-            translate("Assembly", "Create part in new file")
-        )
-        mainLayout.addWidget(self.createInNewFileCheck)
-        self.createInNewFileCheck.setChecked(
-            Preferences.preferences().GetBool("PartInNewFile", True)
-        )
-
         # Wrap the joint creation UI in a groupbox
         jointGroupBox = QtWidgets.QGroupBox(translate("Assembly", "Joint new part origin"))
         jointLayout = QtWidgets.QVBoxLayout(jointGroupBox)
@@ -137,40 +127,38 @@ class TaskAssemblyNewPart(JointObject.TaskAssemblyCreateJoint):
 
     def createPart(self):
         partName = self.nameEdit.text()
-        newFile = self.createInNewFileCheck.isChecked()
 
-        doc = self.assembly.Document
-        if newFile:
-            doc = App.newDocument(partName)
+        # A component is always a reference to a part living in its own document, never
+        # geometry inside the assembly file. The new part therefore always gets a fresh
+        # document (ASSEMBLY_AUDIT §9, gap G1 — components cross-doc only).
+        doc = App.newDocument(partName)
 
         part, body = UtilsAssembly.createPart(partName, doc)
 
         App.setActiveDocument(self.assembly.Document.Name)
 
-        # Then we need to link the part.
-        if newFile:
-            # New file must be saved or we can't link
-            if not Gui.getDocument(doc).saveAs():
-                msgBox = QtWidgets.QMessageBox()
-                msgBox.setIcon(QtWidgets.QMessageBox.Warning)
-                msgBox.setText(
-                    translate(
-                        "Assembly",
-                        "If the new document is not saved the new part cannot be linked in the assembly.",
-                    )
+        # The new document must be saved or we can't link across the document boundary.
+        if not Gui.getDocument(doc).saveAs():
+            msgBox = QtWidgets.QMessageBox()
+            msgBox.setIcon(QtWidgets.QMessageBox.Warning)
+            msgBox.setText(
+                translate(
+                    "Assembly",
+                    "If the new document is not saved the new part cannot be linked in the assembly.",
                 )
-                msgBox.setWindowTitle(translate("Assembly", "Save Document"))
-                saveButton = msgBox.addButton(
-                    translate("Assembly", "Save"), QtWidgets.QMessageBox.AcceptRole
-                )
-                cancelButton = msgBox.addButton(
-                    translate("Assembly", "Do not Link"), QtWidgets.QMessageBox.RejectRole
-                )
+            )
+            msgBox.setWindowTitle(translate("Assembly", "Save Document"))
+            saveButton = msgBox.addButton(
+                translate("Assembly", "Save"), QtWidgets.QMessageBox.AcceptRole
+            )
+            cancelButton = msgBox.addButton(
+                translate("Assembly", "Do not Link"), QtWidgets.QMessageBox.RejectRole
+            )
 
-                msgBox.exec_()
+            msgBox.exec_()
 
-                if not (msgBox.clickedButton() == saveButton and Gui.getDocument(doc).saveAs()):
-                    return
+            if not (msgBox.clickedButton() == saveButton and Gui.getDocument(doc).saveAs()):
+                return
 
         self.link.LinkedObject = part
         self.link.touch()
@@ -213,7 +201,6 @@ class TaskAssemblyNewPart(JointObject.TaskAssemblyCreateJoint):
         return True
 
     def deactivate(self):
-        Preferences.preferences().SetBool("PartInNewFile", self.createInNewFileCheck.isChecked())
         super().deactivate()
 
 
