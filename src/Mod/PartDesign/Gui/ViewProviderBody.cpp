@@ -653,11 +653,9 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
         }
     }
 
-    // 5. Origin must come first (the shared document Origin, resolved by lookup now the
-    //    OriginGroup extension is gone — Cruth §11 step 5e).
-    if (App::DocumentObject* origin = body->getOrigin()) {
-        result.insert(result.begin(), origin);
-    }
+    // 5. The world frame is NOT claimed here. It is owned by the document, shared by
+    //    every body, so claiming it would both hide it from the document root and make
+    //    it a child of every body at once. It belongs at root, listed once.
     return result;
 }
 
@@ -696,10 +694,9 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
         emit(obj);
     }
 
-    // Origin first (the shared document Origin, resolved by lookup — Cruth §11 step 5e).
-    if (App::DocumentObject* origin = body->getOrigin()) {
-        result.insert(result.begin(), origin);
-    }
+    // The world frame is not parented here either: it is document-owned and already sits
+    // at the scene-graph root, at identity. Parenting it under each body would give the
+    // same nodes several parents for no gain.
     return result;
 }
 
