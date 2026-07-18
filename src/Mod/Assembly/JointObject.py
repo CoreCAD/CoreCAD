@@ -455,13 +455,11 @@ class ViewProviderJoint:
             self.switch_JCS_preview.whichChild = coin.SO_SWITCH_NONE
 
     def setJCSPosition(self, jcs, plc, ref):
-        assembly = UtilsAssembly.getAssembly(self.app_obj)
-        if assembly and ref and plc:
-            asm_global_plc = assembly.getGlobalPlacement()
-            if asm_global_plc != App.Placement():
-                global_plc = UtilsAssembly.getJcsGlobalPlc(plc, ref)
-                plc = asm_global_plc.inverse() * global_plc
-                ref = None
+        # The assembly is a plain group rooted at the document world frame (identity),
+        # so its components already carry world placements — no assembly-relative
+        # transform is needed. (Previously assembly.getGlobalPlacement() folded a
+        # non-identity assembly frame in; that instance method is gone with the
+        # GeoFeatureGroup -> DocumentObjectGroup migration, and the frame is identity.)
         jcs.set_marker_placement(plc, ref)
 
     def setPickableState(self, state: bool):
@@ -746,10 +744,12 @@ class MakeJointSelGate:
         if not sub:
             return False
 
-        objs_names, element_name = UtilsAssembly.getObjsNamesAndElement(obj.Name, sub)
-
-        if self.assembly.Name not in objs_names:
-            # Only objects within the assembly.
+        if UtilsAssembly.getAssembly(obj) is not self.assembly:
+            # Only objects within the assembly. The assembly used to be a GeoFeatureGroup
+            # that claimed its members, so its name sat at the root of every in-assembly
+            # selection path; a plain group does not claim members, so a component now roots
+            # its own path. Ask the document which assembly owns the selection instead of
+            # scanning the path for the assembly's name.
             return False
 
         ref = [obj, [sub]]
@@ -928,8 +928,6 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         self.jForm.featureList.installEventFilter(self)
 
         self.createDeleteAction()
-
-        self.addition_rejected = False
 
     def accept(self):
         if len(self.refs) != 2:
@@ -1490,50 +1488,40 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         return UtilsAssembly.getMovingPart(ref)
 
     # selectionObserver stuff
-    def addSelection(self, doc_name, obj_name, sub_name, mousePos):
+    def addSelection(self, doc_name, obj_name, raw_sub, mousePos):
+        # GreedySelection routes a fresh click here; a re-click on an already-selected feature
+        # is routed by the viewer to removeSelection (see there), so addSelection only ever
+        # adds. The assembly is a plain group (post-#38): the viewer roots the click path at the
+        # component, so getComponentReference re-bases it before we compare or store it.
         rootObj = App.getDocument(doc_name).getObject(obj_name)
 
         # We do not need the full TNP string like :"Part.Body.Pad.;#a:1;:G0;XTR;:Hc94:8,F.Face6"
-        # instead we need : "Part.Body.Pad.Face6"
-        resolved = rootObj.resolveSubElement(sub_name, True)
-        sub_name = resolved[2]
-
-        sub_name = UtilsAssembly.fixBodyExtraFeatureInSub(doc_name, sub_name)
+        # instead we need : "Part.Body.Pad.Face6". Keep the raw sub for viewer ops (clearing a
+        # highlight has to reference what the viewer actually stored).
+        resolved = rootObj.resolveSubElement(raw_sub, True)
+        sub_name = UtilsAssembly.fixBodyExtraFeatureInSub(doc_name, resolved[2])
 
         comp, new_sub = UtilsAssembly.getComponentReference(self.assembly, rootObj, sub_name)
         if not comp:
-            # Selection was not valid (not inside assembly or logic failed)
-            Gui.Selection.removeSelection(doc_name, obj_name, sub_name)
+            # Not a valid in-assembly pick: clear the stray viewer highlight.
+            Gui.Selection.removeSelection(doc_name, obj_name, raw_sub)
             return
 
-        # Construct the reference using the Component as the root
+        # Reject a 3rd element, or a second feature on a part already used (can't join a solid
+        # to itself). Gated here, not in the selection gate, so parts stay movable meanwhile.
+        # A rejected element is never in self.refs, so the echoed removeSelection below is a
+        # harmless miss there -- which is why no "addition rejected" flag is needed.
+        moving_part = self.getMovingPart([comp, [new_sub]])
+        if len(self.refs) >= 2 or any(
+            self.getMovingPart(reference) == moving_part for reference in self.refs
+        ):
+            Gui.Selection.removeSelection(doc_name, obj_name, raw_sub)
+            return
+
+        # Accept: pin the aiming vertex from the click point and store the connector.
         ref = [comp, [new_sub]]
-
-        moving_part = self.getMovingPart(ref)
-
-        # Check if the addition is acceptable (we are not doing this in selection gate to let user move objects)
-        acceptable = True
-        if len(self.refs) >= 2:
-            # No more than 2 elements can be selected for basic joints.
-            acceptable = False
-
-        for reference in self.refs:
-            sel_moving_part = self.getMovingPart(reference)
-            if sel_moving_part == moving_part:
-                # Can't join a solid to itself. So the user need to select 2 different parts.
-                acceptable = False
-
-        if not acceptable:
-            self.addition_rejected = True
-            Gui.Selection.removeSelection(doc_name, obj_name, sub_name)
-            return
-
-        # Selection is acceptable so add it
-
         mousePos = App.Vector(mousePos[0], mousePos[1], mousePos[2])
         vertex_name = UtilsAssembly.findElementClosestVertex(ref, mousePos)
-
-        # add the vertex name to the reference
         ref = UtilsAssembly.addVertexToReference(ref, vertex_name)
 
         self.refs.append(ref)
@@ -1543,34 +1531,23 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         self.joint.ViewObject.Proxy.showPreviewJCS(False)
 
     def removeSelection(self, doc_name, obj_name, sub_name, mousePos=None):
-        if self.addition_rejected:
-            self.addition_rejected = False
-            return
-
+        # A re-click on a selected feature: GreedySelection fires this as a genuine user
+        # deselect (verified live), so drop the matching connector. Identity is component +
+        # element name; the stored vertex sub is aiming detail, not identity. Rejected picks
+        # from addSelection also echo here but are never in self.refs, so they simply miss.
         rootObj = App.getDocument(doc_name).getObject(obj_name)
-
-        # Apply the same processing as in addSelection to ensure consistent comparison
         resolved = rootObj.resolveSubElement(sub_name, True)
-        sub_name = resolved[2]
-
-        sub_name = UtilsAssembly.fixBodyExtraFeatureInSub(doc_name, sub_name)
+        sub_name = UtilsAssembly.fixBodyExtraFeatureInSub(doc_name, resolved[2])
 
         comp, new_sub = UtilsAssembly.getComponentReference(self.assembly, rootObj, sub_name)
         if not comp:
             return
 
         for reference in self.refs[:]:
-            ref_obj = reference[0]
-            ref_element_name = reference[1][0] if len(reference[1]) > 0 else ""
-
-            # match both object and processed element name for precise identification
-            if ref_obj == comp and ref_element_name == new_sub:
+            if reference[0] == comp and reference[1] and reference[1][0] == new_sub:
                 self.refs.remove(reference)
-                break
-        else:
-            print("No matching ref found for removal!")
-
-        self.updateJoint()
+                self.updateJoint()
+                return
 
     def setPreselection(self, doc_name, obj_name, sub_name):
         if not sub_name:

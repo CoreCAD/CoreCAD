@@ -687,7 +687,20 @@ App::DocumentObject* getMovingPartFromSel(
     auto names = Base::Tools::splitSubName(sub);
     names.insert(names.begin(), obj->getNameInDocument());
 
-    bool assemblyPassed = false;
+    // The assembly is a plain DocumentObjectGroup (it does not claim its children in the
+    // selection path), so a component click is rooted at the component itself and the
+    // assembly name is absent from the path. Only gate on "pass the assembly" when it
+    // actually appears in the path (e.g. a nested part.assembly.part.body); otherwise the
+    // path already starts inside this assembly. The assembly can only appear as a same-doc
+    // entry, so scan for it in its own document.
+    const App::Document* asmDoc = assemblyObject ? assemblyObject->getDocument() : doc;
+    bool assemblyPassed = true;
+    for (const auto& objName : names) {
+        if (asmDoc->getObject(objName.c_str()) == assemblyObject) {
+            assemblyPassed = false;
+            break;
+        }
+    }
 
     for (const auto& objName : names) {
         obj = doc->getObject(objName.c_str());
@@ -823,13 +836,16 @@ namespace
 {
 struct ResolvedReference
 {
-    App::DocumentObject* obj = nullptr;  // resolved object owning the geometry
-    TopoDS_Shape eltShape;               // primary sub-shape (null for whole-part datums)
-    std::string eltType;                 // "Vertex" | "Edge" | "Face" | ""
-    int eltIndex = 0;                    // trailing number of the primary sub-element
-    std::string vtxName;                 // secondary sub-name; resolved contextually via subShape()
-    std::string vtxType;                 // "" when there is no second sub
-    bool wholePart = false;              // elt or vtx empty -> datum-axis / whole-part case
+    App::DocumentObject* obj = nullptr;  // resolved reference object (a component is an App::Link)
+    App::DocumentObject* geoObj = nullptr;  // geometry-bearing object: obj, or the object obj links
+                                            // to (cross-doc component, #38 G1). All shape reads +
+                                            // frame normalization use geoObj, never obj.
+    TopoDS_Shape eltShape;                  // primary sub-shape (null for whole-part datums)
+    std::string eltType;                    // "Vertex" | "Edge" | "Face" | ""
+    int eltIndex = 0;                       // trailing number of the primary sub-element
+    std::string vtxName;     // secondary sub-name; resolved contextually via subShape()
+    std::string vtxType;     // "" when there is no second sub
+    bool wholePart = false;  // elt or vtx empty -> datum-axis / whole-part case
     bool valid = false;
 };
 
@@ -904,6 +920,16 @@ ResolvedReference resolveReference(App::DocumentObject* value, const std::vector
     if (!r.obj) {
         return r;
     }
+    // A component is a cross-doc App::Link (assembly reference-only, #38 G1). getObjFromRef hands
+    // back the link itself; follow it to the geometry-bearing object. The linked body/primitive
+    // supplies the shape in its own frame, which the component's App::Link maps to world via the
+    // link Placement; the solver applies that component placement separately, so geometry code
+    // reads geoObj (never the link) and normalizes by geoObj's own placement. Mirrors the retired
+    // Python findPlacement, which resolved through to the linked object's shape.
+    r.geoObj = r.obj->isLink() ? r.obj->getLinkedObject(true) : r.obj;
+    if (!r.geoObj) {
+        return r;
+    }
     r.valid = true;
 
     const std::string eltName = elementName(subs[0]);
@@ -919,7 +945,7 @@ ResolvedReference resolveReference(App::DocumentObject* value, const std::vector
     splitTypeAndNumber(eltName, r.eltType, r.eltIndex);
     splitTypeAndNumber(r.vtxName, r.vtxType, dummy);
 
-    auto* base = dynamic_cast<const Part::Feature*>(r.obj);
+    const auto* base = dynamic_cast<const Part::Feature*>(r.geoObj);
     if (!base) {
         r.valid = false;
         return r;
@@ -1038,7 +1064,7 @@ Base::Placement datumAxisPlacement(const App::DocumentObject* obj)
 Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
 {
     if (r.wholePart) {
-        return datumAxisPlacement(r.obj);
+        return datumAxisPlacement(r.geoObj);
     }
 
     Base::Placement plc;
@@ -1064,7 +1090,7 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
             }
         }
         else {
-            const Part::TopoShape* shape = objTopoShape(r.obj);
+            const Part::TopoShape* shape = objTopoShape(r.geoObj);
             const TopoDS_Shape vtx = shape ? subShape(*shape, r.vtxName) : TopoDS_Shape();
             if (vtx.IsNull()) {
                 return {};
@@ -1124,7 +1150,7 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
                     Base::Vector3d hit(toVec(cyl.Location()));
                     for (int i = 1;; ++i) {
                         const std::string name = "Face" + std::to_string(i);
-                        const Part::TopoShape* shp = objTopoShape(r.obj);
+                        const Part::TopoShape* shp = objTopoShape(r.geoObj);
                         if (!shp) {
                             break;
                         }
@@ -1157,7 +1183,7 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
             }
         }
         else {
-            const Part::TopoShape* shape = objTopoShape(r.obj);
+            const Part::TopoShape* shape = objTopoShape(r.geoObj);
             const TopoDS_Shape vtx = shape ? subShape(*shape, r.vtxName) : TopoDS_Shape();
             if (vtx.IsNull()) {
                 return {};
@@ -1174,16 +1200,18 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
     }
 
     // Draft arrays carry the array placement on the Shape; strip it back out.
-    if (r.obj->getPropertyByName("ExpandArray") != nullptr) {
-        if (const auto* baseProp = r.obj->getPropertyByName<App::PropertyLink>("Base")) {
+    if (r.geoObj->getPropertyByName("ExpandArray") != nullptr) {
+        if (const auto* baseProp = r.geoObj->getPropertyByName<App::PropertyLink>("Base")) {
             if (const App::DocumentObject* baseObj = baseProp->getValue()) {
                 plc = objPlacement(baseObj).inverse() * plc;
             }
         }
     }
 
-    // Everything above is in the object's global frame; make it object-relative.
-    plc = objPlacement(r.obj).inverse() * plc;
+    // Everything above is in the geometry object's own frame; make it relative to that frame (the
+    // component-local frame the solver expects). Use geoObj, not the link -- the link's Placement
+    // is the component's global placement, applied downstream by the solver.
+    plc = objPlacement(r.geoObj).inverse() * plc;
 
     if (r.eltType == "Vertex") {
         plc.setRotation(Base::Rotation());

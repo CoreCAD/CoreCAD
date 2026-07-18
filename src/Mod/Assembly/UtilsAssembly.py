@@ -1066,17 +1066,21 @@ def getComponentReference(assembly, root_obj, sub_string):
     doc = assembly.Document
 
     # 1. Reconstruct full path
-    # e.g. ['Part', 'Assembly', 'Cylinder', 'Face1']
+    # e.g. ['Part', 'Assembly', 'Cylinder', 'Face1']  (assembly-rooted, old GeoFeatureGroup)
+    # or   ['Body', 'Face1']                          (component-rooted, plain group)
     names = [root_obj.Name] + sub_string.split(".")
 
-    # 2. Find Assembly in path
-    try:
-        asm_idx = names.index(assembly.Name)
-    except ValueError:
-        return None, ""
+    # 2. Decide where the component search begins. The assembly used to be a
+    # GeoFeatureGroup that claimed its members, so its name sat at the root of every
+    # in-assembly path; a plain group does not claim members, so a component now roots
+    # its own path. Start after the assembly's name when present, otherwise at the root.
+    if assembly.Name in names:
+        start = names.index(assembly.Name) + 1
+    else:
+        start = 0
 
-    # 3. Identify Component (first valid object after Assembly)
-    candidates = names[asm_idx + 1 :]
+    # 3. Identify Component (first valid object in the remaining path)
+    candidates = names[start:]
     if not candidates:
         return None, ""
 
@@ -1105,10 +1109,16 @@ def getComponentReference(assembly, root_obj, sub_string):
             continue
 
         component = obj
-        comp_idx = asm_idx + 1 + i
+        comp_idx = start + i
         break
 
     if not component:
+        return None, ""
+
+    # The component must belong to this assembly. With the assembly's name no longer
+    # guaranteed to be in the path, guard against a stray selection from outside it
+    # (one assembly per document, so a doc query settles ownership).
+    if getAssembly(component) is not assembly:
         return None, ""
 
     # 4. Construct new sub-string
