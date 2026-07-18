@@ -30,7 +30,7 @@ App = FreeCAD
 
 class TestDraft(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDraft")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDraft", type="Part")
 
     def testSimpleDraft(self):
         # fix: create datum plane on YZ. create datum line on Z + 10i

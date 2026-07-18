@@ -28,7 +28,7 @@ import FreeCAD
 
 class TestChamfer(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestChamfer")
+        self.Doc = FreeCAD.newDocument("PartDesignTestChamfer", type="Part")
 
     def testChamferCubeToOctahedron(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

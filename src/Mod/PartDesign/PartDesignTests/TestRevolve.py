@@ -28,7 +28,7 @@ import FreeCAD
 
 class TestRevolve(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestRevolve")
+        self.Doc = FreeCAD.newDocument("PartDesignTestRevolve", type="Part")
 
     def testRevolveFace(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

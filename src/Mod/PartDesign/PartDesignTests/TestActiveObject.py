@@ -31,7 +31,7 @@ import FreeCADGui
 
 class TestActiveObject(unittest.TestCase):
     def setUp(self):
-        self.doc = FreeCAD.newDocument("PartDesignTestSketch")
+        self.doc = FreeCAD.newDocument("PartDesignTestSketch", type="Part")
         self.doc.UndoMode = True
 
     def testPartBody(self):

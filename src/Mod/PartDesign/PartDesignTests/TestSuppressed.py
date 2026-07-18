@@ -51,7 +51,7 @@ from PySide import QtGui
 
 class TestSuppressed(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestSuppressed")
+        self.Doc = FreeCAD.newDocument("PartDesignTestSuppressed", type="Part")
 
     def tearDown(self):
         FreeCAD.closeDocument(self.Doc.Name)
@@ -254,7 +254,7 @@ class TestSuppressedStrikethrough(unittest.TestCase):
     def setUp(self):
         if not hasattr(FreeCADGui, "getMainWindow") or FreeCADGui.getMainWindow() is None:
             self.skipTest("Requires GUI")
-        self.Doc = FreeCAD.newDocument("TestSuppressedStrikethrough")
+        self.Doc = FreeCAD.newDocument("TestSuppressedStrikethrough", type="Part")
         FreeCADGui.activateView("Gui::View3DInventor", True)
 
     def tearDown(self):

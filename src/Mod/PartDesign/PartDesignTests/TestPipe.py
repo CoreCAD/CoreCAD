@@ -33,7 +33,7 @@ App = FreeCAD
 
 class TestPipe(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestPipe")
+        self.Doc = FreeCAD.newDocument("PartDesignTestPipe", type="Part")
 
     def testSimpleAdditivePipeCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

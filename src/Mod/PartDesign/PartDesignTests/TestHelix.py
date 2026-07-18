@@ -38,7 +38,7 @@ class TestHelix(unittest.TestCase):
     """Test various helixes"""
 
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestHelix")
+        self.Doc = FreeCAD.newDocument("PartDesignTestHelix", type="Part")
 
     def testHelicalTubeCase(self):
         body = self.Doc.addObject("PartDesign::Body", "Body")
@@ -84,11 +84,6 @@ class TestHelix(unittest.TestCase):
         body.addFeature(helix)
         helix.Profile = profileSketch
         helix.ReferenceAxis = (profileSketch, "V_Axis")
-        helix.Placement = FreeCAD.Placement(
-            FreeCAD.Vector(0, 0, 0),
-            FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-            FreeCAD.Vector(0, 0, 0),
-        )
         helix.Pitch = 3
         helix.Height = 9
         helix.Turns = 2
@@ -122,11 +117,6 @@ class TestHelix(unittest.TestCase):
         body.addFeature(helix)
         helix.Profile = gearSketch
         helix.ReferenceAxis = (gearSketch, "V_Axis")
-        helix.Placement = FreeCAD.Placement(
-            FreeCAD.Vector(0, 0, 0),
-            FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-            FreeCAD.Vector(0, 0, 0),
-        )
 
         helix.Pitch = 50
         helix.Height = 150
@@ -168,11 +158,6 @@ class TestHelix(unittest.TestCase):
             body.addFeature(helix)
             helix.Profile = gearSketch
             helix.ReferenceAxis = (gearSketch, "V_Axis")
-            helix.Placement = FreeCAD.Placement(
-                FreeCAD.Vector(0, 0, 0),
-                FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-                FreeCAD.Vector(0, 0, 0),
-            )
 
             helix.Pitch = 2 * (10**exponent)
             helix.Turns = 2
@@ -233,11 +218,6 @@ class TestHelix(unittest.TestCase):
             body.addFeature(helix)
             helix.Profile = gearSketch
             helix.ReferenceAxis = (gearSketch, "V_Axis")
-            helix.Placement = FreeCAD.Placement(
-                FreeCAD.Vector(0, 0, 0),
-                FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-                FreeCAD.Vector(0, 0, 0),
-            )
 
             helix.Pitch = 2 * (10**exponent)
             helix.Turns = 2.5  # workaround for OCCT bug with very large helices - full turns truncate the cylinder due to seam alignment
@@ -299,11 +279,6 @@ class TestHelix(unittest.TestCase):
             body.addFeature(helix)
             helix.Profile = gearSketch
             helix.ReferenceAxis = (gearSketch, "V_Axis")
-            helix.Placement = FreeCAD.Placement(
-                FreeCAD.Vector(0, 0, 0),
-                FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-                FreeCAD.Vector(0, 0, 0),
-            )
 
             helix.Pitch = 2 * (10**exponent)
             helix.Turns = 2.5  # workaround for OCCT bug with very large helices - full turns truncate the cylinder due to seam alignment
@@ -369,11 +344,6 @@ class TestHelix(unittest.TestCase):
         body.addFeature(helix)
         helix.Profile = coneSketch
         helix.ReferenceAxis = (coneSketch, "V_Axis")
-        helix.Placement = FreeCAD.Placement(
-            FreeCAD.Vector(0, 0, 0),
-            FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-            FreeCAD.Vector(0, 0, 0),
-        )
 
         helix.Pitch = 50
         helix.Height = 110

@@ -30,7 +30,7 @@ App = FreeCAD
 
 class TestDatumPoint(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPoint")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPoint", type="Part")
 
     def testOriginDatumPoint(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
@@ -49,7 +49,7 @@ class TestDatumPoint(unittest.TestCase):
 
 class TestDatumLine(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDatumLine")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDatumLine", type="Part")
 
     def testXAxisDatumLine(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
@@ -68,7 +68,7 @@ class TestDatumLine(unittest.TestCase):
 
 class TestDatumPlane(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane", type="Part")
 
     def testXYDatumPlane(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

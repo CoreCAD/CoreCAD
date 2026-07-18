@@ -29,7 +29,7 @@ import TestSketcherApp
 
 class TestPolarPattern(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestPolarPattern")
+        self.Doc = FreeCAD.newDocument("PartDesignTestPolarPattern", type="Part")
 
     def testXAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

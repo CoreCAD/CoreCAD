@@ -28,7 +28,7 @@ import FreeCAD
 
 class TestMaterial(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestMaterial")
+        self.Doc = FreeCAD.newDocument("PartDesignTestMaterial", type="Part")
 
     def compareColors(self, c1, c2):
         # Colors are in the form of tuples

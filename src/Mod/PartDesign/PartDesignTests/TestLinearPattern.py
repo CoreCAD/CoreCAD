@@ -29,7 +29,7 @@ import TestSketcherApp
 
 class TestLinearPattern(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestLinearPattern")
+        self.Doc = FreeCAD.newDocument("PartDesignTestLinearPattern", type="Part")
 
     def testXAxisLinearPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

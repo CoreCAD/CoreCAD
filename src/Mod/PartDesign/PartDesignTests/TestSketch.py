@@ -30,7 +30,7 @@ import FreeCAD
 
 class TestSketch(unittest.TestCase):
     def setUp(self):
-        self.doc = FreeCAD.newDocument("PartDesignTestSketch")
+        self.doc = FreeCAD.newDocument("PartDesignTestSketch", type="Part")
         self.doc.UndoMode = True
 
     def testIssue17553(self):
@@ -70,9 +70,13 @@ class TestSketch(unittest.TestCase):
 
         self.doc.undo()  # undo removal
 
+        # The world frame belongs to the document, minted when the document was
+        # created rather than by the body, so undoing the body creation no longer
+        # takes the attachment plane away with it. The restored sketch therefore
+        # keeps its attachment instead of being left dangling.
         self.assertEqual(sketch.InList, [])
-        self.assertEqual(sketch.OutList, [])
-        self.assertEqual(sketch.AttachmentSupport, [])
+        self.assertEqual(sketch.OutList, [plane])
+        self.assertEqual(sketch.AttachmentSupport, [(plane, ("",))])
 
     def testDependency(self):
         self.doc.openTransaction("Create box")

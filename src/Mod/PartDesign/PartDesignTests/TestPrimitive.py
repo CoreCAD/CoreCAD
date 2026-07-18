@@ -29,7 +29,7 @@ import FreeCAD
 
 class TestPrimitive(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestPrimitive")
+        self.Doc = FreeCAD.newDocument("PartDesignTestPrimitive", type="Part")
 
     def testPrimitiveBox(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

@@ -29,7 +29,7 @@ import TestSketcherApp
 
 class TestMirrored(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestMirrored")
+        self.Doc = FreeCAD.newDocument("PartDesignTestMirrored", type="Part")
 
     def testMirroredSketchCase(self):
         """
