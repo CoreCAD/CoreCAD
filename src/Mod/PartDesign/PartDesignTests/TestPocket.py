@@ -29,7 +29,7 @@ import TestSketcherApp
 
 class TestPocket(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestPocket")
+        self.Doc = FreeCAD.newDocument("PartDesignTestPocket", type="Part")
 
     def testPocketDimensionCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

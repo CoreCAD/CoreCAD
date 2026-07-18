@@ -30,7 +30,7 @@ import TestSketcherApp
 
 class TestPad(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestPad")
+        self.Doc = FreeCAD.newDocument("PartDesignTestPad", type="Part")
 
     def testBoxCase(self):
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")

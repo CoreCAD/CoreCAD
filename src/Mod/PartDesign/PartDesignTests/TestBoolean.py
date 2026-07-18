@@ -31,7 +31,7 @@ App = FreeCAD
 
 class TestBoolean(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestBoolean")
+        self.Doc = FreeCAD.newDocument("PartDesignTestBoolean", type="Part")
 
     def testBooleanFuseCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

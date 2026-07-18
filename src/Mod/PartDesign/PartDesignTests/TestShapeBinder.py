@@ -32,7 +32,7 @@ import Sketcher
 
 class TestShapeBinder(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestShapeBinder")
+        self.Doc = FreeCAD.newDocument("PartDesignTestShapeBinder", type="Part")
 
     def testTwoBodyShapeBinderCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
@@ -61,7 +61,7 @@ class TestShapeBinder(unittest.TestCase):
 
 class TestSubShapeBinder(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestSubShapeBinder")
+        self.Doc = FreeCAD.newDocument("PartDesignTestSubShapeBinder", type="Part")
 
     def tearDown(self):
         FreeCAD.closeDocument("PartDesignTestSubShapeBinder")

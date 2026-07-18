@@ -36,7 +36,7 @@ class TestLoft(unittest.TestCase):
     """Loft Tests"""
 
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestLoft")
+        self.Doc = FreeCAD.newDocument("PartDesignTestLoft", type="Part")
 
     def testSimpleAdditiveLoftCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

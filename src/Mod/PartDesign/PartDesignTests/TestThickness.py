@@ -28,7 +28,7 @@ import FreeCAD
 
 class TestThickness(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestThickness")
+        self.Doc = FreeCAD.newDocument("PartDesignTestThickness", type="Part")
 
     def testReversedThickness(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")

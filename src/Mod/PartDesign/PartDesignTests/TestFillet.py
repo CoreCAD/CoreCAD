@@ -30,7 +30,7 @@ import FreeCAD
 
 class TestFillet(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestFillet")
+        self.Doc = FreeCAD.newDocument("PartDesignTestFillet", type="Part")
 
     def _create_box_with_fillet(self):
         body = self.Doc.addObject("PartDesign::Body", "Body")

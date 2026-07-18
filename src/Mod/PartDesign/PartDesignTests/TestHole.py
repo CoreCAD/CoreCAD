@@ -32,7 +32,7 @@ App = FreeCAD
 
 class TestHole(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestHole")
+        self.Doc = FreeCAD.newDocument("PartDesignTestHole", type="Part")
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
         self.Box.Length = 10

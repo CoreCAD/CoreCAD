@@ -41,7 +41,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
 
     def setUp(self):
         """Create a document for each test in the test suite"""
-        self.Doc = App.newDocument("PartDesignTestTNP." + self._testMethodName)
+        self.Doc = App.newDocument("PartDesignTestTNP." + self._testMethodName, type="Part")
 
     def countFacesEdgesVertexes(self, map):
         """Helper to return a tuple of the counts of Faces, Edges, and Vertexes in a map for
@@ -2461,11 +2461,13 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.create_t_sketch()
         self.assertEqual(self.Doc.Sketch.Shape.ElementMapSize, 18)
-        filename = tempfile.gettempdir() + os.sep + self.Doc.Name
+        # Name the file explicitly: the document name carries a dot (test-method
+        # suffix), so letting saveAs derive the extension gives an unexpected path.
+        filename = tempfile.gettempdir() + os.sep + self.Doc.Name + ".FCStd"
         # Act
         self.Doc.saveAs(filename)
         App.closeDocument(self.Doc.Name)
-        self.Doc = App.openDocument(filename + ".FCStd")
+        self.Doc = App.openDocument(filename)
         self.Doc.recompute()
         # Assert
         self.assertEqual(self.Doc.Sketch.Shape.ElementMapSize, 18)

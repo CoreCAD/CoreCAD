@@ -32,7 +32,7 @@ App = FreeCAD
 
 class TestMultiTransform(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestMultiTransform")
+        self.Doc = FreeCAD.newDocument("PartDesignTestMultiTransform", type="Part")
         FreeCAD.ConfigSet("SuppressRecomputeRequiredDialog", "True")
 
     def testMultiTransform(self):
