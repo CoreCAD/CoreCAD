@@ -1219,6 +1219,28 @@ void ViewProviderAssembly::onSelectionChanged(const Gui::SelectionChanges& msg)
         return;
     }
 
+    // A picking click must not also start a part drag. mouseButtonPressed arms canStartDragging
+    // on press and can only disarm it on release -- but the release is swallowed whenever the
+    // click selects something (see the comment there), so the flag survives the click and the
+    // next mouse motion starts a move. That move disables viewer picking for its whole duration,
+    // which is what stops the user picking the second joint element.
+    //
+    // PickedListChanged is the message that actually identifies a picking click here: a genuine
+    // press-and-drag on a part sends no selection message at all, while a click that picks
+    // geometry sends this one, before the first motion event. Add/Rmv/ClrSelection are kept for
+    // programmatic selection changes. This must run before the isolation and explosion branches
+    // below, both of which return early.
+    if (isInEditMode()
+        && (msg.Type == Gui::SelectionChanges::PickedListChanged
+            || msg.Type == Gui::SelectionChanges::AddSelection
+            || msg.Type == Gui::SelectionChanges::ClrSelection
+            || msg.Type == Gui::SelectionChanges::RmvSelection)) {
+        canStartDragging = false;
+        if (partMoving) {
+            endMove();
+        }
+    }
+
     // Joint components isolation
     if (msg.Type == Gui::SelectionChanges::AddSelection) {
         auto selection = Gui::Selection().getSelection();
@@ -1246,12 +1268,6 @@ void ViewProviderAssembly::onSelectionChanged(const Gui::SelectionChanges& msg)
 
     if (!isInEditMode()) {
         return;
-    }
-
-    if (msg.Type == Gui::SelectionChanges::AddSelection
-        || msg.Type == Gui::SelectionChanges::ClrSelection
-        || msg.Type == Gui::SelectionChanges::RmvSelection) {
-        canStartDragging = false;
     }
 
     if (msg.Type == Gui::SelectionChanges::AddSelection) {
