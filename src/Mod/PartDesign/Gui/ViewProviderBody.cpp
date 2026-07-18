@@ -645,15 +645,7 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
         }
     }
 
-    // 4. Keep the GeoExcluded status of Group members consistent with what we
-    //    nested, so sub-object resolution (extensionGetSubObjects) stays correct.
-    for (auto* obj : groupMembers) {
-        if (obj && obj->isAttachedToDocument()) {
-            obj->setStatus(App::ObjectStatus::GeoExcluded, claimed.contains(obj));
-        }
-    }
-
-    // 5. The world frame is NOT claimed here. It is owned by the document, shared by
+    // 4. The world frame is NOT claimed here. It is owned by the document, shared by
     //    every body, so claiming it would both hide it from the document root and make
     //    it a child of every body at once. It belongs at root, listed once.
     return result;
