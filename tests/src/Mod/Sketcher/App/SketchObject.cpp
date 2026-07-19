@@ -857,3 +857,40 @@ TEST_F(SketchObjectTest, testGetElementName)
     EXPECT_STREQ(reverse_export_name.newName.c_str(), (";" + tagName + "v1;SKT.Vertex1").c_str());
     EXPECT_STREQ(reverse_export_name.oldName.c_str(), "Vertex1");
 }
+
+// The document is the only hard boundary left for an external reference: within one document a
+// sketch may reference any geometry it can see, but crossing into another document must go through
+// a binder. These two cases together are the discriminator — a check that refused (or allowed)
+// both would say nothing.
+TEST_F(SketchObjectTest, testExternalWithinDocumentIsAllowed)
+{
+    // Arrange
+    auto* doc = getObject()->getDocument();
+    auto* neighbour = doc->addObject("Sketcher::SketchObject");
+    Sketcher::SketchObject::eReasonList reason {};
+
+    // Act
+    bool allowed = getObject()->isExternalAllowed(doc, neighbour, &reason);
+
+    // Assert
+    EXPECT_TRUE(allowed);
+    EXPECT_EQ(reason, Sketcher::SketchObject::rlAllowed);
+}
+
+TEST_F(SketchObjectTest, testExternalAcrossDocumentsIsRefused)
+{
+    // Arrange
+    auto otherName = App::GetApplication().getUniqueDocumentName("other");
+    auto* otherDoc = App::GetApplication().newDocument(otherName.c_str(), "testUser");
+    auto* stranger = otherDoc->addObject("Sketcher::SketchObject");
+    Sketcher::SketchObject::eReasonList reason {};
+
+    // Act
+    bool allowed = getObject()->isExternalAllowed(otherDoc, stranger, &reason);
+
+    // Assert
+    EXPECT_FALSE(allowed);
+    EXPECT_EQ(reason, Sketcher::SketchObject::rlOtherDoc);
+
+    App::GetApplication().closeDocument(otherName.c_str());
+}
