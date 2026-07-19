@@ -90,7 +90,7 @@ class CommandFillTemplateFields:
                             texts
                             and os.path.exists(file_path)
                             and listofkeys == reader.fieldnames
-                            and obj.Views != []
+                            and obj.getViews() != []
                         ):
                             return True
             return False

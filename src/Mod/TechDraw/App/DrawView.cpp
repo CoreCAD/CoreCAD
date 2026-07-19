@@ -370,10 +370,11 @@ DrawPage* DrawView::findParentPage() const
         return page;
     }
 
-    // A view held in a collection (a projection group, a clip) takes the collection's page.
-    // The collection is the view's parent in the drawing, so the edge is asked for, not stored.
-    if (auto* collection = getCollection()) {
-        return collection->findParentPage();
+    // A view with a parent takes its parent's page: a dimension, balloon, or leader belongs to
+    // the page its source view sits on, and an item belongs to the page of its collection.
+    // Dependents follow the view, so the edge is asked for rather than stored a second time.
+    if (auto* parent = claimParent()) {
+        return parent->findParentPage();
     }
 
     return nullptr;
