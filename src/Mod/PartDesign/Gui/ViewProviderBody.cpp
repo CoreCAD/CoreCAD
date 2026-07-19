@@ -660,30 +660,31 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
         return {};
     }
 
-    // Flat set of every object that must inherit the body's coordinate frame:
-    // the pipeline features, the sub-objects they claim (profile sketches,
-    // datums), and any remaining Group members not reached via the chain. Unlike
-    // the tree (claimChildren), the 3D scene graph parents these flat, not
-    // nested, so we dedupe rather than nest. Order is irrelevant for parenting.
+    // A Body parents its SOLIDS in 3D, and nothing else.
+    //
+    // The solid pipeline is what the Body's shape IS, so nesting those nodes is honest:
+    // it is what makes a clicked face arrive as "Body.Pad.Face6", the selection path the
+    // App layer resolves and the one we want.
+    //
+    // The loose members (profile sketches, datums, shapebinders — Body::getFullModel's
+    // second group) are INPUTS the Body references, never parts of its shape: P1 (inputs
+    // are referenced, not consumed, not owned) and P3 (references, not ownership). Parenting
+    // them here issued an address the model never agreed to honour — a click on a visible
+    // sketch edge resolved to "Body.Prof.Edge1", which Body::getSubObject cannot answer,
+    // so the pick failed even though the element existed and the click was correct. Their
+    // address is simply themselves, and that resolves.
+    //
+    // This is the single-consumer half of the rule Gui::Document already enforces centrally
+    // for shared inputs (contestedChildren3D): an input claimed by two consumers sits at the
+    // scene root. One rule instead of two — an input is never parented by a consumer, whether
+    // it has one or several. Note this is the SCENE half only: the tree (claimChildren) still
+    // lists loose members under the Body, which is a display default, not a model fact.
     std::vector<App::DocumentObject*> result;
     std::set<App::DocumentObject*> seen;
-    auto emit = [&](App::DocumentObject* obj) {
-        if (obj && obj->isAttachedToDocument() && seen.insert(obj).second) {
-            result.push_back(obj);
-        }
-    };
-
     for (auto* feat : pipelineChain()) {
-        emit(feat);
-        Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(feat);
-        if (vp && vp != this) {
-            for (auto* child : vp->claimChildren()) {
-                emit(child);
-            }
+        if (feat && feat->isAttachedToDocument() && seen.insert(feat).second) {
+            result.push_back(feat);
         }
-    }
-    for (auto* obj : body->getFullModel()) {
-        emit(obj);
     }
 
     // The world frame is not parented here either: it is document-owned and already sits
