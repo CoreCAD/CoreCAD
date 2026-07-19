@@ -135,9 +135,7 @@ PartDesign::Body* getBody(
                     doc,
                     QObject::tr(
                         "To use Part Design, an active body is required in the document. "
-                        "Activate a body (double-click) or create a new one."
-                        "\n\nFor legacy documents with Part Design objects lacking a body, "
-                        "use the migrate function in Part Design to place them into a body."
+                        "Activate a body by double-clicking it."
                     )
                 );
                 if (dia.exec() == QDialog::DialogCode::Accepted) {
@@ -199,23 +197,10 @@ void needActiveBodyError()
     );
 }
 
-PartDesign::Body* makeBody(App::Document* doc)
-{
-    // This is intended as a convenience when starting a new document.
-    auto bodyName(doc->getUniqueObjectName("Body"));
-    Gui::Command::doCommand(
-        Gui::Command::Doc,
-        "App.getDocument('%s').addObject('PartDesign::Body','%s')",
-        doc->getName(),
-        bodyName.c_str()
-    );
-
-    auto body = dynamic_cast<PartDesign::Body*>(doc->getObject(bodyName.c_str()));
-    if (body) {
-        makeBodyActive(body, doc);
-    }
-    return body;
-}
+// (Cruth §4.6/§4.8) makeBody() is gone. It birthed a bare Body with no feature in it — the
+// placeholder Body the architecture rules out. Bodies now come into being only with the solid
+// feature that starts them, via PartDesign::Body::spawnAutoBody() inside the feature's own
+// transaction.
 
 PartDesign::Body* getBodyFor(
     const App::DocumentObject* obj,
