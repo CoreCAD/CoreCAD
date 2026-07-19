@@ -651,38 +651,36 @@ void CmdPartDesignClone::activated(int iMsg)
     );
 
     if (objs.size() == 1) {
-        // As suggested in https://forum.freecad.org/viewtopic.php?f=3&t=25265&p=198547#p207336
-        // put the clone into its own new body.
-        // This also fixes bug #3447 because the clone is a PD feature and thus
-        // requires a body where it is part of.
+        // Cruth §4.6: the clone still lands in a body of its own, but the body is not minted
+        // ahead of it. The user creates a feature; the body is the system's accounting of the
+        // solid that results. The spawn happens INSIDE the transaction opened here, so
+        // cancelling the clone removes the body with it and leaves no empty Body behind.
         openCommand(QT_TRANSLATE_NOOP("Command", "Create Clone"));
 
         auto obj = objs[0];
         auto objCmd = getObjectCmd(obj);
         std::string cloneName = getUniqueObjectName("Clone", obj);
-        std::string bodyName = getUniqueObjectName("Body", obj);
 
-        // Create body and clone
-        Gui::cmdAppDocument(
-            obj,
-            std::stringstream() << "addObject('PartDesign::Body','" << bodyName << "')"
-        );
-        Gui::cmdAppDocument(
-            obj,
-            std::stringstream() << "addObject('PartDesign::FeatureBase','" << cloneName << "')"
-        );
+        auto* bodyObj = PartDesign::Body::spawnAutoBody(obj->getDocument());
+        if (!bodyObj) {
+            abortCommand();
+            return;
+        }
 
-        auto bodyObj = obj->getDocument()->getObject(bodyName.c_str());
-        auto cloneObj = obj->getDocument()->getObject(cloneName.c_str());
+        // createFeature births the clone at document level, then splices it into the Body's
+        // pipeline (Tip + BaseFeature chain). A de-owned Body has no Group to write.
+        auto cloneObj = PartDesignGui::createFeature(bodyObj, "PartDesign::FeatureBase", cloneName);
+        if (!cloneObj) {
+            abortCommand();
+            return;
+        }
 
-        // In the first step set the group link and tip of the body
-        Gui::cmdAppObject(bodyObj, std::stringstream() << "Group = [" << getObjectCmd(cloneObj) << "]");
-        Gui::cmdAppObject(bodyObj, std::stringstream() << "Tip = " << getObjectCmd(cloneObj));
-
-        // In the second step set the link of the base feature
+        // The clone's own link to the object it copies. Cruth Amendment 4: feature geometry is
+        // world-frame and position belongs only to anchors, so there is no Placement to copy —
+        // the clone is coincident with its source without one. (The old code copied Placement and
+        // un-hid it to make the clone independently movable; that property no longer exists on
+        // Part::Feature, so those two lines had been throwing since Amendment 4 merged.)
         Gui::cmdAppObject(cloneObj, std::stringstream() << "BaseFeature = " << objCmd);
-        Gui::cmdAppObject(cloneObj, std::stringstream() << "Placement = " << objCmd << ".Placement");
-        Gui::cmdAppObject(cloneObj, std::stringstream() << "setEditorMode('Placement', 0)");
 
         updateActive();
         copyVisual(cloneObj, "ShapeAppearance", obj);
