@@ -103,6 +103,8 @@ DrawView::DrawView():
     Scale.setConstraints(&scaleRange);
 
     ADD_PROPERTY_TYPE(Caption, (""), group, App::Prop_Output, "Short text about the view");
+    ADD_PROPERTY_TYPE(Page, (nullptr), group, App::Prop_Hidden, "The page this view appears on");
+    Page.setScope(App::LinkScope::Hidden);
 
     setScaleAttribute();
 }
@@ -363,23 +365,18 @@ int DrawView::countParentPages() const
 //more than 1 DrawPage claims a DrawView.
 DrawPage* DrawView::findParentPage() const
 {
-    // Get Feature Page
-    DrawPage *page = nullptr;
-    DrawViewCollection *collection = nullptr;
-    std::vector<App::DocumentObject*> parentsAll = getInList();
-    for (auto& parent : parentsAll) {
-        if (parent->isDerivedFrom<DrawPage>()) {
-            page = static_cast<TechDraw::DrawPage *>(parent);
-        } else if (parent->isDerivedFrom<DrawViewCollection>()) {
-            collection = static_cast<TechDraw::DrawViewCollection *>(parent);
-            page = collection->findParentPage();
-        }
-
-        if(page)
-          break; // Found a page so leave
+    // A view names its own page.
+    if (auto* page = freecad_cast<DrawPage*>(Page.getValue())) {
+        return page;
     }
 
-    return page;
+    // A view held in a collection (a projection group, a clip) takes the collection's page.
+    // The collection is the view's parent in the drawing, so the edge is asked for, not stored.
+    if (auto* collection = getCollection()) {
+        return collection->findParentPage();
+    }
+
+    return nullptr;
 }
 
 

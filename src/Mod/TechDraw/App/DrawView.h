@@ -62,6 +62,11 @@ public:
     App::PropertyAngle Rotation;
     App::PropertyString Caption;
 
+    /// The page this view appears on. This link is the authoritative page/view edge:
+    /// a view names its page, the page does not store a list of views. Storing the edge
+    /// in this direction keeps two people adding views to the same page from colliding.
+    App::PropertyLink Page;
+
     /** @name methods override Feature */
     //@{
     App::DocumentObjectExecReturn* recompute() override;

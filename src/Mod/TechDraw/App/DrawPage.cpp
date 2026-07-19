@@ -259,6 +259,12 @@ int DrawPage::addView(App::DocumentObject* docObj, bool setPosition)
         view->Y.setValue(getPageHeight() / 2.0);
     }
 
+    // The view names this page. A view held in a collection takes the collection's page
+    // instead, so the edge is left alone here.
+    if (!view->claimParent()) {
+        view->Page.setValue(this);
+    }
+
     //add view to list
     std::vector<App::DocumentObject*> newViews(Views.getValues());
     newViews.push_back(docObj);
