@@ -100,7 +100,7 @@ class TaskFillTemplateFields:
                 and listofkeys == reader.fieldnames
             ):
                 self.page = obj
-                if obj.Views == []:
+                if obj.getViews() == []:
                     msgBox = QtGui.QMessageBox()
                     msgTitle = QtCore.QT_TRANSLATE_NOOP(
                         "Techdraw_FillTemplateFields",
@@ -118,7 +118,7 @@ class TaskFillTemplateFields:
                     break
 
                 projgrp_view = None
-                for pageObj in obj.Views:
+                for pageObj in obj.getViews():
                     if hasattr(pageObj, "Scale"):
                         # use the scale from the first DVP or DPG encountered to fill the template's
                         # Scale editable text.

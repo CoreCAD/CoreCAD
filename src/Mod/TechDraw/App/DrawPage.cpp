@@ -66,9 +66,6 @@ DrawPage::DrawPage(void)
     ADD_PROPERTY_TYPE(Template, (nullptr), group, (App::PropertyType)(App::Prop_None),
                       "Attached Template");
     Template.setScope(App::LinkScope::Global);
-    ADD_PROPERTY_TYPE(Views, (nullptr), group, (App::PropertyType)(App::Prop_None),
-                      "Attached Views");
-    Views.setScope(App::LinkScope::Global);
 
     // Projection Properties
     ProjectionType.setEnums(ProjectionTypeEnums);
@@ -144,7 +141,6 @@ short DrawPage::mustExecute() const
 {
     if (!isRestoring()) {
         if (
-            Views.isTouched() ||
             Scale.isTouched() ||
             ProjectionType.isTouched() ||
             Template.isTouched()
@@ -231,23 +227,9 @@ int DrawPage::getOrientation() const
 
 int DrawPage::addView(App::DocumentObject* docObj, bool setPosition)
 {
-    if (!docObj->isDerivedFrom<DrawView>()
-        && !docObj->isDerivedFrom<App::Link>()) {
-        return -1;
-    }
-
     auto* view = freecad_cast<DrawView*>(docObj);
-
     if (!view) {
-        auto* link = dynamic_cast<App::Link*>(docObj);
-        if (!link) {
-            return -1;
-        }
-
-        view = freecad_cast<DrawView*>(link->getLinkedObject());
-        if (!view) {
-            return -1;
-        }
+        return -1;
     }
 
     //position all new views without owners in center of Page (exceptDVDimension)
@@ -259,11 +241,12 @@ int DrawPage::addView(App::DocumentObject* docObj, bool setPosition)
         view->Y.setValue(getPageHeight() / 2.0);
     }
 
-    //add view to list
-    std::vector<App::DocumentObject*> newViews(Views.getValues());
-    newViews.push_back(docObj);
-    Views.setValues(newViews);
-
+    // The view names this page. A view with a parent — an item in a collection, a dimension or
+    // balloon on a source view — derives its page from that parent instead, so the edge is left
+    // alone here rather than recorded twice.
+    if (!view->claimParent()) {
+        view->Page.setValue(this);
+    }
 
     //check if View fits on Page
     if (!view->checkFit(this)) {
@@ -273,42 +256,45 @@ int DrawPage::addView(App::DocumentObject* docObj, bool setPosition)
     }
 
     view->checkScale();
+    notifyMembershipChanged();
 
-    return Views.getSize();
+    return (int)getViews().size();
 }
 
-//Note Views might be removed from document elsewhere so need to check if a View is still in Document here
 int DrawPage::removeView(App::DocumentObject* docObj)
 {
-    if (!docObj->isDerivedFrom<DrawView>() && !docObj->isDerivedFrom<App::Link>()) {
-        return -1;
-    }
-
-    App::Document* doc = docObj->getDocument();
-    if (!doc) {
+    auto* view = freecad_cast<DrawView*>(docObj);
+    if (!view) {
         return -1;
     }
 
     if (!docObj->isAttachedToDocument()) {
         return -1;
     }
-    std::vector<App::DocumentObject*> newViews;
-    for (auto* view : Views.getValues()) {
-        App::Document* viewDoc = view->getDocument();
-        if (!viewDoc) {
-            continue;
-        }
 
-        std::string viewName = docObj->getNameInDocument();
-        if (viewName.compare(view->getNameInDocument()) != 0) {
-            newViews.push_back(view);
-        }
+    // A dependent — a dimension, a balloon, an item in a group — is on this page only because
+    // its parent is. It cannot be taken off the page on its own; it leaves when its parent does.
+    if (view->claimParent()) {
+        return -1;
     }
-    Views.setValues(newViews);
-    return Views.getSize();
+
+    // Taking a view off a page is the view forgetting the page, not the page forgetting the view.
+    if (view->Page.getValue() == this) {
+        view->Page.setValue(nullptr);
+    }
+    notifyMembershipChanged();
+
+    return (int)getViews().size();
 }
 
 void DrawPage::requestPaint(void) { signalGuiPaint(this); }
+
+void DrawPage::notifyMembershipChanged()
+{
+    if (!isUnsetting() && !isRestoring()) {
+        signalMembershipChanged(this);
+    }
+}
 
 //this doesn't work right because there is no guaranteed of the restoration order
 void DrawPage::onDocumentRestored()
@@ -360,48 +346,27 @@ void DrawPage::updateAllViews()
 
 std::vector<App::DocumentObject*> DrawPage::getViews() const
 {
-    std::vector<App::DocumentObject*> views = Views.getValues();
-    std::vector<App::DocumentObject*> allViews;
-    for (auto& v : views) {
-        bool addChildren = false;
-
-        if (v->isDerivedFrom<App::Link>()) {
-            // In the case of links, child object of the view need to be added since
-            // they are not in the page Views property.
-            v = static_cast<App::Link*>(v)->getLinkedObject();
-            addChildren = true;
-        }
-
-        if (!v->isDerivedFrom<DrawView>()) {
+    // Derived, never stored. A view is on this page if it names this page, or if it is a
+    // dependent (dimension, balloon, leader) of a view that does. Views held inside a
+    // collection are excluded here and reached through getAllViews(), matching what the
+    // stored list used to return.
+    std::vector<App::DocumentObject*> views;
+    for (auto* obj : getDocument()->getObjectsOfType<DrawView>()) {
+        auto* view = static_cast<DrawView*>(obj);
+        if (view->getCollection()) {
             continue;
         }
-
-        allViews.push_back(v);
-
-        if (addChildren) {
-            for (auto* dep : v->getInList()) {
-                if (dep && dep->isDerivedFrom<TechDraw::DrawView>()) {
-                    allViews.push_back(dep);
-                }
-            }
+        if (view->findParentPage() == this) {
+            views.push_back(view);
         }
     }
-    return allViews;
+    return views;
 }
 
 std::vector<App::DocumentObject*> DrawPage::getAllViews() const
 {
-    std::vector<App::DocumentObject*> views = Views.getValues();
     std::vector<App::DocumentObject*> allViews;
-    for (auto& v : views) {
-        if (v->isDerivedFrom<App::Link>()) {
-            v = static_cast<App::Link*>(v)->getLinkedObject();
-        }
-
-        if (!v->isDerivedFrom<DrawView>()) {
-            continue;
-        }
-
+    for (auto* v : getViews()) {
         allViews.push_back(v);
         if (v->isDerivedFrom<DrawProjGroup>()) {
             auto* dpg = static_cast<DrawProjGroup*>(v);
@@ -424,18 +389,30 @@ void DrawPage::unsetupObject()
     std::string pageName = getNameInDocument();
 
     try {
-        for (auto& v : Views.getValues()) {
-            //NOTE: the order of objects in Page.Views does not reflect the object hierarchy
-            //      this means that a ProjGroup could be deleted before its child ProjGroupItems.
-            //      this causes problems when removing objects from document
+        // Deepest first. The stored list had no hierarchy, so a DrawProjGroup could be deleted
+        // before its own items and the removal would fail; deriving the depth from each view's
+        // parent chain makes the order explicit, so a child never outlives its parent.
+        std::vector<App::DocumentObject*> doomed = getAllViews();
+        std::stable_sort(doomed.begin(), doomed.end(),
+                         [](App::DocumentObject* lhs, App::DocumentObject* rhs) {
+                             auto depth = [](App::DocumentObject* obj) {
+                                 int d = 0;
+                                 auto* view = freecad_cast<DrawView*>(obj);
+                                 while (view && (view = view->claimParent())) {
+                                     ++d;
+                                 }
+                                 return d;
+                             };
+                             return depth(lhs) > depth(rhs);
+                         });
+
+        for (auto* v : doomed) {
             if (v->isAttachedToDocument()) {
                 std::string viewName = v->getNameInDocument();
                 Base::Interpreter().runStringArg("App.getDocument(\"%s\").removeObject(\"%s\")",
                                                  docName.c_str(), viewName.c_str());
             }
         }
-        std::vector<App::DocumentObject*> emptyViews;//probably superfluous
-        Views.setValues(emptyViews);
     }
     catch (...) {
         Base::Console().warning("DP::unsetupObject - %s - error while deleting children\n",
