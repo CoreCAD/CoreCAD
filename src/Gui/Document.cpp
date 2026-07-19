@@ -118,6 +118,12 @@ struct DocumentP
     std::map<std::string, ViewProvider*> _ViewProviderMapAnnotation;
     std::list<ViewProviderDocumentObject*> _redoViewProviders;
 
+    /// Objects contested by several providers as of the last 3D parenting pass, so a change
+    /// in that status can be noticed and the affected providers refreshed.
+    std::set<const App::DocumentObject*> _contested3D;
+    /// Guards the refresh sweep against re-entering itself.
+    bool _reconciling3D = false;
+
     using Connection = fastsignals::connection;
     using AdvancedConnection = fastsignals::advanced_connection;
     Connection connectNewObject;
@@ -1041,6 +1047,8 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
 
         // it is possible that a new viewprovider already claims children
         handleChildren3D(pcProvider);
+        // ... and that its arrival contests a child some other provider was parenting
+        reconcileContested3D(pcProvider);
         if (d->_isTransacting) {
             d->_redoViewProviders.push_back(pcProvider);
         }
@@ -1133,6 +1141,8 @@ void Document::slotChangedObject(const App::DocumentObject& Obj, const App::Prop
         }
 
         handleChildren3D(viewProvider);
+        // Repointing a feature's input can contest or release a shared object elsewhere.
+        reconcileContested3D(viewProvider);
 
         if (viewProvider->isDerivedFrom<ViewProviderDocumentObject>()) {
             signalChangedObject(static_cast<ViewProviderDocumentObject&>(*viewProvider), Prop);
@@ -3025,11 +3035,102 @@ PyObject* Document::getPyObject()
     return _pcDocPy;
 }
 
+std::set<const App::DocumentObject*> Document::contestedChildren3D() const
+{
+    std::map<const App::DocumentObject*, int> wanted;
+    auto tally = [&wanted](ViewProvider* vp) {
+        if (!vp) {
+            return;
+        }
+        // Per provider, count an object once: a provider naming the same child twice is
+        // still only one parent, and must not make the object look contested.
+        std::set<const App::DocumentObject*> named;
+        for (const App::DocumentObject* child : vp->claimChildren3D()) {
+            if (child && named.insert(child).second) {
+                ++wanted[child];
+            }
+        }
+    };
+
+    for (const auto& vp : d->_ViewProviderMap) {
+        tally(vp.second);
+    }
+    for (const auto& va : d->_ViewProviderMapAnnotation) {
+        tally(va.second);
+    }
+
+    std::set<const App::DocumentObject*> contested;
+    for (const auto& [obj, count] : wanted) {
+        if (count > 1) {
+            contested.insert(obj);
+        }
+    }
+    return contested;
+}
+
+void Document::reconcileContested3D(ViewProvider* alreadyHandled)
+{
+    // Whether an object is contested depends on ALL the providers, so it can change without
+    // the affected provider's own object changing at all: adding a second body off a shared
+    // sketch contests that sketch, but only the new object gets a change notification, and
+    // the FIRST body goes on parenting the sketch it no longer may. Nothing else recomputes
+    // it, so the stale parent survives until something unrelated touches that body.
+    if (d->_reconciling3D) {
+        return;
+    }
+
+    std::set<const App::DocumentObject*> contested = contestedChildren3D();
+    if (contested == d->_contested3D) {
+        return;
+    }
+
+    // Only the objects whose status actually flipped need their providers rebuilt.
+    std::set<const App::DocumentObject*> flipped;
+    std::set_symmetric_difference(
+        contested.begin(),
+        contested.end(),
+        d->_contested3D.begin(),
+        d->_contested3D.end(),
+        std::inserter(flipped, flipped.begin())
+    );
+    d->_contested3D = std::move(contested);
+
+    Base::FlagToggler<bool> guard(d->_reconciling3D, true);
+    for (const auto& entry : d->_ViewProviderMap) {
+        ViewProvider* vp = entry.second;
+        if (vp == alreadyHandled || !vp->getChildRoot()) {
+            continue;
+        }
+        for (const App::DocumentObject* child : vp->claimChildren3D()) {
+            if (flipped.contains(child)) {
+                handleChildren3D(vp);
+                break;
+            }
+        }
+    }
+}
+
 void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
 {
     // check for children
     if (viewProvider && viewProvider->getChildRoot()) {
         std::vector<App::DocumentObject*> children = viewProvider->claimChildren3D();
+
+        // Drop the objects another provider also wants (see contestedChildren3D): they stay
+        // at the scene root rather than hanging under two parents at once.
+        const std::set<const App::DocumentObject*> contested = contestedChildren3D();
+        if (!contested.empty()) {
+            children.erase(
+                std::remove_if(
+                    children.begin(),
+                    children.end(),
+                    [&contested](const App::DocumentObject* child) {
+                        return contested.contains(child);
+                    }
+                ),
+                children.end()
+            );
+        }
         SoGroup* childGroup = viewProvider->getChildRoot();
         SoGroup* frontGroup = viewProvider->getFrontRoot();
         SoGroup* backGroup = viewProvider->getFrontRoot();

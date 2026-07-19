@@ -24,6 +24,7 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <string>
 #include <fastsignals/signal.h>
 #include <QString>
@@ -357,6 +358,31 @@ private:
     void resetIfEditing();
     // handles the scene graph nodes to correctly group child and parents
     void handleChildren3D(ViewProvider* viewProvider, bool deleting = false);
+
+    /**
+     * Objects that more than one view provider wants to parent in 3D.
+     *
+     * Scene-graph path uniqueness: a node hangs under exactly one parent, or under the
+     * scene root. `claimChildren3D` is a per-provider answer with no knowledge of the
+     * other providers, so two of them can name the same object -- a sketch feeding two
+     * bodies is named by both. The result is one node with two parents, which makes its
+     * position and its picked path ambiguous. Nothing forbade it because the rule that
+     * used to imply it lived in a flag on the model rather than here.
+     *
+     * Contested objects are parented by nobody and stay at the scene root, which is where
+     * an unparented object already lives -- so this only ever removes an edge, never adds
+     * one, and never has to arbitrate between rival parents.
+     */
+    std::set<const App::DocumentObject*> contestedChildren3D() const;
+
+    /**
+     * Rebuild the 3D parenting of providers whose children changed status elsewhere.
+     *
+     * Contested-ness is a property of the whole document, but 3D parenting is only ever
+     * recomputed for the one object that changed. @p alreadyHandled is skipped as the
+     * caller has just done it.
+     */
+    void reconcileContested3D(ViewProvider* alreadyHandled = nullptr);
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);
