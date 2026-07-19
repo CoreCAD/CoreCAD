@@ -37,7 +37,6 @@ namespace App
 {
 class Document;
 class DocumentObject;
-class Part;
 }  // namespace App
 
 namespace Sketcher
@@ -96,8 +95,6 @@ PartDesign::Body* getBodyFor(
     App::DocumentObject** topParent = nullptr,
     std::string* subname = nullptr
 );
-
-App::Part* getPartFor(const App::DocumentObject*, bool messageIfNot);
 
 /// Fix sketch support after moving a free sketch into a body
 void fixSketchSupport(Sketcher::SketchObject* sketch);

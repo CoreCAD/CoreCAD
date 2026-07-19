@@ -30,7 +30,6 @@
 
 #include <App/Origin.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
 #include <Gui/MainWindow.h>
@@ -289,37 +288,6 @@ App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, con
     return feature;
 }
 
-App::Part* getPartFor(const App::DocumentObject* obj, bool messageIfNot)
-{
-
-    if (!obj) {
-        return nullptr;
-    }
-
-    PartDesign::Body* body = getBodyFor(obj, false);
-    if (body) {
-        obj = body;
-    }
-
-    // get the part
-    for (App::Part* p : obj->getDocument()->getObjectsOfType<App::Part>()) {
-        if (p->hasObject(obj)) {
-            return p;
-        }
-    }
-
-    if (messageIfNot) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("Feature is not in a part"),
-            QObject::tr(
-                "In order to use this feature it needs to belong to a part object in the document."
-            )
-        );
-    }
-
-    return nullptr;
-}
 
 // static void buildDefaultPartAndBody(const App::Document* doc)
 //{
