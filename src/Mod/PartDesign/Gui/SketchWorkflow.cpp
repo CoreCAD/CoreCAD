@@ -228,17 +228,13 @@ public:
             supportString = validator.getSupport();
 
             // Guard: if activeBody is a transitive dependency of the support object,
-            // placing the sketch here creates a DAG cycle. Auto-create a new Body.
+            // splicing the sketch into that Body's pipeline creates a DAG cycle. Cruth
+            // feature-first: rather than manufacture an empty Body to hold the sketch,
+            // detach and let the sketch be born free at document level — the Pad anchor
+            // walk decides which Body (new or existing) claims it later.
             App::DocumentObject* supportObj = validator.getObject();
             if (activeBody && activeBody->getInListEx(true).count(supportObj)) {
-                App::Document* appdoc = guidocument->getDocument();
-                activeBody = PartDesignGui::makeBody(appdoc);
-                if (!activeBody) {
-                    throw RejectException();
-                }
-                Base::Console().message(
-                    "New Body created: the active Body is a dependency of the selected face.\n"
-                );
+                activeBody = nullptr;
             }
         }
         else if (planeFilter.match()) {
@@ -260,7 +256,23 @@ public:
         std::string FeatName = appdocument->getUniqueObjectName("Sketch");
 
         guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Sketch on Face"));
-        auto Feat = PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
+        App::DocumentObject* Feat = nullptr;
+        if (activeBody) {
+            Feat = PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
+        }
+        else {
+            // Born free: the document is the container (ARCHITECTURE §7.1).
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "App.getDocument('%s').addObject('Sketcher::SketchObject','%s')",
+                appdocument->getName(),
+                FeatName.c_str()
+            );
+            Feat = appdocument->getObject(FeatName.c_str());
+        }
+        if (!Feat) {
+            throw RejectException();
+        }
         FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << supportString);
         if (sketchFilter.match()) {
             FCMD_OBJ_CMD(

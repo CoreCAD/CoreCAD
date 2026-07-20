@@ -94,14 +94,12 @@ void DlgActiveBody::accept()
 
     App::DocumentObject* selectedBody
         = selectedItems[0]->data(Qt::UserRole).value<App::DocumentObject*>();
+    // Cruth §4.8: this dialog only picks among bodies that already exist. It used to offer a
+    // "Create New Body" entry, which minted an empty Body with nothing in it — the placeholder
+    // Body the architecture rules out. A Body now comes into being with the feature that starts
+    // it, so there is nothing to create here.
     if (selectedBody) {
         activeBody = makeBodyActive(selectedBody, _doc);
-    }
-    else {
-        // A transaction must be created as otherwise the undo/redo is broken
-        _doc->openTransaction(QT_TRANSLATE_NOOP("Command", "Add a Body"));
-        activeBody = makeBody(_doc);
-        _doc->commitTransaction();
     }
 
     QDialog::accept();
