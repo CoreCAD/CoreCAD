@@ -1215,6 +1215,36 @@ void DocumentObject::renameObjectIdentifiers(
     ExpressionEngine.renameObjectIdentifiers(paths);
 }
 
+void DocumentObject::mintDurableIdentity()
+{
+    Uid.setValue(Base::Uuid::createUuid());
+
+    // The externally-facing object UUID, where one is in use, records where the
+    // duplicate came from before taking an identity of its own.
+    if (const auto propUUID = freecad_cast<PropertyUUID*>(getPropertyByName("_ObjectUUID"))) {
+        auto propSource = freecad_cast<PropertyUUID*>(getPropertyByName("_SourceUUID"));
+        if (!propSource) {
+            propSource = static_cast<PropertyUUID*>(addDynamicProperty("App::PropertyUUID",
+                                                                      "_SourceUUID",
+                                                                      nullptr,
+                                                                      nullptr,
+                                                                      Prop_Output | Prop_Hidden));
+        }
+        if (propSource) {
+            propSource->setValue(propUUID->getValue());
+        }
+        propUUID->setValue(Base::Uuid::createUuid());
+    }
+
+    // A container's contents are duplicated along with it, so anything inside
+    // that carries an identity of its own is reborn too.
+    std::vector<Property*> props;
+    getPropertyList(props);
+    for (auto prop : props) {
+        prop->mintDurableIdentity();
+    }
+}
+
 void DocumentObject::onDocumentRestored()
 {
     // call all extensions

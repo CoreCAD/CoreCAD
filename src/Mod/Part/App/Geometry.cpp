@@ -547,6 +547,11 @@ void Geometry::copyTagFrom(const Part::Geometry* src)
     this->tag = src->tag;
 }
 
+void Geometry::mintDurableIdentity()
+{
+    createNewTag();
+}
+
 void Geometry::copyNonTag(const Part::Geometry* src)
 {
     for (auto& ext : src->extensions) {

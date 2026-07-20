@@ -345,6 +345,19 @@ public:
      */
     virtual void afterRestore() {}
 
+    /** @brief Mint fresh durable identity for content this property owns.
+     *
+     * Called when the owning object has been duplicated rather than continued —
+     * copy-paste, insert-as-copy, drag-duplicate. A duplicate drops *new* things
+     * into a document, so anything inside this property that carries a durable
+     * identity of its own (a sketch entity's tag, say) must take a fresh one:
+     * two coexisting things may never share one identity (§10.7, §7.2).
+     *
+     * Properties whose content has no identity of its own need do nothing. The
+     * object's own identity is handled by DocumentObject::mintDurableIdentity().
+     */
+    virtual void mintDurableIdentity() {}
+
     /** @brief Callback for after document restore.
      *
      * This function is called by Document::restore() after finished calling

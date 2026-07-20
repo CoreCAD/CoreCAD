@@ -172,6 +172,23 @@ public:
     PropertyUUID Uid;
     /// @}
 
+    /** Mint fresh durable identity for this object and everything it contains.
+     *
+     * Called when the object has been duplicated rather than continued — the copy
+     * path (copy-paste, insert-as-copy, drag-duplicate) drops a *new* object into
+     * a document, so it must not inherit the source's identity: two coexisting
+     * objects sharing one id would break "same id means the same object" (§10.7,
+     * §7.2). A relocation (Document::moveObject) is not duplication and never
+     * calls this.
+     *
+     * The base implementation mints this object's own id and then asks every
+     * property to mint identity for any content it owns, so a container's
+     * internal grain (sketch entity tags) is reborn with the container rather
+     * than being left sharing identity with the original's insides. Overriders
+     * must call the base implementation.
+     */
+    virtual void mintDurableIdentity();
+
     /**
      * @name Signals for property change
      * @{
