@@ -158,7 +158,13 @@ public:
         /// Whether a recompute is necessary on restore for migration purposes.
         RecomputeOnRestore = 13,
         /// Whether the local coordinate system of older versions should be migrated.
-        MigrateLCS = 14
+        MigrateLCS = 14,
+        /** Whether the objects currently being imported are a relocation rather
+         * than a duplication. Import is the copy path, so it mints fresh durable
+         * identity by default (§10.7); a move is not duplication and must keep
+         * the identity it already has, at every grain.
+         */
+        Relocating = 15
     };
     // clang-format on
 

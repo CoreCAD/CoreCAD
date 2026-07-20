@@ -117,6 +117,10 @@ public:
     /// convert-to-B-spline that changes the concrete type), so the tag stays unique — \a src must
     /// be discarded by the caller.
     void copyTagFrom(const Part::Geometry* src);
+    /// takes a fresh durable tag, abandoning the one carried in. Use when this geometry has been
+    /// duplicated rather than continued: a duplicate is a new entity and may not go on sharing its
+    /// source's identity. Restoring a saved document is continuation and must NOT call this.
+    void mintDurableIdentity();
 
     virtual bool isSame(const Geometry& other, double tol, double atol) const = 0;
     bool hasSameExtensions(const Geometry& other) const;
