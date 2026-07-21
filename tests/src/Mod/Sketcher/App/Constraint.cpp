@@ -6,6 +6,8 @@
 #include <Base/Writer.h>
 #include <Mod/Sketcher/App/Constraint.h>
 
+#include <boost/uuid/uuid_io.hpp>
+
 #include <gtest/gtest.h>
 #include <xercesc/util/PlatformUtils.hpp>
 #include <QTemporaryFile>
@@ -149,6 +151,54 @@ TEST_F(ConstraintPointsAccess, testFourElementsWhenAddingOne)  // NOLINT
 
     // Assert
     EXPECT_EQ(constraint.getElementsSize(), 4);
+}
+
+// The constraint's durable identity must be written to the file. Without it, two
+// versions of a sketch cannot be lined up on a merge — the whole point of the tag.
+TEST_F(ConstraintPointsAccess, testTagIsSerialized)  // NOLINT
+{
+    // Arrange
+    Sketcher::Constraint constraint;
+
+    // Act
+    Base::StringWriter writer;
+    constraint.Save(writer);
+
+    // Assert
+    EXPECT_TRUE(writer.getString().find("Tag=\"") != std::string::npos)
+        << "constraint identity is not written to the file";
+}
+
+// Identity must survive a save/restore round-trip unchanged.
+TEST_F(ConstraintPointsAccess, testTagRestoredFromSerialization)  // NOLINT
+{
+    // Arrange
+    Sketcher::Constraint constraint;
+    const std::string originalTag = boost::uuids::to_string(constraint.getTag());
+
+    Base::StringWriter writer;
+    writer.Stream() << "<root>\n";  // Wrap in a root element to make constraint.Save happy
+    constraint.Save(writer);
+    writer.Stream() << "</root>";
+
+    QTemporaryFile tempFile;
+    tempFile.setAutoRemove(true);
+    ASSERT_TRUE(tempFile.open());
+    tempFile.write(writer.getString().c_str(), writer.getString().size());
+    tempFile.flush();
+
+    std::ifstream inputFile(tempFile.fileName().toStdString());
+    ASSERT_TRUE(inputFile.is_open());
+
+    // Act
+    Base::XMLReader reader(tempFile.fileName().toStdString().c_str(), inputFile);
+    Sketcher::Constraint restoredConstraint;
+    restoredConstraint.Restore(reader);
+    inputFile.close();
+
+    // Assert
+    EXPECT_EQ(boost::uuids::to_string(restoredConstraint.getTag()), originalTag)
+        << "constraint identity did not survive save/restore";
 }
 
 #if SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS

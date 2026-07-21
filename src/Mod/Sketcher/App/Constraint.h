@@ -125,6 +125,16 @@ public:
     // does not copy the tag, but generates a new one
     Constraint* copy() const;
 
+    /// The durable per-constraint identity, persisted across save/restore.
+    boost::uuids::uuid getTag() const
+    {
+        return tag;
+    }
+
+    /// Give this constraint a fresh identity. Called when a duplicate must take an
+    /// identity of its own rather than keep the source's.
+    void mintDurableIdentity();
+
     // from base class
     unsigned int getMemSize() const override;
     void Save(Base::Writer& /*writer*/) const override;
@@ -177,6 +187,9 @@ public:
 
 private:
     Constraint(const Constraint&) = default;  // only for internal use
+
+    /// Mint a fresh random tag. Shared by the constructor and mintDurableIdentity().
+    void createNewTag();
 
 private:
     double Value {0.0};

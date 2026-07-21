@@ -126,6 +126,11 @@ public:
     Property* Copy() const override;
     void Paste(const App::Property& from) override;
 
+    /// Re-mint every constraint's identity when the owning object is duplicated, so a
+    /// pasted sketch's constraints do not keep the source's tags. Rebuilds the
+    /// tag->index map to match.
+    void mintDurableIdentity() override;
+
     unsigned int getMemSize() const override;
 
     void acceptGeometry(const std::vector<Part::Geometry*>& GeoList);
