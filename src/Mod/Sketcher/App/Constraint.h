@@ -33,6 +33,9 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
+#include <functional>
+#include <optional>
+
 #include "GeoEnum.h"
 
 
@@ -135,10 +138,26 @@ public:
     /// identity of its own rather than keep the source's.
     void mintDurableIdentity();
 
+    /// Resolves an authored geometry's GeoId to its durable tag; returns nil for
+    /// GeoIds with no durable identity (axes, external geometry, undefined).
+    using GeoIdToTagFn = std::function<boost::uuids::uuid(int geoId)>;
+    /// Resolves a durable geometry tag to the GeoId it currently occupies; empty if
+    /// no live geometry carries that tag.
+    using TagToGeoIdFn = std::function<std::optional<int>(const boost::uuids::uuid& tag)>;
+
     // from base class
     unsigned int getMemSize() const override;
     void Save(Base::Writer& /*writer*/) const override;
+    /// Save, additionally recording each element's durable geometry tag alongside its
+    /// GeoId so the reference can be re-bound after the geometry list reorders (merge,
+    /// upstream edit). The GeoId stays a readable annotation; the tag is authoritative.
+    void Save(Base::Writer& writer, const GeoIdToTagFn& geoIdToTag) const;
     void Restore(Base::XMLReader& /*reader*/) override;
+
+    /// Boundary translation, restore side: rewrite each element's GeoId from the durable
+    /// tag read during Restore, so a reference survives a geometry-list reorder. Elements
+    /// whose tag is nil or no longer resolves keep the GeoId as loaded (no silent re-bind).
+    void bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId);
 
     PyObject* getPyObject() override;
 
@@ -285,6 +304,10 @@ public:
     PointPos FirstPos {PointPos::none};
     PointPos SecondPos {PointPos::none};
     PointPos ThirdPos {PointPos::none};
+
+    /// Durable geometry tags read from the file, one per element (nil where none), held
+    /// only between Restore and bindElementsToDurableGeometry, which consumes them.
+    std::vector<boost::uuids::uuid> restoredElementGeoTags;
 #endif
 
 private:
