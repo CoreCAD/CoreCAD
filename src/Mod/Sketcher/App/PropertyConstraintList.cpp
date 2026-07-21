@@ -253,6 +253,21 @@ void PropertyConstraintList::applyValues(std::vector<Constraint*>&& lValue)
     }
 }
 
+void PropertyConstraintList::mintDurableIdentity()
+{
+    // A duplicated sketch arrives carrying the source's constraint tags (they are now
+    // persisted). Duplication mints: give each constraint a fresh identity and rebuild
+    // the tag->index map to match. No signal — this runs mid-copy on constraints not
+    // yet visible, and the tag is identity, not constraint data.
+    valueMap.clear();
+    for (std::size_t i = 0; i < _lValueList.size(); ++i) {
+        if (_lValueList[i]) {
+            _lValueList[i]->mintDurableIdentity();
+            valueMap[_lValueList[i]->tag] = i;
+        }
+    }
+}
+
 PyObject* PropertyConstraintList::getPyObject()
 {
     PyObject* list = PyList_New(getSize());

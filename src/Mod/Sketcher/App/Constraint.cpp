@@ -24,6 +24,8 @@
 
 #include <QDateTime>
 #include <boost/random.hpp>
+#include <boost/uuid/string_generator.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <algorithm>
 #include <cmath>
 #include <ranges>
@@ -53,7 +55,7 @@ using namespace Base;
 
 TYPESYSTEM_SOURCE(Sketcher::Constraint, Base::Persistence)
 
-Constraint::Constraint()
+void Constraint::createNewTag()
 {
     // Initialize a random number generator, to avoid Valgrind false positives.
     // The random number generator is not threadsafe so we guard it.  See
@@ -71,6 +73,18 @@ Constraint::Constraint()
     static boost::uuids::basic_random_generator<boost::mt19937> gen(&ran);
 
     tag = gen();
+}
+
+Constraint::Constraint()
+{
+    createNewTag();
+}
+
+// A duplicated constraint must take an identity of its own rather than keep the
+// source's. Mirrors Part::Geometry::mintDurableIdentity for the authored-entity layer.
+void Constraint::mintDurableIdentity()
+{
+    createNewTag();
 }
 
 Constraint* Constraint::clone() const
@@ -173,6 +187,11 @@ void Constraint::Save(Writer& writer) const
                     << "IsVisible=\"" << (int)isVisible << "\" "
                     << "IsActive=\"" << (int)isActive << "\" ";
 
+    // The tag is the constraint's durable identity. It is written here so that two
+    // versions of a sketch can be lined up on a merge; without it a constraint is
+    // located only by its position in the list, which shifts on any edit.
+    writer.Stream() << "Tag=\"" << boost::uuids::to_string(tag) << "\" ";
+
     // Save elements
     {
         // Ensure backwards compatibility with old versions
@@ -248,6 +267,18 @@ void Constraint::Restore(XMLReader& reader)
 
     if (reader.hasAttribute("IsActive")) {
         isActive = reader.getAttribute<bool>("IsActive");
+    }
+
+    // Restore the durable tag if the file carries one. Files written before tag
+    // persistence have no attribute; those constraints keep the fresh tag minted in
+    // the constructor.
+    if (reader.hasAttribute("Tag")) {
+        try {
+            tag = boost::uuids::string_generator()(reader.getAttribute<const char*>("Tag"));
+        }
+        catch (const std::exception&) {
+            // Malformed tag: keep the constructor-minted one rather than fail the load.
+        }
     }
 
     if (reader.hasAttribute("ElementIds") && reader.hasAttribute("ElementPositions")) {

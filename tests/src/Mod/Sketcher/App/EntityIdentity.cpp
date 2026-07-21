@@ -20,6 +20,7 @@
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
+#include <filesystem>
 #include <set>
 #include <string>
 #include <vector>
@@ -75,6 +76,26 @@ protected:
         return tags;
     }
 
+    static std::vector<std::string> constraintTagsOf(const Sketcher::SketchObject* sketch)
+    {
+        std::vector<std::string> tags;
+        for (const auto* c : sketch->Constraints.getValues()) {
+            tags.emplace_back(boost::uuids::to_string(c->getTag()));
+        }
+        return tags;
+    }
+
+    /// Add a horizontal constraint on the given geometry, so the sketch carries a
+    /// constraint with an identity of its own.
+    static void addHorizontal(Sketcher::SketchObject* sketch, int geoId)
+    {
+        Sketcher::Constraint c;
+        c.Type = Sketcher::Horizontal;
+        c.setElement(0, Sketcher::GeoElementId(geoId, Sketcher::PointPos::none));
+        sketch->addConstraint(&c);
+        sketch->getDocument()->recompute();
+    }
+
     App::Document* _doc {nullptr};
 };
 
@@ -128,6 +149,56 @@ TEST_F(SketchEntityIdentityTest, moveToAnotherDocumentPreservesIdentity)
     EXPECT_EQ(tagsOf(moved), sourceTags);
 
     App::GetApplication().closeDocument(other->getName());
+}
+
+// A constraint is an authored entity too: duplication mints it a fresh identity.
+// This passes today only by accident (the tag is discarded at save, so a pasted
+// constraint is reborn from its constructor); once the tag persists, it holds only
+// if duplication actively re-mints. That is the regression this pins.
+TEST_F(SketchEntityIdentityTest, copyIntoSameDocumentMintsConstraintTags)
+{
+    auto* source = makeSketch(_doc, "Src");
+    addHorizontal(source, 0);
+    const auto sourceTags = constraintTagsOf(source);
+    ASSERT_FALSE(sourceTags.empty());
+
+    const auto copies = _doc->copyObject({source}, false);
+    ASSERT_EQ(copies.size(), 1U);
+    _doc->recompute();
+    const auto copyTags = constraintTagsOf(static_cast<Sketcher::SketchObject*>(copies.front()));
+
+    ASSERT_EQ(copyTags.size(), sourceTags.size());
+    const std::set<std::string> sourceSet(sourceTags.begin(), sourceTags.end());
+    for (const auto& tag : copyTags) {
+        EXPECT_EQ(sourceSet.count(tag), 0U) << "pasted constraint kept the source's identity";
+    }
+}
+
+// Persistence: a constraint's identity must survive a real save and reopen. This
+// fails today — the tag is thrown away at save and the constraint comes back with a
+// fresh one.
+TEST_F(SketchEntityIdentityTest, constraintTagSurvivesSaveAndReload)
+{
+    auto* source = makeSketch(_doc, "Src");
+    addHorizontal(source, 0);
+    const auto before = constraintTagsOf(source);
+    ASSERT_FALSE(before.empty());
+
+    const std::string path
+        = (std::filesystem::temp_directory_path() / "trait1_constraint_reload.FCStd").string();
+    const std::string docName = _doc->getName();
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));
+    App::GetApplication().closeDocument(docName.c_str());
+
+    _doc = App::GetApplication().openDocument(path.c_str());  // hand to TearDown
+    ASSERT_NE(_doc, nullptr);
+    auto* reloaded = static_cast<Sketcher::SketchObject*>(_doc->getObject("Src"));
+    ASSERT_NE(reloaded, nullptr);
+
+    EXPECT_EQ(constraintTagsOf(reloaded), before)
+        << "constraint identity did not survive save/reload";
+
+    std::filesystem::remove(path);
 }
 
 // The two Geometry-level primitives the rule is built on, pinned in opposite
