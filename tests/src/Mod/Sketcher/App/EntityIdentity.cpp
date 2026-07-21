@@ -201,6 +201,43 @@ TEST_F(SketchEntityIdentityTest, constraintTagSurvivesSaveAndReload)
     std::filesystem::remove(path);
 }
 
+// Brick two, end-to-end: a constraint's reference survives a real save/reopen still bound
+// to the same geometry, resolved through the geometry's durable tag. This drives the full
+// container path — PropertyConstraintList::Save writes the tags, onSketchRestore rebinds
+// GeoIds from them — that the Constraint-level unit tests bypass. A plain round-trip does
+// not reorder geometry, so this is a regression guard on that path, not the reorder proof.
+TEST_F(SketchEntityIdentityTest, constraintReferenceStaysBoundAcrossSaveAndReload)
+{
+    auto* source = makeSketch(_doc, "Src");
+    addHorizontal(source, 1);  // constrain the second line
+    ASSERT_FALSE(source->Constraints.getValues().empty());
+
+    const int refGeoId = source->Constraints.getValues().front()->getElement(0).GeoId;
+    ASSERT_GE(refGeoId, 0);
+    const std::string refTag = boost::uuids::to_string(
+        source->getInternalGeometry()[refGeoId]->getTag()
+    );
+
+    const std::string path
+        = (std::filesystem::temp_directory_path() / "trait1_constraint_ref_reload.FCStd").string();
+    const std::string docName = _doc->getName();
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));
+    App::GetApplication().closeDocument(docName.c_str());
+
+    _doc = App::GetApplication().openDocument(path.c_str());  // hand to TearDown
+    ASSERT_NE(_doc, nullptr);
+    auto* reloaded = static_cast<Sketcher::SketchObject*>(_doc->getObject("Src"));
+    ASSERT_NE(reloaded, nullptr);
+    ASSERT_FALSE(reloaded->Constraints.getValues().empty());
+
+    const int reloadedGeoId = reloaded->Constraints.getValues().front()->getElement(0).GeoId;
+    ASSERT_GE(reloadedGeoId, 0);
+    EXPECT_EQ(boost::uuids::to_string(reloaded->getInternalGeometry()[reloadedGeoId]->getTag()), refTag)
+        << "constraint reference did not resolve to the same geometry after reload";
+
+    std::filesystem::remove(path);
+}
+
 // The two Geometry-level primitives the rule is built on, pinned in opposite
 // directions so neither can drift into the other's behaviour unnoticed.
 TEST_F(SketchEntityIdentityTest, copyMintsAndCloneAndMintDurableIdentityAgree)

@@ -25,6 +25,8 @@
 #include <cassert>
 #include <limits>
 
+#include <boost/uuid/nil_generator.hpp>
+
 #include <App/ExpressionParser.h>
 #include <App/ObjectIdentifier.h>
 #include <Base/QuantityPy.h>
@@ -32,8 +34,11 @@
 #include <Base/Tools.h>
 #include <Base/Writer.h>
 
+#include <Mod/Part/App/Geometry.h>
+
 #include "ConstraintPy.h"
 #include "PropertyConstraintList.h"
+#include "SketchObject.h"
 
 
 using namespace App;
@@ -340,10 +345,28 @@ void PropertyConstraintList::setPyObject(PyObject* value)
 
 void PropertyConstraintList::Save(Writer& writer) const
 {
+    // Snapshot GeoId -> durable geometry tag, so each constraint can record the durable
+    // handle behind its positional GeoId reference. This is the save-side boundary
+    // translation: only geometry the owning sketch authors (GeoId >= 0) has a tag.
+    std::vector<boost::uuids::uuid> geoTagByGeoId;
+    if (const auto* sketch = dynamic_cast<const SketchObject*>(getContainer())) {
+        const std::vector<Part::Geometry*>& geometry = sketch->getInternalGeometry();
+        geoTagByGeoId.reserve(geometry.size());
+        for (const Part::Geometry* geo : geometry) {
+            geoTagByGeoId.push_back(geo->getTag());
+        }
+    }
+    auto geoIdToTag = [&geoTagByGeoId](int geoId) -> boost::uuids::uuid {
+        if (geoId < 0 || geoId >= static_cast<int>(geoTagByGeoId.size())) {
+            return boost::uuids::nil_uuid();
+        }
+        return geoTagByGeoId[geoId];
+    };
+
     writer.Stream() << writer.ind() << "<ConstraintList count=\"" << getSize() << "\">" << endl;
     writer.incInd();
     for (int i = 0; i < getSize(); i++) {
-        _lValueList[i]->Save(writer);
+        _lValueList[i]->Save(writer, geoIdToTag);
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</ConstraintList>" << endl;

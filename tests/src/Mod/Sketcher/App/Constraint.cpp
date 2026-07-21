@@ -6,7 +6,11 @@
 #include <Base/Writer.h>
 #include <Mod/Sketcher/App/Constraint.h>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/string_generator.hpp>
 #include <boost/uuid/uuid_io.hpp>
+
+#include <optional>
 
 #include <gtest/gtest.h>
 #include <xercesc/util/PlatformUtils.hpp>
@@ -635,3 +639,126 @@ TEST_F(ConstraintPointsAccess, testSubstituteUpdatesLegacyFieldsToo)  // NOLINT
     EXPECT_EQ(constraint.FirstPos, Sketcher::PointPos::start);
 }
 #endif
+
+namespace
+{
+/// Save a constraint (recording durable tags) and restore it through a real reader into
+/// `restored` — the serialization boundary the tag has to cross. (Constraint is not
+/// copyable, so the caller owns the destination.)
+void saveRestoreWithTags(
+    const Sketcher::Constraint& constraint,
+    const Sketcher::Constraint::GeoIdToTagFn& geoIdToTag,
+    Sketcher::Constraint& restored
+)
+{
+    Base::StringWriter writer;
+    writer.Stream() << "<root>\n";  // wrap so Constraint::Save has a parent element
+    constraint.Save(writer, geoIdToTag);
+    writer.Stream() << "</root>";
+
+    QTemporaryFile tempFile;
+    tempFile.setAutoRemove(true);
+    tempFile.open();
+    tempFile.write(writer.getString().c_str(), writer.getString().size());
+    tempFile.flush();
+
+    std::ifstream inputFile(tempFile.fileName().toStdString());
+    Base::XMLReader reader(tempFile.fileName().toStdString().c_str(), inputFile);
+    restored.Restore(reader);
+}
+}  // namespace
+
+// Trait 1, brick two: a constraint reference resolves through the referenced geometry's
+// durable tag, not its positional GeoId. When the geometry list reorders (a merge, an
+// upstream edit) the stored GeoId goes stale but the tag does not — the reference must
+// follow the tag. Three stages, each the discriminator for the next:
+//   (1) Save records the tag alongside the GeoId, so a durable handle exists on disk.
+//   (2) A plain restore keeps the saved GeoId, so the rebind in (3) is doing real work.
+//   (3) Rebinding against a list where the tag now sits at a DIFFERENT GeoId rewrites the
+//       element to that GeoId — the tag wins over the stale positional index.
+TEST_F(ConstraintPointsAccess, testConstraintReferenceFollowsDurableGeometryTag)  // NOLINT
+{
+    boost::uuids::string_generator toUuid;
+    const boost::uuids::uuid tagAtGeo0 = toUuid("11111111-1111-1111-1111-111111111111");
+    const boost::uuids::uuid tagAtGeo1 = toUuid("22222222-2222-2222-2222-222222222222");
+
+    Sketcher::Constraint constraint;
+    constraint.setElement(0, Sketcher::GeoElementId(1, Sketcher::PointPos::start));
+
+    const Sketcher::Constraint::GeoIdToTagFn geoIdToTag = [&](int geoId) -> boost::uuids::uuid {
+        switch (geoId) {
+            case 0:
+                return tagAtGeo0;
+            case 1:
+                return tagAtGeo1;
+            default:
+                return boost::uuids::nil_uuid();
+        }
+    };
+
+    // Stage 1: the durable tag is written into the serialized form.
+    Base::StringWriter probe;
+    probe.Stream() << "<root>\n";
+    constraint.Save(probe, geoIdToTag);
+    probe.Stream() << "</root>";
+    EXPECT_NE(probe.getString().find(boost::uuids::to_string(tagAtGeo1)), std::string::npos)
+        << "Save did not record the referenced geometry's durable tag";
+
+    Sketcher::Constraint restored;
+    saveRestoreWithTags(constraint, geoIdToTag, restored);
+
+    // Stage 2: before rebinding, the element still holds the saved (soon-stale) GeoId.
+    EXPECT_EQ(restored.getElement(0).GeoId, 1)
+        << "restore should keep the positional GeoId until the tag rebinds it";
+
+    // Stage 3: the geometry carrying tagAtGeo1 now lives at GeoId 5 (list reordered).
+    const Sketcher::Constraint::TagToGeoIdFn tagToGeoId =
+        [&](const boost::uuids::uuid& tag) -> std::optional<int> {
+        if (tag == tagAtGeo1) {
+            return 5;
+        }
+        if (tag == tagAtGeo0) {
+            return 9;
+        }
+        return std::nullopt;
+    };
+    restored.bindElementsToDurableGeometry(tagToGeoId);
+
+    EXPECT_EQ(restored.getElement(0).GeoId, 5)
+        << "reference did not follow the durable tag to the geometry's new GeoId";
+    EXPECT_EQ(restored.getElement(0).Pos, Sketcher::PointPos::start)
+        << "rebinding must preserve the element's PointPos";
+}
+
+// The other half of the rule: an element with no durable handle (a sketch axis, GeoId -1)
+// keeps its GeoId, and a tag whose geometry is gone does NOT silently re-bind to a
+// different element (§4.5). A blind implementation that reset unresolved elements would
+// corrupt both.
+TEST_F(ConstraintPointsAccess, testConstraintReferenceWithoutResolvableTagKeepsGeoId)  // NOLINT
+{
+    boost::uuids::string_generator toUuid;
+    const boost::uuids::uuid tagAtGeo3 = toUuid("33333333-3333-3333-3333-333333333333");
+
+    Sketcher::Constraint constraint;
+    constraint.setElement(0, Sketcher::GeoElementId(-1, Sketcher::PointPos::start));  // H axis
+    constraint.setElement(1, Sketcher::GeoElementId(3, Sketcher::PointPos::end));     // real geo
+
+    const Sketcher::Constraint::GeoIdToTagFn geoIdToTag = [&](int geoId) -> boost::uuids::uuid {
+        return geoId == 3 ? tagAtGeo3 : boost::uuids::nil_uuid();
+    };
+
+    Sketcher::Constraint restored;
+    saveRestoreWithTags(constraint, geoIdToTag, restored);
+
+    // Every geometry is gone: nothing resolves.
+    const Sketcher::Constraint::TagToGeoIdFn tagToGeoId =
+        [](const boost::uuids::uuid&) -> std::optional<int> {
+        return std::nullopt;
+    };
+    restored.bindElementsToDurableGeometry(tagToGeoId);
+
+    EXPECT_EQ(restored.getElement(0).GeoId, -1)
+        << "an axis reference has no durable tag and must keep its GeoId";
+    EXPECT_EQ(restored.getElement(1).GeoId, 3)
+        << "an unresolved tag must not silently re-bind the reference";
+}

@@ -1076,6 +1076,11 @@ protected:
 
     void updateGeometryRefs();
 
+    /// Restore-side boundary translation: rewrite each constraint element's positional
+    /// GeoId from the durable geometry tag it carries, so references survive a
+    /// geometry-list reorder (merge, upstream edit).
+    void rebindConstraintsToDurableGeometry();
+
     void onUndoRedoFinished() override;
 
     // migration functions

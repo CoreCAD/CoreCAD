@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 #include <algorithm>
+#include <map>
+#include <optional>
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
@@ -1341,12 +1343,39 @@ void SketchObject::restoreFinished()
     onSketchRestore();
 }
 
+void SketchObject::rebindConstraintsToDurableGeometry()
+{
+    // Geometry carries the durable identity a constraint reference resolves through. Build a
+    // tag -> current-GeoId map, then let each constraint rewrite its positional GeoIds from
+    // the durable tags it read on Restore. Only internal geometry (GeoId == list index) has
+    // a tag; axes and external geometry keep the GeoId loaded from the file.
+    const std::vector<Part::Geometry*>& geometry = getInternalGeometry();
+    std::map<boost::uuids::uuid, int> geoIdByTag;
+    for (int geoId = 0; geoId < static_cast<int>(geometry.size()); ++geoId) {
+        geoIdByTag[geometry[geoId]->getTag()] = geoId;
+    }
+
+    auto tagToGeoId = [&geoIdByTag](const boost::uuids::uuid& tag) -> std::optional<int> {
+        const auto it = geoIdByTag.find(tag);
+        if (it == geoIdByTag.end()) {
+            return std::nullopt;
+        }
+        return it->second;
+    };
+
+    for (Constraint* constraint : Constraints.getValues()) {
+        constraint->bindElementsToDurableGeometry(tagToGeoId);
+    }
+}
+
 void SketchObject::onSketchRestore()
 {
     try {
         migrateSketch();
 
         updateGeometryRefs();
+
+        rebindConstraintsToDurableGeometry();
 
         fixMissingAxisInExternalGeo();
 

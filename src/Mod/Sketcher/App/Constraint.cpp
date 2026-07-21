@@ -24,6 +24,7 @@
 
 #include <QDateTime>
 #include <boost/random.hpp>
+#include <boost/uuid/nil_generator.hpp>
 #include <boost/uuid/string_generator.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <algorithm>
@@ -168,6 +169,14 @@ unsigned int Constraint::getMemSize() const
 
 void Constraint::Save(Writer& writer) const
 {
+    // No geometry context here: every element resolves to a nil tag, so nothing is
+    // written and the reference stays purely positional. The owning
+    // PropertyConstraintList calls the geometry-aware overload for real saves.
+    Save(writer, [](int) { return boost::uuids::nil_uuid(); });
+}
+
+void Constraint::Save(Writer& writer, const GeoIdToTagFn& geoIdToTag) const
+{
     std::string encodeName = encodeAttribute(Name);
     std::string encodeMetaData = encodeAttribute(MetaData);
     writer.Stream() << writer.ind() << "<Constrain "
@@ -214,6 +223,16 @@ void Constraint::Save(Writer& writer) const
 
         writer.Stream() << "ElementIds=\"" << ids << "\" "
                         << "ElementPositions=\"" << positions << "\" ";
+
+        // The durable geometry handle for each element: the authoritative reference the
+        // GeoId above only annotates. A "-" marks an element with no durable identity
+        // (axes, external geometry, undefined), whose GeoId stays as written.
+        auto tagStrings = geoIds | std::views::transform([&](int geoId) {
+                              const boost::uuids::uuid tag = geoIdToTag(geoId);
+                              return tag.is_nil() ? std::string("-") : boost::uuids::to_string(tag);
+                          });
+        const std::string tags = fmt::format("{}", fmt::join(tagStrings, " "));
+        writer.Stream() << "ElementTags=\"" << tags << "\" ";
     }
 
     writer.Stream() << "/>\n";
@@ -324,6 +343,19 @@ void Constraint::Restore(XMLReader& reader)
             const PointPos pos {static_cast<PointPos>(std::stoi(positions[i]))};
             addElement(GeoElementId(geoId, pos));
         }
+
+        // The durable geometry handle per element, if the file carries it. Held until
+        // the owning SketchObject re-binds GeoIds from these tags after restore.
+        // Files written before tag persistence have no attribute; those elements keep
+        // the positional GeoId loaded above.
+        restoredElementGeoTags.clear();
+        if (reader.hasAttribute("ElementTags")) {
+            const auto tags = splitAndClean(reader.getAttribute<const char*>("ElementTags"));
+            boost::uuids::string_generator stringToUuid;
+            for (const std::string& t : tags) {
+                restoredElementGeoTags.push_back(t == "-" ? boost::uuids::nil_uuid() : stringToUuid(t));
+            }
+        }
     }
 
     // Ensure we have at least 3 elements
@@ -348,6 +380,25 @@ void Constraint::Restore(XMLReader& reader)
             }
         }
     }
+}
+
+void Constraint::bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId)
+{
+    for (size_t i = 0; i < elements.size() && i < restoredElementGeoTags.size(); ++i) {
+        const boost::uuids::uuid& tag = restoredElementGeoTags[i];
+        if (tag.is_nil()) {
+            continue;  // no durable handle: the positional GeoId loaded on Restore stands
+        }
+        if (const std::optional<int> geoId = tagToGeoId(tag)) {
+            // The tag is authoritative: overwrite the annotation GeoId with the one the
+            // geometry now occupies, keeping the element's PointPos.
+            setElement(i, GeoElementId(*geoId, getElement(i).Pos));
+        }
+        // Tag present but unresolved => the geometry is gone. Leave the GeoId as loaded
+        // rather than silently re-bind to a different element (§4.5); an honest failure
+        // is surfaced in a later brick.
+    }
+    restoredElementGeoTags.clear();
 }
 
 void Constraint::substituteIndex(int fromGeoId, int toGeoId)
