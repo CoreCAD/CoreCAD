@@ -1076,14 +1076,24 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
         transferConstraints(GeoId, PointPos::mid, newIds.front(), PointPos::mid);
     }
 
-    // Amendment 6 (Clause 6.3): splitting a closed curve (circle/ellipse) at one point yields a
-    // single open arc — the entity stays one entity, so it keeps its durable id
-    // (paramsOfNewGeos.size() == 1). Splitting an open curve is a 1->2 count-changing event: the
-    // parent tag retires and both children mint fresh (the constructor already does this, and
-    // replaceGeometries carries only the solver-local integer id to child-0), so we leave the tag
-    // alone in that case.
+    // Architecture §4.7: splitting a closed curve (circle/ellipse) at one point yields a single
+    // open arc — the entity stays one entity, so it keeps its durable id (paramsOfNewGeos.size()
+    // == 1). Splitting an open curve is a 1->N count-changing event: the parent tag retires and
+    // every child mints fresh (the constructor already does this, and replaceGeometries carries
+    // only the solver-local integer id to child-0), so we leave the tag alone in that case — and
+    // record the succession so a later fine-grained merge can see the children descend from one
+    // parent (Amendment 10; the handles are Amendment 11's). Capture the tags before
+    // replaceGeometries hands newGeos to the Geometry property.
     if (paramsOfNewGeos.size() == 1) {
         newGeos.front()->copyTagFrom(geoAsCurve);
+    }
+    else {
+        std::vector<boost::uuids::uuid> childTags;
+        childTags.reserve(newGeos.size());
+        for (const auto* child : newGeos) {
+            childTags.push_back(child->getTag());
+        }
+        ParentageLog.recordEvent(ParentageOp::Split, {geoAsCurve->getTag()}, std::move(childTags));
     }
 
     delConstraints(std::move(idsOfOldConstraints), DeleteOption::NoSolve);
