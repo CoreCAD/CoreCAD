@@ -1039,9 +1039,17 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
         return !allConstraints[i]->involvesGeoIdAndPosId(GeoId, PointPos::none);
     });
 
+    // Architecture §4.7 / P7: a split retires the parent entity; constraints that referenced it
+    // are carried to the pieces where that is decidable without resemblance. The residue — a
+    // dimension or relation whose subject was the whole retired entity — has no piece to bind to
+    // and is dropped. Dropping it is honest (its subject genuinely ceased to exist), but the user
+    // did not directly ask to retire it, so the loss is surfaced loudly rather than silently.
+    std::vector<std::string> retiredConstraintLabels;
     for (const auto& oldConstrId : idsOfOldConstraints) {
         Constraint* con = allConstraints[oldConstrId];
-        deriveConstraintsForPieces(GeoId, newIds, con, newConstraints);
+        if (!deriveConstraintsForPieces(GeoId, newIds, con, newConstraints)) {
+            retiredConstraintLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
+        }
     }
 
     // This also seems to reset SketchObject::Geometry.
@@ -1099,6 +1107,20 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
 
     for (auto& cons : newConstraints) {
         delete cons;
+    }
+
+    if (!retiredConstraintLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < retiredConstraintLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + retiredConstraintLabels[i];
+        }
+        Base::Console().warning(
+            "Split retired geometry %d; %zu constraint(s) could not follow it and were removed: "
+            "%s. Their subject was the whole entity, which no longer exists as a single edge.\n",
+            GeoId,
+            retiredConstraintLabels.size(),
+            joined.c_str()
+        );
     }
 
     return 0;
