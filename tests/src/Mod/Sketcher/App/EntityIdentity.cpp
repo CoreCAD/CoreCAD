@@ -20,6 +20,7 @@
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <set>
 #include <string>
@@ -254,6 +255,136 @@ TEST_F(SketchEntityIdentityTest, copyMintsAndCloneAndMintDurableIdentityAgree)
     const auto before = cloned->getTag();
     cloned->mintDurableIdentity();
     EXPECT_NE(cloned->getTag(), before);
+}
+
+// ---------------------------------------------------------------------------
+// Brick three: recorded parentage across a split (§4.7 retire+mint; Amendment 10).
+// ---------------------------------------------------------------------------
+
+// A canonical, order-independent view of the parentage log, so two logs compare
+// by content regardless of entry or uuid order.
+static std::vector<std::string> parentageStrings(const Sketcher::SketchObject* sketch)
+{
+    std::vector<std::string> out;
+    for (const auto& entry : sketch->ParentageLog.getEntries()) {
+        std::vector<std::string> parents;
+        std::vector<std::string> children;
+        for (const auto& u : entry.parents) {
+            parents.emplace_back(boost::uuids::to_string(u));
+        }
+        for (const auto& u : entry.children) {
+            children.emplace_back(boost::uuids::to_string(u));
+        }
+        std::sort(parents.begin(), parents.end());
+        std::sort(children.begin(), children.end());
+        std::string s = std::to_string(static_cast<int>(entry.op)) + "|";
+        for (const auto& p : parents) {
+            s += p + ",";
+        }
+        s += "|";
+        for (const auto& c : children) {
+            s += c + ",";
+        }
+        out.push_back(s);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+// Splitting an open curve is a 1->2 retire+mint: the parent retires and the log
+// records exactly {parent -> child1, child2}.
+TEST_F(SketchEntityIdentityTest, openCurveSplitRecordsParentage)
+{
+    auto* sketch = makeSketch(_doc, "Src");
+    const std::string parentTag = boost::uuids::to_string(sketch->getInternalGeometry()[0]->getTag());
+    ASSERT_TRUE(sketch->ParentageLog.isEmpty());
+
+    sketch->split(0, Base::Vector3d(5, 0, 0));
+    _doc->recompute();
+
+    const auto& entries = sketch->ParentageLog.getEntries();
+    ASSERT_EQ(entries.size(), 1U);
+    EXPECT_EQ(entries.front().op, Sketcher::ParentageOp::Split);
+
+    ASSERT_EQ(entries.front().parents.size(), 1U);
+    EXPECT_EQ(boost::uuids::to_string(entries.front().parents.front()), parentTag);
+
+    std::set<std::string> childStrs;
+    for (const auto& c : entries.front().children) {
+        childStrs.insert(boost::uuids::to_string(c));
+    }
+    EXPECT_EQ(childStrs.size(), 2U) << "a split yields two distinct children";
+    EXPECT_EQ(childStrs.count(parentTag), 0U) << "no child is its parent";
+
+    // The parent has retired: it names no live geometry.
+    for (const auto& tag : tagsOf(sketch)) {
+        EXPECT_NE(tag, parentTag) << "the split parent's identity must retire";
+    }
+}
+
+// The discriminating opposite: splitting a closed curve (a circle) at one point
+// yields a single open arc — the entity stays one entity, so nothing is recorded.
+// This shares the exact if/else the open-curve case takes, so it proves the record
+// is written for a real retirement, not for every split.
+TEST_F(SketchEntityIdentityTest, closedCurveSplitRecordsNothing)
+{
+    auto* sketch = static_cast<Sketcher::SketchObject*>(
+        _doc->addObject("Sketcher::SketchObject", "Circ")
+    );
+    Part::GeomCircle circle;
+    circle.setCenter(Base::Vector3d(0, 0, 0));
+    circle.setRadius(5.0);
+    sketch->addGeometry(&circle);
+    _doc->recompute();
+    ASSERT_TRUE(sketch->ParentageLog.isEmpty());
+
+    sketch->split(0, Base::Vector3d(5, 0, 0));
+    _doc->recompute();
+
+    EXPECT_TRUE(sketch->ParentageLog.isEmpty())
+        << "a closed-curve split keeps one identity and records no succession";
+}
+
+// The record is persisted document data: it survives a real save and reopen.
+TEST_F(SketchEntityIdentityTest, splitParentageSurvivesSaveAndReload)
+{
+    auto* sketch = makeSketch(_doc, "Src");
+    sketch->split(0, Base::Vector3d(5, 0, 0));
+    _doc->recompute();
+    const auto before = parentageStrings(sketch);
+    ASSERT_EQ(before.size(), 1U);
+
+    const std::string path
+        = (std::filesystem::temp_directory_path() / "trait1_parentage_reload.FCStd").string();
+    const std::string docName = _doc->getName();
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));
+    App::GetApplication().closeDocument(docName.c_str());
+
+    _doc = App::GetApplication().openDocument(path.c_str());  // hand to TearDown
+    ASSERT_NE(_doc, nullptr);
+    auto* reloaded = static_cast<Sketcher::SketchObject*>(_doc->getObject("Src"));
+    ASSERT_NE(reloaded, nullptr);
+
+    EXPECT_EQ(parentageStrings(reloaded), before) << "split parentage did not survive save/reload";
+
+    std::filesystem::remove(path);
+}
+
+// A duplicate's entities descend from nothing in their new home, so its log is
+// empty even though the source's is not (Amendment 10, Clause 10.2).
+TEST_F(SketchEntityIdentityTest, splitLogEmptiesOnDuplication)
+{
+    auto* source = makeSketch(_doc, "Src");
+    source->split(0, Base::Vector3d(5, 0, 0));
+    _doc->recompute();
+    ASSERT_FALSE(source->ParentageLog.isEmpty());
+
+    const auto copies = _doc->copyObject({source}, false);
+    ASSERT_EQ(copies.size(), 1U);
+    _doc->recompute();
+
+    auto* copy = static_cast<Sketcher::SketchObject*>(copies.front());
+    EXPECT_TRUE(copy->ParentageLog.isEmpty()) << "a duplicate's parentage log must be empty";
 }
 
 }  // namespace
