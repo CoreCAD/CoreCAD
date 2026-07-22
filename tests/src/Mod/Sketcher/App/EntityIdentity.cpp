@@ -387,4 +387,75 @@ TEST_F(SketchEntityIdentityTest, splitLogEmptiesOnDuplication)
     EXPECT_TRUE(copy->ParentageLog.isEmpty()) << "a duplicate's parentage log must be empty";
 }
 
+// A line crossed at two points, trimmed between them, is severed in two: a 1->2
+// retire+mint just like an open-curve split. The parent retires and the log
+// records exactly {parent -> child1, child2}, tagged as a TrimSever.
+TEST_F(SketchEntityIdentityTest, trimThatSeversRecordsParentage)
+{
+    auto* sketch = static_cast<Sketcher::SketchObject*>(
+        _doc->addObject("Sketcher::SketchObject", "Sev")
+    );
+    Part::GeomLineSegment horizontal;
+    horizontal.setPoints(Base::Vector3d(0, 0, 0), Base::Vector3d(20, 0, 0));
+    Part::GeomLineSegment crossLeft;
+    crossLeft.setPoints(Base::Vector3d(5, -5, 0), Base::Vector3d(5, 5, 0));
+    Part::GeomLineSegment crossRight;
+    crossRight.setPoints(Base::Vector3d(15, -5, 0), Base::Vector3d(15, 5, 0));
+    sketch->addGeometry(&horizontal);  // GeoId 0
+    sketch->addGeometry(&crossLeft);   // GeoId 1
+    sketch->addGeometry(&crossRight);  // GeoId 2
+    _doc->recompute();
+
+    const std::string parentTag = boost::uuids::to_string(sketch->getInternalGeometry()[0]->getTag());
+    ASSERT_TRUE(sketch->ParentageLog.isEmpty());
+
+    // Trim the middle of the horizontal line, between the two crossing lines.
+    sketch->trim(0, Base::Vector3d(10, 0, 0));
+    _doc->recompute();
+
+    const auto& entries = sketch->ParentageLog.getEntries();
+    ASSERT_EQ(entries.size(), 1U);
+    EXPECT_EQ(entries.front().op, Sketcher::ParentageOp::TrimSever);
+
+    ASSERT_EQ(entries.front().parents.size(), 1U);
+    EXPECT_EQ(boost::uuids::to_string(entries.front().parents.front()), parentTag);
+
+    std::set<std::string> childStrs;
+    for (const auto& c : entries.front().children) {
+        childStrs.insert(boost::uuids::to_string(c));
+    }
+    EXPECT_EQ(childStrs.size(), 2U) << "a severing trim yields two distinct children";
+    EXPECT_EQ(childStrs.count(parentTag), 0U) << "no child is its parent";
+
+    for (const auto& tag : tagsOf(sketch)) {
+        EXPECT_NE(tag, parentTag) << "the severed parent's identity must retire";
+    }
+}
+
+// The discriminating opposite: a line crossed at only one point, trimmed toward an
+// end, keeps its single identity — a shorten, not a sever — so nothing is recorded.
+// This shares the exact 1->1 vs 1->2 branch the severing case takes, proving the
+// record is written for a real retirement and not for every trim.
+TEST_F(SketchEntityIdentityTest, shortenOnlyTrimRecordsNothing)
+{
+    auto* sketch = static_cast<Sketcher::SketchObject*>(
+        _doc->addObject("Sketcher::SketchObject", "Short")
+    );
+    Part::GeomLineSegment horizontal;
+    horizontal.setPoints(Base::Vector3d(0, 0, 0), Base::Vector3d(20, 0, 0));
+    Part::GeomLineSegment cross;
+    cross.setPoints(Base::Vector3d(5, -5, 0), Base::Vector3d(5, 5, 0));
+    sketch->addGeometry(&horizontal);  // GeoId 0
+    sketch->addGeometry(&cross);       // GeoId 1
+    _doc->recompute();
+    ASSERT_TRUE(sketch->ParentageLog.isEmpty());
+
+    // Trim the portion past the single intersection: one piece survives, one identity.
+    sketch->trim(0, Base::Vector3d(12, 0, 0));
+    _doc->recompute();
+
+    EXPECT_TRUE(sketch->ParentageLog.isEmpty())
+        << "a shorten-only trim keeps one identity and records no succession";
+}
+
 }  // namespace

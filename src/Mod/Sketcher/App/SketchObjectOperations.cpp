@@ -921,13 +921,24 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         }
     }
 
-    // Amendment 6 (Clause 6.3): a shorten-only trim keeps the entity as one entity, so it keeps
-    // its durable id. replaceGeometries already carries the solver-local integer id (copyId); the
-    // durable tag must ride along too, but only in the 1->1 case. A middle-removal trim
-    // (paramsOfNewGeos.size() == 2) is a 1->2 split: the parent tag retires and both children mint
-    // fresh, so we leave the tag alone there (Step B).
+    // Architecture §4.7: a shorten-only trim keeps the entity as one entity, so it keeps its
+    // durable id. replaceGeometries already carries the solver-local integer id (copyId); the
+    // durable tag must ride along too, but only in the 1->1 case (paramsOfNewGeos.size() == 1). A
+    // middle-removal trim (paramsOfNewGeos.size() == 2) severs the entity in two: the parent tag
+    // retires and both children mint fresh (createArcsFromGeoWithLimits already did this), so we
+    // leave the tag alone there — and record the succession so a later fine-grained merge can see
+    // the children descend from one parent (Amendment 10; the handles are Amendment 11's). Capture
+    // the tags before replaceGeometries hands newGeos to the Geometry property.
     if (paramsOfNewGeos.size() == 1) {
         newGeos.front()->copyTagFrom(geoAsCurve);
+    }
+    else {
+        std::vector<boost::uuids::uuid> childTags;
+        childTags.reserve(newGeos.size());
+        for (const auto* child : newGeos) {
+            childTags.push_back(child->getTag());
+        }
+        ParentageLog.recordEvent(ParentageOp::TrimSever, {geoAsCurve->getTag()}, std::move(childTags));
     }
 
     replaceGeometries({GeoId}, newGeos);
