@@ -657,7 +657,8 @@ void createNewConstraintsForTrim(
     std::vector<int>& idsOfOldConstraints,
     std::vector<Constraint*>& newConstraints,
     std::set<int, std::greater<>>& geoIdsToBeDeleted,
-    std::map<Constraint*, int>& newToOldConstraintMap
+    std::map<Constraint*, int>& newToOldConstraintMap,
+    std::vector<std::string>& retiredConstraintLabels
 )
 {
     const auto& allConstraints = obj->Constraints.getValues();
@@ -711,6 +712,13 @@ void createNewConstraintsForTrim(
         // Map all newly added derived constraints to the old ID
         for (size_t i = sizeBefore; i < newConstraints.size(); ++i) {
             newToOldConstraintMap[newConstraints[i]] = oldConstrId;
+        }
+        // §4.7 / P7: a sever-trim (newIds.size() > 1) retires the entity into two pieces. A
+        // constraint that produced no replacement is residue — its subject was the whole retired
+        // entity, so it has no piece to bind to and is dropped below. Unlike a delete the user did
+        // not ask to retire it, so surface the loss loudly rather than silently (see split).
+        if (newIds.size() > 1 && newConstraints.size() == sizeBefore) {
+            retiredConstraintLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
         }
     }
 
@@ -847,6 +855,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         return (allConstraints[i]->involvesGeoIdAndPosId(GeoId, PointPos::mid));
     });
 
+    std::vector<std::string> retiredConstraintLabels;
     createNewConstraintsForTrim(
         this,
         GeoId,
@@ -857,7 +866,8 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         idsOfOldConstraints,
         newConstraints,
         geoIdsToBeDeleted,
-        newToOldConstraintMap
+        newToOldConstraintMap,
+        retiredConstraintLabels
     );
 
     //******************* Step D => Replacing geometries and constraints
@@ -972,6 +982,20 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
     // Since we used regular "non-smart" pointers, we have to handle cleanup
     for (auto& cons : newConstraints) {
         delete cons;
+    }
+
+    if (!retiredConstraintLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < retiredConstraintLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + retiredConstraintLabels[i];
+        }
+        Base::Console().warning(
+            "Trim severed geometry %d; %zu constraint(s) could not follow it and were removed: "
+            "%s. Their subject was the whole entity, which no longer exists as a single edge.\n",
+            GeoId,
+            retiredConstraintLabels.size(),
+            joined.c_str()
+        );
     }
 
     return 0;
