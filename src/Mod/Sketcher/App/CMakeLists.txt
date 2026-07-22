@@ -51,8 +51,6 @@ generate_from_py(Sketch)
 SET(Properties_SRCS
     PropertyConstraintList.cpp
     PropertyConstraintList.h
-    PropertyParentageLog.cpp
-    PropertyParentageLog.h
 )
 SOURCE_GROUP("Properties" FILES ${Properties_SRCS})
 
