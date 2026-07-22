@@ -35,7 +35,6 @@
 #include "GeometryFacade.h"
 #include "GeometryFacadePy.h"
 #include "PropertyConstraintList.h"
-#include "PropertyParentageLog.h"
 #include "Sketch.h"
 #include "SketchGeometry.h"
 #include "SketchGeometryExtension.h"
@@ -102,7 +101,6 @@ PyMOD_INIT_FUNC(Sketcher)
     Sketcher::Sketch ::init();
     Sketcher::Constraint ::init();
     Sketcher::PropertyConstraintList ::init();
-    Sketcher::PropertyParentageLog ::init();
 
     // connect to unified measurement facility
     Sketcher::Measure ::initialize();

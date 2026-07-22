@@ -87,15 +87,6 @@ SketchObject::SketchObject() : geoLastId(0)
                       "Sketch",
                       (App::PropertyType)(App::Prop_None),
                       "Sketch constraints");
-    // Registered without ADD_PROPERTY_TYPE: the log has no scalar default to set (the macro
-    // would call setValue()), so it is enrolled directly. It starts empty.
-    ParentageLog.setContainer(this);
-    propertyData.addProperty(static_cast<App::PropertyContainer*>(this),
-                             "ParentageLog",
-                             &ParentageLog,
-                             "Sketch",
-                             (App::PropertyType)(App::Prop_Output | App::Prop_Hidden),
-                             "Recorded parentage of sketch entities retired by topology events");
     ADD_PROPERTY_TYPE(ExternalGeometry,
                       (nullptr, nullptr),
                       "Sketch",

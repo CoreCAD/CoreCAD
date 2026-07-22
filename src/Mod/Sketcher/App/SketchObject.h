@@ -32,7 +32,6 @@
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PropertyGeometryList.h>
 #include <Mod/Sketcher/App/PropertyConstraintList.h>
-#include <Mod/Sketcher/App/PropertyParentageLog.h>
 #include <Mod/Sketcher/App/SketchAnalysis.h>
 
 #include "Analyse.h"
@@ -101,7 +100,6 @@ public:
     */
     Part ::PropertyGeometryList Geometry;
     Sketcher::PropertyConstraintList Constraints;
-    Sketcher::PropertyParentageLog ParentageLog;
     App ::PropertyLinkSubList ExternalGeometry;
     App::PropertyIntegerList ExternalTypes;
     App ::PropertyLinkListHidden Exports;
