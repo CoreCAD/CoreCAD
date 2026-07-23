@@ -658,7 +658,8 @@ void createNewConstraintsForTrim(
     std::vector<Constraint*>& newConstraints,
     std::set<int, std::greater<>>& geoIdsToBeDeleted,
     std::map<Constraint*, int>& newToOldConstraintMap,
-    std::vector<std::string>& retiredConstraintLabels
+    std::vector<std::string>& retiredConstraintLabels,
+    std::vector<std::string>& forcedPickLabels
 )
 {
     const auto& allConstraints = obj->Constraints.getValues();
@@ -708,7 +709,8 @@ void createNewConstraintsForTrim(
         }
         // constraint has not yet been changed
         size_t sizeBefore = newConstraints.size();
-        obj->deriveConstraintsForPieces(GeoId, newIds, newGeos, con, newConstraints);
+        bool forcedPick = false;
+        obj->deriveConstraintsForPieces(GeoId, newIds, newGeos, con, newConstraints, &forcedPick);
         // Map all newly added derived constraints to the old ID
         for (size_t i = sizeBefore; i < newConstraints.size(); ++i) {
             newToOldConstraintMap[newConstraints[i]] = oldConstrId;
@@ -719,6 +721,12 @@ void createNewConstraintsForTrim(
         // not ask to retire it, so surface the loss loudly rather than silently (see split).
         if (newIds.size() > 1 && newConstraints.size() == sizeBefore) {
             retiredConstraintLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
+        }
+        // A constraint that was carried but could equally have gone to more than one piece (its
+        // point sits exactly on the cut boundary) was attached to one piece arbitrarily. Disclose
+        // that forced choice too rather than making it silently (§4.7 / P7; see split).
+        else if (forcedPick) {
+            forcedPickLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
         }
     }
 
@@ -856,6 +864,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
     });
 
     std::vector<std::string> retiredConstraintLabels;
+    std::vector<std::string> forcedPickLabels;
     createNewConstraintsForTrim(
         this,
         GeoId,
@@ -867,7 +876,8 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         newConstraints,
         geoIdsToBeDeleted,
         newToOldConstraintMap,
-        retiredConstraintLabels
+        retiredConstraintLabels,
+        forcedPickLabels
     );
 
     //******************* Step D => Replacing geometries and constraints
@@ -998,6 +1008,21 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         );
     }
 
+    if (!forcedPickLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < forcedPickLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + forcedPickLabels[i];
+        }
+        Base::Console().warning(
+            "Trim severed geometry %d; %zu constraint(s) could apply to more than one of the new "
+            "pieces and each was attached to one piece: %s. Reattach it if the wrong piece was "
+            "chosen.\n",
+            GeoId,
+            forcedPickLabels.size(),
+            joined.c_str()
+        );
+    }
+
     return 0;
 }
 
@@ -1068,11 +1093,20 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
     // dimension or relation whose subject was the whole retired entity — has no piece to bind to
     // and is dropped. Dropping it is honest (its subject genuinely ceased to exist), but the user
     // did not directly ask to retire it, so the loss is surfaced loudly rather than silently.
+    // A constraint may also be carried to a piece that was chosen arbitrarily because more than
+    // one piece could equally have taken it (a point sitting exactly on the split boundary). That
+    // pick is disclosed too (§4.7 / P7: a forced choice is surfaced, not made silently), so the
+    // user can reattach it if the wrong piece was chosen.
     std::vector<std::string> retiredConstraintLabels;
+    std::vector<std::string> forcedPickLabels;
     for (const auto& oldConstrId : idsOfOldConstraints) {
         Constraint* con = allConstraints[oldConstrId];
-        if (!deriveConstraintsForPieces(GeoId, newIds, con, newConstraints)) {
+        bool forcedPick = false;
+        if (!deriveConstraintsForPieces(GeoId, newIds, con, newConstraints, &forcedPick)) {
             retiredConstraintLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
+        }
+        else if (forcedPick) {
+            forcedPickLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
         }
     }
 
@@ -1143,6 +1177,21 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
             "%s. Their subject was the whole entity, which no longer exists as a single edge.\n",
             GeoId,
             retiredConstraintLabels.size(),
+            joined.c_str()
+        );
+    }
+
+    if (!forcedPickLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < forcedPickLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + forcedPickLabels[i];
+        }
+        Base::Console().warning(
+            "Split of geometry %d: %zu constraint(s) could apply to more than one of the new "
+            "pieces; each was attached to one piece: %s. Reattach it if the wrong piece was "
+            "chosen.\n",
+            GeoId,
+            forcedPickLabels.size(),
             joined.c_str()
         );
     }

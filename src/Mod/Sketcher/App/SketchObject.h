@@ -492,11 +492,15 @@ public:
     /// assuming all constraints on the end points of the old curve have been transferred or
     /// destroyed
     /// Returns whether or not new constraint(s) was/were added.
+    /// If `forcedPick` is given, it is set true when the constraint was carried but more than one
+    /// piece could equally have taken it and one was chosen arbitrarily (§4.7 / P7: the choice is
+    /// disclosed to the user rather than made silently).
     bool deriveConstraintsForPieces(
         const int oldId,
         const std::vector<int>& newIds,
         const Constraint* con,
-        std::vector<Constraint*>& newConstraints
+        std::vector<Constraint*>& newConstraints,
+        bool* forcedPick = nullptr
     ) const;
     // Explicitly giving `newGeos` for cases where they are not yet added
     bool deriveConstraintsForPieces(
@@ -504,7 +508,8 @@ public:
         const std::vector<int>& newIds,
         const std::vector<const Part::Geometry*>& newGeo,
         const Constraint* con,
-        std::vector<Constraint*>& newConstraints
+        std::vector<Constraint*>& newConstraints,
+        bool* forcedPick = nullptr
     ) const;
 
     /// split a curve
