@@ -1575,12 +1575,17 @@ void SketchObject::changeConstraintAfterDeletingGeo(Constraint* constr,
 }
 
 // clang-format on
+// Returns the index of the piece the point falls on, choosing the first when more than one
+// piece contains it (a point sitting exactly on a split boundary lies on both adjacent pieces).
+// When `forcedChoice` is given, it is set true in that ambiguous case so the caller can disclose
+// the arbitrary pick rather than make it silently (§4.7 / P7).
 std::optional<size_t> findPieceContainingPoint(
     const SketchObject* obj,
     const Part::Geometry* geo,
     const Base::Vector3d& point,
     const std::vector<int>& newIds,
-    const std::vector<const Part::Geometry*>& newGeos
+    const std::vector<const Part::Geometry*>& newGeos,
+    bool* forcedChoice = nullptr
 )
 {
     double conParam;
@@ -1588,26 +1593,36 @@ std::optional<size_t> findPieceContainingPoint(
     geoAsCurve->closestParameter(point, conParam);
     // Choose based on where the closest point lies
     // If it's not there, just leave this constraint out
+    std::optional<size_t> firstMatch;
+    size_t matchCount = 0;
     for (size_t i = 0; i < newIds.size(); ++i) {
         double newGeoFirstParam = static_cast<const Part::GeomCurve*>(newGeos[i])->getFirstParameter();
         double newGeoLastParam = static_cast<const Part::GeomCurve*>(newGeos[i])->getLastParameter();
+        double pieceParam = conParam;
         // For periodic curves the point may need a full revolution
-        if ((newGeoFirstParam - conParam) > Precision::PApproximation() && obj->isClosedCurve(geo)) {
-            conParam += (geoAsCurve->getLastParameter() - geoAsCurve->getFirstParameter());
+        if ((newGeoFirstParam - pieceParam) > Precision::PApproximation() && obj->isClosedCurve(geo)) {
+            pieceParam += (geoAsCurve->getLastParameter() - geoAsCurve->getFirstParameter());
         }
-        if ((newGeoFirstParam - conParam) <= Precision::PApproximation()
-            && (conParam - newGeoLastParam) <= Precision::PApproximation()) {
-            return i;
+        if ((newGeoFirstParam - pieceParam) <= Precision::PApproximation()
+            && (pieceParam - newGeoLastParam) <= Precision::PApproximation()) {
+            if (!firstMatch.has_value()) {
+                firstMatch = i;
+            }
+            ++matchCount;
         }
     }
-    return std::nullopt;
+    if (forcedChoice != nullptr) {
+        *forcedChoice = (matchCount > 1);
+    }
+    return firstMatch;
 }
 
 bool SketchObject::deriveConstraintsForPieces(
     const int oldId,
     const std::vector<int>& newIds,
     const Constraint* con,
-    std::vector<Constraint*>& newConstraints
+    std::vector<Constraint*>& newConstraints,
+    bool* forcedPick
 ) const
 {
     std::vector<const Part::Geometry*> newGeos;
@@ -1615,7 +1630,7 @@ bool SketchObject::deriveConstraintsForPieces(
         newGeos.push_back(getGeometry(newId));
     }
 
-    return deriveConstraintsForPieces(oldId, newIds, newGeos, con, newConstraints);
+    return deriveConstraintsForPieces(oldId, newIds, newGeos, con, newConstraints, forcedPick);
 }
 
 bool SketchObject::deriveConstraintsForPieces(
@@ -1623,9 +1638,13 @@ bool SketchObject::deriveConstraintsForPieces(
     const std::vector<int>& newIds,
     const std::vector<const Part::Geometry*>& newGeos,
     const Constraint* con,
-    std::vector<Constraint*>& newConstraints
+    std::vector<Constraint*>& newConstraints,
+    bool* forcedPick
 ) const
 {
+    if (forcedPick != nullptr) {
+        *forcedPick = false;
+    }
     const Part::Geometry* geo = getGeometry(oldId);
     int conId = con->First;
     PointPos conPos = con->FirstPos;
@@ -1692,7 +1711,8 @@ bool SketchObject::deriveConstraintsForPieces(
 
                 // transfer only to the curve that actually intersects
                 Base::Vector3d point(getPoint(thirdGeo, thirdPos));
-                std::optional<size_t> idx = findPieceContainingPoint(this, geo, point, newIds, newGeos);
+                std::optional<size_t> idx
+                    = findPieceContainingPoint(this, geo, point, newIds, newGeos, forcedPick);
 
                 if (idx.has_value()) {
                     Constraint* trans = con->copy();
@@ -1706,7 +1726,8 @@ bool SketchObject::deriveConstraintsForPieces(
                 // Angle via point but the point won't change, can transfer to all or first
                 // transfer only to the curve that actually intersects
                 Base::Vector3d point(getPoint(thirdGeo, thirdPos));
-                std::optional<size_t> idx = findPieceContainingPoint(this, geo, point, newIds, newGeos);
+                std::optional<size_t> idx
+                    = findPieceContainingPoint(this, geo, point, newIds, newGeos, forcedPick);
 
                 if (idx.has_value()) {
                     Constraint* trans = con->copy();
@@ -1754,31 +1775,19 @@ bool SketchObject::deriveConstraintsForPieces(
             }
 
             Base::Vector3d conPoint(getPoint(conId, conPos));
-            double conParam;
-            auto* geoAsCurve = static_cast<const Part::GeomCurve*>(geo);
-            geoAsCurve->closestParameter(conPoint, conParam);
-            // Choose based on where the closest point lies
-            // If it's not there, just leave this constraint out
-            for (size_t i = 0; i < newIds.size(); ++i) {
-                double newGeoFirstParam
-                    = static_cast<const Part::GeomCurve*>(newGeos[i])->getFirstParameter();
-                double newGeoLastParam
-                    = static_cast<const Part::GeomCurve*>(newGeos[i])->getLastParameter();
-                // For periodic curves the point may need a full revolution
-                if ((newGeoFirstParam - conParam) > Precision::PApproximation()
-                    && isClosedCurve(geo)) {
-                    conParam += (geoAsCurve->getLastParameter() - geoAsCurve->getFirstParameter());
-                }
-                if ((newGeoFirstParam - conParam) <= Precision::PApproximation()
-                    && (conParam - newGeoLastParam) <= Precision::PApproximation()) {
-                    Constraint* trans = con->copy();
-                    trans->First = conId;
-                    trans->FirstPos = conPos;
-                    trans->Second = newIds[i];
-                    trans->SecondPos = PointPos::none;
-                    newConstraints.push_back(trans);
-                    return true;
-                }
+            // Choose based on where the closest point lies; a point sitting exactly on the split
+            // boundary lies on both adjacent pieces, and `findPieceContainingPoint` flags that
+            // forced choice through `forcedPick` so `split` can disclose it.
+            std::optional<size_t> idx
+                = findPieceContainingPoint(this, geo, conPoint, newIds, newGeos, forcedPick);
+            if (idx.has_value()) {
+                Constraint* trans = con->copy();
+                trans->First = conId;
+                trans->FirstPos = conPos;
+                trans->Second = newIds[idx.value()];
+                trans->SecondPos = PointPos::none;
+                newConstraints.push_back(trans);
+                return true;
             }
         } break;
         case Radius:
