@@ -1123,7 +1123,10 @@ void CmdPartImport::activated(int iMsg)
         {QStringLiteral("BREP"), {"*.brp", "*.brep"}},
     };
 
-    qsizetype select;
+    // Default to the first filter. getOpenFileName reads this as the initially
+    // selected filter index and overwrites it with the user's choice; leaving it
+    // uninitialized crashes the non-native dialog path (filters[garbage]).
+    qsizetype select = 0;
     QString fn
         = Gui::FileDialog::getOpenFileName(Gui::getMainWindow(), QString(), QString(), filter, &select);
     if (!fn.isEmpty()) {
@@ -1229,17 +1232,9 @@ void CmdPartImport::activated(int iMsg)
                 newObjs[0]->getNameInDocument()
             );
         }
-        else {
-            // Loose objects with no existing Part — wrap them in a new App::Part.
-            doCommand(Doc, "App.ActiveDocument.addObject('App::Part','Part')");
-            doCommand(Gui, "Gui.ActiveDocument.ActiveView.setActiveObject('part', App.ActiveDocument.ActiveObject)");
-            auto* partObj = dynamic_cast<App::Part*>(pDoc->getActiveObject());
-            if (partObj) {
-                for (auto* obj : newObjs) {
-                    partObj->addObject(obj);
-                }
-            }
-        }
+        // Loose objects with no existing Part are left in the document as-is: the
+        // document is the container (ARCHITECTURE §7.1, P3 no-ownership), so imported
+        // geometry needs no App::Part wrapper to hold it.
 
         commitCommand();
 
