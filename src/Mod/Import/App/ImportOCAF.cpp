@@ -289,7 +289,6 @@ void ImportOCAF::createShape(
         TopExp_Explorer xp;
         int ctSolids = 0, ctShells = 0, ctVertices = 0, ctEdges = 0;
         std::vector<App::DocumentObject*> localValue;
-        App::Part* pcPart = nullptr;
 
         if (mergeShape) {
 
@@ -359,14 +358,12 @@ void ImportOCAF::createShape(
         }
 
         if (!localValue.empty() && !mergeShape) {
-            pcPart = doc->addObject<App::Part>(name.c_str());
-            pcPart->Label.setValue(name);
-
-            // localValue contain the objects that  must added to the local Part
-            // We must add the PartOrigin and the Part itself
-            pcPart->addObjects(localValue);
-
-            lValue.push_back(pcPart);
+            // The exploded solids of one non-merged compound stay in the document as root-level
+            // Part::Features per ARCHITECTURE §7.1 (the document is the container). Each already
+            // carries its own placement, name, and colours, so the former App::Part wrapper held no
+            // unique data -- it was pure organisational grouping. Same flip as the loose-import
+            // wrapper (df93d2f43d).
+            lValue.insert(lValue.end(), localValue.begin(), localValue.end());
         }
 
         if (ctSolids > 0 || ctShells > 0) {
