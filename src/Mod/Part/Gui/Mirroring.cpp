@@ -63,7 +63,6 @@
 #include <App/Datums.h>
 
 #include "Mirroring.h"
-#include "PartGuiUtils.h"
 #include "ui_Mirroring.h"
 
 
@@ -375,7 +374,6 @@ bool Mirroring::accept()
                 .arg(this->document)
                 .toLatin1()
         );
-        PartGui::addToActivePart(activeDoc->getActiveObject());
 
         QString code = QStringLiteral(
                            "__doc__=FreeCAD.getDocument(\"%1\")\n"

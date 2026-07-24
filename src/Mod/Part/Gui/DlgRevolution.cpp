@@ -53,7 +53,6 @@
 
 #include "DlgRevolution.h"
 #include "ui_DlgRevolution.h"
-#include "PartGuiUtils.h"
 
 
 using namespace PartGui;
@@ -498,7 +497,6 @@ void DlgRevolution::accept()
             Gui::Command::runCommand(Gui::Command::App, code.toLatin1());
 
             auto newObj = activeDoc->getObject(name.toStdString().c_str());
-            PartGui::addToActivePart(newObj);
             auto sourceObj = activeDoc->getObject(shape.toStdString().c_str());
 
             if (!sourceObj->isDerivedFrom<Part::Part2DObject>()) {

@@ -74,7 +74,6 @@
 #include "TaskShapeBuilder.h"
 #include "TaskSweep.h"
 #include "ViewProvider.h"
-#include "PartGuiUtils.h"
 
 // Returns true when the active App::Part contains at least one object other
 // than its coordinate origin — i.e. there is real geometry to operate on.
@@ -1947,7 +1946,6 @@ void CmdPartOffset::activated(int iMsg)
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make Offset"));
     doCommand(Doc, "App.ActiveDocument.addObject(\"Part::Offset\",\"%s\")", offset.c_str());
-    PartGui::addToActivePart(App::GetApplication().getActiveDocument()->getObject(offset.c_str()));
     doCommand(
         Doc,
         "App.ActiveDocument.%s.Source = App.ActiveDocument.%s",
@@ -2225,7 +2223,6 @@ void CmdPartThickness::activated(int iMsg)
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Make Thickness"));
     doCommand(Doc, "App.ActiveDocument.addObject(\"Part::Thickness\",\"%s\")", thick.c_str());
-    PartGui::addToActivePart(App::GetApplication().getActiveDocument()->getObject(thick.c_str()));
     doCommand(Doc, "App.ActiveDocument.%s.Faces = %s", thick.c_str(), selection.c_str());
     doCommand(Doc, "App.ActiveDocument.%s.Value = 1.0", thick.c_str());
     updateActive();

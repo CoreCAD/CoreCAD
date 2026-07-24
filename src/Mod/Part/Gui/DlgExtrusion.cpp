@@ -53,7 +53,6 @@
 
 #include "ui_DlgExtrusion.h"
 #include "DlgExtrusion.h"
-#include "PartGuiUtils.h"
 
 
 FC_LOG_LEVEL_INIT("Part", true, true)
@@ -543,7 +542,6 @@ void DlgExtrusion::apply()
 
             FCMD_OBJ_DOC_CMD(sourceObj, "addObject('Part::Extrusion','" << name << "')");
             auto newObj = sourceObj->getDocument()->getObject(name.c_str());
-            PartGui::addToActivePart(newObj);
 
             this->writeParametersToFeature(*newObj, sourceObj);
 

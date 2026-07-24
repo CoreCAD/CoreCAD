@@ -47,7 +47,6 @@
 
 #include "TaskLoft.h"
 #include "ui_TaskLoft.h"
-#include "PartGuiUtils.h"
 
 
 using namespace PartGui;
@@ -232,7 +231,6 @@ bool LoftWidget::accept()
             doc->abortCommand();
             throw Base::RuntimeError(msg);
         }
-        PartGui::addToActivePart(obj);
         doc->commitCommand();
     }
     catch (const Base::Exception& e) {

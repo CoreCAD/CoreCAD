@@ -70,7 +70,6 @@
 #include "SoBrepEdgeSet.h"
 #include "SoBrepFaceSet.h"
 #include "SoBrepPointSet.h"
-#include "PartGuiUtils.h"
 
 FC_LOG_LEVEL_INIT("Part", true, true)
 
@@ -1110,7 +1109,6 @@ bool DlgFilletEdges::accept()
     )
                 .arg(name, shape);
     Gui::Command::runCommand(Gui::Command::App, code.toLatin1());
-    PartGui::addToActivePart(activeDoc->getObject(name.toLatin1()));
     activeDoc->commitTransaction();
     activeDoc->recompute();
     if (d->fillet) {
