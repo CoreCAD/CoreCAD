@@ -108,6 +108,9 @@ DrawView::DrawView():
     ADD_PROPERTY_TYPE(Collection, (nullptr), group, App::Prop_Hidden,
                       "The collection this view is an item of");
     Collection.setScope(App::LinkScope::Hidden);
+    ADD_PROPERTY_TYPE(ClipGroup, (nullptr), group, App::Prop_Hidden,
+                      "The clip group this view is clipped by");
+    ClipGroup.setScope(App::LinkScope::Hidden);
 
     setScaleAttribute();
 }
@@ -418,12 +421,7 @@ std::vector<DrawPage*> DrawView::findAllParentPages() const
 
 bool DrawView::isInClip()
 {
-    for (auto* parent : getInList()) {
-        if (parent->isDerivedFrom<DrawViewClip>()) {
-            return true;
-        }
-    }
-    return false;
+    return getClipGroup() != nullptr;
 }
 
 DrawView *DrawView::claimParent() const
@@ -462,12 +460,9 @@ std::vector<DrawView*> DrawView::getUniqueChildren() const
 
 DrawViewClip* DrawView::getClipGroup()
 {
-    for (auto* obj : getInList()) {
-        if (obj->isDerivedFrom<DrawViewClip>()) {
-            return static_cast<DrawViewClip*>(obj);
-        }
-    }
-    return nullptr;
+    // A clipped view names its clip group; the clip group stores no member list. Read the edge
+    // from the item side, mirroring getCollection()'s read of Collection.
+    return freecad_cast<DrawViewClip*>(ClipGroup.getValue());
 }
 
 DrawViewCollection *DrawView::getCollection() const

@@ -75,8 +75,7 @@ void QGIViewClip::updateView(bool update)
         viewClip->isTouched() ||
         viewClip->Height.isTouched() ||
         viewClip->Width.isTouched() ||
-        viewClip->ShowFrame.isTouched() ||
-        viewClip->Views.isTouched() ) {
+        viewClip->ShowFrame.isTouched() ) {
         draw();
     }
 

@@ -67,11 +67,15 @@ public:
     /// in this direction keeps two people adding views to the same page from colliding.
     App::PropertyLink Page;
 
-    /// The collection (projection group, clip group) this view is an item of, if any. Same
-    /// principle as Page: an item names its collection, the collection stores no list of
-    /// members. A view inside a collection derives its page from the collection, so it does
-    /// not also name a page.
+    /// The collection (projection group) this view is an item of, if any. Same principle as
+    /// Page: an item names its collection, the collection stores no list of members. A view
+    /// inside a collection derives its page from the collection, so it does not also name a page.
     App::PropertyLink Collection;
+
+    /// The clip group this view is clipped by, if any. Clip membership is orthogonal to page
+    /// and collection membership — a clipped view still names its page — so it is a separate
+    /// edge, again stored on the item: the clip group keeps no member list.
+    App::PropertyLink ClipGroup;
 
     /** @name methods override Feature */
     //@{

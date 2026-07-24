@@ -47,7 +47,6 @@ public:
     App::PropertyLength Width;
     App::PropertyLength Height;
     App::PropertyBool ShowFrame;
-    App::PropertyLinkList Views;
 
     void addView(App::DocumentObject* docObj);
     void removeView(App::DocumentObject* docObj);
