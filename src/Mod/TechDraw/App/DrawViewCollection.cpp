@@ -44,9 +44,8 @@ PROPERTY_SOURCE(TechDraw::DrawViewCollection, TechDraw::DrawView)
 DrawViewCollection::DrawViewCollection()
 {
     nowUnsetting = false;
-    static const char *group = "Collection";
-    ADD_PROPERTY_TYPE(Views     ,(nullptr), group, App::Prop_None, "Collection Views");
-    Views.setScope(App::LinkScope::Global);
+    // Membership is not stored: a member view names this collection through DrawView::Collection,
+    // and getViews() derives the list. There is no Views property to declare.
 }
 
 DrawViewCollection::~DrawViewCollection()
@@ -60,11 +59,9 @@ void DrawViewCollection::onChanged(const App::Property* prop)
 
 short DrawViewCollection::mustExecute() const
 {
-    if (Views.isTouched()) {
-        return 1;
-    } else {
-        return TechDraw::DrawView::mustExecute();
-    }
+    // Membership changes touch this object directly (see addView/removeView); there is no
+    // stored Views list to watch.
+    return TechDraw::DrawView::mustExecute();
 }
 
 App::DocumentObjectExecReturn *DrawViewCollection::execute()
@@ -81,93 +78,48 @@ App::DocumentObjectExecReturn *DrawViewCollection::execute()
 
 int DrawViewCollection::addView(App::DocumentObject* docObj)
 {
-    // Add the new view to the collection
-
-    if (!docObj->isDerivedFrom<DrawView>()
-        && !docObj->isDerivedFrom<App::Link>()) {
+    // A view joins the collection by naming it. The collection stores no member list; the edge
+    // lives on the item (DrawView::Collection), the same direction a view names its page.
+    auto* view = freecad_cast<DrawView*>(docObj);
+    if (!view) {
         return -1;
     }
 
-    auto* view = freecad_cast<DrawView*>(docObj);
+    view->Collection.setValue(this);
 
-    if (!view) {
-        auto* link = dynamic_cast<App::Link*>(docObj);
-        if (!link) {
-            return -1;
-        }
+    // Membership changed. There is no property on this object to touch, so touch the object
+    // itself to re-run execute() (arrangement), as the old Views.isTouched() trigger did.
+    touch();
 
-        if (link) {
-            view = freecad_cast<DrawView*>(link->getLinkedObject());
-            if (!view) {
-                return -1;
-            }
-        }
-    }
-
-    std::vector<App::DocumentObject*> newViews(Views.getValues());
-    newViews.push_back(docObj);
-    Views.setValues(newViews);
-
-    return Views.getSize();
+    return (int)getViews().size();
 }
 
 int DrawViewCollection::removeView(App::DocumentObject* docObj)
 {
-    // Remove the view from the collection
-    std::vector<App::DocumentObject*> newViews;
-    std::string viewName = docObj->getNameInDocument();
-    for (auto* view : Views.getValues()) {
-        if (viewName.compare(view->getNameInDocument()) != 0) {
-            newViews.push_back(view);
-        }
+    // Taking a view out of the collection is the view forgetting the collection.
+    auto* view = freecad_cast<DrawView*>(docObj);
+    if (view && view->Collection.getValue() == this) {
+        view->Collection.setValue(nullptr);
+        touch();
     }
-    Views.setValues(newViews);
 
-    return Views.getSize();
+    return (int)getViews().size();
 }
 
 std::vector<App::DocumentObject*> DrawViewCollection::getViews() const
 {
-    std::vector<App::DocumentObject*> views = Views.getValues();
+    // Derived, never stored: the members are the views naming this collection.
     std::vector<App::DocumentObject*> allViews;
-    for (auto& v : views) {
-        if (v->isDerivedFrom<App::Link>()) {
-            v = static_cast<App::Link*>(v)->getLinkedObject();
+    if (!isAttachedToDocument()) {
+        return allViews;
+    }
+    for (auto* obj : getDocument()->getObjectsOfType<DrawView>()) {
+        auto* view = static_cast<DrawView*>(obj);
+        if (view->getCollection() == this) {
+            allViews.push_back(view);
         }
-
-        if (!v->isDerivedFrom<TechDraw::DrawView>()) {
-            continue;
-        }
-
-        allViews.push_back(v);
     }
     return allViews;
-}
-
-//make sure everything in View list represents a real DrawView docObj and occurs only once
-void DrawViewCollection::rebuildViewList()
-{
-    const std::vector<App::DocumentObject*> currViews = Views.getValues();
-    std::vector<App::DocumentObject*> newViews;
-    for (auto* child : getOutList()) {
-        if (child->isDerivedFrom<DrawView>() ||
-            (child->isDerivedFrom<App::Link>()
-                && static_cast<App::Link*>(child)->getLinkedObject()->isDerivedFrom<DrawView>())) {
-            bool found = false;
-            for (auto& v:currViews) {
-                if (v == child) {
-                    found = true;
-                    break;
-                }
-            }
-            if (found) {
-                newViews.push_back(child);
-            }
-        }
-    } // newViews contains only valid items, but may have duplicates
-    sort( newViews.begin(), newViews.end() );
-    newViews.erase( unique( newViews.begin(), newViews.end() ), newViews.end() );
-    Views.setValues(newViews);
 }
 
 int DrawViewCollection::countChildren()
@@ -175,7 +127,7 @@ int DrawViewCollection::countChildren()
     //Count the children recursively if needed
     int numChildren = 0;
 
-    for(auto* view : Views.getValues()) {
+    for(auto* view : getViews()) {
         if(view->isDerivedFrom<DrawViewCollection>()) {
             auto *viewCollection = static_cast<DrawViewCollection *>(view);
             numChildren += viewCollection->countChildren() + 1;
@@ -207,19 +159,17 @@ void DrawViewCollection::unsetupObject()
 {
     nowUnsetting = true;
 
-    // Remove the collection's views from document
+    // Remove the collection's views from document. Membership is derived, so read it before
+    // anything is deleted; there is no stored list to clear afterwards.
     std::string docName = getDocument()->getName();
 
-    for (auto* view : Views.getValues()) {
+    for (auto* view : getViews()) {
         if (view->isAttachedToDocument()) {
             std::string viewName = view->getNameInDocument();
             Base::Interpreter().runStringArg("App.getDocument(\"%s\").removeObject(\"%s\")",
                                               docName.c_str(), viewName.c_str());
         }
     }
-
-    std::vector<App::DocumentObject*> emptyViews;
-    Views.setValues(emptyViews);
 }
 
 QRectF DrawViewCollection::getRect() const
