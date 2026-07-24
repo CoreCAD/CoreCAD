@@ -1709,8 +1709,12 @@ namespace
 FileDialog::FilterList documentSaveFilters(App::Document* doc, const QString& exe)
 {
     FileDialog::FilterList filters;
-    if (doc->documentFileExtension() == "cpart") {
+    const std::string ext = doc->documentFileExtension();
+    if (ext == "cpart") {
         filters.append({QObject::tr("Part document"), {QStringLiteral("*.cpart")}});
+    }
+    else if (ext == "cassembly") {
+        filters.append({QObject::tr("Assembly document"), {QStringLiteral("*.cassembly")}});
     }
     filters.append({QObject::tr("%1 document").arg(exe), {QStringLiteral("*.FCStd")}});
     return filters;

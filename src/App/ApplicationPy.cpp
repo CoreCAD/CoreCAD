@@ -320,7 +320,7 @@ PyObject* ApplicationPy::sLoadFile(PyObject* /*self*/, PyObject* args)
 
         std::stringstream str;
         str << "import " << module << std::endl;
-        if (fi.hasExtension("FCStd") || fi.hasExtension("cpart")) {
+        if (Document::isNativeFormatExtension(fi.extension().c_str())) {
             str << module << ".openDocument(" << pathRepr << ")" << std::endl;
         }
         else {

@@ -336,12 +336,22 @@ public:
     void applyDocumentType(const char* type);
 
     /// Cruth: on-disk file extension (without dot) derived from a document-type marker.
-    /// The marker is the authority; a "Part" document saves as ".cpart", while an
-    /// untyped/legacy document saves as ".FCStd". Unknown types fall back to "FCStd".
+    /// The marker is the authority; a "Part" document saves as ".cpart", an "Assembly"
+    /// document as ".cassembly", while an untyped/legacy document saves as ".FCStd".
+    /// Unknown types fall back to "FCStd".
     static std::string fileExtensionForType(const char* type);
     /// The file extension this document should be saved under, derived from its
     /// DocumentType marker. See fileExtensionForType().
     std::string documentFileExtension() const;
+
+    /// Cruth: every extension that denotes a whole native document (the universal ".FCStd"
+    /// plus each type-specific extension). The single source consumers use to tell a
+    /// document meant to be opened from geometry meant to be imported; adding a new document
+    /// type to fileExtensionForType() extends this automatically.
+    static std::vector<std::string> nativeFormatExtensions();
+    /// Whether the given extension (without dot, case-insensitive) is a native document
+    /// format. See nativeFormatExtensions().
+    static bool isNativeFormatExtension(const char* ext);
 
     /// Save the document to the file in Property Path
     bool save();

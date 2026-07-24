@@ -4099,7 +4099,10 @@ std::string recoverXLinkPath(App::Document* ownerDoc,
         return {};
     }
     QDir dir = QFileInfo(QString::fromUtf8(ownerFile)).absoluteDir();
-    const QStringList filters {QStringLiteral("*.FCStd"), QStringLiteral("*.cpart")};
+    QStringList filters;
+    for (const std::string& ext : Document::nativeFormatExtensions()) {
+        filters.append(QStringLiteral("*.") + QString::fromStdString(ext));
+    }
     for (const QFileInfo& cand : dir.entryInfoList(filters, QDir::Files)) {
         const QString candPath = cand.absoluteFilePath();
         if (candPath == stored) {

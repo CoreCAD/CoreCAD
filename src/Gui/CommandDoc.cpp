@@ -230,17 +230,21 @@ void StdCmdImport::activated(int iMsg)
     FileDialog::Filter allSupportedFormats {QObject::tr("Supported formats"), {}};
     const auto filetypes = App::GetApplication().getImportTypes();
     for (const auto& type : filetypes) {
-        // A whole document format (.FCStd, .cpart) is opened, not imported.
-        if (type != "FCStd" && type != "cpart") {
+        // A whole native document (.FCStd, .cpart, .cassembly) is opened, not imported.
+        if (!App::Document::isNativeFormatExtension(type.c_str())) {
             allSupportedFormats.patterns.append(QStringLiteral("*.") + QString::fromStdString(type));
         }
     }
     formatList.append(allSupportedFormats);
 
+    const auto nativeExts = App::Document::nativeFormatExtensions();
     const auto importFilters = App::GetApplication().getImportFilters();
     for (auto it = importFilters.cbegin(); it != importFilters.cend(); ++it) {
-        if (it->first.find("*.FCStd") == std::string::npos
-            && it->first.find("*.cpart") == std::string::npos) {
+        const bool isNativeDoc
+            = std::any_of(nativeExts.cbegin(), nativeExts.cend(), [&](const std::string& ext) {
+                  return it->first.find("*." + ext) != std::string::npos;
+              });
+        if (!isNativeDoc) {
             formatList.append(FileDialog::Filter::fromFilterString(QString::fromStdString(it->first)));
         }
     }
@@ -616,11 +620,15 @@ void StdCmdMergeProjects::activated(int iMsg)
     Q_UNUSED(iMsg);
 
     QString exe = qApp->applicationName();
+    QStringList docPatterns;
+    for (const std::string& ext : App::Document::nativeFormatExtensions()) {
+        docPatterns.append(QStringLiteral("*.") + QString::fromStdString(ext));
+    }
     QString project = FileDialog::getOpenFileName(
         Gui::getMainWindow(),
         QObject::tr("Merge Document"),
         FileDialog::getWorkingDirectory(),
-        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), {"*.FCStd", "*.cpart"}}}
+        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), docPatterns}}
     );
     if (!project.isEmpty()) {
         FileDialog::setWorkingDirectory(project);
