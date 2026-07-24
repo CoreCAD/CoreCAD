@@ -105,6 +105,9 @@ DrawView::DrawView():
     ADD_PROPERTY_TYPE(Caption, (""), group, App::Prop_Output, "Short text about the view");
     ADD_PROPERTY_TYPE(Page, (nullptr), group, App::Prop_Hidden, "The page this view appears on");
     Page.setScope(App::LinkScope::Hidden);
+    ADD_PROPERTY_TYPE(Collection, (nullptr), group, App::Prop_Hidden,
+                      "The collection this view is an item of");
+    Collection.setScope(App::LinkScope::Hidden);
 
     setScaleAttribute();
 }
@@ -469,12 +472,9 @@ DrawViewClip* DrawView::getClipGroup()
 
 DrawViewCollection *DrawView::getCollection() const
 {
-    for (auto* obj : getInList()) {
-        if (obj->isDerivedFrom<DrawViewCollection>()) {
-            return static_cast<DrawViewCollection*>(obj);
-        }
-    }
-    return nullptr;
+    // An item names its collection; the collection stores no member list. Read the edge from
+    // the item side, mirroring findParentPage()'s read of Page.
+    return freecad_cast<DrawViewCollection*>(Collection.getValue());
 }
 
 double DrawView::autoScale() const

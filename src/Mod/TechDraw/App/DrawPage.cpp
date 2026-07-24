@@ -371,7 +371,7 @@ std::vector<App::DocumentObject*> DrawPage::getAllViews() const
         if (v->isDerivedFrom<DrawProjGroup>()) {
             auto* dpg = static_cast<DrawProjGroup*>(v);
             if (dpg) {//can't really happen!
-                std::vector<App::DocumentObject*> pgViews = dpg->Views.getValues();
+                std::vector<App::DocumentObject*> pgViews = dpg->getViews();
                 allViews.insert(allViews.end(), pgViews.begin(), pgViews.end());
             }
         }

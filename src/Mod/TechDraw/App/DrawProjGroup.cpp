@@ -198,7 +198,6 @@ short DrawProjGroup::mustExecute() const
 {
     if (!isRestoring()) {
         if(
-            Views.isTouched() ||
             Source.isTouched() ||
             XSource.isTouched() ||
             Scale.isTouched() ||
@@ -231,7 +230,7 @@ void DrawProjGroup::reportReady()
 
 bool DrawProjGroup::waitingForChildren() const
 {
-    for (const auto v : Views.getValues()) {
+    for (const auto v : getViews()) {
         DrawProjGroupItem* dpgi = static_cast<DrawProjGroupItem*>(v);
         if (dpgi->waitingForHlr() ||//dpgi is still thinking
             dpgi->isTouched()) {    //dpgi needs to execute
@@ -300,7 +299,7 @@ QRectF DrawProjGroup::getRect() const { return getRect(true); }
 
 QRectF DrawProjGroup::getRect(bool scaled) const
 {
-    //    Base::Console().message("DPG::getRect - views: %d\n", Views.getValues().size());
+    //    Base::Console().message("DPG::getRect - views: %d\n", getViews().size());
     std::array<DrawProjGroupItem*, MAXPROJECTIONCOUNT> viewPtrs;
     arrangeViewPointers(viewPtrs);
     double totalWidth, totalHeight;
@@ -346,7 +345,7 @@ void DrawProjGroup::getViewArea(std::array<DrawProjGroupItem*, MAXPROJECTIONCOUN
 
 App::DocumentObject* DrawProjGroup::getProjObj(const char* viewProjType) const
 {
-    for (auto it : Views.getValues()) {
+    for (auto it : getViews()) {
         auto projPtr(freecad_cast<DrawProjGroupItem*>(it));
         if (!projPtr) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
@@ -396,7 +395,7 @@ bool DrawProjGroup::checkViewProjType(const char* in)
 //********************************
 bool DrawProjGroup::hasProjection(const char* viewProjType) const
 {
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(dynamic_cast<TechDraw::DrawProjGroupItem*>(it));
         if (!view) {
             //should never have a item in DPG that is not a DPGI.
@@ -415,7 +414,7 @@ bool DrawProjGroup::hasProjection(const char* viewProjType) const
 bool DrawProjGroup::canDelete(const char* viewProjType) const
 {
     //    Base::Console().message("DPG::canDelete(%s)\n", viewProjType);
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(dynamic_cast<TechDraw::DrawProjGroupItem*>(it));
         if (!view) {
             //should never have a item in DPG that is not a DPGI.
@@ -501,13 +500,13 @@ int DrawProjGroup::removeProjection(const char* viewProjType)
         }
 
         // Iterate through the child views and find the projection type
-        for (auto it : Views.getValues()) {
+        for (auto it : getViews()) {
             auto projPtr(dynamic_cast<TechDraw::DrawProjGroupItem*>(it));
             if (projPtr) {
                 if (strcmp(viewProjType, projPtr->Type.getValueAsString()) == 0) {
                     removeView(projPtr);                                 // Remove from collection
                     getDocument()->removeObject(it->getNameInDocument());// Remove from the document
-                    return Views.getValues().size();
+                    return getViews().size();
                 }
             }
             else {
@@ -526,8 +525,8 @@ int DrawProjGroup::removeProjection(const char* viewProjType)
 //removes all DPGI - used when deleting DPG
 int DrawProjGroup::purgeProjections()
 {
-    while (!Views.getValues().empty()) {
-        std::vector<DocumentObject*> views = Views.getValues();
+    while (!getViews().empty()) {
+        std::vector<DocumentObject*> views = getViews();
         DocumentObject* dObj = views.back();
         auto* dpgi = freecad_cast<DrawProjGroupItem*>(dObj);
         if (dpgi) {
@@ -546,7 +545,7 @@ int DrawProjGroup::purgeProjections()
         page->requestPaint();
     }
 
-    return Views.getValues().size();
+    return getViews().size();
 }
 
 std::pair<Base::Vector3d, Base::Vector3d> DrawProjGroup::getDirsFromFront(DrawProjGroupItem* view)
@@ -854,7 +853,7 @@ void DrawProjGroup::arrangeViewPointers(
     //                 FTRight  T  FTL          7  8  9
 
     bool thirdAngle = (strcmp(projType, "Third angle") == 0);
-    for (auto it : Views.getValues()) {
+    for (auto it : getViews()) {
         auto oView(freecad_cast<DrawProjGroupItem*>(it));
         if (!oView) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
@@ -932,7 +931,7 @@ void DrawProjGroup::makeViewBbs(std::array<DrawProjGroupItem*, MAXPROJECTIONCOUN
 void DrawProjGroup::recomputeChildren()
 {
     //    Base::Console().message("DPG::recomputeChildren() - waiting: %d\n", waitingForChildren());
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(freecad_cast<DrawProjGroupItem*>(it));
         if (!view) {
             throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
@@ -947,7 +946,7 @@ void DrawProjGroup::autoPositionChildren()
 {
     //    Base::Console().message("DPG::autoPositionChildren() - %s - waiting: %d\n",
     //                            getNameInDocument(), waitingForChildren());
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(freecad_cast<DrawProjGroupItem*>(it));
         if (!view) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
@@ -965,7 +964,7 @@ void DrawProjGroup::autoPositionChildren()
 void DrawProjGroup::updateChildrenScale()
 {
     //    Base::Console().message("DPG::updateChildrenScale() - waiting: %d\n", waitingForChildren());
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(freecad_cast<DrawProjGroupItem*>(it));
         if (!view) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
@@ -981,7 +980,7 @@ void DrawProjGroup::updateChildrenScale()
  */
 void DrawProjGroup::updateChildrenSource()
 {
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(freecad_cast<DrawProjGroupItem*>(it));
         if (!view) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
@@ -1005,7 +1004,7 @@ void DrawProjGroup::updateChildrenSource()
  */
 void DrawProjGroup::updateChildrenLock()
 {
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(freecad_cast<DrawProjGroupItem*>(it));
         if (!view) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
@@ -1020,7 +1019,7 @@ void DrawProjGroup::updateChildrenLock()
 
 void DrawProjGroup::updateChildrenEnforce(void)
 {
-    for (const auto it : Views.getValues()) {
+    for (const auto it : getViews()) {
         auto view(freecad_cast<DrawProjGroupItem*>(it));
         if (!view) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
@@ -1095,7 +1094,7 @@ void DrawProjGroup::updateSecondaryDirs()
 
     std::map<ProjDirection, std::pair<Base::Vector3d, Base::Vector3d>> saveVals;
     std::pair<Base::Vector3d, Base::Vector3d> data;
-    for (auto& docObj : Views.getValues()) {
+    for (auto& docObj : getViews()) {
         DrawProjGroupItem* v = static_cast<DrawProjGroupItem*>(docObj);
         ProjDirection t = static_cast<ProjDirection>(v->Type.getValue());
 
@@ -1110,7 +1109,7 @@ void DrawProjGroup::updateSecondaryDirs()
         }
     }
 
-    for (auto& docObj : Views.getValues()) {
+    for (auto& docObj : getViews()) {
         DrawProjGroupItem* v = static_cast<DrawProjGroupItem*>(docObj);
         ProjDirection type = static_cast<ProjDirection>(v->Type.getValue());
         data = saveVals[type];
@@ -1154,7 +1153,7 @@ void DrawProjGroup::spin(double angle)
 std::vector<DrawProjGroupItem*> DrawProjGroup::getViewsAsDPGI()
 {
     std::vector<DrawProjGroupItem*> result;
-    auto views = Views.getValues();
+    auto views = getViews();
     for (auto& v : views) {
         result.push_back(static_cast<DrawProjGroupItem*>(v));
     }
@@ -1169,7 +1168,7 @@ int DrawProjGroup::getDefProjConv() const { return Preferences::projectionAngle(
 void DrawProjGroup::dumpISO(const char* title)
 {
     Base::Console().message("DPG ISO: %s\n", title);
-    for (auto& docObj : Views.getValues()) {
+    for (auto& docObj : getViews()) {
         Base::Vector3d dir;
         Base::Vector3d axis;
         auto* v = static_cast<DrawProjGroupItem*>(docObj);
@@ -1217,7 +1216,7 @@ void DrawProjGroup::unsetupObject()
     if (getDocument() && !getDocument()->isAnyRestoring()) {
 
         std::vector<std::string> childNamesToDelete;
-        for (App::DocumentObject* child : Views.getValues()) {
+        for (App::DocumentObject* child : getViews()) {
             if (child) {
                 const char* name = child->getNameInDocument();
                 if (name) {

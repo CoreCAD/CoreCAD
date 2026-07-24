@@ -218,7 +218,7 @@ void TaskProjGroup::saveGroupState()
         DrawProjGroupItem* anchor = multiView->getAnchor();
         m_saveDirection = anchor->Direction.getValue();
 
-        for( const auto it : multiView->Views.getValues() ) {
+        for( const auto it : multiView->getViews() ) {
             auto view( dynamic_cast<DrawProjGroupItem *>(it) );
             if (view) {
                 m_saveViewNames.emplace_back(view->Type.getValueAsString());
@@ -262,7 +262,7 @@ void TaskProjGroup::viewToggled(bool toggle)
     if (!blockCheckboxes) {
         if (multiView) {
             // Check if only front is left. If so switch to normal view.
-            if (multiView->Views.getValues().size() == 2 && !toggle) {
+            if (multiView->getViews().size() == 2 && !toggle) {
                 turnProjGroupToView();
                 wc.restoreCursor();
                 return;
