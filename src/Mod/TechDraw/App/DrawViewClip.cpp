@@ -22,6 +22,7 @@
  ***************************************************************************/
 
 
+#include <App/Document.h>
 #include <App/Link.h>
 
 #include "DrawViewClip.h"
@@ -45,8 +46,8 @@ DrawViewClip::DrawViewClip()
     ADD_PROPERTY_TYPE(Height     ,(100), group, App::Prop_None, "The height of the view area of this clip");
     ADD_PROPERTY_TYPE(Width      ,(100), group, App::Prop_None, "The width of the view area of this clip");
     ADD_PROPERTY_TYPE(ShowFrame  ,(0) ,group, App::Prop_None, "Specifies if the clip frame appears on the page or not");
-    ADD_PROPERTY_TYPE(Views      ,(nullptr) ,group, App::Prop_None, "The Views in this Clip group");
-    Views.setScope(App::LinkScope::Global);
+    // Membership is not stored: a clipped view names this clip group through DrawView::ClipGroup,
+    // and getViews() derives the list. There is no Views property to declare.
 
     // hide N/A properties
     ScaleType.setStatus(App::Property::ReadOnly, true);
@@ -59,8 +60,7 @@ void DrawViewClip::onChanged(const App::Property* prop)
 {
     if ((prop == &Height) ||
         (prop == &Width) ||
-        (prop == &ShowFrame) ||
-        (prop == &Views)) {
+        (prop == &ShowFrame)) {
         requestPaint();
     }
     DrawView::onChanged(prop);
@@ -78,9 +78,9 @@ void DrawViewClip::addView(App::DocumentObject* docObj)
     }
     auto* view = static_cast<DrawView*>(docObj);
 
-    std::vector<App::DocumentObject*> newViews(Views.getValues());
-    newViews.push_back(docObj);
-    Views.setValues(newViews);
+    // The view joins the clip by naming it; the clip stores no member list.
+    view->ClipGroup.setValue(this);
+    touch();
     QRectF viewRect = view->getRectAligned();
     QPointF clipPoint(X.getValue(), Y.getValue());
     if (viewRect.contains(clipPoint)) {
@@ -105,30 +105,28 @@ void DrawViewClip::addView(App::DocumentObject* docObj)
 
 void DrawViewClip::removeView(App::DocumentObject* docObj)
 {
-    std::vector<App::DocumentObject *> newViews;
-    std::string viewName = docObj->getNameInDocument();
-    for (auto* view : Views.getValues()) {
-        if (viewName.compare(view->getNameInDocument()) != 0) {
-            newViews.push_back(view);
-        }
+    if (docObj->isDerivedFrom<App::Link>()) {
+        docObj = static_cast<App::Link*>(docObj)->getLinkedObject();
     }
-    Views.setValues(newViews);
+    auto* view = freecad_cast<DrawView*>(docObj);
+    if (view && view->ClipGroup.getValue() == this) {
+        view->ClipGroup.setValue(nullptr);
+        touch();
+    }
 }
 
 std::vector<App::DocumentObject*> DrawViewClip::getViews() const
 {
-    std::vector<App::DocumentObject*> views = Views.getValues();
+    // Derived, never stored: the members are the views naming this clip group.
     std::vector<App::DocumentObject*> allViews;
-    for (auto& v : views) {
-        if (v->isDerivedFrom<App::Link>()) {
-            v = static_cast<App::Link*>(v)->getLinkedObject();
+    if (!isAttachedToDocument()) {
+        return allViews;
+    }
+    for (auto* obj : getDocument()->getObjectsOfType<DrawView>()) {
+        auto* view = static_cast<DrawView*>(obj);
+        if (view->getClipGroup() == this) {
+            allViews.push_back(view);
         }
-
-        if (!v->isDerivedFrom<DrawView>()) {
-            continue;
-        }
-
-        allViews.push_back(v);
     }
     return allViews;
 }
@@ -157,8 +155,7 @@ short DrawViewClip::mustExecute() const
 {
     if (!isRestoring()) {
         if (Height.isTouched() ||
-            Width.isTouched() ||
-            Views.isTouched()) {
+            Width.isTouched()) {
             return 1;
         }
     }
