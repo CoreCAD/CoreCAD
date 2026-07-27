@@ -55,6 +55,7 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <Base/Console.h>
+#include <Base/PlacementPy.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Mod/Part/App/ImportIges.h>
 #include <Mod/Part/App/ImportStep.h>
@@ -65,6 +66,7 @@
 #include <Mod/Part/App/encodeFilename.h>
 
 #include "ImportOCAF2.h"
+#include "ReadAssemblyStructure.h"
 #include "ReaderGltf.h"
 #include "ReaderIges.h"
 #include "ReaderStep.h"
@@ -90,6 +92,16 @@ public:
             "insert",
             &Module::importer,
             "insert(string,string) -- Insert the file into the given document."
+        );
+        add_varargs_method(
+            "readAssemblyStructure",
+            &Module::readAssemblyStructure,
+            "readAssemblyStructure(string) -> dict\n\n"
+            "Read the assembly structure of a STEP/IGES file without creating any\n"
+            "document objects. Returns {'name': str, 'components': [ {'name': str,\n"
+            "'shape': Part.Shape, 'placement': Placement, 'is_assembly': bool}, ... ]}\n"
+            "where each component's shape is local (prototype-frame) geometry and its\n"
+            "placement is the instance pose within the assembly."
         );
         add_keyword_method(
             "export",
@@ -244,6 +256,66 @@ private:
         }
 
         return Py::None();
+    }
+    Py::Object readAssemblyStructure(const Py::Tuple& args)
+    {
+        char* Name = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "et", "utf-8", &Name)) {
+            throw Py::Exception();
+        }
+        std::string Utf8Name = std::string(Name);
+        PyMem_Free(Name);
+
+        try {
+            Base::FileInfo file(Utf8Name.c_str());
+
+            Handle(XCAFApp_Application) hApp = XCAFApp_Application::GetApplication();
+            Handle(TDocStd_Document) hDoc;
+            hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
+
+            if (file.hasExtension({"stp", "step"})) {
+                Import::ReaderStep reader(file);
+                reader.read(hDoc);
+            }
+            else if (file.hasExtension({"igs", "iges"})) {
+                Import::ReaderIges reader(file);
+                reader.read(hDoc);
+            }
+            else {
+                throw Py::Exception(PyExc_IOError, "unsupported file format for assembly structure");
+            }
+
+            Import::ReadAssemblyStructure structure(hDoc);
+            hApp->Close(hDoc);
+
+            Py::List components;
+            for (const auto& comp : structure.components()) {
+                Py::Dict item;
+                item.setItem("name", Py::String(comp.name));
+                item.setItem(
+                    "shape",
+                    Py::asObject(new Part::TopoShapePy(new Part::TopoShape(comp.shape)))
+                );
+                item.setItem(
+                    "placement",
+                    Py::asObject(new Base::PlacementPy(new Base::Placement(comp.placement)))
+                );
+                item.setItem("is_assembly", Py::Boolean(comp.isAssembly));
+                components.append(item);
+            }
+
+            Py::Dict result;
+            result.setItem("name", Py::String(structure.rootName()));
+            result.setItem("components", components);
+            return result;
+        }
+        catch (Standard_Failure& e) {
+            throw Py::Exception(Base::PyExc_FC_GeneralError, e.GetMessageString());
+        }
+        catch (const Base::Exception& e) {
+            e.setPyException();
+            throw Py::Exception();
+        }
     }
     Py::Object exporter(const Py::Tuple& args, const Py::Dict& kwds)
     {
