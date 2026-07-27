@@ -691,6 +691,30 @@ def addComponent(assembly, linkedObject, placement=None, label=None, name="Compo
     return link
 
 
+def addSubAssembly(
+    assembly, subAssembly, placement=None, rigid=True, label=None, name="SubAssembly"
+):
+    """Insert a sub-assembly instance into ``assembly`` as an ``Assembly::AssemblyLink``.
+
+    ``subAssembly`` is the ``AssemblyObject`` of another (saved) assembly document. The
+    link carries the instance ``placement``. When ``rigid`` is True the sub-assembly moves
+    as one block; when False its own joints are honoured (the caller is then responsible
+    for grounding an internal part so the flexible sub-assembly has a fixed base). Returns
+    the AssemblyLink.
+    """
+    link = assembly.newObject("Assembly::AssemblyLink", name)
+    link.LinkedObject = subAssembly
+    if label:
+        link.Label = label
+    # Position first, then set Rigid: AssemblyLink::onChanged uses the placement already
+    # in place to reposition its internal parts when the rigid flag flips.
+    if placement is not None:
+        link.Placement = placement
+    link.recompute()
+    link.Rigid = rigid
+    return link
+
+
 def groundComponent(assembly, component):
     """Ground ``component`` so the solver has a fixed base to solve against.
 

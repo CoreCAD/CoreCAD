@@ -51,8 +51,12 @@ struct ImportExport AssemblyComponent
     Part::TopoShape shape;
     Base::Placement placement;
     /// True when the referred prototype is itself an assembly (a nested
-    /// sub-assembly). The caller decides how to handle nesting.
+    /// sub-assembly). When set, `children` holds its direct components.
     bool isAssembly {false};
+    /// Direct components of this instance when it is a sub-assembly; empty for a
+    /// leaf part. The tree is read to full depth so a caller can build a live
+    /// assembly for each level.
+    std::vector<AssemblyComponent> children;
 };
 
 /// Reads the direct component structure of a STEP/IGES assembly document
@@ -81,7 +85,11 @@ public:
 
 private:
     void read();
-    void addComponent(const TDF_Label& component);
+    /// Build the component for a single instance label, recursing to full depth
+    /// when the referred prototype is itself an assembly.
+    AssemblyComponent buildComponent(const TDF_Label& component);
+    /// Append the direct components of an assembly prototype label to `out`.
+    void readComponentsInto(const TDF_Label& assembly, std::vector<AssemblyComponent>& out);
     std::string labelName(const TDF_Label& label) const;
 
     Handle(XCAFDoc_ShapeTool) shapeTool_;

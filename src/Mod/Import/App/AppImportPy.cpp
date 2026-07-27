@@ -77,6 +77,33 @@
 namespace Import
 {
 
+namespace
+{
+/// Convert one read component (and, recursively, its sub-assembly children) into
+/// the Python dict shape returned by readAssemblyStructure.
+Py::Dict componentToDict(const AssemblyComponent& comp);
+
+Py::List componentsToList(const std::vector<AssemblyComponent>& components)
+{
+    Py::List list;
+    for (const auto& comp : components) {
+        list.append(componentToDict(comp));
+    }
+    return list;
+}
+
+Py::Dict componentToDict(const AssemblyComponent& comp)
+{
+    Py::Dict item;
+    item.setItem("name", Py::String(comp.name));
+    item.setItem("shape", Py::asObject(new Part::TopoShapePy(new Part::TopoShape(comp.shape))));
+    item.setItem("placement", Py::asObject(new Base::PlacementPy(new Base::Placement(comp.placement))));
+    item.setItem("is_assembly", Py::Boolean(comp.isAssembly));
+    item.setItem("children", componentsToList(comp.children));
+    return item;
+}
+}  // namespace
+
 class Module: public Py::ExtensionModule<Module>
 {
 public:
@@ -99,9 +126,11 @@ public:
             "readAssemblyStructure(string) -> dict\n\n"
             "Read the assembly structure of a STEP/IGES file without creating any\n"
             "document objects. Returns {'name': str, 'components': [ {'name': str,\n"
-            "'shape': Part.Shape, 'placement': Placement, 'is_assembly': bool}, ... ]}\n"
-            "where each component's shape is local (prototype-frame) geometry and its\n"
-            "placement is the instance pose within the assembly."
+            "'shape': Part.Shape, 'placement': Placement, 'is_assembly': bool,\n"
+            "'children': [...]}, ... ]} where each component's shape is local\n"
+            "(prototype-frame) geometry and its placement is the instance pose within\n"
+            "the assembly. A sub-assembly component carries its own direct components\n"
+            "under 'children', recursively, to full depth."
         );
         add_keyword_method(
             "export",
@@ -288,25 +317,9 @@ private:
             Import::ReadAssemblyStructure structure(hDoc);
             hApp->Close(hDoc);
 
-            Py::List components;
-            for (const auto& comp : structure.components()) {
-                Py::Dict item;
-                item.setItem("name", Py::String(comp.name));
-                item.setItem(
-                    "shape",
-                    Py::asObject(new Part::TopoShapePy(new Part::TopoShape(comp.shape)))
-                );
-                item.setItem(
-                    "placement",
-                    Py::asObject(new Base::PlacementPy(new Base::Placement(comp.placement)))
-                );
-                item.setItem("is_assembly", Py::Boolean(comp.isAssembly));
-                components.append(item);
-            }
-
             Py::Dict result;
             result.setItem("name", Py::String(structure.rootName()));
-            result.setItem("components", components);
+            result.setItem("components", componentsToList(structure.components()));
             return result;
         }
         catch (Standard_Failure& e) {
