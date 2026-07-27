@@ -27,7 +27,8 @@
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
-#include <Gui/ViewProviderPart.h>
+#include <Gui/ViewProviderGeometryObject.h>
+#include <Gui/ViewProviderGeoFeatureGroupExtension.h>
 
 
 namespace Gui
@@ -38,10 +39,14 @@ class LinkView;
 namespace AssemblyGui
 {
 
-class AssemblyGuiExport ViewProviderAssemblyLink: public Gui::ViewProviderPart
+// A sub-assembly reference is a placed geometry group without an Origin: it pairs
+// ViewProviderGeometryObject (scene/material node) with the plain geo-feature-group
+// extension, mirroring the App-side AssemblyLink (GeoFeature + GeoFeatureGroupExtension).
+class AssemblyGuiExport ViewProviderAssemblyLink: public Gui::ViewProviderGeometryObject,
+                                                  public Gui::ViewProviderGeoFeatureGroupExtension
 {
     Q_DECLARE_TR_FUNCTIONS(AssemblyGui::ViewProviderAssemblyLink)
-    PROPERTY_HEADER_WITH_OVERRIDE(AssemblyGui::ViewProviderAssemblyLink);
+    PROPERTY_HEADER_WITH_EXTENSIONS(AssemblyGui::ViewProviderAssemblyLink);
 
 public:
     ViewProviderAssemblyLink();

@@ -32,7 +32,6 @@
 #include <App/Link.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
-#include <App/Part.h>
 
 #include <Gui/Action.h>
 #include <Gui/ActionFunction.h>
@@ -58,10 +57,11 @@ using namespace Assembly;
 using namespace AssemblyGui;
 
 
-PROPERTY_SOURCE(AssemblyGui::ViewProviderAssemblyLink, Gui::ViewProviderPart)
+PROPERTY_SOURCE_WITH_EXTENSIONS(AssemblyGui::ViewProviderAssemblyLink, Gui::ViewProviderGeometryObject)
 
 ViewProviderAssemblyLink::ViewProviderAssemblyLink()
 {
+    Gui::ViewProviderGeoFeatureGroupExtension::initExtension(this);
     linkView = new Gui::LinkView;
 }
 
@@ -72,7 +72,7 @@ ViewProviderAssemblyLink::~ViewProviderAssemblyLink()
 
 void ViewProviderAssemblyLink::attach(App::DocumentObject* obj)
 {
-    ViewProviderPart::attach(obj);
+    ViewProviderGeometryObject::attach(obj);
     linkView->setOwner(this);
     // Render the linked assembly's geometry beneath this instance's root. pcRoot already
     // carries this AssemblyLink's Placement (via pcTransform), so the linked snapshot is
@@ -83,7 +83,7 @@ void ViewProviderAssemblyLink::attach(App::DocumentObject* obj)
 
 void ViewProviderAssemblyLink::updateData(const App::Property* prop)
 {
-    ViewProviderPart::updateData(prop);
+    ViewProviderGeometryObject::updateData(prop);
 
     auto* link = freecad_cast<AssemblyLink*>(getObject());
     if (link && (prop == &link->LinkedObject || prop == &link->Rigid)) {
@@ -93,7 +93,7 @@ void ViewProviderAssemblyLink::updateData(const App::Property* prop)
 
 void ViewProviderAssemblyLink::finishRestoring()
 {
-    ViewProviderPart::finishRestoring();
+    ViewProviderGeometryObject::finishRestoring();
     // On reload the linked view provider may not have existed when attach() ran; rebuild now.
     updateLinkView();
 }
@@ -128,7 +128,7 @@ bool ViewProviderAssemblyLink::getElementPicked(const SoPickedPoint* pp, std::st
     if (linkView->isLinked() && linkView->linkGetElementPicked(pp, subname)) {
         return true;
     }
-    return ViewProviderPart::getElementPicked(pp, subname);
+    return ViewProviderGeometryObject::getElementPicked(pp, subname);
 }
 
 bool ViewProviderAssemblyLink::getDetailPath(
@@ -152,7 +152,7 @@ bool ViewProviderAssemblyLink::getDetailPath(
         }
         pPath->truncate(len);
     }
-    return ViewProviderPart::getDetailPath(subname, pPath, append, det);
+    return ViewProviderGeometryObject::getDetailPath(subname, pPath, append, det);
 }
 
 QIcon ViewProviderAssemblyLink::getIcon() const
@@ -175,7 +175,7 @@ bool ViewProviderAssemblyLink::setEdit(int mode)
         return true;
     }
 
-    return ViewProviderPart::setEdit(mode);
+    return ViewProviderGeometryObject::setEdit(mode);
 }
 
 bool ViewProviderAssemblyLink::doubleClicked()
@@ -238,7 +238,7 @@ bool ViewProviderAssemblyLink::onDelete(const std::vector<std::string>& subNames
 
     // getObject()->purgeTouched();
 
-    return ViewProviderPart::onDelete(subNames);
+    return ViewProviderGeometryObject::onDelete(subNames);
 }
 
 void ViewProviderAssemblyLink::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)

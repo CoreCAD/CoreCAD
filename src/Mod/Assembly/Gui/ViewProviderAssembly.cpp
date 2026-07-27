@@ -871,6 +871,7 @@ void ViewProviderAssembly::collectMovableObjects(
     if (onlySolids
         && !(
             currentObject->isDerivedFrom<App::Part>()
+            || currentObject->isDerivedFrom<Assembly::AssemblyLink>()
             || currentObject->isDerivedFrom<Part::ShapeFeature>()
             || currentObject->isDerivedFrom<App::Link>()
             || currentObject->isDerivedFrom<App::LinkElement>()
@@ -1459,6 +1460,19 @@ void ViewProviderAssembly::applyIsolationRecursively(
             }
         }
         for (auto* child : part->Group.getValues()) {
+            applyIsolationRecursively(child, isolateSet, mode, visited);
+        }
+        return;
+    }
+    else if (auto* asmLink = dynamic_cast<Assembly::AssemblyLink*>(current)) {
+        // A sub-assembly carries no material override either; recurse into its components
+        // the same way as an App::Part container.
+        if (isolate) {
+            for (auto* child : asmLink->Group.getValues()) {
+                isolateSet.insert(child);
+            }
+        }
+        for (auto* child : asmLink->Group.getValues()) {
             applyIsolationRecursively(child, isolateSet, mode, visited);
         }
         return;
