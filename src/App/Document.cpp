@@ -2002,8 +2002,13 @@ bool Document::admitsContentScope(DocumentObject::ContentScope scope) const
 
 std::string Document::fileExtensionForType(const char* type)
 {
-    if (!Base::Tools::isNullOrEmpty(type) && boost::iequals(type, DocTypePart)) {
-        return "cpart";
+    if (!Base::Tools::isNullOrEmpty(type)) {
+        if (boost::iequals(type, DocTypePart)) {
+            return "cpart";
+        }
+        if (boost::iequals(type, DocTypeAssembly)) {
+            return "cassembly";
+        }
     }
     return "FCStd";
 }
@@ -2011,6 +2016,35 @@ std::string Document::fileExtensionForType(const char* type)
 std::string Document::documentFileExtension() const
 {
     return fileExtensionForType(DocumentType.getStrValue().c_str());
+}
+
+std::vector<std::string> Document::nativeFormatExtensions()
+{
+    // The universal container extension plus every type-specific extension derived from the
+    // DocumentType markers (fileExtensionForType is the authority). A new document type gains
+    // its extension there and is picked up here automatically -- the open/merge/import dialogs
+    // and the cross-link resolver all read this one list rather than duplicating literals.
+    std::vector<std::string> exts {"FCStd"};
+    for (const char* type : {DocTypePart, DocTypeAssembly, DocTypeDrawing, DocTypeSpreadsheet}) {
+        std::string ext = fileExtensionForType(type);
+        if (std::find(exts.begin(), exts.end(), ext) == exts.end()) {
+            exts.push_back(ext);
+        }
+    }
+    return exts;
+}
+
+bool Document::isNativeFormatExtension(const char* ext)
+{
+    if (Base::Tools::isNullOrEmpty(ext)) {
+        return false;
+    }
+    for (const std::string& known : nativeFormatExtensions()) {
+        if (boost::iequals(ext, known)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool Document::saveAs(const char* _file)

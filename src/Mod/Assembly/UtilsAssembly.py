@@ -649,6 +649,59 @@ def getJointGroup(assembly):
     return joint_group
 
 
+# ---------------------------------------------------------------------------
+# Headless assembly construction
+#
+# The minimal App-layer primitives for building a live assembly without any GUI.
+# The Insert Component command and the STEP importer both compose the very same
+# calls; keeping them here means one construction path, exercised by tests, that
+# both consumers stand on. An assembly is its own document (one assembly per file,
+# per section 7.1): createAssembly mints the typed document, so the content-scope
+# door is active and a component can only ever be a cross-document reference.
+# ---------------------------------------------------------------------------
+
+
+def createAssembly(name="Assembly"):
+    """Create a typed Assembly document holding an AssemblyObject and its JointGroup.
+
+    Returns the AssemblyObject; its `.Document` is the freshly created ``.cassembly``
+    document. Because the document is typed at birth, it admits no owned geometry --
+    every component added afterwards is a reference into another document.
+    """
+    doc = App.newDocument(type=App.DocTypeAssembly)
+    assembly = doc.addObject("Assembly::AssemblyObject", name)
+    getJointGroup(assembly)
+    return assembly
+
+
+def addComponent(assembly, linkedObject, placement=None, label=None, name="Component"):
+    """Insert a component instance into ``assembly``.
+
+    A component is an ``App::Link`` living in the assembly that references
+    ``linkedObject`` in another document. The optional ``placement`` is the
+    instance's pose within the assembly (the link carries it); the referenced
+    document's own content keeps its internal frame. Returns the App::Link.
+    """
+    link = assembly.newObject("App::Link", name)
+    link.LinkedObject = linkedObject
+    if label:
+        link.Label = label
+    if placement is not None:
+        link.Placement = placement
+    return link
+
+
+def groundComponent(assembly, component):
+    """Ground ``component`` so the solver has a fixed base to solve against.
+
+    Creates a GroundedJoint in the assembly's JointGroup. Returns the joint.
+    """
+    joint_group = getJointGroup(assembly)
+    ground = joint_group.newObject("Assembly::GroundedJoint", "GroundedJoint")
+    ground.ObjectToGround = component
+    return ground
+
+
 def getViewGroup(assembly):
     view_group = None
 
