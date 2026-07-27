@@ -1896,10 +1896,12 @@ unsigned int Document::getMemSize() const
 }
 
 // Cruth: extensions the save path recognizes as an already-complete document name,
-// so it does not append the type-derived one on top (which produced ".cpart.FCStd").
+// so it does not append the type-derived one on top (which produced ".cpart.FCStd" and
+// ".cassembly.cassembly"). Delegates to the single source of truth for native document
+// extensions so a new document type's extension is honored here automatically.
 static bool isKnownDocumentExtension(const char* ext)
 {
-    return boost::iequals(ext, "FCStd") || boost::iequals(ext, "cpart");
+    return Document::isNativeFormatExtension(ext);
 }
 
 // docExt is the document's own extension (without dot), derived from its type marker.

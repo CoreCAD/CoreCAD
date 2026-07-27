@@ -32,6 +32,7 @@ set(Assembly_Scripts
     JointObject.py
     Preferences.py
     AssemblyImport.py
+    AssemblyStepImport.py
     SoSwitchMarker.py
     UtilsAssembly.py
 )
@@ -58,6 +59,7 @@ SET(AssemblyTests_SRCS
     AssemblyTests/TestCommandInsertLink.py
     AssemblyTests/TestSubAssembly.py
     AssemblyTests/TestAssemblyBuilder.py
+    AssemblyTests/TestStepAssemblyImport.py
     AssemblyTests/mocks/__init__.py
     AssemblyTests/mocks/MockGui.py
 )
