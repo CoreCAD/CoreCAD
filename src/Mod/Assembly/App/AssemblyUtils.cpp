@@ -602,7 +602,8 @@ App::DocumentObject* getObjFromRef(App::DocumentObject* comp, const std::string&
             return obj;
         }
 
-        if (obj->isDerivedFrom<App::Part>() || obj->isLinkGroup()) {
+        if (obj->isDerivedFrom<App::Part>() || obj->isDerivedFrom<Assembly::AssemblyLink>()
+            || obj->isLinkGroup()) {
             continue;
         }
         else if (obj->isDerivedFrom<PartDesign::Body>()) {

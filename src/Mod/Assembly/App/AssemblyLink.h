@@ -26,10 +26,14 @@
 
 #include <unordered_map>
 
+#include <QCoreApplication>
+
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <App/FeaturePython.h>
-#include <App/Part.h>
+#include <App/GeoFeature.h>
+#include <App/GeoFeatureGroupExtension.h>
+#include <App/PlacementExtension.h>
 #include <App/PropertyLinks.h>
 
 
@@ -38,9 +42,12 @@ namespace Assembly
 class AssemblyObject;
 class JointGroup;
 
-class AssemblyExport AssemblyLink: public App::Part
+class AssemblyExport AssemblyLink: public App::GeoFeature,
+                                   public App::GeoFeatureGroupExtension,
+                                   public App::PlacementExtension
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Assembly::AssemblyLink);
+    PROPERTY_HEADER_WITH_EXTENSIONS(Assembly::AssemblyLink);
+    Q_DECLARE_TR_FUNCTIONS(Assembly::AssemblyLink)
 
 public:
     AssemblyLink();

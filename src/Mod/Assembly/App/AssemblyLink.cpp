@@ -55,10 +55,13 @@ using namespace Assembly;
 
 // ================================ Assembly Object ============================
 
-PROPERTY_SOURCE(Assembly::AssemblyLink, App::Part)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Assembly::AssemblyLink, App::GeoFeature)
 
 AssemblyLink::AssemblyLink()
 {
+    App::GroupExtension::initExtension(this);
+    App::PlacementExtension::initExtension(this);
+
     ADD_PROPERTY_TYPE(
         Rigid,
         (true),
@@ -92,7 +95,7 @@ App::DocumentObjectExecReturn* AssemblyLink::execute()
 {
     updateContents();
 
-    return App::Part::execute();
+    return App::GeoFeature::execute();
 }
 
 App::DocumentObject* AssemblyLink::getSubObject(
@@ -105,7 +108,7 @@ App::DocumentObject* AssemblyLink::getSubObject(
 {
     // Flexible sub-assemblies still own a proxy graph (#63); defer to the base container.
     if (!isRigid()) {
-        return App::Part::getSubObject(subname, pyObj, mat, transform, depth);
+        return App::GeoFeature::getSubObject(subname, pyObj, mat, transform, depth);
     }
 
     // Rigid: apply our own instance placement, then resolve the remainder across the
@@ -130,7 +133,7 @@ App::DocumentObject* AssemblyLink::getSubObject(
 void AssemblyLink::onChanged(const App::Property* prop)
 {
     if (App::GetApplication().isRestoring()) {
-        App::Part::onChanged(prop);
+        App::GeoFeature::onChanged(prop);
         return;
     }
 
@@ -211,7 +214,7 @@ void AssemblyLink::onChanged(const App::Property* prop)
                 std::vector<App::DocumentObject*> group = Group.getValues();
                 for (auto* obj : group) {
                     if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-                        && !obj->isDerivedFrom<App::Link>()) {
+                        && !obj->isDerivedFrom<App::Link>() && !obj->isDerivedFrom<AssemblyLink>()) {
                         continue;
                     }
 
@@ -254,7 +257,7 @@ void AssemblyLink::onChanged(const App::Property* prop)
         }
         return;
     }
-    App::Part::onChanged(prop);
+    App::GeoFeature::onChanged(prop);
 }
 
 void AssemblyLink::updateParentJoints()
@@ -361,7 +364,7 @@ void AssemblyLink::synchronizeComponents()
         // Flexible sub-assemblies still materialise an owned proxy graph (#63).
         for (auto* obj : Group.getValues()) {
             if (obj->isDerivedFrom<App::Part>() || obj->isDerivedFrom<PartApp::Feature>()
-                || obj->isDerivedFrom<App::Link>()) {
+                || obj->isDerivedFrom<App::Link>() || obj->isDerivedFrom<AssemblyLink>()) {
                 doc->removeObject(obj->getNameInDocument());
             }
         }
@@ -407,7 +410,7 @@ void AssemblyLink::synchronizeComponents()
     // We check if a component needs to be added to the AssemblyLink
     for (auto* obj : topLevelComponents) {
         if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-            && !obj->isDerivedFrom<App::Link>()) {
+            && !obj->isDerivedFrom<App::Link>() && !obj->isDerivedFrom<AssemblyLink>()) {
             continue;
         }
 
@@ -527,7 +530,7 @@ void AssemblyLink::synchronizeComponents()
         // We don't need to update assemblyLinkGroup after the addition since we're not removing
         // something we just added.
         if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-            && !obj->isDerivedFrom<App::Link>()) {
+            && !obj->isDerivedFrom<App::Link>() && !obj->isDerivedFrom<AssemblyLink>()) {
             continue;
         }
         if (validLinks.find(obj) == validLinks.end()) {

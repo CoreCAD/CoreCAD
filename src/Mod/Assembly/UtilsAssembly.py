@@ -790,7 +790,7 @@ def getSubMovingParts(obj, partsAsSolid):
     if obj.isDerivedFrom("Part::Feature"):
         return [obj]
 
-    elif obj.isDerivedFrom("App::Part"):
+    elif obj.isDerivedFrom("App::Part") or obj.isDerivedFrom("Assembly::AssemblyLink"):
         objs = []
         if not partsAsSolid:
             objs = getMovablePartsWithin(obj)
@@ -861,9 +861,12 @@ def getObjMassAndCom(obj, containingPart=None):
     elif (
         isLinkGroup(obj)
         or obj.isDerivedFrom("App::Part")
+        or obj.isDerivedFrom("Assembly::AssemblyLink")
         or obj.isDerivedFrom("App::DocumentObjectGroup")
     ):
-        if containingPart is None and obj.isDerivedFrom("App::Part"):
+        if containingPart is None and (
+            obj.isDerivedFrom("App::Part") or obj.isDerivedFrom("Assembly::AssemblyLink")
+        ):
             containingPart = obj
 
         total_mass = 0
