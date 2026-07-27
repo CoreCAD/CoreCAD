@@ -27,7 +27,8 @@ The reader (Import.readAssemblyStructure) mints no document objects, and the
 translator turns its output into standalone .cpart leaves plus a .cassembly that
 links them. These tests assert the observable contract: no App::Part is ever
 created, each component's world pose is preserved, the result is a solvable live
-assembly, and a nested source is refused rather than silently flattened.
+assembly, and a nested source recurses -- each sub-assembly becoming its own
+.cassembly linked into its parent by an Assembly::AssemblyLink.
 """
 
 import os
@@ -68,6 +69,29 @@ class TestStepAssemblyImport(unittest.TestCase):
         doc.recompute()
         path = os.path.join(self.tmp, "flat.step")
         Import.export([box, cyl], path)
+        App.closeDocument(doc.Name)
+        return path
+
+    def _nested_step(self):
+        """A two-level STEP: Outer holds a Base box and a placed Inner sub-assembly
+        (which holds a single placed Pin cylinder). Built by exporting nested App::Parts
+        purely to author the STEP hierarchy; the import under test creates no App::Part."""
+        doc = App.newDocument("nestedsrc")
+        outer = doc.addObject("App::Part", "Outer")
+        box = doc.addObject("Part::Box", "Base")
+        box.Length = box.Width = box.Height = 10
+        inner = doc.addObject("App::Part", "Inner")
+        inner.Placement = App.Placement(App.Vector(100, 0, 0), App.Rotation())
+        pin = doc.addObject("Part::Cylinder", "Pin")
+        pin.Radius = 3
+        pin.Height = 15
+        pin.Placement = App.Placement(App.Vector(0, 50, 0), App.Rotation())
+        inner.addObject(pin)
+        outer.addObject(box)
+        outer.addObject(inner)
+        doc.recompute()
+        path = os.path.join(self.tmp, "nested.step")
+        Import.export([outer], path)
         App.closeDocument(doc.Name)
         return path
 
@@ -132,13 +156,85 @@ class TestStepAssemblyImport(unittest.TestCase):
         self.assertLess((centers["B1"] - App.Vector(5, 5, 5)).Length, 1e-6)
         self.assertLess((centers["B2"] - App.Vector(60, 0, 0)).Length, 1e-6)
 
-    def test_nested_assembly_is_refused(self):
-        """A nested STEP is refused, not silently flattened (single-level only)."""
-        nested = "data/tests/Step/as1-ac-214_small.stp"
-        if not os.path.exists(nested):
-            self.skipTest("nested STEP fixture not available")
-        with self.assertRaises(NotImplementedError):
-            AssemblyStepImport.importAssembly(nested, dest_dir=self.tmp)
+    def test_nested_step_imports_recursively(self):
+        """A nested STEP recurses: each sub-assembly becomes its own .cassembly,
+        linked into its parent by an Assembly::AssemblyLink; leaves stay App::Link."""
+        path = self._nested_step()
+
+        assembly = AssemblyStepImport.importAssembly(path)
+
+        # Top level: the Base leaf is an App::Link into a .cpart; the Inner sub-assembly
+        # is an Assembly::AssemblyLink into a separate .cassembly. (A flexible sub-assembly
+        # also surfaces proxy App::Links pointing into that .cassembly -- not leaves.)
+        leaf_links = [
+            o
+            for o in assembly.Document.Objects
+            if o.TypeId == "App::Link" and o.LinkedObject.Document.FileName.endswith(".cpart")
+        ]
+        sub_links = [o for o in assembly.Document.Objects if o.TypeId == "Assembly::AssemblyLink"]
+        self.assertEqual([link.Label for link in leaf_links], ["Base"])
+        self.assertEqual(len(sub_links), 1)
+
+        sub = sub_links[0]
+        self.assertIsNot(sub.LinkedObject.Document, assembly.Document)
+        self.assertEqual(sub.LinkedObject.Document.DocumentType, "Assembly")
+        self.assertTrue(sub.LinkedObject.Document.FileName.endswith(".cassembly"))
+        self.assertEqual(sub.LinkedObject.TypeId, "Assembly::AssemblyObject")
+
+        # Both levels solve, and no App::Part exists anywhere.
+        self.assertEqual(assembly.solve(), 0)
+        self.assertEqual(sub.LinkedObject.solve(), 0)
+        for doc in App.listDocuments().values():
+            parts = [o for o in doc.Objects if o.TypeId == "App::Part"]
+            self.assertEqual(parts, [], f"App::Part leaked into {doc.Name}")
+
+    def test_nested_sub_assembly_link_rigidity_follows_flag(self):
+        """The sub-assembly link is flexible by default and rigid when asked."""
+        path = self._nested_step()
+
+        flexible = AssemblyStepImport.importAssembly(path, rigid=False)
+        sub = [o for o in flexible.Document.Objects if o.TypeId == "Assembly::AssemblyLink"][0]
+        self.assertFalse(sub.Rigid)
+        self.assertEqual(flexible.solve(), 0)
+
+        for doc in list(App.listDocuments().values()):
+            App.closeDocument(doc.Name)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.makedirs(self.tmp, exist_ok=True)
+
+        path = self._nested_step()
+        rigid = AssemblyStepImport.importAssembly(path, rigid=True)
+        sub = [o for o in rigid.Document.Objects if o.TypeId == "Assembly::AssemblyLink"][0]
+        self.assertTrue(sub.Rigid)
+        self.assertEqual(rigid.solve(), 0)
+
+    def test_nested_world_placement_is_preserved(self):
+        """A leaf deep inside a sub-assembly keeps its world pose through the nesting."""
+        path = self._nested_step()
+
+        assembly = AssemblyStepImport.importAssembly(path)
+
+        sub = [o for o in assembly.Document.Objects if o.TypeId == "Assembly::AssemblyLink"][0]
+        pin = [c for c in sub.Group if c.Label.startswith("Pin")][0]
+        world_center = pin.Placement.multVec(pin.LinkedObject.Shape.BoundBox.Center)
+
+        # Pin (r3/h15) center local (0,0,7.5); placed (0,50,0) in Inner; Inner at
+        # (100,0,0) in Outer -> world (100,50,7.5).
+        self.assertLess((world_center - App.Vector(100, 50, 7.5)).Length, 1e-6)
+
+    def test_nested_reopens_from_disk(self):
+        """Closing everything and reopening only the top .cassembly pulls the whole
+        tree back from disk and still solves."""
+        path = self._nested_step()
+
+        assembly = AssemblyStepImport.importAssembly(path)
+        top_file = assembly.Document.FileName
+        for doc in list(App.listDocuments().values()):
+            App.closeDocument(doc.Name)
+
+        reopened = App.openDocument(top_file)
+        top = [o for o in reopened.Objects if o.TypeId == "Assembly::AssemblyObject"][0]
+        self.assertEqual(top.solve(), 0)
 
 
 if __name__ == "__main__":

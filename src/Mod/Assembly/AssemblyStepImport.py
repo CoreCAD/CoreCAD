@@ -24,14 +24,17 @@
 """Import a STEP/IGES assembly as a *live* CoreCAD assembly.
 
 This is a thin translator. The honest structured reader (Import.readAssemblyStructure)
-walks the STEP/IGES tree and hands back, per top-level component, its local geometry
-and its instance placement -- minting no document objects. This module writes each
-component to its own ``.cpart`` document and drives the headless assembly builder
-(UtilsAssembly) to produce a ``.cassembly`` that links those parts at their imported
-placements. No ``App::Part`` is involved anywhere.
+walks the STEP/IGES tree to full depth and hands back, per component, its local geometry,
+its instance placement, and (for a sub-assembly) its own children -- minting no document
+objects. This module writes each leaf component to its own ``.cpart`` document and drives
+the headless assembly builder (UtilsAssembly) to produce a ``.cassembly`` per assembly
+level: a leaf is linked with an ``App::Link``, a nested sub-assembly gets its own
+``.cassembly`` (built first) and is linked into its parent with an ``Assembly::AssemblyLink``.
+No ``App::Part`` is involved anywhere.
 
-Only single-level assemblies are handled for now; a nested sub-assembly is refused
-rather than silently flattened.
+Nested sub-assemblies are imported recursively. All files for one import land in a single
+folder; leaf parts, every sub-assembly, and the top assembly each get a uniquely named
+file there.
 """
 
 import os
@@ -54,16 +57,21 @@ def _unique_name(base, used):
     return candidate
 
 
-def importAssembly(step_path, dest_dir=None):
-    """Import ``step_path`` (a single-level STEP/IGES assembly) as a live assembly.
+def importAssembly(step_path, dest_dir=None, rigid=False):
+    """Import ``step_path`` (a STEP/IGES assembly, nested to any depth) as a live assembly.
 
-    Each component becomes a standalone ``.cpart`` document holding its local
-    geometry; a ``.cassembly`` document links them at their imported placements and
-    grounds the first. All files are written to ``dest_dir`` (default: a folder named
-    after the source file, beside it). Returns the AssemblyObject.
+    Each leaf component becomes a standalone ``.cpart`` document holding its local
+    geometry; each assembly level becomes a ``.cassembly`` that links its components at
+    their imported placements and grounds the first. A nested sub-assembly is built into
+    its own ``.cassembly`` and linked into its parent with an ``Assembly::AssemblyLink``.
+    All files are written to ``dest_dir`` (default: a folder named after the source file,
+    beside it). Returns the top-level AssemblyObject.
 
-    Raises NotImplementedError if the file contains nested sub-assemblies, and
-    ValueError if it contains no components.
+    ``rigid`` controls how nested sub-assemblies are linked: rigid (block) or flexible
+    (their own joints honoured). It currently defaults to flexible while the rigid
+    render path (#75) is being finished; the default flips to rigid once that lands.
+
+    Raises ValueError if the file contains no components.
     """
     import Import  # Assembly -> Import only at call time, never at module import.
 
@@ -71,11 +79,6 @@ def importAssembly(step_path, dest_dir=None):
     components = structure["components"]
     if not components:
         raise ValueError(f"No importable components found in {step_path!r}.")
-    if any(comp["is_assembly"] for comp in components):
-        raise NotImplementedError(
-            "Nested sub-assemblies are not yet supported; only single-level "
-            "assemblies can currently be imported as live assemblies."
-        )
 
     stem = os.path.splitext(os.path.basename(step_path))[0]
     if dest_dir is None:
@@ -83,31 +86,91 @@ def importAssembly(step_path, dest_dir=None):
     os.makedirs(dest_dir, exist_ok=True)
 
     asm_name = structure["name"].strip() or stem
+    # One name pool for the whole tree so every file in dest_dir is uniquely named.
+    used_names = set()
+    return _buildAssembly(asm_name, components, dest_dir, used_names, rigid)
 
-    # The assembly document must exist on disk before it can hold a cross-document
-    # link: a component is a file-to-file reference, so its owner needs a path.
+
+def _buildAssembly(asm_name, components, dest_dir, used_names, rigid):
+    """Build one ``.cassembly`` level and return its AssemblyObject.
+
+    ``components`` is a list of reader dicts (each with name/shape/placement/is_assembly/
+    children). Sub-assemblies are built recursively before they are linked in.
+    """
+    asm_name = _unique_name(asm_name, used_names)
+
+    # The assembly document must exist on disk before it can hold a cross-document link:
+    # a component is a file-to-file reference, so its owner needs a path.
     assembly = UtilsAssembly.createAssembly(asm_name)
     assembly.Document.saveAs(os.path.join(dest_dir, asm_name + ".cassembly"))
 
-    used_names = set()
-    first_link = None
+    first_component = None
     for comp in components:
-        name = _unique_name(comp["name"], used_names)
+        if comp["is_assembly"]:
+            # Build the sub-assembly's own .cassembly first, then link it in.
+            sub = _buildAssembly(comp["name"], comp["children"], dest_dir, used_names, rigid)
+            name = sub.Document.Label
+            component = UtilsAssembly.addSubAssembly(
+                assembly, sub, comp["placement"], rigid=rigid, label=name, name=name
+            )
+        else:
+            name = _unique_name(comp["name"], used_names)
+            leaf_doc = App.newDocument(name, type=App.DocTypePart)
+            feature = leaf_doc.addObject("Part::Feature", "Body")
+            feature.Shape = comp["shape"]
+            feature.Label = name
+            leaf_doc.recompute()
+            leaf_doc.saveAs(os.path.join(dest_dir, name + ".cpart"))
+            component = UtilsAssembly.addComponent(assembly, feature, comp["placement"], label=name)
 
-        leaf_doc = App.newDocument(name, type=App.DocTypePart)
-        feature = leaf_doc.addObject("Part::Feature", "Body")
-        feature.Shape = comp["shape"]
-        feature.Label = name
-        leaf_doc.recompute()
-        leaf_doc.saveAs(os.path.join(dest_dir, name + ".cpart"))
+        if first_component is None:
+            first_component = component
 
-        link = UtilsAssembly.addComponent(assembly, feature, comp["placement"], label=name)
-        if first_link is None:
-            first_link = link
-
-    # A live assembly needs a fixed base to solve against; ground the first part.
-    UtilsAssembly.groundComponent(assembly, first_link)
+    # A live assembly needs a fixed base to solve against; ground the first component.
+    _groundFirst(assembly, first_component)
     assembly.Document.recompute()
     assembly.solve()
     assembly.Document.save()
     return assembly
+
+
+def _groundFirst(assembly, component):
+    """Ground ``component`` in ``assembly`` so the solver has a fixed base.
+
+    Grounding a flexible sub-assembly link does not pin its internals, so ground one of
+    its internal parts instead; a rigid link (or a plain part) is grounded directly.
+    """
+    if component.isDerivedFrom("Assembly::AssemblyLink") and not component.Rigid:
+        base = _flexibleBase(component)
+        if base is not None:
+            component = base
+    UtilsAssembly.groundComponent(assembly, component)
+
+
+def _flexibleBase(link):
+    """Return the internal part of a flexible sub-assembly link to ground, or None.
+
+    Prefers the part that mirrors the sub-assembly's own grounded object; falls back to
+    the first linkable child.
+    """
+    linked = link.LinkedObject
+    src_grounded = None
+    if linked is not None:
+        for obj in linked.InListRecursive:
+            if obj.isDerivedFrom("Assembly::GroundedJoint"):
+                src_grounded = obj.ObjectToGround
+                break
+
+    candidate = None
+    for child in link.Group:
+        if candidate is None and (
+            child.isDerivedFrom("App::Link") or child.isDerivedFrom("Part::Feature")
+        ):
+            candidate = child
+        if (
+            src_grounded is not None
+            and hasattr(child, "LinkedObject")
+            and child.LinkedObject == src_grounded
+        ):
+            return child
+    return candidate

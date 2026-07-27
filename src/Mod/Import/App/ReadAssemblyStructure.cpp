@@ -68,7 +68,7 @@ std::string ReadAssemblyStructure::labelName(const TDF_Label& label) const
     return {};
 }
 
-void ReadAssemblyStructure::addComponent(const TDF_Label& component)
+AssemblyComponent ReadAssemblyStructure::buildComponent(const TDF_Label& component)
 {
     // A component label references a prototype (the shared part definition) and
     // carries its own location (the instance's pose within the assembly). We
@@ -85,7 +85,25 @@ void ReadAssemblyStructure::addComponent(const TDF_Label& component)
     comp.placement = toPlacement(shapeTool_->GetLocation(component));
     comp.isAssembly = shapeTool_->IsAssembly(prototype);
     comp.shape = Part::TopoShape(shapeTool_->GetShape(prototype));
-    components_.push_back(std::move(comp));
+
+    // A sub-assembly carries its own direct components; recurse to full depth so
+    // the caller can build a live assembly for each nested level.
+    if (comp.isAssembly) {
+        readComponentsInto(prototype, comp.children);
+    }
+    return comp;
+}
+
+void ReadAssemblyStructure::readComponentsInto(
+    const TDF_Label& assembly,
+    std::vector<AssemblyComponent>& out
+)
+{
+    TDF_LabelSequence subs;
+    shapeTool_->GetComponents(assembly, subs);
+    for (Standard_Integer i = 1; i <= subs.Length(); ++i) {
+        out.push_back(buildComponent(subs.Value(i)));
+    }
 }
 
 void ReadAssemblyStructure::read()
@@ -98,12 +116,7 @@ void ReadAssemblyStructure::read()
     if (freeShapes.Length() == 1 && shapeTool_->IsAssembly(freeShapes.Value(1))) {
         const TDF_Label root = freeShapes.Value(1);
         rootName_ = labelName(root);
-
-        TDF_LabelSequence subs;
-        shapeTool_->GetComponents(root, subs);
-        for (Standard_Integer i = 1; i <= subs.Length(); ++i) {
-            addComponent(subs.Value(i));
-        }
+        readComponentsInto(root, components_);
         return;
     }
 
@@ -111,6 +124,6 @@ void ReadAssemblyStructure::read()
     // top-level component, at its own location (usually identity). rootName_ stays
     // empty so the caller can name the assembly after the source file.
     for (Standard_Integer i = 1; i <= freeShapes.Length(); ++i) {
-        addComponent(freeShapes.Value(i));
+        components_.push_back(buildComponent(freeShapes.Value(i)));
     }
 }
