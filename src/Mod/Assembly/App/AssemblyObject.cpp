@@ -397,8 +397,9 @@ void AssemblyObject::doDragStep()
             auto mbdPart = getMbDPart(part);
             dragMbdParts.push_back(mbdPart);
 
-            // Update the MBD part's position
-            Base::Placement plc = App::GeoFeature::getPlacementFromProp(part, "Placement");
+            // Update the MBD part's position. The ASMTPart lives in the world frame, so drag
+            // from the part's global placement (identity group for a top-level part).
+            Base::Placement plc = App::GeoFeature::getGlobalPlacement(part);
             Base::Vector3d pos = plc.getPosition();
             mbdPart->updateMbDFromPosition3D(
                 std::make_shared<FullColumn<double>>(ListD {pos.x, pos.y, pos.z})
@@ -468,6 +469,10 @@ bool AssemblyObject::validateNewPlacements()
                 Base::Placement newPlacement = getMbdPlacement(mbdPart);
                 if (!it->second.offsetPlc.isIdentity()) {
                     newPlacement = newPlacement * it->second.offsetPlc;
+                }
+                // oldPlc is the local Placement; bring the solved world pose back to local.
+                if (!it->second.groupPlc.isIdentity()) {
+                    newPlacement = it->second.groupPlc.inverse() * newPlacement;
                 }
 
                 if (!oldPlc.isSame(newPlacement, Precision::Confusion())) {
@@ -577,9 +582,14 @@ void AssemblyObject::setNewPlacements()
         }
 
 
+        // getMbdPlacement returns the solved pose in the world frame. Divide out the
+        // enclosing group's global placement to recover the local Placement to store.
         Base::Placement newPlacement = getMbdPlacement(mbdPart);
         if (!pair.second.offsetPlc.isIdentity()) {
             newPlacement = newPlacement * pair.second.offsetPlc;
+        }
+        if (!pair.second.groupPlc.isIdentity()) {
+            newPlacement = pair.second.groupPlc.inverse() * newPlacement;
         }
         if (!propPlacement->getValue().isSame(newPlacement)) {
             propPlacement->setValue(newPlacement);
@@ -878,7 +888,10 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::fixGroundedParts()
             continue;
         }
 
-        Base::Placement plc = App::GeoFeature::getPlacementFromProp(obj, "Placement");
+        // Grounded parts are pinned in the world frame, consistent with the global seed of
+        // every ASMTPart (a grounded internal part of a nested sub-assembly carries the
+        // enclosing group transform).
+        Base::Placement plc = App::GeoFeature::getGlobalPlacement(obj);
         std::string str = obj->getFullName();
         fixGroundedPart(obj, plc, str);
     }
@@ -1863,12 +1876,17 @@ AssemblyObject::MbDPartData AssemblyObject::getMbDData(App::DocumentObject* part
         return it->second;
     }
 
-    // part has not been associated with an ASMTPart before
+    // part has not been associated with an ASMTPart before. The solver works in the world
+    // frame, so seed the ASMTPart with the part's global placement (joint markers are already
+    // expressed relative to the part's global frame). groupPlc is the enclosing group chain's
+    // global placement, divided out when the solved pose is written back to the local Placement.
     std::string str = part->getFullName();
-    Base::Placement plc = App::GeoFeature::getPlacementFromProp(part, "Placement");
+    Base::Placement localPlc = App::GeoFeature::getPlacementFromProp(part, "Placement");
+    Base::Placement plc = App::GeoFeature::getGlobalPlacement(part);
+    Base::Placement groupPlc = plc * localPlc.inverse();
     std::shared_ptr<ASMTPart> mbdPart = makeMbdPart(str, plc);
     mbdAssembly->addPart(mbdPart);
-    MbDPartData data = {mbdPart, Base::Placement()};
+    MbDPartData data = {mbdPart, Base::Placement(), groupPlc};
     objectPartMap[part] = data;  // Store the association
 
     // Associate other objects connected with fixed joints
@@ -1887,9 +1905,13 @@ AssemblyObject::MbDPartData AssemblyObject::getMbDData(App::DocumentObject* part
                         continue;
                     }
 
-                    Base::Placement plci
+                    Base::Placement localPlci
                         = App::GeoFeature::getPlacementFromProp(partToAdd, "Placement");
-                    MbDPartData partData = {mbdPart, plc.inverse() * plci};
+                    Base::Placement plci = App::GeoFeature::getGlobalPlacement(partToAdd);
+                    Base::Placement groupPlci = plci * localPlci.inverse();
+                    // offsetPlc is the member's pose relative to the bundle representative,
+                    // in the world frame (both plc and plci are global here).
+                    MbDPartData partData = {mbdPart, plc.inverse() * plci, groupPlci};
                     objectPartMap[partToAdd] = partData;  // Store the association
 
                     // Recursively call for partToAdd

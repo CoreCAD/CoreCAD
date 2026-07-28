@@ -257,3 +257,70 @@ class TestCore(unittest.TestCase):
         JointObject.setJointConnectors(joint, refs)
 
         self.assertTrue(box.Placement.isSame(box2.Placement, 1e-6), "'{}'".format(operation))
+
+    def test_solve_part_inside_transformed_group(self):
+        """Solver is group-aware: mate a part that lives inside a group carrying a transform.
+
+        The MBD solver works in the world frame. A part directly in the assembly has an
+        identity enclosing group, so its local Placement is its world pose and the solver
+        never had to distinguish the two. A part inside a group that carries a non-identity
+        transform (e.g. a nested flexible sub-assembly link) does not: its world pose is
+        groupPlacement o localPlacement. The solver must seed such a part in the world frame
+        and divide the group transform back out when it writes the local Placement -- otherwise
+        the mate is solved against the wrong frame and the part lands at the wrong world pose.
+        """
+        operation = "Solve part inside a transformed group"
+        _msg("  Test '{}'".format(operation))
+
+        # Grounded anchor directly in the assembly (identity enclosing group).
+        anchor = self.assembly.newObject("Part::Box", "Anchor")
+        anchor.Length = anchor.Width = anchor.Height = 10
+        anchor.Placement = App.Placement(App.Vector(50, 0, 0), App.Rotation())
+
+        # A group carrying a non-identity transform, holding an inner part.
+        group = self.doc.addObject("Assembly::AssemblyLink", "Grp")
+        group.Rigid = False
+        self.assembly.addObject(group)
+        group_plc = App.Placement(App.Vector(0, 100, 0), App.Rotation(App.Vector(0, 0, 1), 90))
+        group.Placement = group_plc
+
+        inner = self.doc.addObject("Part::Box", "Inner")
+        inner.Length = inner.Width = inner.Height = 10
+        inner.Placement = App.Placement(App.Vector(5, 5, 5), App.Rotation())
+        group.addObject(inner)
+        self.doc.recompute()
+
+        ground = self.jointgroup.newObject("Assembly::GroundedJoint", "GroundedJoint")
+        ground.ObjectToGround = anchor
+
+        joint = self.jointgroup.newObject("Assembly::Joint", "mate")
+        joint.JointType = JointObject.JointTypes[0]  # Fixed
+        JointObject.setJointConnectors(joint, [])
+        refs = [[anchor, ["Face6", "Vertex7"]], [inner, ["Face6", "Vertex7"]]]
+        JointObject.setJointConnectors(joint, refs)  # triggers the solve
+
+        # The mate is satisfied in the world frame: inner's world pose coincides with the
+        # grounded anchor's. (Pre-fix, inner was seeded from its local Placement while its
+        # joint marker was global-relative, so it landed at the wrong world pose.)
+        self.assertTrue(
+            inner.getGlobalPlacement().isSame(anchor.getGlobalPlacement(), 1e-6),
+            "inner world pose {} did not mate to anchor {}".format(
+                inner.getGlobalPlacement(), anchor.getGlobalPlacement()
+            ),
+        )
+        # The group itself did not move; only inner's local Placement absorbed the mate.
+        self.assertTrue(
+            group.Placement.isSame(group_plc, 1e-6),
+            "group placement changed: {}".format(group.Placement),
+        )
+        # The stored local Placement is the world pose with the group transform divided out,
+        # i.e. group o local reproduces the world pose (not local == world).
+        composed = group.Placement.multiply(inner.Placement)
+        self.assertTrue(
+            composed.isSame(inner.getGlobalPlacement(), 1e-6),
+            "group o local {} != world {}".format(composed, inner.getGlobalPlacement()),
+        )
+        self.assertFalse(
+            inner.Placement.isSame(inner.getGlobalPlacement(), 1e-6),
+            "local Placement should differ from world when the group carries a transform",
+        )
