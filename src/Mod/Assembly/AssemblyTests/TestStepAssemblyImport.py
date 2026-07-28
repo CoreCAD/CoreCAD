@@ -119,6 +119,28 @@ class TestStepAssemblyImport(unittest.TestCase):
         App.closeDocument(doc.Name)
         return path
 
+    def _shared_leaf_step(self):
+        """A single-level STEP that instances one part twice at distinct placements.
+
+        Built from two App::Links to a single box so the exported STEP expresses one
+        shared prototype with two instances -- the case #76 must not duplicate."""
+        doc = App.newDocument("sharedsrc")
+        outer = doc.addObject("App::Part", "Outer")
+        box = doc.addObject("Part::Box", "Widget")
+        box.Length = box.Width = box.Height = 10
+        inst1 = doc.addObject("App::Link", "Inst1")
+        inst1.LinkedObject = box
+        inst2 = doc.addObject("App::Link", "Inst2")
+        inst2.LinkedObject = box
+        inst2.Placement = App.Placement(App.Vector(50, 0, 0), App.Rotation())
+        outer.addObject(inst1)
+        outer.addObject(inst2)
+        doc.recompute()
+        path = os.path.join(self.tmp, "shared.step")
+        Import.export([outer], path)
+        App.closeDocument(doc.Name)
+        return path
+
     # -- tests -------------------------------------------------------------
 
     def test_reader_mints_no_document_objects(self):
@@ -250,6 +272,83 @@ class TestStepAssemblyImport(unittest.TestCase):
         # Pin (r3/h15) center local (0,0,7.5); placed (0,50,0) in Inner; Inner at
         # (100,0,0) in Outer -> world (100,50,7.5).
         self.assertLess((world_center - App.Vector(100, 50, 7.5)).Length, 1e-6)
+
+    def test_shared_prototype_is_reused_not_duplicated(self):
+        """One prototype instanced twice yields ONE leaf document, referenced twice (#76)."""
+        path = self._shared_leaf_step()
+
+        assembly = AssemblyStepImport.importAssembly(path)
+
+        links = [o for o in assembly.Document.Objects if o.TypeId == "App::Link"]
+        self.assertEqual(len(links), 2)
+
+        # Both instances reference the SAME leaf object in the SAME single leaf document --
+        # the shared prototype is not written twice.
+        leaf_objects = {link.LinkedObject for link in links}
+        self.assertEqual(len(leaf_objects), 1)
+        leaf_docs = {link.LinkedObject.Document.Name for link in links}
+        self.assertEqual(len(leaf_docs), 1)
+        cpart_docs = [d for d in App.listDocuments().values() if d.FileName.endswith(".cpart")]
+        self.assertEqual(len(cpart_docs), 1)
+
+        # Each instance still carries its own placement: the shared geometry lands at two
+        # distinct, correct world positions.
+        centers = sorted(
+            link.Placement.multVec(link.LinkedObject.Shape.BoundBox.Center).x for link in links
+        )
+        # Box center local x=5; second instance placed at x=50 -> world x centers 5 and 55.
+        self.assertLess(abs(centers[0] - 5), 1e-6)
+        self.assertLess(abs(centers[1] - 55), 1e-6)
+        self.assertEqual(assembly.solve(), 0)
+
+    def _shared_sub_step(self):
+        """A two-level STEP that instances one sub-assembly twice at distinct placements.
+
+        Outer holds two App::Links to a single Inner sub-assembly (a placed Pin), so the
+        exported STEP expresses one shared sub-assembly prototype instanced twice -- the
+        nested analogue of the #76 duplication case."""
+        doc = App.newDocument("sharedsubsrc")
+        outer = doc.addObject("App::Part", "Outer")
+        inner = doc.addObject("App::Part", "Gadget")
+        pin = doc.addObject("Part::Cylinder", "Pin")
+        pin.Radius = 3
+        pin.Height = 15
+        pin.Placement = App.Placement(App.Vector(0, 50, 0), App.Rotation())
+        inner.addObject(pin)
+        g1 = doc.addObject("App::Link", "G1")
+        g1.LinkedObject = inner
+        g2 = doc.addObject("App::Link", "G2")
+        g2.LinkedObject = inner
+        g2.Placement = App.Placement(App.Vector(100, 0, 0), App.Rotation())
+        outer.addObject(g1)
+        outer.addObject(g2)
+        doc.recompute()
+        path = os.path.join(self.tmp, "sharedsub.step")
+        Import.export([outer], path)
+        App.closeDocument(doc.Name)
+        return path
+
+    def test_shared_sub_assembly_is_reused(self):
+        """A sub-assembly instanced twice links ONE shared .cassembly twice, and its
+        single leaf .cpart is written once, rather than duplicating either (#76)."""
+        path = self._shared_sub_step()
+        out_dir = os.path.join(self.tmp, "out")
+
+        assembly = AssemblyStepImport.importAssembly(path, dest_dir=out_dir)
+
+        sub_links = [o for o in assembly.Document.Objects if o.TypeId == "Assembly::AssemblyLink"]
+        self.assertEqual(len(sub_links), 2)
+        # Both instances link the SAME sub-assembly document, at distinct placements.
+        sub_docs = {link.LinkedObject.Document.Name for link in sub_links}
+        self.assertEqual(len(sub_docs), 1)
+        self.assertNotEqual(sub_links[0].Placement.Base, sub_links[1].Placement.Base)
+        # One .cassembly per distinct assembly (top + one shared sub) and one .cpart for
+        # the single shared leaf -- no _2 duplicates on disk.
+        cassembly_files = [f for f in os.listdir(out_dir) if f.endswith(".cassembly")]
+        cpart_files = [f for f in os.listdir(out_dir) if f.endswith(".cpart")]
+        self.assertEqual(len(cassembly_files), 2)
+        self.assertEqual(len(cpart_files), 1)
+        self.assertEqual(assembly.solve(), 0)
 
     def test_nested_reopens_from_disk(self):
         """Closing everything and reopening only the top .cassembly pulls the whole
