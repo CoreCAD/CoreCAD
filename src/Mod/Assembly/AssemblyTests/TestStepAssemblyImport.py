@@ -216,7 +216,13 @@ class TestStepAssemblyImport(unittest.TestCase):
 
         sub = [o for o in assembly.Document.Objects if o.TypeId == "Assembly::AssemblyLink"][0]
         pin = [c for c in sub.Group if c.Label.startswith("Pin")][0]
-        world_center = pin.Placement.multVec(pin.LinkedObject.Shape.BoundBox.Center)
+        # A flexible proxy carries the leaf's world frame in its own Placement (the
+        # sub-assembly instance offset premultiplied onto the component's internal pose)
+        # and renders the leaf body with LinkTransform off -- i.e. the body's *own* local
+        # geometry, not the sub-internal link's placed shape. So compose the proxy frame
+        # with the body-local centre (one link deeper) to get the rendered world pose.
+        body_local_center = pin.LinkedObject.LinkedObject.Shape.BoundBox.Center
+        world_center = pin.Placement.multVec(body_local_center)
 
         # Pin (r3/h15) center local (0,0,7.5); placed (0,50,0) in Inner; Inner at
         # (100,0,0) in Outer -> world (100,50,7.5).
