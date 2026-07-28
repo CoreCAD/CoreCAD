@@ -57,7 +57,7 @@ def _unique_name(base, used):
     return candidate
 
 
-def importAssembly(step_path, dest_dir=None, rigid=False):
+def importAssembly(step_path, dest_dir=None, rigid=False, structure=None):
     """Import ``step_path`` (a STEP/IGES assembly, nested to any depth) as a live assembly.
 
     Each leaf component becomes a standalone ``.cpart`` document holding its local
@@ -71,11 +71,15 @@ def importAssembly(step_path, dest_dir=None, rigid=False):
     (their own joints honoured). It currently defaults to flexible while the rigid
     render path (#75) is being finished; the default flips to rigid once that lands.
 
+    ``structure`` may hold an already-read reader dict (as returned by
+    ``Import.readAssemblyStructure``) to avoid parsing the file twice.
+
     Raises ValueError if the file contains no components.
     """
-    import Import  # Assembly -> Import only at call time, never at module import.
+    if structure is None:
+        import Import  # Assembly -> Import only at call time, never at module import.
 
-    structure = Import.readAssemblyStructure(step_path)
+        structure = Import.readAssemblyStructure(step_path)
     components = structure["components"]
     if not components:
         raise ValueError(f"No importable components found in {step_path!r}.")
@@ -89,6 +93,63 @@ def importAssembly(step_path, dest_dir=None, rigid=False):
     # One name pool for the whole tree so every file in dest_dir is uniquely named.
     used_names = set()
     return _buildAssembly(asm_name, components, dest_dir, used_names, rigid)
+
+
+def _looksLikeAssembly(components):
+    """Whether an imported structure warrants a live assembly rather than a loose part.
+
+    A lone leaf solid stays a plain ``Part::Feature`` (imported the standard way);
+    anything with more than one top-level component, or any nested sub-assembly,
+    becomes a live ``.cassembly``.
+    """
+    if len(components) != 1:
+        return True
+    return bool(components[0]["is_assembly"])
+
+
+def _delegateStandardImport(filename, docname=None):
+    """Fall back to the standard (non-live) importer for a single-part file.
+
+    Uses the GUI importer when a GUI is up (so colours/progress match a plain
+    File>Open), otherwise the headless one.
+    """
+    if App.GuiUp:
+        import ImportGui as importer
+    else:
+        import Import as importer
+    if docname is None:
+        return importer.open(filename)
+    return importer.insert(filename, docname)
+
+
+def open(filename):  # noqa: A001 - the import framework calls a module-level open().
+    """File>Open handler for STEP: a live assembly when structured, else a loose part."""
+    import Import  # Assembly -> Import only at call time, never at module import.
+
+    structure = Import.readAssemblyStructure(filename)
+    if not _looksLikeAssembly(structure["components"]):
+        return _delegateStandardImport(filename)
+
+    assembly = importAssembly(filename, structure=structure)
+    if App.GuiUp:
+        try:
+            import FreeCADGui as Gui
+
+            App.setActiveDocument(assembly.Document.Name)
+            Gui.SendMsgToActiveView("ViewFit")
+        except Exception:  # a failed view fit must not fail the import
+            pass
+    return assembly
+
+
+def insert(filename, docname):
+    """Insert (merge-into-document) handler.
+
+    A live assembly is inherently its own set of documents, so a request to merge one
+    into an existing document keeps the standard (non-live) importer; single parts do
+    too.
+    """
+    return _delegateStandardImport(filename, docname)
 
 
 def _buildAssembly(asm_name, components, dest_dir, used_names, rigid):
