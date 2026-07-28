@@ -202,54 +202,18 @@ void AssemblyLink::onChanged(const App::Property* prop)
             return;
         }
 
-        if (!Rigid.getValue()) {
-            // when the assemblyLink becomes flexible, we need to make sure its placement is
-            // identity or it's going to mess up moving parts placement within.
-            Base::Placement plc = propPlc->getValue();
-            if (!plc.isIdentity()) {
-                propPlc->setValue(Base::Placement());
-
-                // We need to apply the placement of the assembly link to the children or they will
-                // move.
-                std::vector<App::DocumentObject*> group = Group.getValues();
-                for (auto* obj : group) {
-                    if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-                        && !obj->isDerivedFrom<App::Link>() && !obj->isDerivedFrom<AssemblyLink>()) {
-                        continue;
-                    }
-
-                    if (obj->isLinkGroup()) {
-                        auto* srcLink = static_cast<App::Link*>(obj);
-                        const std::vector<App::DocumentObject*> srcElements
-                            = srcLink->ElementList.getValues();
-
-                        for (auto elt : srcElements) {
-                            if (!elt) {
-                                continue;
-                            }
-
-                            auto* prop = dynamic_cast<App::PropertyPlacement*>(
-                                elt->getPropertyByName("Placement")
-                            );
-                            if (prop) {
-                                prop->setValue(plc * prop->getValue());
-                            }
-                        }
-                    }
-                    else {
-                        auto* prop = dynamic_cast<App::PropertyPlacement*>(
-                            obj->getPropertyByName("Placement")
-                        );
-                        if (prop) {
-                            prop->setValue(plc * prop->getValue());
-                        }
-                    }
-                }
-
-                AssemblyObject::redrawJointPlacements(getJoints());
-            }
-        }
-        else {
+        // A flexible sub-assembly carries its instance transform on the link itself. Because
+        // AssemblyLink is a GeoFeatureGroup, the kernel composes that transform onto the owned
+        // proxy children whenever a pose is resolved (render, getGlobalPlacement, solve). Keeping
+        // the transform on the link -- instead of the old convention of zeroing Placement and
+        // baking the offset into every child -- is what lets nested sub-assemblies compose
+        // depth-independently: each level contributes one group transform, exactly the recursion
+        // rigid links already had. (The prior smear intentionally forced identity so the solver,
+        // which reads/writes child *local* placements, saw an identity group; making the solver
+        // group-aware is the paired follow-up.)
+        //
+        // Rigid retained transitionally until rigid support is removed.
+        if (Rigid.getValue()) {
             // For the assemblylink not to move to origin, we need to update its placement.
             if (!movePlc.isIdentity()) {
                 propPlc->setValue(movePlc);
@@ -479,6 +443,11 @@ void AssemblyLink::synchronizeComponents()
                 subAsmLink->Rigid.setValue(asmLink->Rigid.getValue());
                 subAsmLink->Label.setValue(obj->Label.getValue());
                 addObject(subAsmLink);
+                // Carry the source sub-assembly's instance transform onto the proxy link, just
+                // as the leaf branches do for their proxies. The group then composes it onto the
+                // proxy's own children, so a sub-assembly nested inside a sub-assembly places its
+                // leaves at the right world pose without depending on a re-solve.
+                syncPlacements(obj, subAsmLink);
                 link = subAsmLink;
             }
             else if (obj->isDerivedFrom<App::Link>() && obj->isLinkGroup()) {

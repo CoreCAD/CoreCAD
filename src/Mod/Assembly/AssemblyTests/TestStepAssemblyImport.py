@@ -43,6 +43,30 @@ import Import
 import AssemblyStepImport
 
 
+def _enclosing_asm_link(obj):
+    """The AssemblyLink whose group owns ``obj``, or None."""
+    for p in obj.InList:
+        if p.TypeId == "Assembly::AssemblyLink" and obj in p.Group:
+            return p
+    return None
+
+
+def _global_placement(obj):
+    """Compose ``obj``'s world frame by premultiplying every enclosing AssemblyLink placement.
+
+    Mirrors the kernel's GeoFeatureGroup composition (what the renderer / getGlobalPlacement
+    use). A flexible sub-assembly carries its instance transform on its AssemblyLink, not baked
+    into the leaf proxies, so the world pose is the chain of group placements times the leaf's
+    own -- and this holds at any nesting depth.
+    """
+    plc = obj.Placement
+    parent = _enclosing_asm_link(obj)
+    while parent is not None:
+        plc = parent.Placement.multiply(plc)
+        parent = _enclosing_asm_link(parent)
+    return plc
+
+
 class TestStepAssemblyImport(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="corecad_stepasm_")
@@ -216,13 +240,12 @@ class TestStepAssemblyImport(unittest.TestCase):
 
         sub = [o for o in assembly.Document.Objects if o.TypeId == "Assembly::AssemblyLink"][0]
         pin = [c for c in sub.Group if c.Label.startswith("Pin")][0]
-        # A flexible proxy carries the leaf's world frame in its own Placement (the
-        # sub-assembly instance offset premultiplied onto the component's internal pose)
-        # and renders the leaf body with LinkTransform off -- i.e. the body's *own* local
-        # geometry, not the sub-internal link's placed shape. So compose the proxy frame
-        # with the body-local centre (one link deeper) to get the rendered world pose.
+        # A flexible sub-assembly carries its instance offset on the AssemblyLink itself; the
+        # leaf proxy holds only the component's pose within its own sub-assembly. The rendered
+        # world pose is therefore the group-composed frame (every enclosing AssemblyLink
+        # placement premultiplied) applied to the body's own local geometry.
         body_local_center = pin.LinkedObject.LinkedObject.Shape.BoundBox.Center
-        world_center = pin.Placement.multVec(body_local_center)
+        world_center = _global_placement(pin).multVec(body_local_center)
 
         # Pin (r3/h15) center local (0,0,7.5); placed (0,50,0) in Inner; Inner at
         # (100,0,0) in Outer -> world (100,50,7.5).
