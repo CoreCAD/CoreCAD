@@ -136,6 +136,11 @@ public:
     {
         std::shared_ptr<MbD::ASMTPart> part;
         Base::Placement offsetPlc;  // This is the offset within the bundled parts
+        // The global placement of the enclosing GeoFeatureGroup chain (e.g. a nested
+        // flexible AssemblyLink). The solver works in the world frame, so parts are seeded
+        // and solved globally; groupPlc is divided out to write the local Placement back.
+        // Identity for parts directly in the assembly document (no enclosing group).
+        Base::Placement groupPlc;
     };
     MbDPartData getMbDData(App::DocumentObject* part);
     std::shared_ptr<MbD::ASMTMarker> makeMbdMarker(std::string& name, Base::Placement& plc);
