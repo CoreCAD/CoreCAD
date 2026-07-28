@@ -23,6 +23,19 @@
 
 import Assembly_rc
 
+# Init.py registered our own STEP entry so live import wins the headless File>Open.
+# Part also registers a STEP entry (re-pointed to "ImportGui" for the GUI by
+# Import/InitGui.py). Re-point that one to the live handler too, so whichever "STEP"
+# filter the user picks in the Open dialog imports as a live assembly -- no dead-geometry
+# path is reachable from the dialog. InitGui runs after all Init.py, so both source
+# names are covered regardless of load order.
+FreeCAD.changeImportModule(
+    "STEP with colors (*.step *.STEP *.stp *.STP)", "Import", "AssemblyStepImport"
+)
+FreeCAD.changeImportModule(
+    "STEP with colors (*.step *.STEP *.stp *.STP)", "ImportGui", "AssemblyStepImport"
+)
+
 
 class AssemblyCommandGroup:
     def __init__(self, cmdlist, menu, tooltip=None):
