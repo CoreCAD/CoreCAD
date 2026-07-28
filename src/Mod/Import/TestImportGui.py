@@ -58,7 +58,7 @@ class ExportImportTest(unittest.TestCase):
         ImportGui.export([part], self.fileName)
 
         self.doc.clearDocument()
-        ImportGui.insert(name=self.fileName, docName=self.doc.Name, merge=False, useLinkGroup=True)
+        ImportGui.insert(name=self.fileName, docName=self.doc.Name, merge=False)
 
         part_features = list(filter(lambda x: x.isDerivedFrom("Part::Feature"), self.doc.Objects))
         self.assertEqual(len(part_features), 1)

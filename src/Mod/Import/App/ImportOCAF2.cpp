@@ -87,7 +87,9 @@ ImportOCAF2::ImportOCAF2(Handle(TDocStd_Document) hDoc, App::Document* doc, cons
         filePath = fi.dirPath();
     }
 
-    setUseLinkGroup(options.useLinkGroup);
+    // Imports always produce the App::Link/App::LinkGroup structure; disable OCAF
+    // auto-naming so the reader keeps the STEP/IGES label names.
+    aShapeTool->SetAutoNaming(false);
 }
 
 ImportOCAF2::~ImportOCAF2() = default;
@@ -98,7 +100,6 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
 
     ImportOCAFOptions defaultOptions;
     defaultOptions.merge = settings.getReadShapeCompoundMode();
-    defaultOptions.useLinkGroup = settings.getUseLinkGroup();
     defaultOptions.useBaseName = settings.getUseBaseName();
     defaultOptions.importHidden = settings.getImportHiddenObject();
     defaultOptions.reduceObjects = settings.getReduceObjects();
@@ -125,13 +126,6 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
 void ImportOCAF2::setImportOptions(ImportOCAFOptions opts)
 {
     options = opts;
-    setUseLinkGroup(options.useLinkGroup);
-}
-
-void ImportOCAF2::setUseLinkGroup(bool enable)
-{
-    options.useLinkGroup = enable;
-    aShapeTool->SetAutoNaming(!enable);
 }
 
 void ImportOCAF2::setMode(int m)
@@ -505,13 +499,6 @@ bool ImportOCAF2::createGroup(
 
 App::DocumentObject* ImportOCAF2::loadShapes()
 {
-    if (!options.useLinkGroup) {
-        ImportLegacy legacy(*this);
-        legacy.setMerge(options.merge);
-        legacy.loadShapes();
-        return nullptr;
-    }
-
     if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
         Tools::dumpLabels(pDoc->Main(), aShapeTool, aColorTool);
     }
@@ -691,9 +678,6 @@ App::DocumentObject* ImportOCAF2::loadShape(
     }
 
     std::map<std::string, Base::Color> shuoColors;
-    if (!options.useLinkGroup) {
-        getSHUOColors(label, shuoColors, false);
-    }
 
     auto info = it->second;
     getColor(shape, info, true);

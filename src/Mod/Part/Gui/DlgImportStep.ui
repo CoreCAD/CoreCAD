@@ -40,22 +40,6 @@
        </widget>
       </item>
       <item>
-       <widget class="Gui::PrefCheckBox" name="checkBoxUseLinkGroup">
-        <property name="toolTip">
-         <string>Select this to use App::LinkGroup as group container, or else use App::Part</string>
-        </property>
-        <property name="text">
-         <string>Use LinkGroup</string>
-        </property>
-        <property name="prefEntry" stdset="0">
-         <cstring>UseLinkGroup</cstring>
-        </property>
-        <property name="prefPath" stdset="0">
-         <cstring>Mod/Import</cstring>
-        </property>
-       </widget>
-      </item>
-      <item>
        <widget class="Gui::PrefCheckBox" name="checkBoxImportHiddenObj">
         <property name="toolTip">
          <string>Select this to import invisible objects</string>
@@ -242,7 +226,6 @@
  </customwidgets>
  <tabstops>
   <tabstop>checkBoxMergeCompound</tabstop>
-  <tabstop>checkBoxUseLinkGroup</tabstop>
   <tabstop>checkBoxImportHiddenObj</tabstop>
   <tabstop>checkBoxReduceObjects</tabstop>
   <tabstop>checkBoxExpandCompound</tabstop>

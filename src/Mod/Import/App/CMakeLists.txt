@@ -13,8 +13,6 @@ SET(Import_SRCS
     ExportOCAF.h
     ExportOCAF2.cpp
     ExportOCAF2.h
-    ImportOCAF.cpp
-    ImportOCAF.h
     ImportOCAF2.cpp
     ImportOCAF2.h
     #ImportOCAFAssembly.cpp

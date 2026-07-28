@@ -169,7 +169,6 @@ private:
             }
             auto stepSettings = dlg.getSettings();
             options.setItem("merge", Py::Boolean(stepSettings.merge));
-            options.setItem("useLinkGroup", Py::Boolean(stepSettings.useLinkGroup));
             options.setItem("useBaseName", Py::Boolean(stepSettings.useBaseName));
             options.setItem("importHidden", Py::Boolean(stepSettings.importHidden));
             options.setItem("reduceObjects", Py::Boolean(stepSettings.reduceObjects));
@@ -188,22 +187,13 @@ private:
         PyObject* pyoptions = nullptr;
         PyObject* importHidden = Py_None;
         PyObject* merge = Py_None;
-        PyObject* useLinkGroup = Py_None;
         int mode = -1;
-        static const std::array<const char*, 8> kwd_list {
-            "name",
-            "docName",
-            "options",
-            "importHidden",
-            "merge",
-            "useLinkGroup",
-            "mode",
-            nullptr
-        };
+        static const std::array<const char*, 7>
+            kwd_list {"name", "docName", "options", "importHidden", "merge", "mode", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "et|sO!O!O!O!i",
+                "et|sO!O!O!i",
                 kwd_list,
                 "utf-8",
                 &Name,
@@ -214,8 +204,6 @@ private:
                 &importHidden,
                 &PyBool_Type,
                 &merge,
-                &PyBool_Type,
-                &useLinkGroup,
                 &mode
             )) {
             throw Py::Exception();
@@ -266,11 +254,6 @@ private:
                     Py::Dict options(pyoptions);
                     if (options.hasKey("merge")) {
                         ocaf.setMerge(static_cast<bool>(Py::Boolean(options.getItem("merge"))));
-                    }
-                    if (options.hasKey("useLinkGroup")) {
-                        ocaf.setUseLinkGroup(
-                            static_cast<bool>(Py::Boolean(options.getItem("useLinkGroup")))
-                        );
                     }
                     if (options.hasKey("useBaseName")) {
                         ocaf.setBaseName(
@@ -366,9 +349,6 @@ private:
             }
             if (importHidden != Py_None) {
                 ocaf.setImportHiddenObject(Base::asBoolean(importHidden));
-            }
-            if (useLinkGroup != Py_None) {
-                ocaf.setUseLinkGroup(Base::asBoolean(useLinkGroup));
             }
             if (mode >= 0) {
                 ocaf.setMode(mode);

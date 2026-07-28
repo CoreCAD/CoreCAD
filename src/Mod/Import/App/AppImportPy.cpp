@@ -170,14 +170,13 @@ private:
         char* DocName = nullptr;
         PyObject* importHidden = Py_None;
         PyObject* merge = Py_None;
-        PyObject* useLinkGroup = Py_None;
         int mode = -1;
-        static const std::array<const char*, 7>
-            kwd_list {"name", "docName", "importHidden", "merge", "useLinkGroup", "mode", nullptr};
+        static const std::array<const char*, 6>
+            kwd_list {"name", "docName", "importHidden", "merge", "mode", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "et|sO!O!O!i",
+                "et|sO!O!i",
                 kwd_list,
                 "utf-8",
                 &Name,
@@ -186,8 +185,6 @@ private:
                 &importHidden,
                 &PyBool_Type,
                 &merge,
-                &PyBool_Type,
-                &useLinkGroup,
                 &mode
             )) {
             throw Py::Exception();
@@ -252,9 +249,6 @@ private:
             }
             if (importHidden != Py_None) {
                 ocaf.setImportHiddenObject(Base::asBoolean(importHidden));
-            }
-            if (useLinkGroup != Py_None) {
-                ocaf.setUseLinkGroup(Base::asBoolean(useLinkGroup));
             }
             if (mode >= 0) {
                 ocaf.setMode(mode);

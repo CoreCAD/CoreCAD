@@ -107,7 +107,7 @@ TopoDS_Shape ReaderGltf::processSubShapes(
     for (Standard_Integer i = 1; i <= subShapeLabels.Length(); i++) {
         auto faceLabel = subShapeLabels.Value(i);
 
-        // OCCT handles colors of a glTF with material labels but the ImportOCAF(2) class
+        // OCCT handles colors of a glTF with material labels but the ImportOCAF2 class
         // expects color labels. Thus, the material labels are converted into color labels.
         Handle(XCAFDoc_VisMaterial) aVisMat = aVisTool->GetShapeMaterial(faceLabel);
 

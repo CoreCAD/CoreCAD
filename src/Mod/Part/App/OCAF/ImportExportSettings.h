@@ -88,9 +88,6 @@ public:
     void setExportKeepPlacement(bool);
     bool getExportKeepPlacement() const;
 
-    void setUseLinkGroup(bool);
-    bool getUseLinkGroup() const;
-
     void setUseBaseName(bool);
     bool getUseBaseName() const;
 
