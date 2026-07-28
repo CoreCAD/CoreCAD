@@ -28,6 +28,8 @@
 #include <sstream>
 #include <iostream>
 
+#include <boost/dynamic_bitset.hpp>
+
 
 #include <App/Link.h>
 #include <App/Document.h>
@@ -48,6 +50,7 @@
 
 #include <Mod/Assembly/App/AssemblyObject.h>
 #include <Mod/Assembly/App/AssemblyLink.h>
+#include <Mod/Assembly/App/AssemblyUtils.h>
 
 #include "ViewProviderAssembly.h"
 #include "ViewProviderAssemblyLink.h"
@@ -111,21 +114,39 @@ void ViewProviderAssemblyLink::updateLinkView()
 
     auto* assembly = link->getLinkedAssembly();
     if (!assembly) {
-        linkView->setLink(nullptr);
+        linkView->setChildren({}, {});
         return;
     }
 
-    // SnapshotVisible keeps the linked assembly's internal placements and defers position to our
+    // The linked AssemblyObject is a plain group whose view-provider node does not aggregate
+    // its members' geometry (they render as separate top-level objects in the linked document),
+    // so a snapshot of that node is empty. Instead, render the assembly's components directly:
+    // getAssemblyComponents is the App-layer notion of the renderable parts (cross-document
+    // links, nested sub-assembly links, expanded arrays), excluding joints and datums. Each
+    // component's snapshot carries its own placement within the sub-assembly; our pcTransform
+    // then positions the whole by the instance placement -- matching getSubObject composition.
+    // A nested sub-assembly component is itself an AssemblyLink whose view-provider renders
+    // through its own reference, so the recursion is handled per component.
+    std::vector<App::DocumentObject*> components = Assembly::getAssemblyComponents(assembly);
+
+    boost::dynamic_bitset<> vis(components.size());
+    for (size_t i = 0; i < components.size(); ++i) {
+        vis[i] = components[i] && components[i]->Visibility.getValue();
+    }
+
+    // SnapshotVisible keeps each component's internal placement and defers position to our
     // pcTransform; SnapshotTransform would discard them.
     linkView->setNodeType(Gui::LinkView::SnapshotVisible);
-    linkView->setLink(assembly);
+    linkView->setChildren(components, vis, Gui::LinkView::SnapshotVisible);
 }
 
 bool ViewProviderAssemblyLink::getElementPicked(const SoPickedPoint* pp, std::string& subname) const
 {
-    // A pick on the referenced geometry resolves to its sub-shape (e.g. "Body.Face3"); nothing
-    // is linked for a flexible sub-assembly, so defer to the base group behaviour.
-    if (linkView->isLinked() && linkView->linkGetElementPicked(pp, subname)) {
+    // A pick on the referenced geometry resolves to its sub-shape (e.g. "Body.Face3"). The
+    // rigid sub-assembly renders its components through the reference (setChildren), so query
+    // the link view; a flexible sub-assembly renders nothing here (getSize() == 0), so defer
+    // to the base group behaviour.
+    if (linkView->getSize() > 0 && linkView->linkGetElementPicked(pp, subname)) {
         return true;
     }
     return ViewProviderGeometryObject::getElementPicked(pp, subname);
@@ -139,8 +160,9 @@ bool ViewProviderAssemblyLink::getDetailPath(
 ) const
 {
     // Reverse of getElementPicked: turn a referenced sub-name back into the Coin path under our
-    // linked root, so selection highlighting reaches through the reference.
-    if (linkView->isLinked()) {
+    // linked root, so selection highlighting reaches through the reference. Rigid renders its
+    // components through the reference (getSize() > 0); flexible defers to the base group.
+    if (linkView->getSize() > 0) {
         int len = pPath->getLength();
         if (append) {
             // The linked root hangs directly off pcRoot (not pcModeSwitch); LinkView appends the
