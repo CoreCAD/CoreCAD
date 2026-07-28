@@ -512,6 +512,13 @@ void AssemblyLink::synchronizeComponents()
                 newLink->LinkedObject.setValue(obj);
                 newLink->Label.setValue(obj->Label.getValue());
                 addObject(newLink);
+                // Bake the component's own pose (its placement inside the sub-assembly) into
+                // the proxy, exactly as the link-group branch above does for its elements. The
+                // flexible-flip in onChanged then premultiplies the link's instance placement,
+                // yielding the correct world pose. Without this the proxy starts at identity and
+                // renders the geometry at only the instance offset, dropping the internal pose --
+                // parts of a sub-assembly whose frame is far from its origin then fly apart.
+                syncPlacements(obj, newLink);
                 link = newLink;
             }
         }
