@@ -106,8 +106,12 @@ void ViewProviderAssemblyLink::updateLinkView()
     auto* link = freecad_cast<AssemblyLink*>(getObject());
 
     // A rigid sub-assembly owns no proxy geometry, so we render the linked assembly through the
-    // reference. A flexible one keeps its owned proxy children (#63); leave it to the base class.
+    // reference. A flexible one keeps its owned proxy children (#63); this view provider must
+    // contribute nothing. Clear the child snapshot array as well as the direct link: a prior
+    // rigid state (or the transient rigid pass during import) populates the array via
+    // setChildren, and setLink(nullptr) alone leaves it in place -- double-drawing every leaf.
     if (!link || !link->isRigid()) {
+        linkView->setChildren({}, {});
         linkView->setLink(nullptr);
         return;
     }
