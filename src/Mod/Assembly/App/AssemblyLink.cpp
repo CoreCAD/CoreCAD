@@ -198,9 +198,6 @@ void AssemblyLink::onChanged(const App::Property* prop)
         updateContents();
 
         auto* propPlc = dynamic_cast<App::PropertyPlacement*>(getPropertyByName("Placement"));
-        if (!propPlc) {
-            return;
-        }
 
         // A flexible sub-assembly carries its instance transform on the link itself. Because
         // AssemblyLink is a GeoFeatureGroup, the kernel composes that transform onto the owned
@@ -213,14 +210,17 @@ void AssemblyLink::onChanged(const App::Property* prop)
         // group-aware is the paired follow-up.)
         //
         // Rigid retained transitionally until rigid support is removed.
-        if (Rigid.getValue()) {
+        if (propPlc && Rigid.getValue()) {
             // For the assemblylink not to move to origin, we need to update its placement.
             if (!movePlc.isIdentity()) {
                 propPlc->setValue(movePlc);
             }
         }
-        return;
     }
+    // Always forward to the base so the change -- including Rigid -- is signalled to observers.
+    // The view provider listens for Rigid here to rebuild the sub-assembly's render for the new
+    // rigid/flexible state; returning early left a flexible sub-assembly showing both its owned
+    // proxy geometry and the stale through-reference render (issue #77).
     App::GeoFeature::onChanged(prop);
 }
 
