@@ -30,16 +30,18 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/dynamic_bitset.hpp>
+
 #include <TDocStd_Document.hxx>
 #include <TopoDS_Shape.hxx>
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
+#include <App/PropertyGeo.h>
 #include <Base/Sequencer.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include "ExportOCAF.h"
-#include "ImportOCAF.h"
 #include "Tools.h"
 
 
@@ -65,7 +67,6 @@ struct ImportExport ImportOCAFOptions
     Base::Color defaultFaceColor;
     Base::Color defaultEdgeColor;
     bool merge = false;
-    bool useLinkGroup = false;
     bool useBaseName = true;
     bool importHidden = true;
     bool reduceObjects = false;
@@ -87,7 +88,6 @@ public:
     {
         options.merge = enable;
     }
-    void setUseLinkGroup(bool enable);
     void setBaseName(bool enable)
     {
         options.useBaseName = enable;
@@ -187,24 +187,6 @@ private:
     {}
 
 private:
-    class ImportLegacy: public ImportOCAF
-    {
-    public:
-        explicit ImportLegacy(ImportOCAF2& parent)
-            : ImportOCAF(parent.pDoc, parent.pDocument, parent.default_name)
-            , myParent(parent)
-        {}
-
-    private:
-        void applyColors(Part::Feature* part, const std::vector<Base::Color>& colors) override
-        {
-            myParent.applyFaceColors(part, colors);
-        }
-
-        ImportOCAF2& myParent;
-    };
-    friend class ImportLegacy;
-
     Handle(TDocStd_Document) pDoc;
     App::Document* pDocument;
     Handle(XCAFDoc_ShapeTool) aShapeTool;

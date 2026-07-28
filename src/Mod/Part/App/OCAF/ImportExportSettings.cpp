@@ -232,16 +232,6 @@ bool ImportExportSettings::getExportKeepPlacement() const
     return pGroup->GetBool("ExportKeepPlacement", false);
 }
 
-void ImportExportSettings::setUseLinkGroup(bool on)
-{
-    pGroup->SetBool("UseLinkGroup", on);
-}
-
-bool ImportExportSettings::getUseLinkGroup() const
-{
-    return pGroup->GetBool("UseLinkGroup", false);
-}
-
 void ImportExportSettings::setUseBaseName(bool on)
 {
     pGroup->SetBool("UseBaseName", on);

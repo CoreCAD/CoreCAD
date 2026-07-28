@@ -43,7 +43,6 @@ DlgImportStep::DlgImportStep(QWidget* parent)
     Part::OCAF::ImportExportSettings settings;
     ui->checkBoxMergeCompound->setChecked(settings.getReadShapeCompoundMode());
     ui->checkBoxImportHiddenObj->setChecked(settings.getImportHiddenObject());
-    ui->checkBoxUseLinkGroup->setChecked(settings.getUseLinkGroup());
     ui->checkBoxUseBaseName->setChecked(settings.getUseBaseName());
     ui->checkBoxReduceObjects->setChecked(settings.getReduceObjects());
     ui->checkBoxExpandCompound->setChecked(settings.getExpandCompound());
@@ -74,7 +73,6 @@ void DlgImportStep::saveSettings()
 #endif
     ui->checkBoxMergeCompound->onSave();
     ui->checkBoxImportHiddenObj->onSave();
-    ui->checkBoxUseLinkGroup->onSave();
     ui->checkBoxUseBaseName->onSave();
     ui->checkBoxReduceObjects->onSave();
     ui->checkBoxExpandCompound->onSave();
@@ -90,7 +88,6 @@ void DlgImportStep::loadSettings()
 #endif
     ui->checkBoxMergeCompound->onRestore();
     ui->checkBoxImportHiddenObj->onRestore();
-    ui->checkBoxUseLinkGroup->onRestore();
     ui->checkBoxUseBaseName->onRestore();
     ui->checkBoxReduceObjects->onRestore();
     ui->checkBoxExpandCompound->onRestore();
@@ -103,7 +100,6 @@ StepImportSettings DlgImportStep::getSettings() const
     StepImportSettings set;
     Part::OCAF::ImportExportSettings settings;
     set.merge = settings.getReadShapeCompoundMode();
-    set.useLinkGroup = settings.getUseLinkGroup();
     set.useBaseName = settings.getUseBaseName();
     set.importHidden = settings.getImportHiddenObject();
     set.reduceObjects = settings.getReduceObjects();
