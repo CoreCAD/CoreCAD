@@ -216,11 +216,23 @@ void AssemblyLink::onChanged(const App::Property* prop)
                 propPlc->setValue(movePlc);
             }
         }
+
+        // Forward to the base so the change is signalled to observers -- notably the view
+        // provider, which rebuilds the sub-assembly's render for the new rigid/flexible state.
+        // Returning early (as this used to) left a flexible sub-assembly showing both its owned
+        // proxy geometry and the stale through-reference render (issue #77). But suppress the
+        // touch while doing so: a Rigid change applies its whole effect synchronously above
+        // (updateContents + placement), and letting it also mark the object for recompute makes
+        // Document::recompute re-enter the solver on a freshly built rigid tree and never settle
+        // (an unbounded recompute). No-touch keeps the pre-#77 invariant "a Rigid change does not
+        // schedule a recompute" while still emitting the signal #77 needs.
+        Base::ObjectStatusLocker<App::ObjectStatus, App::DocumentObject> noTouch(
+            App::ObjectStatus::NoTouch,
+            this
+        );
+        App::GeoFeature::onChanged(prop);
+        return;
     }
-    // Always forward to the base so the change -- including Rigid -- is signalled to observers.
-    // The view provider listens for Rigid here to rebuild the sub-assembly's render for the new
-    // rigid/flexible state; returning early left a flexible sub-assembly showing both its owned
-    // proxy geometry and the stale through-reference render (issue #77).
     App::GeoFeature::onChanged(prop);
 }
 
