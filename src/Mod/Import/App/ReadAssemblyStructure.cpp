@@ -25,6 +25,8 @@
 #ifndef _PreComp_
 # include <TDF_Label.hxx>
 # include <TDF_LabelSequence.hxx>
+# include <TDF_Tool.hxx>
+# include <TCollection_AsciiString.hxx>
 # include <TDataStd_Name.hxx>
 # include <TopLoc_Location.hxx>
 # include <XCAFDoc_DocumentTool.hxx>
@@ -82,6 +84,11 @@ AssemblyComponent ReadAssemblyStructure::buildComponent(const TDF_Label& compone
     if (comp.name.empty()) {
         comp.name = labelName(component);
     }
+    // The prototype label's entry uniquely identifies the shared part/sub-assembly
+    // definition within this file; every instance of it resolves to the same entry.
+    TCollection_AsciiString entry;
+    TDF_Tool::Entry(prototype, entry);
+    comp.prototype = entry.ToCString();
     comp.placement = toPlacement(shapeTool_->GetLocation(component));
     comp.isAssembly = shapeTool_->IsAssembly(prototype);
     comp.shape = Part::TopoShape(shapeTool_->GetShape(prototype));

@@ -92,7 +92,12 @@ def importAssembly(step_path, dest_dir=None, rigid=False, structure=None):
     asm_name = structure["name"].strip() or stem
     # One name pool for the whole tree so every file in dest_dir is uniquely named.
     used_names = set()
-    return _buildAssembly(asm_name, components, dest_dir, used_names, rigid)
+    # One document per distinct prototype (keyed by the reader's stable prototype id),
+    # shared across the whole tree: every instance references it rather than duplicating
+    # its geometry on disk. Maps prototype id -> the reusable target (a Part::Feature for
+    # a leaf, an AssemblyObject for a sub-assembly).
+    prototypes = {}
+    return _buildAssembly(asm_name, components, dest_dir, used_names, rigid, prototypes)
 
 
 def _looksLikeAssembly(components):
@@ -152,11 +157,13 @@ def insert(filename, docname):
     return _delegateStandardImport(filename, docname)
 
 
-def _buildAssembly(asm_name, components, dest_dir, used_names, rigid):
+def _buildAssembly(asm_name, components, dest_dir, used_names, rigid, prototypes):
     """Build one ``.cassembly`` level and return its AssemblyObject.
 
-    ``components`` is a list of reader dicts (each with name/shape/placement/is_assembly/
-    children). Sub-assemblies are built recursively before they are linked in.
+    ``components`` is a list of reader dicts (each with name/shape/placement/prototype/
+    is_assembly/children). Sub-assemblies are built recursively before they are linked in.
+    ``prototypes`` caches one built document per distinct prototype id so shared parts and
+    sub-assemblies are referenced, not duplicated.
     """
     asm_name = _unique_name(asm_name, used_names)
 
@@ -168,20 +175,31 @@ def _buildAssembly(asm_name, components, dest_dir, used_names, rigid):
     first_component = None
     for comp in components:
         if comp["is_assembly"]:
-            # Build the sub-assembly's own .cassembly first, then link it in.
-            sub = _buildAssembly(comp["name"], comp["children"], dest_dir, used_names, rigid)
+            # Build (or reuse) the sub-assembly's own .cassembly, then link it in at this
+            # instance's placement. Two instances of one prototype share the document.
+            sub = prototypes.get(comp["prototype"])
+            if sub is None:
+                sub = _buildAssembly(
+                    comp["name"], comp["children"], dest_dir, used_names, rigid, prototypes
+                )
+                prototypes[comp["prototype"]] = sub
             name = sub.Document.Label
             component = UtilsAssembly.addSubAssembly(
                 assembly, sub, comp["placement"], rigid=rigid, label=name, name=name
             )
         else:
-            name = _unique_name(comp["name"], used_names)
-            leaf_doc = App.newDocument(name, type=App.DocTypePart)
-            feature = leaf_doc.addObject("Part::Feature", "Body")
-            feature.Shape = comp["shape"]
-            feature.Label = name
-            leaf_doc.recompute()
-            leaf_doc.saveAs(os.path.join(dest_dir, name + ".cpart"))
+            # Build (or reuse) the leaf part document; link this instance at its placement.
+            feature = prototypes.get(comp["prototype"])
+            if feature is None:
+                name = _unique_name(comp["name"], used_names)
+                leaf_doc = App.newDocument(name, type=App.DocTypePart)
+                feature = leaf_doc.addObject("Part::Feature", "Body")
+                feature.Shape = comp["shape"]
+                feature.Label = name
+                leaf_doc.recompute()
+                leaf_doc.saveAs(os.path.join(dest_dir, name + ".cpart"))
+                prototypes[comp["prototype"]] = feature
+            name = feature.Label
             component = UtilsAssembly.addComponent(assembly, feature, comp["placement"], label=name)
 
         if first_component is None:

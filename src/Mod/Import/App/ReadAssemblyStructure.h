@@ -50,6 +50,11 @@ struct ImportExport AssemblyComponent
     std::string name;
     Part::TopoShape shape;
     Base::Placement placement;
+    /// Stable identity of the referred prototype (its XCAF label entry). Two
+    /// instances of the same shared prototype carry the same value, so a caller
+    /// can build one document per distinct prototype and reference it N times
+    /// instead of duplicating the geometry per instance.
+    std::string prototype;
     /// True when the referred prototype is itself an assembly (a nested
     /// sub-assembly). When set, `children` holds its direct components.
     bool isAssembly {false};

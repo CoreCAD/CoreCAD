@@ -98,6 +98,7 @@ Py::Dict componentToDict(const AssemblyComponent& comp)
     item.setItem("name", Py::String(comp.name));
     item.setItem("shape", Py::asObject(new Part::TopoShapePy(new Part::TopoShape(comp.shape))));
     item.setItem("placement", Py::asObject(new Base::PlacementPy(new Base::Placement(comp.placement))));
+    item.setItem("prototype", Py::String(comp.prototype));
     item.setItem("is_assembly", Py::Boolean(comp.isAssembly));
     item.setItem("children", componentsToList(comp.children));
     return item;
@@ -126,11 +127,13 @@ public:
             "readAssemblyStructure(string) -> dict\n\n"
             "Read the assembly structure of a STEP/IGES file without creating any\n"
             "document objects. Returns {'name': str, 'components': [ {'name': str,\n"
-            "'shape': Part.Shape, 'placement': Placement, 'is_assembly': bool,\n"
-            "'children': [...]}, ... ]} where each component's shape is local\n"
-            "(prototype-frame) geometry and its placement is the instance pose within\n"
-            "the assembly. A sub-assembly component carries its own direct components\n"
-            "under 'children', recursively, to full depth."
+            "'shape': Part.Shape, 'placement': Placement, 'prototype': str,\n"
+            "'is_assembly': bool, 'children': [...]}, ... ]} where each component's\n"
+            "shape is local (prototype-frame) geometry and its placement is the instance\n"
+            "pose within the assembly. 'prototype' is a stable id of the referred part\n"
+            "definition: instances that share a prototype carry the same value. A\n"
+            "sub-assembly component carries its own direct components under 'children',\n"
+            "recursively, to full depth."
         );
         add_keyword_method(
             "export",
