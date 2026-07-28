@@ -492,13 +492,42 @@ Body* Body::breakOutInstance(Body* instanceBody)
     // re-parent — a body is not nested in a container.
     newBody->addFeature(baked);  // also points the new Body's Tip at the BakedShape
 
-    // Record the skip (§5.6) so the pattern drops this instance, then recompute.
-    // The originating Body becomes an orphan and is retired by the reconciler (§4.7).
-    std::vector<std::string> skips = pattern->SkipComponentIds.getValues();
-    if (std::find(skips.begin(), skips.end(), cid) == skips.end()) {
-        skips.push_back(cid);
-        pattern->SkipComponentIds.setValues(skips);
+    // Record the skip (§5.6) so the pattern drops this instance, then recompute. The pattern's
+    // skip-list keys on each instance's ORIGINAL ordinal (ARCHITECTURE §5.6/§11.2), not its
+    // component-id: the element-map id is only self-consistent against the pattern's own stored
+    // shape, so translate the selected Body's id to its ordinal HERE, once, where the ids agree,
+    // and store the stable ordinal. The originating Body becomes an orphan and is retired by the
+    // reconciler (§4.7).
+    const Part::TopoShape patShape = pattern->Shape.getShape();
+    const auto solidCount = static_cast<int>(patShape.countSubShapes(TopAbs_SOLID));
+    int keptPos = -1;  // the selected instance's position among the pattern's CURRENTLY-kept solids
+    for (int i = 1; i <= solidCount; ++i) {
+        if (Body::componentIdOfSolid(patShape, i) == cid) {
+            keptPos = i - 1;
+            break;
+        }
     }
+    if (keptPos < 0) {
+        // The Body's component is not present in the pattern output (already broken out or
+        // retired); nothing to skip. The freshly baked independent Body still stands.
+        return newBody;
+    }
+    // Map the kept-position back to an original ordinal by stepping over already-skipped ones:
+    // the ordinal space spans every generated instance, the kept space only the survivors.
+    std::vector<long> skips = pattern->SkipInstances.getValues();
+    const std::set<long> skipSet(skips.begin(), skips.end());
+    long ordinal = 0;
+    for (int seen = 0;; ++ordinal) {
+        if (skipSet.count(ordinal)) {
+            continue;
+        }
+        if (seen == keptPos) {
+            break;
+        }
+        ++seen;
+    }
+    skips.push_back(ordinal);
+    pattern->SkipInstances.setValues(skips);
     doc->recompute();
 
     return newBody;

@@ -63,12 +63,17 @@ public:
     /// classic instance-fusing behaviour.
     App::PropertyBool MultiBody;
 
-    /// Cruth §5.6 skip-list: component-ids (§3.3) of instances omitted from the MultiBody
-    /// output. Break-out records the detached instance's component-id here so the pattern
-    /// continues with one fewer member and never silently re-merges it. Id-based, not
-    /// positional: the list speaks the same identity language as Body::TipComponentId — the
-    /// thing the user actually selects — so no fragile index translation is needed.
-    App::PropertyStringList SkipComponentIds;
+    /// Cruth §5.6 skip-list: original ordinals of the instances broken out of the MultiBody
+    /// output. An instance's ordinal is its position in the transform sequence
+    /// (getTransformedCompShape order) — stable across recompute and independent of other
+    /// skips — so the pattern continues with one fewer member and never silently re-merges it.
+    /// Index-based per ARCHITECTURE §5.6/§11.2 ("marking that index as broken-out"). An earlier
+    /// design keyed this on Body::TipComponentId to "speak the identity language the user
+    /// selects", but the element-map component-id is context-dependent: its map name shifts
+    /// with the surrounding compound, so a skip keyed on it silently failed to match at execute
+    /// time. Break-out translates the selected Body's component-id to its ordinal once, against
+    /// the pattern's stored shape where the ids are self-consistent, then stores the ordinal.
+    App::PropertyIntegerList SkipInstances;
 
     /**
      * Returns the BaseFeature property's object(if any) otherwise return first original,
