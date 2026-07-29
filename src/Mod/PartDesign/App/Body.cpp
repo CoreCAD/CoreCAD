@@ -472,12 +472,12 @@ Body* Body::breakOutInstance(Body* instanceBody)
         return nullptr;
     }
 
-    // Capture the instance's solid straight from the instance Body's own Shape: it
-    // is already the pattern component for this cid with the instance offset baked
-    // into the geometry (the §3.3 multi-output display path does that bake) and the
-    // element map intact. Capture before recording the skip — once skipped, neither
-    // the pattern nor this Body emit it any more.
-    Part::TopoShape captured = instanceBody->Shape.getShape();
+    // Capture the instance's solid straight from the instance Body's own derived shape:
+    // it is already the pattern component for this cid with the instance offset baked
+    // into the geometry (derivedTipShape does that bake) and the element map intact.
+    // Capture before recording the skip — once skipped, neither the pattern nor this
+    // Body emit it any more.
+    Part::TopoShape captured = instanceBody->derivedTipShape();
     if (captured.countSubShapes(TopAbs_SOLID) >= 1) {
         captured = captured.getSubTopoShape(TopAbs_SOLID, 1, /*silent*/ true);
     }
@@ -666,7 +666,7 @@ std::vector<std::pair<Body*, Body*>> Body::findInterferingPairs(App::Document* d
     std::vector<Bnd_Box> boxes;
     for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
         auto* body = static_cast<Body*>(obj);
-        Part::TopoShape shape = body->Shape.getShape();
+        Part::TopoShape shape = body->derivedTipShape();
         if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) == 0) {
             continue;
         }
@@ -2100,7 +2100,13 @@ App::DocumentObjectExecReturn* Body::execute()
         ));
     }
 
-    Shape.setValue(tipShape);
+    // Cruth §3.3: a Body stores no geometry of its own. Its shape is derived from the Tip
+    // on demand (derivedTipShape) — read by the render path and every consumer — so execute
+    // no longer materialises it into the Shape property. The computation above is retained
+    // as validation only: an empty Tip, a non-PartDesign Tip, or an empty Tip shape fails
+    // loud (P7), while a missing named component silently defers to the reconciler (§4.7).
+    // The Shape property (still inherited from Part::Feature here) is now unmaintained and
+    // is removed with the base-class reparent in the next slice.
     return App::DocumentObject::StdReturn;
 }
 

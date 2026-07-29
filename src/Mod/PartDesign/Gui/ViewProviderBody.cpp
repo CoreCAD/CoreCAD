@@ -156,9 +156,32 @@ void ViewProviderBody::onChangedObject(const Gui::ViewProvider& vp, const App::P
     }
 }
 
-void ViewProviderBody::afterRecompute(const App::Document& /* doc */, const std::vector<App::DocumentObject*>& /* recomputedObjs */)
+void ViewProviderBody::afterRecompute(
+    const App::Document& /* doc */,
+    const std::vector<App::DocumentObject*>& recomputedObjs
+)
 {
     refreshOverlays();
+
+    // Cruth §3.3: a Body's displayed geometry is DERIVED from its Tip (getRenderedShape ->
+    // getSubObject -> derivedTipShape), not stored in a Shape property, so no "Shape"
+    // property change fires the base rebuild any more. Drive the rebuild from recompute
+    // instead: when this Body recomputed (it links its Tip, so a change to the tip feature
+    // recomputes it), its derived shape may have changed — refresh the Coin visual, mirroring
+    // the base's visibility guard so a hidden Body defers until it is shown again.
+    auto* body = getObject<PartDesign::Body>();
+    if (!body) {
+        return;
+    }
+    if (std::ranges::find(recomputedObjs, static_cast<App::DocumentObject*>(body))
+        != recomputedObjs.end()) {
+        if (isUpdateForced() || Visibility.getValue()) {
+            updateVisual();
+        }
+        else {
+            VisualTouched = true;
+        }
+    }
 }
 
 void ViewProviderBody::refreshOverlays()
