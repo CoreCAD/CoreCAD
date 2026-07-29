@@ -372,6 +372,17 @@ Body::Body()
         "Cruth §8.2 durable body identity; minted once at birth, persisted, never recomputed"
     );
 
+    // Cruth §8.6: dismissed spatial-interference partners (other Bodies' durable Uids). Hidden
+    // document state — persisted, but never a user-facing property and never a recompute input, so
+    // NoRecompute keeps a dismissal from touching geometry (§8.6: not a model concern).
+    ADD_PROPERTY_TYPE(
+        AcknowledgedOverlaps,
+        (),
+        "Base",
+        static_cast<App::PropertyType>(App::Prop_Hidden | App::Prop_NoRecompute),
+        "Cruth §8.6 durable Uids of Bodies whose overlap with this one the user acknowledged"
+    );
+
     // (Cruth §11 step 5e) The Group property and its _GroupTouched companion are gone entirely
     // now the OriginGroup extension is retired — nothing left to mark Transient/Output. Members
     // are derived from the BaseFeature chain (§9.1-inverse).
@@ -635,6 +646,111 @@ bool Body::toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyS
     GProp_GProps props;
     BRepGProp::VolumeProperties(inter, props);
     return props.Mass() > Precision::Confusion();
+}
+
+std::vector<std::pair<Body*, Body*>> Body::findInterferingPairs(App::Document* doc)
+{
+    // Cruth §8.6: distinct Bodies overlapping in space without a topological merge. A pure geometry
+    // sweep — no state read, no recompute touched (§8.6: detection is a UI concern, not a model one).
+    std::vector<std::pair<Body*, Body*>> pairs;
+    if (!doc) {
+        return pairs;
+    }
+
+    // Collect each candidate Body once with its world-frame shape and bounding box. Skip Bodies
+    // with no solid (a marker mid-edit or a degenerate compute) — there is nothing to interfere.
+    std::vector<Body*> bodies;
+    std::vector<Part::TopoShape> shapes;
+    std::vector<Bnd_Box> boxes;
+    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
+        auto* body = static_cast<Body*>(obj);
+        Part::TopoShape shape = body->Shape.getShape();
+        if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) == 0) {
+            continue;
+        }
+        Bnd_Box box;
+        try {
+            BRepBndLib::Add(shape.getShape(), box);
+        }
+        catch (const Standard_Failure&) {
+            continue;
+        }
+        if (box.IsVoid()) {
+            continue;
+        }
+        bodies.push_back(body);
+        shapes.push_back(shape);
+        boxes.push_back(box);
+    }
+
+    // Every unordered pair; the bounding-box reject keeps the costly boolean off far-apart Bodies.
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        for (std::size_t j = i + 1; j < bodies.size(); ++j) {
+            if (boxes[i].IsOut(boxes[j])) {
+                continue;
+            }
+            if (toolReaches(shapes[i], shapes[j])) {
+                pairs.emplace_back(bodies[i], bodies[j]);
+            }
+        }
+    }
+    return pairs;
+}
+
+bool Body::isInterferenceDismissed(const Body* a, const Body* b)
+{
+    // §8.6: the dismissal is symmetric and stored on both sides, but honour either — a one-sided
+    // record (e.g. after the other side was edited) still counts. Match on the durable §8.2 Uid.
+    if (!a || !b) {
+        return false;
+    }
+    const std::string aid = a->Uid.getValueStr();
+    const std::string bid = b->Uid.getValueStr();
+    for (const std::string& other : a->AcknowledgedOverlaps.getValues()) {
+        if (other == bid) {
+            return true;
+        }
+    }
+    for (const std::string& other : b->AcknowledgedOverlaps.getValues()) {
+        if (other == aid) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Body::dismissInterference(Body* a, Body* b)
+{
+    if (!a || !b) {
+        return;
+    }
+    const std::string aid = a->Uid.getValueStr();
+    const std::string bid = b->Uid.getValueStr();
+    if (aid.empty() || bid.empty()) {
+        return;
+    }
+    // Record each on the other, de-duplicated, so the notice stays silent regardless of which side
+    // a later query starts from.
+    const auto add = [](Body* body, const std::string& partnerId) {
+        std::vector<std::string> acks = body->AcknowledgedOverlaps.getValues();
+        if (std::ranges::find(acks, partnerId) == acks.end()) {
+            acks.push_back(partnerId);
+            body->AcknowledgedOverlaps.setValues(acks);
+        }
+    };
+    add(a, bid);
+    add(b, aid);
+}
+
+std::vector<std::pair<Body*, Body*>> Body::liveInterferingPairs(App::Document* doc)
+{
+    std::vector<std::pair<Body*, Body*>> live;
+    for (const auto& pair : findInterferingPairs(doc)) {
+        if (!isInterferenceDismissed(pair.first, pair.second)) {
+            live.push_back(pair);
+        }
+    }
+    return live;
 }
 
 std::vector<App::DocumentObject*> Body::spawnScopeSiblings(

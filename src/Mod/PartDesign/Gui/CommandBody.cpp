@@ -24,8 +24,14 @@
 
 
 #include <QApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QInputDialog>
+#include <QLabel>
+#include <QListWidget>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QVBoxLayout>
 #include <TopExp_Explorer.hxx>
 
 #include <App/Datums.h>
@@ -39,6 +45,7 @@
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
+#include <Gui/Selection/Selection.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureBase.h>
@@ -617,6 +624,130 @@ bool CmdPartDesignMoveFeatureInTree::isActive()
 
 
 //===========================================================================
+// PartDesign_CheckInterference
+//===========================================================================
+
+DEF_STD_CMD_A(CmdPartDesignCheckInterference)
+
+CmdPartDesignCheckInterference::CmdPartDesignCheckInterference()
+    : Command("PartDesign_CheckInterference")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Check spatial interference");
+    sToolTipText = QT_TR_NOOP(
+        "List pairs of bodies whose volumes overlap in space, and acknowledge intended overlaps"
+    );
+    sWhatsThis = "PartDesign_CheckInterference";
+    sStatusTip = sToolTipText;
+}
+
+void CmdPartDesignCheckInterference::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    // Cruth §8.6: an on-demand, non-blocking check — the pairwise boolean is too costly to run
+    // every recompute, and an overlap is valid geometry, never a failure. This dialog is the
+    // interim surface until the Phase-5 state manifest carries the notice.
+    App::Document* doc = getDocument();
+    if (!doc) {
+        return;
+    }
+
+    if (PartDesign::Body::liveInterferingPairs(doc).empty()) {
+        QMessageBox::information(
+            Gui::getMainWindow(),
+            QObject::tr("Spatial interference"),
+            QObject::tr("No unacknowledged overlaps: no two bodies share volume in space.")
+        );
+        return;
+    }
+
+    QDialog dialog(Gui::getMainWindow());
+    dialog.setWindowTitle(QObject::tr("Spatial interference"));
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(
+        QObject::tr(
+            "These bodies overlap in space without being merged. Select a pair to highlight "
+            "it, then acknowledge if the overlap is intentional (keep them distinct)."
+        ),
+        &dialog
+    ));
+    auto* list = new QListWidget(&dialog);
+    layout->addWidget(list);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    auto* ackButton = buttons->addButton(
+        QObject::tr("Acknowledge (keep distinct)"),
+        QDialogButtonBox::ActionRole
+    );
+    ackButton->setEnabled(false);
+    layout->addWidget(buttons);
+
+    // Rebuild the row list from the current live pairs; each row remembers its two body names so a
+    // later selection/acknowledge resolves them freshly (a body could have been retired meanwhile).
+    const std::string docName = doc->getName();
+    auto repopulate = [&]() {
+        list->clear();
+        for (const auto& pair : PartDesign::Body::liveInterferingPairs(doc)) {
+            auto* item = new QListWidgetItem(
+                QString::fromUtf8("%1  ∩  %2")
+                    .arg(QString::fromUtf8(pair.first->Label.getValue()))
+                    .arg(QString::fromUtf8(pair.second->Label.getValue())),
+                list
+            );
+            item->setData(Qt::UserRole, QString::fromLatin1(pair.first->getNameInDocument()));
+            item->setData(Qt::UserRole + 1, QString::fromLatin1(pair.second->getNameInDocument()));
+        }
+        ackButton->setEnabled(false);
+        if (list->count() == 0) {
+            dialog.accept();  // nothing left to resolve
+        }
+    };
+
+    QObject::connect(list, &QListWidget::currentItemChanged, [&](QListWidgetItem* item) {
+        ackButton->setEnabled(item != nullptr);
+        Gui::Selection().clearSelection();
+        if (!item) {
+            return;
+        }
+        // Highlight both bodies of the selected pair in the 3D view.
+        Gui::Selection().addSelection(
+            docName.c_str(),
+            item->data(Qt::UserRole).toString().toLatin1().constData()
+        );
+        Gui::Selection().addSelection(
+            docName.c_str(),
+            item->data(Qt::UserRole + 1).toString().toLatin1().constData()
+        );
+    });
+
+    QObject::connect(ackButton, &QPushButton::clicked, [&]() {
+        QListWidgetItem* item = list->currentItem();
+        if (!item) {
+            return;
+        }
+        auto* a = freecad_cast<PartDesign::Body*>(
+            doc->getObject(item->data(Qt::UserRole).toString().toLatin1().constData())
+        );
+        auto* b = freecad_cast<PartDesign::Body*>(
+            doc->getObject(item->data(Qt::UserRole + 1).toString().toLatin1().constData())
+        );
+        PartDesign::Body::dismissInterference(a, b);
+        repopulate();
+    });
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    repopulate();
+    dialog.exec();
+    Gui::Selection().clearSelection();
+}
+
+bool CmdPartDesignCheckInterference::isActive()
+{
+    return hasActiveDocument();
+}
+
+//===========================================================================
 // Initialization
 //===========================================================================
 
@@ -629,4 +760,5 @@ void CreatePartDesignBodyCommands()
     rcCmdMgr.addCommand(new CmdPartDesignDuplicateSelection());
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeature());
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeatureInTree());
+    rcCmdMgr.addCommand(new CmdPartDesignCheckInterference());
 }

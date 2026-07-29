@@ -28,6 +28,8 @@
 
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <App/PropertyStandard.h>
 #include <Mod/Part/App/BodyBase.h>
@@ -68,6 +70,14 @@ public:
     /// persisted. This is the stable id assemblies and BOMs resolve a body through (§13.1);
     /// unlike the runtime which-solid predicate, it costs no robustness to topology changes.
     App::PropertyUUID Uid;
+
+    /// Cruth §8.6 dismissed spatial interferences — the durable Uids of the other Bodies whose
+    /// geometric overlap with this one the user has acknowledged as intentional. Stored on both
+    /// Bodies of a dismissed pair; the interference notice is suppressed while either side lists
+    /// the other. Keyed on the durable §8.2 Uid (not the object name), so a Body that is retired
+    /// and reborn gets a fresh identity and correctly re-warns. Hidden document state, not a
+    /// user-facing property.
+    App::PropertyStringList AcknowledgedOverlaps;
 
     /// True if this body feature is active or was active when the document was last closed
     // App::PropertyBool IsActive;
@@ -191,6 +201,32 @@ public:
     /// nothing. Robust to disjoint inputs (returns false, never throws). This is a pure geometry
     /// predicate on two shapes; the caller gathers each Body's Tip shape and asks per Body.
     static bool toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyShape);
+
+    /// Cruth §8.6 Spatial Interference: every unordered pair of distinct Bodies in @p doc whose
+    /// shapes share positive volume. Two Bodies may occupy overlapping space without being
+    /// topologically merged (§4.8) — geometrically valid but usually unintended (e.g. keep-distinct
+    /// pattern instances that coincide). This is the pure-geometry detector; per §8.6 it is a UI
+    /// concern surfaced as a NON-blocking notice, never a recompute failure, and is meant to be run
+    /// on demand rather than every recompute (the pairwise boolean is costly). Bounding boxes
+    /// pre-reject far-apart Bodies; the volume test (via toolReaches) ignores bare surface contact.
+    /// Bodies with a null or solid-less Shape are skipped. Dismissal of intentional overlaps is a
+    /// caller/document-state concern layered above this predicate, not filtered here.
+    static std::vector<std::pair<Body*, Body*>> findInterferingPairs(App::Document* doc);
+
+    /// Cruth §8.6: the interfering pairs in @p doc the user has NOT dismissed —
+    /// findInterferingPairs minus every pair whose overlap was acknowledged as intentional (either
+    /// Body listing the other in AcknowledgedOverlaps). This is what the interference notice
+    /// surfaces; an empty result means nothing needs the user's attention.
+    static std::vector<std::pair<Body*, Body*>> liveInterferingPairs(App::Document* doc);
+
+    /// Cruth §8.6: has the overlap between @p a and @p b been dismissed as intentional? True when
+    /// either Body records the other's durable §8.2 Uid in AcknowledgedOverlaps.
+    static bool isInterferenceDismissed(const Body* a, const Body* b);
+
+    /// Cruth §8.6: acknowledge the overlap between @p a and @p b as intentional, silencing its
+    /// notice. Records each Body's durable Uid on the other (idempotent). A no-op on null Bodies or
+    /// a Body with no Uid.
+    static void dismissInterference(Body* a, Body* b);
 
     /// Cruth Amendment 5 §5.1 multi-body scope fan-out: given one shared @p tool and the set of
     /// @p targets the user chose to affect, spawn one ordinary single-`BaseShape` Boolean feature
