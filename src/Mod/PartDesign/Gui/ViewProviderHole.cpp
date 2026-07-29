@@ -441,7 +441,8 @@ TopoDS_Shape ViewProviderHole::getCurrentlyVisibleShape(const PartDesign::Hole* 
             return posteriorFeature->Shape.getValue();
         }
     }
-    return body->Shape.getValue();
+    // Cruth §3.3: a Body holds no stored geometry; its shape is derived from its Tip.
+    return body->derivedTipShape().getShape();
 }
 
 std::pair<gp_Dir, gp_Dir> ViewProviderHole::buildOrthonormalFrame(const gp_Dir& axis)

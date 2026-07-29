@@ -2636,14 +2636,15 @@ void CmdPartDesignBoolean::activated(int iMsg)
         }
         if (toolBodies.size() == 1) {
             PartDesign::Body* tool = toolBodies.front();
-            const Part::TopoShape toolShape = tool->Shape.getShape();
+            // Cruth §3.3: a Body holds no stored geometry; derive it from the Tip.
+            const Part::TopoShape toolShape = tool->derivedTipShape();
             // Candidate targets: the active body (explicit intent) plus every other body the tool
             // reaches. Order: active first, then document order.
             std::vector<PartDesign::Body*> reached {pcActiveBody};
             for (auto* obj : getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
                 auto* cand = static_cast<PartDesign::Body*>(obj);
                 if (cand != pcActiveBody && cand != tool
-                    && PartDesign::Body::toolReaches(toolShape, cand->Shape.getShape())) {
+                    && PartDesign::Body::toolReaches(toolShape, cand->derivedTipShape())) {
                     reached.push_back(cand);
                 }
             }

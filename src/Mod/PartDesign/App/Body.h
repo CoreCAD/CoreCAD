@@ -506,6 +506,13 @@ public:
         int depth
     ) const override;
 
+    /// The shape a Body propagates as its output, derived on demand from its Tip
+    /// (ARCHITECTURE §3.3: "the Body propagates its Tip's shape; it does not compute
+    /// geometry of its own"). For a multi-output Body it is the single connected
+    /// component named by TipComponentId (§3.3), extracted and world-placed. A null
+    /// shape means there is no valid Tip/component yet; callers decide what a miss means.
+    Part::TopoShape derivedTipShape() const;
+
     void setShowTip(bool enable)
     {
         showTip = enable;

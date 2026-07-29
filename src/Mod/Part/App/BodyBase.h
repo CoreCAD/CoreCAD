@@ -44,7 +44,13 @@ namespace Part
  * in edit or active on a workbench, the body shows only the
  * resulting shape to the outside (Tip link).
  */
-class PartExport BodyBase: public Part::Feature
+// Cruth §3.3/§4 (issue #12): a Body is an unplaced marker, not a placed feature. It derives
+// from the *unplaced* Part::ShapeFeature — which carries the shape-source identity every
+// consumer resolves a Body through (isDerivedFrom<Part::ShapeFeature>) — but NOT from
+// Part::Feature, which would mix in App::PlacementExtension (Amendment 4). A Body therefore
+// carries no Placement slot of its own: its features derive their frame from their own
+// attachments, never from Body containment, so there is nothing to pin to identity.
+class PartExport BodyBase: public Part::ShapeFeature
 {
     PROPERTY_HEADER(Part::BodyBase);
 
