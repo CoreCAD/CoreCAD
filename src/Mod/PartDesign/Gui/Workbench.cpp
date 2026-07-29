@@ -535,6 +535,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
           << "Materials_InspectMaterial"
           << "Separator"
           << "Part_CheckGeometry"
+          << "PartDesign_CheckInterference"
           << "Separator"
           << "PartDesign_InvoluteGear"
           << "PartDesign_Sprocket";
