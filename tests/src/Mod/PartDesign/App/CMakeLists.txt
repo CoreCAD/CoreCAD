@@ -7,6 +7,7 @@ add_executable(PartDesign_tests_run
         Pad.cpp
         MoveFeatureToBody.cpp
         AddFeature.cpp
+        FindInterferingPairs.cpp
         ReconcileMultiOutput.cpp
         SpawnScopeSiblings.cpp
         ToolReaches.cpp

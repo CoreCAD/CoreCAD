@@ -637,6 +637,55 @@ bool Body::toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyS
     return props.Mass() > Precision::Confusion();
 }
 
+std::vector<std::pair<Body*, Body*>> Body::findInterferingPairs(App::Document* doc)
+{
+    // Cruth §8.6: distinct Bodies overlapping in space without a topological merge. A pure geometry
+    // sweep — no state read, no recompute touched (§8.6: detection is a UI concern, not a model one).
+    std::vector<std::pair<Body*, Body*>> pairs;
+    if (!doc) {
+        return pairs;
+    }
+
+    // Collect each candidate Body once with its world-frame shape and bounding box. Skip Bodies
+    // with no solid (a marker mid-edit or a degenerate compute) — there is nothing to interfere.
+    std::vector<Body*> bodies;
+    std::vector<Part::TopoShape> shapes;
+    std::vector<Bnd_Box> boxes;
+    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
+        auto* body = static_cast<Body*>(obj);
+        Part::TopoShape shape = body->Shape.getShape();
+        if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) == 0) {
+            continue;
+        }
+        Bnd_Box box;
+        try {
+            BRepBndLib::Add(shape.getShape(), box);
+        }
+        catch (const Standard_Failure&) {
+            continue;
+        }
+        if (box.IsVoid()) {
+            continue;
+        }
+        bodies.push_back(body);
+        shapes.push_back(shape);
+        boxes.push_back(box);
+    }
+
+    // Every unordered pair; the bounding-box reject keeps the costly boolean off far-apart Bodies.
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        for (std::size_t j = i + 1; j < bodies.size(); ++j) {
+            if (boxes[i].IsOut(boxes[j])) {
+                continue;
+            }
+            if (toolReaches(shapes[i], shapes[j])) {
+                pairs.emplace_back(bodies[i], bodies[j]);
+            }
+        }
+    }
+    return pairs;
+}
+
 std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
     App::DocumentObject* tool,
     const std::vector<Body*>& targets,
