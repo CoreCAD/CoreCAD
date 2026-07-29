@@ -268,9 +268,11 @@ CmdPrimtiveCompSubtractive::CmdPrimtiveCompSubtractive()
 
 void CmdPrimtiveCompSubtractive::activated(int iMsg)
 {
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    // Cruth §8.5/§4.6: a subtractive primitive is a combinator — it must be told which solid
+    // it cuts, resolved from the selection, never silently taken from an active body.
+    PartDesign::Body* targetBody = PartDesignGui::resolveTargetBody(this);
 
-    if (!pcActiveBody) {
+    if (!targetBody) {
         return;
     }
 
@@ -279,7 +281,7 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
 
     // check if we already have a feature as subtractive ones work only if we have
     // something to subtract from.
-    App::DocumentObject* prevSolid = pcActiveBody->Tip.getValue();
+    App::DocumentObject* prevSolid = targetBody->Tip.getValue();
     if (!prevSolid) {
         QMessageBox::warning(
             Gui::getMainWindow(),
@@ -290,11 +292,11 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
     }
 
     auto shapeType(primitiveIntToName(iMsg));
-    auto FeatName(getUniqueObjectName(shapeType, pcActiveBody));
+    auto FeatName(getUniqueObjectName(shapeType, targetBody));
 
     openCommand(std::string("Make subtractive ") + shapeType);
     const std::string featType = std::string("PartDesign::Subtractive") + shapeType;
-    auto Feat = PartDesignGui::createFeature(pcActiveBody, featType.c_str(), FeatName);
+    auto Feat = PartDesignGui::createFeature(targetBody, featType.c_str(), FeatName);
     Gui::Command::updateActive();
     copyVisual(Feat, "ShapeAppearance", prevSolid);
     copyVisual(Feat, "LineColor", prevSolid);
@@ -307,7 +309,7 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
         FCMD_OBJ_HIDE(prevSolid);
     }
 
-    PartDesignGui::setEdit(Feat, pcActiveBody);
+    PartDesignGui::setEdit(Feat, targetBody);
 }
 
 Gui::Action* CmdPrimtiveCompSubtractive::createAction()

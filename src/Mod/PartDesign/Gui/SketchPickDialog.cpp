@@ -33,9 +33,11 @@
 #endif
 
 #include <App/Document.h>
+#include <App/DocumentObject.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection/Selection.h>
 #include <Mod/Part/App/Part2DObject.h>
+#include <Mod/PartDesign/App/Body.h>
 
 #include "SketchPickDialog.h"
 
@@ -44,52 +46,47 @@ using namespace PartDesignGui;
 namespace
 {
 
-Part::Part2DObject* sketchOf(const QListWidgetItem* item)
+App::DocumentObject* objectOf(const QListWidgetItem* item)
 {
     if (!item) {
         return nullptr;
     }
-    return reinterpret_cast<Part::Part2DObject*>(item->data(Qt::UserRole).value<void*>());
+    return reinterpret_cast<App::DocumentObject*>(item->data(Qt::UserRole).value<void*>());
 }
 
-// Highlight the given sketch in the 3D view (and tree) so the user sees what they are
+// Highlight the given object in the 3D view (and tree) so the user sees what they are
 // about to pick. Clears any prior highlight first.
-void highlightInView(Part::Part2DObject* sketch)
+void highlightInView(App::DocumentObject* obj)
 {
     Gui::Selection().clearSelection();
-    if (sketch) {
-        Gui::Selection().addSelection(sketch->getDocument()->getName(), sketch->getNameInDocument());
+    if (obj) {
+        Gui::Selection().addSelection(obj->getDocument()->getName(), obj->getNameInDocument());
     }
 }
 
-}  // namespace
-
-Part::Part2DObject* PartDesignGui::pickSketch(const std::vector<Part::Part2DObject*>& candidates)
+// The one modal chooser shared by pickSketch and pickBody: list the candidates by label,
+// highlight the current one in the 3D view, gate OK until a row is picked, and return the
+// chosen object (or nullptr on cancel). The typed wrappers cast the result.
+App::DocumentObject* pickFromCandidates(
+    const std::vector<App::DocumentObject*>& candidates,
+    const QString& title,
+    const QString& prompt
+)
 {
     if (candidates.empty()) {
         return nullptr;
     }
 
     QDialog dialog(Gui::getMainWindow());
-    dialog.setWindowTitle(
-        QCoreApplication::translate("PartDesignGui::SketchPickDialog", "Select a sketch")
-    );
+    dialog.setWindowTitle(title);
 
     auto* layout = new QVBoxLayout(&dialog);
-
-    auto* prompt = new QLabel(
-        QCoreApplication::translate(
-            "PartDesignGui::SketchPickDialog",
-            "Several sketches are available. Choose the one to use:"
-        ),
-        &dialog
-    );
-    layout->addWidget(prompt);
+    layout->addWidget(new QLabel(prompt, &dialog));
 
     auto* list = new QListWidget(&dialog);
-    for (auto* sketch : candidates) {
-        auto* item = new QListWidgetItem(QString::fromUtf8(sketch->Label.getValue()), list);
-        item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(sketch)));
+    for (auto* obj : candidates) {
+        auto* item = new QListWidgetItem(QString::fromUtf8(obj->Label.getValue()), list);
+        item->setData(Qt::UserRole, QVariant::fromValue(reinterpret_cast<void*>(obj)));
     }
     layout->addWidget(list);
 
@@ -102,7 +99,7 @@ Part::Part2DObject* PartDesignGui::pickSketch(const std::vector<Part::Part2DObje
     okButton->setEnabled(false);
     QObject::connect(list, &QListWidget::itemSelectionChanged, &dialog, [list, okButton]() {
         okButton->setEnabled(!list->selectedItems().isEmpty());
-        highlightInView(sketchOf(list->currentItem()));
+        highlightInView(objectOf(list->currentItem()));
     });
     QObject::connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -113,5 +110,35 @@ Part::Part2DObject* PartDesignGui::pickSketch(const std::vector<Part::Part2DObje
         return nullptr;
     }
 
-    return sketchOf(list->currentItem());
+    return objectOf(list->currentItem());
+}
+
+}  // namespace
+
+Part::Part2DObject* PartDesignGui::pickSketch(const std::vector<Part::Part2DObject*>& candidates)
+{
+    std::vector<App::DocumentObject*> objects(candidates.begin(), candidates.end());
+    auto* picked = pickFromCandidates(
+        objects,
+        QCoreApplication::translate("PartDesignGui::SketchPickDialog", "Select a sketch"),
+        QCoreApplication::translate(
+            "PartDesignGui::SketchPickDialog",
+            "Several sketches are available. Choose the one to use:"
+        )
+    );
+    return static_cast<Part::Part2DObject*>(picked);
+}
+
+PartDesign::Body* PartDesignGui::pickBody(const std::vector<PartDesign::Body*>& candidates)
+{
+    std::vector<App::DocumentObject*> objects(candidates.begin(), candidates.end());
+    auto* picked = pickFromCandidates(
+        objects,
+        QCoreApplication::translate("PartDesignGui::SketchPickDialog", "Select a body"),
+        QCoreApplication::translate(
+            "PartDesignGui::SketchPickDialog",
+            "Several bodies are available. Choose the one to operate on:"
+        )
+    );
+    return static_cast<PartDesign::Body*>(picked);
 }

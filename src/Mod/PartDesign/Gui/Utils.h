@@ -44,6 +44,11 @@ namespace Sketcher
 class SketchObject;
 }
 
+namespace Gui
+{
+class Command;
+}
+
 namespace PartDesignGui
 {
 
@@ -92,6 +97,16 @@ PartDesign::Body* getBodyFor(
     App::DocumentObject** topParent = nullptr,
     std::string* subname = nullptr
 );
+
+/**
+ * Cruth §8.5/§4.6: resolve the target Body a combinator (subtractive primitive, Boolean)
+ * operates on, from the selection rather than an active-body session state. One body
+ * selected → that body; several selected → warn and abort; nothing selected but a sole body
+ * exists → that body; several bodies, none selected → the de-owned pickBody chooser; no
+ * bodies → warn and abort. Shows the appropriate message and returns nullptr on any
+ * no-target/cancel/ambiguous outcome, so a combinator is never told a target it did not pick.
+ */
+PartDesign::Body* resolveTargetBody(Gui::Command* cmd);
 
 /// Fix sketch support after moving a free sketch into a body
 void fixSketchSupport(Sketcher::SketchObject* sketch);
