@@ -28,6 +28,7 @@ from AssemblyTests.TestCommandInsertLink import TestCommandInsertLink
 from AssemblyTests.TestSubAssembly import TestSubAssembly
 from AssemblyTests.TestAssemblyBuilder import TestAssemblyBuilder
 from AssemblyTests.TestStepAssemblyImport import TestStepAssemblyImport
+from AssemblyTests.TestStepAssemblyImportDraw import TestStepAssemblyImportDraw
 from AssemblyTests.TestSceneGraphHelpers import TestSceneGraphHelpers
 
 # Use the modules so that code checkers don't complain (flake8)
@@ -36,4 +37,5 @@ True if TestCommandInsertLink else False
 True if TestSubAssembly else False
 True if TestAssemblyBuilder else False
 True if TestStepAssemblyImport else False
+True if TestStepAssemblyImportDraw else False
 True if TestSceneGraphHelpers else False

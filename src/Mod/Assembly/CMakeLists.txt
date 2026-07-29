@@ -60,6 +60,7 @@ SET(AssemblyTests_SRCS
     AssemblyTests/TestSubAssembly.py
     AssemblyTests/TestAssemblyBuilder.py
     AssemblyTests/TestStepAssemblyImport.py
+    AssemblyTests/TestStepAssemblyImportDraw.py
     AssemblyTests/scene_graph.py
     AssemblyTests/TestSceneGraphHelpers.py
     AssemblyTests/mocks/__init__.py
