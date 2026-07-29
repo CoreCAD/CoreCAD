@@ -32,6 +32,11 @@ namespace Part
 class Part2DObject;
 }
 
+namespace PartDesign
+{
+class Body;
+}
+
 namespace PartDesignGui
 {
 
@@ -47,6 +52,14 @@ namespace PartDesignGui
 ///
 /// @returns the sketch the user picked, or nullptr if they cancelled.
 Part::Part2DObject* pickSketch(const std::vector<Part::Part2DObject*>& candidates);
+
+/// Cruth §8.5: the same synchronous modal chooser for "which body?" — the target of a
+/// combinator (subtractive primitive, Boolean) when several bodies exist and the user
+/// selected none. A combinator is told its target explicitly and never silently reads an
+/// active body (§4.6); this is the twin of pickSketch, so both pickers share one dialog.
+///
+/// @returns the body the user picked, or nullptr if they cancelled.
+PartDesign::Body* pickBody(const std::vector<PartDesign::Body*>& candidates);
 
 }  // namespace PartDesignGui
 

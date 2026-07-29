@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 
+#include <algorithm>
+
 #include <QMessageBox>
 #include <gp_Pln.hxx>
 #include <Precision.hxx>
@@ -31,9 +33,11 @@
 #include <App/Origin.h>
 #include <App/Datums.h>
 #include <Gui/Application.h>
+#include <Gui/Command.h>
 #include <Gui/CommandT.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
+#include <Gui/Selection/Selection.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
@@ -42,6 +46,7 @@
 #include "Utils.h"
 #include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
+#include "SketchPickDialog.h"
 
 
 FC_LOG_LEVEL_INIT("PartDesignGui", true, true)
@@ -237,6 +242,67 @@ PartDesign::Body* getBodyFor(
     }
 
     return nullptr;
+}
+
+PartDesign::Body* resolveTargetBody(Gui::Command* cmd)
+{
+    if (!cmd) {
+        return nullptr;
+    }
+    App::Document* doc = cmd->getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+
+    // Cruth §8.5/§4.6: a combinator (subtractive primitive, Boolean) is *told* the solid it
+    // operates on — it never reads an active body. Resolve the target from the selection: a
+    // Body picked directly, or any feature/sub-shape resolved to its Body (getBodyFor walks the
+    // BaseFeature chain). Collect the distinct Bodies the selection points at.
+    std::vector<PartDesign::Body*> selectedBodies;
+    for (auto* obj : cmd->getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId())) {
+        auto* body = freecad_cast<PartDesign::Body*>(obj);
+        if (!body) {
+            body = getBodyFor(obj, /*messageIfNot=*/false);
+        }
+        if (body
+            && std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
+            selectedBodies.push_back(body);
+        }
+    }
+
+    if (selectedBodies.size() == 1) {
+        return selectedBodies.front();  // one body indicated — unambiguous
+    }
+    if (selectedBodies.size() > 1) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("Multiple bodies selected"),
+            QObject::tr("Select exactly one body as the target of this operation.")
+        );
+        return nullptr;
+    }
+
+    // Nothing in the selection resolves to a Body — fall back to the document.
+    auto allBodies = doc->getObjectsOfType(PartDesign::Body::getClassTypeId());
+    if (allBodies.empty()) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No body to work on"),
+            QObject::tr("No solid body is available in the document to operate on.")
+        );
+        return nullptr;
+    }
+    if (allBodies.size() == 1) {
+        return static_cast<PartDesign::Body*>(allBodies.front());  // sole body — unambiguous
+    }
+
+    // Several bodies, none selected: open the de-owned chooser (Cancel aborts silently).
+    std::vector<PartDesign::Body*> candidates;
+    candidates.reserve(allBodies.size());
+    for (auto* obj : allBodies) {
+        candidates.push_back(static_cast<PartDesign::Body*>(obj));
+    }
+    return pickBody(candidates);
 }
 
 App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, const std::string& name)
