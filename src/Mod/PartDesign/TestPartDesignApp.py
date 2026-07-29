@@ -49,6 +49,7 @@ from PartDesignTests.TestPolarPattern import TestPolarPattern
 from PartDesignTests.TestMultiTransform import TestMultiTransform
 from PartDesignTests.TestBoolean import TestBoolean
 from PartDesignTests.TestBreakOut import TestBreakOut
+from PartDesignTests.TestMultiOutputDelete import TestMultiOutputDelete
 
 # dressup features
 from PartDesignTests.TestFillet import TestFillet
