@@ -71,6 +71,14 @@ public:
     /// unlike the runtime which-solid predicate, it costs no robustness to topology changes.
     App::PropertyUUID Uid;
 
+    /// Cruth §8.6 dismissed spatial interferences — the durable Uids of the other Bodies whose
+    /// geometric overlap with this one the user has acknowledged as intentional. Stored on both
+    /// Bodies of a dismissed pair; the interference notice is suppressed while either side lists
+    /// the other. Keyed on the durable §8.2 Uid (not the object name), so a Body that is retired
+    /// and reborn gets a fresh identity and correctly re-warns. Hidden document state, not a
+    /// user-facing property.
+    App::PropertyStringList AcknowledgedOverlaps;
+
     /// True if this body feature is active or was active when the document was last closed
     // App::PropertyBool IsActive;
 
@@ -204,6 +212,21 @@ public:
     /// Bodies with a null or solid-less Shape are skipped. Dismissal of intentional overlaps is a
     /// caller/document-state concern layered above this predicate, not filtered here.
     static std::vector<std::pair<Body*, Body*>> findInterferingPairs(App::Document* doc);
+
+    /// Cruth §8.6: the interfering pairs in @p doc the user has NOT dismissed —
+    /// findInterferingPairs minus every pair whose overlap was acknowledged as intentional (either
+    /// Body listing the other in AcknowledgedOverlaps). This is what the interference notice
+    /// surfaces; an empty result means nothing needs the user's attention.
+    static std::vector<std::pair<Body*, Body*>> liveInterferingPairs(App::Document* doc);
+
+    /// Cruth §8.6: has the overlap between @p a and @p b been dismissed as intentional? True when
+    /// either Body records the other's durable §8.2 Uid in AcknowledgedOverlaps.
+    static bool isInterferenceDismissed(const Body* a, const Body* b);
+
+    /// Cruth §8.6: acknowledge the overlap between @p a and @p b as intentional, silencing its
+    /// notice. Records each Body's durable Uid on the other (idempotent). A no-op on null Bodies or
+    /// a Body with no Uid.
+    static void dismissInterference(Body* a, Body* b);
 
     /// Cruth Amendment 5 §5.1 multi-body scope fan-out: given one shared @p tool and the set of
     /// @p targets the user chose to affect, spawn one ordinary single-`BaseShape` Boolean feature

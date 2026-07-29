@@ -121,4 +121,58 @@ TEST_F(FindInterferingPairsTest, SingleBodyDoesNotInterfereWithItself)
     EXPECT_TRUE(PartDesign::Body::findInterferingPairs(_doc).empty());
 }
 
+TEST_F(FindInterferingPairsTest, DismissedOverlapDropsFromLivePairsButNotRaw)
+{
+    auto* a = makeBoxBody("A", 0.0);
+    auto* b = makeBoxBody("B", 5.0);
+
+    // Before dismissal the overlap is both detected and live.
+    ASSERT_EQ(PartDesign::Body::findInterferingPairs(_doc).size(), 1U);
+    ASSERT_EQ(PartDesign::Body::liveInterferingPairs(_doc).size(), 1U);
+    EXPECT_FALSE(PartDesign::Body::isInterferenceDismissed(a, b));
+
+    PartDesign::Body::dismissInterference(a, b);
+
+    // The raw detector still sees the geometry; only the live (user-facing) list drops it.
+    EXPECT_TRUE(PartDesign::Body::isInterferenceDismissed(a, b));
+    EXPECT_EQ(PartDesign::Body::findInterferingPairs(_doc).size(), 1U);
+    EXPECT_TRUE(PartDesign::Body::liveInterferingPairs(_doc).empty());
+}
+
+TEST_F(FindInterferingPairsTest, DismissalIsSymmetricAndRecordedOnBothBodies)
+{
+    auto* a = makeBoxBody("A", 0.0);
+    auto* b = makeBoxBody("B", 5.0);
+    PartDesign::Body::dismissInterference(a, b);
+
+    // Recorded on both sides, keyed by durable Uid, and queryable in either order.
+    EXPECT_EQ(a->AcknowledgedOverlaps.getValues().size(), 1U);
+    EXPECT_EQ(b->AcknowledgedOverlaps.getValues().size(), 1U);
+    EXPECT_EQ(a->AcknowledgedOverlaps.getValues().front(), b->Uid.getValueStr());
+    EXPECT_EQ(b->AcknowledgedOverlaps.getValues().front(), a->Uid.getValueStr());
+    EXPECT_TRUE(PartDesign::Body::isInterferenceDismissed(b, a));
+}
+
+TEST_F(FindInterferingPairsTest, DismissIsIdempotent)
+{
+    auto* a = makeBoxBody("A", 0.0);
+    auto* b = makeBoxBody("B", 5.0);
+    PartDesign::Body::dismissInterference(a, b);
+    PartDesign::Body::dismissInterference(a, b);
+    EXPECT_EQ(a->AcknowledgedOverlaps.getValues().size(), 1U);
+}
+
+TEST_F(FindInterferingPairsTest, DismissingOneOverlapLeavesAnotherLive)
+{
+    auto* a = makeBoxBody("A", 0.0);
+    auto* b = makeBoxBody("B", 5.0);  // overlaps A
+    makeBoxBody("C", 8.0);            // overlaps A and B
+
+    // Three mutually overlapping boxes => three pairs.
+    ASSERT_EQ(PartDesign::Body::liveInterferingPairs(_doc).size(), 3U);
+    PartDesign::Body::dismissInterference(a, b);
+    // Only the A–B pair is silenced; A–C and B–C remain.
+    EXPECT_EQ(PartDesign::Body::liveInterferingPairs(_doc).size(), 2U);
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
