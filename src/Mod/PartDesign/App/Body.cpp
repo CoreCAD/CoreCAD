@@ -392,7 +392,17 @@ Body::Body()
     // (Cruth §3.3/§4, issue #12) A Body carries no coordinate frame of its own and no longer
     // has a Placement slot to pin: BodyBase now derives from the unplaced Part::ShapeFeature,
     // not Part::Feature, so App::PlacementExtension (and its Placement property) is gone. There
-    // is nothing here to mark Transient and nothing to guard back to identity on a live edit.
+    // is nothing here to guard back to identity on a live edit.
+
+    // (Cruth §3.3, issue #79-interim) The inherited Shape property is a DERIVED mirror of the
+    // Tip, not authored state. Publish it Transient (never serialized — the Tip chain is the
+    // source of truth on reload, so a persisted copy would only risk going stale) and ReadOnly
+    // (a user never authors a Body's shape). execute() refreshes it from the Tip each pass; this
+    // keeps getPropertyOfGeometry() and every direct .Shape reader (FEM meshing, Inspection, the
+    // Transform bounding box) honest, since those bypass the getSubObject derivation. The full
+    // fix — removing the property in favour of a Part::ShapeExtension — is the deferred #79.
+    Shape.setStatus(App::Property::Transient, true);
+    Shape.setStatus(App::Property::ReadOnly, true);
 }
 
 Body* Body::spawnAutoBody(App::Document* doc)
@@ -2096,13 +2106,15 @@ App::DocumentObjectExecReturn* Body::execute()
         ));
     }
 
-    // Cruth §3.3: a Body stores no geometry of its own. Its shape is derived from the Tip
-    // on demand (derivedTipShape) — read by the render path and every consumer — so execute
-    // no longer materialises it into the Shape property. The computation above is retained
-    // as validation only: an empty Tip, a non-PartDesign Tip, or an empty Tip shape fails
-    // loud (P7), while a missing named component silently defers to the reconciler (§4.7).
-    // The Shape property (still inherited from Part::Feature here) is now unmaintained and
-    // is removed with the base-class reparent in the next slice.
+    // Cruth §3.3: a Body owns no geometry — its shape is DERIVED from the Tip, never authored.
+    // Publish that derivation into the Transient, ReadOnly Shape property (flagged in the ctor)
+    // so it is a live, element-mapped mirror rather than stored state: this is what lets a direct
+    // reader — getPropertyOfGeometry(), or any consumer that reads .Shape without going through
+    // getSubObject (FEM meshing, Inspection, the Transform bbox) — see real geometry. It is
+    // recomputed every pass and never serialized, so it cannot desync or leak into the recipe.
+    // The computation above still fails loud on an empty/non-PartDesign/empty-shape Tip (P7); a
+    // missing named component already returned above, leaving the last mirror untouched (§4.7).
+    Shape.setValue(tipShape);
     return App::DocumentObject::StdReturn;
 }
 
@@ -2464,6 +2476,17 @@ void Body::onDocumentRestored()
     // demand, but direct _Body readers — findOwnedFeature, the de-owned sub-element path
     // — need the cache warm before the first selection click.
     rebuildBodyCacheFromChain();
+
+    // (Cruth §3.3, issue #79-interim) The derived Shape mirror is Transient — not serialized —
+    // so after a reload it is empty until the next recompute. Repopulate it from the Tip now:
+    // the Tip's own Shape IS serialized and has already been restored at this point, so
+    // derivedTipShape() yields valid geometry without forcing a document recompute. This keeps a
+    // direct .Shape / getPropertyOfGeometry() reader honest immediately on open. Skip silently if
+    // the Tip does not yet resolve its component (a Body about to be reconciled/retired, §4.7).
+    Part::TopoShape restoredShape = derivedTipShape();
+    if (!restoredShape.isNull()) {
+        Shape.setValue(restoredShape);
+    }
 
     // trigger ViewProviderBody::copyColorsfromTip
     if (Tip.getValue()) {

@@ -158,30 +158,15 @@ void ViewProviderBody::onChangedObject(const Gui::ViewProvider& vp, const App::P
 
 void ViewProviderBody::afterRecompute(
     const App::Document& /* doc */,
-    const std::vector<App::DocumentObject*>& recomputedObjs
+    const std::vector<App::DocumentObject*>& /* recomputedObjs */
 )
 {
+    // Cruth §3.3 (issue #79-interim): the Coin rebuild is driven by the base
+    // ViewProviderPartExt on a "Shape" property change again — Body::execute() now refreshes its
+    // Transient derived Shape each recompute, so the normal updateData("Shape") path fires. Do
+    // NOT also call updateVisual() here or the Body would draw twice per recompute (cf. #77).
+    // This hook keeps only its pre-existing job: refresh the Body's overlays on recompute.
     refreshOverlays();
-
-    // Cruth §3.3: a Body's displayed geometry is DERIVED from its Tip (getRenderedShape ->
-    // getSubObject -> derivedTipShape), not stored in a Shape property, so no "Shape"
-    // property change fires the base rebuild any more. Drive the rebuild from recompute
-    // instead: when this Body recomputed (it links its Tip, so a change to the tip feature
-    // recomputes it), its derived shape may have changed — refresh the Coin visual, mirroring
-    // the base's visibility guard so a hidden Body defers until it is shown again.
-    auto* body = getObject<PartDesign::Body>();
-    if (!body) {
-        return;
-    }
-    if (std::ranges::find(recomputedObjs, static_cast<App::DocumentObject*>(body))
-        != recomputedObjs.end()) {
-        if (isUpdateForced() || Visibility.getValue()) {
-            updateVisual();
-        }
-        else {
-            VisualTouched = true;
-        }
-    }
 }
 
 void ViewProviderBody::refreshOverlays()
