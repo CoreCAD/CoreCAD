@@ -8,6 +8,17 @@
 # This policy allows it to configure anyway.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
+# ── Live script iteration ─────────────────────────────────────────────────────
+# fc_copy_sources() copies every .py/.ui into build/<cfg>/Mod, so a Python-only
+# edit needs a rebuild to take effect. Where symlinks are cheap we link instead,
+# making script edits live in the build tree with no rebuild. Windows is left on
+# copies (symlink creation needs admin/Developer Mode), and install() reads from
+# the source tree, so packaging is unaffected either way.
+if(NOT WIN32)
+    set(INSTALL_PREFER_SYMLINKS ON CACHE BOOL
+        "CoreCAD: symlink build-tree scripts for live dev iteration" FORCE)
+endif()
+
 # ── Branding icon overlay (build-tree only) ───────────────────────────────────
 include(cMake/CoreCAD_Branding.cmake)
 

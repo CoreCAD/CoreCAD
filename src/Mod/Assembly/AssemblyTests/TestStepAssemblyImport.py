@@ -364,6 +364,34 @@ class TestStepAssemblyImport(unittest.TestCase):
         top = [o for o in reopened.Objects if o.TypeId == "Assembly::AssemblyObject"][0]
         self.assertEqual(top.solve(), 0)
 
+    def test_reopen_preserves_object_identity(self):
+        """Every object's durable Uid survives the save/close/reopen round-trip.
+
+        This is the git-for-CAD bedrock: identity is the stored Uid, not a name or
+        position, so a diff across two loads of the same import must be empty. We assert
+        the *set* of Uids across the whole imported tree is invariant -- matching by name
+        or document would be fragile (unsaved sub-docs are lazily named 'Unnamed...' before
+        the first save), but the Uid is exactly what must not change. A regression that
+        re-mints ids on save or reopen would make the two sets differ."""
+        path = self._nested_step()
+
+        assembly = AssemblyStepImport.importAssembly(path)
+        top_file = assembly.Document.FileName
+        before = {o.Uid for doc in App.listDocuments().values() for o in doc.Objects}
+        self.assertTrue(before, "import produced no objects to identify")
+
+        for doc in list(App.listDocuments().values()):
+            App.closeDocument(doc.Name)
+
+        App.openDocument(top_file)
+        after = {o.Uid for doc in App.listDocuments().values() for o in doc.Objects}
+
+        self.assertEqual(
+            before,
+            after,
+            "object Uids were not preserved across reopen -- git-for-CAD identity broke",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
