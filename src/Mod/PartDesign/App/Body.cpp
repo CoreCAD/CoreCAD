@@ -1137,6 +1137,54 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
     }
 }
 
+void Body::retireOrRetreatTippedBodies(App::Document* doc, App::DocumentObject* feature)
+{
+    if (!doc || g_reconciling) {
+        return;
+    }
+    // Only a solid PartDesign feature can be a Body's Tip; anything else tips nothing.
+    if (!freecad_cast<PartDesign::Feature*>(feature)) {
+        return;
+    }
+
+    std::vector<Body*> tipped;
+    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
+        auto* body = static_cast<Body*>(obj);
+        if (body->Tip.getValue() == feature) {
+            tipped.push_back(body);
+        }
+    }
+    if (tipped.empty()) {
+        // Non-Tip feature, or the GUI path already retreated the Tips via removeFeature.
+        return;
+    }
+
+    // The base solid feature the deleted Tip extended, if any. A pattern/primitive Tip
+    // with no BaseFeature has nothing to retreat onto.
+    App::DocumentObject* retreatTo = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
+
+    if (retreatTo) {
+        for (auto* body : tipped) {
+            body->Tip.setValue(retreatTo);
+        }
+        if (tipped.size() > 1) {
+            // Force the shared base into the next recompute's signalRecomputed set so
+            // reconcileMultiOutput runs the §4.3 union that folds the split-children back
+            // into one Body — nothing downstream touches the base (the deleted feature was
+            // the Tip, so it had no successor to propagate a touch).
+            retreatTo->touch();
+        }
+    }
+    else {
+        // No base to fall back on: the Body no longer accounts for any solid, so it
+        // retires (§4.6). A marker owns nothing — removal breaks no refs (P7 surfaces
+        // any dangling inbound link at the feature graph).
+        for (auto* body : tipped) {
+            doc->removeObject(body->getNameInDocument());
+        }
+    }
+}
+
 namespace
 {
 // Per-document observer that runs reconcileMultiOutput after every recompute.
@@ -1157,6 +1205,7 @@ public:
         });
         m_delDocConn = app.signalDeleteDocument.connect([this](const App::Document& doc) {
             m_recomputeConns.erase(&doc);
+            m_deleteConns.erase(&doc);
         });
         for (auto* doc : app.getDocuments()) {
             watch(*doc);
@@ -1172,12 +1221,22 @@ private:
                 Body::reconcileMultiOutput(docPtr, objs);
             }
         );
+        // Raw Document::removeObject of a Tip feature (script/MCP path) bypasses
+        // Body::removeFeature; retire or retreat the Bodies it tipped so none survives
+        // as a zombie. The Tip still points at the feature when this fires (post-removal
+        // from the object map, pre-teardown).
+        m_deleteConns[docPtr] = doc.signalDeletedObject.connect(
+            [docPtr](const App::DocumentObject& obj) {
+                Body::retireOrRetreatTippedBodies(docPtr, const_cast<App::DocumentObject*>(&obj));
+            }
+        );
     }
 
     bool m_initialized = false;
     fastsignals::scoped_connection m_newDocConn;
     fastsignals::scoped_connection m_delDocConn;
     std::map<const App::Document*, fastsignals::scoped_connection> m_recomputeConns;
+    std::map<const App::Document*, fastsignals::scoped_connection> m_deleteConns;
 };
 
 MultiOutputObserver g_multiOutputObserver;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)

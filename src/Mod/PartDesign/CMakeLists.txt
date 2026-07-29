@@ -52,6 +52,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestMultiTransform.py
     PartDesignTests/TestBoolean.py
     PartDesignTests/TestBreakOut.py
+    PartDesignTests/TestMultiOutputDelete.py
     PartDesignTests/TestFillet.py
     PartDesignTests/TestChamfer.py
     PartDesignTests/TestDraft.py

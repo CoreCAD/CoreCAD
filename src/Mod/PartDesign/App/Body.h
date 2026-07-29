@@ -160,6 +160,21 @@ public:
         const std::vector<App::DocumentObject*>& recomputed
     );
 
+    /**
+     * Cruth §4.6/§4.7 retire-on-Tip-delete. Run when a PartDesign feature is deleted
+     * directly (raw `Document::removeObject`, e.g. from a script or the MCP bridge),
+     * which bypasses Body::removeFeature. A Tip feature's deletion is the ultimate
+     * "output ceases to produce a component" event: every Body tipped by it would
+     * otherwise survive as a zombie (Tip nulled to None, no resolvable component).
+     * Mirror removeFeature's tip-retreat — retreat each such Body's Tip onto the
+     * deleted feature's base and, when more than one Body was tipped, touch that base
+     * so reconcileMultiOutput unifies them on the next recompute; when there is no
+     * base, the Body has nothing left and is retired (§4.6 auto-retirement). No-op
+     * for a non-Tip feature (nothing is tipped by it) and for the GUI delete path
+     * (removeFeature already retreated the Tips before removeObject fires).
+     */
+    static void retireOrRetreatTippedBodies(App::Document* doc, App::DocumentObject* feature);
+
     /// Wire reconcileMultiOutput onto every document's recompute signal. Call once
     /// at module init; idempotent. P8: fires for both UI and API recompute paths.
     static void initMultiOutputObserver();
