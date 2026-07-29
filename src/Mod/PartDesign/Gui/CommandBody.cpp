@@ -51,7 +51,6 @@
 #include <Mod/PartDesign/App/FeatureBase.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 
-#include "TaskFeaturePick.h"
 #include "Utils.h"
 
 
