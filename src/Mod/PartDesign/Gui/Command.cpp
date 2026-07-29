@@ -28,6 +28,7 @@
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <GeomLib_IsPlanarSurface.hxx>
+#include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -71,7 +72,6 @@
 #include "ReferenceSelection.h"
 #include "SketchPickDialog.h"
 #include "SketchWorkflow.h"
-#include "TaskFeaturePick.h"
 #include "Utils.h"
 #include "ViewProvider.h"
 #include "ViewProviderBody.h"
@@ -123,11 +123,10 @@ static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, bool& abort)
 }
 
 // Cruth §8.5: push a resolved sketch into the GUI selection so the shared
-// feature-creation path (prepareProfileBased's "a profile is selected" fast-path,
-// Command.cpp ~1132) consumes exactly this sketch. Without this, that lower path
-// re-resolves from an empty selection and falls into the legacy TaskDlgFeaturePick —
-// the orphaned active-body picker that returns nothing here, leaving the user unable
-// to reach the feature's parameter dialog.
+// feature-creation path (prepareProfileBased's "a profile is selected" fast-path)
+// consumes exactly this sketch. Without this, that lower path sees an empty selection
+// and hits its no-usable-profile guard, leaving the user unable to reach the feature's
+// parameter dialog.
 static void selectResolvedSketch(Part::Part2DObject* sketch)
 {
     if (!sketch) {
@@ -792,108 +791,6 @@ static void finishFeature(
 // Common utility functions for ProfileBased features
 //===========================================================================
 
-// Take a list of Part2DObjects and classify them for creating a
-// ProfileBased feature. FirstFreeSketch is the first free sketch in the same body
-// or sketches.end() if non available. The returned number is the amount of free sketches
-unsigned validateSketches(
-    std::vector<App::DocumentObject*>& sketches,
-    std::vector<PartDesignGui::TaskFeaturePick::featureStatus>& status,
-    std::vector<App::DocumentObject*>::iterator& firstFreeSketch
-)
-{
-    // TODO Review the function for non-part bodies (2015-09-04, Fat-Zer)
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(false);
-
-    // TODO: If the user previously opted to allow multiple use of sketches or use of sketches from
-    // other bodies, then count these as valid sketches!
-    unsigned freeSketches = 0;
-    firstFreeSketch = sketches.end();
-
-    for (std::vector<App::DocumentObject*>::iterator s = sketches.begin(); s != sketches.end(); s++) {
-
-        if (!pcActiveBody) {
-            // We work in the old style outside any body
-            if (PartDesign::Body::findBodyOf(*s)) {
-                status.push_back(PartDesignGui::TaskFeaturePick::otherBody);
-                continue;
-            }
-        }
-        bool isCrossBody = false;
-        // "In the active body?" is honest membership: a sketch feeding a feature that splits
-        // into several component bodies backs them all, so backsBody catches the active one
-        // even when it is not the first (Cruth §4.7). The representative body below stays
-        // first-match — it only labels same-part vs other-part.
-        if (pcActiveBody && !PartDesign::Body::backsBody(*s, pcActiveBody)) {
-            PartDesign::Body* b = PartDesign::Body::findBodyOf(*s);
-            if (!b) {
-                status.push_back(PartDesignGui::TaskFeaturePick::notInBody);
-                continue;
-            }
-            // Everything in the same part document is fair game: a sketch owned by any other
-            // body is a valid cross-body reference (ARCHITECTURE §8.7 — features are shareable,
-            // not imprisoned in a body). With the App::Part container retired there is no longer
-            // a "different part" to wall it off from. Skip isUsed/afterTip checks; those apply to
-            // the active body's feature tree only. Fall through to shape/wire validity below.
-            isCrossBody = true;
-        }
-
-        if (!isCrossBody) {
-            // Check whether this sketch is already being used by another feature
-            // Body features don't count...
-            std::vector<App::DocumentObject*> inList = (*s)->getInList();
-            std::vector<App::DocumentObject*>::iterator o = inList.begin();
-            while (o != inList.end()) {
-                if ((*o)->isDerivedFrom<PartDesign::Body>()) {
-                    o = inList.erase(o);  // ignore bodies
-                }
-                else if (!((*o)->isDerivedFrom<PartDesign::Feature>())) {
-                    o = inList.erase(o);  // ignore non-partDesign
-                }
-                else {
-                    ++o;
-                }
-            }
-            if (!inList.empty()) {
-                status.push_back(PartDesignGui::TaskFeaturePick::isUsed);
-                continue;
-            }
-
-            if (pcActiveBody->isAfterInsertPoint(*s)) {
-                status.push_back(PartDesignGui::TaskFeaturePick::afterTip);
-                continue;
-            }
-        }
-
-        // Check whether the sketch shape is valid
-        Part::Part2DObject* sketch = static_cast<Part::Part2DObject*>(*s);
-        const TopoDS_Shape& shape = sketch->Shape.getValue();
-        if (shape.IsNull()) {
-            status.push_back(PartDesignGui::TaskFeaturePick::invalidShape);
-            continue;
-        }
-
-        // count free wires
-        int ctWires = 0;
-        TopExp_Explorer ex;
-        for (ex.Init(shape, TopAbs_WIRE); ex.More(); ex.Next()) {
-            ctWires++;
-        }
-        if (ctWires == 0) {
-            status.push_back(PartDesignGui::TaskFeaturePick::noWire);
-            continue;
-        }
-
-        // All checks passed - found a valid sketch
-        if (firstFreeSketch == sketches.end()) {
-            firstFreeSketch = s;
-        }
-        freeSketches++;
-        status.push_back(PartDesignGui::TaskFeaturePick::validFeature);
-    }
-
-    return freeSketches;
-}
-
 /**
  *  Partially pulled from Linkstage3 importExternalObjects for toponaming element map
  *  compatibility with sketches that contain point objects.  By adding an empty
@@ -1178,91 +1075,20 @@ void prepareProfileBased(
             return;
         }
         // Selection is not a usable profile (e.g. a Body was selected in the tree)
-        // — fall through to the sketch picker.
+        // — fall through to the guard below.
     }
 
-    // no face profile was selected, do the extended sketch logic
-
-    bool bNoSketchWasSelected = false;
-    // Get a valid sketch from the user
-    // First check selections
-    std::vector<App::DocumentObject*> sketches = cmd->getSelection().getObjectsOfType(
-        Part::Part2DObject::getClassTypeId()
+    // Cruth §8.5: every command resolves its profile up front — resolveBaseBodyForNewFeature →
+    // resolveSketchFromSelection leaves exactly one sketch in the selection (via the de-owned
+    // SketchPickDialog when several candidates exist) or aborts. So the "a profile is selected"
+    // fast-path above handles the real flow; reaching here means no usable profile is selected.
+    // The old active-body sketch chooser (TaskFeaturePick / validateSketches) used to live here
+    // and is retired — this is now a defensive guard, not a second picker.
+    QMessageBox::warning(
+        Gui::getMainWindow(),
+        QObject::tr("No sketch to work on"),
+        QObject::tr("Select a sketch to use as the profile.")
     );
-    if (sketches.empty()) {  // no sketches were selected. Let user pick an object from valid ones
-                             // available in document
-        sketches = cmd->getDocument()->getObjectsOfType(Part::Part2DObject::getClassTypeId());
-        bNoSketchWasSelected = true;
-    }
-
-    if (sketches.empty()) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("No sketch to work on"),
-            QObject::tr("No sketch is available in the document")
-        );
-        return;
-    }
-
-    std::vector<PartDesignGui::TaskFeaturePick::featureStatus> status;
-    std::vector<App::DocumentObject*>::iterator firstFreeSketch;
-    int freeSketches = validateSketches(sketches, status, firstFreeSketch);
-
-    auto accepter = [=](const std::vector<App::DocumentObject*>& features) -> bool {
-        if (features.empty()) {
-            return false;
-        }
-
-        return true;
-    };
-
-    auto sketch_worker = [&, base_worker](std::vector<App::DocumentObject*> features) {
-        base_worker(features.front(), {});
-    };
-
-    // CoreCAD Phase 2: cross-Body sketch references are valid. No ShapeBinder copy needed.
-
-    // Show sketch choose dialog and let user pick sketch if no sketch was selected and no free one
-    // available or multiple free ones are available
-    if (bNoSketchWasSelected && (freeSketches != 1)) {
-
-        Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
-        PartDesignGui::TaskDlgFeaturePick* pickDlg
-            = qobject_cast<PartDesignGui::TaskDlgFeaturePick*>(dlg);
-        if (dlg && !pickDlg) {
-            QMessageBox msgBox(Gui::getMainWindow());
-            msgBox.setText(QObject::tr("A dialog is already open in the task panel"));
-            msgBox.setInformativeText(QObject::tr("Close this dialog?"));
-            msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-            msgBox.setDefaultButton(QMessageBox::Yes);
-            int ret = msgBox.exec();
-            if (ret == QMessageBox::Yes) {
-                Gui::Control().closeDialog();
-            }
-            else {
-                return;
-            }
-        }
-
-        if (dlg) {
-            Gui::Control().closeDialog();
-        }
-
-        Gui::Selection().clearSelection();
-        pickDlg = new PartDesignGui::TaskDlgFeaturePick(sketches, status, accepter, sketch_worker, true);
-        Gui::Control().showDialog(pickDlg, cmd->getDocument());
-    }
-    else {
-        std::vector<App::DocumentObject*> theSketch;
-        if (!bNoSketchWasSelected) {
-            theSketch.push_back(sketches[0]);
-        }
-        else {
-            theSketch.push_back(*firstFreeSketch);
-        }
-
-        sketch_worker(theSketch);
-    }
 }
 
 void finishProfileBased(

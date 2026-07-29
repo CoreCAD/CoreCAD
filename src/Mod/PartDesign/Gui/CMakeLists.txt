@@ -34,7 +34,6 @@ corecad_stage_resources(
 qt_add_resources(PartDesignGui_SRCS ${_PartDesign_Icons_QRC} ${PartDesign_TR_QRC})
 
 set(PartDesignGui_UIC_SRCS
-    TaskFeaturePick.ui
     TaskPadPocketParameters.ui
     TaskChamferParameters.ui
     TaskFilletParameters.ui
@@ -130,9 +129,6 @@ SET(PartDesignGuiViewProvider_SRCS
 SOURCE_GROUP("ViewProvider" FILES ${PartDesignGuiViewProvider_SRCS})
 
 SET(PartDesignGuiTaskDlgs_SRCS
-    TaskFeaturePick.ui
-    TaskFeaturePick.cpp
-    TaskFeaturePick.h
     ReferenceSelection.cpp
     ReferenceSelection.h
     TaskFeatureParameters.cpp
