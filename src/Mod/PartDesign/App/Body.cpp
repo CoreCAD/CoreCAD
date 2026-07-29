@@ -39,6 +39,7 @@
 #include <gp_Vec.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
+#include <TopLoc_Location.hxx>
 #include <TopoDS_Shape.hxx>
 
 #include <App/Application.h>
@@ -59,6 +60,7 @@
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/PartPyCXX.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include <App/GeoFeature.h>
@@ -2313,6 +2315,38 @@ PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
     return nullptr;
 }
 
+// ARCHITECTURE §3.3/§4: a Body stores no geometry of its own — its shape is its Tip's
+// shape, derived on demand and returned already world-placed. This is the single source
+// used by both the render path (ViewProviderPartExt::getRenderedShape ->
+// Part::Feature::getTopoShape -> getSubObject) and any generic consumer. It mirrors the
+// geometry Body::execute() currently materialises into the (soon-to-be-retired) Shape
+// property, so the two agree while both exist.
+Part::TopoShape Body::derivedTipShape() const
+{
+    App::DocumentObject* tip = Tip.getValue();
+    if (!tip || !tip->isDerivedFrom<PartDesign::Feature>()) {
+        return {};
+    }
+    Part::TopoShape tipShape = static_cast<Part::ShapeFeature*>(tip)->Shape.getShape();
+    if (tipShape.getShape().IsNull()) {
+        return {};
+    }
+    const std::string cid = TipComponentId.getStrValue();
+    if (!cid.empty()) {
+        Part::TopoShape component = extractSolidById(tip, tipShape, cid);
+        if (component.isNull()) {
+            return {};
+        }
+        // A pattern stores each instance's offset in the solid's placement, not its
+        // geometry; bake it in so this component keeps its own pattern position (§3.3).
+        component.transformShape(Base::Matrix4D(), true);
+        tipShape = component;
+    }
+    // Bake in the tip feature's own transform (matches Body::execute()).
+    tipShape.transformShape(tipShape.getTransform(), true);
+    return tipShape;
+}
+
 App::DocumentObject* Body::getSubObject(
     const char* subname,
     PyObject** pyObj,
@@ -2364,33 +2398,39 @@ App::DocumentObject* Body::getSubObject(
             }
         }
     }
-#if 1
-    return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
-#else
-    // The following code returns Body shape only if there is at least one
-    // child visible in the body (when show through, not show tip). The
-    // original intention is to sync visual to shape returned by
-    // Part.getShape() when the body is included in some other group. But this
-    // interfere with direct modeling using body shape. Therefore it is
-    // disabled here.
-
-    if (!pyObj || showTip
-        || (subname && !Data::ComplexGeoData::isMappedElement(subname) && strchr(subname, '.'))) {
-        return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
+    // Cruth §3.3/§4: a Body stores no geometry of its own — answer a query for its own
+    // shape by DERIVING it from the Tip on demand (derivedTipShape), never from a stored
+    // Shape property. Mirrors ShapeFeature::getSubObject, but a Body holds no authored
+    // position (§4: "nothing to guard"), so its own frame is identity and no placement is
+    // composed here. (Path components containing '.' were already delegated to the owning
+    // feature or the document Origin above; here subname is empty or a plain sub-element.)
+    //
+    // This supersedes the FreeCAD-era caution — returning the Body shape only when a child
+    // was visible, to avoid double-draw when the Body sat inside another group — which was
+    // long disabled; under de-ownership a Body always represents its Tip (§3.3).
+    if (!pyObj) {
+        return const_cast<Body*>(this);
     }
-
-    // We return the shape only if there are feature visible inside. Derived membership
-    // (§9.1-inverse): a de-owned Body has no Group, so scan the derived list.
-    for (auto obj : getFullModel()) {
-        if (obj->Visibility.getValue() && obj->isDerivedFrom<PartDesign::Feature>()) {
-            return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
+    try {
+        Part::TopoShape ts = derivedTipShape();
+        Base::Matrix4D _mat;
+        auto& mat = pmat ? *pmat : _mat;
+        bool doTransform = !ts.isNull() && mat != ts.getTransform();
+        if (doTransform) {
+            ts.setShape(ts.getShape().Located(TopLoc_Location()), false);
         }
+        if (subname && *subname && !ts.isNull()) {
+            ts = ts.getSubTopoShape(subname, /*silent*/ true);
+        }
+        if (doTransform && !ts.isNull()) {
+            ts.transformShape(mat, false, true);
+        }
+        *pyObj = Py::new_reference_to(Part::shape2pyshape(ts));
     }
-    if (pmat && transform) {
-        *pmat *= Placement.getValue().toMatrix();
+    catch (Standard_Failure&) {
+        // Match ShapeFeature: swallow OCCT failures here rather than flood the log.
     }
     return const_cast<Body*>(this);
-#endif
 }
 
 void Body::rebuildBodyCacheFromChain()
