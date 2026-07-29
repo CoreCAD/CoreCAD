@@ -311,3 +311,9 @@ class AssemblyWorkbench(Workbench):
 
 
 Gui.addWorkbench(AssemblyWorkbench())
+
+# GUI-only test unit (draw-layer / Coin scene-graph regressions). The "Gui" in the
+# name is what the CI xvfb GUI-test lane filters on to run it under a virtual
+# display; registering it here (not in Init.py) keeps it out of the headless lane
+# where it could only skip.
+FreeCAD.__unit_test__ += ["TestAssemblyWorkbenchGui"]

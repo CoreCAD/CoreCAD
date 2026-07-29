@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # /**************************************************************************
 #                                                                           *
-#    Copyright (c) 2023 Ondsel <development@ondsel.com>                     *
+#    Copyright (c) 2026 Cruth (Sean Barton)                                 *
 #                                                                           *
 #    This file is part of FreeCAD.                                          *
 #                                                                           *
@@ -21,23 +21,14 @@
 #                                                                           *
 # **************************************************************************/
 
+# GUI-only Assembly tests. These inspect the built Coin scene graph, which only
+# exists with a running GUI, so they are registered from InitGui.py (never under
+# the headless FreeCADCmd lane) and run in CI via the xvfb GUI-test lane, which
+# discovers test units whose name contains "Gui".
+
 import TestApp
 
-from AssemblyTests.TestCore import TestCore
-from AssemblyTests.TestCommandInsertLink import TestCommandInsertLink
-from AssemblyTests.TestSubAssembly import TestSubAssembly
-from AssemblyTests.TestAssemblyBuilder import TestAssemblyBuilder
-from AssemblyTests.TestStepAssemblyImport import TestStepAssemblyImport
-from AssemblyTests.TestSceneGraphHelpers import TestSceneGraphHelpers
-
-# The draw-layer test (TestStepAssemblyImportDraw) needs a running GUI, so it is
-# registered separately as TestAssemblyWorkbenchGui from InitGui.py rather than
-# here -- otherwise it would only ever skip under the headless FreeCADCmd lane.
+from AssemblyTests.TestStepAssemblyImportDraw import TestStepAssemblyImportDraw
 
 # Use the modules so that code checkers don't complain (flake8)
-True if TestCore else False
-True if TestCommandInsertLink else False
-True if TestSubAssembly else False
-True if TestAssemblyBuilder else False
-True if TestStepAssemblyImport else False
-True if TestSceneGraphHelpers else False
+True if TestStepAssemblyImportDraw else False
