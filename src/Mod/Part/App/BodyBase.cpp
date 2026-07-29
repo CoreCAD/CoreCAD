@@ -33,7 +33,7 @@
 namespace Part
 {
 
-PROPERTY_SOURCE(Part::BodyBase, Part::Feature)
+PROPERTY_SOURCE(Part::BodyBase, Part::ShapeFeature)
 
 BodyBase::BodyBase()
 {
@@ -121,7 +121,7 @@ void BodyBase::onBeforeChange(const App::Property* prop)
     if ( prop == &BaseFeature && BaseFeature.getValue() == Tip.getValue() && BaseFeature.getValue()
     ) { Tip.setValue( nullptr );
     }*/
-    Part::Feature::onBeforeChange(prop);
+    Part::ShapeFeature::onBeforeChange(prop);
 }
 
 void BodyBase::onChanged(const App::Property* prop)
@@ -131,7 +131,7 @@ void BodyBase::onChanged(const App::Property* prop)
     if ( prop == &BaseFeature && !Tip.getValue() && BaseFeature.getValue() ) {
         Tip.setValue( BaseFeature.getValue () );
     }*/
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 PyObject* BodyBase::getPyObject()

@@ -560,17 +560,16 @@ std::tuple<bool, PartDesign::Body*> SketchWorkflow::shouldCreateBody()
     // sketch would nest into that Body and a second independent Body could never
     // be started. A Body is used only when one is genuinely active; with no
     // active Body the sketch is born free and Pad's anchor walk owns the spawn.
-    App::DocumentObject* topParent = nullptr;
+    //
+    // (issue #12) A de-owned Body carries no frame of its own, so the former "sketch inside a
+    // Link: copy the Link's placement onto the Body" step is gone — a Body has no Placement to
+    // write. When editing inside a Link, the sketch resolves its own world position through its
+    // attachment and the Link's global placement, not through a mutated Body frame.
     PartDesign::Body* pdBody = PartDesignGui::getBody(
         /* messageIfNot = */ false,
         /* autoActivate = */ false,
-        /* assertModern = */ true,
-        &topParent
+        /* assertModern = */ true
     );
-    if (pdBody && topParent && topParent->isLink()) {
-        auto* xLink = dynamic_cast<App::Link*>(topParent);
-        pdBody->Placement.setValue(xLink->Placement.getValue());
-    }
 
     return std::make_tuple(false, pdBody);
 }

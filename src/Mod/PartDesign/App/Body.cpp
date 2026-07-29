@@ -389,14 +389,10 @@ Body::Body()
     // now the OriginGroup extension is retired — nothing left to mark Transient/Output. Members
     // are derived from the BaseFeature chain (§9.1-inverse).
 
-    // Cruth substrate flip, Stage 3b step 4. A de-owned Body carries no coordinate frame of
-    // its own: de-owned features are not Group members, so the Body's placement never enters
-    // a feature's global frame (globalGroupPlacement walks group membership, which is empty)
-    // — the Day-1 Experiment-C finding. The onChanged guard already pins any live edit back to
-    // identity; stop persisting the property too, so a legacy non-identity Body.Placement can't
-    // be read back off disk and silently diverge from its features. Property lives on the shared
-    // GeoFeature base and is retired for Body in step 5; this only stops its content being saved.
-    Placement.setStatus(App::Property::Transient, true);
+    // (Cruth §3.3/§4, issue #12) A Body carries no coordinate frame of its own and no longer
+    // has a Placement slot to pin: BodyBase now derives from the unplaced Part::ShapeFeature,
+    // not Part::Feature, so App::PlacementExtension (and its Placement property) is gone. There
+    // is nothing here to mark Transient and nothing to guard back to identity on a live edit.
 }
 
 Body* Body::spawnAutoBody(App::Document* doc)
@@ -2168,23 +2164,8 @@ void Body::onChanged(const App::Property* prop)
                 bf->BaseFeature.setValue(BaseFeature.getValue());
             }
         }
-        else if (prop == &Placement) {
-            // Cruth substrate flip (de-ownership): the modeling Body carries no coordinate
-            // frame of its own — the frame comes from each feature's attachment, not from
-            // Body containment (ARCHITECTURE §3.3). De-owned features do not inherit
-            // Body.Placement, so a non-identity Body placement would silently diverge from
-            // its features (the Day-1 Experiment-C case). The property itself cannot be
-            // removed: it lives on the shared App::GeoFeature base and every Part::Feature
-            // inherits it. So this is a PERMANENT guard, not interim — it pins the frame to
-            // identity on any live edit (e.g. dragging the Body) for as long as Body derives
-            // from GeoFeature. Removing it requires reparenting Body off GeoFeature; tracked
-            // as CoreCAD/CoreCAD#12. Restore and undo/redo are excluded by the guard above,
-            // so loaded data is never mutated; this fires only on a live user change.
-            const Base::Placement identity;
-            if (Placement.getValue() != identity) {
-                Placement.setValue(identity);
-            }
-        }
+        // (issue #12) The identity-pinning Placement guard is gone: BodyBase now derives from
+        // the unplaced Part::ShapeFeature, so a Body has no Placement property to drift or pin.
         else if (prop == &ShapeMaterial) {
             // Derived membership (§9.1-inverse): a de-owned Body has no Group container, so
             // push the Body material onto its features via the derived list.
@@ -2384,9 +2365,9 @@ App::DocumentObject* Body::getSubObject(
         if (const char* dot = strchr(subname, '.')) {
             const std::string first(subname, dot);
             if (auto* feat = findOwnedFeature(first)) {
-                if (pmat && transform) {
-                    *pmat *= Placement.getValue().toMatrix();
-                }
+                // A Body has no frame of its own (§4: unplaced marker, no Placement), so it
+                // composes identity here — the owned feature applies its own frame. Delegate
+                // straight through.
                 return feat->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
             }
             // The shared document Origin is claimed as a child of the Body in the tree/3D
