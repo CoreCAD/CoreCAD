@@ -240,6 +240,8 @@ SET(Features_SRCS
     PreviewExtension.h
     PrismExtension.cpp
     PrismExtension.h
+    ShapeExtension.cpp
+    ShapeExtension.h
     VectorAdapter.cpp
     VectorAdapter.h
 )

@@ -2,8 +2,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <boost/core/ignore_unused.hpp>
 #include "Mod/Part/App/FeaturePartCommon.h"
+#include "Mod/Part/App/ShapeExtension.h"
+#include "Mod/Part/App/TopoShapePy.h"
 #include <src/App/InitApplication.h>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include "PartTestHelpers.h"
@@ -213,6 +217,66 @@ TEST_F(FeaturePartTest, getSubObject)
     // Assert
     ASSERT_NE(result, nullptr);
     EXPECT_STREQ(result->getNameInDocument(), "Part__Box001");
+}
+
+// Spike for #79: prove Part::ShapeExtension can host the shape-source contract and
+// hand back the *identical* element map as the current inheritance-based
+// ShapeFeature::getSubObject. The element map is the silent-failure surface the
+// deferred refactor fears — a subtly wrong map does not crash, it mis-binds a
+// TechDraw dimension or a ShapeBinder weeks later. If this passes, the capability
+// approach is viable; if it diverges, the whole direction is suspect.
+TEST_F(FeaturePartTest, shapeExtensionCarriesElementMap)
+{
+    // Arrange: a real box with a computed, element-mapped shape.
+    auto* box = _boxes[0];
+    box->execute();
+    const char* ref = "Face5";
+
+    // Baseline: the current inheritance-based shape-source path.
+    PyObject* pyBaseline = nullptr;
+    auto* baselineOwner = box->getSubObject(ref, &pyBaseline, nullptr, false, 10);
+    ASSERT_NE(baselineOwner, nullptr);
+    ASSERT_NE(pyBaseline, nullptr);
+
+    // Capability path: bind ShapeExtension to the same object and pull the same
+    // reference through extensionGetSubObject, sourcing geometry via the object's
+    // own getPropertyOfGeometry() delegation hook.
+    Part::ShapeExtension ext;
+    ext.initExtension(box);
+    App::DocumentObject* extOwner = nullptr;
+    PyObject* pyExt = nullptr;
+    bool handled = ext.extensionGetSubObject(extOwner, ref, &pyExt, nullptr, false, 10);
+
+    // Assert: handled, resolved to the same owner, returned a shape.
+    ASSERT_TRUE(handled);
+    ASSERT_EQ(extOwner, baselineOwner);
+    ASSERT_NE(pyExt, nullptr);
+
+    // The element maps of the two returned sub-shapes must be identical.
+    auto baseMap = static_cast<Part::TopoShapePy*>(pyBaseline)->getTopoShapePtr()->getElementMap();
+    auto extMap = static_cast<Part::TopoShapePy*>(pyExt)->getTopoShapePtr()->getElementMap();
+    std::sort(baseMap.begin(), baseMap.end());
+    std::sort(extMap.begin(), extMap.end());
+
+    EXPECT_FALSE(baseMap.empty());  // a bare face carries its face/edge/vertex names
+    ASSERT_EQ(baseMap.size(), extMap.size());
+    EXPECT_TRUE(baseMap == extMap);
+
+    // Negative control: the comparison must be able to tell a wrong element map from
+    // a right one. Pull a *different* face's map and confirm it does NOT match the
+    // capability path's Face5 map — otherwise the equality above would be blind and
+    // would pass even if the extension returned garbage.
+    PyObject* pyWrong = nullptr;
+    auto* wrongOwner = box->getSubObject("Face3", &pyWrong, nullptr, false, 10);
+    ASSERT_NE(wrongOwner, nullptr);
+    ASSERT_NE(pyWrong, nullptr);
+    auto wrongMap = static_cast<Part::TopoShapePy*>(pyWrong)->getTopoShapePtr()->getElementMap();
+    std::sort(wrongMap.begin(), wrongMap.end());
+    EXPECT_FALSE(wrongMap == extMap);
+
+    Py_XDECREF(pyBaseline);
+    Py_XDECREF(pyExt);
+    Py_XDECREF(pyWrong);
 }
 
 TEST_F(FeaturePartTest, getElementTypes)
