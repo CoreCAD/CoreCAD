@@ -262,8 +262,21 @@ TEST_F(FeaturePartTest, shapeExtensionCarriesElementMap)
     ASSERT_EQ(baseMap.size(), extMap.size());
     EXPECT_TRUE(baseMap == extMap);
 
+    // Negative control: the comparison must be able to tell a wrong element map from
+    // a right one. Pull a *different* face's map and confirm it does NOT match the
+    // capability path's Face5 map — otherwise the equality above would be blind and
+    // would pass even if the extension returned garbage.
+    PyObject* pyWrong = nullptr;
+    auto* wrongOwner = box->getSubObject("Face3", &pyWrong, nullptr, false, 10);
+    ASSERT_NE(wrongOwner, nullptr);
+    ASSERT_NE(pyWrong, nullptr);
+    auto wrongMap = static_cast<Part::TopoShapePy*>(pyWrong)->getTopoShapePtr()->getElementMap();
+    std::sort(wrongMap.begin(), wrongMap.end());
+    EXPECT_FALSE(wrongMap == extMap);
+
     Py_XDECREF(pyBaseline);
     Py_XDECREF(pyExt);
+    Py_XDECREF(pyWrong);
 }
 
 TEST_F(FeaturePartTest, getElementTypes)
