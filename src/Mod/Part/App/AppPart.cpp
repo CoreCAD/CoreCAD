@@ -136,6 +136,7 @@
 #include "OCCError.h"
 #include "OCCTMessagePrinter.h"
 #include "PrismExtension.h"
+#include "ShapeExtension.h"
 #include "PropertyGeometryList.h"
 #include "PropertyTopoShapeList.h"
 
@@ -446,6 +447,7 @@ PyMOD_INIT_FUNC(Part)
     Part::AttachExtensionPython ::init();
     Part::PreviewExtension      ::init();
     Part::PrismExtension        ::init();
+    Part::ShapeExtension        ::init();
 
     Part::ShapeFeature          ::init();
     Part::Feature               ::init();
