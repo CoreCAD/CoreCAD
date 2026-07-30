@@ -29,12 +29,21 @@
 #include <Mod/Part/PartGlobal.h>
 
 #include "PrimitiveFeature.h"
+#include "ShapeExtension.h"
 
 
 namespace Part
 {
 
-class PartExport Box: public Part::Primitive
+/** First concrete feature to carry its shape as a composed capability (#79).
+ *
+ * Box mixes in Part::ShapeExtension (the same pattern Cylinder uses for
+ * PrismExtension) and routes its getSubObject through the extension rather than
+ * the inherited ShapeFeature override, proving the write/ownership side of
+ * Amendment 17: a stored-backed feature can source its element-mapped shape
+ * from the capability with byte-identical results, transform path included.
+ */
+class PartExport Box: public Part::Primitive, public Part::ShapeExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Box);
 
@@ -54,6 +63,17 @@ public:
     {
         return "PartGui::ViewProviderBox";
     }
+
+    /// Route the shape-source query through the composed Part::ShapeExtension
+    /// (App::DocumentObject::getSubObject dispatches to it) instead of the
+    /// inherited Part::ShapeFeature override.
+    App::DocumentObject* getSubObject(
+        const char* subname,
+        PyObject** pyObj,
+        Base::Matrix4D* mat,
+        bool transform,
+        int depth
+    ) const override;
 
 protected:
     void Restore(Base::XMLReader& reader) override;

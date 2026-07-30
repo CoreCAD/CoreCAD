@@ -12,6 +12,11 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include "PartTestHelpers.h"
 #include "App/MappedElement.h"
+#include <App/PropertyGeo.h>
+#include <Base/Matrix.h>
+#include <Base/Placement.h>
+#include <Base/Rotation.h>
+#include <Base/Vector3D.h>
 
 using namespace Part;
 using namespace PartTestHelpers;
@@ -219,12 +224,15 @@ TEST_F(FeaturePartTest, getSubObject)
     EXPECT_STREQ(result->getNameInDocument(), "Part__Box001");
 }
 
-// Spike for #79: prove Part::ShapeExtension can host the shape-source contract and
-// hand back the *identical* element map as the current inheritance-based
-// ShapeFeature::getSubObject. The element map is the silent-failure surface the
-// deferred refactor fears — a subtly wrong map does not crash, it mis-binds a
-// TechDraw dimension or a ShapeBinder weeks later. If this passes, the capability
-// approach is viable; if it diverges, the whole direction is suspect.
+// #79 step 2 (Amendment 17): Part::Box is the first concrete feature to carry its
+// shape as a *composed capability* — it mixes in Part::ShapeExtension and routes
+// getSubObject through it instead of the inherited ShapeFeature override. This
+// test proves the routed live path hands back the *identical* element map as the
+// inheritance path it replaces. The element map is the silent-failure surface the
+// refactor fears — a subtly wrong map does not crash, it mis-binds a TechDraw
+// dimension or a ShapeBinder weeks later. The inheritance path stays reachable as
+// an oracle via an explicitly-qualified ShapeFeature::getSubObject call, which
+// bypasses Box's override and does not touch the extension.
 TEST_F(FeaturePartTest, shapeExtensionCarriesElementMap)
 {
     // Arrange: a real box with a computed, element-mapped shape.
@@ -232,51 +240,101 @@ TEST_F(FeaturePartTest, shapeExtensionCarriesElementMap)
     box->execute();
     const char* ref = "Face5";
 
-    // Baseline: the current inheritance-based shape-source path.
-    PyObject* pyBaseline = nullptr;
-    auto* baselineOwner = box->getSubObject(ref, &pyBaseline, nullptr, false, 10);
-    ASSERT_NE(baselineOwner, nullptr);
-    ASSERT_NE(pyBaseline, nullptr);
+    // Oracle: the inheritance-based path, invoked explicitly past Box's override.
+    PyObject* pyOracle = nullptr;
+    auto* oracleOwner = box->ShapeFeature::getSubObject(ref, &pyOracle, nullptr, false, 10);
+    ASSERT_NE(oracleOwner, nullptr);
+    ASSERT_NE(pyOracle, nullptr);
 
-    // Capability path: bind ShapeExtension to the same object and pull the same
-    // reference through extensionGetSubObject, sourcing geometry via the object's
-    // own getPropertyOfGeometry() delegation hook.
-    Part::ShapeExtension ext;
-    ext.initExtension(box);
-    App::DocumentObject* extOwner = nullptr;
-    PyObject* pyExt = nullptr;
-    bool handled = ext.extensionGetSubObject(extOwner, ref, &pyExt, nullptr, false, 10);
-
-    // Assert: handled, resolved to the same owner, returned a shape.
-    ASSERT_TRUE(handled);
-    ASSERT_EQ(extOwner, baselineOwner);
-    ASSERT_NE(pyExt, nullptr);
+    // Actual: the live getSubObject, now dispatched to the composed ShapeExtension.
+    PyObject* pyActual = nullptr;
+    auto* actualOwner = box->getSubObject(ref, &pyActual, nullptr, false, 10);
+    ASSERT_NE(actualOwner, nullptr);
+    ASSERT_NE(pyActual, nullptr);
+    ASSERT_EQ(actualOwner, oracleOwner);
 
     // The element maps of the two returned sub-shapes must be identical.
-    auto baseMap = static_cast<Part::TopoShapePy*>(pyBaseline)->getTopoShapePtr()->getElementMap();
-    auto extMap = static_cast<Part::TopoShapePy*>(pyExt)->getTopoShapePtr()->getElementMap();
-    std::sort(baseMap.begin(), baseMap.end());
-    std::sort(extMap.begin(), extMap.end());
+    auto oracleMap = static_cast<Part::TopoShapePy*>(pyOracle)->getTopoShapePtr()->getElementMap();
+    auto actualMap = static_cast<Part::TopoShapePy*>(pyActual)->getTopoShapePtr()->getElementMap();
+    std::sort(oracleMap.begin(), oracleMap.end());
+    std::sort(actualMap.begin(), actualMap.end());
 
-    EXPECT_FALSE(baseMap.empty());  // a bare face carries its face/edge/vertex names
-    ASSERT_EQ(baseMap.size(), extMap.size());
-    EXPECT_TRUE(baseMap == extMap);
+    EXPECT_FALSE(oracleMap.empty());  // a bare face carries its face/edge/vertex names
+    ASSERT_EQ(oracleMap.size(), actualMap.size());
+    EXPECT_TRUE(oracleMap == actualMap);
 
     // Negative control: the comparison must be able to tell a wrong element map from
     // a right one. Pull a *different* face's map and confirm it does NOT match the
-    // capability path's Face5 map — otherwise the equality above would be blind and
+    // routed path's Face5 map — otherwise the equality above would be blind and
     // would pass even if the extension returned garbage.
     PyObject* pyWrong = nullptr;
-    auto* wrongOwner = box->getSubObject("Face3", &pyWrong, nullptr, false, 10);
+    auto* wrongOwner = box->ShapeFeature::getSubObject("Face3", &pyWrong, nullptr, false, 10);
     ASSERT_NE(wrongOwner, nullptr);
     ASSERT_NE(pyWrong, nullptr);
     auto wrongMap = static_cast<Part::TopoShapePy*>(pyWrong)->getTopoShapePtr()->getElementMap();
     std::sort(wrongMap.begin(), wrongMap.end());
-    EXPECT_FALSE(wrongMap == extMap);
+    EXPECT_FALSE(wrongMap == actualMap);
 
-    Py_XDECREF(pyBaseline);
-    Py_XDECREF(pyExt);
+    Py_XDECREF(pyOracle);
+    Py_XDECREF(pyActual);
     Py_XDECREF(pyWrong);
+}
+
+// #79 step 2, transform path: the proposal flagged that the extension reads
+// placement via getPropertyByName("Placement") where the ported original composed
+// getPlacement().toMatrix() — so transform=true parity must be verified, not
+// assumed. Under a genuinely non-identity placement the routed path must (a)
+// accumulate the same transform matrix and (b) return the same placed geometry as
+// the inheritance oracle.
+TEST_F(FeaturePartTest, shapeExtensionTransformParity)
+{
+    auto* box = _boxes[0];
+    box->execute();
+    const char* ref = "Face5";
+
+    // A genuinely non-identity placement: translate + rotate about Z.
+    auto* pla = freecad_cast<App::PropertyPlacement*>(box->getPropertyByName("Placement"));
+    ASSERT_NE(pla, nullptr);
+    pla->setValue(
+        Base::Placement(Base::Vector3d(3, 5, 7), Base::Rotation(Base::Vector3d(0, 0, 1), 0.7))
+    );
+
+    // Oracle vs actual, both transform=true, each into its own accumulator matrix.
+    Base::Matrix4D matOracle;
+    PyObject* pyOracle = nullptr;
+    box->ShapeFeature::getSubObject(ref, &pyOracle, &matOracle, true, 10);
+    ASSERT_NE(pyOracle, nullptr);
+
+    Base::Matrix4D matActual;
+    PyObject* pyActual = nullptr;
+    box->getSubObject(ref, &pyActual, &matActual, true, 10);
+    ASSERT_NE(pyActual, nullptr);
+
+    // (a) Same placement, same math → the accumulated transform must match exactly.
+    EXPECT_TRUE(matOracle == matActual);
+
+    // (b) The placed geometry must coincide: compare bounding boxes.
+    auto bbOracle = static_cast<Part::TopoShapePy*>(pyOracle)->getTopoShapePtr()->getBoundBox();
+    auto bbActual = static_cast<Part::TopoShapePy*>(pyActual)->getTopoShapePtr()->getBoundBox();
+    EXPECT_NEAR(bbOracle.MinX, bbActual.MinX, 1e-7);
+    EXPECT_NEAR(bbOracle.MinY, bbActual.MinY, 1e-7);
+    EXPECT_NEAR(bbOracle.MinZ, bbActual.MinZ, 1e-7);
+    EXPECT_NEAR(bbOracle.MaxX, bbActual.MaxX, 1e-7);
+    EXPECT_NEAR(bbOracle.MaxY, bbActual.MaxY, 1e-7);
+    EXPECT_NEAR(bbOracle.MaxZ, bbActual.MaxZ, 1e-7);
+
+    // Negative control: pulling the same face with transform=false must NOT produce
+    // the placed transform — otherwise the checks above would pass even if the
+    // routed path silently ignored the placement.
+    Base::Matrix4D matNoXform;
+    PyObject* pyNoXform = nullptr;
+    box->getSubObject(ref, &pyNoXform, &matNoXform, false, 10);
+    ASSERT_NE(pyNoXform, nullptr);
+    EXPECT_FALSE(matNoXform == matActual);
+
+    Py_XDECREF(pyOracle);
+    Py_XDECREF(pyActual);
+    Py_XDECREF(pyNoXform);
 }
 
 TEST_F(FeaturePartTest, getElementTypes)
