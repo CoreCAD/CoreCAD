@@ -403,6 +403,13 @@ Body::Body()
     // fix — removing the property in favour of a Part::ShapeExtension — is the deferred #79.
     Shape.setStatus(App::Property::Transient, true);
     Shape.setStatus(App::Property::ReadOnly, true);
+
+    // (Cruth §3.3 / Amendment 17, #79 step 3a) Compose the shape-source capability. The extension
+    // hosts the own-shape half of getSubObject and sources its backing geometry through the
+    // inherited getPropertyOfGeometry() hook (the derived Shape mirror above), so a Body answers a
+    // sub-element query via the capability, exactly like a stored-backed feature. No capability
+    // state to serialize (the extension holds no properties).
+    Part::ShapeExtension::initExtension(this);
 }
 
 Body* Body::spawnAutoBody(App::Document* doc)
@@ -2397,39 +2404,22 @@ App::DocumentObject* Body::getSubObject(
             }
         }
     }
-    // Cruth §3.3/§4: a Body stores no geometry of its own — answer a query for its own
-    // shape by DERIVING it from the Tip on demand (derivedTipShape), never from a stored
-    // Shape property. Mirrors ShapeFeature::getSubObject, but a Body holds no authored
-    // position (§4: "nothing to guard"), so its own frame is identity and no placement is
-    // composed here. (Path components containing '.' were already delegated to the owning
-    // feature or the document Origin above; here subname is empty or a plain sub-element.)
+    // Cruth §3.3/§4 / Amendment 17 (#79 step 3a): a Body stores no geometry of its own — answer a
+    // query for its own shape through the composed Part::ShapeExtension, exactly as a stored-backed
+    // feature (Part::Box) does. Delegating to the App base runs the extension loop, and the
+    // extension resolves the sub-element against the backing geometry it obtains from this Body's
+    // getPropertyOfGeometry() — the Transient/ReadOnly Shape mirror execute()/onDocumentRestored()
+    // keep in step with derivedTipShape(). A Body holds no authored position (§4: "nothing to
+    // guard"), so its own frame is identity and no placement is composed (the extension's
+    // getPropertyByName("Placement") lookup finds none). This replaces the former in-line
+    // derivedTipShape() resolution, which this path now reaches via the capability rather than
+    // by hand. (Path components containing '.' were already delegated to the owning feature or the
+    // document Origin above; here subname is empty or a plain sub-element.)
     //
     // This supersedes the FreeCAD-era caution — returning the Body shape only when a child
     // was visible, to avoid double-draw when the Body sat inside another group — which was
     // long disabled; under de-ownership a Body always represents its Tip (§3.3).
-    if (!pyObj) {
-        return const_cast<Body*>(this);
-    }
-    try {
-        Part::TopoShape ts = derivedTipShape();
-        Base::Matrix4D _mat;
-        auto& mat = pmat ? *pmat : _mat;
-        bool doTransform = !ts.isNull() && mat != ts.getTransform();
-        if (doTransform) {
-            ts.setShape(ts.getShape().Located(TopLoc_Location()), false);
-        }
-        if (subname && *subname && !ts.isNull()) {
-            ts = ts.getSubTopoShape(subname, /*silent*/ true);
-        }
-        if (doTransform && !ts.isNull()) {
-            ts.transformShape(mat, false, true);
-        }
-        *pyObj = Py::new_reference_to(Part::shape2pyshape(ts));
-    }
-    catch (Standard_Failure&) {
-        // Match ShapeFeature: swallow OCCT failures here rather than flood the log.
-    }
-    return const_cast<Body*>(this);
+    return App::DocumentObject::getSubObject(subname, pyObj, pmat, transform, depth);
 }
 
 void Body::rebuildBodyCacheFromChain()
