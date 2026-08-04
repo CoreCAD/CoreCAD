@@ -97,6 +97,11 @@ ShapeFeature::ShapeFeature()
     ADD_PROPERTY(Shape, (TopoDS_Shape()));
     auto mat = Materials::MaterialManager::defaultMaterial();
     ADD_PROPERTY(ShapeMaterial, (*mat));
+    // Amendment 17 (#79): the whole shape lineage carries the shape-source
+    // capability, so Part::hasShape is true for every shape feature. Stateless
+    // extension; the getSubObject routing stays dormant unless a subclass opts in
+    // by overriding getSubObject (Box, Body).
+    ShapeExtension::initExtension(this);
 }
 
 ShapeFeature::~ShapeFeature() = default;

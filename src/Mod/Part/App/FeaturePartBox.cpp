@@ -41,8 +41,8 @@ Box::Box()
     ADD_PROPERTY_TYPE(Length, (10.0f), "Box", App::Prop_None, "The length of the box");
     ADD_PROPERTY_TYPE(Width, (10.0f), "Box", App::Prop_None, "The width of the box");
     ADD_PROPERTY_TYPE(Height, (10.0f), "Box", App::Prop_None, "The height of the box");
-
-    ShapeExtension::initExtension(this);
+    // The shape-source capability is composed by the Part::ShapeFeature base; Box
+    // only overrides getSubObject below to route the query through it.
 }
 
 App::DocumentObject* Box::getSubObject(

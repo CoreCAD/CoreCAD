@@ -33,7 +33,6 @@
 
 #include <App/PropertyStandard.h>
 #include <Mod/Part/App/BodyBase.h>
-#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
 
 namespace App
@@ -52,15 +51,17 @@ namespace PartDesign
 
 class Feature;
 
-// Cruth §3.3 / Amendment 17 (#79 step 3a): a Body carries its shape as a *composed capability*,
-// not as an inherited role. It mixes in Part::ShapeExtension — the same peel Amendment 4 performed
-// for placement — and routes the own-shape half of getSubObject through it, so a Body sources its
-// element-mapped sub-shapes via the capability exactly as a stored-backed feature (Part::Box) does.
-// The backing geometry stays derived from the Tip: the extension reads it through the inherited
-// getPropertyOfGeometry() hook, which returns the Transient/ReadOnly Shape mirror execute() refreshes
-// from derivedTipShape() each pass. Retiring that mirror property outright (sourcing the capability
-// and the element-map paths without a stored Shape) is the separate, TNP-critical step 3b.
-class PartDesignExport Body: public Part::BodyBase, public Part::ShapeExtension
+// Cruth §3.3 / Amendment 17 (#79): a Body carries its shape as a *composed capability*, not as an
+// inherited role. The shape-source capability (Part::ShapeExtension) is composed by the
+// Part::ShapeFeature base — the same peel Amendment 4 performed for placement — so a Body carries
+// it through BodyBase and routes the own-shape half of getSubObject through it (overriding
+// getSubObject to delegate to the App base), sourcing its element-mapped sub-shapes via the
+// capability exactly as a stored-backed feature (Part::Box) does. The backing geometry stays
+// derived from the Tip: the extension reads it through the inherited getPropertyOfGeometry() hook,
+// which returns the Transient/ReadOnly Shape mirror execute() refreshes from derivedTipShape() each
+// pass. Retiring that mirror property outright (sourcing the capability and the element-map paths
+// without a stored Shape) is the separate, TNP-critical step 3b.
+class PartDesignExport Body: public Part::BodyBase
 {
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::Body);
 

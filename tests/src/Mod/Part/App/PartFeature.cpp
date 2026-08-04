@@ -280,6 +280,33 @@ TEST_F(FeaturePartTest, shapeExtensionCarriesElementMap)
     Py_XDECREF(pyWrong);
 }
 
+// #79: carrying a shape is a capability the whole Part::ShapeFeature lineage
+// composes (Amendment 17), so Part::hasShape must be true for an ordinary shape
+// feature that never composed the extension itself — not only for the classes
+// (Box, Body) that opt into routing getSubObject through it. This is the faithful
+// stand-in for isDerivedFrom<ShapeFeature>() the consumer migration will adopt.
+TEST_F(FeaturePartTest, hasShapeCapabilityIsUniversalAcrossLineage)
+{
+    // A Part::Common (boolean feature) is a plain ShapeFeature descendant: it never
+    // calls ShapeExtension::initExtension and does not override getSubObject. Before
+    // the base composed the capability, hasShape(_common) was false; it must now be
+    // true purely by inheriting the extension from Part::ShapeFeature.
+    EXPECT_TRUE(Part::hasShape(_common));
+
+    // A Box still answers true (it now carries the capability from the base rather
+    // than composing it directly).
+    EXPECT_TRUE(Part::hasShape(_boxes[0]));
+
+    // Negative control: a non-shape object must answer false, so the check is not
+    // trivially true for everything. An App::DocumentObjectGroup carries no shape.
+    auto* group = _doc->addObject("App::DocumentObjectGroup", "grp");
+    ASSERT_NE(group, nullptr);
+    EXPECT_FALSE(Part::hasShape(group));
+
+    // And the null guard holds.
+    EXPECT_FALSE(Part::hasShape(nullptr));
+}
+
 // #79 step 2, transform path: the proposal flagged that the extension reads
 // placement via getPropertyByName("Placement") where the ported original composed
 // getPlacement().toMatrix() — so transform=true parity must be verified, not
