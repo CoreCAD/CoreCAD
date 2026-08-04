@@ -307,6 +307,43 @@ TEST_F(FeaturePartTest, hasShapeCapabilityIsUniversalAcrossLineage)
     EXPECT_FALSE(Part::hasShape(nullptr));
 }
 
+// #79 step-4 accessor: Part::getShape is the capability read that pairs with
+// Part::hasShape — the successor to the raw static_cast<ShapeFeature*>(obj)->
+// Shape.getShape() the downcast-to-read consumer sites still perform. It must
+// return the object's own backing geometry, sourced through getPropertyOfGeometry,
+// and an empty shape for objects that carry none.
+TEST_F(FeaturePartTest, getShapeCapabilityReturnsBackingShape)
+{
+    auto* box = _boxes[0];
+    box->execute();
+
+    // Oracle: the raw stored-property read the migration replaces.
+    auto* feat = freecad_cast<Part::Feature*>(box);
+    ASSERT_NE(feat, nullptr);
+    Base::BoundBox3d bbOracle = feat->Shape.getShape().getBoundBox();
+    ASSERT_TRUE(bbOracle.IsValid());
+
+    // Actual: the capability accessor must return the same backing geometry.
+    Part::TopoShape ts = Part::getShape(box);
+    ASSERT_FALSE(ts.isNull());
+    Base::BoundBox3d bbActual = ts.getBoundBox();
+    EXPECT_NEAR(bbOracle.MinX, bbActual.MinX, 1e-7);
+    EXPECT_NEAR(bbOracle.MinY, bbActual.MinY, 1e-7);
+    EXPECT_NEAR(bbOracle.MinZ, bbActual.MinZ, 1e-7);
+    EXPECT_NEAR(bbOracle.MaxX, bbActual.MaxX, 1e-7);
+    EXPECT_NEAR(bbOracle.MaxY, bbActual.MaxY, 1e-7);
+    EXPECT_NEAR(bbOracle.MaxZ, bbActual.MaxZ, 1e-7);
+
+    // Negative control: a non-shape object yields an empty shape, so the accessor
+    // is not trivially returning geometry for everything.
+    auto* group = _doc->addObject("App::DocumentObjectGroup", "grp2");
+    ASSERT_NE(group, nullptr);
+    EXPECT_TRUE(Part::getShape(group).isNull());
+
+    // And the null guard holds.
+    EXPECT_TRUE(Part::getShape(nullptr).isNull());
+}
+
 // #79 step 2, transform path: the proposal flagged that the extension reads
 // placement via getPropertyByName("Placement") where the ported original composed
 // getPlacement().toMatrix() — so transform=true parity must be verified, not

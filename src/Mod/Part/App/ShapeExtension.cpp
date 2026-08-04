@@ -164,4 +164,14 @@ bool hasShape(const App::DocumentObject* obj)
     return obj != nullptr && obj->hasExtension(ShapeExtension::getExtensionClassTypeId());
 }
 
+TopoShape getShape(const App::DocumentObject* obj)
+{
+    if (const auto* geo = freecad_cast<const App::GeoFeature*>(obj)) {
+        if (const auto* prop = freecad_cast<const PropertyPartShape*>(geo->getPropertyOfGeometry())) {
+            return prop->getShape();
+        }
+    }
+    return {};
+}
+
 }  // namespace Part

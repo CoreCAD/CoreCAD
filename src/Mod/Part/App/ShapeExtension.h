@@ -35,6 +35,8 @@ class GeoFeature;
 namespace Part
 {
 
+class TopoShape;
+
 /**
  * @brief The opt-in "is a shape source" capability (spike for #79).
  *
@@ -87,5 +89,14 @@ public:
 /// Capability check: does this object provide the shape-source contract?
 /// The extension-based successor to isDerivedFrom<Part::ShapeFeature>().
 PartExport bool hasShape(const App::DocumentObject* obj);
+
+/// Capability read: the object's own backing shape, sourced through its
+/// App::GeoFeature::getPropertyOfGeometry() hook — a stored Shape for a normal
+/// feature, the derived Tip shape for a Body — or an empty TopoShape when the
+/// object carries no shape. Returns the raw, local-frame geometry (no placement
+/// transform, no sub-element resolution): the extension-based successor to the
+/// bare static_cast<Part::ShapeFeature*>(obj)->Shape.getShape() property read.
+/// For transform- or sub-element-aware reads, use Part::Feature::getTopoShape().
+PartExport TopoShape getShape(const App::DocumentObject* obj);
 
 }  // namespace Part
