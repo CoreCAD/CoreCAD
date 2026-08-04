@@ -404,12 +404,12 @@ Body::Body()
     Shape.setStatus(App::Property::Transient, true);
     Shape.setStatus(App::Property::ReadOnly, true);
 
-    // (Cruth §3.3 / Amendment 17, #79 step 3a) Compose the shape-source capability. The extension
-    // hosts the own-shape half of getSubObject and sources its backing geometry through the
-    // inherited getPropertyOfGeometry() hook (the derived Shape mirror above), so a Body answers a
-    // sub-element query via the capability, exactly like a stored-backed feature. No capability
-    // state to serialize (the extension holds no properties).
-    Part::ShapeExtension::initExtension(this);
+    // (Cruth §3.3 / Amendment 17, #79) The shape-source capability is composed by the
+    // Part::ShapeFeature base (carried here via BodyBase), so a Body already has it —
+    // Part::hasShape is true. The extension hosts the own-shape half of getSubObject and sources
+    // its backing geometry through the inherited getPropertyOfGeometry() hook (the derived Shape
+    // mirror above), so the Body::getSubObject override (which delegates to the App base) answers a
+    // sub-element query via the capability, exactly like a stored-backed feature.
 }
 
 Body* Body::spawnAutoBody(App::Document* doc)

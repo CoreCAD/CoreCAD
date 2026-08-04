@@ -36,6 +36,7 @@
 #include <Mod/Part/PartGlobal.h>
 
 #include "PropertyTopoShape.h"
+#include "ShapeExtension.h"
 
 
 class gp_Dir;
@@ -72,8 +73,17 @@ class Feature;
  * App::PlacementExtension; the derived PartDesign feature line derives from
  * ShapeFeature directly and holds none. Everything asks getLocation() /
  * getPlacement(), which answer identity when no placement is carried.
+ *
+ * ShapeFeature composes Part::ShapeExtension (Amendment 17, #79): carrying a
+ * shape is a capability, so the whole shape lineage gets it from the base and
+ * Part::hasShape(obj) is true for every shape feature — the faithful successor
+ * to the ~138 isDerivedFrom<ShapeFeature>() type tests the consumer migration
+ * will retire. The extension is stateless (no properties to serialize) and its
+ * getSubObject routing stays dormant here: ShapeFeature::getSubObject keeps the
+ * in-line resolution; only classes that override getSubObject to delegate to the
+ * App base (Box, Body) actually route the shape query through the extension.
  */
-class PartExport ShapeFeature: public App::GeoFeature
+class PartExport ShapeFeature: public App::GeoFeature, public Part::ShapeExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::ShapeFeature);
 
