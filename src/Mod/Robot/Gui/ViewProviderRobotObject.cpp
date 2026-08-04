@@ -38,6 +38,7 @@
 #include <App/VRMLObject.h>
 #include <Gui/Application.h>
 #include <Mod/Part/Gui/ViewProvider.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Robot/App/RobotObject.h>
 
 #include "ViewProviderRobotObject.h"
@@ -403,7 +404,7 @@ void ViewProviderRobotObject::updateData(const App::Property* prop)
     else if (prop == &robObj->ToolShape) {
         App::DocumentObject* o = robObj->ToolShape.getValue<App::DocumentObject*>();
 
-        if (o && (o->isDerivedFrom<Part::ShapeFeature>() || o->isDerivedFrom<App::VRMLObject>())) {
+        if (o && (Part::hasShape(o) || o->isDerivedFrom<App::VRMLObject>())) {
             toolShape = Gui::Application::Instance->getViewProvider(o);
             toolShape->setTransformation(
                 (robObj->Tcp.getValue() * (robObj->ToolBase.getValue().inverse())).toMatrix()

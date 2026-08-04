@@ -44,6 +44,7 @@
 #include <Gui/Selection/SoFCUnifiedSelection.h>
 #include <Gui/ViewProviderDatum.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 #include <Mod/PartDesign/App/FeatureBase.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
@@ -790,7 +791,7 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
     else if (obj->isDerivedFrom<Part::Part2DObject>()) {
         return true;
     }
-    else if (!obj->isDerivedFrom<Part::ShapeFeature>()) {
+    else if (!Part::hasShape(obj)) {
         return false;
     }
     else if (PartDesign::Body::inAnyBody(obj)) {

@@ -39,6 +39,7 @@
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Mod/Part/App/Part2DObject.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Feature.h>
@@ -97,11 +98,11 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
     }
 
     // resolve links if needed
-    if (!pObj->isDerivedFrom<Part::ShapeFeature>()) {
+    if (!Part::hasShape(pObj)) {
         pObj = Part::Feature::getShapeOwner(pObj, sSubName);
     }
 
-    if (pObj && pObj->isDerivedFrom<Part::ShapeFeature>()) {
+    if (pObj && Part::hasShape(pObj)) {
         return allowPartFeature(pObj, sSubName);
     }
 

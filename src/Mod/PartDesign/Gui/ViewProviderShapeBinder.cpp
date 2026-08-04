@@ -40,6 +40,7 @@
 #include <Gui/MainWindow.h>
 #include <Gui/ViewParams.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "ViewProviderShapeBinder.h"
 #include "TaskShapeBinder.h"
@@ -157,7 +158,7 @@ void ViewProviderShapeBinder::highlightReferences(bool on)
     }
 
     // stop if not a Part feature was found
-    if (!obj || !obj->isDerivedFrom<Part::ShapeFeature>()) {
+    if (!obj || !Part::hasShape(obj)) {
         return;
     }
 

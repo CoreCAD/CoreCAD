@@ -41,6 +41,7 @@
 #include <QObject>
 
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/Spreadsheet/App/Cell.h>
 
@@ -209,7 +210,7 @@ void BomObject::addObjectChildrenToBom(
         }
 
         if (!child->isDerivedFrom<AssemblyObject>() && !child->isDerivedFrom<App::Part>()
-            && !(child->isDerivedFrom<Part::ShapeFeature>() && !onlyParts.getValue())) {
+            && !(Part::hasShape(child) && !onlyParts.getValue())) {
             continue;
         }
 

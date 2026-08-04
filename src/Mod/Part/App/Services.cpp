@@ -22,6 +22,7 @@
  ***************************************************************************/
 
 #include <Base/Interpreter.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Base/Vector3D.h>
 
 #include "Services.h"
@@ -61,7 +62,7 @@ std::optional<Base::Vector3d> PartCenterOfMass::ofDocumentObject(App::DocumentOb
 
 bool PartCenterOfMass::supports(App::DocumentObject* object) const
 {
-    return object->isDerivedFrom<Part::ShapeFeature>();
+    return Part::hasShape(object);
 }
 
 std::optional<PyObject*> ShapeAttributeProvider::getAttribute(

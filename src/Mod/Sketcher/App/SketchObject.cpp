@@ -52,6 +52,7 @@
 #include <Base/Tools.h>
 #include <Base/Vector3D.h>
 #include <Mod/Part/App/PartPyCXX.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/GeometryMigrationExtension.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 #include <Mod/Part/App/WireJoiner.h>
@@ -793,7 +794,7 @@ bool SketchObject::evaluateSupport()
 {
     // returns false if the shape is broken, null or non-planar
     App::DocumentObject* link = AttachmentSupport.getValue();
-    if (!link || !link->isDerivedFrom<Part::ShapeFeature>())
+    if (!link || !Part::hasShape(link))
         return false;
     return true;
 }

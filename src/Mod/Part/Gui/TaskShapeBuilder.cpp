@@ -44,6 +44,7 @@
 #include <Gui/Selection/SelectionFilter.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "TaskShapeBuilder.h"
 #include "ui_TaskShapeBuilder.h"
@@ -74,7 +75,7 @@ public:
     }
     bool allow(App::Document*, App::DocumentObject* obj, const char* sSubName) override
     {
-        if (!obj || !obj->isDerivedFrom<Part::ShapeFeature>()) {
+        if (!obj || !Part::hasShape(obj)) {
             return false;
         }
         if (Base::Tools::isNullOrEmpty(sSubName)) {

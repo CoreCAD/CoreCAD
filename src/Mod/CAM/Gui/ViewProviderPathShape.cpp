@@ -26,6 +26,7 @@
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Mod/CAM/App/FeaturePathShape.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "ViewProviderPathShape.h"
 
@@ -52,7 +53,7 @@ bool ViewProviderPathShape::canDragObjects() const
 
 bool ViewProviderPathShape::canDragObject(App::DocumentObject* obj) const
 {
-    return obj && obj->isDerivedFrom<Part::ShapeFeature>();
+    return obj && Part::hasShape(obj);
 }
 
 void ViewProviderPathShape::dragObject(App::DocumentObject* obj)

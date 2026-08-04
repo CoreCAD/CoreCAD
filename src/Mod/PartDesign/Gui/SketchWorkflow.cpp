@@ -40,6 +40,7 @@
 #include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 #include <Mod/Part/App/AttachExtension.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/Attacher.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/TopoShape.h>
@@ -96,7 +97,7 @@ public:
         // https://forum.freecad.org/viewtopic.php?f=3&t=37448
         if (object == activeBody) {
             App::DocumentObject* tip = activeBody->Tip.getValue();
-            if (tip && tip->isDerivedFrom<Part::ShapeFeature>() && elements.size() == 1) {
+            if (tip && Part::hasShape(tip) && elements.size() == 1) {
                 Gui::SelectionChanges msg;
                 msg.pDocName = faceSelection.getDocName();
                 msg.pObjectName = tip->getNameInDocument();

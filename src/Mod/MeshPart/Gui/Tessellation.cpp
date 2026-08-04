@@ -41,6 +41,7 @@
 #include <Mod/Mesh/App/MeshFeature.h>
 #include <Mod/Mesh/Gui/ViewProvider.h>
 #include <Mod/Part/App/BodyBase.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 
 #include "Tessellation.h"
@@ -261,7 +262,7 @@ bool Tessellation::accept()
             shapeObjects.emplace_back(sel.pObject, sel.SubName);
         }
         else if (sel.pObject) {
-            if (sel.pObject->isDerivedFrom<Part::ShapeFeature>()) {
+            if (Part::hasShape(sel.pObject)) {
                 partWithNoFace = true;
             }
             if (auto body = dynamic_cast<Part::BodyBase*>(sel.pObject)) {

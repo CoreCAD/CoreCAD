@@ -50,6 +50,7 @@
 #include <Gui/Selection/SelectionFilter.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Mod/Sketcher/App/GeometryFacade.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/Sketcher/App/SolverGeometryExtension.h>
 
@@ -953,7 +954,7 @@ int SketchSelection::setUp()
                 return -1;
             }
             // assume always a Part::Feature derived object as support
-            assert(selection[1].getObject()->isDerivedFrom<Part::ShapeFeature>());
+            assert(Part::hasShape(selection[1].getObject()));
             SketchSubNames = selection[0].getSubNames();
             SupportSubNames = selection[1].getSubNames();
         }
@@ -965,7 +966,7 @@ int SketchSelection::setUp()
                 return -1;
             }
             // assume always a Part::Feature derived object as support
-            assert(selection[0].getObject()->isDerivedFrom<Part::ShapeFeature>());
+            assert(Part::hasShape(selection[0].getObject()));
             SketchSubNames = selection[1].getSubNames();
             SupportSubNames = selection[0].getSubNames();
         }

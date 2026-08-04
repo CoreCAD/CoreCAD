@@ -69,6 +69,7 @@
 #include <Gui/Selection/SoFCSelectionAction.h>
 
 #include <Mod/Assembly/App/AssemblyLink.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Assembly/App/AssemblyObject.h>
 #include <Mod/Assembly/App/AssemblyUtils.h>
 #include <Mod/Assembly/App/JointGroup.h>
@@ -872,8 +873,7 @@ void ViewProviderAssembly::collectMovableObjects(
         && !(
             currentObject->isDerivedFrom<App::Part>()
             || currentObject->isDerivedFrom<Assembly::AssemblyLink>()
-            || currentObject->isDerivedFrom<Part::ShapeFeature>()
-            || currentObject->isDerivedFrom<App::Link>()
+            || Part::hasShape(currentObject) || currentObject->isDerivedFrom<App::Link>()
             || currentObject->isDerivedFrom<App::LinkElement>()
         )) {
         return;

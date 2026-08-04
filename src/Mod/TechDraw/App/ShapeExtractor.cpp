@@ -42,6 +42,7 @@
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/PrimitiveFeature.h>
 #include <Mod/Part/App/FeaturePartCircle.h>
 #include <Mod/Part/App/TopoShapePy.h>
@@ -67,7 +68,7 @@ std::vector<TopoDS_Shape> ShapeExtractor::getShapes2d(const std::vector<App::Doc
 
     for (auto& l:links) {
         if (is2dObject(l)) {
-            if (l->isDerivedFrom<Part::ShapeFeature>()) {
+            if (Part::hasShape(l)) {
                 TopoDS_Shape temp = getLocatedShape(l);
                 // checkShape on 2d objs?
                 if (!temp.IsNull()) {
@@ -302,7 +303,7 @@ std::vector<TopoDS_Shape> ShapeExtractor::getShapesFromObject(const App::Documen
     const App::GroupExtension* gex = dynamic_cast<const App::GroupExtension*>(docObj);
     App::Property* gProp = docObj->getPropertyByName("Group");
     App::Property* sProp = docObj->getPropertyByName("Shape");
-    if (docObj->isDerivedFrom<Part::ShapeFeature>()) {
+    if (Part::hasShape(docObj)) {
         if (checkShape(docObj, getLocatedShape(docObj))) {
             result.push_back(getLocatedShape(docObj));
         }

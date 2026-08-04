@@ -32,6 +32,7 @@
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>
 #include <Mod/Part/App/FeatureCompound.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "ViewProviderCompound.h"
 
@@ -214,7 +215,7 @@ bool ViewProviderCompound::canDragObjects() const
 
 bool ViewProviderCompound::canDragObject(App::DocumentObject* obj) const
 {
-    return obj->isDerivedFrom<Part::ShapeFeature>();
+    return Part::hasShape(obj);
 }
 
 void ViewProviderCompound::dragObject(App::DocumentObject* obj)
@@ -237,7 +238,7 @@ bool ViewProviderCompound::canDropObjects() const
 
 bool ViewProviderCompound::canDropObject(App::DocumentObject* obj) const
 {
-    return obj->isDerivedFrom<Part::ShapeFeature>();
+    return Part::hasShape(obj);
 }
 
 void ViewProviderCompound::dropObject(App::DocumentObject* obj)

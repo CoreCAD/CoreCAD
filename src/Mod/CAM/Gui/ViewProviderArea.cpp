@@ -25,6 +25,7 @@
 
 #include <Gui/Application.h>
 #include <Mod/CAM/App/FeatureArea.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "ViewProviderArea.h"
 
@@ -53,7 +54,7 @@ bool ViewProviderArea::canDragObjects() const
 
 bool ViewProviderArea::canDragObject(App::DocumentObject* obj) const
 {
-    return obj && obj->isDerivedFrom<Part::ShapeFeature>();
+    return obj && Part::hasShape(obj);
 }
 
 void ViewProviderArea::dragObject(App::DocumentObject* obj)

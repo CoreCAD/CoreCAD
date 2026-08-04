@@ -42,6 +42,7 @@
 #include <Gui/Selection/SelectionObject.h>
 #include <Gui/Widgets.h>
 #include <Mod/Part/Gui/ViewProvider.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "TaskGeomFillSurface.h"
 
@@ -167,7 +168,7 @@ bool GeomFillSurface::EdgeSelection::allow(App::Document*, App::DocumentObject* 
     if (pObj == editedObject) {
         return false;
     }
-    if (!pObj->isDerivedFrom<Part::ShapeFeature>()) {
+    if (!Part::hasShape(pObj)) {
         return false;
     }
 
