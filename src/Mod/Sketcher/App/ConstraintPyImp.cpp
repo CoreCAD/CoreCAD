@@ -24,6 +24,7 @@
 
 #include <sstream>
 
+#include <boost/uuid/uuid_io.hpp>
 
 #include <Base/QuantityPy.h>
 
@@ -1091,6 +1092,11 @@ Py::String ConstraintPy::getType() const
             return Py::String("Undefined");
             break;
     }
+}
+
+Py::String ConstraintPy::getTag() const
+{
+    return Py::String(boost::uuids::to_string(this->getConstraintPtr()->getTag()));
 }
 
 Py::Long ConstraintPy::getFirst() const

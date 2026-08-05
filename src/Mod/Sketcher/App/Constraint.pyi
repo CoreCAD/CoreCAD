@@ -22,6 +22,10 @@ class Constraint(Persistence):
     Type: Final[str] = ""
     """Get the constraint type"""
 
+    Tag: Final[str] = ""
+    """The constraint's durable identity (UUID string), stable across save/reload
+    and geometry-list reorder; minted fresh on a clone."""
+
     First: int = 0
     """First geometry index the Constraint refers to"""
 
