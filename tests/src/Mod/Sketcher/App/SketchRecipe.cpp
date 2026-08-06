@@ -382,4 +382,93 @@ TEST_F(SketchRecipeMergeTest, danglingWithSurvivingParticipantResolvesToStopAsk)
     EXPECT_EQ(mergedCons.count(ctag), 1U) << "a live participant survives -> kept for the user";
 }
 
+// Slice 5, end-to-end on real sketches: regenerate. The recipe layer merges with nothing running;
+// running the existing solver on the merged recipe is what reveals whether it "compiles". These
+// two cases merge EQUALLY clean at the recipe level (no value conflict, no dangling reference) and
+// are told apart only by the solver on regenerate — the payoff the design names.
+
+// A fresh sketch to regenerate onto, plus the branch sketches as coordinate-seed sources.
+Sketcher::SketchObject* freshTarget(App::Document* doc)
+{
+    return static_cast<Sketcher::SketchObject*>(doc->addObject("Sketcher::SketchObject", "T"));
+}
+
+// Merged-but-does-not-compile: A constrains L0's length to 40, B (independently, its own durable
+// constraint) constrains the SAME line to 30. Different tags -> the three-way merge sees two
+// non-overlapping additions and merges clean; both refs point at the surviving L0, so no dangling
+// reference either. Only on regenerate does the solver find two lengths on one line irreconcilable.
+TEST_F(SketchRecipeMergeTest, cleanMergeRegeneratesToConflict)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        addLine(s, 0, 0, 40, 0);  // L0, unconstrained in the ancestor
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+
+    addDistance(br.a, 0, 40.0);  // A: length 40
+    addDistance(br.b, 0, 30.0);  // B: length 30 — a distinct constraint, not an edit of A's
+
+    SketchRecipe a = Sketcher::emitSketchRecipe(*br.a);
+    SketchRecipe b = Sketcher::emitSketchRecipe(*br.b);
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection mergedGeom
+        = App::RecipeMerge::threeWay(br.base.geometry, a.geometry, b.geometry, conflicts);
+    App::RecipeSection mergedCons
+        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
+    App::RecipeMerge::checkReferences(mergedCons, mergedGeom, conflicts);
+    ASSERT_TRUE(conflicts.empty())
+        << "the merge is textually clean: no value or referential conflict";
+    ASSERT_EQ(mergedCons.size(), 2U) << "both branches' constraints carried through";
+
+    SketchRecipe merged {mergedGeom, mergedCons};
+    auto* doc = App::GetApplication().newDocument("regenConflict");
+    Sketcher::RegenResult r = Sketcher::regenerateSketch(*freshTarget(doc), merged, {br.a, br.b});
+
+    EXPECT_TRUE(r.fullyRealized) << "every geometry and constraint was materialized (not skipped)";
+    EXPECT_TRUE(r.hasConflicts) << "two lengths on one line: the merge does not compile";
+    EXPECT_LT(r.solverStatus, 0) << "the solver reports failure";
+}
+
+// Positive control — merges equally clean, and DOES compile: A constrains L0's length to 40, B
+// makes the same line Horizontal. Both additions merge clean by tag, both ref the surviving L0,
+// and on regenerate the two constraints are mutually satisfiable, so the solver succeeds. A blind
+// regenerate that always reported a conflict would fail here; one that always succeeded would fail
+// the case above.
+TEST_F(SketchRecipeMergeTest, cleanMergeRegeneratesValid)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        addLine(s, 0, 0, 40, 0);  // L0
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+
+    addDistance(br.a, 0, 40.0);  // A: length 40
+    addHorizontal(br.b, 0);      // B: horizontal — compatible with A's length
+
+    SketchRecipe a = Sketcher::emitSketchRecipe(*br.a);
+    SketchRecipe b = Sketcher::emitSketchRecipe(*br.b);
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection mergedGeom
+        = App::RecipeMerge::threeWay(br.base.geometry, a.geometry, b.geometry, conflicts);
+    App::RecipeSection mergedCons
+        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
+    App::RecipeMerge::checkReferences(mergedCons, mergedGeom, conflicts);
+    ASSERT_TRUE(conflicts.empty())
+        << "the merge is textually clean, exactly as in the conflict case";
+    ASSERT_EQ(mergedCons.size(), 2U) << "both branches' constraints carried through";
+
+    SketchRecipe merged {mergedGeom, mergedCons};
+    auto* doc = App::GetApplication().newDocument("regenValid");
+    Sketcher::RegenResult r = Sketcher::regenerateSketch(*freshTarget(doc), merged, {br.a, br.b});
+
+    EXPECT_TRUE(r.fullyRealized) << "every geometry and constraint was materialized";
+    EXPECT_FALSE(r.hasConflicts) << "length + horizontal are mutually satisfiable";
+    EXPECT_EQ(r.solverStatus, 0) << "the merge compiles";
+    // Both constraints really took effect: a free line has 4 DoF; length removes one, horizontal
+    // another -> 2 remain. (If a constraint had been silently skipped, DoF would be higher.)
+    EXPECT_EQ(r.dof, 2) << "distance and horizontal both applied on regenerate";
+}
+
 }  // namespace
