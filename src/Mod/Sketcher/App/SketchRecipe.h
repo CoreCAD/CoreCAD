@@ -57,6 +57,36 @@ struct SketchRecipe
 /// is not run.
 SketcherExport SketchRecipe emitSketchRecipe(const SketchObject& sketch);
 
+/** The outcome of regenerating a recipe onto a live sketch and re-solving with the existing
+ *  solver — the CAD analogue of "does the merge compile?" (DESIGN_recipe-merge.md §6 slice 5,
+ *  §10.3). The recipe layer merges text with nothing running; a textually-clean merge can still
+ *  regenerate to invalid geometry, and only running the kernel/solver reveals it.
+ */
+struct RegenResult
+{
+    int solverStatus = 0;          ///< SketchObject::solve() return: 0 ok; -4 overconstrained,
+                                   ///< -3 conflicting, -5 malformed, -1 solver error, -2 redundant
+    bool hasConflicts = false;     ///< last solve reported conflicting constraints
+    bool hasRedundancies = false;  ///< last solve reported redundant constraints
+    bool hasMalformed = false;     ///< last solve reported malformed constraints
+    int dof = -1;                  ///< remaining degrees of freedom after the solve
+    bool fullyRealized = true;  ///< every node materialized (false if a seed/type/ref was missing)
+};
+
+/// Slice 5: regenerate. Materialize a (typically merged) recipe as live geometry and constraints
+/// on `target`, then run the existing solver. Coordinates are not in the recipe (they are
+/// regenerable seeds, §4): each surviving entity's seed geometry is pulled from `seedSources` by
+/// durable tag, so the merged constraint set is re-solved against real starting coordinates.
+/// Constraint values are taken as literal datums (a bound expression is not re-evaluated here —
+/// a named deferral); refs with no durable identity (axes/external) were never emitted and so are
+/// absent. Returns the solver's verdict: a clean merge that regenerates with hasConflicts is the
+/// "merged but does not compile" case.
+SketcherExport RegenResult regenerateSketch(
+    SketchObject& target,
+    const SketchRecipe& recipe,
+    const std::vector<const SketchObject*>& seedSources
+);
+
 }  // namespace Sketcher
 
 #endif  // SKETCHER_SKETCHRECIPE_H
