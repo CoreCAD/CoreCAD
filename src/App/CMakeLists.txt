@@ -319,6 +319,7 @@ SET(FreeCADApp_CPP_SRCS
     MeasureManagerPyImp.cpp
     Metadata.cpp
     MetadataPyImp.cpp
+    Recipe.cpp
     ElementNamingUtils.cpp
     ProgramInformation.cpp
     SafeMode.cpp
@@ -346,6 +347,7 @@ SET(FreeCADApp_HPP_SRCS
     Material.h
     MeasureManager.h
     Metadata.h
+    Recipe.h
     ElementNamingUtils.h
     ProgramInformation.h
     Services.h
