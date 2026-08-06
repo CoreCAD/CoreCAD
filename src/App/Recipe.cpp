@@ -121,3 +121,59 @@ void RecipeMerge::checkReferences(const RecipeSection& withRefs,
         }
     }
 }
+
+std::vector<RefResolution> RecipeMerge::resolveReferences(RecipeSection& withRefs,
+                                                          const RecipeSection& liveTargets)
+{
+    std::vector<RefResolution> resolutions;
+    std::vector<std::string> toDrop;
+
+    for (auto& [id, node] : withRefs) {
+        bool anyDangling = false;
+        bool anySurviving = false;
+        std::string danglingTarget;
+
+        for (const RecipeRef& ref : node.refs) {
+            if (ref.target.empty()) {
+                continue;  // sentinel (sketch axis/external) — not an authored target
+            }
+            if (liveTargets.find(ref.target) == liveTargets.end()) {
+                anyDangling = true;
+                if (danglingTarget.empty()) {
+                    danglingTarget = ref.target;
+                }
+            }
+            else {
+                anySurviving = true;
+            }
+        }
+
+        if (!anyDangling) {
+            continue;  // Carry: geometry still determines it; nothing to decide.
+        }
+
+        if (anySurviving) {
+            // A live participant survives; a satisfiable target remains but re-targeting
+            // off the retired one is the user's choice.
+            resolutions.push_back({RefResolution::Outcome::StopAsk,
+                                   id,
+                                   "a live reference survives; retargeting from retired "
+                                       + danglingTarget + " is the user's choice"});
+        }
+        else {
+            // No authored ref survives; the subject genuinely ceased to exist and nothing
+            // remains to hold this node. Drop it, disclosing what retired.
+            resolutions.push_back({RefResolution::Outcome::Drop,
+                                   id,
+                                   "no surviving reference; dropped (target " + danglingTarget
+                                       + " retired)"});
+            toDrop.push_back(id);
+        }
+    }
+
+    for (const std::string& id : toDrop) {
+        withRefs.erase(id);
+    }
+
+    return resolutions;
+}

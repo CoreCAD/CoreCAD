@@ -137,6 +137,22 @@ void addHorizontal(Sketcher::SketchObject* sketch, int geoId)
     sketch->getDocument()->recompute();
 }
 
+void addCoincident(
+    Sketcher::SketchObject* sketch,
+    int geoId1,
+    Sketcher::PointPos pos1,
+    int geoId2,
+    Sketcher::PointPos pos2
+)
+{
+    Sketcher::Constraint c;
+    c.Type = Sketcher::Coincident;
+    c.setElement(0, Sketcher::GeoElementId(geoId1, pos1));
+    c.setElement(1, Sketcher::GeoElementId(geoId2, pos2));
+    sketch->addConstraint(&c);
+    sketch->getDocument()->recompute();
+}
+
 // --- the three cases -------------------------------------------------------------------
 
 // Clean, position-independent: A deletes an EARLY entity (renumbering the rest), B adds a new
@@ -269,6 +285,101 @@ TEST_F(SketchRecipeMergeTest, danglingReferenceIsReferentialConflict)
     std::vector<App::MergeConflict> liveConflicts;
     App::RecipeMerge::checkReferences(mergedCons, br.base.geometry, liveConflicts);
     EXPECT_TRUE(liveConflicts.empty()) << "a reference to a live target is not a conflict";
+}
+
+// Slice 4, end-to-end on real sketches: the dangling reference is not merely flagged but
+// RESOLVED through §4.7's honest-retirement outcomes.
+
+// Drop-with-disclosure: A retires L1; B adds a Horizontal whose ONLY subject is L1. After the
+// merge nothing the constraint depends on survives, so it resolves to Drop and is erased from
+// the merged recipe — the whole-subject case. Control: against geometry where L1 still lives,
+// the same constraint carries and nothing is reported.
+TEST_F(SketchRecipeMergeTest, danglingWholeSubjectResolvesToDrop)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        addLine(s, 0, 0, 10, 0);
+        addLine(s, 0, 5, 10, 5);
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+
+    br.a->delGeometry(1);  // A retires L1
+    br.a->getDocument()->recompute();
+    addHorizontal(br.b, 1);  // B constrains L1 — its only reference
+
+    SketchRecipe a = Sketcher::emitSketchRecipe(*br.a);
+    SketchRecipe b = Sketcher::emitSketchRecipe(*br.b);
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection mergedGeom
+        = App::RecipeMerge::threeWay(br.base.geometry, a.geometry, b.geometry, conflicts);
+    App::RecipeSection mergedCons
+        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
+    ASSERT_EQ(mergedCons.size(), 1U);
+    const std::string ctag = mergedCons.begin()->first;
+
+    std::vector<App::RefResolution> res = App::RecipeMerge::resolveReferences(mergedCons, mergedGeom);
+    ASSERT_EQ(res.size(), 1U);
+    EXPECT_EQ(res.front().outcome, App::RefResolution::Outcome::Drop);
+    EXPECT_EQ(res.front().id, ctag);
+    EXPECT_EQ(mergedCons.count(ctag), 0U) << "the whole-subject constraint was dropped";
+
+    // Control: re-merge (the first pass mutated mergedCons) and resolve against LIVE geometry.
+    App::RecipeSection consAgain
+        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
+    std::vector<App::RefResolution> live
+        = App::RecipeMerge::resolveReferences(consAgain, br.base.geometry);
+    EXPECT_TRUE(live.empty()) << "with its target alive the constraint carries, nothing to resolve";
+    EXPECT_EQ(consAgain.count(ctag), 1U);
+}
+
+// Stop-and-ask: A retires L1 but L0 survives; B adds a Coincident tying L0's end to L1's start,
+// so the merged constraint references a live participant AND the retired one. A satisfiable
+// target survives but re-targeting is the user's choice, so it resolves to StopAsk and is KEPT.
+TEST_F(SketchRecipeMergeTest, danglingWithSurvivingParticipantResolvesToStopAsk)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        addLine(s, 0, 0, 10, 0);    // L0
+        addLine(s, 10, 0, 10, 10);  // L1 — its start meets L0's end at (10,0)
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    const std::string tag0 = boost::uuids::to_string(br.a->getInternalGeometry()[0]->getTag());
+    const std::string tag1 = boost::uuids::to_string(br.a->getInternalGeometry()[1]->getTag());
+
+    br.a->delGeometry(1);  // A retires L1; L0 survives
+    br.a->getDocument()->recompute();
+    // B ties the surviving line to the retired one.
+    addCoincident(br.b, 0, Sketcher::PointPos::end, 1, Sketcher::PointPos::start);
+
+    SketchRecipe a = Sketcher::emitSketchRecipe(*br.a);
+    SketchRecipe b = Sketcher::emitSketchRecipe(*br.b);
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection mergedGeom
+        = App::RecipeMerge::threeWay(br.base.geometry, a.geometry, b.geometry, conflicts);
+    App::RecipeSection mergedCons
+        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
+    ASSERT_EQ(mergedCons.size(), 1U);
+    const std::string ctag = mergedCons.begin()->first;
+
+    // Precondition that makes StopAsk the genuine outcome (not a fluke): the emitted coincidence
+    // references BOTH the surviving line and the retired one.
+    bool refsLive = false;
+    bool refsDead = false;
+    for (const App::RecipeRef& r : mergedCons.at(ctag).refs) {
+        refsLive = refsLive || r.target == tag0;
+        refsDead = refsDead || r.target == tag1;
+    }
+    ASSERT_TRUE(refsLive) << "constraint must reference the surviving line L0";
+    ASSERT_TRUE(refsDead) << "constraint must reference the retired line L1";
+    EXPECT_EQ(mergedGeom.count(tag1), 0U) << "L1 really was retired by the merge";
+
+    std::vector<App::RefResolution> res = App::RecipeMerge::resolveReferences(mergedCons, mergedGeom);
+    ASSERT_EQ(res.size(), 1U);
+    EXPECT_EQ(res.front().outcome, App::RefResolution::Outcome::StopAsk);
+    EXPECT_EQ(res.front().id, ctag);
+    EXPECT_EQ(mergedCons.count(ctag), 1U) << "a live participant survives -> kept for the user";
 }
 
 }  // namespace

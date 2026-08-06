@@ -172,3 +172,90 @@ TEST(RecipeMergeTest, liveReferenceIsNotFlagged)
 
     EXPECT_TRUE(conflicts.empty());
 }
+
+// Slice 4 — referential resolution routed through §4.7's three honest-retirement
+// outcomes (Amendment 15), not a bespoke flag.
+
+// Drop-with-disclosure: a whole-subject dimension whose only target the merge deleted has
+// nothing left to hold it. It resolves to Drop and is ERASED from the merged section (a
+// flag-only implementation would leave it dangling in the result).
+TEST(RecipeMergeTest, danglingWithNoSurvivorDropsWithDisclosure)
+{
+    RecipeSection mergedGeo = baseGeometry();
+    mergedGeo.erase("g0");  // the merge retired g0
+
+    RecipeSection mergedCon;
+    // DistanceX on g0's two endpoints — subject is entirely g0.
+    mergedCon["c3"] = con("c3", "DistanceX", {{"g0", 1}, {"g0", 2}}, "10");
+
+    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
+
+    ASSERT_EQ(resolutions.size(), 1u);
+    EXPECT_EQ(resolutions[0].outcome, RefResolution::Outcome::Drop);
+    EXPECT_EQ(resolutions[0].id, "c3");
+    EXPECT_EQ(mergedCon.count("c3"), 0u);  // dropped — cannot be carried honestly
+}
+
+// Stop-and-ask: a coincidence between a retired point and a surviving one still has a live
+// participant, so re-targeting is the user's call. It resolves to StopAsk and is KEPT (a
+// drop-everything implementation would erase it).
+TEST(RecipeMergeTest, danglingWithLiveParticipantStopsAndAsks)
+{
+    RecipeSection mergedGeo = baseGeometry();
+    mergedGeo.erase("g1");  // g0 survives, g1 retired
+
+    RecipeSection mergedCon;
+    mergedCon["c0"] = con("c0", "Coincident", {{"g0", 2}, {"g1", 1}});
+
+    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
+
+    ASSERT_EQ(resolutions.size(), 1u);
+    EXPECT_EQ(resolutions[0].outcome, RefResolution::Outcome::StopAsk);
+    EXPECT_EQ(resolutions[0].id, "c0");
+    EXPECT_EQ(mergedCon.count("c0"), 1u);  // kept — a live target survives to re-home onto
+}
+
+// Carry: every ref still resolves. Nothing is reported and nothing is erased (negative
+// control — the resolver must not report or drop a node whose references are all live).
+TEST(RecipeMergeTest, allLiveReferencesCarryAndAreNotReported)
+{
+    RecipeSection mergedGeo = baseGeometry();
+    RecipeSection mergedCon = baseConstraints();  // all refs point at surviving g0..g3
+
+    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
+
+    EXPECT_TRUE(resolutions.empty());
+    EXPECT_EQ(mergedCon.size(), 4u);  // nothing dropped
+}
+
+// One resolution pass yields BOTH outcomes at once — the discriminator is whether a live
+// participant survives, per node. Deleting g2 drops the Vertical on g2 (no survivor) while
+// the Coincident g1-g2 stops-and-asks (g1 survives). A blind rule that always dropped, or
+// always asked, would fail one half of this.
+TEST(RecipeMergeTest, mixedDanglingResolvesPerNode)
+{
+    RecipeSection mergedGeo = baseGeometry();
+    mergedGeo.erase("g2");
+
+    RecipeSection mergedCon;
+    mergedCon["cV"] = con("cV", "Vertical", {{"g2", 0}});               // only g2 -> Drop
+    mergedCon["c1"] = con("c1", "Coincident", {{"g1", 2}, {"g2", 1}});  // g1 lives -> StopAsk
+
+    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
+
+    ASSERT_EQ(resolutions.size(), 2u);
+    // collect by id (map iteration order is by key, but assert explicitly to be safe)
+    RefResolution::Outcome cV {}, c1 {};
+    for (const RefResolution& r : resolutions) {
+        if (r.id == "cV") {
+            cV = r.outcome;
+        }
+        if (r.id == "c1") {
+            c1 = r.outcome;
+        }
+    }
+    EXPECT_EQ(cV, RefResolution::Outcome::Drop);
+    EXPECT_EQ(c1, RefResolution::Outcome::StopAsk);
+    EXPECT_EQ(mergedCon.count("cV"), 0u);  // dropped
+    EXPECT_EQ(mergedCon.count("c1"), 1u);  // kept
+}
