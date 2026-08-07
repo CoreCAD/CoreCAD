@@ -64,16 +64,16 @@ App::DocumentObjectExecReturn* Cut::execute()
         Part::TopoShape ts2;
 
         // Get first toposhape
-        if (shapes[0]->isDerivedFrom<Part::ShapeFeature>()) {
-            ts1 = static_cast<Part::ShapeFeature*>(shapes[0])->Shape.getShape();  // Part::TopoShape 1
+        if (Part::hasShape(shapes[0])) {
+            ts1 = Part::getShape(shapes[0]);  // Part::TopoShape 1
         }
         else {
             return new App::DocumentObjectExecReturn("Shape1 not from Part::Feature");
         }
 
         // Get second toposhape
-        if (shapes[1]->isDerivedFrom<Part::ShapeFeature>()) {
-            ts2 = static_cast<Part::ShapeFeature*>(shapes[1])->Shape.getShape();
+        if (Part::hasShape(shapes[1])) {
+            ts2 = Part::getShape(shapes[1]);
         }
         else {
             return new App::DocumentObjectExecReturn("Shape2 not from Part::Feature");

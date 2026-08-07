@@ -142,9 +142,9 @@ void Filling::addConstraints(
             App::DocumentObject* obj = edge_obj[index];
             const std::string& sub = edge_sub[index];
 
-            if (obj && obj->isDerivedFrom<Part::ShapeFeature>()) {
+            if (obj && Part::hasShape(obj)) {
                 // get the sub-edge of the part's shape
-                const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(obj)->Shape.getShape();
+                Part::TopoShape shape = Part::getShape(obj);
                 TopoDS_Shape edge = shape.getSubShape(sub.c_str());
                 if (!edge.IsNull() && edge.ShapeType() == TopAbs_EDGE) {
                     GeomAbs_Shape cont = static_cast<GeomAbs_Shape>(contvals[index]);
@@ -222,8 +222,8 @@ void Filling::addConstraints(
         for (std::size_t index = 0; index < face_obj.size(); index++) {
             App::DocumentObject* obj = face_obj[index];
             const std::string& sub = face_sub[index];
-            if (obj && obj->isDerivedFrom<Part::ShapeFeature>()) {
-                const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(obj)->Shape.getShape();
+            if (obj && Part::hasShape(obj)) {
+                Part::TopoShape shape = Part::getShape(obj);
                 TopoDS_Shape face = shape.getSubShape(sub.c_str());
                 if (!face.IsNull() && face.ShapeType() == TopAbs_FACE) {
                     GeomAbs_Shape cont = static_cast<GeomAbs_Shape>(contvals[index]);
@@ -246,8 +246,8 @@ void Filling::addConstraints(BRepFill_Filling& builder, const App::PropertyLinkS
     for (const auto& it : points) {
         App::DocumentObject* obj = it.first;
         std::vector<std::string> sub = it.second;
-        if (obj && obj->isDerivedFrom<Part::ShapeFeature>()) {
-            const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(obj)->Shape.getShape();
+        if (obj && Part::hasShape(obj)) {
+            Part::TopoShape shape = Part::getShape(obj);
             for (const auto& jt : sub) {
                 TopoDS_Shape subShape = shape.getSubShape(jt.c_str());
                 if (!subShape.IsNull() && subShape.ShapeType() == TopAbs_VERTEX) {
@@ -283,8 +283,8 @@ App::DocumentObjectExecReturn* Filling::execute()
 
         // Load the initial surface if set
         App::DocumentObject* initFace = InitialFace.getValue();
-        if (initFace && initFace->isDerivedFrom<Part::ShapeFeature>()) {
-            const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(initFace)->Shape.getShape();
+        if (initFace && Part::hasShape(initFace)) {
+            Part::TopoShape shape = Part::getShape(initFace);
             std::vector<std::string> subNames = InitialFace.getSubValues();
             for (const auto& it : subNames) {
                 TopoDS_Shape subShape = shape.getSubShape(it.c_str());

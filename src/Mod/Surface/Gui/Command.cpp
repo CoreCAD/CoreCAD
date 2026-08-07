@@ -73,8 +73,8 @@ void CmdSurfaceCut::activated(int iMsg)
         bool askUser = false;
         for (std::vector<Gui::SelectionObject>::iterator it = Sel.begin(); it != Sel.end(); ++it) {
             App::DocumentObject* obj = it->getObject();
-            if (obj->isDerivedFrom<Part::ShapeFeature>()) {
-                const TopoDS_Shape& shape = static_cast<Part::ShapeFeature*>(obj)->Shape.getValue();
+            if (Part::hasShape(obj)) {
+                TopoDS_Shape shape = Part::getShape(obj).getShape();
                 if (!PartGui::checkForSolids(shape) && !askUser) {
                     int ret = QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Non-solids
        selected"), QObject::tr("The use of non-solids for boolean operations may lead to unexpected
