@@ -31,9 +31,9 @@ ExportOCAFGui::ExportOCAFGui(Handle(TDocStd_Document) hDoc, bool explicitPlaceme
     : ExportOCAF(hDoc, explicitPlacement)
 {}
 
-void ExportOCAFGui::findColors(Part::ShapeFeature* part, std::vector<Base::Color>& colors) const
+void ExportOCAFGui::findColors(App::DocumentObject* obj, std::vector<Base::Color>& colors) const
 {
-    if (auto vp = Gui::Application::Instance->getViewProvider(part)) {
+    if (auto vp = Gui::Application::Instance->getViewProvider(obj)) {
         if (auto vppe = freecad_cast<PartGui::ViewProviderPartExt*>(vp)) {
             colors = vppe->ShapeAppearance.getDiffuseColors();
             auto transp = vppe->ShapeAppearance.getTransparency();

@@ -68,7 +68,7 @@ public:
         std::vector<App::DocumentObject*>& hierarchical_part
     );
     int saveShape(
-        Part::ShapeFeature* part,
+        App::DocumentObject* obj,
         const std::vector<Base::Color>&,
         std::vector<TDF_Label>& hierarchical_label,
         std::vector<TopLoc_Location>& hierarchical_loc,
@@ -106,7 +106,7 @@ public:
     );
 
 private:
-    virtual void findColors(Part::ShapeFeature*, std::vector<Base::Color>&) const
+    virtual void findColors(App::DocumentObject*, std::vector<Base::Color>&) const
     {}
     std::vector<App::DocumentObject*> filterPart(App::Part* part) const;
 
@@ -123,16 +123,16 @@ class ImportExport ExportOCAFCmd: public ExportOCAF
 {
 public:
     ExportOCAFCmd(Handle(TDocStd_Document) h, bool explicitPlacement);
-    void setPartColorsMap(const std::map<Part::ShapeFeature*, std::vector<Base::Color>>& colors)
+    void setPartColorsMap(const std::map<App::DocumentObject*, std::vector<Base::Color>>& colors)
     {
         partColors = colors;
     }
 
 private:
-    void findColors(Part::ShapeFeature*, std::vector<Base::Color>&) const override;
+    void findColors(App::DocumentObject*, std::vector<Base::Color>&) const override;
 
 private:
-    std::map<Part::ShapeFeature*, std::vector<Base::Color>> partColors;
+    std::map<App::DocumentObject*, std::vector<Base::Color>> partColors;
 };
 
 

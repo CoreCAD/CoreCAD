@@ -44,6 +44,7 @@
 
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/GeoFeature.h>
 #include <App/Part.h>
 #include <Mod/Part/App/Interface.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -176,12 +177,11 @@ int ExportOCAF::exportObject(
         return_label = root_id;
     }
 
-    if (obj->isDerivedFrom<Part::ShapeFeature>()) {
-        Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(obj);
+    if (Part::hasShape(obj)) {
         std::vector<Base::Color> colors;
-        findColors(part, colors);
+        findColors(obj, colors);
 
-        return_label = saveShape(part, colors, hierarchical_label, hierarchical_loc, hierarchical_part);
+        return_label = saveShape(obj, colors, hierarchical_label, hierarchical_loc, hierarchical_part);
     }
 
     return return_label;
@@ -221,14 +221,14 @@ void ExportOCAF::createNode(
 }
 
 int ExportOCAF::saveShape(
-    Part::ShapeFeature* part,
+    App::DocumentObject* obj,
     const std::vector<Base::Color>& colors,
     std::vector<TDF_Label>& hierarchical_label,
     std::vector<TopLoc_Location>& hierarchical_loc,
     std::vector<App::DocumentObject*>& hierarchical_part
 )
 {
-    const TopoDS_Shape& shape = part->Shape.getValue();
+    TopoDS_Shape shape = Part::getShape(obj).getShape();
     if (shape.IsNull()) {
         return -1;
     }
@@ -237,7 +237,7 @@ int ExportOCAF::saveShape(
     TopLoc_Location aLoc;
     Handle(TDataStd_Name) N;
 
-    Base::Placement pl = part->getPlacement();
+    Base::Placement pl = App::GeoFeature::getPlacementFromProp(obj, "Placement");
     Base::Rotation rot(pl.getRotation());
     Base::Vector3d axis;
     double angle;
@@ -260,7 +260,7 @@ int ExportOCAF::saveShape(
     TDF_Label shapeLabel = aShapeTool->NewShape();
     aShapeTool->SetShape(shapeLabel, baseShape);
 
-    TDataStd_Name::Set(shapeLabel, TCollection_ExtendedString(part->Label.getValue(), true));
+    TDataStd_Name::Set(shapeLabel, TCollection_ExtendedString(obj->Label.getValue(), true));
 
 
     /*
@@ -319,7 +319,7 @@ int ExportOCAF::saveShape(
 
     hierarchical_label.push_back(shapeLabel);
     hierarchical_loc.push_back(MyLoc);
-    hierarchical_part.push_back(part);
+    hierarchical_part.push_back(obj);
 
     return (hierarchical_label.size());
 }
@@ -359,10 +359,7 @@ void ExportOCAF::getPartColors(
     std::size_t n = FreeLabels.size();
     for (std::size_t i = 0; i < n; i++) {
         std::vector<Base::Color> colors;
-        Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(
-            hierarchical_part.at(part_id.at(i))
-        );
-        findColors(part, colors);
+        findColors(hierarchical_part.at(part_id.at(i)), colors);
         Colors.push_back(colors);
     }
 }
@@ -378,15 +375,13 @@ void ExportOCAF::reallocateFreeShape(
     for (std::size_t i = 0; i < n; i++) {
         TDF_Label label = FreeLabels.at(i);
         // hierarchical part does contain only part currently and not node I should add node
-        if (hierarchical_part.at(part_id.at(i))->isDerivedFrom<Part::ShapeFeature>()) {
-            Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(
-                hierarchical_part.at(part_id.at(i))
-            );
-            aShapeTool->SetShape(label, part->Shape.getValue());
+        App::DocumentObject* obj = hierarchical_part.at(part_id.at(i));
+        if (Part::hasShape(obj)) {
+            TopoDS_Shape baseShape = Part::getShape(obj).getShape();
+            aShapeTool->SetShape(label, baseShape);
             // Add color information
             std::vector<Base::Color> colors;
             colors = Colors.at(i);
-            TopoDS_Shape baseShape = part->Shape.getValue();
 
             // Add color information
             Quantity_ColorRGBA col;
@@ -477,9 +472,9 @@ ExportOCAFCmd::ExportOCAFCmd(Handle(TDocStd_Document) h, bool explicitPlacement)
     : ExportOCAF(h, explicitPlacement)
 {}
 
-void ExportOCAFCmd::findColors(Part::ShapeFeature* part, std::vector<Base::Color>& colors) const
+void ExportOCAFCmd::findColors(App::DocumentObject* obj, std::vector<Base::Color>& colors) const
 {
-    std::map<Part::ShapeFeature*, std::vector<Base::Color>>::const_iterator it = partColors.find(part);
+    std::map<App::DocumentObject*, std::vector<Base::Color>>::const_iterator it = partColors.find(obj);
     if (it != partColors.end()) {
         colors = it->second;
     }

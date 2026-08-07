@@ -61,6 +61,7 @@
 #include <Mod/Part/App/ImportStep.h>
 #include <Mod/Part/App/Interface.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
+#include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PartFeaturePy.h>
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/Part/App/encodeFilename.h>
@@ -372,7 +373,7 @@ private:
         try {
             Py::Sequence list(object);
             std::vector<App::DocumentObject*> objs;
-            std::map<Part::ShapeFeature*, std::vector<Base::Color>> partColor;
+            std::map<App::DocumentObject*, std::vector<Base::Color>> partColor;
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 PyObject* item = (*it).ptr();
                 if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
@@ -387,10 +388,10 @@ private:
                         auto pydoc = static_cast<App::DocumentObjectPy*>(item0.ptr());
                         App::DocumentObject* obj = pydoc->getDocumentObjectPtr();
                         objs.push_back(obj);
-                        if (Part::ShapeFeature* part = dynamic_cast<Part::ShapeFeature*>(obj)) {
+                        if (Part::hasShape(obj)) {
                             App::PropertyColorList colors;
                             colors.setPyObject(item1.ptr());
-                            partColor[part] = colors.getValues();
+                            partColor[obj] = colors.getValues();
                         }
                     }
                 }
@@ -402,7 +403,7 @@ private:
 
             auto getShapeColors = [partColor](App::DocumentObject* obj, const char* subname) {
                 std::map<std::string, Base::Color> cols;
-                auto it = partColor.find(dynamic_cast<Part::ShapeFeature*>(obj));
+                auto it = partColor.find(obj);
                 if (it != partColor.end() && boost::starts_with(subname, "Face")) {
                     const auto& colors = it->second;
                     std::string face("Face");
