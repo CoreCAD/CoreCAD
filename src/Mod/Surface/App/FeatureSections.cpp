@@ -56,9 +56,9 @@ App::DocumentObjectExecReturn* Sections::execute()
             // get the part object
             App::DocumentObject* obj = edge_obj[index];
             const std::string& sub = edge_sub[index];
-            if (obj && obj->isDerivedFrom<Part::ShapeFeature>()) {
+            if (obj && Part::hasShape(obj)) {
                 // get the sub-edge of the part's shape
-                const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(obj)->Shape.getShape();
+                Part::TopoShape shape = Part::getShape(obj);
                 TopoDS_Shape edge = shape.getSubShape(sub.c_str());
                 if (!edge.IsNull() && edge.ShapeType() == TopAbs_EDGE) {
                     BRepAdaptor_Curve curve_adapt(TopoDS::Edge(edge));
