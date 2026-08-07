@@ -981,9 +981,8 @@ private:
             if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj
                     = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
-                if (obj->isDerivedFrom<Part::ShapeFeature>()) {
-                    Part::Feature* part = static_cast<Part::Feature*>(obj);
-                    const TopoDS_Shape& shape = part->Shape.getValue();
+                if (Part::hasShape(obj)) {
+                    TopoDS_Shape shape = Part::getShape(obj).getShape();
                     if (!shape.IsNull()) {
                         builder.Add(comp, shape);
                     }

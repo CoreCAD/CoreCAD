@@ -836,9 +836,9 @@ void DlgFilletEdges::onShapeObjectActivated(int itemPos)
         return;
     }
     App::DocumentObject* part = doc->getObject((const char*)name);
-    if (part && part->isDerivedFrom<Part::ShapeFeature>()) {
+    if (part && Part::hasShape(part)) {
         d->object = part;
-        TopoDS_Shape myShape = static_cast<Part::ShapeFeature*>(part)->Shape.getValue();
+        TopoDS_Shape myShape = Part::getShape(part).getShape();
 
         d->all_edges.Clear();
         TopExp::MapShapes(myShape, TopAbs_EDGE, d->all_edges);

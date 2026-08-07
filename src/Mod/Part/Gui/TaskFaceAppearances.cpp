@@ -118,7 +118,8 @@ public:
 
         // build up map edge->face
         TopTools_IndexedMapOfShape mapOfShape;
-        TopExp_Explorer xp(static_cast<Part::ShapeFeature*>(obj)->Shape.getValue(), TopAbs_FACE);
+        Part::TopoShape ts = Part::getShape(obj);
+        TopExp_Explorer xp(ts.getShape(), TopAbs_FACE);
         while (xp.More()) {
             mapOfShape.Add(xp.Current());
             xp.Next();
@@ -240,10 +241,9 @@ public:
 
         FaceAppearances* self = static_cast<FaceAppearances*>(ud);
         self->d->view = nullptr;
-        if (self->d->obj && self->d->obj->isDerivedFrom<Part::ShapeFeature>()) {
+        if (self->d->obj && Part::hasShape(self->d->obj)) {
             cb->setHandled();
-            const TopoDS_Shape& shape
-                = static_cast<Part::ShapeFeature*>(self->d->obj)->Shape.getValue();
+            TopoDS_Shape shape = Part::getShape(self->d->obj).getShape();
             self->d->boxSelection = true;
             self->d->addFacesToSelection(view, proj, polygon, shape);
             self->d->boxSelection = false;
