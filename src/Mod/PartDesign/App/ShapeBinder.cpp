@@ -219,16 +219,16 @@ Part::TopoShape ShapeBinder::buildShapeFromReferences(App::GeoFeature* obj, std:
         return TopoDS_Shape();
     }
 
-    if (obj->isDerivedFrom<Part::ShapeFeature>()) {
-        auto part = static_cast<Part::ShapeFeature*>(obj);
+    if (Part::hasShape(obj)) {
+        Part::TopoShape ts = Part::getShape(obj);
         if (subs.empty()) {
-            return part->Shape.getValue();
+            return ts.getShape();
         }
 
         std::vector<TopoDS_Shape> shapes;
         shapes.reserve(subs.size());
         for (const std::string& sub : subs) {
-            shapes.push_back(part->Shape.getShape().getSubShape(sub.c_str()));
+            shapes.push_back(ts.getSubShape(sub.c_str()));
         }
 
         if (shapes.size() == 1) {

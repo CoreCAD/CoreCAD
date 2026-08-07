@@ -130,7 +130,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
 
     auto getSectionShape = [](App::DocumentObject* feature,
                               const std::vector<std::string>& subs) -> TopoDS_Shape {
-        if (!feature || !feature->isDerivedFrom<Part::ShapeFeature>()) {
+        if (!feature || !Part::hasShape(feature)) {
             throw Base::TypeError("Pipe: Invalid profile/section");
         }
 
@@ -206,7 +206,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
 
         // build the paths
         App::DocumentObject* spine = Spine.getValue();
-        if (!(spine && spine->isDerivedFrom<Part::ShapeFeature>())) {
+        if (!(spine && Part::hasShape(spine))) {
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "No spine linked"));
         }
 
@@ -219,7 +219,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
         TopoDS_Shape auxpath;
         if (Mode.getValue() == 3) {
             App::DocumentObject* auxspine = AuxiliarySpine.getValue();
-            if (!(auxspine && auxspine->isDerivedFrom<Part::ShapeFeature>())) {
+            if (!(auxspine && Part::hasShape(auxspine))) {
                 return new App::DocumentObjectExecReturn(
                     QT_TRANSLATE_NOOP("Exception", "No auxiliary spine linked.")
                 );
@@ -269,7 +269,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
             // TODO: we need to order the sections to prevent occ from crashing,
             // as makepipeshell connects the sections in the order of adding
             for (auto& subSet : multisections) {
-                if (!subSet.first->isDerivedFrom<Part::ShapeFeature>()) {
+                if (!Part::hasShape(subSet.first)) {
                     return new App::DocumentObjectExecReturn(
                         QT_TRANSLATE_NOOP("Exception", "Pipe: All sections need to be Part features")
                     );

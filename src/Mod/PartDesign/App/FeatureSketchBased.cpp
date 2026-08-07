@@ -170,7 +170,7 @@ Part::ShapeFeature* ProfileBased::getVerifiedObject(bool silent) const
         err = "No object linked";
     }
     else {
-        if (!result->isDerivedFrom<Part::ShapeFeature>()) {
+        if (!Part::hasShape(result)) {
             err = "Linked object is not a Sketch, Part2DObject or Feature";
         }
     }
@@ -400,7 +400,7 @@ TopoDS_Shape ProfileBased::getVerifiedFace(bool silent) const
             auto wires = getProfileWires();
             return Part::FaceMakerCheese::makeFace(wires);
         }
-        else if (result->isDerivedFrom<Part::ShapeFeature>()) {
+        else if (Part::hasShape(result)) {
             if (Profile.getSubValues().empty()) {
                 err = "Linked object has no subshape specified";
             }
@@ -470,7 +470,7 @@ std::vector<TopoDS_Wire> ProfileBased::getProfileWires() const
 {
     std::vector<TopoDS_Wire> result;
 
-    if (!Profile.getValue() || !Profile.getValue()->isDerivedFrom<Part::ShapeFeature>()) {
+    if (!Profile.getValue() || !Part::hasShape(Profile.getValue())) {
         throw Base::TypeError("No valid profile linked");
     }
 
@@ -749,7 +749,7 @@ int ProfileBased::getUpToShapeFromLinkSubList(
             ret++;
         }
         else {
-            if (!ref->isDerivedFrom<Part::ShapeFeature>()) {
+            if (!Part::hasShape(ref)) {
                 throw Base::TypeError("SketchBased: Must be face of a feature");
             }
 
@@ -819,7 +819,7 @@ void ProfileBased::getFaceFromLinkSub(TopoDS_Face& upToFace, const App::Property
         return;
     }
 
-    if (!ref->isDerivedFrom<Part::ShapeFeature>()) {
+    if (!Part::hasShape(ref)) {
         throw Base::TypeError("SketchBased: Must be face of a feature");
     }
     Part::TopoShape baseShape = static_cast<Part::ShapeFeature*>(ref)->Shape.getShape();
@@ -1320,7 +1320,7 @@ void ProfileBased::getAxis(
             }  // else - an edge of the sketch was selected as an axis
         }
     }
-    else if (profile->isDerivedFrom<Part::ShapeFeature>()) {
+    else if (Part::hasShape(profile)) {
         Base::Placement SketchPlm = getVerifiedObject()->getPlacement();
         Base::Vector3d SketchVector = getProfileNormal();
         Base::Vector3d SketchPos = SketchPlm.getPosition();
@@ -1349,12 +1349,11 @@ void ProfileBased::getAxis(
         return;
     }
 
-    if (pcReferenceAxis->isDerivedFrom<Part::ShapeFeature>()) {
+    if (Part::hasShape(pcReferenceAxis)) {
         if (subReferenceAxis.empty()) {
             throw Base::ValueError("No rotation axis reference specified");
         }
-        const Part::ShapeFeature* refFeature = static_cast<const Part::ShapeFeature*>(pcReferenceAxis);
-        Part::TopoShape refShape = refFeature->Shape.getShape();
+        Part::TopoShape refShape = Part::getShape(pcReferenceAxis);
         TopoDS_Shape ref;
         try {
             // if an exception is raised then convert it into a FreeCAD-specific exception

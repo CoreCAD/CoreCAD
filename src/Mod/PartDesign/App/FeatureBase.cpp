@@ -69,7 +69,7 @@ App::DocumentObjectExecReturn* FeatureBase::execute()
         );
     }
 
-    if (!BaseFeature.getValue()->isDerivedFrom<Part::ShapeFeature>()) {
+    if (!Part::hasShape(BaseFeature.getValue())) {
         return new App::DocumentObjectExecReturn(
             QT_TRANSLATE_NOOP("Exception", "BaseFeature must be a Part::Feature")
         );
