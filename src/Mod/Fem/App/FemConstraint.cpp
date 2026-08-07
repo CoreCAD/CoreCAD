@@ -534,7 +534,7 @@ const Base::Vector3d Constraint::getDirection(const App::PropertyLinkSub& direct
         return rot.multVec(Base::Vector3d(0, 0, 1));
     }
 
-    if (!obj->isDerivedFrom<Part::ShapeFeature>()) {
+    if (!Part::hasShape(obj)) {
         std::stringstream str;
         str << "Type is not a line, plane or Part object";
         throw Base::TypeError(str.str());

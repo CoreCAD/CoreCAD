@@ -61,10 +61,10 @@ App::DocumentObjectExecReturn* FeatureShape::execute()
 
     std::list<TopoDS_Shape> shapes;
     for (std::vector<App::DocumentObject*>::iterator it = links.begin(); it != links.end(); ++it) {
-        if (!(*it && (*it)->isDerivedFrom<Part::ShapeFeature>())) {
+        if (!(*it && Part::hasShape(*it))) {
             continue;
         }
-        const TopoDS_Shape& shape = static_cast<Part::ShapeFeature*>(*it)->Shape.getShape().getShape();
+        TopoDS_Shape shape = Part::getShape(*it).getShape();
         if (shape.IsNull()) {
             continue;
         }
