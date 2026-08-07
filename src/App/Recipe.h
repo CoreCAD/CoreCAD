@@ -99,6 +99,9 @@ struct MergeConflict
 
     Kind kind;
     std::string id;       ///< the conflicted node's id
+    std::string type;     ///< the node's authored type token, opaque here — a driver (e.g. the
+                          ///< sketch layer) turns it into a readable label so a report need not
+                          ///< print the raw id
     std::string detail;   ///< human-readable summary (which field / which dangling target)
 };
 
@@ -119,6 +122,9 @@ struct RefResolution
 
     Outcome outcome;
     std::string id;       ///< the referencing node's id
+    std::string type;     ///< the node's authored type token, opaque here — a driver turns it
+                          ///< into a readable label; carried so a dropped node (erased from the
+                          ///< merged section) can still be described without its id
     std::string detail;   ///< which target dangled / what survives
 };
 

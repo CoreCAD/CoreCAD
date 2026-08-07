@@ -91,7 +91,9 @@ RecipeSection RecipeMerge::threeWay(const RecipeSection& base,
         else {
             // Both moved off the ancestor, differently: a genuine conflict. Keep A's side
             // provisionally (if any) so the merged recipe stays inspectable.
-            conflicts.push_back({MergeConflict::Kind::Value, id, "diverging edit to the same entity"});
+            const std::string type = nA ? nA->type : (nB ? nB->type : std::string {});
+            conflicts.push_back(
+                {MergeConflict::Kind::Value, id, type, "diverging edit to the same entity"});
             if (inA) {
                 merged[id] = *nA;
             }
@@ -116,6 +118,7 @@ void RecipeMerge::checkReferences(const RecipeSection& withRefs,
             if (liveTargets.find(ref.target) == liveTargets.end()) {
                 conflicts.push_back({MergeConflict::Kind::Referential,
                                      id,
+                                     node.type,
                                      "references deleted entity " + ref.target});
             }
         }
@@ -157,6 +160,7 @@ std::vector<RefResolution> RecipeMerge::resolveReferences(RecipeSection& withRef
             // off the retired one is the user's choice.
             resolutions.push_back({RefResolution::Outcome::StopAsk,
                                    id,
+                                   node.type,
                                    "a live reference survives; retargeting from retired "
                                        + danglingTarget + " is the user's choice"});
         }
@@ -165,6 +169,7 @@ std::vector<RefResolution> RecipeMerge::resolveReferences(RecipeSection& withRef
             // remains to hold this node. Drop it, disclosing what retired.
             resolutions.push_back({RefResolution::Outcome::Drop,
                                    id,
+                                   node.type,
                                    "no surviving reference; dropped (target " + danglingTarget
                                        + " retired)"});
             toDrop.push_back(id);
