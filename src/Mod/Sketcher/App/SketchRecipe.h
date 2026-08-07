@@ -87,6 +87,33 @@ SketcherExport RegenResult regenerateSketch(
     const std::vector<const SketchObject*>& seedSources
 );
 
+/** The user-facing outcome of merging three sketches — a common ancestor and two edited copies —
+ *  the whole recipe-merge pipeline (emit → three-way merge → reference resolution → regenerate)
+ *  run as one call so the result can be surfaced to a person (DESIGN_recipe-merge.md §7). This is
+ *  the exploratory surfacing layer: a provisional trigger until the git-for-CAD merge driver
+ *  exists. The three sketches need not share a document, but they must share a common ancestor's
+ *  durable identity (a reload/copy of one sketch, not an independently re-drawn one), or the merge
+ *  has no basis to align them.
+ */
+struct MergeReport
+{
+    App::RecipeSection mergedGeometry;     ///< geometry after the three-way merge
+    App::RecipeSection mergedConstraints;  ///< constraints after the merge + reference resolution
+    std::vector<App::MergeConflict> conflicts;  ///< value conflicts (both edits changed one thing)
+    std::vector<App::RefResolution> resolutions;  ///< dropped-with-disclosure + stop-and-ask
+    RegenResult regen;                            ///< does the merged sketch still compile?
+};
+
+/// Run the whole recipe-merge pipeline over three sketches and collect the outcome (§7). Emits the
+/// three recipes, merges geometry and constraints, resolves dangling references through §4.7's
+/// honest-retirement outcomes, then regenerates the merged recipe onto a throwaway scratch sketch
+/// and re-solves — so the "does the merge compile?" verdict is included.
+SketcherExport MergeReport
+mergeSketches(const SketchObject& ancestor, const SketchObject& branchA, const SketchObject& branchB);
+
+/// Render a MergeReport as plain language a person can read (Report View / Python console).
+SketcherExport std::string formatMergeReport(const MergeReport& report);
+
 }  // namespace Sketcher
 
 #endif  // SKETCHER_SKETCHRECIPE_H
