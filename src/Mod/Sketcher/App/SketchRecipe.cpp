@@ -36,6 +36,8 @@
 # include <boost/uuid/uuid_io.hpp>
 #endif
 
+#include <App/Application.h>
+#include <App/Document.h>
 #include <Mod/Part/App/Geometry.h>
 
 #include "SketchRecipe.h"
@@ -253,4 +255,125 @@ RegenResult Sketcher::regenerateSketch(
     result.hasMalformed = target.getLastHasMalformedConstraints();
     result.dof = target.getLastDoF();
     return result;
+}
+
+MergeReport Sketcher::mergeSketches(
+    const SketchObject& ancestor,
+    const SketchObject& branchA,
+    const SketchObject& branchB
+)
+{
+    MergeReport report;
+
+    const SketchRecipe base = emitSketchRecipe(ancestor);
+    const SketchRecipe a = emitSketchRecipe(branchA);
+    const SketchRecipe b = emitSketchRecipe(branchB);
+
+    // Merge each section by durable identity (renumber-invisible); value conflicts accumulate.
+    report.mergedGeometry
+        = App::RecipeMerge::threeWay(base.geometry, a.geometry, b.geometry, report.conflicts);
+    report.mergedConstraints
+        = App::RecipeMerge::threeWay(base.constraints, a.constraints, b.constraints, report.conflicts);
+
+    // Turn any dangling reference into a §4.7 honest-retirement outcome (Drop erases the node;
+    // StopAsk keeps it for the user; Carry is not reported).
+    report.resolutions
+        = App::RecipeMerge::resolveReferences(report.mergedConstraints, report.mergedGeometry);
+
+    // Regenerate onto a hidden, throwaway scratch sketch and re-solve: the merge is text until the
+    // kernel runs, and only the solver reveals a clean merge that does not compile.
+    App::DocumentInitFlags flags;
+    flags.createView = false;
+    flags.temporary = true;
+    App::Document* scratch = App::GetApplication().newDocument("recipeMergeScratch", nullptr, flags);
+    auto* target = static_cast<SketchObject*>(
+        scratch->addObject("Sketcher::SketchObject", "MergeScratch")
+    );
+    const SketchRecipe merged {report.mergedGeometry, report.mergedConstraints};
+    report.regen = regenerateSketch(*target, merged, {&branchA, &branchB});
+    App::GetApplication().closeDocument(scratch);
+
+    return report;
+}
+
+std::string Sketcher::formatMergeReport(const MergeReport& report)
+{
+    std::ostringstream out;
+    out << "Sketch merge report\n";
+    out << "===================\n\n";
+    out << "Combined: " << report.mergedGeometry.size() << " geometry element(s), "
+        << report.mergedConstraints.size() << " constraint(s).\n\n";
+
+    // Value conflicts — both edits changed the same authored thing in different ways.
+    if (report.conflicts.empty()) {
+        out << "No value conflicts: the two edits never changed the same thing differently.\n\n";
+    }
+    else {
+        out << report.conflicts.size()
+            << " value conflict(s) — both versions changed the same thing differently, so you "
+               "must choose:\n";
+        for (const App::MergeConflict& c : report.conflicts) {
+            out << "  - " << c.detail << "\n";
+        }
+        out << "\n";
+    }
+
+    // Reference resolutions — dropped-with-disclosure and stop-and-ask.
+    std::vector<const App::RefResolution*> drops;
+    std::vector<const App::RefResolution*> asks;
+    for (const App::RefResolution& r : report.resolutions) {
+        if (r.outcome == App::RefResolution::Outcome::Drop) {
+            drops.push_back(&r);
+        }
+        else if (r.outcome == App::RefResolution::Outcome::StopAsk) {
+            asks.push_back(&r);
+        }
+    }
+    if (drops.empty() && asks.empty()) {
+        out << "No dangling references: every constraint still points at geometry that "
+               "survived.\n\n";
+    }
+    if (!drops.empty()) {
+        out << drops.size()
+            << " constraint(s) removed — the geometry they described is gone from the merged "
+               "result, so nothing was left to hold them:\n";
+        for (const App::RefResolution* r : drops) {
+            out << "  - " << r->detail << "\n";
+        }
+        out << "\n";
+    }
+    if (!asks.empty()) {
+        out << asks.size()
+            << " constraint(s) need your decision — they point at deleted geometry while a related "
+               "element survives, so where they should attach is your call:\n";
+        for (const App::RefResolution* r : asks) {
+            out << "  - " << r->detail << "\n";
+        }
+        out << "\n";
+    }
+
+    // Compile verdict — the CAD-specific outcome with no text analogy.
+    out << "Does the merged sketch hold together? ";
+    if (report.regen.solverStatus == 0 && !report.regen.hasConflicts) {
+        out << "YES — it solves cleanly (" << report.regen.dof << " degree(s) of freedom remain).";
+    }
+    else {
+        out << "NO — it does not compile:";
+        if (report.regen.hasConflicts) {
+            out << " conflicting constraints;";
+        }
+        if (report.regen.hasRedundancies) {
+            out << " redundant constraints;";
+        }
+        if (report.regen.hasMalformed) {
+            out << " malformed constraints;";
+        }
+        out << " (solver status " << report.regen.solverStatus << ").";
+    }
+    if (!report.regen.fullyRealized) {
+        out << "\n(Note: some elements could not be rebuilt from the merged recipe.)";
+    }
+    out << "\n";
+
+    return out.str();
 }
