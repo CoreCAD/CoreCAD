@@ -39,6 +39,7 @@
 #include <Mod/TechDraw/App/DrawPage.h>
 #include <Mod/TechDraw/App/DrawView.h>
 #include <Mod/TechDraw/App/DrawViewAnnotation.h>
+#include <Mod/Part/App/PartFeature.h>
 #include <Mod/TechDraw/App/DrawViewPart.h>
 #include <Mod/TechDraw/App/DrawViewSymbol.h>
 #include <Mod/TechDraw/App/DrawWeldSymbol.h>
@@ -1016,7 +1017,7 @@ void execLine2Points(Gui::Command* cmd)
     std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
     TechDraw::DrawViewPart* baseFeat = nullptr;
     std::vector<std::string> subNames2D;
-    std::vector< std::pair<Part::Feature*, std::string> > objs3D;
+    std::vector< std::pair<App::DocumentObject*, std::string> > objs3D;
     if (selection.empty()) {
         QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong Selection"),
                              QObject::tr("Selection is empty"));
@@ -1027,11 +1028,11 @@ void execLine2Points(Gui::Command* cmd)
         if (so.getObject()->isDerivedFrom<TechDraw::DrawViewPart>()) {
             baseFeat = static_cast<TechDraw::DrawViewPart*> (so.getObject());
             subNames2D = so.getSubNames();
-        } else if (so.getObject()->isDerivedFrom<Part::ShapeFeature>()) {
+        } else if (Part::hasShape(so.getObject())) {
             std::vector<std::string> subNames3D = so.getSubNames();
             for (auto& sub3D: subNames3D) {
-                std::pair<Part::Feature*, std::string> temp;
-                temp.first = static_cast<Part::Feature*>(so.getObject());
+                std::pair<App::DocumentObject*, std::string> temp;
+                temp.first = so.getObject();
                 temp.second = sub3D;
                 objs3D.push_back(temp);
             }
@@ -1096,7 +1097,7 @@ void execLine2Points(Gui::Command* cmd)
     if (!objs3D.empty()) {
         for (auto& o3D: objs3D) {
             int idx = DrawUtil::getIndexFromName(o3D.second);
-            Part::TopoShape s = o3D.first->Shape.getShape();
+            Part::TopoShape s = Part::getShape(o3D.first);
             TopoDS_Vertex v = TopoDS::Vertex(s.getSubShape(TopAbs_VERTEX, idx));
             Base::Vector3d p = DrawUtil::vertex2Vector(v);
             points.push_back(p);
