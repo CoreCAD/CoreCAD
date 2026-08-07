@@ -885,8 +885,7 @@ bool SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
             }
         }
         // get all shapes that are also Part::Features
-        if (object->getPropertyByName("Shape") != nullptr
-            && object->isDerivedFrom<Part::ShapeFeature>()) {
+        if (object->getPropertyByName("Shape") != nullptr && Part::hasShape(object)) {
             // sort out 2D objects, datums, App:Parts, compounds and objects that are
             // part of a PartDesign body
             if (!object->isDerivedFrom<Part::Part2DObject>() && !object->isDerivedFrom<Part::Datum>()
@@ -899,7 +898,7 @@ bool SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
         // get Links that are derived from Part objects
         if (auto pcLink = dynamic_cast<App::Link*>(object)) {
             auto linkedObject = doc->getObject(pcLink->LinkedObject.getObjectName());
-            if (linkedObject != nullptr && linkedObject->isDerivedFrom<Part::ShapeFeature>()) {
+            if (linkedObject != nullptr && Part::hasShape(linkedObject)) {
                 objects.push_back(object);
             }
         }

@@ -139,7 +139,7 @@ void DlgBooleanOperation::slotCreatedObject(const App::DocumentObject& obj)
         return;
     }
     App::Document* doc = obj.getDocument();
-    if (activeDoc == doc && obj.isDerivedFrom<Part::ShapeFeature>()) {
+    if (activeDoc == doc && Part::hasShape(&obj)) {
         observe.push_back(&obj);
     }
 }
@@ -213,8 +213,8 @@ void DlgBooleanOperation::slotChangedObject(const App::DocumentObject& obj, cons
 
 bool DlgBooleanOperation::hasSolids(const App::DocumentObject* obj) const
 {
-    if (obj->isDerivedFrom<Part::ShapeFeature>()) {
-        const TopoDS_Shape& shape = static_cast<const Part::ShapeFeature*>(obj)->Shape.getValue();
+    if (Part::hasShape(obj)) {
+        TopoDS_Shape shape = Part::getShape(obj).getShape();
         TopExp_Explorer anExp(shape, TopAbs_SOLID);
         if (anExp.More()) {
             return true;
@@ -241,7 +241,7 @@ void DlgBooleanOperation::findShapes()
 
     QTreeWidgetItem *item_left = nullptr, *item_right = nullptr;
     for (auto obj : objs) {
-        const TopoDS_Shape& shape = static_cast<Part::ShapeFeature*>(obj)->Shape.getValue();
+        TopoDS_Shape shape = Part::getShape(obj).getShape();
         if (!shape.IsNull()) {
             QString label = QString::fromUtf8(obj->Label.getValue());
             QString name = QString::fromLatin1(obj->getNameInDocument());

@@ -178,9 +178,7 @@ App::DocumentObjectExecReturn* Mirroring::execute()
             axdir = gp_Dir(dir.x, dir.y, dir.z);
             // reference is an app::link or a part::feature or some subobject
         }
-        else if (
-            refObject->isDerivedFrom<Part::ShapeFeature>() || refObject->isDerivedFrom<App::Link>()
-        ) {
+        else if (Part::hasShape(refObject) || refObject->isDerivedFrom<App::Link>()) {
             if (subStrings.size() > 1) {
                 throw Base::ValueError(
                     std::string(this->getFullLabel()) + ": Only 1 subobject is supported for Mirror Plane reference, either a plane face or a circle edge."

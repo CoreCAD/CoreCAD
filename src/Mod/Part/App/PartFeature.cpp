@@ -1334,13 +1334,13 @@ TopoShape ShapeFeature::getTopoShape(
     // to false. So we manually apply the top level transform if asked.
 
     if (options.testFlag(ShapeOption::NeedSubElement) && (!pmat || *pmat == Base::Matrix4D())
-        && obj->isDerivedFrom<Part::ShapeFeature>()
+        && Part::hasShape(obj)
         && !obj->hasExtension(App::LinkBaseExtension::getExtensionClassTypeId())) {
         // Some OCC shape making is very sensitive to shape transformation. So
         // check here if a direct sub shape is required, and bypass all extra
         // processing here.
         if (subname && *subname && Data::findElementName(subname) == subname) {
-            TopoShape ts = static_cast<const Part::ShapeFeature*>(obj)->Shape.getShape();
+            TopoShape ts = Part::getShape(obj);
             if (!options.testFlag(ShapeOption::Transform)) {
                 ts.setShape(ts.getShape().Located(TopLoc_Location()), false);
             }

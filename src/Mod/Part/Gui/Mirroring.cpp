@@ -93,7 +93,7 @@ public:
             return true;
             // reference is an app::link or a part::feature or some subobject
         }
-        else if (pObj->isDerivedFrom<Part::ShapeFeature>() || pObj->isDerivedFrom<App::Link>()) {
+        else if (Part::hasShape(pObj) || pObj->isDerivedFrom<App::Link>()) {
             bool isFace = false;  // will be true if user selected face subobject or if object only
                                   // has 1 face
             bool isEdge = false;  // will be true if user selected edge subobject or if object only
