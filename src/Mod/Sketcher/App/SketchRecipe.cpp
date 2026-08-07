@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <cctype>
 # include <cstdlib>
 # include <iomanip>
 # include <limits>
@@ -296,6 +297,107 @@ MergeReport Sketcher::mergeSketches(
     return report;
 }
 
+namespace
+{
+
+/// Prefix the noun with "a"/"an" by the first letter's sound (a coarse vowel test — good enough
+/// for the fixed vocabulary of sketch nouns; "B-spline" reads "a", "arc" reads "an").
+std::string withArticle(const std::string& noun)
+{
+    if (noun.empty()) {
+        return noun;
+    }
+    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(noun.front())));
+    const bool vowel = c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u';
+    return (vowel ? "an " : "a ") + noun;
+}
+
+/// A short noun for a geometry node's authored type token (Part::GeomLineSegment -> "line").
+/// Unmapped tokens fall back to the bare token so nothing is silently lost.
+std::string geometryNoun(const std::string& type)
+{
+    static const std::map<std::string, std::string> nouns = {
+        {"Part::GeomLineSegment", "line"},
+        {"Part::GeomCircle", "circle"},
+        {"Part::GeomArcOfCircle", "arc"},
+        {"Part::GeomEllipse", "ellipse"},
+        {"Part::GeomArcOfEllipse", "elliptical arc"},
+        {"Part::GeomArcOfHyperbola", "hyperbolic arc"},
+        {"Part::GeomArcOfParabola", "parabolic arc"},
+        {"Part::GeomBSplineCurve", "B-spline"},
+        {"Part::GeomPoint", "point"},
+    };
+    const auto it = nouns.find(type);
+    return it != nouns.end() ? it->second : type;
+}
+
+/// A noun phrase for a constraint node's authored type token ("Horizontal" -> "horizontal
+/// constraint"). A few tokens read poorly lower-cased and are spelled out; the rest are just
+/// lower-cased. Unknown tokens still read as "<token> constraint".
+std::string constraintNoun(const std::string& type)
+{
+    static const std::map<std::string, std::string> special = {
+        {"DistanceX", "horizontal-distance"},
+        {"DistanceY", "vertical-distance"},
+        {"PointOnObject", "point-on-object"},
+        {"InternalAlignment", "internal-alignment"},
+    };
+    const auto it = special.find(type);
+    std::string word = it->second;
+    if (it == special.end()) {
+        word = type;
+        for (char& c : word) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+    }
+    return word + " constraint";
+}
+
+/// True when a type token names sketch geometry (its driver emits "Part::Geom..."), as opposed
+/// to a constraint. Lets one report line describe either kind from the token alone.
+bool isGeometryType(const std::string& type)
+{
+    return type.rfind("Part::Geom", 0) == 0;
+}
+
+/// The affected node named with its article ("a line", "a horizontal constraint"). Works from the
+/// type token alone, so a dropped node (already erased from the merged section) still reads well.
+std::string nounFor(const std::string& type)
+{
+    if (type.empty()) {
+        return "an element";
+    }
+    return withArticle(isGeometryType(type) ? geometryNoun(type) : constraintNoun(type));
+}
+
+/// " on a line and a circle" — the surviving geometry a still-present constraint attaches to, for
+/// the value-conflict / stop-and-ask lines where the node (and its targets) remain in the merge.
+/// Empty when the node was dropped, has no resolvable targets, or is itself geometry.
+std::string describeTargets(const std::string& id, const MergeReport& report)
+{
+    const auto it = report.mergedConstraints.find(id);
+    if (it == report.mergedConstraints.end()) {
+        return {};
+    }
+    std::vector<std::string> nouns;
+    for (const App::RecipeRef& ref : it->second.refs) {
+        const auto geo = report.mergedGeometry.find(ref.target);
+        if (geo != report.mergedGeometry.end()) {
+            nouns.push_back(withArticle(geometryNoun(geo->second.type)));
+        }
+    }
+    if (nouns.empty()) {
+        return {};
+    }
+    std::string joined = nouns[0];
+    for (size_t i = 1; i < nouns.size(); ++i) {
+        joined += (i + 1 == nouns.size() ? " and " : ", ") + nouns[i];
+    }
+    return " on " + joined;
+}
+
+}  // namespace
+
 std::string Sketcher::formatMergeReport(const MergeReport& report)
 {
     std::ostringstream out;
@@ -313,7 +415,7 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
             << " value conflict(s) — both versions changed the same thing differently, so you "
                "must choose:\n";
         for (const App::MergeConflict& c : report.conflicts) {
-            out << "  - " << c.detail << "\n";
+            out << "  - " << nounFor(c.type) << describeTargets(c.id, report) << "\n";
         }
         out << "\n";
     }
@@ -338,7 +440,7 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
             << " constraint(s) removed — the geometry they described is gone from the merged "
                "result, so nothing was left to hold them:\n";
         for (const App::RefResolution* r : drops) {
-            out << "  - " << r->detail << "\n";
+            out << "  - " << nounFor(r->type) << "\n";
         }
         out << "\n";
     }
@@ -347,7 +449,7 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
             << " constraint(s) need your decision — they point at deleted geometry while a related "
                "element survives, so where they should attach is your call:\n";
         for (const App::RefResolution* r : asks) {
-            out << "  - " << r->detail << "\n";
+            out << "  - " << nounFor(r->type) << describeTargets(r->id, report) << "\n";
         }
         out << "\n";
     }
