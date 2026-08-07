@@ -224,12 +224,11 @@ const std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<App:
         Base::Vector3d d = line->getDirection();
         axdir = gp_Dir(d.x, d.y, d.z);
     }
-    else if (refObject->isDerivedFrom<Part::ShapeFeature>()) {
+    else if (Part::hasShape(refObject)) {
         if (subStrings[0].empty()) {
             throw Base::ValueError("No axis reference specified");
         }
-        Part::ShapeFeature* refFeature = static_cast<Part::ShapeFeature*>(refObject);
-        Part::TopoShape refShape = refFeature->Shape.getShape();
+        Part::TopoShape refShape = Part::getShape(refObject);
         TopoDS_Shape ref = refShape.getSubShape(subStrings[0].c_str());
 
         if (ref.ShapeType() == TopAbs_EDGE) {

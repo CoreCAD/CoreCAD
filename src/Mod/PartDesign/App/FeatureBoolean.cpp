@@ -97,7 +97,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
     }
     else {
         auto feature = tools.back();
-        if (!feature->isDerivedFrom<Part::ShapeFeature>()) {
+        if (!Part::hasShape(feature)) {
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
                 "Exception",
                 "Cannot do boolean with anything but Part::Feature and its derivatives"

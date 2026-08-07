@@ -895,7 +895,7 @@ void prepareProfileBased(
 )
 {
     auto base_worker = [=](App::DocumentObject* feature, const std::vector<std::string>& subs) {
-        if (!feature || !feature->isDerivedFrom<Part::ShapeFeature>()) {
+        if (!feature || !Part::hasShape(feature)) {
             return;
         }
 
