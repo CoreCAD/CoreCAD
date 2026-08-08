@@ -95,9 +95,9 @@ void Transformed::purgeTouchedTransformations()
     // MultiTransform can override it to purge the touched state of its linked sub-transformations.
 }
 
-Part::ShapeFeature* Transformed::getBaseObject(bool silent) const
+App::DocumentObject* Transformed::getBaseObject(bool silent) const
 {
-    Part::ShapeFeature* rv = Feature::getBaseObject(/* silent = */ true);
+    App::DocumentObject* rv = Feature::getBaseObject(/* silent = */ true);
     if (rv) {
         return rv;
     }
@@ -108,7 +108,7 @@ Part::ShapeFeature* Transformed::getBaseObject(bool silent) const
     // first
     App::DocumentObject* firstOriginal = originals.empty() ? nullptr : originals.front();
     if (firstOriginal) {
-        rv = freecad_cast<Part::ShapeFeature*>(firstOriginal);
+        rv = Part::hasShape(firstOriginal) ? firstOriginal : nullptr;
         if (!rv) {
             err = QT_TRANSLATE_NOOP(
                 "Exception",
@@ -250,8 +250,8 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
 {
     const auto mode = static_cast<Mode>(TransformMode.getValue());
 
-    const Part::ShapeFeature* supportFeature = getBaseObject();
-    const Part::TopoShape supportShape = supportFeature->Shape.getShape();
+    App::DocumentObject* supportFeature = getBaseObject();
+    const Part::TopoShape supportShape = Part::getShape(supportFeature);
 
     if (supportShape.isNull()) {
         return App::DocumentObject::StdReturn;
@@ -354,7 +354,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
     }
 
     // Get the support
-    Part::ShapeFeature* supportFeature = nullptr;
+    App::DocumentObject* supportFeature = nullptr;
 
     try {
         supportFeature = getBaseObject();
@@ -363,7 +363,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
         return new App::DocumentObjectExecReturn(e.what());
     }
 
-    const Part::TopoShape& supportTopShape = supportFeature->Shape.getShape();
+    const Part::TopoShape supportTopShape = Part::getShape(supportFeature);
     if (supportTopShape.getShape().IsNull()) {
         return new App::DocumentObjectExecReturn(
             QT_TRANSLATE_NOOP("Exception", "Cannot transform invalid support shape")

@@ -108,7 +108,7 @@ bool ViewProviderDressUp::setEdit(int ModNum)
 void ViewProviderDressUp::highlightReferences(const bool on)
 {
     PartDesign::DressUp* pcDressUp = getObject<PartDesign::DressUp>();
-    Part::ShapeFeature* base = pcDressUp->getBaseObject(/*silent =*/true);
+    App::DocumentObject* base = pcDressUp->getBaseObject(/*silent =*/true);
     if (!base) {
         return;
     }
@@ -127,7 +127,7 @@ void ViewProviderDressUp::highlightReferences(const bool on)
             std::vector<App::Material> materials = vp->ShapeAppearance.getValues();
 
             PartGui::ReferenceHighlighter highlighter(
-                base->Shape.getValue(),
+                Part::getShape(base).getShape(),
                 ShapeAppearance.getDiffuseColor()
             );
             highlighter.getFaceMaterials(faces, materials);
@@ -137,7 +137,10 @@ void ViewProviderDressUp::highlightReferences(const bool on)
         if (!edges.empty()) {
             std::vector<Base::Color> colors = vp->LineColorArray.getValues();
 
-            PartGui::ReferenceHighlighter highlighter(base->Shape.getValue(), LineColor.getValue());
+            PartGui::ReferenceHighlighter highlighter(
+                Part::getShape(base).getShape(),
+                LineColor.getValue()
+            );
             highlighter.getEdgeColors(edges, colors);
 
             vp->setHighlightedEdges(colors);

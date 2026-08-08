@@ -43,7 +43,7 @@ FeatureBase::FeatureBase()
     BaseFeature.setStatus(App::Property::Hidden, false);
 }
 
-Part::ShapeFeature* FeatureBase::getBaseObject(bool) const
+App::DocumentObject* FeatureBase::getBaseObject(bool) const
 {
 
     return nullptr;

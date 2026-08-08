@@ -96,9 +96,9 @@ public:
      *               silently return a nullptr, otherwise throw Base::Exception.
      *               Default is false.
      */
-    virtual Part::ShapeFeature* getBaseObject(bool silent = false) const;
+    virtual App::DocumentObject* getBaseObject(bool silent = false) const;
     /// Returns the BaseFeature property's shape (if any)
-    virtual const TopoDS_Shape& getBaseShape() const;
+    virtual TopoDS_Shape getBaseShape() const;
     /// Returns the BaseFeature property's TopoShape (if any)
     Part::TopoShape getBaseTopoShape(bool silent = false) const;
 

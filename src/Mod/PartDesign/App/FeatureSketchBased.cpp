@@ -128,7 +128,7 @@ void ProfileBased::setupObject()
 
 void ProfileBased::transformPlacement(const Base::Placement& transform)
 {
-    Part::ShapeFeature* feat = getBaseObject(/* silent = */ true);
+    auto* feat = freecad_cast<App::GeoFeature*>(getBaseObject(/* silent = */ true));
     if (feat) {
         feat->transformPlacement(transform);
     }
@@ -650,10 +650,10 @@ int ProfileBased::getSketchAxisCount() const
     return sketch->getAxisCount();
 }
 
-Part::ShapeFeature* ProfileBased::getBaseObject(bool silent) const
+App::DocumentObject* ProfileBased::getBaseObject(bool silent) const
 {
     // Test the base's class feature.
-    Part::ShapeFeature* rv = Feature::getBaseObject(/* silent = */ true);
+    App::DocumentObject* rv = Feature::getBaseObject(/* silent = */ true);
     if (rv) {
         return rv;
     }
@@ -674,8 +674,8 @@ Part::ShapeFeature* ProfileBased::getBaseObject(bool silent) const
     const char* err = nullptr;
     App::DocumentObject* spt = sketch->AttachmentSupport.getValue();
     if (spt) {
-        if (spt->isDerivedFrom<Part::ShapeFeature>()) {
-            rv = static_cast<Part::ShapeFeature*>(spt);
+        if (Part::hasShape(spt)) {
+            rv = spt;
         }
         else {
             err = "No base set, sketch support is not Part::Feature";

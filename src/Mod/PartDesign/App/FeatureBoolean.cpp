@@ -77,7 +77,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
     std::string type = Type.getValueAsString();
 
     // Check the parameters
-    const Part::ShapeFeature* baseFeature = this->getBaseObject(/* silent = */ true);
+    App::DocumentObject* baseFeature = this->getBaseObject(/* silent = */ true);
 
     if (!baseFeature && type == "Cut") {
         return new App::DocumentObjectExecReturn(
@@ -93,7 +93,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
     // Get the base shape to operate on
     Part::TopoShape baseTopShape;
     if (baseFeature) {
-        baseTopShape = baseFeature->Shape.getShape();
+        baseTopShape = Part::getShape(baseFeature);
     }
     else {
         auto feature = tools.back();

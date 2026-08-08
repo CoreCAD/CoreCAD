@@ -82,7 +82,7 @@ public:
      *               silently return a nullptr, otherwise throw Base::Exception.
      *               Default is false.
      */
-    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
+    App::DocumentObject* getBaseObject(bool silent = false) const override;
 
     virtual std::vector<App::DocumentObject*> getOriginals() const;
 

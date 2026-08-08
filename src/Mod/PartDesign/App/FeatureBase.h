@@ -40,7 +40,7 @@ public:
 
     short int mustExecute() const override;
 
-    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
+    App::DocumentObject* getBaseObject(bool silent = false) const override;
 
     const char* getViewProviderName() const override
     {
