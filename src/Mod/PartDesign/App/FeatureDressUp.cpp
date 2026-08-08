@@ -74,9 +74,9 @@ short DressUp::mustExecute() const
     return PartDesign::FeatureAddSub::mustExecute();
 }
 
-Part::ShapeFeature* DressUp::getBaseObject(bool silent) const
+App::DocumentObject* DressUp::getBaseObject(bool silent) const
 {
-    Part::ShapeFeature* rv = Feature::getBaseObject(/* silent = */ true);
+    App::DocumentObject* rv = Feature::getBaseObject(/* silent = */ true);
     if (rv) {
         return rv;
     }
@@ -84,8 +84,8 @@ Part::ShapeFeature* DressUp::getBaseObject(bool silent) const
     const char* err = nullptr;
     App::DocumentObject* base = Base.getValue();
     if (base) {
-        if (base->isDerivedFrom<Part::ShapeFeature>()) {
-            rv = static_cast<Part::ShapeFeature*>(base);
+        if (Part::hasShape(base)) {
+            rv = base;
         }
         else {
             err = "Linked object is not a Part object";

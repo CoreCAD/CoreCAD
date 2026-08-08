@@ -311,15 +311,15 @@ const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)
     throw Base::NotImplementedError("getPointFromFace(): Not implemented yet for this case");
 }
 
-Part::ShapeFeature* Feature::getBaseObject(bool silent) const
+App::DocumentObject* Feature::getBaseObject(bool silent) const
 {
     App::DocumentObject* BaseLink = BaseFeature.getValue();
-    Part::ShapeFeature* BaseObject = nullptr;
+    App::DocumentObject* BaseObject = nullptr;
     const char* err = nullptr;
 
     if (BaseLink) {
-        if (BaseLink->isDerivedFrom<Part::ShapeFeature>()) {
-            BaseObject = static_cast<Part::ShapeFeature*>(BaseLink);
+        if (Part::hasShape(BaseLink)) {
+            BaseObject = BaseLink;
         }
         if (!BaseObject) {
             err = "No base feature linked";
@@ -337,9 +337,9 @@ Part::ShapeFeature* Feature::getBaseObject(bool silent) const
     return BaseObject;
 }
 
-const TopoDS_Shape& Feature::getBaseShape() const
+TopoDS_Shape Feature::getBaseShape() const
 {
-    const Part::ShapeFeature* BaseObject = getBaseObject();
+    App::DocumentObject* BaseObject = getBaseObject();
 
     if (!BaseObject) {
         throw Base::ValueError("Base feature's shape is not defined");
@@ -350,7 +350,7 @@ const TopoDS_Shape& Feature::getBaseShape() const
         throw Base::ValueError("Base shape of shape binder cannot be used");
     }
 
-    const TopoDS_Shape& result = BaseObject->Shape.getValue();
+    const TopoDS_Shape result = Part::getShape(BaseObject).getShape();
     if (result.IsNull()) {
         throw Base::ValueError("Base feature's shape is invalid");
     }
@@ -366,7 +366,7 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
 {
     Part::TopoShape result;
 
-    const Part::ShapeFeature* BaseObject = getBaseObject(silent);
+    App::DocumentObject* BaseObject = getBaseObject(silent);
     if (!BaseObject) {
         return result;
     }
@@ -388,7 +388,7 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
         }
     }
 
-    result = BaseObject->Shape.getShape();
+    result = Part::getShape(BaseObject);
     if (!silent) {
         if (result.isNull()) {
             throw Base::ValueError("Base feature's TopoShape is invalid");

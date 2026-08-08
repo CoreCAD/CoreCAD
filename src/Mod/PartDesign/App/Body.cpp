@@ -224,7 +224,7 @@ bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodi
         return true;
     }
 
-    if (obj->isDerivedFrom(Part::ShapeFeature::getClassTypeId())) {
+    if (Part::hasShape(obj)) {
         // A Body is itself a ShapeFeature (via BodyBase) and provides the displayed
         // solid, so a datum/sketch attached to a face of its own Body anchors onto the
         // Body object. It is its own answer: never findBodyOf a Body, which re-enters

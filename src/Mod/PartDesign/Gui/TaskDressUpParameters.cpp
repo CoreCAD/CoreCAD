@@ -429,7 +429,7 @@ ViewProviderDressUp* TaskDressUpParameters::getDressUpView() const
     return DressUpView.expired() ? nullptr : DressUpView.get();
 }
 
-Part::ShapeFeature* TaskDressUpParameters::getBase() const
+App::DocumentObject* TaskDressUpParameters::getBase() const
 {
     if (ViewProviderDressUp* vp = getDressUpView()) {
         auto dressUp = vp->getObject<PartDesign::DressUp>();

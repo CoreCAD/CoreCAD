@@ -138,7 +138,7 @@ public:
     /// retrieves the number of axes in the linked sketch (defined as construction lines)
     int getSketchAxisCount() const;
 
-    Part::ShapeFeature* getBaseObject(bool silent = false) const override;
+    App::DocumentObject* getBaseObject(bool silent = false) const override;
 
     // backwards compatibility: profile property was renamed and has different type now
     void Restore(Base::XMLReader& reader) override;
