@@ -37,6 +37,7 @@
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 #include <App/Application.h>
+#include <App/Document.h>
 
 #include "ShapeExtension.h"
 #include "PropertyTopoShape.h"
@@ -172,6 +173,20 @@ TopoShape getShape(const App::DocumentObject* obj)
         }
     }
     return {};
+}
+
+std::vector<App::DocumentObject*> getShapeObjects(const App::Document* doc)
+{
+    std::vector<App::DocumentObject*> result;
+    if (doc == nullptr) {
+        return result;
+    }
+    for (auto* obj : doc->getObjects()) {
+        if (hasShape(obj)) {
+            result.push_back(obj);
+        }
+    }
+    return result;
 }
 
 }  // namespace Part

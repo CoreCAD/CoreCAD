@@ -24,13 +24,17 @@
 
 #pragma once
 
+#include <vector>
+
 #include <App/DocumentObjectExtension.h>
 #include <Mod/Part/PartGlobal.h>
 
 namespace App
 {
+class Document;
+class DocumentObject;
 class GeoFeature;
-}
+}  // namespace App
 
 namespace Part
 {
@@ -98,5 +102,10 @@ PartExport bool hasShape(const App::DocumentObject* obj);
 /// bare static_cast<Part::ShapeFeature*>(obj)->Shape.getShape() property read.
 /// For transform- or sub-element-aware reads, use Part::Feature::getTopoShape().
 PartExport TopoShape getShape(const App::DocumentObject* obj);
+
+/// Capability enumeration: every object in the document that provides the
+/// shape-source contract (Part::hasShape). The extension-based successor to
+/// doc->getObjectsOfType(Part::ShapeFeature::getClassTypeId()).
+PartExport std::vector<App::DocumentObject*> getShapeObjects(const App::Document* doc);
 
 }  // namespace Part

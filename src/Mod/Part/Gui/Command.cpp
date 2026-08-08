@@ -101,7 +101,7 @@ static bool documentHasVisibleShapes()
     if (!doc) {
         return false;
     }
-    for (auto* obj : doc->getObjectsOfType(Part::ShapeFeature::getClassTypeId())) {
+    for (auto* obj : Part::getShapeObjects(doc)) {
         if (obj->Visibility.getValue()) {
             return true;
         }
@@ -2492,8 +2492,9 @@ void CmdColorPerFace::activated(int iMsg)
         getActiveGuiDocument()->resetEdit();
     }
     std::vector<App::DocumentObject*> sel = Gui::Selection().getObjectsOfType(
-        Part::ShapeFeature::getClassTypeId()
+        App::DocumentObject::getClassTypeId()
     );
+    std::erase_if(sel, [](App::DocumentObject* o) { return !Part::hasShape(o); });
     if (sel.empty()) {
         return;
     }

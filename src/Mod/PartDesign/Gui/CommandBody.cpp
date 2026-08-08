@@ -75,8 +75,9 @@ void CmdPartDesignMoveTip::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::ShapeFeature::getClassTypeId()
+        App::DocumentObject::getClassTypeId()
     );
+    std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
     App::DocumentObject* selFeature;
     PartDesign::Body* body = nullptr;
 
@@ -243,8 +244,9 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::ShapeFeature::getClassTypeId()
+        App::DocumentObject::getClassTypeId()
     );
+    std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
     if (features.empty()) {
         return;
     }
@@ -440,8 +442,9 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::ShapeFeature::getClassTypeId()
+        App::DocumentObject::getClassTypeId()
     );
+    std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
 
     // also check and include datum objects, ie. plane, line, and point
     std::vector<App::DocumentObject*> datums = getSelection().getObjectsOfType(

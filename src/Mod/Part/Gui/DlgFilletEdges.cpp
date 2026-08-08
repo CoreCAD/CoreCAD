@@ -595,9 +595,7 @@ void DlgFilletEdges::findShapes()
         return;
     }
 
-    std::vector<App::DocumentObject*> objs = activeDoc->getObjectsOfType(
-        Part::ShapeFeature::getClassTypeId()
-    );
+    std::vector<App::DocumentObject*> objs = Part::getShapeObjects(activeDoc);
     int index = 1;
     int current_index = 0;
     for (std::vector<App::DocumentObject*>::iterator it = objs.begin(); it != objs.end();

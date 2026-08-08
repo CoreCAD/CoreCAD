@@ -59,9 +59,12 @@ void CmdPathArea::activated(int iMsg)
     std::ostringstream sources;
     std::string areaName;
     bool addView = true;
-    for (const Gui::SelectionObject& selObj :
-         getSelection().getSelectionEx(nullptr, Part::ShapeFeature::getClassTypeId())) {
-        const Part::ShapeFeature* pcObj = static_cast<const Part::ShapeFeature*>(selObj.getObject());
+    auto selObjs = getSelection().getSelectionEx();
+    std::erase_if(selObjs, [](const Gui::SelectionObject& s) {
+        return !Part::hasShape(s.getObject());
+    });
+    for (const Gui::SelectionObject& selObj : selObjs) {
+        const App::DocumentObject* pcObj = selObj.getObject();
         const std::vector<std::string>& subnames = selObj.getSubNames();
         if (addView && !areaName.empty()) {
             addView = false;
@@ -159,14 +162,17 @@ void CmdPathAreaWorkplane::activated(int iMsg)
     std::string planeSubname;
     std::string planeName;
 
-    for (Gui::SelectionObject& selObj :
-         getSelection().getSelectionEx(nullptr, Part::ShapeFeature::getClassTypeId())) {
+    auto selObjs = getSelection().getSelectionEx();
+    std::erase_if(selObjs, [](const Gui::SelectionObject& s) {
+        return !Part::hasShape(s.getObject());
+    });
+    for (Gui::SelectionObject& selObj : selObjs) {
         const std::vector<std::string>& subnames = selObj.getSubNames();
         if (subnames.size() > 1) {
             Base::Console().error("Select one sub shape object for plane only\n");
             return;
         }
-        const Part::ShapeFeature* pcObj = static_cast<Part::ShapeFeature*>(selObj.getObject());
+        const App::DocumentObject* pcObj = selObj.getObject();
         if (subnames.empty()) {
             if (pcObj->isDerivedFrom<Path::FeatureArea>()) {
                 if (!areaName.empty()) {
@@ -176,7 +182,7 @@ void CmdPathAreaWorkplane::activated(int iMsg)
                 areaName = pcObj->getNameInDocument();
                 continue;
             }
-            for (TopExp_Explorer it(pcObj->Shape.getShape().getShape(), TopAbs_SHELL); it.More();
+            for (TopExp_Explorer it(Part::getShape(pcObj).getShape(), TopAbs_SHELL); it.More();
                  it.Next()) {
                 Base::Console().error("Selected shape is not 2D\n");
                 return;
@@ -316,9 +322,12 @@ void CmdPathShape::activated(int iMsg)
     Q_UNUSED(iMsg);
     std::list<std::string> cmds;
     std::ostringstream sources;
-    for (const Gui::SelectionObject& selObj :
-         getSelection().getSelectionEx(nullptr, Part::ShapeFeature::getClassTypeId())) {
-        const Part::ShapeFeature* pcObj = static_cast<const Part::ShapeFeature*>(selObj.getObject());
+    auto selObjs = getSelection().getSelectionEx();
+    std::erase_if(selObjs, [](const Gui::SelectionObject& s) {
+        return !Part::hasShape(s.getObject());
+    });
+    for (const Gui::SelectionObject& selObj : selObjs) {
+        const App::DocumentObject* pcObj = selObj.getObject();
         const std::vector<std::string>& subnames = selObj.getSubNames();
         if (subnames.empty()) {
             sources << "FreeCAD.activeDocument()." << pcObj->getNameInDocument() << ",";
