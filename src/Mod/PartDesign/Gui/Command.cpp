@@ -646,8 +646,9 @@ void CmdPartDesignClone::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> objs = getSelection().getObjectsOfType(
-        Part::ShapeFeature::getClassTypeId()
+        App::DocumentObject::getClassTypeId()
     );
+    std::erase_if(objs, [](App::DocumentObject* o) { return !Part::hasShape(o); });
 
     if (objs.size() == 1) {
         // Cruth §4.6: the clone still lands in a body of its own, but the body is not minted
@@ -1804,7 +1805,7 @@ bool dressupGetSelected(
     // set the
     selected = selection[0];
 
-    if (!selected.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
+    if (!Part::hasShape(selected.getObject())) {
         QMessageBox::warning(
             Gui::getMainWindow(),
             QObject::tr("Wrong object type"),

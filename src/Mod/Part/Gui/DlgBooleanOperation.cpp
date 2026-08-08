@@ -235,9 +235,7 @@ void DlgBooleanOperation::findShapes()
         return;
     }
 
-    std::vector<App::DocumentObject*> objs = activeDoc->getObjectsOfType(
-        Part::ShapeFeature::getClassTypeId()
-    );
+    std::vector<App::DocumentObject*> objs = Part::getShapeObjects(activeDoc);
 
     QTreeWidgetItem *item_left = nullptr, *item_right = nullptr;
     for (auto obj : objs) {

@@ -231,8 +231,8 @@ void CmdBlendCurve::activated(int)
     std::string objName[2];
     std::string edge[2];
     std::string featName = getUniqueObjectName("BlendCurve");
-    std::vector<Gui::SelectionObject> sel
-        = getSelection().getSelectionEx(nullptr, Part::ShapeFeature::getClassTypeId());
+    std::vector<Gui::SelectionObject> sel = getSelection().getSelectionEx();
+    std::erase_if(sel, [](const Gui::SelectionObject& s) { return !Part::hasShape(s.getObject()); });
 
     objName[0] = sel[0].getFeatName();
     edge[0] = sel[0].getSubNames()[0];

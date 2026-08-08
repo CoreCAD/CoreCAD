@@ -344,6 +344,42 @@ TEST_F(FeaturePartTest, getShapeCapabilityReturnsBackingShape)
     EXPECT_TRUE(Part::getShape(nullptr).isNull());
 }
 
+// #79 step-4 tail: Part::getShapeObjects is the capability enumeration that
+// replaces doc->getObjectsOfType(Part::ShapeFeature::getClassTypeId()) at the
+// selection/dialog sites. It must return exactly the document's shape carriers.
+TEST_F(FeaturePartTest, getShapeObjectsEnumeratesShapeCarriers)
+{
+    // A non-shape object must be excluded from the enumeration.
+    auto* group = _doc->addObject("App::DocumentObjectGroup", "grpEnum");
+    ASSERT_NE(group, nullptr);
+
+    std::vector<App::DocumentObject*> shapeObjs = Part::getShapeObjects(_doc);
+
+    // Every shape-carrying object qualifies: the fixture boxes and the Common
+    // (a ShapeFeature descendant) are all present.
+    for (auto* box : _boxes) {
+        EXPECT_NE(std::ranges::find(shapeObjs, box), shapeObjs.end());
+    }
+    EXPECT_NE(std::ranges::find(shapeObjs, _common), shapeObjs.end());
+
+    // Negative control: the group carries no shape, so the enumeration is not
+    // trivially returning every object in the document.
+    EXPECT_EQ(std::ranges::find(shapeObjs, group), shapeObjs.end());
+
+    // The result equals exactly the hasShape-filtered document contents.
+    std::size_t expected = 0;
+    for (auto* obj : _doc->getObjects()) {
+        if (Part::hasShape(obj)) {
+            ++expected;
+        }
+    }
+    EXPECT_EQ(shapeObjs.size(), expected);
+    EXPECT_GT(expected, 0U);  // guard: the fixture really does hold shape carriers
+
+    // Null-document guard.
+    EXPECT_TRUE(Part::getShapeObjects(nullptr).empty());
+}
+
 // #79 step 2, transform path: the proposal flagged that the extension reads
 // placement via getPropertyByName("Placement") where the ported original composed
 // getPlacement().toMatrix() — so transform=true parity must be verified, not
