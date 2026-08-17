@@ -149,4 +149,45 @@ TEST_F(DocumentTest, getObjectByUuidTracksUuidChange)
     EXPECT_EQ(doc()->getObjectByUuid(replacement), a);
 }
 
+// Independent oracle mirroring Document.cpp's deriveObjectIdFromUuid. Kept as a separate
+// implementation so a regression that reverts object-id minting to a counter fails the test
+// below rather than silently agreeing with it.
+static long fnvIdFromUuid(const std::string& uuid)
+{
+    unsigned long long hash = 14695981039346656037ULL;
+    for (const unsigned char ch : uuid) {
+        hash ^= ch;
+        hash *= 1099511628211ULL;
+    }
+    long id = static_cast<long>(hash & 0x7FFFFFFFFFFFFFFFULL);
+    return id != 0 ? id : 1;
+}
+
+TEST_F(DocumentTest, newObjectIdIsDerivedFromDurableUuid)
+{
+    // A new object's integer id -- stamped into every element-map name and resolved by
+    // getObjectByID -- is a deterministic projection of its durable UUID, not a per-document
+    // counter. That is what keeps an object added on one branch distinct from a different
+    // object added on another branch (two copies of a saved file no longer mint colliding
+    // ids that would false-match computed faces on merge). If minting reverts to a counter,
+    // this fails.
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+
+    EXPECT_EQ(a->getID(), fnvIdFromUuid(a->Uid.getValueStr()));
+    // Tag 0 means "no tag" and negative tags are semantically special in the element map, so
+    // a derived id must be strictly positive.
+    EXPECT_GT(a->getID(), 0);
+}
+
+TEST_F(DocumentTest, distinctObjectsGetDistinctIds)
+{
+    // Different durable UUIDs must yield different ids -- the branch-uniqueness guarantee in
+    // its simplest observable form.
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    auto* b = doc()->addObject("App::DocumentObjectGroup");
+
+    EXPECT_NE(a->Uid.getValueStr(), b->Uid.getValueStr());
+    EXPECT_NE(a->getID(), b->getID());
+}
+
 // NOLINTEND(readability-magic-numbers)
