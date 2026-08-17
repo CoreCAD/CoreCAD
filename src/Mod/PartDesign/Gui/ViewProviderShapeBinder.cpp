@@ -172,12 +172,13 @@ void ViewProviderShapeBinder::highlightReferences(bool on)
     if (on) {
         if (!subs.empty() && originalLineColors.empty()) {
             TopTools_IndexedMapOfShape eMap;
-            TopExp::MapShapes(static_cast<Part::ShapeFeature*>(obj)->Shape.getValue(), TopAbs_EDGE, eMap);
+            const Part::TopoShape bindShape = Part::getShape(obj);
+            TopExp::MapShapes(bindShape.getShape(), TopAbs_EDGE, eMap);
             originalLineColors = svp->LineColorArray.getValues();
             std::vector<Base::Color> lcolors = originalLineColors;
             lcolors.resize(eMap.Extent(), svp->LineColor.getValue());
 
-            TopExp::MapShapes(static_cast<Part::ShapeFeature*>(obj)->Shape.getValue(), TopAbs_FACE, eMap);
+            TopExp::MapShapes(bindShape.getShape(), TopAbs_FACE, eMap);
             originalFaceAppearance = svp->ShapeAppearance.getValues();
             std::vector<App::Material> fcolors = originalFaceAppearance;
             fcolors.resize(eMap.Extent(), svp->ShapeAppearance[0]);

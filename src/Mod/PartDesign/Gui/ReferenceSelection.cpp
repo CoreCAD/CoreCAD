@@ -200,7 +200,7 @@ bool ReferenceSelection::allowPartFeature(App::DocumentObject* pObj, const char*
 
 bool ReferenceSelection::isEdge(App::DocumentObject* pObj, const char* sSubName) const
 {
-    const Part::TopoShape& shape = static_cast<const Part::ShapeFeature*>(pObj)->Shape.getValue();
+    const Part::TopoShape shape = Part::getShape(pObj);
     TopoDS_Shape sh = shape.getSubShape(sSubName);
     const TopoDS_Edge& edgeShape = TopoDS::Edge(sh);
     if (!edgeShape.IsNull()) {
@@ -220,7 +220,7 @@ bool ReferenceSelection::isEdge(App::DocumentObject* pObj, const char* sSubName)
 
 bool ReferenceSelection::isFace(App::DocumentObject* pObj, const char* sSubName) const
 {
-    const Part::TopoShape& shape = static_cast<const Part::ShapeFeature*>(pObj)->Shape.getValue();
+    const Part::TopoShape shape = Part::getShape(pObj);
     TopoDS_Shape sh = shape.getSubShape(sSubName);
     const TopoDS_Face& face = TopoDS::Face(sh);
     if (!face.IsNull()) {
@@ -240,7 +240,7 @@ bool ReferenceSelection::isFace(App::DocumentObject* pObj, const char* sSubName)
 
 bool ReferenceSelection::isCircle(App::DocumentObject* pObj, const char* sSubName) const
 {
-    const Part::TopoShape& shape = static_cast<const Part::ShapeFeature*>(pObj)->Shape.getValue();
+    const Part::TopoShape shape = Part::getShape(pObj);
     TopoDS_Shape sh = shape.getSubShape(sSubName);
     const TopoDS_Edge& edgeShape = TopoDS::Edge(sh);
     BRepAdaptor_Curve adapt(edgeShape);

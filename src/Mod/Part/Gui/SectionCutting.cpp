@@ -885,7 +885,7 @@ bool SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
             }
         }
         // get all shapes that are also Part::Features
-        if (object->getPropertyByName("Shape") != nullptr && Part::hasShape(object)) {
+        if (Part::hasShape(object)) {
             // sort out 2D objects, datums, App:Parts, compounds and objects that are
             // part of a PartDesign body
             if (!object->isDerivedFrom<Part::Part2DObject>() && !object->isDerivedFrom<Part::Datum>()
