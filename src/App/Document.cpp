@@ -117,6 +117,31 @@ bool transactionStateBlocksRecoveryWrite(const DocumentP& documentPrivate)
         || documentPrivate.activeUndoTransaction != nullptr || documentPrivate.committing;
 }
 
+// Derive an object's integer id from its durable UUID.
+//
+// The integer id is stamped into every element-map name (as the "master tag") and is the
+// key `getObjectByID` resolves. Historically it came from a per-document counter, which two
+// copies of the same saved file resume identically -- so a feature added on one branch and a
+// different feature added on another mint the SAME id, and their computed faces collide by
+// name (breaking any branch/merge that pairs sub-shapes by name). The UUID is already branch-
+// unique, so we project it onto the integer instead of counting. A compact integer is kept
+// (element-map names embed it pervasively and nest it), but its value now carries real
+// identity. Deterministic (FNV-1a) so it never depends on std::hash randomization; the value
+// is persisted, so it is computed once at birth and travels with the object.
+long deriveObjectIdFromUuid(const std::string& uuid)
+{
+    // FNV-1a over the UUID string.
+    uint64_t hash = 14695981039346656037ULL;
+    for (const unsigned char ch : uuid) {
+        hash ^= ch;
+        hash *= 1099511628211ULL;
+    }
+    // Tag 0 means "no tag" and negative tags are semantically special in the element map,
+    // so force a strictly-positive value by clearing the sign bit and lifting 0 to 1.
+    long id = static_cast<long>(hash & 0x7FFFFFFFFFFFFFFFULL);
+    return id != 0 ? id : 1;
+}
+
 }  // namespace
 
 namespace App
@@ -3589,7 +3614,26 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, Add
 
     // generate object id and add to id map + object array
     if (pcObject->_Id == 0) {
-        pcObject->_Id = ++d->lastObjectId;
+        // For a genuinely new object (DoSetup) whose durable UUID is already final, derive the
+        // id from that UUID so it is branch-unique (see deriveObjectIdFromUuid). Restore and
+        // import pass isNew=false: they stamp the persisted UUID only AFTER this point and
+        // instead prime lastObjectId to reproduce the persisted id, so those paths must keep
+        // the legacy counter -- deriving here would hash the constructor's throwaway UUID and
+        // drift the id away from the one baked into the restored element-map names.
+        const std::string uuid = pcObject->Uid.getValueStr();
+        long id;
+        if (options.testFlag(AddObjectOption::DoSetup) && !uuid.empty()) {
+            id = deriveObjectIdFromUuid(uuid);
+            // Perturb on the (astronomically unlikely) in-document hash clash so the id stays
+            // a unique key into objectIdMap.
+            while (d->objectIdMap.count(id) != 0) {
+                id = id > 0 ? id + 1 : 1;  // step forward; wrap negatives to a positive tag
+            }
+        }
+        else {
+            id = ++d->lastObjectId;
+        }
+        pcObject->_Id = id;
     }
     d->objectIdMap[pcObject->_Id] = pcObject;
     d->objectUuidMapDirty = true;
