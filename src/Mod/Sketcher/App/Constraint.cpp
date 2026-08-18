@@ -382,8 +382,9 @@ void Constraint::Restore(XMLReader& reader)
     }
 }
 
-void Constraint::bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId)
+bool Constraint::bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId)
 {
+    bool wentDangling = false;
     for (size_t i = 0; i < elements.size() && i < restoredElementGeoTags.size(); ++i) {
         const boost::uuids::uuid& tag = restoredElementGeoTags[i];
         if (tag.is_nil()) {
@@ -394,11 +395,18 @@ void Constraint::bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId)
             // geometry now occupies, keeping the element's PointPos.
             setElement(i, GeoElementId(*geoId, getElement(i).Pos));
         }
-        // Tag present but unresolved => the geometry is gone. Leave the GeoId as loaded
-        // rather than silently re-bind to a different element (§4.5); an honest failure
-        // is surfaced in a later brick.
+        else {
+            // Tag present but unresolved => the referenced geometry is genuinely gone. The
+            // loaded GeoId is a stale positional index: if the list reordered it may still
+            // be in range and now point at a DIFFERENT live element, so keeping it is the
+            // silent re-bind §10.1 forbids. Mark the element GeoUndef instead — the loss is
+            // then unmistakable to the constraint validator, and disclosed by the caller.
+            setElement(i, GeoElementId(GeoEnum::GeoUndef, getElement(i).Pos));
+            wentDangling = true;
+        }
     }
     restoredElementGeoTags.clear();
+    return wentDangling;
 }
 
 void Constraint::substituteIndex(int fromGeoId, int toGeoId)
