@@ -1364,8 +1364,22 @@ void SketchObject::rebindConstraintsToDurableGeometry()
         return it->second;
     };
 
+    int danglingCount = 0;
     for (Constraint* constraint : Constraints.getValues()) {
-        constraint->bindElementsToDurableGeometry(tagToGeoId);
+        if (constraint->bindElementsToDurableGeometry(tagToGeoId)) {
+            ++danglingCount;
+        }
+    }
+
+    // §10.1 / Amendment 15 (honest retirement, loud-drop): a reference whose durable target
+    // is gone is disclosed, never silently patched. The dangling elements were marked
+    // GeoUndef above, so validateConstraints/the solver will treat them as invalid rather
+    // than let a stale index alias a surviving element.
+    if (danglingCount > 0) {
+        FC_WARN(getFullName() << ": " << danglingCount
+                              << " constraint(s) reference geometry that no longer exists; "
+                                 "their references were dropped rather than rebound to a "
+                                 "different element");
     }
 }
 

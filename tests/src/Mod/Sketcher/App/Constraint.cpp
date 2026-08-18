@@ -731,10 +731,11 @@ TEST_F(ConstraintPointsAccess, testConstraintReferenceFollowsDurableGeometryTag)
 }
 
 // The other half of the rule: an element with no durable handle (a sketch axis, GeoId -1)
-// keeps its GeoId, and a tag whose geometry is gone does NOT silently re-bind to a
-// different element (§4.5). A blind implementation that reset unresolved elements would
-// corrupt both.
-TEST_F(ConstraintPointsAccess, testConstraintReferenceWithoutResolvableTagKeepsGeoId)  // NOLINT
+// keeps its GeoId, while a durable handle whose geometry is gone is marked GeoUndef so the
+// loss fails loud (§10.1) instead of being silently patched. A blind implementation that
+// reset every unresolved element would corrupt the axis; one that kept every loaded GeoId
+// would leave the dangling reference aliasing whatever now sits at that index.
+TEST_F(ConstraintPointsAccess, testConstraintReferenceWithLostTagIsMarkedDangling)  // NOLINT
 {
     boost::uuids::string_generator toUuid;
     const boost::uuids::uuid tagAtGeo3 = toUuid("33333333-3333-3333-3333-333333333333");
@@ -750,15 +751,49 @@ TEST_F(ConstraintPointsAccess, testConstraintReferenceWithoutResolvableTagKeepsG
     Sketcher::Constraint restored;
     saveRestoreWithTags(constraint, geoIdToTag, restored);
 
-    // Every geometry is gone: nothing resolves.
+    // The referenced geometry is gone: its tag resolves to nothing.
     const Sketcher::Constraint::TagToGeoIdFn tagToGeoId =
         [](const boost::uuids::uuid&) -> std::optional<int> {
         return std::nullopt;
     };
-    restored.bindElementsToDurableGeometry(tagToGeoId);
+    const bool dangling = restored.bindElementsToDurableGeometry(tagToGeoId);
 
+    EXPECT_TRUE(dangling) << "a lost durable reference must report itself for disclosure";
     EXPECT_EQ(restored.getElement(0).GeoId, -1)
         << "an axis reference has no durable tag and must keep its GeoId";
-    EXPECT_EQ(restored.getElement(1).GeoId, 3)
-        << "an unresolved tag must not silently re-bind the reference";
+    EXPECT_EQ(restored.getElement(1).GeoId, Sketcher::GeoEnum::GeoUndef)
+        << "a lost durable reference must be marked GeoUndef, not left on a stale index";
+}
+
+// The aliasing case the rule exists for: the referenced geometry is gone, but the stale
+// loaded GeoId is still IN RANGE and now belongs to a different, surviving element. Keeping
+// the GeoId here would silently re-point the constraint at the wrong geometry — the exact
+// failure §10.1 forbids. The discriminator is that a *live* GeoId is offered for a
+// different tag, so "no resolution" cannot be mistaken for "empty document".
+TEST_F(ConstraintPointsAccess, testLostReferenceDoesNotAliasSurvivingElement)  // NOLINT
+{
+    boost::uuids::string_generator toUuid;
+    const boost::uuids::uuid tagGone = toUuid("44444444-4444-4444-4444-444444444444");
+    const boost::uuids::uuid tagAlive = toUuid("55555555-5555-5555-5555-555555555555");
+
+    Sketcher::Constraint constraint;
+    constraint.setElement(0, Sketcher::GeoElementId(2, Sketcher::PointPos::start));  // -> tagGone
+
+    const Sketcher::Constraint::GeoIdToTagFn geoIdToTag = [&](int geoId) -> boost::uuids::uuid {
+        return geoId == 2 ? tagGone : boost::uuids::nil_uuid();
+    };
+
+    Sketcher::Constraint restored;
+    saveRestoreWithTags(constraint, geoIdToTag, restored);
+    ASSERT_EQ(restored.getElement(0).GeoId, 2) << "restore keeps the stale index until rebind";
+
+    // tagGone is absent; a different, surviving element now occupies GeoId 2 under tagAlive.
+    const Sketcher::Constraint::TagToGeoIdFn tagToGeoId =
+        [&](const boost::uuids::uuid& tag) -> std::optional<int> {
+        return tag == tagAlive ? std::optional<int>(2) : std::nullopt;
+    };
+    restored.bindElementsToDurableGeometry(tagToGeoId);
+
+    EXPECT_EQ(restored.getElement(0).GeoId, Sketcher::GeoEnum::GeoUndef)
+        << "the lost reference must not alias the surviving element now at GeoId 2";
 }

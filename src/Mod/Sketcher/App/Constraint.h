@@ -155,9 +155,13 @@ public:
     void Restore(Base::XMLReader& /*reader*/) override;
 
     /// Boundary translation, restore side: rewrite each element's GeoId from the durable
-    /// tag read during Restore, so a reference survives a geometry-list reorder. Elements
-    /// whose tag is nil or no longer resolves keep the GeoId as loaded (no silent re-bind).
-    void bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId);
+    /// tag read during Restore, so a reference survives a geometry-list reorder. An element
+    /// with no durable handle (nil tag: axis, external geometry) keeps its loaded GeoId. An
+    /// element whose durable handle no longer resolves — the target geometry is genuinely
+    /// gone — is marked GeoUndef so the loss fails loud (§10.1) instead of the loaded GeoId
+    /// silently aliasing whatever element now occupies that slot. Returns true if any
+    /// element went dangling this way, so the caller can disclose it.
+    bool bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId);
 
     PyObject* getPyObject() override;
 
