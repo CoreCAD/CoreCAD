@@ -76,6 +76,11 @@ public:
     App::PropertyEnumeration MeasureType;   // True/Projected
     App::PropertyLinkSubList References2D;  // Points to Projection SubFeatures
     App::PropertyLinkSubList References3D;  // Points to 3D Geometry SubFeatures
+    // Durable 3d source sub-element that each 2d reference was projected from,
+    // kept in step with References2D.  Lets autocorrect re-find a 2d reference by
+    // identity (through the element map) after the model changes, instead of by
+    // the fragile projected index.  Managed internally, hidden from the user.
+    App::PropertyLinkSubList ReferenceAnchors3D;
     App::PropertyEnumeration Type;          // DistanceX, DistanceY, Diameter, etc.
 
     App::PropertyBool TheoreticalExact;
@@ -261,6 +266,8 @@ protected:
 
     bool okToProceed();
     void updateSavedGeometry();
+    // populate ReferenceAnchors3D from the currently valid 2d references
+    void captureReferenceAnchors();
 
     bool validateReferenceForm() const;
     bool autocorrectReferences();

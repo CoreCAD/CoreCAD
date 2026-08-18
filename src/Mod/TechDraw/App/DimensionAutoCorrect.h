@@ -59,6 +59,9 @@ public:
 private:
     bool fix1GeomExact(ReferenceEntry& refToFix, const TopoDS_Shape& geomToMatch) const;
     bool fix1GeomSimilar(ReferenceEntry& refToFix, const TopoDS_Shape& geomToMatch) const;
+    // repair a 2d reference by resolving its durable 3d source anchor (through the
+    // element map) and re-projecting it to find the current 2d edge/vertex.
+    bool fix1GeomDurable(ReferenceEntry& refToFix, size_t iRef) const;
 
     bool findExactVertex2d(ReferenceEntry& refToFix, const Part::TopoShape& refGeom) const;
     bool findExactEdge2d(ReferenceEntry& refToFix, const Part::TopoShape& refGeom) const;
