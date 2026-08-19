@@ -26,10 +26,15 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QComboBox>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QMessageBox>
 #include <QTextStream>
 #include <QTreeWidgetItem>
+#include <QVBoxLayout>
 
 #include <boost/regex.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -39,6 +44,8 @@
 #include <App/DocumentObject.h>
 #include <App/Expression.h>
 #include <App/GeoFeature.h>
+#include <App/ObjectRecipe.h>
+#include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
 #include <Base/Stream.h>
@@ -657,6 +664,106 @@ void StdCmdMergeProjects::activated(int iMsg)
 bool StdCmdMergeProjects::isActive()
 {
     return this->hasActiveDocument();
+}
+
+//===========================================================================
+// Std_MergeDocumentVersions
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdMergeDocumentVersions)
+
+StdCmdMergeDocumentVersions::StdCmdMergeDocumentVersions()
+    : Command("Std_MergeDocumentVersions")
+{
+    sAppModule = "File";
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Merge Document &Versions...");
+    sToolTipText = QT_TR_NOOP(
+        "Three-way merge of a model's authored recipe: reconciles a common "
+        "ancestor with two edited copies and reports what merges cleanly, "
+        "what conflicts, and any references left dangling. Reads only — "
+        "it changes nothing."
+    );
+    sWhatsThis = "Std_MergeDocumentVersions";
+    sStatusTip = sToolTipText;
+}
+
+void StdCmdMergeDocumentVersions::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    const std::vector<App::Document*> docs = App::GetApplication().getDocuments();
+    if (docs.size() < 3) {  // guarded by isActive(), but stay honest
+        return;
+    }
+
+    QStringList labels;
+    labels.reserve(static_cast<int>(docs.size()));
+    for (auto* doc : docs) {
+        labels.append(QString::fromUtf8(doc->Label.getValue()));
+    }
+
+    QDialog dlg(getMainWindow());
+    dlg.setWindowTitle(QObject::tr("Merge Document Versions"));
+
+    auto* ancestorBox = new QComboBox(&dlg);
+    auto* branchABox = new QComboBox(&dlg);
+    auto* branchBBox = new QComboBox(&dlg);
+    for (auto* box : {ancestorBox, branchABox, branchBBox}) {
+        box->addItems(labels);
+    }
+    // Distinct defaults so the common case (three open versions) needs no fiddling.
+    ancestorBox->setCurrentIndex(0);
+    branchABox->setCurrentIndex(1);
+    branchBBox->setCurrentIndex(2);
+
+    auto* form = new QFormLayout;
+    form->addRow(QObject::tr("Common ancestor:"), ancestorBox);
+    form->addRow(QObject::tr("Branch A:"), branchABox);
+    form->addRow(QObject::tr("Branch B:"), branchBBox);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->addLayout(form);
+    layout->addWidget(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    App::Document* ancestor = docs[ancestorBox->currentIndex()];
+    App::Document* branchA = docs[branchABox->currentIndex()];
+    App::Document* branchB = docs[branchBBox->currentIndex()];
+
+    if (ancestor == branchA || ancestor == branchB || branchA == branchB) {
+        QMessageBox::warning(
+            getMainWindow(),
+            QObject::tr("Merge Document Versions"),
+            QObject::tr("Choose three different documents: one ancestor and two edited copies.")
+        );
+        return;
+    }
+
+    try {
+        App::DocumentMergeReport report = App::mergeDocuments(*ancestor, *branchA, *branchB);
+        Base::Console().message("%s\n", App::formatDocumentReport(report).c_str());
+        getMainWindow()->showMessage(QObject::tr("Merge report written to the Report view."));
+    }
+    catch (const Base::Exception& e) {
+        QMessageBox::critical(
+            getMainWindow(),
+            QObject::tr("Merge Document Versions"),
+            QString::fromUtf8(e.what())
+        );
+    }
+}
+
+bool StdCmdMergeDocumentVersions::isActive()
+{
+    return App::GetApplication().getDocuments().size() >= 3;
 }
 
 //===========================================================================
@@ -2362,6 +2469,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdImport());
     rcCmdMgr.addCommand(new StdCmdExport());
     rcCmdMgr.addCommand(new StdCmdMergeProjects());
+    rcCmdMgr.addCommand(new StdCmdMergeDocumentVersions());
     rcCmdMgr.addCommand(new StdCmdDependencyGraph());
     rcCmdMgr.addCommand(new StdCmdExportDependencyGraph());
 
