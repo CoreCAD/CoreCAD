@@ -6,6 +6,7 @@ add_executable(PartDesign_tests_run
         DatumPlane.cpp
         ShapeBinder.cpp
         Pad.cpp
+        PadRecipe.cpp
         MoveFeatureToBody.cpp
         AddFeature.cpp
         FindInterferingPairs.cpp
