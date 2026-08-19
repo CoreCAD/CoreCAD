@@ -99,6 +99,13 @@ std::optional<std::string> authoredFieldValue(const Property* prop)
     return std::nullopt;
 }
 
+/// A short, readable stand-in for a durable Uid in a report line (the full uuid is exact but
+/// unreadable). Never used for identity — only for a person scanning the summary.
+std::string shortId(const std::string& id)
+{
+    return id.size() > 8 ? id.substr(0, 8) : id;
+}
+
 }  // namespace
 
 RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
@@ -177,4 +184,63 @@ RecipeSection App::emitDocumentRecipe(const Document& doc)
         section[obj->Uid.getValueStr()] = emitObjectRecipe(*obj);
     }
     return section;
+}
+
+DocumentMergeReport App::mergeDocuments(const Document& ancestor,
+                                        const Document& branchA,
+                                        const Document& branchB)
+{
+    DocumentMergeReport report;
+
+    const RecipeSection base = emitDocumentRecipe(ancestor);
+    const RecipeSection a = emitDocumentRecipe(branchA);
+    const RecipeSection b = emitDocumentRecipe(branchB);
+
+    report.merged = RecipeMerge::threeWay(base, a, b, report.conflicts);
+
+    // Objects reference other objects in the same section, so a reference dangles when the merge
+    // kept an object whose referent the other branch deleted. Resolve against a snapshot of the
+    // survivors (a copy, so dropping a node cannot perturb the target set mid-pass).
+    const RecipeSection survivors = report.merged;
+    report.resolutions = RecipeMerge::resolveReferences(report.merged, survivors);
+
+    return report;
+}
+
+std::string App::formatDocumentReport(const DocumentMergeReport& report)
+{
+    std::ostringstream out;
+    const std::size_t objectCount = report.merged.size();
+
+    if (report.conflicts.empty() && report.resolutions.empty()) {
+        out << "Merged cleanly: " << objectCount << " objects, no conflicts.\n";
+        return out.str();
+    }
+
+    out << "Merged " << objectCount << " objects.\n";
+
+    if (!report.conflicts.empty()) {
+        out << "\nConflicts — both branches changed the same object differently:\n";
+        for (const MergeConflict& conflict : report.conflicts) {
+            out << "  - " << (conflict.type.empty() ? "object" : conflict.type) << " "
+                << shortId(conflict.id) << ": " << conflict.detail << "\n";
+        }
+    }
+
+    if (!report.resolutions.empty()) {
+        out << "\nReferences the merge had to settle:\n";
+        for (const RefResolution& resolution : report.resolutions) {
+            const char* label = "kept";
+            if (resolution.outcome == RefResolution::Outcome::Drop) {
+                label = "dropped";
+            }
+            else if (resolution.outcome == RefResolution::Outcome::StopAsk) {
+                label = "needs a decision";
+            }
+            out << "  - " << (resolution.type.empty() ? "object" : resolution.type) << " "
+                << shortId(resolution.id) << " " << label << ": " << resolution.detail << "\n";
+        }
+    }
+
+    return out.str();
 }

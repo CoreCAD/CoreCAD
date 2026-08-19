@@ -8,10 +8,13 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectRecipe.h>
+#include <App/PropertyStandard.h>
 #include <App/Recipe.h>
 #include <Base/Interpreter.h>
+#include <Base/Uuid.h>
 
 #include <set>
+#include <string>
 
 using namespace App;
 
@@ -137,6 +140,43 @@ TEST_F(ObjectRecipeTest, documentRecipeKeysEveryObjectByUid)
     ASSERT_EQ(section.count(second->Uid.getValueStr()), 1u);
     EXPECT_EQ(section.at(first->Uid.getValueStr()).type, "Part::Box");
     EXPECT_EQ(section.at(second->Uid.getValueStr()).type, "Part::Cylinder");
+}
+
+// Three versions of a model sharing durable object identity (as branches copied from one origin
+// would): a lone edit on one branch merges through and the report reads clean.
+TEST_F(ObjectRecipeTest, mergeDocumentsTakesTheLoneEditAndReadsClean)
+{
+    // Ancestor: a box at its default length.
+    auto* ancestorBox = _doc->addObject("Part::Box");
+    ASSERT_NE(ancestorBox, nullptr);
+    const std::string uid = ancestorBox->Uid.getValueStr();
+
+    auto& app = App::GetApplication();
+
+    // Branch A: the same object (shared Uid), lengthened.
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    auto* boxA = docA->addObject("Part::Box");
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+    boxA->Uid.setValue(sharedId);
+    dynamic_cast<App::PropertyFloat*>(boxA->getPropertyByName("Length"))->setValue(25.0);
+
+    // Branch B: the same object, untouched.
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxB = docB->addObject("Part::Box");
+    boxB->Uid.setValue(sharedId);
+
+    // Act
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    // Assert: A's edit is taken, no conflict, and the summary is human-readable.
+    EXPECT_TRUE(report.conflicts.empty());
+    ASSERT_EQ(report.merged.count(uid), 1u);
+    EXPECT_EQ(report.merged.at(uid).fields.at("Length"), "25 mm");
+    EXPECT_NE(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

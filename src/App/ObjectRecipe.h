@@ -25,6 +25,9 @@
 
 #include <FCGlobal.h>
 
+#include <string>
+#include <vector>
+
 #include "Recipe.h"
 
 namespace App
@@ -59,5 +62,33 @@ AppExport RecipeNode emitObjectRecipe(const DocumentObject& obj);
  *  to it.)
  */
 AppExport RecipeSection emitDocumentRecipe(const Document& doc);
+
+/** The outcome of merging three versions of a model — a common ancestor and two edited copies —
+ *  at object granularity. `merged` is the reconciled section; `conflicts` lists objects both
+ *  branches changed differently; `resolutions` lists objects whose references the merge left
+ *  dangling (an object kept on one branch whose referent was deleted on the other), routed
+ *  through §4.7's honest-retirement outcomes.
+ *
+ *  `conflicts` is a flat list by design: the later field-level refinement pass consumes each
+ *  object-level entry and either dissolves it (the branches touched disjoint fields, auto-merged)
+ *  or replaces it with finer per-field entries — extending this same list, never reshaping it.
+ */
+struct DocumentMergeReport
+{
+    RecipeSection merged;
+    std::vector<MergeConflict> conflicts;
+    std::vector<RefResolution> resolutions;
+};
+
+/// Merge three versions of a model — a common ancestor and two edited copies of it — into a
+/// DocumentMergeReport. The three documents must share a common ancestor's durable identities
+/// (branches copied/reloaded from one origin, not independently rebuilt), or the merge has no
+/// basis to align their objects. Emergent geometry is never matched: only authored recipes are
+/// reconciled, and a merged model is regenerated afterwards.
+AppExport DocumentMergeReport
+mergeDocuments(const Document& ancestor, const Document& branchA, const Document& branchB);
+
+/// Render a DocumentMergeReport as plain language a person can read (Report View / console).
+AppExport std::string formatDocumentReport(const DocumentMergeReport& report);
 
 }  // namespace App
