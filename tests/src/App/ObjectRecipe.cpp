@@ -179,4 +179,73 @@ TEST_F(ObjectRecipeTest, mergeDocumentsTakesTheLoneEditAndReadsClean)
     app.closeDocument(docB->getName());
 }
 
+// Two branches edit DIFFERENT fields of the same object (A its length, B its width). Through the
+// full emit -> object-granular merge -> field-granular refinement path, the disjoint edits are
+// auto-merged and the whole-document report reads clean — no conflict is put to the user.
+TEST_F(ObjectRecipeTest, mergeDocumentsAutoMergesDisjointFieldEdits)
+{
+    auto* ancestorBox = _doc->addObject("Part::Box");
+    ASSERT_NE(ancestorBox, nullptr);
+    const std::string uid = ancestorBox->Uid.getValueStr();
+
+    auto& app = App::GetApplication();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+
+    // Branch A: same object, lengthened.
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    auto* boxA = docA->addObject("Part::Box");
+    boxA->Uid.setValue(sharedId);
+    dynamic_cast<App::PropertyFloat*>(boxA->getPropertyByName("Length"))->setValue(25.0);
+
+    // Branch B: same object, widened (a different field).
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxB = docB->addObject("Part::Box");
+    boxB->Uid.setValue(sharedId);
+    dynamic_cast<App::PropertyFloat*>(boxB->getPropertyByName("Width"))->setValue(30.0);
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    EXPECT_TRUE(report.conflicts.empty());  // disjoint fields dissolved
+    ASSERT_EQ(report.merged.count(uid), 1u);
+    EXPECT_EQ(report.merged.at(uid).fields.at("Length"), "25 mm");  // A's edit
+    EXPECT_EQ(report.merged.at(uid).fields.at("Width"), "30 mm");   // and B's, on one object
+    EXPECT_NE(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// Both branches change the SAME field of the same object differently. The report keeps one
+// conflict, now naming the field — the case the refinement cannot and must not dissolve.
+TEST_F(ObjectRecipeTest, mergeDocumentsKeepsSameFieldEditAsAFieldConflict)
+{
+    auto* ancestorBox = _doc->addObject("Part::Box");
+    ASSERT_NE(ancestorBox, nullptr);
+    const std::string uid = ancestorBox->Uid.getValueStr();
+
+    auto& app = App::GetApplication();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    auto* boxA = docA->addObject("Part::Box");
+    boxA->Uid.setValue(sharedId);
+    dynamic_cast<App::PropertyFloat*>(boxA->getPropertyByName("Length"))->setValue(25.0);
+
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxB = docB->addObject("Part::Box");
+    boxB->Uid.setValue(sharedId);
+    dynamic_cast<App::PropertyFloat*>(boxB->getPropertyByName("Length"))->setValue(30.0);
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    ASSERT_EQ(report.conflicts.size(), 1u);
+    EXPECT_EQ(report.conflicts.front().id, uid);
+    EXPECT_NE(report.conflicts.front().detail.find("Length"), std::string::npos);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

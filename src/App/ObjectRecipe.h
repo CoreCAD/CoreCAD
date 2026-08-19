@@ -64,14 +64,16 @@ AppExport RecipeNode emitObjectRecipe(const DocumentObject& obj);
 AppExport RecipeSection emitDocumentRecipe(const Document& doc);
 
 /** The outcome of merging three versions of a model — a common ancestor and two edited copies —
- *  at object granularity. `merged` is the reconciled section; `conflicts` lists objects both
- *  branches changed differently; `resolutions` lists objects whose references the merge left
- *  dangling (an object kept on one branch whose referent was deleted on the other), routed
+ *  `merged` is the reconciled section; `resolutions` lists objects whose references the merge
+ *  left dangling (an object kept on one branch whose referent was deleted on the other), routed
  *  through §4.7's honest-retirement outcomes.
  *
- *  `conflicts` is a flat list by design: the later field-level refinement pass consumes each
- *  object-level entry and either dissolves it (the branches touched disjoint fields, auto-merged)
- *  or replaces it with finer per-field entries — extending this same list, never reshaping it.
+ *  `conflicts` is field-granular: object-granular reconciliation runs first, then the refinement
+ *  pass takes each object both branches changed and either dissolves it (they touched disjoint
+ *  fields — auto-merged into `merged`) or keeps one entry per genuinely-overlapping field (the
+ *  field named in its detail). A delete-vs-edit conflict, having no two field sets to reconcile,
+ *  stays a whole-object entry. It is a flat list either way — the refinement makes it finer, it
+ *  does not reshape it.
  */
 struct DocumentMergeReport
 {
