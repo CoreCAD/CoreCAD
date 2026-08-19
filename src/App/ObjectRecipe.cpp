@@ -40,6 +40,7 @@
 
 #include "ObjectRecipe.h"
 
+#include "Document.h"
 #include "DocumentObject.h"
 #include "Expression.h"
 #include "ObjectIdentifier.h"
@@ -164,4 +165,16 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
     }
 
     return node;
+}
+
+RecipeSection App::emitDocumentRecipe(const Document& doc)
+{
+    RecipeSection section;
+    for (const DocumentObject* obj : doc.getObjects()) {
+        if (obj == nullptr) {
+            continue;
+        }
+        section[obj->Uid.getValueStr()] = emitObjectRecipe(*obj);
+    }
+    return section;
 }

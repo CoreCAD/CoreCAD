@@ -8,6 +8,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectRecipe.h>
+#include <App/Recipe.h>
 #include <Base/Interpreter.h>
 
 #include <set>
@@ -119,6 +120,23 @@ TEST_F(ObjectRecipeTest, boundExpressionIsTheAuthoredValueNotTheResolvedNumber)
     ASSERT_EQ(node.fields.count("Length"), 1u);
     EXPECT_NE(node.fields.at("Length").find('+'), std::string::npos);
     EXPECT_NE(node.fields.at("Length"), "10 mm");
+}
+
+// The document recipe holds one node per object, keyed by durable Uid — the section the merge
+// engine reconciles for model-wide, object-granular three-way merge.
+TEST_F(ObjectRecipeTest, documentRecipeKeysEveryObjectByUid)
+{
+    auto* first = _doc->addObject("Part::Box");
+    auto* second = _doc->addObject("Part::Cylinder");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+
+    const RecipeSection section = emitDocumentRecipe(*_doc);
+
+    ASSERT_EQ(section.count(first->Uid.getValueStr()), 1u);
+    ASSERT_EQ(section.count(second->Uid.getValueStr()), 1u);
+    EXPECT_EQ(section.at(first->Uid.getValueStr()).type, "Part::Box");
+    EXPECT_EQ(section.at(second->Uid.getValueStr()).type, "Part::Cylinder");
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

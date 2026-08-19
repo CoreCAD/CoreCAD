@@ -30,6 +30,7 @@
 namespace App
 {
 
+class Document;
 class DocumentObject;
 
 /** Emit one document object's authored recipe node — the generic, type-blind driver behind
@@ -48,5 +49,15 @@ class DocumentObject;
  *  RecipeSection for model-wide three-way merge.
  */
 AppExport RecipeNode emitObjectRecipe(const DocumentObject& obj);
+
+/** Emit a whole document's authored recipe — one id-keyed section holding every object's node,
+ *  built by calling emitObjectRecipe once per object. This is the section App::RecipeMerge
+ *  reconciles for model-wide, object-granular three-way merge: an object untouched on both
+ *  branches compares equal as a whole node and is taken with no field-level work, so the
+ *  unchanged majority costs a single comparison. (Finer, field-level reconciliation of the few
+ *  objects that both branches edit is a later refinement pass layered over this, not a change
+ *  to it.)
+ */
+AppExport RecipeSection emitDocumentRecipe(const Document& doc);
 
 }  // namespace App
