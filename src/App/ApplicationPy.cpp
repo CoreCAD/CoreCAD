@@ -40,6 +40,7 @@
 #include "DocumentPy.h"
 #include "DocumentObserverPython.h"
 #include "DocumentObjectPy.h"
+#include "ObjectRecipe.h"
 #include "RecoverySnapshot.h"
 
 
@@ -208,6 +209,15 @@ PyMethodDef ApplicationPy::Methods[] = {
      "getDocument(string) -> object\n\n"
      "Get a document by its name or raise an exception\n"
      "if there is no document with the given name."},
+    {"mergeDocuments",
+     (PyCFunction)ApplicationPy::sMergeDocuments,
+     METH_VARARGS,
+     "mergeDocuments(ancestor, branchA, branchB) -> str\n\n"
+     "Three-way merge of a model's authored recipe. The three documents must share a\n"
+     "common ancestor's durable identities (branches reloaded/copied from one origin,\n"
+     "not independently rebuilt). Only authored state is reconciled -- no recompute is\n"
+     "run and emergent geometry is never matched. Returns a plain-language report of\n"
+     "what merged cleanly, what conflicts, and any references left dangling."},
     {"listDocuments",
      (PyCFunction)ApplicationPy::sListDocuments,
      METH_VARARGS,
@@ -609,6 +619,38 @@ PyObject* ApplicationPy::sGetDocument(PyObject* /*self*/, PyObject* args)
     }
 
     return doc->getPyObject();
+}
+
+PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
+{
+    PyObject* ancpy {};
+    PyObject* apy {};
+    PyObject* bpy {};
+    if (!PyArg_ParseTuple(args,
+                          "O!O!O!",
+                          &App::DocumentPy::Type,
+                          &ancpy,
+                          &App::DocumentPy::Type,
+                          &apy,
+                          &App::DocumentPy::Type,
+                          &bpy)) {
+        return nullptr;
+    }
+
+    Document* ancestor = static_cast<App::DocumentPy*>(ancpy)->getDocumentPtr();
+    Document* branchA = static_cast<App::DocumentPy*>(apy)->getDocumentPtr();
+    Document* branchB = static_cast<App::DocumentPy*>(bpy)->getDocumentPtr();
+    if (!ancestor || !branchA || !branchB) {
+        PyErr_SetString(PyExc_RuntimeError, "Invalid document");
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        DocumentMergeReport report = mergeDocuments(*ancestor, *branchA, *branchB);
+        return Py::new_reference_to(Py::String(formatDocumentReport(report)));
+    }
+    PY_CATCH;
 }
 
 PyObject* ApplicationPy::sGetParam(PyObject* /*self*/, PyObject* args)

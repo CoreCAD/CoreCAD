@@ -70,6 +70,7 @@ public:
     static PyObject* sActiveDocument         (PyObject *self,PyObject *args);
     static PyObject* sSetActiveDocument      (PyObject *self,PyObject *args);
     static PyObject* sGetDocument            (PyObject *self,PyObject *args);
+    static PyObject* sMergeDocuments         (PyObject *self,PyObject *args);
     static PyObject* sListDocuments          (PyObject *self,PyObject *args);
     static PyObject* sAddDocObserver         (PyObject *self,PyObject *args);
     static PyObject* sRemoveDocObserver      (PyObject *self,PyObject *args);
