@@ -27,7 +27,9 @@
 # include <iomanip>
 # include <limits>
 # include <locale>
+# include <map>
 # include <optional>
+# include <set>
 # include <sstream>
 # include <string>
 # include <utility>
@@ -39,6 +41,8 @@
 #include "ObjectRecipe.h"
 
 #include "DocumentObject.h"
+#include "Expression.h"
+#include "ObjectIdentifier.h"
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
 #include "PropertyUnits.h"
@@ -106,6 +110,19 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
     // preferences, not geometry, so a rename or a show/hide toggle is never a merge conflict.
     const short excludedFlags = Prop_Output | Prop_Transient | Prop_NoPersist | Prop_Hidden;
 
+    // A property driven by an expression is authored by that expression, not by its resolved
+    // number; index the bindings by property so the field records the expression text.
+    std::map<const Property*, std::string> expressionByProperty;
+    for (const auto& [identifier, expression] : obj.ExpressionEngine.getExpressions()) {
+        if (expression == nullptr) {
+            continue;
+        }
+        if (const Property* bound = identifier.getProperty()) {
+            expressionByProperty.emplace(bound, expression->toString());
+        }
+    }
+
+    std::set<std::string> seenRefs;
     std::vector<std::pair<const char*, Property*>> properties;
     obj.getPropertyNamedList(properties);
     for (const auto& [name, prop] : properties) {
@@ -120,10 +137,29 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
             continue;
         }
         if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
-            continue;  // links become refs-by-Uid — a follow-on increment
+            // A link addresses another object; the recipe references it by the target's durable
+            // Uid, never by name. Whole-object only (pos 0): a link's sub-element string (Face3,
+            // Edge1) names emergent geometry with no durable identity, so it is deliberately not
+            // encoded here.
+            std::vector<DocumentObject*> targets;
+            static_cast<const PropertyLinkBase*>(prop)->getLinks(targets, /*all=*/true);
+            for (const DocumentObject* target : targets) {
+                if (target == nullptr) {
+                    continue;
+                }
+                RecipeRef ref;
+                ref.target = target->Uid.getValueStr();
+                ref.pos = 0;
+                if (seenRefs.insert(ref.target).second) {
+                    node.refs.push_back(ref);
+                }
+            }
+            continue;
         }
         if (const std::optional<std::string> value = authoredFieldValue(prop)) {
-            node.fields[propName] = *value;
+            const auto bound = expressionByProperty.find(prop);
+            node.fields[propName] =
+                bound != expressionByProperty.end() ? bound->second : *value;
         }
     }
 
