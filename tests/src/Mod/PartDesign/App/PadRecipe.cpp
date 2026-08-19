@@ -119,4 +119,57 @@ TEST_F(PadRecipeTest, divergentLengthEditsConflict)
     EXPECT_EQ(conflicts.front().id, node.id);
 }
 
+// Two branches edit DIFFERENT fields of the same Pad (A its length, B its type). Object-granular
+// reports one whole-Pad conflict; the field-granular refinement dissolves it and the merged Pad
+// carries both edits. This is the payoff of #1 on a real feature: independent parameter changes
+// on one object no longer force a person to arbitrate.
+TEST_F(PadRecipeTest, disjointFieldEditsOnOnePadAutoMerge)
+{
+    const App::RecipeNode node = App::emitObjectRecipe(*_pad);
+    ASSERT_EQ(node.fields.count("Length"), 1u);
+    ASSERT_EQ(node.fields.count("Type"), 1u);
+
+    App::RecipeSection base;
+    base[node.id] = node;
+    App::RecipeSection branchA = base;
+    branchA[node.id].fields["Length"] = "25 mm";  // A changes the length
+    App::RecipeSection branchB = base;
+    branchB[node.id].fields["Type"] = "TwoLengths";  // B changes the pad type
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection merged = App::RecipeMerge::threeWay(base, branchA, branchB, conflicts);
+    ASSERT_EQ(conflicts.size(), 1u);  // object-granular: one whole-Pad conflict
+
+    const std::vector<App::MergeConflict> refined
+        = App::RecipeMerge::refineConflicts(conflicts, base, branchA, branchB, merged);
+
+    EXPECT_TRUE(refined.empty());                                   // dissolved — disjoint fields
+    EXPECT_EQ(merged.at(node.id).fields.at("Length"), "25 mm");     // A's edit
+    EXPECT_EQ(merged.at(node.id).fields.at("Type"), "TwoLengths");  // and B's, on one Pad
+}
+
+// Both branches change the SAME field of the Pad (its length) to different values. The refinement
+// keeps it a conflict, now named at the field — this is the case a person must still arbitrate.
+TEST_F(PadRecipeTest, sameFieldEditsOnOnePadStayAConflict)
+{
+    const App::RecipeNode node = App::emitObjectRecipe(*_pad);
+
+    App::RecipeSection base;
+    base[node.id] = node;
+    App::RecipeSection branchA = base;
+    branchA[node.id].fields["Length"] = "25 mm";
+    App::RecipeSection branchB = base;
+    branchB[node.id].fields["Length"] = "30 mm";
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection merged = App::RecipeMerge::threeWay(base, branchA, branchB, conflicts);
+
+    const std::vector<App::MergeConflict> refined
+        = App::RecipeMerge::refineConflicts(conflicts, base, branchA, branchB, merged);
+
+    ASSERT_EQ(refined.size(), 1u);
+    EXPECT_EQ(refined.front().id, node.id);
+    EXPECT_NE(refined.front().detail.find("Length"), std::string::npos);  // names the field
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

@@ -164,6 +164,24 @@ public:
     /// not authored targets and never dangle.
     static std::vector<RefResolution> resolveReferences(RecipeSection& withRefs,
                                                         const RecipeSection& liveTargets);
+
+    /// Refine object-granular Value conflicts to field granularity — the layered pass that
+    /// makes `threeWay`'s results finer without changing them. For each Value conflict, the
+    /// same three-way rule is re-run over the object's base/A/B nodes one dimension at a time
+    /// (each authored field, plus the object's type and its links as single dimensions). When
+    /// the two branches touched disjoint dimensions, the edits are auto-merged: the object's
+    /// node in `merged` is rebuilt to carry both sides and the conflict dissolves (no entry is
+    /// returned for it). Only genuinely overlapping same-dimension edits remain, as one refined
+    /// Value conflict per clashing dimension (the dimension named in `detail`); `merged` still
+    /// takes A's side there, matching object-granular. A delete-vs-edit conflict (one branch
+    /// dropped the object) has no two field sets to reconcile and passes through unchanged, as
+    /// does any Referential conflict. The returned list is the same flat MergeConflict list,
+    /// only finer — the object-granular pass and its data are not touched.
+    static std::vector<MergeConflict> refineConflicts(const std::vector<MergeConflict>& conflicts,
+                                                      const RecipeSection& base,
+                                                      const RecipeSection& a,
+                                                      const RecipeSection& b,
+                                                      RecipeSection& merged);
 };
 
 }  // namespace App

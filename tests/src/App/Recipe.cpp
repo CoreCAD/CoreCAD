@@ -45,6 +45,29 @@ RecipeSection baseConstraints()
     };
 }
 
+// A feature-like node carrying several authored fields (e.g. a Pad's Length/Type/Reversed),
+// the unit the field-granular refinement pass reconciles.
+RecipeNode feature(
+    const std::string& id,
+    std::map<std::string, std::string> fields,
+    std::vector<RecipeRef> refs = {}
+)
+{
+    return RecipeNode {id, "PartDesign::Pad", std::move(fields), std::move(refs)};
+}
+
+// Count the refined Value conflicts naming a given object id.
+std::size_t valueConflictsFor(const std::vector<MergeConflict>& conflicts, const std::string& id)
+{
+    std::size_t count = 0;
+    for (const MergeConflict& c : conflicts) {
+        if (c.kind == MergeConflict::Kind::Value && c.id == id) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 }  // namespace
 
 // An untouched three-way merge introduces nothing and conflicts on nothing (the metric
@@ -258,4 +281,144 @@ TEST(RecipeMergeTest, mixedDanglingResolvesPerNode)
     EXPECT_EQ(c1, RefResolution::Outcome::StopAsk);
     EXPECT_EQ(mergedCon.count("cV"), 0u);  // dropped
     EXPECT_EQ(mergedCon.count("c1"), 1u);  // kept
+}
+
+// Slice 5 — the field-granular refinement pass layered over the object-granular merge. It
+// takes the SAME base/A/B sections and the object-level conflicts threeWay produced and makes
+// them finer, without re-representing anything.
+
+// Disjoint field edits to the same object: object-granular reports one whole-object conflict;
+// the refinement pass dissolves it (the branches touched different fields) and rebuilds the
+// merged node to carry BOTH edits. (A pass that only kept A's side would drop B's Type change.)
+TEST(RecipeMergeTest, disjointFieldEditsDissolveTheConflict)
+{
+    RecipeSection base = {{"p", feature("p", {{"Length", "10 mm"}, {"Type", "Length"}})}};
+
+    RecipeSection a = base;
+    a["p"].fields["Length"] = "20 mm";  // A edits Length only
+
+    RecipeSection b = base;
+    b["p"].fields["Type"] = "TwoLengths";  // B edits Type only
+
+    std::vector<MergeConflict> conflicts;
+    RecipeSection merged = RecipeMerge::threeWay(base, a, b, conflicts);
+    ASSERT_EQ(valueConflictsFor(conflicts, "p"), 1u);  // object-granular: one whole-object clash
+
+    std::vector<MergeConflict> refined = RecipeMerge::refineConflicts(conflicts, base, a, b, merged);
+
+    EXPECT_EQ(valueConflictsFor(refined, "p"), 0u);             // dissolved — disjoint dimensions
+    EXPECT_EQ(merged.at("p").fields.at("Length"), "20 mm");     // A's edit landed
+    EXPECT_EQ(merged.at("p").fields.at("Type"), "TwoLengths");  // and B's, on the same node
+}
+
+// The same field changed to different values on both sides stays a conflict, now named at the
+// field. (Distinguishes real overlap from the disjoint case above.)
+TEST(RecipeMergeTest, sameFieldEditsRemainAFieldConflict)
+{
+    RecipeSection base = {{"p", feature("p", {{"Length", "10 mm"}})}};
+
+    RecipeSection a = base;
+    a["p"].fields["Length"] = "20 mm";
+    RecipeSection b = base;
+    b["p"].fields["Length"] = "30 mm";
+
+    std::vector<MergeConflict> conflicts;
+    RecipeSection merged = RecipeMerge::threeWay(base, a, b, conflicts);
+
+    std::vector<MergeConflict> refined = RecipeMerge::refineConflicts(conflicts, base, a, b, merged);
+
+    ASSERT_EQ(valueConflictsFor(refined, "p"), 1u);
+    EXPECT_NE(refined[0].detail.find("Length"), std::string::npos);  // names the clashing field
+    EXPECT_EQ(merged.at("p").fields.at("Length"), "20 mm");          // A kept provisionally
+}
+
+// A mix: one field clashes, another is disjoint. Only the overlap survives, and the disjoint
+// edit from each side still merges. (A whole-object pass would report the object once and lose
+// the disjoint merge; an over-fine pass that re-represented everything would report both.)
+TEST(RecipeMergeTest, mixedEditsKeepOnlyTheOverlappingField)
+{
+    RecipeSection base = {{"p", feature("p", {{"Length", "10 mm"}, {"Midplane", "false"}})}};
+
+    RecipeSection a = base;
+    a["p"].fields["Length"] = "20 mm";   // clashes
+    a["p"].fields["Midplane"] = "true";  // disjoint (B leaves it)
+
+    RecipeSection b = base;
+    b["p"].fields["Length"] = "30 mm";  // clashes
+
+    std::vector<MergeConflict> conflicts;
+    RecipeSection merged = RecipeMerge::threeWay(base, a, b, conflicts);
+
+    std::vector<MergeConflict> refined = RecipeMerge::refineConflicts(conflicts, base, a, b, merged);
+
+    ASSERT_EQ(valueConflictsFor(refined, "p"), 1u);  // only Length remains
+    EXPECT_NE(refined[0].detail.find("Length"), std::string::npos);
+    EXPECT_EQ(merged.at("p").fields.at("Midplane"), "true");  // A's disjoint edit kept
+    EXPECT_EQ(merged.at("p").fields.at("Length"), "20 mm");   // clash keeps A provisionally
+}
+
+// A changed link is a disjoint dimension from a changed field: they auto-merge. (Proves links
+// participate in the refinement, not just scalar fields.)
+TEST(RecipeMergeTest, disjointFieldAndLinkEditsDissolve)
+{
+    RecipeSection base = {{"p", feature("p", {{"Length", "10 mm"}}, {{"sketch1", 0}})}};
+
+    RecipeSection a = base;
+    a["p"].fields["Length"] = "20 mm";  // A edits a field
+
+    RecipeSection b = base;
+    b["p"].refs = {{"sketch2", 0}};  // B re-points the profile link
+
+    std::vector<MergeConflict> conflicts;
+    RecipeSection merged = RecipeMerge::threeWay(base, a, b, conflicts);
+    ASSERT_EQ(valueConflictsFor(conflicts, "p"), 1u);
+
+    std::vector<MergeConflict> refined = RecipeMerge::refineConflicts(conflicts, base, a, b, merged);
+
+    EXPECT_EQ(valueConflictsFor(refined, "p"), 0u);          // dissolved
+    EXPECT_EQ(merged.at("p").fields.at("Length"), "20 mm");  // A's field edit
+    ASSERT_EQ(merged.at("p").refs.size(), 1u);
+    EXPECT_EQ(merged.at("p").refs[0].target, "sketch2");  // B's link edit
+}
+
+// A delete-vs-edit conflict has no two field sets to reconcile, so it is NOT refined — it
+// passes through as the whole-object conflict it is. (The refinement must not fabricate a
+// field merge against a deleted object.)
+TEST(RecipeMergeTest, deleteVersusEditPassesThroughUnrefined)
+{
+    RecipeSection base = {{"p", feature("p", {{"Length", "10 mm"}})}};
+
+    RecipeSection a = base;
+    a.erase("p");  // A deletes the object
+
+    RecipeSection b = base;
+    b["p"].fields["Length"] = "20 mm";  // B edits it
+
+    std::vector<MergeConflict> conflicts;
+    RecipeSection merged = RecipeMerge::threeWay(base, a, b, conflicts);
+    ASSERT_EQ(valueConflictsFor(conflicts, "p"), 1u);
+
+    std::vector<MergeConflict> refined = RecipeMerge::refineConflicts(conflicts, base, a, b, merged);
+
+    ASSERT_EQ(valueConflictsFor(refined, "p"), 1u);     // still one whole-object conflict
+    EXPECT_EQ(refined[0].detail, conflicts[0].detail);  // unchanged, not field-decomposed
+}
+
+// A Referential conflict is about identity across objects, not a field, so the refinement pass
+// leaves it exactly as it was (negative control: refinement only touches Value conflicts).
+TEST(RecipeMergeTest, referentialConflictPassesThroughRefinement)
+{
+    RecipeSection empty;
+    std::vector<MergeConflict> conflicts = {
+        {MergeConflict::Kind::Referential, "cV", "Vertical", "references deleted entity g2"}
+    };
+
+    RecipeSection merged;
+    std::vector<MergeConflict> refined
+        = RecipeMerge::refineConflicts(conflicts, empty, empty, empty, merged);
+
+    ASSERT_EQ(refined.size(), 1u);
+    EXPECT_EQ(refined[0].kind, MergeConflict::Kind::Referential);
+    EXPECT_EQ(refined[0].id, "cV");
+    EXPECT_EQ(refined[0].detail, "references deleted entity g2");
 }

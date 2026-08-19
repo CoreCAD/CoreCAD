@@ -198,6 +198,12 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
 
     report.merged = RecipeMerge::threeWay(base, a, b, report.conflicts);
 
+    // Refine each whole-object conflict to field granularity: where the two branches touched
+    // disjoint fields (or links, or type) the edits are auto-merged into report.merged and the
+    // conflict dissolves; only genuinely overlapping same-field edits remain. Runs before the
+    // referential pass so that pass resolves against the refined links.
+    report.conflicts = RecipeMerge::refineConflicts(report.conflicts, base, a, b, report.merged);
+
     // Objects reference other objects in the same section, so a reference dangles when the merge
     // kept an object whose referent the other branch deleted. Resolve against a snapshot of the
     // survivors (a copy, so dropping a node cannot perturb the target set mid-pass).
