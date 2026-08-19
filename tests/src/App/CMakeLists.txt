@@ -23,6 +23,7 @@ add_executable(App_tests_run
         Property.h
         Property.cpp
         PropertyExpressionEngine.cpp
+        ObjectRecipe.cpp
         Recipe.cpp
         StringHasher.cpp
         VarSet.cpp
