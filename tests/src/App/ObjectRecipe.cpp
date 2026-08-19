@@ -12,6 +12,7 @@
 #include <App/PropertyStandard.h>
 #include <App/Recipe.h>
 #include <Base/Interpreter.h>
+#include <Base/Matrix.h>
 #include <Base/Placement.h>
 #include <Base/Rotation.h>
 #include <Base/Uuid.h>
@@ -324,6 +325,90 @@ TEST_F(ObjectRecipeTest, vectorValueIsEmittedAsAField)
     ASSERT_EQ(node.fields.count("Anchor"), 1u);
     EXPECT_NE(node.fields.at("Anchor").find('4'), std::string::npos);
     EXPECT_NE(node.fields.at("Anchor").find('6'), std::string::npos);
+}
+
+// A scalar list value type is canonicalized element-by-element, and the field changes when any
+// element changes (a metric returning the same string either way would be blind to the edit).
+TEST_F(ObjectRecipeTest, floatListIsEmittedAndDistinguishesAnElementEdit)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyFloatList*>(
+        box->addDynamicProperty("App::PropertyFloatList", "Samples")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    prop->setValues({1.5, 2.5, 3.5});
+    const std::string before = emitObjectRecipe(*box).fields.at("Samples");
+
+    prop->setValues({1.5, 9.5, 3.5});
+    const std::string after = emitObjectRecipe(*box).fields.at("Samples");
+
+    EXPECT_FALSE(before.empty());
+    EXPECT_NE(before, after);  // the middle-element edit is visible in the field
+}
+
+// A list's element count is part of its canonical form: appending an element changes the field
+// even when every pre-existing element is unchanged (order and length are authored state).
+TEST_F(ObjectRecipeTest, listLengthChangeIsVisible)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyIntegerList*>(
+        box->addDynamicProperty("App::PropertyIntegerList", "Counts")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    prop->setValues({1, 2, 3});
+    const std::string shorter = emitObjectRecipe(*box).fields.at("Counts");
+
+    prop->setValues({1, 2, 3, 4});
+    const std::string longer = emitObjectRecipe(*box).fields.at("Counts");
+
+    EXPECT_NE(shorter, longer);
+}
+
+// A vector list carries non-scalar elements; a change to one component of one element changes
+// the field (covers PropertyVectorList over the shared per-element canonicalizer).
+TEST_F(ObjectRecipeTest, vectorListIsEmittedAndDistinguishesAComponentEdit)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyVectorList*>(
+        box->addDynamicProperty("App::PropertyVectorList", "Path")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    prop->setValues({Base::Vector3d(0, 0, 0), Base::Vector3d(1, 1, 1)});
+    const std::string before = emitObjectRecipe(*box).fields.at("Path");
+
+    prop->setValues({Base::Vector3d(0, 0, 0), Base::Vector3d(1, 7, 1)});
+    const std::string after = emitObjectRecipe(*box).fields.at("Path");
+
+    EXPECT_NE(before, after);
+}
+
+// A matrix is a non-scalar authored value; it is canonicalized as its 16 cells, and the field
+// changes when any cell changes.
+TEST_F(ObjectRecipeTest, matrixIsEmittedAndDistinguishesACellEdit)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyMatrix*>(
+        box->addDynamicProperty("App::PropertyMatrix", "Transform")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    Base::Matrix4D mat;  // identity
+    prop->setValue(mat);
+    const std::string identity = emitObjectRecipe(*box).fields.at("Transform");
+
+    mat[0][3] = 12.0;  // a translation cell
+    prop->setValue(mat);
+    const std::string translated = emitObjectRecipe(*box).fields.at("Transform");
+
+    EXPECT_FALSE(identity.empty());
+    EXPECT_NE(identity, translated);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
