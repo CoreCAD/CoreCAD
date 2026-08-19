@@ -44,6 +44,7 @@
 #include "DocumentObject.h"
 #include "Expression.h"
 #include "ObjectIdentifier.h"
+#include "PropertyGeo.h"
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
 #include "PropertyUnits.h"
@@ -64,11 +65,18 @@ std::string canonicalNumber(double value)
     return oss.str();
 }
 
+/// A full-precision, locale-free rendering of a 3-vector's components, so a change to any
+/// component changes the field. Shared by the vector and placement canonicalizers.
+std::string canonicalVector(const Base::Vector3d& vec)
+{
+    return canonicalNumber(vec.x) + " " + canonicalNumber(vec.y) + " " + canonicalNumber(vec.z);
+}
+
 /// The authored value of one property as a canonical string, or nullopt if the property carries
-/// no value this driver can yet canonicalize (richer value types — placements, vectors, lists —
-/// are follow-on increments, each gated by its own test). A quantity keeps its unit token so a
-/// bare-number change and a unit change are both visible. Most-derived types are matched first
-/// (PropertyQuantity derives from PropertyFloat).
+/// no value this driver can yet canonicalize (list value types are a follow-on increment, each
+/// gated by its own test). A quantity keeps its unit token so a bare-number change and a unit
+/// change are both visible. Most-derived types are matched first (PropertyQuantity derives from
+/// PropertyFloat; PropertyPosition/PropertyVectorDistance derive from PropertyVector).
 std::optional<std::string> authoredFieldValue(const Property* prop)
 {
     if (const auto* quantity = dynamic_cast<const PropertyQuantity*>(prop)) {
@@ -95,6 +103,18 @@ std::optional<std::string> authoredFieldValue(const Property* prop)
     if (const auto* text = dynamic_cast<const PropertyString*>(prop)) {
         const char* value = text->getValue();
         return value != nullptr ? std::string(value) : std::string();
+    }
+    if (const auto* placement = dynamic_cast<const PropertyPlacement*>(prop)) {
+        // Position then rotation as a quaternion, full precision, so a move OR a rotation of a
+        // datum/attachment placement — previously invisible to the merge — changes the field.
+        const Base::Placement& value = placement->getValue();
+        double q0 = 0.0, q1 = 0.0, q2 = 0.0, q3 = 0.0;
+        value.getRotation().getValue(q0, q1, q2, q3);
+        return canonicalVector(value.getPosition()) + " " + canonicalNumber(q0) + " "
+            + canonicalNumber(q1) + " " + canonicalNumber(q2) + " " + canonicalNumber(q3);
+    }
+    if (const auto* vector = dynamic_cast<const PropertyVector*>(prop)) {
+        return canonicalVector(vector->getValue());
     }
     return std::nullopt;
 }
@@ -131,13 +151,16 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
     }
 
     std::set<std::string> seenRefs;
-    std::vector<std::pair<const char*, Property*>> properties;
-    obj.getPropertyNamedList(properties);
-    for (const auto& [name, prop] : properties) {
-        if (name == nullptr || prop == nullptr) {
+    // getPropertyMap (unlike getPropertyNamedList) is overridden by ExtensionContainer to include
+    // properties an extension contributes — Placement chief among them, which Amendment 4 moved
+    // off GeoFeature into App::PlacementExtension. Enumerating the map keeps those in the recipe
+    // (and orders deterministically by name).
+    std::map<std::string, Property*> properties;
+    obj.getPropertyMap(properties);
+    for (const auto& [propName, prop] : properties) {
+        if (prop == nullptr) {
             continue;
         }
-        const std::string propName = name;
         if (propName == "Label" || propName == "Visibility") {
             continue;
         }
