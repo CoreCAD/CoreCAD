@@ -8,10 +8,15 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectRecipe.h>
+#include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
 #include <App/Recipe.h>
 #include <Base/Interpreter.h>
+#include <Base/Matrix.h>
+#include <Base/Placement.h>
+#include <Base/Rotation.h>
 #include <Base/Uuid.h>
+#include <Base/Vector3D.h>
 
 #include <set>
 #include <string>
@@ -246,6 +251,164 @@ TEST_F(ObjectRecipeTest, mergeDocumentsKeepsSameFieldEditAsAFieldConflict)
 
     app.closeDocument(docA->getName());
     app.closeDocument(docB->getName());
+}
+
+// A placement is a non-scalar authored value; it is now canonicalized into a field, and the
+// field changes when the placement changes (a metric that reported the same string either way
+// would be blind to exactly the move this closes).
+TEST_F(ObjectRecipeTest, placementIsEmittedAndDistinguishesAMove)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* placement = dynamic_cast<PropertyPlacement*>(box->getPropertyByName("Placement"));
+    ASSERT_NE(placement, nullptr);
+
+    placement->setValue(Base::Placement(Base::Vector3d(1.0, 2.0, 3.0), Base::Rotation()));
+    const std::string atOrigin = emitObjectRecipe(*box).fields.at("Placement");
+
+    placement->setValue(Base::Placement(Base::Vector3d(5.0, 2.0, 3.0), Base::Rotation()));
+    const std::string moved = emitObjectRecipe(*box).fields.at("Placement");
+
+    EXPECT_FALSE(atOrigin.empty());
+    EXPECT_NE(atOrigin, moved);  // the x-move is visible in the field
+}
+
+// The headline of #84: a placement-only change on one branch — previously dropped from the
+// recipe and so invisible — now merges through as the authored edit it is.
+TEST_F(ObjectRecipeTest, mergeDocumentsSeesAPlacementOnlyEdit)
+{
+    auto* ancestorBox = _doc->addObject("Part::Box");
+    ASSERT_NE(ancestorBox, nullptr);
+    const std::string uid = ancestorBox->Uid.getValueStr();
+
+    auto& app = App::GetApplication();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+
+    // Branch A: same object, moved.
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    auto* boxA = docA->addObject("Part::Box");
+    boxA->Uid.setValue(sharedId);
+    dynamic_cast<PropertyPlacement*>(boxA->getPropertyByName("Placement"))
+        ->setValue(Base::Placement(Base::Vector3d(10.0, 0.0, 0.0), Base::Rotation()));
+
+    // Branch B: same object, untouched.
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxB = docB->addObject("Part::Box");
+    boxB->Uid.setValue(sharedId);
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    EXPECT_TRUE(report.conflicts.empty());  // lone edit — no conflict
+    ASSERT_EQ(report.merged.count(uid), 1u);
+    const std::string ancestorPlacement = emitObjectRecipe(*ancestorBox).fields.at("Placement");
+    EXPECT_NE(report.merged.at(uid).fields.at("Placement"), ancestorPlacement);  // A's move landed
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// A bare vector value type is canonicalized too (covers the PropertyVector path directly, via a
+// dynamic property so the test does not lean on any one object type carrying a vector).
+TEST_F(ObjectRecipeTest, vectorValueIsEmittedAsAField)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyVector*>(
+        box->addDynamicProperty("App::PropertyVector", "Anchor")
+    );
+    ASSERT_NE(prop, nullptr);
+    prop->setValue(Base::Vector3d(4.0, 5.0, 6.0));
+
+    const RecipeNode node = emitObjectRecipe(*box);
+
+    ASSERT_EQ(node.fields.count("Anchor"), 1u);
+    EXPECT_NE(node.fields.at("Anchor").find('4'), std::string::npos);
+    EXPECT_NE(node.fields.at("Anchor").find('6'), std::string::npos);
+}
+
+// A scalar list value type is canonicalized element-by-element, and the field changes when any
+// element changes (a metric returning the same string either way would be blind to the edit).
+TEST_F(ObjectRecipeTest, floatListIsEmittedAndDistinguishesAnElementEdit)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyFloatList*>(
+        box->addDynamicProperty("App::PropertyFloatList", "Samples")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    prop->setValues({1.5, 2.5, 3.5});
+    const std::string before = emitObjectRecipe(*box).fields.at("Samples");
+
+    prop->setValues({1.5, 9.5, 3.5});
+    const std::string after = emitObjectRecipe(*box).fields.at("Samples");
+
+    EXPECT_FALSE(before.empty());
+    EXPECT_NE(before, after);  // the middle-element edit is visible in the field
+}
+
+// A list's element count is part of its canonical form: appending an element changes the field
+// even when every pre-existing element is unchanged (order and length are authored state).
+TEST_F(ObjectRecipeTest, listLengthChangeIsVisible)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyIntegerList*>(
+        box->addDynamicProperty("App::PropertyIntegerList", "Counts")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    prop->setValues({1, 2, 3});
+    const std::string shorter = emitObjectRecipe(*box).fields.at("Counts");
+
+    prop->setValues({1, 2, 3, 4});
+    const std::string longer = emitObjectRecipe(*box).fields.at("Counts");
+
+    EXPECT_NE(shorter, longer);
+}
+
+// A vector list carries non-scalar elements; a change to one component of one element changes
+// the field (covers PropertyVectorList over the shared per-element canonicalizer).
+TEST_F(ObjectRecipeTest, vectorListIsEmittedAndDistinguishesAComponentEdit)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyVectorList*>(
+        box->addDynamicProperty("App::PropertyVectorList", "Path")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    prop->setValues({Base::Vector3d(0, 0, 0), Base::Vector3d(1, 1, 1)});
+    const std::string before = emitObjectRecipe(*box).fields.at("Path");
+
+    prop->setValues({Base::Vector3d(0, 0, 0), Base::Vector3d(1, 7, 1)});
+    const std::string after = emitObjectRecipe(*box).fields.at("Path");
+
+    EXPECT_NE(before, after);
+}
+
+// A matrix is a non-scalar authored value; it is canonicalized as its 16 cells, and the field
+// changes when any cell changes.
+TEST_F(ObjectRecipeTest, matrixIsEmittedAndDistinguishesACellEdit)
+{
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* prop = dynamic_cast<PropertyMatrix*>(
+        box->addDynamicProperty("App::PropertyMatrix", "Transform")
+    );
+    ASSERT_NE(prop, nullptr);
+
+    Base::Matrix4D mat;  // identity
+    prop->setValue(mat);
+    const std::string identity = emitObjectRecipe(*box).fields.at("Transform");
+
+    mat[0][3] = 12.0;  // a translation cell
+    prop->setValue(mat);
+    const std::string translated = emitObjectRecipe(*box).fields.at("Transform");
+
+    EXPECT_FALSE(identity.empty());
+    EXPECT_NE(identity, translated);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
