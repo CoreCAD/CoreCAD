@@ -7,6 +7,7 @@
 #include "App/Document.h"
 #include "App/DocumentObject.h"
 #include "App/StringHasher.h"
+#include "Base/Exception.h"
 #include "Base/Uuid.h"
 #include "Base/Writer.h"
 #include <src/App/InitApplication.h>
@@ -26,12 +27,29 @@ class FakeWriter: public Base::Writer
     }
 };
 
+// A DocumentObject whose setupObject() deliberately throws, used to prove that
+// Document::addObject rolls the half-created object back out of the document
+// rather than stranding it (issue #31).
+class ThrowingSetupObject: public App::DocumentObject
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    void setupObject() override
+    {
+        throw Base::RuntimeError("setupObject deliberately failed");
+    }
+};
+
+TYPESYSTEM_SOURCE(ThrowingSetupObject, App::DocumentObject)  // NOLINT
+
 class DocumentTest: public ::testing::Test
 {
 protected:
     static void SetUpTestSuite()
     {
         tests::initApplication();
+        ThrowingSetupObject::init();
     }
 
     void SetUp() override
@@ -80,6 +98,24 @@ TEST_F(DocumentTest, addStringHasherIndicatesAlreadyWritten)
 
     // Assert
     EXPECT_FALSE(addResult.first);
+}
+
+TEST_F(DocumentTest, addObjectRollsBackWhenSetupObjectThrows)
+{
+    // Act: create with DoSetup (isNew=true) so setupObject() runs and throws.
+    EXPECT_THROW(doc()->addObject("ThrowingSetupObject", "T", /*isNew=*/true), Base::Exception);
+
+    // Assert: the half-created object was rolled back, not stranded (issue #31).
+    // Before the fix this left a registered 'T' object in the document.
+    EXPECT_TRUE(doc()->getObjects().empty());
+    EXPECT_EQ(doc()->getObject("T"), nullptr);
+
+    // The document is still usable afterwards: a normal add succeeds and the
+    // rolled-back name is free to reuse.
+    auto* reused = doc()->addObject("App::VarSet", "T");
+    ASSERT_NE(reused, nullptr);
+    EXPECT_STREQ(reused->getNameInDocument(), "T");
+    EXPECT_EQ(doc()->getObjects().size(), 1U);
 }
 
 TEST_F(DocumentTest, getStringHasherGivesExpectedHasher)

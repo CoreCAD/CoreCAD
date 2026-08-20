@@ -3655,7 +3655,37 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, Add
 
     // Call the object-specific initialization
     if (!isPerformingTransaction() && options.testFlag(AddObjectOption::DoSetup)) {
-        pcObject->setupObject();
+        try {
+            pcObject->setupObject();
+        }
+        catch (...) {
+            // setupObject() is a validation chokepoint that may legitimately reject
+            // the object (e.g. a Body spawned into a document with no world frame).
+            // Undo the partial registration so the throw cannot strand a half-created
+            // object in the document (issue #31). signalNewObject has not fired yet,
+            // so no observer knows about pcObject -- we reverse the internal
+            // bookkeeping directly and emit no removal signals. Only the internally
+            // owning create paths (addObject-by-type, addObjects) set DoSetup, so
+            // pcObject is owned here and deleting it dangles no caller reference.
+            if (!d->rollback && d->activeUndoTransaction) {
+                // Drops the addObjectDel entry recorded above (Del status -> erased).
+                d->activeUndoTransaction->addObjectNew(pcObject);
+            }
+            for (auto it = d->objectArray.begin(); it != d->objectArray.end(); ++it) {
+                if (*it == pcObject) {
+                    d->objectArray.erase(it);
+                    break;
+                }
+            }
+            d->objectIdMap.erase(pcObject->_Id);
+            d->objectUuidMapDirty = true;
+            d->objectNameManager.removeExactName(ObjectName);
+            unregisterLabel(pcObject->Label.getStrValue());
+            pcObject->pcNameInDocument = nullptr;
+            d->objectMap.erase(ObjectName);
+            delete pcObject;
+            throw;
+        }
     }
 
     if (options.testFlag(AddObjectOption::SetNewStatus)) {
