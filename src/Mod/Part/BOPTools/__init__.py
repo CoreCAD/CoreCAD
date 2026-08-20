@@ -68,6 +68,14 @@ def reloadAll():
 
 def addCommands():
     "addCommands(): add all GUI commands of BOPTools package to FreeCAD command manager."
+    import FreeCADGui
+
+    # Idempotent: the ribbon can activate a workbench (and thus re-run Part's
+    # Initialize) more than once, which otherwise re-registers these commands
+    # and emits a "duplicate command" error for each. Registration already
+    # happened if any BOPTools command is present, so skip the whole batch.
+    if "Part_JoinConnect" in FreeCADGui.listCommands():
+        return
     JoinFeatures.addCommands()
     SplitFeatures.addCommands()
     ToleranceFeatures.addCommands()
