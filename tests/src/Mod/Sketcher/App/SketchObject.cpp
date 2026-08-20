@@ -685,6 +685,57 @@ TEST_F(SketchObjectTest, testDeleteExposeInternalGeometryOfBSpline)
     EXPECT_EQ(getObject()->getHighestCurveIndex(), 0);
 }
 
+// A B-spline InternalAlignment names a pole/knot by a bare positional ordinal
+// (InternalAlignmentIndex). When the referenced B-spline survives but now has fewer
+// poles/knots, that ordinal can point past the end -- the state a cross-branch
+// pole-count change leaves behind. evaluateConstraint must fail loud on it (#82,
+// ARCHITECTURE §10.1), never silently address the wrong pole.
+TEST_F(SketchObjectTest, bSplineInternalAlignmentIndexOutOfRangeFailsEvaluation)
+{
+    // Arrange
+    auto bspline = createTypicalNonPeriodicBSpline();
+    int geoId = getObject()->addGeometry(bspline.get());
+    const int poleCount = bspline->countPoles();
+    const int knotCount = bspline->countKnots();
+
+    // evaluateConstraint only range-checks First, so pointing it at the B-spline's
+    // own (in-range) geoId keeps the setup minimal; Second is the B-spline itself.
+    // Constraint is non-copyable, so each case is built in place.
+    auto makeControlPointAlignment = [geoId](Sketcher::Constraint& c, int index) {
+        c.Type = Sketcher::InternalAlignment;
+        c.AlignmentType = Sketcher::BSplineControlPoint;
+        c.First = geoId;
+        c.Second = geoId;
+        c.InternalAlignmentIndex = index;
+    };
+
+    // Act / Assert
+    // The last valid pole ordinal evaluates as valid...
+    Sketcher::Constraint lastValid;
+    makeControlPointAlignment(lastValid, poleCount - 1);
+    EXPECT_TRUE(getObject()->evaluateConstraint(&lastValid));
+
+    // ...one past it is out of range and must fail (before the fix the ordinal was
+    // never checked and this passed).
+    Sketcher::Constraint pastEnd;
+    makeControlPointAlignment(pastEnd, poleCount);
+    EXPECT_FALSE(getObject()->evaluateConstraint(&pastEnd));
+
+    // A negative ordinal is likewise invalid.
+    Sketcher::Constraint negative;
+    makeControlPointAlignment(negative, -1);
+    EXPECT_FALSE(getObject()->evaluateConstraint(&negative));
+
+    // The same bound applies to knot-point alignments, checked against the knot count.
+    Sketcher::Constraint knotPastEnd;
+    knotPastEnd.Type = Sketcher::InternalAlignment;
+    knotPastEnd.AlignmentType = Sketcher::BSplineKnotPoint;
+    knotPastEnd.First = geoId;
+    knotPastEnd.Second = geoId;
+    knotPastEnd.InternalAlignmentIndex = knotCount;
+    EXPECT_FALSE(getObject()->evaluateConstraint(&knotPastEnd));
+}
+
 // TODO: Needs to be done for other curves too but currently they are working as intended
 TEST_F(SketchObjectTest, testDeleteOnlyUnusedInternalGeometryOfBSpline)
 {

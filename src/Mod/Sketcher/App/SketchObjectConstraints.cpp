@@ -39,6 +39,8 @@
 
 #include <memory>
 
+#include <Mod/Part/App/Geometry.h>
+
 #include "GeoEnum.h"
 #include "SketchObject.h"
 
@@ -2274,6 +2276,32 @@ bool SketchObject::evaluateConstraint(const Constraint* constraint) const
     ret = ret
         && ((geoId == GeoEnum::GeoUndef && !requireThird)
             || (geoId >= -extGeoCount && geoId < intGeoCount));
+
+    // An InternalAlignment on a B-spline additionally names a pole or knot by a bare
+    // positional ordinal (InternalAlignmentIndex). That ordinal renumbers under an
+    // identity-preserving edit and is not a durable identity (ARCHITECTURE §10.1): if
+    // the referenced B-spline survives but now has fewer poles/knots, an out-of-range
+    // index must fail loud (P7) so validateConstraints drops the constraint, never
+    // silently address the wrong pole. The GeoId checks above only bound Second, not
+    // the ordinal into it.
+    if (ret && constraint->Type == InternalAlignment
+        && (constraint->AlignmentType == BSplineControlPoint
+            || constraint->AlignmentType == BSplineKnotPoint)) {
+        const auto* bspline = constraint->Second == GeoEnum::GeoUndef
+            ? nullptr
+            : dynamic_cast<const Part::GeomBSplineCurve*>(getGeometry(constraint->Second));
+        if (bspline == nullptr) {
+            // Second is absent or is not a B-spline: the pole/knot alignment is malformed.
+            ret = false;
+        }
+        else {
+            const int count = constraint->AlignmentType == BSplineControlPoint
+                ? static_cast<int>(bspline->getPoles().size())
+                : static_cast<int>(bspline->getKnots().size());
+            ret = constraint->InternalAlignmentIndex >= 0
+                && constraint->InternalAlignmentIndex < count;
+        }
+    }
 
     return ret;
 }
