@@ -22,6 +22,7 @@ add_executable(Part_tests_run
         PartFeatures.cpp
         PartTestHelpers.cpp
         PropertyTopoShape.cpp
+        SubShapeSignature.cpp
         TopoDS_Shape.cpp
         TopoShape.cpp
         TopoShapeCache.cpp
