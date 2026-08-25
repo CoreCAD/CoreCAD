@@ -10,6 +10,8 @@
 # include <BRepAdaptor_Surface.hxx>
 # include <BRepGProp.hxx>
 # include <GProp_GProps.hxx>
+# include <TopExp.hxx>
+# include <TopTools_IndexedMapOfShape.hxx>
 # include <TopoDS.hxx>
 # include <TopoDS_Face.hxx>
 # include <TopoDS_Shape.hxx>
@@ -85,6 +87,37 @@ std::string primitiveBoxFaceRole(
         }
     }
     return best;
+}
+
+TopoDS_Shape resolveBoxFaceByRole(
+    const TopoDS_Shape& solid,
+    const gp_Trsf& localToWorld,
+    const std::string& role
+)
+{
+    if (solid.IsNull() || role.empty()) {
+        return {};
+    }
+
+    // Read the role of every planar face and keep the unique one that matches.
+    // A box has exactly one face per axis, so a healthy solid yields one match;
+    // zero or several means the role is gone or the solid is malformed, and we
+    // hand back null rather than bind a guess.
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(solid, TopAbs_FACE, faces);
+
+    TopoDS_Shape match;
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        const TopoDS_Shape& face = faces(i);
+        if (primitiveBoxFaceRole(face, solid, localToWorld) != role) {
+            continue;
+        }
+        if (!match.IsNull()) {
+            return {};  // ambiguous: two faces claim one role -> stop, do not guess
+        }
+        match = face;
+    }
+    return match;
 }
 
 }  // namespace Part

@@ -25,6 +25,7 @@
 #include "Mod/Part/App/SubShapeSignature.h"
 
 using Part::primitiveBoxFaceRole;
+using Part::resolveBoxFaceByRole;
 using Part::subShapeSignature;
 
 namespace
@@ -43,13 +44,7 @@ std::vector<TopoDS_Shape> facesOf(const TopoDS_Shape& shape)
 // The face of a box whose role (in the identity frame) matches the wanted axis.
 TopoDS_Shape faceWithRole(const TopoDS_Shape& box, const std::string& role)
 {
-    const gp_Trsf identity;
-    for (const auto& face : facesOf(box)) {
-        if (primitiveBoxFaceRole(face, box, identity) == role) {
-            return face;
-        }
-    }
-    return {};
+    return resolveBoxFaceByRole(box, gp_Trsf(), role);
 }
 }  // namespace
 
@@ -125,6 +120,67 @@ TEST(PrimitiveFaceRoleTest, roleSurvivesSelfSymmetryThatSignatureAliases)
         primitiveBoxFaceRole(movedPlusX, movedCube, sym),
         primitiveBoxFaceRole(minusX, cube, identity)
     );
+}
+
+// Capture then resolve, with no motion: the role stored for a face resolves back
+// to that very face. This is the base of the leaf-regime reference contract.
+TEST(PrimitiveFaceRoleTest, resolveRoundTripsToTheCapturedFace)
+{
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(30.0, 20.0, 10.0).Shape();
+    const gp_Trsf identity;
+
+    for (const auto& face : facesOf(box)) {
+        const std::string role = primitiveBoxFaceRole(face, box, identity);       // capture
+        const TopoDS_Shape resolved = resolveBoxFaceByRole(box, identity, role);  // resolve
+        ASSERT_FALSE(resolved.IsNull());
+        EXPECT_TRUE(resolved.IsSame(face));
+    }
+}
+
+// The decisive resolve case, mirroring the decisive capture case above. We store
+// a reference to the +X face as its role, apply a 180-degree self-symmetry of the
+// cube, and resolve. Resolution carries the reference to the physical +X face
+// under the motion -- NOT to the -X world slot the moved +X face now occupies,
+// which is exactly where a signature match would (wrongly) bind it.
+TEST(PrimitiveFaceRoleTest, resolveCarriesReferenceAcrossSelfSymmetry)
+{
+    const TopoDS_Shape cube = BRepPrimAPI_MakeBox(15.0, 15.0, 15.0).Shape();
+    const gp_Trsf identity;
+
+    // Capture: the reference is "the +X face", stored as its role.
+    const TopoDS_Shape plusX = faceWithRole(cube, "+X");
+    ASSERT_FALSE(plusX.IsNull());
+    const std::string captured = primitiveBoxFaceRole(plusX, cube, identity);
+    ASSERT_EQ(captured, "+X");
+
+    // 180 degrees about the vertical centre axis: a self-symmetry that lands the
+    // +X face in -X's world position and orientation.
+    gp_Trsf sym;
+    sym.SetRotation(gp_Ax1(gp_Pnt(7.5, 7.5, 0), gp_Dir(0, 0, 1)), std::acos(-1.0));
+    BRepBuilderAPI_Transform xform(cube, sym, /*copy*/ true);
+    const TopoDS_Shape movedCube = xform.Shape();
+
+    // Resolve the stored role against the moved solid: it binds the physical +X
+    // face carried through the motion, the correct answer.
+    const TopoDS_Shape resolved = resolveBoxFaceByRole(movedCube, sym, captured);
+    ASSERT_FALSE(resolved.IsNull());
+    EXPECT_TRUE(resolved.IsSame(xform.ModifiedShape(plusX)));
+
+    // It is genuinely the right face and not the -X-slot occupant a signature
+    // would alias onto: the resolved face still reads +X in the local frame.
+    EXPECT_EQ(primitiveBoxFaceRole(resolved, movedCube, sym), "+X");
+}
+
+// An unresolvable or malformed request degrades to null -- it never guesses a
+// face. This is the stop-and-ask the merge contract sits on.
+TEST(PrimitiveFaceRoleTest, resolveDegradesToNullOnBadInput)
+{
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape();
+    const gp_Trsf identity;
+
+    EXPECT_TRUE(resolveBoxFaceByRole(box, identity, "").IsNull());               // no role asked
+    EXPECT_TRUE(resolveBoxFaceByRole(box, identity, "+W").IsNull());             // unknown role
+    EXPECT_TRUE(resolveBoxFaceByRole(TopoDS_Shape(), identity, "+X").IsNull());  // null solid
 }
 
 TEST(PrimitiveFaceRoleTest, nullNonFaceAndNonPlanarReturnEmpty)

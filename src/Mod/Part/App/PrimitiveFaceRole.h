@@ -50,6 +50,33 @@ PartExport std::string primitiveBoxFaceRole(
     const gp_Trsf& localToWorld
 );
 
+/**
+ * Resolve a stored box-face role back to the live face that now carries it.
+ *
+ * This is the inverse of primitiveBoxFaceRole and the resolution half of the
+ * leaf-regime reference contract: capture stores the role a picked face plays in
+ * the feature's parametric frame; resolve, run against a possibly-recomputed or
+ * rigidly-moved solid, hands back the face that plays that same role. Because the
+ * role is read in the local frame, resolution carries a reference correctly
+ * across any rigid motion -- including a self-symmetry of the body, the case
+ * where matching by geometric signature would alias onto the wrong face.
+ *
+ * The match is required to be unique: a box has exactly one face per axis, so a
+ * healthy solid resolves unambiguously. Zero matches (the role is gone) or more
+ * than one (a malformed solid) both return null rather than bind a guess -- the
+ * stop-and-ask degrade the merge contract assumes.
+ *
+ * @param solid         the box solid to resolve against, in world coordinates
+ * @param localToWorld  the feature's placement (local frame -> world), the same
+ *                      frame the role was captured in
+ * @param role          a role name as produced by primitiveBoxFaceRole
+ *                      ("+X", "-X", "+Y", "-Y", "+Z", "-Z")
+ * @return the unique planar face of @p solid playing @p role; null if @p role is
+ *         empty/unknown, @p solid is null, or the match is not unique
+ */
+PartExport TopoDS_Shape
+resolveBoxFaceByRole(const TopoDS_Shape& solid, const gp_Trsf& localToWorld, const std::string& role);
+
 }  // namespace Part
 
 #endif  // PART_PRIMITIVEFACEROLE_H
