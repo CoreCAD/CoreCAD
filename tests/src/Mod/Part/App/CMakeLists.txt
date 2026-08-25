@@ -21,6 +21,7 @@ add_executable(Part_tests_run
         PartFeature.cpp
         PartFeatures.cpp
         PartTestHelpers.cpp
+        PrimitiveFaceRole.cpp
         PropertyTopoShape.cpp
         SubShapeSignature.cpp
         TopoDS_Shape.cpp
