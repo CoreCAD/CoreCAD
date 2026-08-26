@@ -220,6 +220,8 @@ SET(Features_SRCS
     PartFeature.h
     PartFeatureReference.cpp
     PartFeatureReference.h
+    BoxFaceRoleRef.cpp
+    BoxFaceRoleRef.h
     PrimitiveFaceRole.cpp
     PrimitiveFaceRole.h
     SubShapeSignature.cpp

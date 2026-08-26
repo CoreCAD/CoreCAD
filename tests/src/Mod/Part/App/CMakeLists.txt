@@ -18,6 +18,7 @@ add_executable(Part_tests_run
         FeatureRevolution.cpp
         FuzzyBoolean.cpp
         Geometry.cpp
+        BoxFaceRoleRef.cpp
         PartFeature.cpp
         PartFeatures.cpp
         PartTestHelpers.cpp
