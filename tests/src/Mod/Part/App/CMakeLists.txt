@@ -19,6 +19,7 @@ add_executable(Part_tests_run
         FuzzyBoolean.cpp
         Geometry.cpp
         BoxFaceRoleRef.cpp
+        NeutralRef.cpp
         PartFeature.cpp
         PartFeatures.cpp
         PartTestHelpers.cpp
