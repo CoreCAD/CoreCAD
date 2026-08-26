@@ -6,6 +6,13 @@
 #include <set>
 #include <string>
 
+#include <BRep_Builder.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS_Shape.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <src/App/InitApplication.h>
@@ -15,9 +22,34 @@
 #include "Mod/Part/App/NeutralRef.h"
 #include "Mod/Part/App/PrimitiveFeature.h"
 
+using Part::captureBoxFaceRole;
 using Part::captureFaceRef;
 using Part::NRef;
 using Part::resolveFaceRef;
+
+namespace
+{
+// Rebuild a solid with its faces enumerated in the reverse order -- same geometry,
+// a different internal face numbering. This stands in for what an independent
+// rebuild or a re-import of the same shape produces: the physical faces are
+// identical, but the kernel's positional "FaceN" ordinals no longer line up.
+TopoDS_Shape withReversedFaceOrder(const TopoDS_Shape& solid)
+{
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(solid, TopAbs_FACE, faces);
+
+    BRep_Builder builder;
+    TopoDS_Shell shell;
+    builder.MakeShell(shell);
+    for (int i = faces.Extent(); i >= 1; --i) {
+        builder.Add(shell, faces(i));
+    }
+    TopoDS_Solid rebuilt;
+    builder.MakeSolid(rebuilt);
+    builder.Add(rebuilt, shell);
+    return rebuilt;
+}
+}  // namespace
 
 // NRef is the neutral stored form of a leaf reference. These tests exercise the
 // two-regime capture/resolve on live features: a box (role regime, symmetry-proof)
@@ -138,4 +170,48 @@ TEST_F(NeutralRefTest, degradesOnBadRef)
     goneSignature.kind = "face";
     goneSignature.signature = "not-a-real-signature";
     EXPECT_TRUE(resolveFaceRef(goneSignature, *box).empty());
+}
+
+// The payoff. Capture a reference on one box, then resolve it against an
+// independently-numbered rebuild of the same box -- the merge situation, where the
+// two branches wrote the same geometry with different kernel face ordinals. The
+// stored "FaceN" now denotes a DIFFERENT physical face on the rebuild (the bug the
+// whole layer exists to cure); the NRef, held by role, still finds the correct +X
+// face at its new ordinal.
+TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
+{
+    Part::Box* branchA = makeBox();
+
+    // Find the +X face's sub-name on branch A and capture a reference to it.
+    std::string plusXOnA;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        if (captureBoxFaceRole(*branchA, sub) == "+X") {
+            plusXOnA = sub;
+        }
+    }
+    ASSERT_FALSE(plusXOnA.empty());
+    const NRef ref = captureFaceRef(*branchA, plusXOnA);
+    ASSERT_EQ(ref.role, "+X");
+
+    // Branch B: the same box, rebuilt with a different internal face numbering.
+    Part::Box* branchB = makeBox();
+    branchB->Shape.setValue(withReversedFaceOrder(branchA->Shape.getValue()));
+    // Sanity: the rebuild is a well-formed box that still has all six axis faces.
+    std::set<std::string> rolesOnB;
+    for (int i = 1; i <= 6; ++i) {
+        rolesOnB.insert(captureBoxFaceRole(*branchB, "Face" + std::to_string(i)));
+    }
+    ASSERT_EQ(rolesOnB, (std::set<std::string> {"+X", "-X", "+Y", "-Y", "+Z", "-Z"}));
+
+    // The raw stored ordinal is now STALE: on branch B it names a different face,
+    // not the +X face the reference meant.
+    EXPECT_NE(captureBoxFaceRole(*branchB, plusXOnA), "+X");
+
+    // The NRef resolves correctly: a different ordinal than was stored, but genuinely
+    // the +X face -- the reference survived the renumbering the raw index could not.
+    const std::string resolvedOnB = resolveFaceRef(ref, *branchB);
+    ASSERT_FALSE(resolvedOnB.empty());
+    EXPECT_NE(resolvedOnB, plusXOnA);
+    EXPECT_EQ(captureBoxFaceRole(*branchB, resolvedOnB), "+X");
 }
