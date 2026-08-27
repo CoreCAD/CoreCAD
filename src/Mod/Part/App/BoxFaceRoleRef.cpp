@@ -39,7 +39,7 @@ std::string captureBoxFaceRole(const Feature& feature, const std::string& subNam
     const TopoDS_Shape worldFace = localFace.Moved(loc);
     const gp_Trsf localToWorld = worldSolid.Location().Transformation();
 
-    return primitiveBoxFaceRole(worldFace, worldSolid, localToWorld);
+    return primitiveFaceRole(worldFace, worldSolid, localToWorld);
 }
 
 std::string resolveBoxFaceRole(const Feature& feature, const std::string& role)
@@ -53,7 +53,7 @@ std::string resolveBoxFaceRole(const Feature& feature, const std::string& role)
     const TopoDS_Shape worldSolid = stored.getShape().Moved(loc);
     const gp_Trsf localToWorld = worldSolid.Location().Transformation();
 
-    const TopoDS_Shape worldFace = resolveBoxFaceByRole(worldSolid, localToWorld, role);
+    const TopoDS_Shape worldFace = resolveFaceByRole(worldSolid, localToWorld, role);
     if (worldFace.IsNull()) {
         return {};
     }

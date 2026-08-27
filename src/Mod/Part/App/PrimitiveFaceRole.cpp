@@ -9,6 +9,7 @@
 
 # include <BRepAdaptor_Surface.hxx>
 # include <BRepGProp.hxx>
+# include <GeomAbs_SurfaceType.hxx>
 # include <GProp_GProps.hxx>
 # include <TopExp.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
@@ -51,24 +52,11 @@ gp_Pnt centreOfMass(const TopoDS_Shape& shape, bool linearFace)
     return props.CentreOfMass();
 }
 
-}  // namespace
-
-std::string primitiveBoxFaceRole(
-    const TopoDS_Shape& face,
-    const TopoDS_Shape& solid,
-    const gp_Trsf& localToWorld
-)
+// Name a planar face by the local axis it faces. Used for the six faces of a box
+// and the flat end caps of a round primitive alike.
+std::string planarAxisRole(const TopoDS_Shape& face, const TopoDS_Shape& solid, const gp_Trsf& localToWorld)
 {
-    if (face.IsNull() || face.ShapeType() != TopAbs_FACE || solid.IsNull()) {
-        return {};
-    }
-
-    BRepAdaptor_Surface surf(TopoDS::Face(face));
-    if (surf.GetType() != GeomAbs_Plane) {
-        return {};  // a box face is planar; anything else is not this regime's concern
-    }
-
-    // Which side of the box centre this face sits on, read in the local frame.
+    // Which side of the solid centre this face sits on, read in the local frame.
     // Both centroids are in world; their difference cancels the placement's
     // translation, and the rotation names the axis. Centroids carry through a
     // rigid motion exactly, so this is invariant to how the feature is posed.
@@ -89,7 +77,37 @@ std::string primitiveBoxFaceRole(
     return best;
 }
 
-TopoDS_Shape resolveBoxFaceByRole(
+}  // namespace
+
+std::string primitiveFaceRole(
+    const TopoDS_Shape& face,
+    const TopoDS_Shape& solid,
+    const gp_Trsf& localToWorld
+)
+{
+    if (face.IsNull() || face.ShapeType() != TopAbs_FACE || solid.IsNull()) {
+        return {};
+    }
+
+    // One vocabulary keyed off the surface type. A planar face is placed on an
+    // axis; a round lateral face is the "Side"; a closed round face is the whole
+    // "Surface". Any other surface type is not a primitive this regime names.
+    BRepAdaptor_Surface surf(TopoDS::Face(face));
+    switch (surf.GetType()) {
+        case GeomAbs_Plane:
+            return planarAxisRole(face, solid, localToWorld);
+        case GeomAbs_Cylinder:
+        case GeomAbs_Cone:
+            return "Side";
+        case GeomAbs_Sphere:
+        case GeomAbs_Torus:
+            return "Surface";
+        default:
+            return {};
+    }
+}
+
+TopoDS_Shape resolveFaceByRole(
     const TopoDS_Shape& solid,
     const gp_Trsf& localToWorld,
     const std::string& role
@@ -99,17 +117,17 @@ TopoDS_Shape resolveBoxFaceByRole(
         return {};
     }
 
-    // Read the role of every planar face and keep the unique one that matches.
-    // A box has exactly one face per axis, so a healthy solid yields one match;
-    // zero or several means the role is gone or the solid is malformed, and we
-    // hand back null rather than bind a guess.
+    // Read the role of every face and keep the unique one that matches. A healthy
+    // primitive has exactly one face per role, so it yields one match; zero or
+    // several means the role is gone or the solid is malformed, and we hand back
+    // null rather than bind a guess.
     TopTools_IndexedMapOfShape faces;
     TopExp::MapShapes(solid, TopAbs_FACE, faces);
 
     TopoDS_Shape match;
     for (int i = 1; i <= faces.Extent(); ++i) {
         const TopoDS_Shape& face = faces(i);
-        if (primitiveBoxFaceRole(face, solid, localToWorld) != role) {
+        if (primitiveFaceRole(face, solid, localToWorld) != role) {
             continue;
         }
         if (!match.IsNull()) {
