@@ -4,6 +4,7 @@ add_executable(PartDesign_tests_run
         BackwardCompatibility.cpp
         BodyShapeCapability.cpp
         DatumPlane.cpp
+        FeatureDressUp.cpp
         ShapeBinder.cpp
         Pad.cpp
         PadRecipe.cpp

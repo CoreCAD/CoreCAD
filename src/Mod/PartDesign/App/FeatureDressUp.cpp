@@ -37,7 +37,10 @@
 #include "FeatureDressUp.h"
 #include <Base/Console.h>
 #include <App/Document.h>
+#include <App/PropertyStandard.h>
 #include <Base/Exception.h>
+#include "Mod/Part/App/NeutralRef.h"
+#include "Mod/Part/App/PartFeature.h"
 #include "Mod/Part/App/TopoShapeMapper.h"
 
 FC_LOG_LEVEL_INIT("PartDesign", true, true)
@@ -61,6 +64,14 @@ DressUp::DressUp()
         App::Prop_None,
         "Include the base additive/subtractive shape when used in pattern features.\n"
         "If disabled, only the dressed part of the shape is used for patterning."
+    );
+
+    ADD_PROPERTY_TYPE(
+        SubRefs,
+        (),
+        "Base",
+        App::PropertyType(App::Prop_Hidden | App::Prop_Output),
+        "Durable references for the picked sub-elements"
     );
 
     AddSubShape.setStatus(App::Property::Output, true);
@@ -270,6 +281,13 @@ void DressUp::onChanged(const App::Property* prop)
         if (BaseFeature.getValue() && Base.getValue() != BaseFeature.getValue()) {
             BaseFeature.setValue(Base.getValue());
         }
+        // Record a durable reference for each picked sub-element at selection time, so
+        // a later rebuild that renumbers the base's edges/faces can re-find them. Not
+        // during restore (SubRefs is read from the file) or a transaction replay.
+        if (getDocument() && !getDocument()->testStatus(App::Document::Restoring)
+            && !getDocument()->isPerformingTransaction()) {
+            captureSubRefs();
+        }
     }
     else if (prop == &Shape || prop == &SupportTransform) {
         if (!getDocument()->testStatus(App::Document::Restoring)
@@ -286,6 +304,50 @@ void DressUp::onChanged(const App::Property* prop)
 void DressUp::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase)
 {
     relinkToMatchingSubelements(Base, oldBase, newBase);
+}
+
+void DressUp::captureSubRefs()
+{
+    auto* baseFeat = freecad_cast<Part::Feature*>(Base.getValue());
+    const std::vector<std::string>& subs = Base.getSubValues();
+    if (!baseFeat || subs.empty()) {
+        if (!SubRefs.getValues().empty()) {
+            SubRefs.setValues(std::vector<std::string>());
+        }
+        return;
+    }
+
+    std::vector<std::string> refs;
+    refs.reserve(subs.size());
+    for (const std::string& sub : subs) {
+        refs.push_back(Part::toNeutralString(Part::captureSubRef(*baseFeat, sub)));
+    }
+    if (refs != SubRefs.getValues()) {
+        SubRefs.setValues(refs);
+    }
+}
+
+int DressUp::rebindSubsFromRefs()
+{
+    auto* baseFeat = freecad_cast<Part::Feature*>(Base.getValue());
+    std::vector<std::string> subs = Base.getSubValues();
+    const std::vector<std::string>& refs = SubRefs.getValues();
+    if (!baseFeat || refs.size() != subs.size()) {
+        return 0;  // no base, or refs not aligned with the current selection
+    }
+
+    int changed = 0;
+    for (std::size_t i = 0; i < subs.size(); ++i) {
+        const std::string rebound = Part::resolveSubRef(Part::fromNeutralString(refs[i]), *baseFeat);
+        if (!rebound.empty() && rebound != subs[i]) {
+            subs[i] = rebound;
+            ++changed;
+        }
+    }
+    if (changed > 0) {
+        Base.setValue(Base.getValue(), subs);
+    }
+    return changed;
 }
 
 void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShape)
