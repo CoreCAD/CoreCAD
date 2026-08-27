@@ -9,6 +9,8 @@
 # include <TopoDS_Shape.hxx>
 #endif
 
+#include <App/Document.h>
+
 #include "NeutralRef.h"
 #include "BoxFaceRoleRef.h"
 #include "FeaturePartBox.h"
@@ -120,6 +122,27 @@ NRef fromNeutralString(const std::string& text)
     ref.role = body.substr(p2 + 1, p3 - p2 - 1);
     ref.signature = body.substr(p3 + 1);
     return ref;
+}
+
+NRefBinding bindInDocument(const NRef& ref, const App::Document& doc)
+{
+    if (ref.kind.empty() || ref.featureUid.empty()) {
+        return {};  // null ref names no feature to bind
+    }
+
+    // The Uid is the join key: find the feature that carries this identity, whatever
+    // face ordinals its own rebuild produced, and resolve the sub-name on it.
+    for (const Feature* feature : doc.getObjectsOfType<Feature>()) {
+        if (feature->Uid.getValueStr() != ref.featureUid) {
+            continue;
+        }
+        const std::string subName = resolveFaceRef(ref, *feature);
+        if (subName.empty()) {
+            return {};  // right feature, but its sub-shape is gone -> unbound, not a guess
+        }
+        return {feature, subName};
+    }
+    return {};  // no feature in this document carries the ref's identity
 }
 
 }  // namespace Part

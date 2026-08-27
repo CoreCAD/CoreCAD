@@ -22,10 +22,12 @@
 #include "Mod/Part/App/NeutralRef.h"
 #include "Mod/Part/App/PrimitiveFeature.h"
 
+using Part::bindInDocument;
 using Part::captureBoxFaceRole;
 using Part::captureFaceRef;
 using Part::fromNeutralString;
 using Part::NRef;
+using Part::NRefBinding;
 using Part::resolveFaceRef;
 using Part::toNeutralString;
 
@@ -282,4 +284,60 @@ TEST_F(NeutralRefTest, serializedRefBindsAcrossRebuild)
     const std::string resolvedOnB = resolveFaceRef(reloaded, *branchB);
     ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_EQ(captureBoxFaceRole(*branchB, resolvedOnB), "+X");
+}
+
+// The merge consumer. Two independent documents -- two files -- each with the same
+// authored box (shared durable Uid, the identity that survives a branch) but its own
+// kernel face numbering. A reference captured and serialized on doc A is read back and
+// bound against doc B WITHOUT any live pointer into B: the consumer finds the feature
+// by its Uid and resolves the current sub-name. This is the file-to-file merge step,
+// and the only test where featureUid does real work.
+TEST_F(NeutralRefTest, bindInDocumentFindsFeatureByUidAcrossFiles)
+{
+    Part::Box* boxA = makeBox();
+
+    std::string plusXOnA;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        if (captureBoxFaceRole(*boxA, sub) == "+X") {
+            plusXOnA = sub;
+        }
+    }
+    ASSERT_FALSE(plusXOnA.empty());
+    const std::string stored = toNeutralString(captureFaceRef(*boxA, plusXOnA));
+
+    // Doc B: a second file. The same authored box carries the same Uid (its identity
+    // rode across the branch), but the rebuild numbered its faces differently.
+    App::Document* docB = App::GetApplication().newDocument("neutralRefMergeTarget");
+    auto* boxB = docB->addObject<Part::Box>();
+    boxB->Length.setValue(30.0);
+    boxB->Width.setValue(20.0);
+    boxB->Height.setValue(10.0);
+    docB->recompute();
+    boxB->Uid.setValue(boxA->Uid.getValueStr());
+    boxB->Shape.setValue(withReversedFaceOrder(boxA->Shape.getValue()));
+
+    // Consume the stored reference against the whole document -- no pointer to boxB.
+    const NRefBinding bound = bindInDocument(fromNeutralString(stored), *docB);
+    ASSERT_NE(bound.feature, nullptr);
+    EXPECT_EQ(bound.feature, boxB);  // found by Uid alone
+    ASSERT_FALSE(bound.subName.empty());
+    EXPECT_EQ(captureBoxFaceRole(*boxB, bound.subName), "+X");  // the correct physical face
+
+    App::GetApplication().closeDocument(docB->getName());
+}
+
+// A reference whose feature is absent from the target document binds to nothing --
+// no feature carries its Uid, so there is no face to guess at.
+TEST_F(NeutralRefTest, bindInDocumentReportsUnboundWhenFeatureAbsent)
+{
+    Part::Box* box = makeBox();
+    const std::string stored = toNeutralString(captureFaceRef(*box, "Face1"));
+
+    App::Document* other = App::GetApplication().newDocument("neutralRefEmptyTarget");
+    const NRefBinding bound = bindInDocument(fromNeutralString(stored), *other);
+    EXPECT_EQ(bound.feature, nullptr);
+    EXPECT_TRUE(bound.subName.empty());
+
+    App::GetApplication().closeDocument(other->getName());
 }

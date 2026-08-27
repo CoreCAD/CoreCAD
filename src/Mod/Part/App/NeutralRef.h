@@ -7,6 +7,11 @@
 #include <string>
 #include <Mod/Part/PartGlobal.h>
 
+namespace App
+{
+class Document;
+}
+
 namespace Part
 {
 
@@ -91,6 +96,38 @@ PartExport std::string toNeutralString(const NRef& ref);
  *         well-formed NRef string of a known version
  */
 PartExport NRef fromNeutralString(const std::string& text);
+
+/**
+ * The live binding a stored NRef resolves to inside a target document: the feature
+ * that now carries the referenced sub-shape, and its current positional sub-name.
+ */
+struct PartExport NRefBinding
+{
+    const Feature* feature {nullptr};  ///< the located owning feature; null if unbound
+    std::string subName;               ///< its current sub-name for the ref; empty if unbound
+};
+
+/**
+ * Consume a stored NRef against a whole document -- the cross-file merge step.
+ *
+ * This is where @c featureUid earns its place. The caller holds a reference lifted
+ * from another saved version of a design and has no live pointer into @p doc; the
+ * consumer finds the feature whose durable Uid the reference names (the same
+ * authored feature, whatever face ordinals its own rebuild happened to produce) and
+ * resolves the current sub-name on it. A merge that brings a downstream feature from
+ * one branch onto the same primitive on another rides through this call.
+ *
+ * The Uid, not a positional index, is the join key: the two branches share the
+ * feature's identity even when their kernel face numbering diverges.
+ *
+ * @param ref an NRef, e.g. one just read back via fromNeutralString
+ * @param doc the document to bind against
+ * @return the live binding; a null binding (null @c feature, empty @c subName) if no
+ *         feature in @p doc carries the ref's Uid, or its sub-shape is gone or not
+ *         uniquely matched. A partial location (feature found, sub-shape lost) still
+ *         reports unbound -- never a feature paired with an empty sub-name.
+ */
+PartExport NRefBinding bindInDocument(const NRef& ref, const App::Document& doc);
 
 }  // namespace Part
 
