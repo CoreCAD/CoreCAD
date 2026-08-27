@@ -144,12 +144,28 @@ public:
     App::PropertyEnumeration Join;
     App::PropertyBool Intersection;
     App::PropertyBool SelfIntersection;
+    /// Durable neutral references (Part::NRef) for the selected faces, one per sub of
+    /// @c Faces, captured on execute. Carried alongside the positional subs so the
+    /// selection can be re-bound after the base is rebuilt with different face
+    /// ordinals (a merge). Hidden: an implementation detail, not user-facing.
+    App::PropertyStringList FaceRefs;
 
     /** @name methods override feature */
     //@{
     /// recalculate the feature
     App::DocumentObjectExecReturn* execute() override;
     short mustExecute() const override;
+
+    /**
+     * Rewrite the positional sub-names in @c Faces from the durable @c FaceRefs.
+     *
+     * Resolves each stored NRef against the current base solid and replaces the
+     * matching @c Faces sub with the sub-name the reference now denotes -- the step
+     * that heals a selection gone stale because the base was rebuilt with a different
+     * face numbering. A ref that no longer resolves leaves its sub untouched (a lost
+     * face is not silently rebound to a survivor). Returns the number of subs changed.
+     */
+    int rebindFacesFromRefs();
     const char* getViewProviderName() const override
     {
         return "PartGui::ViewProviderThickness";

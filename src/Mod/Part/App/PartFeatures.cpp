@@ -46,6 +46,7 @@
 #include <App/Link.h>
 
 #include <App/Document.h>
+#include "NeutralRef.h"
 #include "PartFeatures.h"
 #include "TopoShapeOpCode.h"
 
@@ -374,6 +375,13 @@ Thickness::Thickness()
     Join.setEnums(JoinEnums);
     ADD_PROPERTY_TYPE(Intersection, (false), "Thickness", App::Prop_None, "Intersection");
     ADD_PROPERTY_TYPE(SelfIntersection, (false), "Thickness", App::Prop_None, "Self Intersection");
+    ADD_PROPERTY_TYPE(
+        FaceRefs,
+        (),
+        "Thickness",
+        App::PropertyType(App::Prop_Hidden | App::Prop_Output),
+        "Durable references for the selected faces"
+    );
 
     // Value should have length as unit
     Value.setUnit(Base::Unit::Length);
@@ -436,6 +444,19 @@ App::DocumentObjectExecReturn* Thickness::execute()
             return new App::DocumentObjectExecReturn("Invalid face selection");
         }
     }
+
+    // Capture a durable reference for each selected face (additive: the positional
+    // subs above stay the source of truth for this execute). Carried in FaceRefs so
+    // the selection can be re-bound if the base is later rebuilt with a different face
+    // numbering -- see rebindFacesFromRefs().
+    if (auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue())) {
+        std::vector<std::string> refs;
+        for (const std::string& sub : Faces.getSubValues()) {
+            refs.push_back(toNeutralString(captureFaceRef(*baseFeat, sub)));
+        }
+        FaceRefs.setValues(refs);
+    }
+
     double thickness = Value.getValue();
     double tol = Precision::Confusion();
     bool inter = Intersection.getValue();
@@ -448,6 +469,29 @@ App::DocumentObjectExecReturn* Thickness::execute()
             .makeElementThickSolid(base, shapes, thickness, tol, inter, self, mode, static_cast<JoinType>(join))
     );
     return Part::Feature::execute();
+}
+
+int Thickness::rebindFacesFromRefs()
+{
+    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    const std::vector<std::string>& refs = FaceRefs.getValues();
+    std::vector<std::string> subs = Faces.getSubValues();
+    if (baseFeat == nullptr || refs.size() != subs.size()) {
+        return 0;  // no base, or refs not aligned with the current selection
+    }
+
+    int changed = 0;
+    for (std::size_t i = 0; i < subs.size(); ++i) {
+        const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+        if (!rebound.empty() && rebound != subs[i]) {
+            subs[i] = rebound;
+            ++changed;
+        }
+    }
+    if (changed > 0) {
+        Faces.setValue(Faces.getValue(), subs);
+    }
+    return changed;
 }
 
 // ----------------------------------------------------------------------------

@@ -2,6 +2,13 @@
 
 #include <gtest/gtest.h>
 
+#include <BRep_Builder.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
+
+#include "Mod/Part/App/BoxFaceRoleRef.h"
 #include "Mod/Part/App/PartFeatures.h"
 #include <src/App/InitApplication.h>
 
@@ -9,6 +16,27 @@
 
 using namespace Part;
 using namespace PartTestHelpers;
+
+namespace
+{
+// Rebuild a solid with its faces enumerated in reverse -- same geometry, a different
+// internal face numbering; stands in for an independent rebuild of the same design.
+TopoDS_Shape withReversedFaceOrder(const TopoDS_Shape& solid)
+{
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(solid, TopAbs_FACE, faces);
+    BRep_Builder builder;
+    TopoDS_Shell shell;
+    builder.MakeShell(shell);
+    for (int i = faces.Extent(); i >= 1; --i) {
+        builder.Add(shell, faces(i));
+    }
+    TopoDS_Solid rebuilt;
+    builder.MakeSolid(rebuilt);
+    builder.Add(rebuilt, shell);
+    return rebuilt;
+}
+}  // namespace
 
 class PartFeaturesTest: public ::testing::Test, public PartTestHelperClass
 {
@@ -142,6 +170,49 @@ TEST_F(PartFeaturesTest, testThickness)
     EXPECT_TRUE(boxesMatch(bb, Base::BoundBox3d(0, -0.25, -0.25, 1.25, 2.25, 3.25)));
     // Assert element map is correct
     EXPECT_EQ(51, elementMap.size());
+}
+
+// A real feature carries the durable reference layer. Thickness captures an NRef per
+// selected face on execute; when the base is later rebuilt with a different face
+// numbering (the merge situation), its stored positional sub names the WRONG physical
+// face, and rebindFacesFromRefs() heals the selection back onto the intended face from
+// the durable ref -- the first proof the layer survives contact with a live feature.
+TEST_F(PartFeaturesTest, thicknessRebindsFacesFromDurableRefsAfterRebuild)
+{
+    _doc->recompute();
+    Part::Box* box = _boxes[0];
+
+    // Select the +X face of the box.
+    std::string plusX;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        if (captureBoxFaceRole(*box, sub) == "+X") {
+            plusX = sub;
+        }
+    }
+    ASSERT_FALSE(plusX.empty());
+
+    auto* th = _doc->addObject<Thickness>();
+    th->Faces.setValue(box, {plusX});
+    th->Value.setValue(0.25);
+    th->execute();  // captures the durable ref for the selection
+
+    ASSERT_EQ(th->FaceRefs.getValues().size(), 1U);
+    ASSERT_FALSE(th->FaceRefs.getValues()[0].empty());
+
+    // The merge: the base is rebuilt with reversed face numbering. The stored
+    // positional sub now denotes a DIFFERENT physical face -- no longer the +X face.
+    box->Shape.setValue(withReversedFaceOrder(box->Shape.getValue()));
+    ASSERT_EQ(th->Faces.getSubValues()[0], plusX);     // sub string unchanged...
+    ASSERT_NE(captureBoxFaceRole(*box, plusX), "+X");  // ...but now names the wrong face
+
+    // Heal from the durable ref: the selection returns to the intended +X face, at
+    // whatever ordinal it now carries.
+    const int changed = th->rebindFacesFromRefs();
+    EXPECT_EQ(changed, 1);
+    const std::string healed = th->Faces.getSubValues()[0];
+    EXPECT_NE(healed, plusX);
+    EXPECT_EQ(captureBoxFaceRole(*box, healed), "+X");
 }
 
 TEST_F(PartFeaturesTest, testRefine)
