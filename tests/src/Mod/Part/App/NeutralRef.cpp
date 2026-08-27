@@ -15,12 +15,17 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/IndexedName.h>
+#include <App/MappedName.h>
+#include <Base/Placement.h>
 #include <src/App/InitApplication.h>
 
 #include "Mod/Part/App/BoxFaceRoleRef.h"
 #include "Mod/Part/App/FeaturePartBox.h"
+#include "Mod/Part/App/FeaturePartCut.h"
 #include "Mod/Part/App/NeutralRef.h"
 #include "Mod/Part/App/PrimitiveFeature.h"
+#include "Mod/Part/App/TopoShape.h"
 
 using Part::bindInDocument;
 using Part::captureBoxFaceRole;
@@ -52,6 +57,36 @@ TopoDS_Shape withReversedFaceOrder(const TopoDS_Shape& solid)
     builder.MakeSolid(rebuilt);
     builder.Add(rebuilt, shell);
     return rebuilt;
+}
+
+// A box-minus-box cut in @p doc: the smallest design with genuinely DERIVED faces
+// (walls the cut created, carrying element-map provenance names). Returns the cut
+// and its two operands so a test can align their durable Uids across two documents.
+struct CutDesign
+{
+    Part::Cut* cut {nullptr};
+    Part::Box* base {nullptr};
+    Part::Box* tool {nullptr};
+};
+
+CutDesign buildCut(App::Document* doc)
+{
+    auto* b1 = doc->addObject<Part::Box>();
+    b1->Length.setValue(30.0);
+    b1->Width.setValue(20.0);
+    b1->Height.setValue(10.0);
+
+    auto* b2 = doc->addObject<Part::Box>();
+    b2->Length.setValue(10.0);
+    b2->Width.setValue(10.0);
+    b2->Height.setValue(40.0);
+    b2->Placement.setValue(Base::Placement(Base::Vector3d(10, 5, -5), Base::Rotation()));
+
+    auto* cut = doc->addObject<Part::Cut>();
+    cut->Base.setValue(b1);
+    cut->Tool.setValue(b2);
+    doc->recompute();
+    return {cut, b1, b2};
 }
 }  // namespace
 
@@ -230,6 +265,7 @@ TEST_F(NeutralRefTest, neutralStringRoundTripsAllFields)
     EXPECT_EQ(back.featureUid, ref.featureUid);
     EXPECT_EQ(back.kind, ref.kind);
     EXPECT_EQ(back.role, ref.role);
+    EXPECT_EQ(back.prov, ref.prov);
     EXPECT_EQ(back.signature, ref.signature);
 }
 
@@ -253,8 +289,9 @@ TEST_F(NeutralRefTest, fromNeutralStringRejectsMalformed)
 {
     EXPECT_TRUE(fromNeutralString("").kind.empty());
     EXPECT_TRUE(fromNeutralString("garbage").kind.empty());
-    EXPECT_TRUE(fromNeutralString("NRef|2|uid|face|+X|sig").kind.empty());  // unknown version
-    EXPECT_TRUE(fromNeutralString("NRef|1|uid|face").kind.empty());         // too few fields
+    EXPECT_TRUE(fromNeutralString("NRef|1|uid|face|+X|sig").kind.empty());    // superseded version
+    EXPECT_TRUE(fromNeutralString("NRef|9|uid|face|+X|p|sig").kind.empty());  // unknown version
+    EXPECT_TRUE(fromNeutralString("NRef|2|uid|face|+X").kind.empty());        // too few fields
 }
 
 // End to end: a reference written out as a neutral string, read back as if from a
@@ -340,4 +377,63 @@ TEST_F(NeutralRefTest, bindInDocumentReportsUnboundWhenFeatureAbsent)
     EXPECT_TRUE(bound.subName.empty());
 
     App::GetApplication().closeDocument(other->getName());
+}
+
+// The DERIVED regime across files. A cut creates walls that no primitive owns; each
+// carries a provenance name in the element map that embeds the OPERAND's per-document
+// object tag. Captured, neutralized (tag -> durable Uid), serialized on branch A, the
+// reference binds the same wall on a second document -- and the RAW provenance name,
+// still carrying branch A's tags, does NOT, proving portability comes from the
+// neutralization, not from the name happening to match.
+TEST_F(NeutralRefTest, derivedFaceBindsAcrossFilesWhereRawProvenanceFails)
+{
+    const CutDesign a = buildCut(_doc);
+
+    // Pick a face the cut genuinely created (its provenance names the CUT op).
+    std::string cutFaceOnA;
+    NRef ref;
+    const int faceCount = static_cast<int>(a.cut->Shape.getShape().countSubShapes(TopAbs_FACE));
+    for (int i = 1; i <= faceCount; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        const NRef r = captureFaceRef(*a.cut, sub);
+        if (r.prov.find(";:M;CUT") != std::string::npos) {
+            cutFaceOnA = sub;
+            ref = r;
+            break;
+        }
+    }
+    ASSERT_FALSE(cutFaceOnA.empty()) << "no cut-created wall found";
+    EXPECT_TRUE(ref.role.empty()) << "a derived face carries no primitive role";
+    ASSERT_FALSE(ref.prov.empty());
+
+    const std::string stored = toNeutralString(ref);
+
+    // Branch B: the same authored design in a SECOND document -- same durable Uids
+    // (identities rode across the fork), its own per-document object tags.
+    App::Document* docB = App::GetApplication().newDocument("neutralRefCutTarget");
+    const CutDesign b = buildCut(docB);
+    b.base->Uid.setValue(a.base->Uid.getValueStr());
+    b.tool->Uid.setValue(a.tool->Uid.getValueStr());
+    b.cut->Uid.setValue(a.cut->Uid.getValueStr());
+
+    // The RAW provenance name (branch A's tags) must NOT bind on branch B.
+    const Data::MappedName rawA = a.cut->Shape.getShape().getMappedName(
+        Data::IndexedName(cutFaceOnA.c_str())
+    );
+    ASSERT_FALSE(rawA.empty());
+    // Positive control: the raw name resolves on its OWN document (so the null on B
+    // below is specifically the tag mismatch, not a name the map never resolves).
+    EXPECT_EQ(a.cut->Shape.getShape().getIndexedName(rawA).toString(), cutFaceOnA);
+    EXPECT_TRUE(b.cut->Shape.getShape().getIndexedName(rawA).isNull())
+        << "raw provenance name carrying branch A tags must not bind on branch B";
+
+    // The neutralized reference DOES bind: found by Uid, resolved by provenance.
+    const NRefBinding bound = bindInDocument(fromNeutralString(stored), *docB);
+    ASSERT_NE(bound.feature, nullptr);
+    EXPECT_EQ(bound.feature, b.cut);
+    ASSERT_FALSE(bound.subName.empty());
+    // The bound face carries the same neutral provenance identity as the reference.
+    EXPECT_EQ(captureFaceRef(*b.cut, bound.subName).prov, ref.prov);
+
+    App::GetApplication().closeDocument(docB->getName());
 }

@@ -21,25 +21,28 @@ class Feature;
  * A kernel-neutral reference to a sub-shape of a feature -- the stored form a
  * durable reference takes, in our own schema rather than a kernel's dialect.
  *
- * This is the leaf regime of the two-regime identity model (the derived regime,
- * a neutralized provenance name, is a later bite and is not carried here yet). A
- * leaf sub-shape -- one with no authored construction history -- is identified
- * two ways, in order of strength:
+ * Both regimes of the two-regime identity model live here. A sub-shape is
+ * identified by up to three handles, tried in order of strength:
  *
  *  - role: for a primitive feature that knows its faces parametrically (a box has
  *    a +X, -X, ... face by construction), the symmetry-proof intent name. Empty
- *    when the owning feature is not a role-bearing primitive.
- *  - signature: the geometric signature (Part::subShapeSignature), the identity
- *    for a history-less import leaf, and a cross-check otherwise. Always recorded.
+ *    when the owning feature is not a role-bearing primitive. (Leaf regime.)
+ *  - prov: for a face produced by an operation (a cut, a fuse), its history-derived
+ *    provenance name from the element map, made portable between files by rewriting
+ *    each per-document object tag to that object's durable Uid. Empty for a leaf
+ *    with no construction history. (Derived regime.)
+ *  - signature: the geometric signature (Part::subShapeSignature), the identity for
+ *    a history-less import leaf, and a cross-check otherwise. Always recorded.
  *
- * Resolution prefers the role when present (it survives a self-symmetry that the
- * world-read signature aliases) and falls back to the signature otherwise.
+ * Resolution prefers the role, then the prov name, then the signature -- the earlier
+ * handles survive a self-symmetry that the world-read signature aliases.
  */
 struct PartExport NRef
 {
     std::string featureUid;  ///< owning feature's durable Uid
     std::string kind;        ///< "face" (the only supported grain for now); empty = null ref
     std::string role;        ///< leaf role ("+X".."-Z") for a primitive; empty otherwise
+    std::string prov;        ///< neutralized provenance name for a derived face; empty otherwise
     std::string signature;   ///< geometric signature of the sub-shape (feature-local frame)
 };
 
@@ -63,8 +66,10 @@ PartExport NRef captureFaceRef(const Feature& feature, const std::string& subNam
  * it -- the inverse of captureFaceRef.
  *
  * Two-regime: a ref with a role resolves through the role (symmetry-proof); a ref
- * without one resolves by a unique geometric-signature match. Either way a lost
- * or ambiguous target yields the empty string, never a guessed binding.
+ * with a prov name resolves through the element map (the provenance name is first
+ * rewritten from durable Uids back to this document's object tags); a bare leaf
+ * resolves by a unique geometric-signature match. Either way a lost or ambiguous
+ * target yields the empty string, never a guessed binding.
  *
  * @param ref     an NRef as produced by captureFaceRef
  * @param feature the feature to resolve against (recomputed or moved)
@@ -77,11 +82,10 @@ PartExport std::string resolveFaceRef(const NRef& ref, const Feature& feature);
  * Serialize an NRef to its neutral string form -- the shape it takes when written
  * to a file, so a reference can travel between saved versions of a design.
  *
- * The form is a versioned, pipe-delimited line: @c "NRef|1|<uid>|<kind>|<role>|
- * <signature>". It speaks no kernel's dialect; the signature is the last field so
- * it is read as the remainder, robust to any delimiter a future signature might
- * contain. The version tag lets the schema grow (the derived-regime provenance
- * name is a later field).
+ * The form is a versioned, pipe-delimited line: @c "NRef|2|<uid>|<kind>|<role>|
+ * <prov>|<signature>". It speaks no kernel's dialect; the signature is the last
+ * field so it is read as the remainder, robust to any delimiter a future signature
+ * might contain. The version tag lets the schema grow.
  *
  * @param ref the reference to serialize
  * @return the neutral string form
