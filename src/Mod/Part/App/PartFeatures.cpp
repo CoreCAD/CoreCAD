@@ -438,23 +438,42 @@ App::DocumentObjectExecReturn* Thickness::execute()
     if (base.countSubShapes(TopAbs_SOLID) != 1) {
         return new App::DocumentObjectExecReturn("Source shape is not single solid.");
     }
-    for (auto& sub : Faces.getSubValues(true)) {
+    // The durable references drive the selection. Resolve each stored NRef against the
+    // current base and use the sub-name it now denotes, so a selection gone stale
+    // because the base was rebuilt with a different face numbering (a merge) self-heals
+    // here -- no user action, on the next recompute. The stored positional sub is a
+    // fallback: used for a face with no usable ref yet (the first execute) or whose ref
+    // no longer resolves. The input property is not mutated; the heal is per-execute.
+    std::vector<std::string> subs = Faces.getSubValues();
+    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    const std::vector<std::string>& refs = FaceRefs.getValues();
+    if (baseFeat != nullptr && refs.size() == subs.size()) {
+        for (std::size_t i = 0; i < subs.size(); ++i) {
+            const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+            if (!rebound.empty()) {
+                subs[i] = rebound;
+            }
+        }
+    }
+
+    for (const std::string& sub : subs) {
         shapes.push_back(base.getSubTopoShape(sub.c_str()));
         if (shapes.back().getShape().ShapeType() != TopAbs_FACE) {
             return new App::DocumentObjectExecReturn("Invalid face selection");
         }
     }
 
-    // Capture a durable reference for each selected face (additive: the positional
-    // subs above stay the source of truth for this execute). Carried in FaceRefs so
-    // the selection can be re-bound if the base is later rebuilt with a different face
-    // numbering -- see rebindFacesFromRefs().
-    if (auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue())) {
-        std::vector<std::string> refs;
-        for (const std::string& sub : Faces.getSubValues()) {
-            refs.push_back(toNeutralString(captureFaceRef(*baseFeat, sub)));
+    // Refresh the durable references from the effective (healed) selection, so the last
+    // good binding is always on record -- and captured on the very first execute.
+    if (baseFeat != nullptr) {
+        std::vector<std::string> newRefs;
+        newRefs.reserve(subs.size());
+        for (const std::string& sub : subs) {
+            newRefs.push_back(toNeutralString(captureFaceRef(*baseFeat, sub)));
         }
-        FaceRefs.setValues(refs);
+        if (newRefs != FaceRefs.getValues()) {
+            FaceRefs.setValues(newRefs);  // only on change -- an unchanged recompute stays clean
+        }
     }
 
     double thickness = Value.getValue();

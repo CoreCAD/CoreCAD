@@ -9,6 +9,7 @@
 #include <TopoDS_Solid.hxx>
 
 #include "Mod/Part/App/BoxFaceRoleRef.h"
+#include "Mod/Part/App/NeutralRef.h"
 #include "Mod/Part/App/PartFeatures.h"
 #include <src/App/InitApplication.h>
 
@@ -213,6 +214,44 @@ TEST_F(PartFeaturesTest, thicknessRebindsFacesFromDurableRefsAfterRebuild)
     const std::string healed = th->Faces.getSubValues()[0];
     EXPECT_NE(healed, plusX);
     EXPECT_EQ(captureBoxFaceRole(*box, healed), "+X");
+}
+
+// Thick: the reference drives execute itself. After the base is rebuilt with a
+// different face numbering, a plain recompute -- with NO manual rebind -- computes on
+// the intended face, because execute resolves the selection through the durable ref
+// before computing and refreshes the ref from the healed selection. Distinguisher: the
+// refreshed ref still reads +X; without the self-heal, execute would have recaptured
+// from the stale positional sub and the ref's role would be some other face.
+TEST_F(PartFeaturesTest, thicknessSelfHealsSelectionOnExecuteAfterRebuild)
+{
+    _doc->recompute();
+    Part::Box* box = _boxes[0];
+
+    std::string plusX;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        if (captureBoxFaceRole(*box, sub) == "+X") {
+            plusX = sub;
+        }
+    }
+    ASSERT_FALSE(plusX.empty());
+
+    auto* th = _doc->addObject<Thickness>();
+    th->Faces.setValue(box, {plusX});
+    th->Value.setValue(0.25);
+    th->execute();  // first execute captures the ref (role +X)
+    ASSERT_EQ(th->FaceRefs.getValues().size(), 1U);
+    ASSERT_EQ(fromNeutralString(th->FaceRefs.getValues()[0]).role, "+X");
+
+    // The merge: rebuild the base with reversed face numbering. The stored positional
+    // sub now names the wrong physical face.
+    box->Shape.setValue(withReversedFaceOrder(box->Shape.getValue()));
+    ASSERT_NE(captureBoxFaceRole(*box, plusX), "+X");
+
+    // A plain recompute of the feature -- no manual rebind -- self-heals.
+    th->execute();
+    EXPECT_EQ(fromNeutralString(th->FaceRefs.getValues()[0]).role, "+X")
+        << "execute must compute on the ref-resolved +X face, not the stale positional sub";
 }
 
 TEST_F(PartFeaturesTest, testRefine)
