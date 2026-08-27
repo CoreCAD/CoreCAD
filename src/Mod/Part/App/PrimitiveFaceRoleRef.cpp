@@ -11,7 +11,7 @@
 # include <gp_Trsf.hxx>
 #endif
 
-#include "BoxFaceRoleRef.h"
+#include "PrimitiveFaceRoleRef.h"
 #include "PartFeature.h"
 #include "PrimitiveFaceRole.h"
 #include "TopoShape.h"
@@ -19,7 +19,7 @@
 namespace Part
 {
 
-std::string captureBoxFaceRole(const Feature& feature, const std::string& subName)
+std::string capturePrimitiveFaceRole(const Feature& feature, const std::string& subName)
 {
     const TopoShape& stored = feature.Shape.getShape();
     if (stored.isNull() || subName.empty()) {
@@ -33,7 +33,7 @@ std::string captureBoxFaceRole(const Feature& feature, const std::string& subNam
 
     // Lift shape and face into the feature's world frame, and read the role in the
     // placement frame that lift carries -- the same world-frame contract the
-    // primitiveBoxFaceRole compute seam was proven against.
+    // primitiveFaceRole compute seam was proven against.
     const TopLoc_Location loc = feature.getLocation();
     const TopoDS_Shape worldSolid = stored.getShape().Moved(loc);
     const TopoDS_Shape worldFace = localFace.Moved(loc);
@@ -42,7 +42,7 @@ std::string captureBoxFaceRole(const Feature& feature, const std::string& subNam
     return primitiveFaceRole(worldFace, worldSolid, localToWorld);
 }
 
-std::string resolveBoxFaceRole(const Feature& feature, const std::string& role)
+std::string resolvePrimitiveFaceRole(const Feature& feature, const std::string& role)
 {
     const TopoShape& stored = feature.Shape.getShape();
     if (stored.isNull() || role.empty()) {

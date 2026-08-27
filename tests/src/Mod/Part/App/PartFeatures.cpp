@@ -8,7 +8,7 @@
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
 
-#include "Mod/Part/App/BoxFaceRoleRef.h"
+#include "Mod/Part/App/PrimitiveFaceRoleRef.h"
 #include "Mod/Part/App/NeutralRef.h"
 #include "Mod/Part/App/PartFeatures.h"
 #include <src/App/InitApplication.h>
@@ -187,7 +187,7 @@ TEST_F(PartFeaturesTest, thicknessRebindsFacesFromDurableRefsAfterRebuild)
     std::string plusX;
     for (int i = 1; i <= 6; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        if (captureBoxFaceRole(*box, sub) == "+X") {
+        if (capturePrimitiveFaceRole(*box, sub) == "+X") {
             plusX = sub;
         }
     }
@@ -204,8 +204,8 @@ TEST_F(PartFeaturesTest, thicknessRebindsFacesFromDurableRefsAfterRebuild)
     // The merge: the base is rebuilt with reversed face numbering. The stored
     // positional sub now denotes a DIFFERENT physical face -- no longer the +X face.
     box->Shape.setValue(withReversedFaceOrder(box->Shape.getValue()));
-    ASSERT_EQ(th->Faces.getSubValues()[0], plusX);     // sub string unchanged...
-    ASSERT_NE(captureBoxFaceRole(*box, plusX), "+X");  // ...but now names the wrong face
+    ASSERT_EQ(th->Faces.getSubValues()[0], plusX);           // sub string unchanged...
+    ASSERT_NE(capturePrimitiveFaceRole(*box, plusX), "+X");  // ...but now names the wrong face
 
     // Heal from the durable ref: the selection returns to the intended +X face, at
     // whatever ordinal it now carries.
@@ -213,7 +213,7 @@ TEST_F(PartFeaturesTest, thicknessRebindsFacesFromDurableRefsAfterRebuild)
     EXPECT_EQ(changed, 1);
     const std::string healed = th->Faces.getSubValues()[0];
     EXPECT_NE(healed, plusX);
-    EXPECT_EQ(captureBoxFaceRole(*box, healed), "+X");
+    EXPECT_EQ(capturePrimitiveFaceRole(*box, healed), "+X");
 }
 
 // Thick: the reference drives execute itself. After the base is rebuilt with a
@@ -230,7 +230,7 @@ TEST_F(PartFeaturesTest, thicknessSelfHealsSelectionOnExecuteAfterRebuild)
     std::string plusX;
     for (int i = 1; i <= 6; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        if (captureBoxFaceRole(*box, sub) == "+X") {
+        if (capturePrimitiveFaceRole(*box, sub) == "+X") {
             plusX = sub;
         }
     }
@@ -246,7 +246,7 @@ TEST_F(PartFeaturesTest, thicknessSelfHealsSelectionOnExecuteAfterRebuild)
     // The merge: rebuild the base with reversed face numbering. The stored positional
     // sub now names the wrong physical face.
     box->Shape.setValue(withReversedFaceOrder(box->Shape.getValue()));
-    ASSERT_NE(captureBoxFaceRole(*box, plusX), "+X");
+    ASSERT_NE(capturePrimitiveFaceRole(*box, plusX), "+X");
 
     // A plain recompute of the feature -- no manual rebind -- self-heals.
     th->execute();

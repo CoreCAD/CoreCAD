@@ -20,7 +20,7 @@
 #include <Base/Placement.h>
 #include <src/App/InitApplication.h>
 
-#include "Mod/Part/App/BoxFaceRoleRef.h"
+#include "Mod/Part/App/PrimitiveFaceRoleRef.h"
 #include "Mod/Part/App/FeaturePartBox.h"
 #include "Mod/Part/App/FeaturePartCut.h"
 #include "Mod/Part/App/NeutralRef.h"
@@ -28,8 +28,8 @@
 #include "Mod/Part/App/TopoShape.h"
 
 using Part::bindInDocument;
-using Part::captureBoxFaceRole;
 using Part::captureFaceRef;
+using Part::capturePrimitiveFaceRole;
 using Part::fromNeutralString;
 using Part::NRef;
 using Part::NRefBinding;
@@ -91,8 +91,9 @@ CutDesign buildCut(App::Document* doc)
 }  // namespace
 
 // NRef is the neutral stored form of a leaf reference. These tests exercise the
-// two-regime capture/resolve on live features: a box (role regime, symmetry-proof)
-// and a cylinder (signature regime -- a non-role-bearing leaf).
+// two-regime capture/resolve on live features: role-bearing primitives (a box, a
+// cylinder -- symmetry-proof) and an ellipsoid, a primitive deliberately outside
+// the role allow-list, standing in for the signature regime a true import falls to.
 class NeutralRefTest: public ::testing::Test
 {
 protected:
@@ -128,6 +129,18 @@ protected:
         cyl->Height.setValue(15.0);
         _doc->recompute();
         return cyl;
+    }
+
+    // A primitive outside the role allow-list: its faces carry no role, so it falls
+    // to the signature regime -- the stand-in for a history-less import leaf.
+    Part::Ellipsoid* makeEllipsoid()
+    {
+        auto* ell = _doc->addObject<Part::Ellipsoid>();
+        ell->Radius1.setValue(4.0);
+        ell->Radius2.setValue(2.0);
+        ell->Radius3.setValue(3.0);
+        _doc->recompute();
+        return ell;
     }
 
     App::Document* _doc {nullptr};
@@ -172,23 +185,45 @@ TEST_F(NeutralRefTest, roleRegimeRoundTripsAndSurvivesEdit)
     EXPECT_EQ(captureFaceRef(*box, resolved).role, ref.role);
 }
 
-// A cylinder is not a role-bearing primitive here, so its faces fall to the
-// signature regime: no role captured, but the geometric signature identifies each
-// face and resolves back to it.
-TEST_F(NeutralRefTest, signatureRegimeForNonBoxRoundTrips)
+// A cylinder is now a role-bearing primitive: every face captures a role from the
+// round-primitive vocabulary (Side, +Z, -Z) and resolves back through it.
+TEST_F(NeutralRefTest, roleRegimeForCylinderRoundTrips)
 {
     Part::Cylinder* cyl = makeCylinder();
 
     const int faceCount = static_cast<int>(cyl->Shape.getShape().countSubShapes(TopAbs_FACE));
     ASSERT_GT(faceCount, 1);
 
+    std::set<std::string> roles;
     for (int i = 1; i <= faceCount; ++i) {
         const std::string sub = "Face" + std::to_string(i);
         const NRef ref = captureFaceRef(*cyl, sub);
         EXPECT_EQ(ref.kind, "face");
-        EXPECT_TRUE(ref.role.empty()) << "a cylinder face should carry no role";
+        ASSERT_FALSE(ref.role.empty()) << "a cylinder face should carry a role";
         ASSERT_FALSE(ref.signature.empty());
         EXPECT_EQ(resolveFaceRef(ref, *cyl), sub);
+        roles.insert(ref.role);
+    }
+    EXPECT_EQ(roles, (std::set<std::string> {"Side", "+Z", "-Z"}));
+}
+
+// A primitive outside the role allow-list (an ellipsoid) falls to the signature
+// regime: no role captured, but the geometric signature identifies the face and
+// resolves back to it -- the path a true history-less import leaf takes.
+TEST_F(NeutralRefTest, signatureRegimeForExcludedPrimitiveRoundTrips)
+{
+    Part::Ellipsoid* ell = makeEllipsoid();
+
+    const int faceCount = static_cast<int>(ell->Shape.getShape().countSubShapes(TopAbs_FACE));
+    ASSERT_GE(faceCount, 1);
+
+    for (int i = 1; i <= faceCount; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        const NRef ref = captureFaceRef(*ell, sub);
+        EXPECT_EQ(ref.kind, "face");
+        EXPECT_TRUE(ref.role.empty()) << "an excluded primitive's face carries no role";
+        ASSERT_FALSE(ref.signature.empty());
+        EXPECT_EQ(resolveFaceRef(ref, *ell), sub);
     }
 }
 
@@ -225,7 +260,7 @@ TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
     std::string plusXOnA;
     for (int i = 1; i <= 6; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        if (captureBoxFaceRole(*branchA, sub) == "+X") {
+        if (capturePrimitiveFaceRole(*branchA, sub) == "+X") {
             plusXOnA = sub;
         }
     }
@@ -239,20 +274,20 @@ TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
     // Sanity: the rebuild is a well-formed box that still has all six axis faces.
     std::set<std::string> rolesOnB;
     for (int i = 1; i <= 6; ++i) {
-        rolesOnB.insert(captureBoxFaceRole(*branchB, "Face" + std::to_string(i)));
+        rolesOnB.insert(capturePrimitiveFaceRole(*branchB, "Face" + std::to_string(i)));
     }
     ASSERT_EQ(rolesOnB, (std::set<std::string> {"+X", "-X", "+Y", "-Y", "+Z", "-Z"}));
 
     // The raw stored ordinal is now STALE: on branch B it names a different face,
     // not the +X face the reference meant.
-    EXPECT_NE(captureBoxFaceRole(*branchB, plusXOnA), "+X");
+    EXPECT_NE(capturePrimitiveFaceRole(*branchB, plusXOnA), "+X");
 
     // The NRef resolves correctly: a different ordinal than was stored, but genuinely
     // the +X face -- the reference survived the renumbering the raw index could not.
     const std::string resolvedOnB = resolveFaceRef(ref, *branchB);
     ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_NE(resolvedOnB, plusXOnA);
-    EXPECT_EQ(captureBoxFaceRole(*branchB, resolvedOnB), "+X");
+    EXPECT_EQ(capturePrimitiveFaceRole(*branchB, resolvedOnB), "+X");
 }
 
 // A serialized NRef round-trips every field through its neutral string form.
@@ -273,8 +308,8 @@ TEST_F(NeutralRefTest, neutralStringRoundTripsAllFields)
 // field must not collapse the format.
 TEST_F(NeutralRefTest, neutralStringRoundTripsSignatureOnly)
 {
-    Part::Cylinder* cyl = makeCylinder();
-    const NRef ref = captureFaceRef(*cyl, "Face1");
+    Part::Ellipsoid* ell = makeEllipsoid();
+    const NRef ref = captureFaceRef(*ell, "Face1");
     ASSERT_TRUE(ref.role.empty());
 
     const NRef back = fromNeutralString(toNeutralString(ref));
@@ -304,7 +339,7 @@ TEST_F(NeutralRefTest, serializedRefBindsAcrossRebuild)
     std::string plusXOnA;
     for (int i = 1; i <= 6; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        if (captureBoxFaceRole(*branchA, sub) == "+X") {
+        if (capturePrimitiveFaceRole(*branchA, sub) == "+X") {
             plusXOnA = sub;
         }
     }
@@ -320,7 +355,7 @@ TEST_F(NeutralRefTest, serializedRefBindsAcrossRebuild)
 
     const std::string resolvedOnB = resolveFaceRef(reloaded, *branchB);
     ASSERT_FALSE(resolvedOnB.empty());
-    EXPECT_EQ(captureBoxFaceRole(*branchB, resolvedOnB), "+X");
+    EXPECT_EQ(capturePrimitiveFaceRole(*branchB, resolvedOnB), "+X");
 }
 
 // The merge consumer. Two independent documents -- two files -- each with the same
@@ -336,7 +371,7 @@ TEST_F(NeutralRefTest, bindInDocumentFindsFeatureByUidAcrossFiles)
     std::string plusXOnA;
     for (int i = 1; i <= 6; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        if (captureBoxFaceRole(*boxA, sub) == "+X") {
+        if (capturePrimitiveFaceRole(*boxA, sub) == "+X") {
             plusXOnA = sub;
         }
     }
@@ -359,7 +394,7 @@ TEST_F(NeutralRefTest, bindInDocumentFindsFeatureByUidAcrossFiles)
     ASSERT_NE(bound.feature, nullptr);
     EXPECT_EQ(bound.feature, boxB);  // found by Uid alone
     ASSERT_FALSE(bound.subName.empty());
-    EXPECT_EQ(captureBoxFaceRole(*boxB, bound.subName), "+X");  // the correct physical face
+    EXPECT_EQ(capturePrimitiveFaceRole(*boxB, bound.subName), "+X");  // the correct physical face
 
     App::GetApplication().closeDocument(docB->getName());
 }

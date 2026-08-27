@@ -18,9 +18,10 @@
 #include <App/MappedName.h>
 
 #include "NeutralRef.h"
-#include "BoxFaceRoleRef.h"
 #include "FeaturePartBox.h"
 #include "PartFeature.h"
+#include "PrimitiveFaceRoleRef.h"
+#include "PrimitiveFeature.h"
 #include "SubShapeSignature.h"
 #include "TopoShape.h"
 
@@ -29,6 +30,16 @@ namespace Part
 
 namespace
 {
+// The primitives whose faces carry a parametric role. An explicit allow-list, not
+// "derives from Primitive": that base also covers leaves with no clean per-face
+// role (a wedge, a helix, a regular polygon), which stay signature-only.
+bool isRoleBearingPrimitive(const Feature& feature)
+{
+    return feature.isDerivedFrom<Box>() || feature.isDerivedFrom<Cylinder>()
+        || feature.isDerivedFrom<Sphere>() || feature.isDerivedFrom<Cone>()
+        || feature.isDerivedFrom<Torus>();
+}
+
 // An element-map provenance name embeds, at each "\;:H" postfix, the per-document
 // integer tag (in hex) of the object that operation belonged to. That tag is not
 // portable: the same authored object carries a different tag in another file. These
@@ -149,11 +160,12 @@ NRef captureFaceRef(const Feature& feature, const std::string& subName)
 
     // A role is meaningful only for a feature that knows its faces parametrically.
     // For any other leaf (an import) the role stays empty and the signature is the
-    // identity. primitiveBoxFaceRole would happily label any planar face by its
-    // centroid direction, so the regime is gated on the feature type, not on
+    // identity. primitiveFaceRole would happily label any planar face by its
+    // centroid direction, so the regime is gated on the feature type -- an explicit
+    // allow-list of the primitives whose faces have parametric roles -- not on
     // whether a role string comes back.
-    if (feature.isDerivedFrom<Box>()) {
-        ref.role = captureBoxFaceRole(feature, subName);
+    if (isRoleBearingPrimitive(feature)) {
+        ref.role = capturePrimitiveFaceRole(feature, subName);
     }
 
     // Derived regime: a face produced by an operation carries a provenance name in
@@ -178,7 +190,7 @@ std::string resolveFaceRef(const NRef& ref, const Feature& feature)
 
     // Regime 1: a role-bearing primitive leaf -- symmetry-proof.
     if (!ref.role.empty()) {
-        return resolveBoxFaceRole(feature, ref.role);
+        return resolvePrimitiveFaceRole(feature, ref.role);
     }
 
     const TopoShape& stored = feature.Shape.getShape();

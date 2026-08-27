@@ -18,12 +18,12 @@ add_executable(Part_tests_run
         FeatureRevolution.cpp
         FuzzyBoolean.cpp
         Geometry.cpp
-        BoxFaceRoleRef.cpp
         NeutralRef.cpp
         PartFeature.cpp
         PartFeatures.cpp
         PartTestHelpers.cpp
         PrimitiveFaceRole.cpp
+        PrimitiveFaceRoleRef.cpp
         PropertyTopoShape.cpp
         SubShapeSignature.cpp
         TopoDS_Shape.cpp
