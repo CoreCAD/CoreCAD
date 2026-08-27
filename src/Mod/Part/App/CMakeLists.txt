@@ -220,6 +220,12 @@ SET(Features_SRCS
     PartFeature.h
     PartFeatureReference.cpp
     PartFeatureReference.h
+    NeutralRef.cpp
+    NeutralRef.h
+    PrimitiveFaceRole.cpp
+    PrimitiveFaceRole.h
+    PrimitiveFaceRoleRef.cpp
+    PrimitiveFaceRoleRef.h
     SubShapeSignature.cpp
     SubShapeSignature.h
     Part2DObject.cpp

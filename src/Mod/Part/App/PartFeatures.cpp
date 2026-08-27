@@ -46,6 +46,7 @@
 #include <App/Link.h>
 
 #include <App/Document.h>
+#include "NeutralRef.h"
 #include "PartFeatures.h"
 #include "TopoShapeOpCode.h"
 
@@ -374,6 +375,13 @@ Thickness::Thickness()
     Join.setEnums(JoinEnums);
     ADD_PROPERTY_TYPE(Intersection, (false), "Thickness", App::Prop_None, "Intersection");
     ADD_PROPERTY_TYPE(SelfIntersection, (false), "Thickness", App::Prop_None, "Self Intersection");
+    ADD_PROPERTY_TYPE(
+        FaceRefs,
+        (),
+        "Thickness",
+        App::PropertyType(App::Prop_Hidden | App::Prop_Output),
+        "Durable references for the selected faces"
+    );
 
     // Value should have length as unit
     Value.setUnit(Base::Unit::Length);
@@ -430,12 +438,44 @@ App::DocumentObjectExecReturn* Thickness::execute()
     if (base.countSubShapes(TopAbs_SOLID) != 1) {
         return new App::DocumentObjectExecReturn("Source shape is not single solid.");
     }
-    for (auto& sub : Faces.getSubValues(true)) {
+    // The durable references drive the selection. Resolve each stored NRef against the
+    // current base and use the sub-name it now denotes, so a selection gone stale
+    // because the base was rebuilt with a different face numbering (a merge) self-heals
+    // here -- no user action, on the next recompute. The stored positional sub is a
+    // fallback: used for a face with no usable ref yet (the first execute) or whose ref
+    // no longer resolves. The input property is not mutated; the heal is per-execute.
+    std::vector<std::string> subs = Faces.getSubValues();
+    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    const std::vector<std::string>& refs = FaceRefs.getValues();
+    if (baseFeat != nullptr && refs.size() == subs.size()) {
+        for (std::size_t i = 0; i < subs.size(); ++i) {
+            const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+            if (!rebound.empty()) {
+                subs[i] = rebound;
+            }
+        }
+    }
+
+    for (const std::string& sub : subs) {
         shapes.push_back(base.getSubTopoShape(sub.c_str()));
         if (shapes.back().getShape().ShapeType() != TopAbs_FACE) {
             return new App::DocumentObjectExecReturn("Invalid face selection");
         }
     }
+
+    // Refresh the durable references from the effective (healed) selection, so the last
+    // good binding is always on record -- and captured on the very first execute.
+    if (baseFeat != nullptr) {
+        std::vector<std::string> newRefs;
+        newRefs.reserve(subs.size());
+        for (const std::string& sub : subs) {
+            newRefs.push_back(toNeutralString(captureFaceRef(*baseFeat, sub)));
+        }
+        if (newRefs != FaceRefs.getValues()) {
+            FaceRefs.setValues(newRefs);  // only on change -- an unchanged recompute stays clean
+        }
+    }
+
     double thickness = Value.getValue();
     double tol = Precision::Confusion();
     bool inter = Intersection.getValue();
@@ -448,6 +488,29 @@ App::DocumentObjectExecReturn* Thickness::execute()
             .makeElementThickSolid(base, shapes, thickness, tol, inter, self, mode, static_cast<JoinType>(join))
     );
     return Part::Feature::execute();
+}
+
+int Thickness::rebindFacesFromRefs()
+{
+    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    const std::vector<std::string>& refs = FaceRefs.getValues();
+    std::vector<std::string> subs = Faces.getSubValues();
+    if (baseFeat == nullptr || refs.size() != subs.size()) {
+        return 0;  // no base, or refs not aligned with the current selection
+    }
+
+    int changed = 0;
+    for (std::size_t i = 0; i < subs.size(); ++i) {
+        const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+        if (!rebound.empty() && rebound != subs[i]) {
+            subs[i] = rebound;
+            ++changed;
+        }
+    }
+    if (changed > 0) {
+        Faces.setValue(Faces.getValue(), subs);
+    }
+    return changed;
 }
 
 // ----------------------------------------------------------------------------
