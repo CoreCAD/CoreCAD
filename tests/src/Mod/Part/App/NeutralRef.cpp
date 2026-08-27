@@ -24,8 +24,10 @@
 
 using Part::captureBoxFaceRole;
 using Part::captureFaceRef;
+using Part::fromNeutralString;
 using Part::NRef;
 using Part::resolveFaceRef;
+using Part::toNeutralString;
 
 namespace
 {
@@ -213,5 +215,71 @@ TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
     const std::string resolvedOnB = resolveFaceRef(ref, *branchB);
     ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_NE(resolvedOnB, plusXOnA);
+    EXPECT_EQ(captureBoxFaceRole(*branchB, resolvedOnB), "+X");
+}
+
+// A serialized NRef round-trips every field through its neutral string form.
+TEST_F(NeutralRefTest, neutralStringRoundTripsAllFields)
+{
+    Part::Box* box = makeBox();
+    const NRef ref = captureFaceRef(*box, "Face1");
+
+    const NRef back = fromNeutralString(toNeutralString(ref));
+    EXPECT_EQ(back.featureUid, ref.featureUid);
+    EXPECT_EQ(back.kind, ref.kind);
+    EXPECT_EQ(back.role, ref.role);
+    EXPECT_EQ(back.signature, ref.signature);
+}
+
+// The signature-only case (empty role) survives the round-trip too -- an empty
+// field must not collapse the format.
+TEST_F(NeutralRefTest, neutralStringRoundTripsSignatureOnly)
+{
+    Part::Cylinder* cyl = makeCylinder();
+    const NRef ref = captureFaceRef(*cyl, "Face1");
+    ASSERT_TRUE(ref.role.empty());
+
+    const NRef back = fromNeutralString(toNeutralString(ref));
+    EXPECT_EQ(back.kind, ref.kind);
+    EXPECT_TRUE(back.role.empty());
+    EXPECT_EQ(back.signature, ref.signature);
+}
+
+// Anything that is not a well-formed NRef string of a known version parses to a
+// null ref rather than a half-populated guess.
+TEST_F(NeutralRefTest, fromNeutralStringRejectsMalformed)
+{
+    EXPECT_TRUE(fromNeutralString("").kind.empty());
+    EXPECT_TRUE(fromNeutralString("garbage").kind.empty());
+    EXPECT_TRUE(fromNeutralString("NRef|2|uid|face|+X|sig").kind.empty());  // unknown version
+    EXPECT_TRUE(fromNeutralString("NRef|1|uid|face").kind.empty());         // too few fields
+}
+
+// End to end: a reference written out as a neutral string, read back as if from a
+// saved file, still binds across an independent rebuild -- serialization carries
+// the durable identity, not just the in-memory struct.
+TEST_F(NeutralRefTest, serializedRefBindsAcrossRebuild)
+{
+    Part::Box* branchA = makeBox();
+
+    std::string plusXOnA;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        if (captureBoxFaceRole(*branchA, sub) == "+X") {
+            plusXOnA = sub;
+        }
+    }
+    ASSERT_FALSE(plusXOnA.empty());
+
+    // Capture, serialize, and re-parse -- the trip through a file.
+    const std::string stored = toNeutralString(captureFaceRef(*branchA, plusXOnA));
+    const NRef reloaded = fromNeutralString(stored);
+    ASSERT_EQ(reloaded.role, "+X");
+
+    Part::Box* branchB = makeBox();
+    branchB->Shape.setValue(withReversedFaceOrder(branchA->Shape.getValue()));
+
+    const std::string resolvedOnB = resolveFaceRef(reloaded, *branchB);
+    ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_EQ(captureBoxFaceRole(*branchB, resolvedOnB), "+X");
 }

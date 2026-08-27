@@ -82,4 +82,44 @@ std::string resolveFaceRef(const NRef& ref, const Feature& feature)
     return match;
 }
 
+namespace
+{
+// The one delimiter between fields. Chosen because it appears in none of the
+// fields: a Uid is hex + hyphens, a role is a signed axis, and a signature is
+// letters/digits/':'/','/'-' (Part::subShapeSignature) -- never a pipe.
+const std::string neutralPrefix = "NRef|1|";
+constexpr char fieldSep = '|';
+}  // namespace
+
+std::string toNeutralString(const NRef& ref)
+{
+    return neutralPrefix + ref.featureUid + fieldSep + ref.kind + fieldSep + ref.role + fieldSep
+        + ref.signature;
+}
+
+NRef fromNeutralString(const std::string& text)
+{
+    if (text.rfind(neutralPrefix, 0) != 0) {
+        return {};  // wrong magic/version -> not an NRef we know how to read
+    }
+
+    // Split the body into uid | kind | role | signature. The signature is the
+    // remainder after the third separator, so it survives any delimiter it might
+    // itself contain in a future schema.
+    const std::string body = text.substr(neutralPrefix.size());
+    const std::string::size_type p1 = body.find(fieldSep);
+    const std::string::size_type p2 = p1 == std::string::npos ? p1 : body.find(fieldSep, p1 + 1);
+    const std::string::size_type p3 = p2 == std::string::npos ? p2 : body.find(fieldSep, p2 + 1);
+    if (p3 == std::string::npos) {
+        return {};  // too few fields -> malformed
+    }
+
+    NRef ref;
+    ref.featureUid = body.substr(0, p1);
+    ref.kind = body.substr(p1 + 1, p2 - p1 - 1);
+    ref.role = body.substr(p2 + 1, p3 - p2 - 1);
+    ref.signature = body.substr(p3 + 1);
+    return ref;
+}
+
 }  // namespace Part

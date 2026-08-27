@@ -68,6 +68,30 @@ PartExport NRef captureFaceRef(const Feature& feature, const std::string& subNam
  */
 PartExport std::string resolveFaceRef(const NRef& ref, const Feature& feature);
 
+/**
+ * Serialize an NRef to its neutral string form -- the shape it takes when written
+ * to a file, so a reference can travel between saved versions of a design.
+ *
+ * The form is a versioned, pipe-delimited line: @c "NRef|1|<uid>|<kind>|<role>|
+ * <signature>". It speaks no kernel's dialect; the signature is the last field so
+ * it is read as the remainder, robust to any delimiter a future signature might
+ * contain. The version tag lets the schema grow (the derived-regime provenance
+ * name is a later field).
+ *
+ * @param ref the reference to serialize
+ * @return the neutral string form
+ */
+PartExport std::string toNeutralString(const NRef& ref);
+
+/**
+ * Parse a neutral string form back to an NRef -- the inverse of toNeutralString.
+ *
+ * @param text a string as produced by toNeutralString
+ * @return the parsed NRef; a null ref (empty @c kind) if @p text is not a
+ *         well-formed NRef string of a known version
+ */
+PartExport NRef fromNeutralString(const std::string& text);
+
 }  // namespace Part
 
 #endif  // PART_NEUTRALREF_H
