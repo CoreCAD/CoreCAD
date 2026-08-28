@@ -33,7 +33,7 @@ namespace
 // The primitives whose faces carry a parametric role. An explicit allow-list, not
 // "derives from Primitive": that base also covers leaves with no clean per-face
 // role (a wedge, a helix, a regular polygon), which stay signature-only.
-bool isRoleBearingPrimitive(const ShapeFeature& feature)
+bool isRoleBearingPrimitive(const Feature& feature)
 {
     return feature.isDerivedFrom<Box>() || feature.isDerivedFrom<Cylinder>()
         || feature.isDerivedFrom<Sphere>() || feature.isDerivedFrom<Cone>()
@@ -139,7 +139,7 @@ std::string denormalizeProv(const std::string& prov, const App::Document& doc)
 }
 }  // namespace
 
-NRef captureSubRef(const ShapeFeature& feature, const std::string& subName)
+NRef captureFaceRef(const Feature& feature, const std::string& subName)
 {
     const TopoShape& stored = feature.Shape.getShape();
     if (stored.isNull() || subName.empty()) {
@@ -147,40 +147,25 @@ NRef captureSubRef(const ShapeFeature& feature, const std::string& subName)
     }
 
     // The signature is read in the feature-local (stored) frame per Amendment 4,
-    // the same frame resolveSubRef reads it back in.
+    // the same frame resolveFaceRef reads it back in.
     const TopoDS_Shape localSub = stored.getSubShape(subName.c_str(), /*silent*/ true);
     if (localSub.IsNull()) {
         return {};
     }
 
-    // The grain follows the sub-shape's own type: a face reference and an edge
-    // reference resolve against different pools, so the kind records which. Only
-    // faces and edges carry a durable reference for now.
     NRef ref;
-    const TopAbs_ShapeEnum type = localSub.ShapeType();
-    if (type == TopAbs_FACE) {
-        ref.kind = "face";
-    }
-    else if (type == TopAbs_EDGE) {
-        ref.kind = "edge";
-    }
-    else {
-        return {};
-    }
+    ref.kind = "face";
     ref.featureUid = feature.Uid.getValueStr();
     ref.signature = subShapeSignature(localSub);
 
-    // A role is meaningful only for a feature that knows its faces parametrically,
-    // and only for a face (an edge has no parametric role). For any other leaf (an
-    // import) the role stays empty and the signature is the identity. primitiveFaceRole
-    // would happily label any planar face by its centroid direction, so the regime is
-    // gated on the feature type -- an explicit allow-list of the primitives whose faces
-    // have parametric roles -- not on whether a role string comes back.
-    if (ref.kind == "face" && isRoleBearingPrimitive(feature)) {
-        // A role-bearing primitive is a Part::Feature (it carries its own placement);
-        // the guard guarantees the downcast. capturePrimitiveFaceRole reads the local
-        // frame, which lives on Feature, not on the ShapeFeature base.
-        ref.role = capturePrimitiveFaceRole(static_cast<const Feature&>(feature), subName);
+    // A role is meaningful only for a feature that knows its faces parametrically.
+    // For any other leaf (an import) the role stays empty and the signature is the
+    // identity. primitiveFaceRole would happily label any planar face by its
+    // centroid direction, so the regime is gated on the feature type -- an explicit
+    // allow-list of the primitives whose faces have parametric roles -- not on
+    // whether a role string comes back.
+    if (isRoleBearingPrimitive(feature)) {
+        ref.role = capturePrimitiveFaceRole(feature, subName);
     }
 
     // Derived regime: a face produced by an operation carries a provenance name in
@@ -197,19 +182,15 @@ NRef captureSubRef(const ShapeFeature& feature, const std::string& subName)
     return ref;
 }
 
-std::string resolveSubRef(const NRef& ref, const ShapeFeature& feature)
+std::string resolveFaceRef(const NRef& ref, const Feature& feature)
 {
-    if (ref.kind != "face" && ref.kind != "edge") {
+    if (ref.kind != "face") {
         return {};
     }
 
-    // Regime 1: a role-bearing primitive leaf -- symmetry-proof. Roles are a face
-    // concept, so this regime applies only to a face ref; an edge ref (which never
-    // carries a role on capture) is never routed here even if handed one. A role only
-    // exists on a primitive (a Part::Feature), so a non-Feature base never matches.
-    if (ref.kind == "face" && !ref.role.empty()) {
-        const auto* prim = freecad_cast<const Feature*>(&feature);
-        return prim != nullptr ? resolvePrimitiveFaceRole(*prim, ref.role) : std::string();
+    // Regime 1: a role-bearing primitive leaf -- symmetry-proof.
+    if (!ref.role.empty()) {
+        return resolvePrimitiveFaceRole(feature, ref.role);
     }
 
     const TopoShape& stored = feature.Shape.getShape();
@@ -232,26 +213,23 @@ std::string resolveSubRef(const NRef& ref, const ShapeFeature& feature)
         return std::string(idx.getType()) + std::to_string(idx.getIndex());
     }
 
-    // Regime 3: a history-less leaf -- unique geometric-signature match over the
-    // pool of the ref's own grain (faces for a face ref, edges for an edge ref),
-    // read in the same feature-local frame the signature was captured in.
+    // Regime 3: a history-less leaf -- unique geometric-signature match, read in
+    // the same feature-local frame the signature was captured in.
     if (ref.signature.empty()) {
         return {};
     }
 
-    const TopAbs_ShapeEnum type = ref.kind == "face" ? TopAbs_FACE : TopAbs_EDGE;
-    const char* const prefix = ref.kind == "face" ? "Face" : "Edge";
-    const int count = static_cast<int>(stored.countSubShapes(type));
+    const int faceCount = static_cast<int>(stored.countSubShapes(TopAbs_FACE));
     std::string match;
-    for (int i = 1; i <= count; ++i) {
-        const TopoDS_Shape sub = stored.getSubShape(type, i, /*silent*/ true);
-        if (sub.IsNull() || subShapeSignature(sub) != ref.signature) {
+    for (int i = 1; i <= faceCount; ++i) {
+        const TopoDS_Shape face = stored.getSubShape(TopAbs_FACE, i, /*silent*/ true);
+        if (face.IsNull() || subShapeSignature(face) != ref.signature) {
             continue;
         }
         if (!match.empty()) {
-            return {};  // ambiguous: two sub-shapes share one signature -> stop, do not guess
+            return {};  // ambiguous: two faces share one signature -> stop, do not guess
         }
-        match = prefix + std::to_string(i);
+        match = "Face" + std::to_string(i);
     }
     return match;
 }
@@ -306,11 +284,11 @@ NRefBinding bindInDocument(const NRef& ref, const App::Document& doc)
 
     // The Uid is the join key: find the feature that carries this identity, whatever
     // face ordinals its own rebuild produced, and resolve the sub-name on it.
-    for (const ShapeFeature* feature : doc.getObjectsOfType<ShapeFeature>()) {
+    for (const Feature* feature : doc.getObjectsOfType<Feature>()) {
         if (feature->Uid.getValueStr() != ref.featureUid) {
             continue;
         }
-        const std::string subName = resolveSubRef(ref, *feature);
+        const std::string subName = resolveFaceRef(ref, *feature);
         if (subName.empty()) {
             return {};  // right feature, but its sub-shape is gone -> unbound, not a guess
         }

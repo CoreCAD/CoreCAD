@@ -76,12 +76,6 @@ short Fillet::mustExecute() const
 
 App::DocumentObjectExecReturn* Fillet::execute()
 {
-    // Self-heal a stale edge selection before it is read: if the base was rebuilt with
-    // a different edge numbering, rewrite Base's sub-names from the durable references
-    // so they point back at the originally-picked edges. Self-stabilizing -- once
-    // healed, a later recompute resolves to the same names and changes nothing.
-    rebindSubsFromRefs();
-
     if (onlyHaveRefined()) {
         return App::DocumentObject::StdReturn;
     }

@@ -28,12 +28,12 @@
 #include "Mod/Part/App/TopoShape.h"
 
 using Part::bindInDocument;
+using Part::captureFaceRef;
 using Part::capturePrimitiveFaceRole;
-using Part::captureSubRef;
 using Part::fromNeutralString;
 using Part::NRef;
 using Part::NRefBinding;
-using Part::resolveSubRef;
+using Part::resolveFaceRef;
 using Part::toNeutralString;
 
 namespace
@@ -152,7 +152,7 @@ TEST_F(NeutralRefTest, captureFillsRoleAndSignatureForBox)
 {
     Part::Box* box = makeBox();
 
-    const NRef ref = captureSubRef(*box, "Face1");
+    const NRef ref = captureFaceRef(*box, "Face1");
     EXPECT_EQ(ref.kind, "face");
     EXPECT_EQ(ref.featureUid, box->Uid.getValueStr());
     EXPECT_FALSE(ref.featureUid.empty());
@@ -170,19 +170,19 @@ TEST_F(NeutralRefTest, roleRegimeRoundTripsAndSurvivesEdit)
 
     const std::array<const char*, 6> faces {"Face1", "Face2", "Face3", "Face4", "Face5", "Face6"};
     for (const char* sub : faces) {
-        const NRef ref = captureSubRef(*box, sub);
+        const NRef ref = captureFaceRef(*box, sub);
         ASSERT_FALSE(ref.role.empty());
-        EXPECT_EQ(resolveSubRef(ref, *box), sub);
+        EXPECT_EQ(resolveFaceRef(ref, *box), sub);
     }
 
-    const NRef ref = captureSubRef(*box, "Face3");
+    const NRef ref = captureFaceRef(*box, "Face3");
     box->Length.setValue(48.0);
     box->Height.setValue(6.0);
     _doc->recompute();
 
-    const std::string resolved = resolveSubRef(ref, *box);
+    const std::string resolved = resolveFaceRef(ref, *box);
     ASSERT_FALSE(resolved.empty());
-    EXPECT_EQ(captureSubRef(*box, resolved).role, ref.role);
+    EXPECT_EQ(captureFaceRef(*box, resolved).role, ref.role);
 }
 
 // A cylinder is now a role-bearing primitive: every face captures a role from the
@@ -197,11 +197,11 @@ TEST_F(NeutralRefTest, roleRegimeForCylinderRoundTrips)
     std::set<std::string> roles;
     for (int i = 1; i <= faceCount; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        const NRef ref = captureSubRef(*cyl, sub);
+        const NRef ref = captureFaceRef(*cyl, sub);
         EXPECT_EQ(ref.kind, "face");
         ASSERT_FALSE(ref.role.empty()) << "a cylinder face should carry a role";
         ASSERT_FALSE(ref.signature.empty());
-        EXPECT_EQ(resolveSubRef(ref, *cyl), sub);
+        EXPECT_EQ(resolveFaceRef(ref, *cyl), sub);
         roles.insert(ref.role);
     }
     EXPECT_EQ(roles, (std::set<std::string> {"Side", "+Z", "-Z"}));
@@ -219,60 +219,31 @@ TEST_F(NeutralRefTest, signatureRegimeForExcludedPrimitiveRoundTrips)
 
     for (int i = 1; i <= faceCount; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        const NRef ref = captureSubRef(*ell, sub);
+        const NRef ref = captureFaceRef(*ell, sub);
         EXPECT_EQ(ref.kind, "face");
         EXPECT_TRUE(ref.role.empty()) << "an excluded primitive's face carries no role";
         ASSERT_FALSE(ref.signature.empty());
-        EXPECT_EQ(resolveSubRef(ref, *ell), sub);
+        EXPECT_EQ(resolveFaceRef(ref, *ell), sub);
     }
 }
 
-// A ref whose leaf target matches nothing degrades to the empty string; a capture on
-// a non-existent sub-name yields a null ref; an incoherent ref (an edge carrying a
-// face role but no signature) does not sneak through the face-role regime.
+// A ref that is not a face, or whose leaf target matches nothing, degrades to the
+// empty string; a capture on a non-existent sub-name yields a null ref.
 TEST_F(NeutralRefTest, degradesOnBadRef)
 {
     Part::Box* box = makeBox();
 
-    EXPECT_TRUE(captureSubRef(*box, "Face99").kind.empty());  // null ref, no such face
+    EXPECT_TRUE(captureFaceRef(*box, "Face99").kind.empty());  // null ref, no such face
 
-    NRef incoherentEdge;
-    incoherentEdge.kind = "edge";
-    incoherentEdge.role = "+X";  // an edge never carries a role; must be ignored, not resolved
-    EXPECT_TRUE(resolveSubRef(incoherentEdge, *box).empty());
+    NRef notAFace;
+    notAFace.kind = "edge";
+    notAFace.role = "+X";
+    EXPECT_TRUE(resolveFaceRef(notAFace, *box).empty());
 
     NRef goneSignature;
     goneSignature.kind = "face";
     goneSignature.signature = "not-a-real-signature";
-    EXPECT_TRUE(resolveSubRef(goneSignature, *box).empty());
-}
-
-// The grain generalization. An EDGE reference: a box's edges carry no parametric
-// role, so an edge ref falls to the signature regime -- the first feature-level
-// exercise of that regime on an edge. Capture records the edge grain and round-trips
-// on its own shape; and the reference binds across an independent rebuild that
-// renumbers the edges, landing on the same PHYSICAL edge where the raw ordinal would
-// name a different one. (With the face-only resolver this returned empty for an edge.)
-TEST_F(NeutralRefTest, edgeRefBindsBySignatureAcrossRebuild)
-{
-    Part::Box* branchA = makeBox();
-
-    const NRef ref = captureSubRef(*branchA, "Edge1");
-    EXPECT_EQ(ref.kind, "edge");
-    EXPECT_TRUE(ref.role.empty()) << "an edge carries no parametric role";
-    ASSERT_FALSE(ref.signature.empty());
-    EXPECT_EQ(resolveSubRef(ref, *branchA), "Edge1");  // round-trip on its own shape
-
-    // Branch B: the same box rebuilt with a different internal face (hence edge)
-    // numbering -- the merge situation, one grain down from a face.
-    Part::Box* branchB = makeBox();
-    branchB->Shape.setValue(withReversedFaceOrder(branchA->Shape.getValue()));
-
-    const std::string reboundOnB = resolveSubRef(ref, *branchB);
-    ASSERT_FALSE(reboundOnB.empty());
-    // Whatever ordinal it landed on, it is genuinely the same physical edge: its
-    // signature (a frame-local geometric fingerprint) matches the captured one.
-    EXPECT_EQ(captureSubRef(*branchB, reboundOnB).signature, ref.signature);
+    EXPECT_TRUE(resolveFaceRef(goneSignature, *box).empty());
 }
 
 // The payoff. Capture a reference on one box, then resolve it against an
@@ -294,7 +265,7 @@ TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
         }
     }
     ASSERT_FALSE(plusXOnA.empty());
-    const NRef ref = captureSubRef(*branchA, plusXOnA);
+    const NRef ref = captureFaceRef(*branchA, plusXOnA);
     ASSERT_EQ(ref.role, "+X");
 
     // Branch B: the same box, rebuilt with a different internal face numbering.
@@ -313,7 +284,7 @@ TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
 
     // The NRef resolves correctly: a different ordinal than was stored, but genuinely
     // the +X face -- the reference survived the renumbering the raw index could not.
-    const std::string resolvedOnB = resolveSubRef(ref, *branchB);
+    const std::string resolvedOnB = resolveFaceRef(ref, *branchB);
     ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_NE(resolvedOnB, plusXOnA);
     EXPECT_EQ(capturePrimitiveFaceRole(*branchB, resolvedOnB), "+X");
@@ -323,7 +294,7 @@ TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
 TEST_F(NeutralRefTest, neutralStringRoundTripsAllFields)
 {
     Part::Box* box = makeBox();
-    const NRef ref = captureSubRef(*box, "Face1");
+    const NRef ref = captureFaceRef(*box, "Face1");
 
     const NRef back = fromNeutralString(toNeutralString(ref));
     EXPECT_EQ(back.featureUid, ref.featureUid);
@@ -338,7 +309,7 @@ TEST_F(NeutralRefTest, neutralStringRoundTripsAllFields)
 TEST_F(NeutralRefTest, neutralStringRoundTripsSignatureOnly)
 {
     Part::Ellipsoid* ell = makeEllipsoid();
-    const NRef ref = captureSubRef(*ell, "Face1");
+    const NRef ref = captureFaceRef(*ell, "Face1");
     ASSERT_TRUE(ref.role.empty());
 
     const NRef back = fromNeutralString(toNeutralString(ref));
@@ -375,14 +346,14 @@ TEST_F(NeutralRefTest, serializedRefBindsAcrossRebuild)
     ASSERT_FALSE(plusXOnA.empty());
 
     // Capture, serialize, and re-parse -- the trip through a file.
-    const std::string stored = toNeutralString(captureSubRef(*branchA, plusXOnA));
+    const std::string stored = toNeutralString(captureFaceRef(*branchA, plusXOnA));
     const NRef reloaded = fromNeutralString(stored);
     ASSERT_EQ(reloaded.role, "+X");
 
     Part::Box* branchB = makeBox();
     branchB->Shape.setValue(withReversedFaceOrder(branchA->Shape.getValue()));
 
-    const std::string resolvedOnB = resolveSubRef(reloaded, *branchB);
+    const std::string resolvedOnB = resolveFaceRef(reloaded, *branchB);
     ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_EQ(capturePrimitiveFaceRole(*branchB, resolvedOnB), "+X");
 }
@@ -405,7 +376,7 @@ TEST_F(NeutralRefTest, bindInDocumentFindsFeatureByUidAcrossFiles)
         }
     }
     ASSERT_FALSE(plusXOnA.empty());
-    const std::string stored = toNeutralString(captureSubRef(*boxA, plusXOnA));
+    const std::string stored = toNeutralString(captureFaceRef(*boxA, plusXOnA));
 
     // Doc B: a second file. The same authored box carries the same Uid (its identity
     // rode across the branch), but the rebuild numbered its faces differently.
@@ -433,7 +404,7 @@ TEST_F(NeutralRefTest, bindInDocumentFindsFeatureByUidAcrossFiles)
 TEST_F(NeutralRefTest, bindInDocumentReportsUnboundWhenFeatureAbsent)
 {
     Part::Box* box = makeBox();
-    const std::string stored = toNeutralString(captureSubRef(*box, "Face1"));
+    const std::string stored = toNeutralString(captureFaceRef(*box, "Face1"));
 
     App::Document* other = App::GetApplication().newDocument("neutralRefEmptyTarget");
     const NRefBinding bound = bindInDocument(fromNeutralString(stored), *other);
@@ -459,7 +430,7 @@ TEST_F(NeutralRefTest, derivedFaceBindsAcrossFilesWhereRawProvenanceFails)
     const int faceCount = static_cast<int>(a.cut->Shape.getShape().countSubShapes(TopAbs_FACE));
     for (int i = 1; i <= faceCount; ++i) {
         const std::string sub = "Face" + std::to_string(i);
-        const NRef r = captureSubRef(*a.cut, sub);
+        const NRef r = captureFaceRef(*a.cut, sub);
         if (r.prov.find(";:M;CUT") != std::string::npos) {
             cutFaceOnA = sub;
             ref = r;
@@ -497,7 +468,7 @@ TEST_F(NeutralRefTest, derivedFaceBindsAcrossFilesWhereRawProvenanceFails)
     EXPECT_EQ(bound.feature, b.cut);
     ASSERT_FALSE(bound.subName.empty());
     // The bound face carries the same neutral provenance identity as the reference.
-    EXPECT_EQ(captureSubRef(*b.cut, bound.subName).prov, ref.prov);
+    EXPECT_EQ(captureFaceRef(*b.cut, bound.subName).prov, ref.prov);
 
     App::GetApplication().closeDocument(docB->getName());
 }

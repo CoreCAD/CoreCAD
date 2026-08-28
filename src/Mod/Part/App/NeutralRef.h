@@ -15,7 +15,7 @@ class Document;
 namespace Part
 {
 
-class ShapeFeature;
+class Feature;
 
 /**
  * A kernel-neutral reference to a sub-shape of a feature -- the stored form a
@@ -40,8 +40,8 @@ class ShapeFeature;
 struct PartExport NRef
 {
     std::string featureUid;  ///< owning feature's durable Uid
-    std::string kind;        ///< the sub-shape grain: "face" or "edge"; empty = null ref
-    std::string role;        ///< leaf role ("+X".."-Z") for a primitive face; empty otherwise
+    std::string kind;        ///< "face" (the only supported grain for now); empty = null ref
+    std::string role;        ///< leaf role ("+X".."-Z") for a primitive; empty otherwise
     std::string prov;        ///< neutralized provenance name for a derived face; empty otherwise
     std::string signature;   ///< geometric signature of the sub-shape (feature-local frame)
 };
@@ -49,37 +49,34 @@ struct PartExport NRef
 /**
  * Capture a durable NRef for the sub-element @p subName of @p feature.
  *
- * The grain -- face or edge -- follows the sub-shape's own type; a vertex or any
- * other grain yields a null ref for now. Records the owning feature's Uid and, in
- * the feature-local frame, the sub-shape's geometric signature; and, when @p feature
- * is a role-bearing primitive and the grain is a face, its parametric role (an edge
- * has no role). The signature is always taken so an import leaf still has an
- * identity; the role is the primary handle when present.
+ * Records the owning feature's Uid and, in the feature-local frame, the
+ * sub-shape's geometric signature; and, when @p feature is a role-bearing
+ * primitive (a box), its parametric role. The signature is always taken so an
+ * import leaf still has an identity; the role is the primary handle when present.
  *
  * @param feature the owning feature
- * @param subName a positional sub-name, e.g. "Face3" or "Edge5"
+ * @param subName a positional face sub-name, e.g. "Face3"
  * @return the captured NRef; a null ref (empty @c kind) if @p subName names no
- *         face or edge of @p feature's shape
+ *         sub-shape of @p feature's shape
  */
-PartExport NRef captureSubRef(const ShapeFeature& feature, const std::string& subName);
+PartExport NRef captureFaceRef(const Feature& feature, const std::string& subName);
 
 /**
  * Resolve an NRef against @p feature to the positional sub-name that now carries
- * it -- the inverse of captureSubRef.
+ * it -- the inverse of captureFaceRef.
  *
  * Two-regime: a ref with a role resolves through the role (symmetry-proof); a ref
  * with a prov name resolves through the element map (the provenance name is first
  * rewritten from durable Uids back to this document's object tags); a bare leaf
- * resolves by a unique geometric-signature match over the pool of its own grain
- * (faces for a face ref, edges for an edge ref). Either way a lost or ambiguous
+ * resolves by a unique geometric-signature match. Either way a lost or ambiguous
  * target yields the empty string, never a guessed binding.
  *
- * @param ref     an NRef as produced by captureSubRef
+ * @param ref     an NRef as produced by captureFaceRef
  * @param feature the feature to resolve against (recomputed or moved)
- * @return the current sub-name of the referenced sub-shape; empty if @p ref is not
- *         a face or edge ref, or the target is gone or not uniquely matched
+ * @return the current sub-name of the referenced face; empty if @p ref is not a
+ *         face ref, or the target is gone or not uniquely matched
  */
-PartExport std::string resolveSubRef(const NRef& ref, const ShapeFeature& feature);
+PartExport std::string resolveFaceRef(const NRef& ref, const Feature& feature);
 
 /**
  * Serialize an NRef to its neutral string form -- the shape it takes when written
@@ -110,8 +107,8 @@ PartExport NRef fromNeutralString(const std::string& text);
  */
 struct PartExport NRefBinding
 {
-    const ShapeFeature* feature {nullptr};  ///< the located owning feature; null if unbound
-    std::string subName;                    ///< its current sub-name for the ref; empty if unbound
+    const Feature* feature {nullptr};  ///< the located owning feature; null if unbound
+    std::string subName;               ///< its current sub-name for the ref; empty if unbound
 };
 
 /**

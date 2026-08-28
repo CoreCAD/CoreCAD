@@ -449,7 +449,7 @@ App::DocumentObjectExecReturn* Thickness::execute()
     const std::vector<std::string>& refs = FaceRefs.getValues();
     if (baseFeat != nullptr && refs.size() == subs.size()) {
         for (std::size_t i = 0; i < subs.size(); ++i) {
-            const std::string rebound = resolveSubRef(fromNeutralString(refs[i]), *baseFeat);
+            const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
             if (!rebound.empty()) {
                 subs[i] = rebound;
             }
@@ -469,7 +469,7 @@ App::DocumentObjectExecReturn* Thickness::execute()
         std::vector<std::string> newRefs;
         newRefs.reserve(subs.size());
         for (const std::string& sub : subs) {
-            newRefs.push_back(toNeutralString(captureSubRef(*baseFeat, sub)));
+            newRefs.push_back(toNeutralString(captureFaceRef(*baseFeat, sub)));
         }
         if (newRefs != FaceRefs.getValues()) {
             FaceRefs.setValues(newRefs);  // only on change -- an unchanged recompute stays clean
@@ -501,7 +501,7 @@ int Thickness::rebindFacesFromRefs()
 
     int changed = 0;
     for (std::size_t i = 0; i < subs.size(); ++i) {
-        const std::string rebound = resolveSubRef(fromNeutralString(refs[i]), *baseFeat);
+        const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
         if (!rebound.empty() && rebound != subs[i]) {
             subs[i] = rebound;
             ++changed;
