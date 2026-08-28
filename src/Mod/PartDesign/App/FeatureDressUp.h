@@ -44,8 +44,18 @@ public:
      */
     App::PropertyLinkSub Base;
     App::PropertyBool SupportTransform;
+    /// Durable neutral references (Part::NRef, serialized) for each picked sub-element
+    /// of Base, in the same order as Base's sub-names. Captured when the selection
+    /// changes; let a stale edge/face selection re-find its target after the base was
+    /// rebuilt with a different sub-shape numbering. Hidden, machine-maintained.
+    App::PropertyStringList SubRefs;
 
     short mustExecute() const override;
+
+    /// Rewrite Base's sub-names from the durable references, so a selection gone stale
+    /// (a merge renumbered the base's edges/faces) points at the intended sub-shapes
+    /// again. Returns the number of sub-names changed; 0 if nothing needed rebinding.
+    int rebindSubsFromRefs();
 
     /**
      * Returns the BaseFeature property's object if it's set otherwise returns Base's
@@ -70,6 +80,8 @@ public:
 protected:
     void onChanged(const App::Property* prop) override;
     void onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase) override;
+    /// Capture a durable reference for each of Base's picked sub-elements, into SubRefs.
+    void captureSubRefs();
 };
 
 }  // namespace PartDesign

@@ -121,6 +121,9 @@ short Chamfer::mustExecute() const
 
 App::DocumentObjectExecReturn* Chamfer::execute()
 {
+    // Self-heal a stale edge selection before it is read (see Fillet::execute).
+    rebindSubsFromRefs();
+
     if (onlyHaveRefined()) {
         return App::DocumentObject::StdReturn;
     }
