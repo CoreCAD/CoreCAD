@@ -33,7 +33,7 @@ namespace
 // The primitives whose faces carry a parametric role. An explicit allow-list, not
 // "derives from Primitive": that base also covers leaves with no clean per-face
 // role (a wedge, a helix, a regular polygon), which stay signature-only.
-bool isRoleBearingPrimitive(const Feature& feature)
+bool isRoleBearingPrimitive(const ShapeFeature& feature)
 {
     return feature.isDerivedFrom<Box>() || feature.isDerivedFrom<Cylinder>()
         || feature.isDerivedFrom<Sphere>() || feature.isDerivedFrom<Cone>()
@@ -139,7 +139,7 @@ std::string denormalizeProv(const std::string& prov, const App::Document& doc)
 }
 }  // namespace
 
-NRef captureSubRef(const Feature& feature, const std::string& subName)
+NRef captureSubRef(const ShapeFeature& feature, const std::string& subName)
 {
     const TopoShape& stored = feature.Shape.getShape();
     if (stored.isNull() || subName.empty()) {
@@ -177,7 +177,10 @@ NRef captureSubRef(const Feature& feature, const std::string& subName)
     // gated on the feature type -- an explicit allow-list of the primitives whose faces
     // have parametric roles -- not on whether a role string comes back.
     if (ref.kind == "face" && isRoleBearingPrimitive(feature)) {
-        ref.role = capturePrimitiveFaceRole(feature, subName);
+        // A role-bearing primitive is a Part::Feature (it carries its own placement);
+        // the guard guarantees the downcast. capturePrimitiveFaceRole reads the local
+        // frame, which lives on Feature, not on the ShapeFeature base.
+        ref.role = capturePrimitiveFaceRole(static_cast<const Feature&>(feature), subName);
     }
 
     // Derived regime: a face produced by an operation carries a provenance name in
@@ -194,7 +197,7 @@ NRef captureSubRef(const Feature& feature, const std::string& subName)
     return ref;
 }
 
-std::string resolveSubRef(const NRef& ref, const Feature& feature)
+std::string resolveSubRef(const NRef& ref, const ShapeFeature& feature)
 {
     if (ref.kind != "face" && ref.kind != "edge") {
         return {};
@@ -202,9 +205,11 @@ std::string resolveSubRef(const NRef& ref, const Feature& feature)
 
     // Regime 1: a role-bearing primitive leaf -- symmetry-proof. Roles are a face
     // concept, so this regime applies only to a face ref; an edge ref (which never
-    // carries a role on capture) is never routed here even if handed one.
+    // carries a role on capture) is never routed here even if handed one. A role only
+    // exists on a primitive (a Part::Feature), so a non-Feature base never matches.
     if (ref.kind == "face" && !ref.role.empty()) {
-        return resolvePrimitiveFaceRole(feature, ref.role);
+        const auto* prim = freecad_cast<const Feature*>(&feature);
+        return prim != nullptr ? resolvePrimitiveFaceRole(*prim, ref.role) : std::string();
     }
 
     const TopoShape& stored = feature.Shape.getShape();
@@ -301,7 +306,7 @@ NRefBinding bindInDocument(const NRef& ref, const App::Document& doc)
 
     // The Uid is the join key: find the feature that carries this identity, whatever
     // face ordinals its own rebuild produced, and resolve the sub-name on it.
-    for (const Feature* feature : doc.getObjectsOfType<Feature>()) {
+    for (const ShapeFeature* feature : doc.getObjectsOfType<ShapeFeature>()) {
         if (feature->Uid.getValueStr() != ref.featureUid) {
             continue;
         }

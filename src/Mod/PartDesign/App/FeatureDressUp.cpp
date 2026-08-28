@@ -308,7 +308,7 @@ void DressUp::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentO
 
 void DressUp::captureSubRefs()
 {
-    auto* baseFeat = freecad_cast<Part::Feature*>(Base.getValue());
+    auto* baseFeat = freecad_cast<Part::ShapeFeature*>(Base.getValue());
     const std::vector<std::string>& subs = Base.getSubValues();
     if (!baseFeat || subs.empty()) {
         if (!SubRefs.getValues().empty()) {
@@ -329,7 +329,7 @@ void DressUp::captureSubRefs()
 
 int DressUp::rebindSubsFromRefs()
 {
-    auto* baseFeat = freecad_cast<Part::Feature*>(Base.getValue());
+    auto* baseFeat = freecad_cast<Part::ShapeFeature*>(Base.getValue());
     std::vector<std::string> subs = Base.getSubValues();
     const std::vector<std::string>& refs = SubRefs.getValues();
     if (!baseFeat || refs.size() != subs.size()) {

@@ -102,6 +102,9 @@ short Draft::mustExecute() const
 
 App::DocumentObjectExecReturn* Draft::execute()
 {
+    // Self-heal a stale face selection before it is read (see Fillet::execute).
+    rebindSubsFromRefs();
+
     // Get parameters
     // Base shape
     Part::TopoShape TopShape;

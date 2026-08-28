@@ -14,11 +14,17 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentObject.h>
 #include <src/App/InitApplication.h>
 
 #include <Mod/Part/App/FeaturePartBox.h>
+#include <Mod/Part/App/Geometry.h>
 #include <Mod/Part/App/NeutralRef.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureFillet.h>
+#include <Mod/PartDesign/App/FeaturePad.h>
+#include <Mod/Sketcher/App/SketchObject.h>
 
 using Part::captureSubRef;
 using Part::fromNeutralString;
@@ -130,6 +136,85 @@ TEST_F(DressUpRefTest, staleEdgeSelectionSelfHealsThroughRefs)
         EXPECT_EQ(captureSubRef(*_box, healed[i]).signature, pickedSignatures[i])
             << "healed sub " << healed[i] << " is not the originally-picked edge";
     }
+}
+
+// The thick half: the self-heal runs automatically inside execute(), not only via an
+// explicit call. Executing the feature after a base renumber rewrites Base's stale
+// sub-names. (A bare box base has no body, so the fillet geometry step errors out --
+// but the heal is the first statement in execute(), so it has already run.) Were the
+// heal not wired into execute, the stale "EdgeN" names would still name the wrong
+// physical edges here.
+TEST_F(DressUpRefTest, executeHealsStaleSelectionAutomatically)
+{
+    const std::vector<std::string> picked {"Edge1", "Edge6"};
+    std::vector<std::string> pickedSignatures;
+    for (const std::string& sub : picked) {
+        pickedSignatures.push_back(captureSubRef(*_box, sub).signature);
+    }
+
+    auto* fillet = _doc->addObject<PartDesign::Fillet>();
+    fillet->Base.setValue(_box, picked);
+
+    _box->Shape.setValue(withReversedFaceOrder(_box->Shape.getValue()));
+
+    App::DocumentObjectExecReturn* ret = fillet->execute();
+    if (ret != nullptr && ret != App::DocumentObject::StdReturn) {
+        delete ret;  // an error object (no body) -- the heal already ran before it
+    }
+
+    const std::vector<std::string> healed = fillet->Base.getSubValues();
+    ASSERT_EQ(healed.size(), picked.size());
+    for (std::size_t i = 0; i < healed.size(); ++i) {
+        EXPECT_EQ(captureSubRef(*_box, healed[i]).signature, pickedSignatures[i])
+            << "execute did not heal sub " << i << " back onto the picked edge";
+    }
+}
+
+// The real-base guard. The base of an actual dress-up is a PartDesign feature, which
+// in this fork derives from Part::ShapeFeature but NOT Part::Feature (it carries no
+// placement of its own -- the world-frame de-ownership). Capture must key on
+// ShapeFeature; if it narrowed back to Part::Feature, every real Fillet/Chamfer/Draft
+// would silently record nothing. The Part::Box-based tests above cannot catch that,
+// because a Box IS a Part::Feature. This builds a genuine Pad base and proves the
+// reference is captured against it.
+TEST(DressUpPadBaseTest, capturesAgainstPartDesignFeatureBase)
+{
+    tests::initApplication();
+    App::Document* doc
+        = App::GetApplication().newDocument("dressUpPadBase", "testUser", {.documentType = "Part"});
+
+    auto* body = doc->addObject<PartDesign::Body>();
+    auto* sketch = doc->addObject<Sketcher::SketchObject>("Sketch");
+    body->addFeature(sketch);
+    sketch->AttachmentSupport.setValue(doc->getObject("XY_Plane"), "");
+    sketch->MapMode.setValue("FlatFace");
+    Part::GeomCircle circle;
+    circle.setRadius(10.0);
+    sketch->addGeometry(&circle, false);
+
+    auto* pad = doc->addObject<PartDesign::Pad>("Pad");
+    body->addFeature(pad);
+    pad->Profile.setValue(sketch, {""});
+    pad->Length.setValue(5.0);
+    doc->recompute();
+    ASSERT_FALSE(pad->Shape.getShape().isNull());
+
+    // The premise the layer rests on: a PartDesign feature is a ShapeFeature, not a Feature.
+    EXPECT_TRUE(pad->isDerivedFrom<Part::ShapeFeature>());
+    EXPECT_FALSE(pad->isDerivedFrom<Part::Feature>());
+
+    auto* fillet = doc->addObject<PartDesign::Fillet>();
+    body->addFeature(fillet);
+    fillet->Base.setValue(pad, std::vector<std::string> {"Edge1"});
+
+    // Selecting an edge on a real PartDesign base captured a durable reference to it.
+    const std::vector<std::string> refs = fillet->SubRefs.getValues();
+    ASSERT_EQ(refs.size(), 1U);
+    const NRef ref = fromNeutralString(refs[0]);
+    EXPECT_EQ(ref.featureUid, pad->Uid.getValueStr());
+    EXPECT_FALSE(ref.signature.empty());
+
+    App::GetApplication().closeDocument(doc->getName());
 }
 
 // A base with no durable references (nothing was captured) leaves the selection
