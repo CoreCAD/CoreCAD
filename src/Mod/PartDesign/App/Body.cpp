@@ -1402,7 +1402,12 @@ bool Body::isAllowed(const App::DocumentObject* obj)
     // TODO: Should we introduce a PartDesign::FeaturePython class? This should then also return
     // true for isSolidFeature()
     return (
-        obj->isDerivedFrom<PartDesign::Feature>() || obj->isDerivedFrom<Part::Datum>() ||
+        obj->isDerivedFrom<PartDesign::Feature>()
+        || obj->isDerivedFrom<Part::Datum>()
+        // Lean datums (App::Plane/Line/Point and the local coordinate system) replace the retired
+        // fat Part::Datum family and are equally valid body members.
+        || obj->isDerivedFrom<App::DatumElement>()
+        || obj->isDerivedFrom<App::LocalCoordinateSystem>() ||
         // TODO Shouldn't we replace it with Sketcher::SketchObject? (2015-08-13, Fat-Zer)
         obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<PartDesign::ShapeBinder>()
         || obj->isDerivedFrom<PartDesign::SubShapeBinder>() ||

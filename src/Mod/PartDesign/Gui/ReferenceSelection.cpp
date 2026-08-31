@@ -69,9 +69,14 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
         return false;
     }
 
-    // Enable selection of the document's shared world-frame base planes/axes
+    // A shared world-frame base plane/axis lives in the document Origin; a user-created datum
+    // (now an App::DatumElement of its own, not the retired fat Part::Datum) does not. Route the
+    // former to the Origin rule, and fall back to the datum rule for the latter.
     if (pObj->isDerivedFrom<App::DatumElement>()) {
-        return allowOrigin(body, pObj);
+        if (allowOrigin(body, pObj)) {
+            return true;
+        }
+        return allowDatum(body, pObj);
     }
 
     if (pObj->isDerivedFrom<Part::Datum>()) {
@@ -157,13 +162,16 @@ bool ReferenceSelection::allowDatum(PartDesign::Body* body, App::DocumentObject*
         return false;
     }
 
-    if (type.testFlag(AllowSelection::FACE) && (pObj->isDerivedFrom<PartDesign::Plane>())) {
+    if (type.testFlag(AllowSelection::FACE)
+        && (pObj->isDerivedFrom<PartDesign::Plane>() || pObj->isDerivedFrom<App::Plane>())) {
         return true;
     }
-    if (type.testFlag(AllowSelection::EDGE) && (pObj->isDerivedFrom<PartDesign::Line>())) {
+    if (type.testFlag(AllowSelection::EDGE)
+        && (pObj->isDerivedFrom<PartDesign::Line>() || pObj->isDerivedFrom<App::Line>())) {
         return true;
     }
-    if (type.testFlag(AllowSelection::POINT) && (pObj->isDerivedFrom<PartDesign::Point>())) {
+    if (type.testFlag(AllowSelection::POINT)
+        && (pObj->isDerivedFrom<PartDesign::Point>() || pObj->isDerivedFrom<App::Point>())) {
         return true;
     }
 
