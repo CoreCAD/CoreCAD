@@ -37,7 +37,6 @@
 #include <Mod/Fem/App/FemConstraintForce.h>
 #include <Mod/Fem/App/FemTools.h>
 #include <Mod/Part/App/PartFeature.h>
-#include <Mod/Part/App/DatumFeature.h>
 
 #include "TaskFemConstraintForce.h"
 #include "ui_TaskFemConstraintForce.h"
@@ -275,7 +274,7 @@ std::pair<App::DocumentObject*, std::string> TaskFemConstraintForce::getDirectio
 
     // Line or Plane
     const auto selObj = selectionElement.getObject();
-    if (selObj->isDerivedFrom<App::DatumElement>() || selObj->isDerivedFrom<Part::Datum>()) {
+    if (selObj->isDerivedFrom<App::DatumElement>()) {
         link = std::make_pair(selObj, std::string());
     }
     // Sub-element of Part object

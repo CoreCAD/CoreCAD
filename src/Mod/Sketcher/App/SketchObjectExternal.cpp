@@ -80,7 +80,6 @@
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Base/Vector3D.h>
-#include <Mod/Part/App/DatumFeature.h>
 
 #include <memory>
 
@@ -1303,11 +1302,7 @@ void SketchObject::validateExternalLinks()
 
         TopoDS_Shape refSubShape;
         try {
-            if (Obj->isDerivedFrom<Part::Datum>()) {
-                const auto* datum = static_cast<const Part::Datum*>(Obj);
-                refSubShape = datum->getShape();
-            }
-            else if (Obj->isDerivedFrom<App::DatumElement>()) {
+            if (Obj->isDerivedFrom<App::DatumElement>()) {
                 // do nothing - shape will be calculated later during rebuild
             }
             else {
@@ -2420,10 +2415,7 @@ void SketchObject::rebuildExternalGeometry(std::optional<ExternalToAdd> extToAdd
                 }
             }
 
-            if (auto* datum = freecad_cast<const Part::Datum*>(resolvedObj)) {
-                refSubShape = datum->getShape();
-            }
-            else if (auto* refObj = freecad_cast<const Part::ShapeFeature*>(resolvedObj)) {
+            if (auto* refObj = freecad_cast<const Part::ShapeFeature*>(resolvedObj)) {
                 const Part::TopoShape& refShape = refObj->Shape.getShape();
                 refSubShape = refShape.getSubShape(SubElement.c_str());
             }
@@ -2789,9 +2781,7 @@ void SketchObject::updateGeometryRefs()
 
         legacyMap[key + Data::oldElementName(sub.c_str())] = i;
 
-        if (!obj->isDerivedFrom<Part::Datum>()) {
-            key += Data::newElementName(sub.c_str());
-        }
+        key += Data::newElementName(sub.c_str());
         if (!originalRefs.empty() && originalRefs[i] != key) {
             refMap[originalRefs[i]] = key;
         }

@@ -240,8 +240,6 @@ SET(Features_SRCS
     BodyBase.cpp
     Datums.cpp
     Datums.h
-    DatumFeature.cpp
-    DatumFeature.h
     AttachExtension.h
     AttachExtension.cpp
     PreviewExtension.cpp

@@ -60,7 +60,6 @@
 #include <cmath>
 #include <set>
 
-#include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/PartDesign/App/Body.h>
 
@@ -550,12 +549,11 @@ App::DocumentObject* getObjFromRef(App::DocumentObject* comp, const std::string&
 
     // Lambda function to check if the typeId is a BodySubObject
     const auto isBodySubObject = [](App::DocumentObject* obj) -> bool {
-        // PartDesign::Point + Line + Plane + CoordinateSystem
+        // Datum point/line/plane and the local coordinate system.
         // getViewProviderName instead of isDerivedFrom to avoid dependency on sketcher
         const auto isDerivedFromVpSketch
             = strcmp(obj->getViewProviderName(), "SketcherGui::ViewProviderSketch") == 0;
-        return isDerivedFromVpSketch || obj->isDerivedFrom<PartApp::Datum>()
-            || obj->isDerivedFrom<App::DatumElement>()
+        return isDerivedFromVpSketch || obj->isDerivedFrom<App::DatumElement>()
             || obj->isDerivedFrom<App::LocalCoordinateSystem>();
     };
 

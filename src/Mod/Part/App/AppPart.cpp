@@ -63,7 +63,6 @@
 #include "CustomFeature.h"
 #include "CylinderPy.h"
 #include "Datums.h"
-#include "DatumFeature.h"
 #include "EllipsePy.h"
 #include "FaceMaker.h"
 #include "FaceMakerBullseye.h"
@@ -552,7 +551,6 @@ PyMOD_INIT_FUNC(Part)
     Part::GeomTrimmedSurface      	::init();
     Part::GeomSurfaceOfRevolution 	::init();
     Part::GeomSurfaceOfExtrusion  	::init();
-    Part::Datum                   	::init();
     Part::DatumPlane             	::init();
     Part::DatumLine                	::init();
     Part::DatumPoint               	::init();

@@ -46,8 +46,8 @@
 #include <BRepBuilderAPI_Copy.hxx>
 #include <GeomLib_IsPlanarSurface.hxx>
 
-#include <DatumFeature.h>
 #include <App/Application.h>
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/MeasureManager.h>
@@ -114,7 +114,7 @@ TopoDS_Shape getLocatedShape(const App::SubObjectT& subject, Base::Matrix4D* mat
     shape.setPlacement(placement);
 
     // Don't get the subShape from datum elements
-    if (obj->isDerivedFrom<Part::Datum>()) {
+    if (obj->isDerivedFrom<App::DatumElement>()) {
         return shape.getShape();
     }
 
@@ -162,8 +162,9 @@ App::MeasureElementType PartMeasureTypeCb(App::DocumentObject* ob, const char* s
 
             switch (curve.GetType()) {
                 case GeomAbs_Line: {
-                    return ob->isDerivedFrom<Part::Datum>() ? App::MeasureElementType::LINE
-                                                            : App::MeasureElementType::LINESEGMENT;
+                    return ob->isDerivedFrom<App::DatumElement>()
+                        ? App::MeasureElementType::LINE
+                        : App::MeasureElementType::LINESEGMENT;
                 }
                 case GeomAbs_Circle: {
                     return App::MeasureElementType::CIRCLE;

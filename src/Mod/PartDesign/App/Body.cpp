@@ -196,8 +196,8 @@ constexpr int MaxAnchorWalkDepth = 4;
 // branch ends at a global plane, free datum, or otherwise unanchored geometry —
 // the signal to spawn a new Body when no Body is found.
 //
-// Order of checks matters: a Part::Datum has AttachExtension and is also a
-// Part::Feature, so the AttachExtension branch must come first to avoid treating
+// Order of checks matters: a datum carries AttachExtension and may also be a
+// solid feature, so the AttachExtension branch must come first to avoid treating
 // it as a solid feature.
 bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodies, int depth)
 {
@@ -1403,9 +1403,8 @@ bool Body::isAllowed(const App::DocumentObject* obj)
     // true for isSolidFeature()
     return (
         obj->isDerivedFrom<PartDesign::Feature>()
-        || obj->isDerivedFrom<Part::Datum>()
-        // Lean datums (App::Plane/Line/Point and the local coordinate system) replace the retired
-        // fat Part::Datum family and are equally valid body members.
+        // Lean datums: App::Plane/Line/Point (via App::DatumElement) and the local coordinate
+        // system are valid body members.
         || obj->isDerivedFrom<App::DatumElement>()
         || obj->isDerivedFrom<App::LocalCoordinateSystem>() ||
         // TODO Shouldn't we replace it with Sketcher::SketchObject? (2015-08-13, Fat-Zer)

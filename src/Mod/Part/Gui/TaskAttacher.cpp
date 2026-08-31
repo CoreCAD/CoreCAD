@@ -57,7 +57,6 @@
 #include <Base/Tools.h>
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/BodyBase.h>
-#include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/Gui/AttacherTexts.h>
 #include <Mod/Part/Gui/TaskAttacher.h>
 
@@ -84,7 +83,7 @@ const QString makeRefString(const App::DocumentObject* obj, const std::string& s
         return QObject::tr("No reference selected");
     }
 
-    if (obj->isDerivedFrom<App::DatumElement>() || obj->isDerivedFrom<Part::Datum>()) {
+    if (obj->isDerivedFrom<App::DatumElement>()) {
         return QString::fromLatin1(obj->getNameInDocument());
     }
 
@@ -661,7 +660,7 @@ void TaskAttacher::addToReference(const std::vector<SubAndObjName>& pairs)
         }
 
         // Remove subname for planes and datum features
-        if (selObj->isDerivedFrom<App::DatumElement>() || selObj->isDerivedFrom<Part::Datum>()) {
+        if (selObj->isDerivedFrom<App::DatumElement>()) {
             subname = "";
         }
 
@@ -937,7 +936,7 @@ void TaskAttacher::onRefName(const QString& text, unsigned idx)
     if (parts.length() < 2) {
         parts.push_back(QStringLiteral(""));
     }
-    // Check whether this is the name of an App::Plane or Part::Datum feature
+    // Check whether this is the name of an App::Plane / App::Line datum feature
     App::DocumentObject* obj = ViewProvider->getObject()->getDocument()->getObject(parts[0].toLatin1());
     if (!obj) {
         return;
@@ -953,9 +952,6 @@ void TaskAttacher::onRefName(const QString& text, unsigned idx)
     else if (obj->isDerivedFrom<App::Line>()) {
         // everything is OK (we assume a Part can only have exactly 3 App::Line objects located at
         // the base of the feature tree)
-        subElement.clear();
-    }
-    else if (obj->isDerivedFrom<Part::Datum>()) {
         subElement.clear();
     }
     else {

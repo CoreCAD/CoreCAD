@@ -459,7 +459,7 @@ PyObject* Feature::getPyObject()
 
 bool Feature::isDatum(const App::DocumentObject* feature)
 {
-    return feature->isDerivedFrom<App::DatumElement>() || feature->isDerivedFrom<Part::Datum>();
+    return feature->isDerivedFrom<App::DatumElement>();
 }
 
 gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)

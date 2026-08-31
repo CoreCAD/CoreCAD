@@ -34,6 +34,7 @@
 #include <QSlider>
 #include <QToolTip>
 
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <App/Link.h>
 #include <App/Part.h>
@@ -49,7 +50,6 @@
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewProviderGeometryObject.h>
-#include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/FeatureCompound.h>
 #include <Mod/Part/App/FeaturePartBox.h>
 #include <Mod/Part/App/FeaturePartCommon.h>
@@ -888,7 +888,8 @@ bool SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
         if (Part::hasShape(object)) {
             // sort out 2D objects, datums, App:Parts, compounds and objects that are
             // part of a PartDesign body
-            if (!object->isDerivedFrom<Part::Part2DObject>() && !object->isDerivedFrom<Part::Datum>()
+            if (!object->isDerivedFrom<Part::Part2DObject>()
+                && !object->isDerivedFrom<App::DatumElement>()
                 && !object->isDerivedFrom(Base::Type::fromName("PartDesign::Feature"))
                 && !object->isDerivedFrom<Part::Compound>()
                 && object->getTypeId() != Base::Type::fromName("App::Part")) {
