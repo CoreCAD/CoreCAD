@@ -57,7 +57,7 @@ class TestPad(unittest.TestCase):
 
     def testSketchOnDatumPlane(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        self.DatumPlane = self.Doc.addObject("PartDesign::Plane", "DatumPlane")
+        self.DatumPlane = self.Doc.addObject("Part::DatumPlane", "DatumPlane")
         self.DatumPlane.AttachmentSupport = (self.Doc.XY_Plane, [""])
         self.DatumPlane.MapMode = "FlatFace"
         self.Body.addFeature(self.DatumPlane)

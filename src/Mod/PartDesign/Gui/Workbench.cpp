@@ -230,7 +230,7 @@ void Workbench::activated()
         nullptr
     };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Plane COUNT 1",
+        "SELECT Part::DatumPlane COUNT 1",
         Plane2,
         "Helper Tools",
         "PartDesign_Body"
@@ -238,7 +238,7 @@ void Workbench::activated()
 
     const char* Line[] = {"Part_DatumPoint", "Part_DatumLine", "Part_DatumPlane", nullptr};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Line COUNT 1",
+        "SELECT Part::DatumLine COUNT 1",
         Line,
         "Helper Tools",
         "PartDesign_Body"
@@ -247,7 +247,7 @@ void Workbench::activated()
     const char* Point[]
         = {"Part_DatumPoint", "Part_DatumLine", "Part_DatumPlane", "Part_CoordinateSystem", nullptr};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Point COUNT 1",
+        "SELECT Part::DatumPoint COUNT 1",
         Point,
         "Helper Tools",
         "PartDesign_Body"

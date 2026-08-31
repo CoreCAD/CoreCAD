@@ -422,7 +422,7 @@ void fixSketchSupport(Sketcher::SketchObject* sketch)
         }
 
         std::string Datum = doc->getUniqueObjectName("DatumPlane");
-        FCMD_DOC_CMD(doc, "addObject('PartDesign::Plane','" << Datum << "')");
+        FCMD_DOC_CMD(doc, "addObject('Part::DatumPlane','" << Datum << "')");
         auto obj = doc->getObject(Datum.c_str());
         FCMD_OBJ_CMD(obj, "AttachmentSupport = [(" << Gui::Command::getObjectCmd(plane) << ",'')]");
         FCMD_OBJ_CMD(obj, "MapMode = '" << AttachEngine::getModeName(Attacher::mmFlatFace) << "'");

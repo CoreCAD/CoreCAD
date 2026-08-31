@@ -44,9 +44,6 @@
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/DatumLine.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
-#include <Mod/PartDesign/App/DatumPoint.h>
 
 #include "ReferenceSelection.h"
 #include "Utils.h"
@@ -70,16 +67,12 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
     }
 
     // A shared world-frame base plane/axis lives in the document Origin; a user-created datum
-    // (now an App::DatumElement of its own, not the retired fat Part::Datum) does not. Route the
-    // former to the Origin rule, and fall back to the datum rule for the latter.
+    // is an App::DatumElement of its own. Route the former to the Origin rule, and fall back to
+    // the datum rule for the latter.
     if (pObj->isDerivedFrom<App::DatumElement>()) {
         if (allowOrigin(body, pObj)) {
             return true;
         }
-        return allowDatum(body, pObj);
-    }
-
-    if (pObj->isDerivedFrom<Part::Datum>()) {
         return allowDatum(body, pObj);
     }
 
@@ -155,23 +148,20 @@ bool ReferenceSelection::allowOrigin(PartDesign::Body* body, App::DocumentObject
 
 bool ReferenceSelection::allowDatum(PartDesign::Body* body, App::DocumentObject* pObj) const
 {
-    if (!body) {  // Allow selecting Part::Datum features from the active Body
+    if (!body) {  // Allow selecting datum features from the active Body
         return false;
     }
     else if (!type.testFlag(AllowSelection::OTHERBODY) && !PartDesign::Body::backsBody(pObj, body)) {
         return false;
     }
 
-    if (type.testFlag(AllowSelection::FACE)
-        && (pObj->isDerivedFrom<PartDesign::Plane>() || pObj->isDerivedFrom<App::Plane>())) {
+    if (type.testFlag(AllowSelection::FACE) && pObj->isDerivedFrom<App::Plane>()) {
         return true;
     }
-    if (type.testFlag(AllowSelection::EDGE)
-        && (pObj->isDerivedFrom<PartDesign::Line>() || pObj->isDerivedFrom<App::Line>())) {
+    if (type.testFlag(AllowSelection::EDGE) && pObj->isDerivedFrom<App::Line>()) {
         return true;
     }
-    if (type.testFlag(AllowSelection::POINT)
-        && (pObj->isDerivedFrom<PartDesign::Point>() || pObj->isDerivedFrom<App::Point>())) {
+    if (type.testFlag(AllowSelection::POINT) && pObj->isDerivedFrom<App::Point>()) {
         return true;
     }
 

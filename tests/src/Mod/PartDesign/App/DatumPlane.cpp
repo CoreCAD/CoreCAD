@@ -8,7 +8,7 @@
 #include <App/Origin.h>
 #include "Mod/Part/App/Attacher.h"
 #include "Mod/PartDesign/App/Body.h"
-#include "Mod/PartDesign/App/DatumPlane.h"
+#include "Mod/Part/App/Datums.h"
 
 class DatumPlaneTest: public ::testing::Test
 {
@@ -48,7 +48,7 @@ private:
 
 TEST_F(DatumPlaneTest, attachDatumPlane)
 {
-    auto datumPlane = getDocument()->addObject<PartDesign::Plane>("Plane");
+    auto datumPlane = getDocument()->addObject<Part::DatumPlane>("Plane");
     ASSERT_TRUE(datumPlane);
     getBody()->addFeature(datumPlane);
     auto origin = getBody()->getOrigin();

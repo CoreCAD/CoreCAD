@@ -62,9 +62,6 @@
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
-#include <Mod/PartDesign/App/DatumLine.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
-#include <Mod/PartDesign/App/DatumPoint.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 

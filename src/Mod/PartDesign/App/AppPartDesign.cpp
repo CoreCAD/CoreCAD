@@ -28,10 +28,6 @@
 #include <Base/PyObjectBase.h>
 
 #include "Body.h"
-#include "DatumCS.h"
-#include "DatumLine.h"
-#include "DatumPlane.h"
-#include "DatumPoint.h"
 #include "Measure.h"
 #include "FeatureBakedShape.h"
 #include "FeatureBase.h"
@@ -130,10 +126,6 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::ShapeBinder                 ::init();
     PartDesign::SubShapeBinder              ::init();
     PartDesign::SubShapeBinderPython        ::init();
-    PartDesign::Plane                       ::init();
-    PartDesign::Line                        ::init();
-    PartDesign::Point                       ::init();
-    PartDesign::CoordinateSystem            ::init();
     PartDesign::Boolean                     ::init();
     PartDesign::FeaturePrimitive            ::init();
     PartDesign::Box                         ::init();

@@ -101,16 +101,6 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderScaled.h
     ViewProviderMultiTransform.cpp
     ViewProviderMultiTransform.h
-    ViewProviderDatum.cpp
-    ViewProviderDatum.h
-    ViewProviderDatumPoint.cpp
-    ViewProviderDatumPoint.h
-    ViewProviderDatumLine.cpp
-    ViewProviderDatumLine.h
-    ViewProviderDatumPlane.cpp
-    ViewProviderDatumPlane.h
-    ViewProviderDatumCS.cpp
-    ViewProviderDatumCS.h
     ViewProviderShapeBinder.h
     ViewProviderShapeBinder.cpp
     ViewProviderBoolean.cpp
@@ -179,8 +169,6 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskHoleParameters.ui
     TaskHoleParameters.cpp
     TaskHoleParameters.h
-    TaskDatumParameters.cpp
-    TaskDatumParameters.h
     TaskShapeBinder.ui
     TaskShapeBinder.cpp
     TaskShapeBinder.h

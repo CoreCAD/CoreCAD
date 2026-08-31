@@ -31,7 +31,6 @@
 #include <gp_Ax2.hxx>
 #include <BRepAdaptor_Curve.hxx>
 
-#include "DatumLine.h"
 #include <Base/Axis.h>
 #include <Base/Exception.h>
 #include <Base/Tools.h>
@@ -209,13 +208,6 @@ const std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<App:
 
         axbase = gp_Pnt(axis.getBase().x, axis.getBase().y, axis.getBase().z);
         axdir = gp_Dir(axis.getDirection().x, axis.getDirection().y, axis.getDirection().z);
-    }
-    else if (refObject->isDerivedFrom<PartDesign::Line>()) {
-        PartDesign::Line* line = static_cast<PartDesign::Line*>(refObject);
-        Base::Vector3d base = line->getBasePoint();
-        axbase = gp_Pnt(base.x, base.y, base.z);
-        Base::Vector3d dir = line->getDirection();
-        axdir = gp_Dir(dir.x, dir.y, dir.z);
     }
     else if (refObject->isDerivedFrom<App::Line>()) {
         App::Line* line = static_cast<App::Line*>(refObject);

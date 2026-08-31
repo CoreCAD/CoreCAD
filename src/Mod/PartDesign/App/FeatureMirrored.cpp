@@ -35,7 +35,6 @@
 #include <Mod/Part/App/Part2DObject.h>
 
 #include "FeatureMirrored.h"
-#include "DatumPlane.h"
 
 
 using namespace PartDesign;
@@ -111,21 +110,7 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
         return false;
     };
 
-    // Datum plane
-    getMirrorAxis axisOfDatumPlane = [this](gp_Pnt& axbase, gp_Dir& axdir) {
-        App::DocumentObject* refObject = MirrorPlane.getValue();
-        if (auto plane = dynamic_cast<PartDesign::Plane*>(refObject)) {
-            Base::Vector3d base = plane->getBasePoint();
-            axbase = gp_Pnt(base.x, base.y, base.z);
-            Base::Vector3d dir = plane->getNormal();
-            axdir = gp_Dir(dir.x, dir.y, dir.z);
-            return true;
-        }
-
-        return false;
-    };
-
-    // Normal plane
+    // Datum or normal plane
     getMirrorAxis axisOfPlane = [this](gp_Pnt& axbase, gp_Dir& axdir) {
         App::DocumentObject* refObject = MirrorPlane.getValue();
         if (auto plane = dynamic_cast<App::Plane*>(refObject)) {
@@ -184,7 +169,6 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
     gp_Dir axdir;
     std::vector<getMirrorAxis> axisCheckers;
     axisCheckers.push_back(axisOfSketch);
-    axisCheckers.push_back(axisOfDatumPlane);
     axisCheckers.push_back(axisOfPlane);
     axisCheckers.push_back(axisOfPlanarShape);
 

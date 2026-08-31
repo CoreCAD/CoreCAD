@@ -37,8 +37,6 @@
 #include <Gui/Command.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/DatumLine.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
 #include <Mod/PartDesign/App/FeaturePolarPattern.h>
 #include <Mod/Part/Gui/PatternParametersWidget.h>

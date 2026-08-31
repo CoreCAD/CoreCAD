@@ -731,10 +731,6 @@ void TaskMassProperties::tryUpdate()
         if (freecad_cast<App::Origin*>(obj)) {
             return true;
         }
-        if (obj->getTypeId().getName() == std::string("PartDesign::CoordinateSystem")) {
-            return true;
-        }
-
         return obj->isDerivedFrom<App::Line>();
     };
 

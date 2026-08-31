@@ -30,19 +30,11 @@ SET(Features_SRCS
 )
 SOURCE_GROUP("Features" FILES ${Features_SRCS})
 
-SET(DatumFeatures_SRCS
+SET(ShapeBinder_SRCS
     ShapeBinder.h
     ShapeBinder.cpp
-    DatumPlane.cpp
-    DatumPlane.h
-    DatumLine.cpp
-    DatumLine.h
-    DatumPoint.cpp
-    DatumPoint.h
-    DatumCS.h
-    DatumCS.cpp
 )
-SOURCE_GROUP("DatumFeatures" FILES ${DatumFeatures_SRCS})
+SOURCE_GROUP("ShapeBinder" FILES ${ShapeBinder_SRCS})
 
 SET(FeaturesTransformed_SRCS
     FeatureTransformed.h
@@ -129,7 +121,7 @@ SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
 SET(PartDesign_SRCS
     ${Features_SRCS}
-    ${DatumFeatures_SRCS}
+    ${ShapeBinder_SRCS}
     ${FeaturesTransformed_SRCS}
     ${FeaturesSketchBased_SRCS}
     ${FeaturesDressUp_SRCS}

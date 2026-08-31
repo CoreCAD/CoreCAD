@@ -34,7 +34,7 @@ class TestDatumPoint(unittest.TestCase):
 
     def testOriginDatumPoint(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        self.DatumPoint = self.Doc.addObject("PartDesign::Point", "DatumPoint")
+        self.DatumPoint = self.Doc.addObject("Part::DatumPoint", "DatumPoint")
         self.DatumPoint.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumPoint.MapMode = "ObjectOrigin"
         self.Body.addFeature(self.DatumPoint)
@@ -53,7 +53,7 @@ class TestDatumLine(unittest.TestCase):
 
     def testXAxisDatumLine(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        self.DatumLine = self.Doc.addObject("PartDesign::Line", "DatumLine")
+        self.DatumLine = self.Doc.addObject("Part::DatumLine", "DatumLine")
         self.DatumLine.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumLine.MapMode = "ObjectX"
         self.Body.addFeature(self.DatumLine)
@@ -72,7 +72,7 @@ class TestDatumPlane(unittest.TestCase):
 
     def testXYDatumPlane(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        self.DatumPlane = self.Doc.addObject("PartDesign::Plane", "DatumPlane")
+        self.DatumPlane = self.Doc.addObject("Part::DatumPlane", "DatumPlane")
         self.DatumPlane.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumPlane.MapMode = "FlatFace"
         self.Body.addFeature(self.DatumPlane)
