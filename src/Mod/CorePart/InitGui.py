@@ -532,18 +532,6 @@ class CorePartWorkbench(Gui.Workbench):
                 "Vertex Tools",
                 "PartDesign_Body",
             ),
-            # Vertex tools (PartDesign datum objects)
-            FilterWatcher(
-                "SELECT Part::Feature SUBELEMENT Vertex COUNT 1..",
-                [
-                    "PartDesign_Point",
-                    "PartDesign_Line",
-                    "PartDesign_Plane",
-                    "PartDesign_CoordinateSystem",
-                ],
-                "Datum objects",
-                "PartDesign_CoordinateSystem",
-            ),
             # Edge tools
             FilterWatcher(
                 "SELECT Part::Feature SUBELEMENT Edge COUNT 1..",
@@ -557,17 +545,6 @@ class CorePartWorkbench(Gui.Workbench):
                 ],
                 "Edge Tools",
                 "PartDesign_Body",
-            ),
-            FilterWatcher(
-                "SELECT Part::Feature SUBELEMENT Edge COUNT 1..",
-                [
-                    "PartDesign_Point",
-                    "PartDesign_Line",
-                    "PartDesign_Plane",
-                    "PartDesign_CoordinateSystem",
-                ],
-                "Datum objects",
-                "PartDesign_CoordinateSystem",
             ),
             # Single-face tools
             FilterWatcher(
@@ -585,17 +562,6 @@ class CorePartWorkbench(Gui.Workbench):
                 ],
                 "Face Tools",
                 "PartDesign_Body",
-            ),
-            FilterWatcher(
-                "SELECT Part::Feature SUBELEMENT Face COUNT 1",
-                [
-                    "PartDesign_Point",
-                    "PartDesign_Line",
-                    "PartDesign_Plane",
-                    "PartDesign_CoordinateSystem",
-                ],
-                "Datum objects",
-                "PartDesign_CoordinateSystem",
             ),
             # Body selected
             FilterWatcher(
@@ -628,20 +594,9 @@ class CorePartWorkbench(Gui.Workbench):
                 "Helper Tools",
                 "PartDesign_Body",
             ),
+            # Plane selected (Part::DatumPlane — datum plane)
             FilterWatcher(
-                "SELECT App::Plane COUNT 1",
-                [
-                    "PartDesign_Point",
-                    "PartDesign_Line",
-                    "PartDesign_Plane",
-                    "PartDesign_CoordinateSystem",
-                ],
-                "Datum objects",
-                "PartDesign_CoordinateSystem",
-            ),
-            # Plane selected (PartDesign::Plane — datum plane)
-            FilterWatcher(
-                "SELECT PartDesign::Plane COUNT 1",
+                "SELECT Part::DatumPlane COUNT 1",
                 [
                     "PartDesign_NewSketch",
                     "Part_DatumPoint",
@@ -652,33 +607,16 @@ class CorePartWorkbench(Gui.Workbench):
                 "Helper Tools",
                 "PartDesign_Body",
             ),
+            # Line selected (Part::DatumLine)
             FilterWatcher(
-                "SELECT PartDesign::Plane COUNT 1",
-                [
-                    "PartDesign_Point",
-                    "PartDesign_Line",
-                    "PartDesign_Plane",
-                    "PartDesign_CoordinateSystem",
-                ],
-                "Datum objects",
-                "PartDesign_CoordinateSystem",
-            ),
-            # Line selected (PartDesign::Line)
-            FilterWatcher(
-                "SELECT PartDesign::Line COUNT 1",
+                "SELECT Part::DatumLine COUNT 1",
                 ["Part_DatumPoint", "Part_DatumLine", "Part_DatumPlane"],
                 "Helper Tools",
                 "PartDesign_Body",
             ),
+            # Point selected (Part::DatumPoint)
             FilterWatcher(
-                "SELECT PartDesign::Line COUNT 1",
-                ["PartDesign_Point", "PartDesign_Line", "PartDesign_Plane"],
-                "Datum objects",
-                "PartDesign_CoordinateSystem",
-            ),
-            # Point selected (PartDesign::Point)
-            FilterWatcher(
-                "SELECT PartDesign::Point COUNT 1",
+                "SELECT Part::DatumPoint COUNT 1",
                 [
                     "Part_DatumPoint",
                     "Part_DatumLine",
@@ -687,17 +625,6 @@ class CorePartWorkbench(Gui.Workbench):
                 ],
                 "Helper Tools",
                 "PartDesign_Body",
-            ),
-            FilterWatcher(
-                "SELECT PartDesign::Point COUNT 1",
-                [
-                    "PartDesign_Point",
-                    "PartDesign_Line",
-                    "PartDesign_Plane",
-                    "PartDesign_CoordinateSystem",
-                ],
-                "Datum objects",
-                "PartDesign_CoordinateSystem",
             ),
             # Multiple faces
             FilterWatcher(

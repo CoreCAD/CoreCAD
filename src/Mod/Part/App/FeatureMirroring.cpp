@@ -43,7 +43,6 @@
 #include <App/Datums.h>
 
 #include "FeatureMirroring.h"
-#include "DatumFeature.h"
 
 
 using namespace Part;
@@ -166,9 +165,7 @@ App::DocumentObjectExecReturn* Mirroring::execute()
       Can also be App::Links to such objects
     */
     if (refObject) {
-        if (refObject->isDerivedFrom<Part::Plane>() || refObject->isDerivedFrom<App::Plane>()
-            || (strstr(refObject->getNameInDocument(), "Plane")
-                && refObject->isDerivedFrom<Part::Datum>())) {
+        if (refObject->isDerivedFrom<Part::Plane>() || refObject->isDerivedFrom<App::Plane>()) {
             auto* plane = static_cast<Part::ShapeFeature*>(refObject);
             Base::Vector3d base = plane->getPlacement().getPosition();
             axbase = gp_Pnt(base.x, base.y, base.z);

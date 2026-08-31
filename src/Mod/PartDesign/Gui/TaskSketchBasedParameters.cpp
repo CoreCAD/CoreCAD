@@ -37,7 +37,6 @@
 #include <Gui/Document.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/ViewProvider.h>
-#include <Mod/Part/App/DatumFeature.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
@@ -147,7 +146,7 @@ void TaskSketchBasedParameters::finishReferenceSelection(App::DocumentObject*, A
 
 void TaskSketchBasedParameters::onSelectReference(AllowSelectionFlags allow)
 {
-    // Note: Even if there is no solid, App::Plane and Part::Datum can still be selected
+    // Note: Even if there is no solid, an App::Plane (base or datum) can still be selected
     if (auto sketchBased = getObject<PartDesign::ProfileBased>()) {
         // The solid this feature will be fused to
         App::DocumentObject* prevSolid = sketchBased->getBaseObject(/* silent =*/true);
@@ -183,7 +182,7 @@ QVariant TaskSketchBasedParameters::setUpToFace(const QString& text)
         parts.push_back(QString());
     }
 
-    // Check whether this is the name of an App::Plane or Part::Datum feature
+    // Check whether this is the name of an App::Plane (base-frame or datum) feature
     App::Document* doc = getAppDocument();
     if (!doc) {
         return {};
@@ -195,13 +194,8 @@ QVariant TaskSketchBasedParameters::setUpToFace(const QString& text)
     }
 
     if (obj->isDerivedFrom<App::Plane>()) {
-        // everything is OK (we assume a Part can only have exactly 3 App::Plane objects
-        // located at the base of the feature tree)
-        return {};
-    }
-
-    if (obj->isDerivedFrom<Part::Datum>()) {
-        // it's up to the document to check that the datum plane is in the same body
+        // everything is OK (base-frame planes and user datum planes both derive from App::Plane;
+        // it's up to the document to check that a datum plane is in the same body)
         return {};
     }
 

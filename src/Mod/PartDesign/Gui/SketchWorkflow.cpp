@@ -37,7 +37,6 @@
 #include "Utils.h"
 #include "ViewProviderBody.h"
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/ShapeExtension.h>
@@ -591,7 +590,7 @@ std::tuple<Gui::SelectionFilter, Gui::SelectionFilter, Gui::SelectionFilter> Ske
 
     Gui::SelectionFilter FaceFilter("SELECT Part::Feature SUBELEMENT Face COUNT 1");
     Gui::SelectionFilter PlaneFilter("SELECT App::Plane COUNT 1", activeBody);
-    Gui::SelectionFilter PlaneFilter2("SELECT PartDesign::Plane COUNT 1", activeBody);
+    Gui::SelectionFilter PlaneFilter2("SELECT Part::DatumPlane COUNT 1", activeBody);
     Gui::SelectionFilter SketchFilter("SELECT Part::Part2DObject COUNT 1", activeBody);
 
     if (PlaneFilter2.match()) {

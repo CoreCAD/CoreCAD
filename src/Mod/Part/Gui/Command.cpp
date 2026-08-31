@@ -55,6 +55,8 @@
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/WaitCursor.h>
 
+#include <Mod/Part/App/Attacher.h>
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/Datums.h>
 #include <Mod/Part/App/Part2DObject.h>
 
@@ -2643,6 +2645,42 @@ QString getAutoGroupCommandStr()
 
     return QStringLiteral("# Object created at document root.");
 }
+
+// Give a freshly created datum the best-fit attachment for the current selection, so
+// "select a face -> create datum" yields an already-attached datum in one step. Ported from
+// the retired PartDesign UnifiedDatumCommand (Cruth datum consolidation, issue #45): the
+// surviving Part datum command is the union of both halves -- no active-body gate (kept) plus
+// auto-attach-from-selection (restored here). If nothing is selected, or the selection fits no
+// attachment mode, the datum is left loose for the user to attach through the dialog that opens.
+void applyAttachmentFromSelection(App::DocumentObject* obj)
+{
+    if (!obj) {
+        return;
+    }
+    App::PropertyLinkSubList support;
+    Gui::Selection().getAsPropertyLinkSubList(support);
+    // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the Tip
+    // feature so the datum attaches to the feature, not the tip-tracking Body (ARCHITECTURE §8).
+    Part::BodyBase::rebaseBodySubReferencesToTip(support);
+    support.removeValue(obj);
+    if (support.getSize() == 0) {
+        return;
+    }
+
+    auto* attach = obj->getExtensionByType<Part::AttachExtension>();
+    if (!attach) {
+        return;
+    }
+    attach->attacher().setReferences(support);
+    Attacher::SuggestResult sugr;
+    attach->attacher().suggestMapModes(sugr);
+    if (sugr.message != Attacher::SuggestResult::srOK) {
+        return;
+    }
+    FCMD_OBJ_CMD(obj, "AttachmentSupport = " << support.getPyReprString());
+    FCMD_OBJ_CMD(obj, "MapMode = '" << Attacher::AttachEngine::getModeName(sugr.bestFitMode) << "'");
+    Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
+}
 }  // namespace
 
 DEF_STD_CMD_A(CmdPartCoordinateSystem)
@@ -2671,6 +2709,7 @@ void CmdPartCoordinateSystem::activated(int iMsg)
         name.c_str()
     );
     doCommand(Doc, getAutoGroupCommandStr().toUtf8());
+    applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.Visibility = True");
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
 }
@@ -2705,6 +2744,7 @@ void CmdPartDatumPlane::activated(int iMsg)
     std::string name = getUniqueObjectName("DatumPlane");
     doCommand(Doc, "obj = App.activeDocument().addObject('Part::DatumPlane','%s')", name.c_str());
     doCommand(Doc, getAutoGroupCommandStr().toUtf8());
+    applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
 }
 
@@ -2738,6 +2778,7 @@ void CmdPartDatumLine::activated(int iMsg)
     std::string name = getUniqueObjectName("DatumLine");
     doCommand(Doc, "obj = App.activeDocument().addObject('Part::DatumLine','%s')", name.c_str());
     doCommand(Doc, getAutoGroupCommandStr().toUtf8());
+    applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
 }
 
@@ -2771,6 +2812,7 @@ void CmdPartDatumPoint::activated(int iMsg)
     std::string name = getUniqueObjectName("DatumPoint");
     doCommand(Doc, "obj = App.activeDocument().addObject('Part::DatumPoint','%s')", name.c_str());
     doCommand(Doc, getAutoGroupCommandStr().toUtf8());
+    applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
 }
 

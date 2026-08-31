@@ -58,7 +58,6 @@
 #include <Gui/WaitCursor.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PrimitiveFeature.h>
-#include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/FeatureMirroring.h>
 #include <App/Datums.h>
 
@@ -88,8 +87,7 @@ public:
     {
         std::string subString(sSubName);
 
-        if (pObj->isDerivedFrom<Part::Plane>() || pObj->isDerivedFrom<App::Plane>()
-            || (strstr(pObj->getNameInDocument(), "Plane") && pObj->isDerivedFrom<Part::Datum>())) {
+        if (pObj->isDerivedFrom<Part::Plane>() || pObj->isDerivedFrom<App::Plane>()) {
             return true;
             // reference is an app::link or a part::feature or some subobject
         }

@@ -15,7 +15,7 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
+#include <Mod/Part/App/Datums.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
@@ -135,7 +135,7 @@ TEST_F(WorldFrameTest, PadWithAttachmentOffsetOnPlacedSupport)
     ASSERT_NE(xy, nullptr);
 
     // A datum plane with a genuinely non-identity placement (offset + tilt off XY_Plane).
-    auto* datum = _doc->addObject<PartDesign::Plane>("Datum");
+    auto* datum = _doc->addObject<Part::DatumPlane>("Datum");
     _body->addFeature(datum);
     datum->AttachmentSupport.setValue(xy, "");
     datum->MapMode.setValue("FlatFace");

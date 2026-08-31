@@ -62,9 +62,6 @@
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
-#include <Mod/PartDesign/App/DatumLine.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
-#include <Mod/PartDesign/App/DatumPoint.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 
@@ -217,234 +214,6 @@ static bool resolveBaseBodyForNewFeature(Gui::Command* cmd, PartDesign::Body*& b
     bool abort = false;
     body = decideBaseBody(sketch, abort);
     return !abort;
-}
-
-//===========================================================================
-// PartDesign_Datum
-//===========================================================================
-
-/**
- * @brief UnifiedDatumCommand is a common routine called by datum plane, line and point commands
- * @param cmd (i/o) command, to have shortcuts to doCommand, etc.
- * @param type (input)
- * @param name (input). Is used to generate new name for an object, and to fill undo messages.
- *
- */
-void UnifiedDatumCommand(Gui::Command& cmd, Base::Type type, std::string name)
-{
-    try {
-        std::string fullTypeName(type.getName());
-
-        App::PropertyLinkSubList support;
-        cmd.getSelection().getAsPropertyLinkSubList(support);
-        // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the
-        // Tip feature so the datum attaches to the feature, not the tip-tracking Body (§8).
-        Part::BodyBase::rebaseBodySubReferencesToTip(support);
-
-        bool bEditSelected = false;
-        if (support.getSize() == 1 && support.getValue()) {
-            if (support.getValue()->isDerivedFrom(type)) {
-                bEditSelected = true;
-            }
-        }
-
-        PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/*messageIfNot = */ true);
-
-        if (bEditSelected) {
-            pcActiveBody->getDocument()->openTransaction(
-                std::string(std::string("Edit ") + name).c_str()
-            );  // Will be closed in the edit dialog accept/reject
-            PartDesignGui::setEdit(support.getValue(), pcActiveBody);
-        }
-        else if (pcActiveBody) {
-
-            // TODO Check how this will work outside of a body (2015-10-20, Fat-Zer)
-            std::string FeatName = cmd.getUniqueObjectName(name.c_str(), pcActiveBody);
-
-            pcActiveBody->getDocument()->openTransaction(
-                std::string(std::string("Create ") + name).c_str()
-            );  // Will be closed in the edit dialog accept/reject
-            // remove the body from links in case it's selected as
-            // otherwise a cyclic dependency will be created
-            support.removeValue(pcActiveBody);
-
-            auto Feat = PartDesignGui::createFeature(pcActiveBody, fullTypeName.c_str(), FeatName);
-            if (!Feat) {
-                return;
-            }
-
-            // test if current selection fits a mode.
-            if (support.getSize() > 0) {
-                Part::AttachExtension* pcDatum = Feat->getExtensionByType<Part::AttachExtension>();
-                pcDatum->attacher().setReferences(support);
-                SuggestResult sugr;
-                pcDatum->attacher().suggestMapModes(sugr);
-                if (sugr.message == Attacher::SuggestResult::srOK) {
-                    // fits some mode. Populate AttachmentSupport property.
-                    FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << support.getPyReprString());
-                    FCMD_OBJ_CMD(
-                        Feat,
-                        "MapMode = '" << AttachEngine::getModeName(sugr.bestFitMode) << "'"
-                    );
-                }
-                else {
-                    QMessageBox::information(
-                        Gui::getMainWindow(),
-                        QObject::tr("Invalid Selection"),
-                        QObject::tr("There are no attachment modes that fit selected objects. Select something else.")
-                    );
-                }
-            }
-            cmd.doCommand(
-                Gui::Command::Doc,
-                "App.activeDocument().recompute()"
-            );  // recompute the feature based on its references
-            PartDesignGui::setEdit(Feat, pcActiveBody);
-        }
-        else {
-            QMessageBox::warning(
-                Gui::getMainWindow(),
-                QObject::tr("Error"),
-                QObject::tr("There is no active body. Please activate a body before inserting a datum entity.")
-            );
-        }
-    }
-    catch (Base::Exception& e) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("Error"),
-            QApplication::translate("Exception", e.what())
-        );
-    }
-    catch (Standard_Failure& e) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("Error"),
-            QString::fromLatin1(e.GetMessageString())
-        );
-    }
-}
-
-/* Datum feature commands =======================================================*/
-
-DEF_STD_CMD_A(CmdPartDesignPlane)
-
-CmdPartDesignPlane::CmdPartDesignPlane()
-    : Command("PartDesign_Plane")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Datum Plane");
-    sToolTipText = QT_TR_NOOP("Creates a new datum plane");
-    sWhatsThis = "PartDesign_Plane";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_Plane";
-}
-
-void CmdPartDesignPlane::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    UnifiedDatumCommand(*this, Base::Type::fromName("PartDesign::Plane"), "DatumPlane");
-}
-
-bool CmdPartDesignPlane::isActive()
-{
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
-DEF_STD_CMD_A(CmdPartDesignLine)
-
-CmdPartDesignLine::CmdPartDesignLine()
-    : Command("PartDesign_Line")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Datum Line");
-    sToolTipText = QT_TR_NOOP("Creates a new datum line");
-    sWhatsThis = "PartDesign_Line";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_Line";
-}
-
-void CmdPartDesignLine::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    UnifiedDatumCommand(*this, Base::Type::fromName("PartDesign::Line"), "DatumLine");
-}
-
-bool CmdPartDesignLine::isActive()
-{
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
-DEF_STD_CMD_A(CmdPartDesignPoint)
-
-CmdPartDesignPoint::CmdPartDesignPoint()
-    : Command("PartDesign_Point")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Datum Point");
-    sToolTipText = QT_TR_NOOP("Creates a new datum point");
-    sWhatsThis = "PartDesign_Point";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_Point";
-}
-
-void CmdPartDesignPoint::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    UnifiedDatumCommand(*this, Base::Type::fromName("PartDesign::Point"), "DatumPoint");
-}
-
-bool CmdPartDesignPoint::isActive()
-{
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
-DEF_STD_CMD_A(CmdPartDesignCS)
-
-CmdPartDesignCS::CmdPartDesignCS()
-    : Command("PartDesign_CoordinateSystem")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Local Coordinate System");
-    sToolTipText = QT_TR_NOOP("Creates a new local coordinate system");
-    sWhatsThis = "PartDesign_CoordinateSystem";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_CoordinateSystem";
-}
-
-void CmdPartDesignCS::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    UnifiedDatumCommand(*this, Base::Type::fromName("PartDesign::CoordinateSystem"), "Local_CS");
-}
-
-bool CmdPartDesignCS::isActive()
-{
-    if (getActiveGuiDocument()) {
-        return true;
-    }
-    else {
-        return false;
-    }
 }
 
 //===========================================================================
@@ -2697,41 +2466,6 @@ bool CmdPartDesignBoolean::isActive()
 
 // Command group for datums =============================================
 
-class CmdPartDesignCompDatums: public Gui::GroupCommand
-{
-public:
-    CmdPartDesignCompDatums()
-        : GroupCommand("PartDesign_CompDatums")
-    {
-        sAppModule = "PartDesign";
-        sGroup = "PartDesign";
-        sMenuText = QT_TR_NOOP("Create Datum");
-        sToolTipText = QT_TR_NOOP("Creates a datum object or local coordinate system");
-        sWhatsThis = "PartDesign_CompDatums";
-        sStatusTip = sToolTipText;
-        eType = ForEdit;
-
-        setCheckable(false);
-
-        addCommand("PartDesign_Plane");
-        addCommand("PartDesign_Line");
-        addCommand("PartDesign_Point");
-        addCommand("PartDesign_CoordinateSystem");
-    }
-
-    const char* className() const override
-    {
-        return "CmdPartDesignCompDatums";
-    }
-
-    bool isActive() override
-    {
-        return (hasActiveDocument() && !Gui::Control().activeDialog());
-    }
-};
-
-// Command group for datums =============================================
-
 class CmdPartDesignCompSketches: public Gui::GroupCommand
 {
 public:
@@ -2776,10 +2510,6 @@ void CreatePartDesignCommands()
     rcCmdMgr.addCommand(new CmdPartDesignShapeBinder());
     rcCmdMgr.addCommand(new CmdPartDesignSubShapeBinder());
     rcCmdMgr.addCommand(new CmdPartDesignClone());
-    rcCmdMgr.addCommand(new CmdPartDesignPlane());
-    rcCmdMgr.addCommand(new CmdPartDesignLine());
-    rcCmdMgr.addCommand(new CmdPartDesignPoint());
-    rcCmdMgr.addCommand(new CmdPartDesignCS());
 
     rcCmdMgr.addCommand(new CmdPartDesignNewSketch());
 
@@ -2807,6 +2537,5 @@ void CreatePartDesignCommands()
     rcCmdMgr.addCommand(new CmdPartDesignMultiTransform());
 
     rcCmdMgr.addCommand(new CmdPartDesignBoolean());
-    rcCmdMgr.addCommand(new CmdPartDesignCompDatums());
     rcCmdMgr.addCommand(new CmdPartDesignCompSketches());
 }

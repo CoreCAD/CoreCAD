@@ -39,8 +39,6 @@
 #include <Mod/Part/App/Part2DObject.h>
 
 #include "FeatureLinearPattern.h"
-#include "DatumLine.h"
-#include "DatumPlane.h"
 
 
 using namespace PartDesign;
@@ -405,14 +403,6 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
             axis.setDirection(Base::Vector3d(d.X(), d.Y(), d.Z()));
         }
         dir = gp_Dir(axis.getDirection().x, axis.getDirection().y, axis.getDirection().z);
-    }
-    else if (auto* plane = freecad_cast<PartDesign::Plane*>(refObject)) {
-        Base::Vector3d d = plane->getNormal();
-        dir = gp_Dir(d.x, d.y, d.z);
-    }
-    else if (auto* line = freecad_cast<PartDesign::Line*>(refObject)) {
-        Base::Vector3d d = line->getDirection();
-        dir = gp_Dir(d.x, d.y, d.z);
     }
     else if (auto* plane = freecad_cast<App::Plane*>(refObject)) {
         Base::Vector3d d = plane->getDirection();

@@ -435,7 +435,7 @@ class TestDatumPlane(unittest.TestCase):
         body.addFeature(box)
 
         self.Doc.recompute()
-        datum = body.addFeature(body.Document.addObject("PartDesign::Plane", "DatumPlane"))
+        datum = body.addFeature(body.Document.addObject("Part::DatumPlane", "DatumPlane"))
         datum.AttachmentSupport = [(box, "Face6")]
         datum.MapMode = "FlatFace"
         self.Doc.recompute()

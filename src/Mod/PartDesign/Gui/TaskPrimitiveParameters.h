@@ -32,8 +32,9 @@
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
 
+#include <Mod/Part/Gui/TaskAttacher.h>
+
 #include "ViewProviderPrimitive.h"
-#include "TaskDatumParameters.h"
 #include "TaskFeatureParameters.h"
 
 namespace App

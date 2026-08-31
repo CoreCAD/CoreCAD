@@ -196,8 +196,8 @@ constexpr int MaxAnchorWalkDepth = 4;
 // branch ends at a global plane, free datum, or otherwise unanchored geometry —
 // the signal to spawn a new Body when no Body is found.
 //
-// Order of checks matters: a Part::Datum has AttachExtension and is also a
-// Part::Feature, so the AttachExtension branch must come first to avoid treating
+// Order of checks matters: a datum carries AttachExtension and may also be a
+// solid feature, so the AttachExtension branch must come first to avoid treating
 // it as a solid feature.
 bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodies, int depth)
 {
@@ -1402,7 +1402,11 @@ bool Body::isAllowed(const App::DocumentObject* obj)
     // TODO: Should we introduce a PartDesign::FeaturePython class? This should then also return
     // true for isSolidFeature()
     return (
-        obj->isDerivedFrom<PartDesign::Feature>() || obj->isDerivedFrom<Part::Datum>() ||
+        obj->isDerivedFrom<PartDesign::Feature>()
+        // Lean datums: App::Plane/Line/Point (via App::DatumElement) and the local coordinate
+        // system are valid body members.
+        || obj->isDerivedFrom<App::DatumElement>()
+        || obj->isDerivedFrom<App::LocalCoordinateSystem>() ||
         // TODO Shouldn't we replace it with Sketcher::SketchObject? (2015-08-13, Fat-Zer)
         obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<PartDesign::ShapeBinder>()
         || obj->isDerivedFrom<PartDesign::SubShapeBinder>() ||

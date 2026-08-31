@@ -51,8 +51,6 @@
 #include <Mod/Part/App/TopoShape.h>
 
 #include "FeatureDraft.h"
-#include "DatumLine.h"
-#include "DatumPlane.h"
 
 
 using namespace PartDesign;
@@ -130,12 +128,7 @@ App::DocumentObjectExecReturn* Draft::execute()
     gp_Dir pullDirection;
     App::DocumentObject* refDirection = PullDirection.getValue();
     if (refDirection) {
-        if (refDirection->isDerivedFrom<PartDesign::Line>()) {
-            PartDesign::Line* line = static_cast<PartDesign::Line*>(refDirection);
-            Base::Vector3d d = line->getDirection();
-            pullDirection = gp_Dir(d.x, d.y, d.z);
-        }
-        else if (refDirection->isDerivedFrom<App::Line>()) {
+        if (refDirection->isDerivedFrom<App::Line>()) {
             App::Line* line = static_cast<App::Line*>(refDirection);
             Base::Vector3d d = line->getDirection();
             pullDirection = gp_Dir(d.x, d.y, d.z);
@@ -227,15 +220,7 @@ App::DocumentObjectExecReturn* Draft::execute()
         }
     }
     else {
-        if (refPlane->isDerivedFrom<PartDesign::Plane>()) {
-            PartDesign::Plane* plane = static_cast<PartDesign::Plane*>(refPlane);
-            Base::Vector3d b = plane->getBasePoint();
-            Base::Vector3d n = plane->getNormal();
-            neutralPlane = gp_Pln(gp_Pnt(b.x, b.y, b.z), gp_Dir(n.x, n.y, n.z));
-        }
-        else if (
-            refPlane->isDerivedFrom<App::Plane>() || refPlane->isDerivedFrom<Part::Part2DObject>()
-        ) {
+        if (refPlane->isDerivedFrom<App::Plane>() || refPlane->isDerivedFrom<Part::Part2DObject>()) {
             neutralPlane = Feature::makePlnFromPlane(refPlane);
         }
         else if (Part::hasShape(refPlane)) {

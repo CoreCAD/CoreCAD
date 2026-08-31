@@ -329,13 +329,13 @@ public:
     /**
      * Return true if the given feature is a solid feature allowed in a Body. Currently this is only
      * valid for features derived from PartDesign::Feature Return false if the given feature is a
-     * Sketch or a Part::Datum feature
+     * Sketch or a datum feature
      */
     static bool isSolidFeature(const App::DocumentObject* obj);
 
     /**
      * Return true if the given feature is allowed in a Body. Currently allowed are
-     * all features derived from PartDesign::Feature and Part::Datum and sketches
+     * all features derived from PartDesign::Feature, datums, and sketches
      */
     static bool isAllowed(const App::DocumentObject* obj);
     bool allowObject(DocumentObject* obj)

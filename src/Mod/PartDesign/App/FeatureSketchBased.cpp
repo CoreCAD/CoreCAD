@@ -58,8 +58,6 @@
 #include <Mod/Part/App/FaceMakerCheese.h>
 
 #include "FeatureSketchBased.h"
-#include "DatumLine.h"
-#include "DatumPlane.h"
 #include "Mod/Part/App/Geometry.h"
 
 
@@ -813,11 +811,6 @@ void ProfileBased::getFaceFromLinkSub(TopoDS_Face& upToFace, const App::Property
         upToFace = TopoDS::Face(makeShapeFromPlane(ref));
         return;
     }
-    else if (ref->isDerivedFrom<PartDesign::Plane>()) {
-        Part::Datum* datum = static_cast<Part::Datum*>(ref);
-        upToFace = TopoDS::Face(datum->getShape());
-        return;
-    }
 
     if (!Part::hasShape(ref)) {
         throw Base::TypeError("SketchBased: Must be face of a feature");
@@ -1331,15 +1324,6 @@ void ProfileBased::getAxis(
     }
 
     // get reference axis
-    if (pcReferenceAxis->isDerivedFrom<PartDesign::Line>()) {
-        const PartDesign::Line* line = static_cast<const PartDesign::Line*>(pcReferenceAxis);
-        base = line->getBasePoint();
-        dir = line->getDirection();
-
-        verifyAxisFunc(checkAxis, sketchplane, gp_Dir(dir.x, dir.y, dir.z));
-        return;
-    }
-
     if (pcReferenceAxis->isDerivedFrom<App::Line>()) {
         auto* line = static_cast<const App::Line*>(pcReferenceAxis);
         base = line->getBasePoint();

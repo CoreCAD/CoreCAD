@@ -40,7 +40,6 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/Part/App/DatumFeature.h>
 
 #include "AssemblyObject.h"
 #include "AssemblyUtils.h"
