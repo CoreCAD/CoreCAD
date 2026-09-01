@@ -36,7 +36,13 @@ class FCBRepAlgoAPI_BooleanOperation;
 namespace Part
 {
 
-class PartExport Boolean: public Part::Feature
+/** A two-operand boolean.
+ *
+ * Derived, not an anchor (Amendment 4): its place in the world is wholly a
+ * consequence of the operands it consumes, so it holds no authored placement of
+ * its own — hence the unplaced Part::ShapeFeature base rather than Part::Feature.
+ */
+class PartExport Boolean: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Boolean);
 

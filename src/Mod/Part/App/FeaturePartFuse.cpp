@@ -66,7 +66,7 @@ const char* Fuse::opCode() const
 
 // ----------------------------------------------------
 
-PROPERTY_SOURCE(Part::MultiFuse, Part::Feature)
+PROPERTY_SOURCE(Part::MultiFuse, Part::ShapeFeature)
 
 
 MultiFuse::MultiFuse()
@@ -220,7 +220,7 @@ App::DocumentObjectExecReturn* MultiFuse::execute()
 
             App::DocumentObject* link = Shapes.getValues()[0];
             copyMaterial(link);
-            return Part::Feature::execute();
+            return Part::ShapeFeature::execute();
         }
         catch (Standard_Failure& e) {
             return new App::DocumentObjectExecReturn(e.GetMessageString());
