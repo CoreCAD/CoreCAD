@@ -32,7 +32,13 @@
 namespace Part
 {
 
-class PartExport Face: public Part::Feature
+/** A face built across the wires of the objects it links.
+ *
+ * Derived, not an anchor (Amendment 4): every wire it spans arrives already in
+ * world coordinates from the source it consumes, so the face lands wherever
+ * those sources are and authors no position of its own.
+ */
+class PartExport Face: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Face);
 
