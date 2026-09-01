@@ -53,7 +53,7 @@
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::RuledSurface, Part::Feature)
+PROPERTY_SOURCE(Part::RuledSurface, Part::ShapeFeature)
 
 const char* RuledSurface::OrientationEnums[] = {"Automatic", "Forward", "Reversed", nullptr};
 
@@ -87,7 +87,7 @@ short RuledSurface::mustExecute() const
 
 void RuledSurface::onChanged(const App::Property* prop)
 {
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 App::DocumentObjectExecReturn* RuledSurface::getShape(
@@ -161,7 +161,7 @@ App::DocumentObjectExecReturn* RuledSurface::execute()
         TopoShape res(0, getDocument()->getStringHasher());
         res.makeElementRuledSurface(shapes, Orientation.getValue());
         this->Shape.setValue(res);
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
 
@@ -176,7 +176,7 @@ App::DocumentObjectExecReturn* RuledSurface::execute()
 
 App::PropertyIntegerConstraint::Constraints Loft::Degrees = {2, Geom_BSplineSurface::MaxDegree(), 1};
 
-PROPERTY_SOURCE(Part::Loft, Part::Feature)
+PROPERTY_SOURCE(Part::Loft, Part::ShapeFeature)
 
 Loft::Loft()
 {
@@ -218,7 +218,7 @@ short Loft::mustExecute() const
 
 void Loft::onChanged(const App::Property* prop)
 {
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 App::DocumentObjectExecReturn* Loft::execute()
@@ -245,7 +245,7 @@ App::DocumentObjectExecReturn* Loft::execute()
             result.linearize(LinearizeFace::linearizeFaces, LinearizeEdge::noEdges);
         }
         this->Shape.setValue(result);
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
 
@@ -257,7 +257,7 @@ App::DocumentObjectExecReturn* Loft::execute()
 
 const char* Part::Sweep::TransitionEnums[] = {"Transformed", "Right corner", "Round corner", nullptr};
 
-PROPERTY_SOURCE(Part::Sweep, Part::Feature)
+PROPERTY_SOURCE(Part::Sweep, Part::ShapeFeature)
 
 Sweep::Sweep()
 {
@@ -299,7 +299,7 @@ short Sweep::mustExecute() const
 
 void Sweep::onChanged(const App::Property* prop)
 {
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 App::DocumentObjectExecReturn* Sweep::execute()

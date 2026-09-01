@@ -40,7 +40,7 @@ using namespace Part;
 
 App::PropertyFloatConstraint::Constraints Revolution::angleRangeU = {-360.0, 360.0, 1.0};
 
-PROPERTY_SOURCE(Part::Revolution, Part::Feature)
+PROPERTY_SOURCE(Part::Revolution, Part::ShapeFeature)
 
 Revolution::Revolution()
 {
@@ -110,7 +110,7 @@ void Revolution::onChanged(const App::Property* prop)
             Axis.setReadOnly(AxisLink.getValue() != nullptr);
         }
     }
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 bool Revolution::fetchAxisLink(
@@ -229,7 +229,7 @@ App::DocumentObjectExecReturn* Revolution::execute()
             return new App::DocumentObjectExecReturn("Resulting shape is null");
         }
         this->Shape.setValue(revolve);
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());
@@ -238,6 +238,6 @@ App::DocumentObjectExecReturn* Revolution::execute()
 
 void Part::Revolution::setupObject()
 {
-    Part::Feature::setupObject();
+    Part::ShapeFeature::setupObject();
     this->FaceMakerClass.setValue("Part::FaceMakerBullseye");  // default for newly created features
 }

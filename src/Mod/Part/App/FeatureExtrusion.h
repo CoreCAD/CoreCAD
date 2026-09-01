@@ -37,7 +37,13 @@
 namespace Part
 {
 
-class PartExport Extrusion: public Part::Feature
+/** A profile swept along a straight direction.
+ *
+ * Derived, not an anchor (Amendment 4): it stands on the profile it consumes
+ * and grows from where that profile is, so it holds no authored placement and
+ * derives from the unplaced ShapeFeature.
+ */
+class PartExport Extrusion: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Extrusion);
 

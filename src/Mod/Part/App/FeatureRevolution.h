@@ -35,7 +35,13 @@
 namespace Part
 {
 
-class PartExport Revolution: public Part::Feature
+/** A profile swept about an axis.
+ *
+ * Derived, not an anchor (Amendment 4): it stands on the profile it consumes
+ * and turns about an axis it is given, so it holds no authored placement and
+ * derives from the unplaced ShapeFeature.
+ */
+class PartExport Revolution: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Revolution);
 

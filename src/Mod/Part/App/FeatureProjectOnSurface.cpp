@@ -49,7 +49,7 @@
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::ProjectOnSurface, Part::Feature)
+PROPERTY_SOURCE(Part::ProjectOnSurface, Part::ShapeFeature)
 static std::array<const char*, 4> modes = {"All", "Faces", "Edges", nullptr};  // NOLINT
 
 ProjectOnSurface::ProjectOnSurface()
@@ -101,9 +101,7 @@ void ProjectOnSurface::tryExecute()
     }
 
     results = filterShapes(results);
-    auto currentPlacement = Placement.getValue();
     Shape.setValue(createCompound(results));
-    Placement.setValue(currentPlacement);
 }
 
 TopoDS_Face ProjectOnSurface::getSupportFace() const
