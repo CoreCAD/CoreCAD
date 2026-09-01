@@ -35,7 +35,13 @@
 namespace Part
 {
 
-class PartExport RuledSurface: public Part::Feature
+/** The surface ruled between two curves.
+ *
+ * Derived, not an anchor (Amendment 4): it is stretched between the two curves
+ * it consumes, so it holds no authored placement and derives from the unplaced
+ * ShapeFeature.
+ */
+class PartExport RuledSurface: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::RuledSurface);
 
@@ -67,7 +73,13 @@ private:
     static const char* OrientationEnums[];
 };
 
-class PartExport Loft: public Part::Feature
+/** A shape lofted through a series of section profiles.
+ *
+ * Derived, not an anchor (Amendment 4): it passes through the sections it
+ * consumes and sits where they sit, so it holds no authored placement and
+ * derives from the unplaced ShapeFeature.
+ */
+class PartExport Loft: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Loft);
 
@@ -99,7 +111,12 @@ private:
     static App::PropertyIntegerConstraint::Constraints Degrees;
 };
 
-class PartExport Sweep: public Part::Feature
+/** A profile swept along a spine.
+ *
+ * Derived, not an anchor (Amendment 4): it follows the spine it consumes, so it
+ * holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class PartExport Sweep: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Sweep);
 

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <BRep_Builder.hxx>
+#include <Precision.hxx>
 #include <TopExp.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS_Shell.hxx>
@@ -10,8 +11,11 @@
 
 #include "Mod/Part/App/PrimitiveFaceRoleRef.h"
 #include "Mod/Part/App/NeutralRef.h"
+#include "Mod/Part/App/FeatureExtrusion.h"
 #include "Mod/Part/App/FeatureMirroring.h"
 #include "Mod/Part/App/FeatureOffset.h"
+#include "Mod/Part/App/FeatureProjectOnSurface.h"
+#include "Mod/Part/App/FeatureRevolution.h"
 #include "Mod/Part/App/FeatureScale.h"
 #include "Mod/Part/App/PartFeatures.h"
 #include <src/App/InitApplication.h>
@@ -385,4 +389,72 @@ TEST_F(PartFeaturesTest, derivedOpsStayWhereTheirBaseIs)
             Base::BoundBox3d(0, 3, 0, 2, 7, 6)
         )
     );
+}
+
+// Amendment 4 again, one level along the same argument: a feature that builds a
+// shape by sweeping a profile it consumes is derived too. It stands on its profile
+// and goes where the profile, the axis or the spine sends it, so it authors no
+// position of its own. Stated structurally for the same reason as the transform
+// ops above -- putting any of these back onto the placed Part::Feature should fail
+// here rather than quietly hand the result a placement that lies.
+TEST_F(PartFeaturesTest, profileBuildersHoldNoAuthoredPlacement)
+{
+    auto* extrusion = _doc->addObject<Part::Extrusion>();
+    auto* revolution = _doc->addObject<Part::Revolution>();
+    auto* loft = _doc->addObject<Part::Loft>();
+    auto* sweep = _doc->addObject<Part::Sweep>();
+    auto* ruled = _doc->addObject<Part::RuledSurface>();
+    auto* projection = _doc->addObject<Part::ProjectOnSurface>();
+
+    const std::vector<App::GeoFeature*> builders
+        = {extrusion, revolution, loft, sweep, ruled, projection};
+    for (auto* obj : builders) {
+        EXPECT_TRUE(obj->isDerivedFrom<Part::ShapeFeature>()) << obj->getTypeId().getName();
+        EXPECT_FALSE(obj->isDerivedFrom<Part::Feature>()) << obj->getTypeId().getName();
+        EXPECT_FALSE(obj->holdsAuthoredPlacement()) << obj->getTypeId().getName();
+        EXPECT_EQ(nullptr, obj->getPropertyByName("Placement")) << obj->getTypeId().getName();
+    }
+
+    // The contrast the rule turns on: a primitive IS an anchor and does author one.
+    EXPECT_TRUE(_boxes[0]->holdsAuthoredPlacement());
+}
+
+// And the behaviour that goes with it: an extrusion grows from where its profile
+// is, not from the world origin. Driven through a real recompute, since it is the
+// recompute that stores the shape at the feature's own placement -- the step where
+// a position left in the shape's OCC location would be lost.
+TEST_F(PartFeaturesTest, anExtrusionGrowsFromWhereItsProfileIs)
+{
+    // _boxes[2] is a 1 x 2 x 3 box parked away from the origin, at 0, 3, 0. Take its
+    // top face as a profile so the profile is off the origin in all three axes.
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(_boxes[2]->Shape.getShape().getShape(), TopAbs_FACE, faces);
+    TopoDS_Shape topFace;
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        const Base::BoundBox3d bb = Part::TopoShape(faces(i)).getBoundBox();
+        if (bb.MinZ > 3.0 - Precision::Confusion()) {
+            topFace = faces(i);
+            break;
+        }
+    }
+    ASSERT_FALSE(topFace.IsNull());
+
+    auto* profile = _doc->addObject<Part::Feature>();
+    profile->Shape.setValue(topFace);
+
+    auto* extrusion = _doc->addObject<Part::Extrusion>();
+    extrusion->Base.setValue(profile);
+    extrusion->DirMode.setValue(static_cast<long>(Part::Extrusion::dmCustom));
+    extrusion->Dir.setValue(Base::Vector3d(0, 0, 1));
+    extrusion->LengthFwd.setValue(4.0);
+    extrusion->Solid.setValue(true);
+    _doc->recompute();
+
+    // Sits on the profile and grows upward from it -- it does not fall to the origin.
+    EXPECT_TRUE(
+        PartTestHelpers::boxesMatch(
+            extrusion->Shape.getShape().getBoundBox(),
+            Base::BoundBox3d(0, 3, 3, 1, 5, 7)
+        )
+    ) << "the extrusion left its profile behind";
 }
