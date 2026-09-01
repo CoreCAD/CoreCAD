@@ -34,7 +34,13 @@
 namespace Part
 {
 
-class PartExport Mirroring: public Part::Feature
+/** The mirror image of what it consumes.
+ *
+ * Derived, not an anchor (Amendment 4): the result sits where the mirror plane
+ * puts it, so it holds no authored placement and derives from the unplaced
+ * ShapeFeature.
+ */
+class PartExport Mirroring: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Mirroring);
 

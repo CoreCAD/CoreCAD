@@ -47,7 +47,7 @@
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::Mirroring, Part::Feature)
+PROPERTY_SOURCE(Part::Mirroring, Part::ShapeFeature)
 
 Mirroring::Mirroring()
 {
@@ -118,7 +118,7 @@ void Mirroring::onChanged(const App::Property* prop)
             }
         }
     }
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 void Mirroring::handleChangedPropertyType(
@@ -142,7 +142,7 @@ void Mirroring::handleChangedPropertyType(
         Normal.setValue(v.getValue());
     }
     else {
-        Part::Feature::handleChangedPropertyType(reader, TypeName, prop);
+        Part::ShapeFeature::handleChangedPropertyType(reader, TypeName, prop);
     }
 }
 
@@ -334,7 +334,7 @@ App::DocumentObjectExecReturn* Mirroring::execute()
         this->Shape.setValue(mirrored);
         copyMaterial(link);
 
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());

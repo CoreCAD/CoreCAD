@@ -37,7 +37,7 @@
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::Scale, Part::Feature)
+PROPERTY_SOURCE(Part::Scale, Part::ShapeFeature)
 
 Scale::Scale()
 {
@@ -115,8 +115,15 @@ TopoShape Scale::uniformScale(const TopoShape& source, const double& factor)
         gp_Trsf scaleTransform;
         scaleTransform.SetScale(gp_Pnt(0, 0, 0), factor);
 
-        BRepBuilderAPI_Transform mkTrf(source.getShape(), scaleTransform);
-        transShape = mkTrf.Shape();
+        // Scale about the source's own origin, so the part grows in place rather
+        // than being flung away from the world origin: strip the position off,
+        // scale, then put the position back -- baked into the geometry, since a
+        // feature that authors no placement has no location to keep it in
+        // (Amendment 4).
+        const TopoDS_Shape& sourceShape = source.getShape();
+        const TopLoc_Location sourceLoc = sourceShape.Location();
+        BRepBuilderAPI_Transform mkTrf(sourceShape.Located(TopLoc_Location()), scaleTransform);
+        transShape = bakeLocationIntoGeometry(mkTrf.Shape().Located(sourceLoc));
     }
     catch (...) {
         return transTopo;
@@ -149,11 +156,15 @@ TopoShape Scale::nonuniformScale(const TopoShape& source, const Scale::ScalePara
     // this copy step seems to eliminate Part.OCCError: gp_GTrsf::Trsf() - non-orthogonal GTrsf
     // which may to be related to the tessellation of the input shape.  See Github issue #9651
     // for more detail.
-    BRepBuilderAPI_Copy copier(source.getShape());
+    const TopoDS_Shape& sourceShape = source.getShape();
+    const TopLoc_Location sourceLoc = sourceShape.Location();
+    BRepBuilderAPI_Copy copier(sourceShape.Located(TopLoc_Location()));
     TopoShape transTopo;
     try {
         BRepBuilderAPI_GTransform mkTrf(copier.Shape(), mat, true);
-        transTopo.setShape(mkTrf.Shape());
+        // Same as the uniform case: scale in the source's own frame, then bake its
+        // position back into the geometry (Amendment 4).
+        transTopo.setShape(bakeLocationIntoGeometry(mkTrf.Shape().Located(sourceLoc)));
     }
     catch (...) {
         Base::Console().warning("FeatureScale failed on nonuniform scale\n");

@@ -36,7 +36,13 @@
 namespace Part
 {
 
-class PartExport Scale: public Part::Feature
+/** The shape it consumes, scaled about its own frame.
+ *
+ * Derived, not an anchor (Amendment 4): the result is anchored by what it
+ * scales, so it holds no authored placement and derives from the unplaced
+ * ShapeFeature.
+ */
+class PartExport Scale: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Scale);
 
