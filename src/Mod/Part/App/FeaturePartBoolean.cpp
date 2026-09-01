@@ -72,7 +72,7 @@ bool getRefineModelParameter()
 
 }  // namespace Part
 
-PROPERTY_SOURCE_ABSTRACT(Part::Boolean, Part::Feature)
+PROPERTY_SOURCE_ABSTRACT(Part::Boolean, Part::ShapeFeature)
 
 
 Boolean::Boolean()
@@ -173,7 +173,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
         }
         this->Shape.setValue(res);
         copyMaterial(base);
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (const Base::Exception& e) {
         return new App::DocumentObjectExecReturn(e.what());

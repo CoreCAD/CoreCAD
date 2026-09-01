@@ -472,3 +472,35 @@ TEST_F(NeutralRefTest, derivedFaceBindsAcrossFilesWhereRawProvenanceFails)
 
     App::GetApplication().closeDocument(docB->getName());
 }
+
+// The reference layer is keyed on the UNPLACED shape base, not on the placed
+// Part::Feature. This matters because every derived feature -- a boolean here, and
+// the whole PartDesign feature line by the same rule -- holds no authored placement
+// (Amendment 4) and so is not a Part::Feature at all. Keyed on the placed class, the
+// document scan below simply does not see such a feature and the binding comes back
+// empty: references into every derived feature in a document are silently lost.
+//
+// The type assertions state the premise the keying rests on, so a future narrowing
+// of the layer back to Part::Feature fails here loudly rather than going quiet.
+TEST_F(NeutralRefTest, bindInDocumentFindsAnUnplacedDerivedFeature)
+{
+    const CutDesign a = buildCut(_doc);
+
+    // Premise: the cut is a shape feature, but NOT a placed one.
+    ASSERT_TRUE(a.cut->isDerivedFrom<Part::ShapeFeature>());
+    EXPECT_FALSE(a.cut->isDerivedFrom<Part::Feature>());
+    EXPECT_FALSE(a.cut->holdsAuthoredPlacement());
+    // Its operand, a primitive, IS an anchor -- the contrast the rule turns on.
+    EXPECT_TRUE(a.base->holdsAuthoredPlacement());
+
+    // A reference into the derived feature survives a round trip through the file
+    // form and binds against the document by Uid.
+    const NRef ref = captureFaceRef(*a.cut, "Face1");
+    ASSERT_EQ(ref.kind, "face");
+    ASSERT_EQ(ref.featureUid, a.cut->Uid.getValueStr());
+
+    const NRefBinding bound = bindInDocument(fromNeutralString(toNeutralString(ref)), *_doc);
+    ASSERT_NE(bound.feature, nullptr) << "the derived feature was not found by the document scan";
+    EXPECT_EQ(bound.feature, a.cut);
+    EXPECT_EQ(bound.subName, "Face1");
+}

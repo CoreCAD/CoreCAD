@@ -303,7 +303,12 @@ public:
     ~Feature() override;
 };
 
-class PartExport FilletBase: public Part::Feature
+/** Base of the dress-ups that round or cut back an edge of what they consume.
+ *
+ * Derived, not an anchor (Amendment 4): a fillet sits where its base sits, so
+ * it holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class PartExport FilletBase: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::FilletBase);
 
@@ -383,6 +388,18 @@ PartExport bool checkIntersection(
     const bool quick,
     const bool touch_is_intersection
 );
+
+/** Rebuild a shape's geometry at the position its location holds.
+ *
+ * OCC records a rigid move as a location beside the geometry rather than in it.
+ * A feature that authors no placement stores its shape at identity (Amendment 4),
+ * so such a location is dropped on the way into the Shape property and the result
+ * snaps back to the origin. A derived feature whose operation may leave the
+ * position in the location -- rather than baking it, as a boolean or a real scale
+ * does -- passes its result through here first. A shape already at identity is
+ * returned untouched.
+ */
+PartExport TopoDS_Shape bakeLocationIntoGeometry(const TopoDS_Shape& shape);
 
 }  // namespace Part
 

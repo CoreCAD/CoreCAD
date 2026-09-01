@@ -36,7 +36,7 @@ using namespace Part;
 const char* Part::Offset::ModeEnums[] = {"Skin", "Pipe", "RectoVerso", nullptr};
 const char* Part::Offset::JoinEnums[] = {"Arc", "Tangent", "Intersection", nullptr};
 
-PROPERTY_SOURCE(Part::Offset, Part::Feature)
+PROPERTY_SOURCE(Part::Offset, Part::ShapeFeature)
 
 Offset::Offset()
 {

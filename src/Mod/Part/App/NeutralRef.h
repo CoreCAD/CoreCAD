@@ -15,7 +15,7 @@ class Document;
 namespace Part
 {
 
-class Feature;
+class ShapeFeature;
 
 /**
  * A kernel-neutral reference to a sub-shape of a feature -- the stored form a
@@ -59,7 +59,7 @@ struct PartExport NRef
  * @return the captured NRef; a null ref (empty @c kind) if @p subName names no
  *         sub-shape of @p feature's shape
  */
-PartExport NRef captureFaceRef(const Feature& feature, const std::string& subName);
+PartExport NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName);
 
 /**
  * Resolve an NRef against @p feature to the positional sub-name that now carries
@@ -76,7 +76,7 @@ PartExport NRef captureFaceRef(const Feature& feature, const std::string& subNam
  * @return the current sub-name of the referenced face; empty if @p ref is not a
  *         face ref, or the target is gone or not uniquely matched
  */
-PartExport std::string resolveFaceRef(const NRef& ref, const Feature& feature);
+PartExport std::string resolveFaceRef(const NRef& ref, const ShapeFeature& feature);
 
 /**
  * Serialize an NRef to its neutral string form -- the shape it takes when written
@@ -107,8 +107,8 @@ PartExport NRef fromNeutralString(const std::string& text);
  */
 struct PartExport NRefBinding
 {
-    const Feature* feature {nullptr};  ///< the located owning feature; null if unbound
-    std::string subName;               ///< its current sub-name for the ref; empty if unbound
+    const ShapeFeature* feature {nullptr};  ///< the located owning feature; null if unbound
+    std::string subName;                    ///< its current sub-name for the ref; empty if unbound
 };
 
 /**

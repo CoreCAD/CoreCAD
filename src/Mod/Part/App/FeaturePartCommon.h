@@ -54,7 +54,8 @@ enum CommonBehavior
     CommonOfFirstAndRest,
 };
 
-class PartExport MultiCommon: public Part::Feature
+/// Derived, not an anchor (Amendment 4): unplaced, like Part::Boolean.
+class PartExport MultiCommon: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::MultiCommon);
 

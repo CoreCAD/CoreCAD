@@ -34,7 +34,12 @@
 namespace Part
 {
 
-class PartExport Offset: public Part::Feature
+/** The shape it consumes, grown or shrunk by an offset distance.
+ *
+ * Derived, not an anchor (Amendment 4): an offset sits where its source sits,
+ * so it holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class PartExport Offset: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Offset);
 

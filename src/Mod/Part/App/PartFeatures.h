@@ -131,7 +131,13 @@ private:
     static const char* TransitionEnums[];
 };
 
-class PartExport Thickness: public Part::Feature
+/** A solid hollowed out to a wall thickness, opened at the chosen faces.
+ *
+ * Derived, not an anchor (Amendment 4): it sits where the solid it hollows
+ * sits, so it holds no authored placement and derives from the unplaced
+ * ShapeFeature.
+ */
+class PartExport Thickness: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Thickness);
 
@@ -184,7 +190,12 @@ private:
     static const char* JoinEnums[];
 };
 
-class Refine: public Part::Feature
+/** The shape it consumes with its redundant seams removed.
+ *
+ * Derived, not an anchor (Amendment 4): refining changes no position, so it
+ * holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class Refine: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Refine);
 
@@ -204,7 +215,12 @@ public:
     //@}
 };
 
-class Reverse: public Part::Feature
+/** The shape it consumes with its orientation flipped.
+ *
+ * Derived, not an anchor (Amendment 4): reversing changes no position, so it
+ * holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class Reverse: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Reverse);
 

@@ -27,6 +27,7 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepFill.hxx>
 #include <BRepLib_MakeWire.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
@@ -363,7 +364,7 @@ App::DocumentObjectExecReturn* Sweep::execute()
 const char* Part::Thickness::ModeEnums[] = {"Skin", "Pipe", "RectoVerso", nullptr};
 const char* Part::Thickness::JoinEnums[] = {"Arc", "Tangent", "Intersection", nullptr};
 
-PROPERTY_SOURCE(Part::Thickness, Part::Feature)
+PROPERTY_SOURCE(Part::Thickness, Part::ShapeFeature)
 
 Thickness::Thickness()
 {
@@ -424,7 +425,7 @@ void Thickness::handleChangedPropertyType(
         Value.setValue(v.getValue());
     }
     else {
-        Part::Feature::handleChangedPropertyType(reader, TypeName, prop);
+        Part::ShapeFeature::handleChangedPropertyType(reader, TypeName, prop);
     }
 }
 
@@ -445,7 +446,7 @@ App::DocumentObjectExecReturn* Thickness::execute()
     // fallback: used for a face with no usable ref yet (the first execute) or whose ref
     // no longer resolves. The input property is not mutated; the heal is per-execute.
     std::vector<std::string> subs = Faces.getSubValues();
-    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
     const std::vector<std::string>& refs = FaceRefs.getValues();
     if (baseFeat != nullptr && refs.size() == subs.size()) {
         for (std::size_t i = 0; i < subs.size(); ++i) {
@@ -487,12 +488,12 @@ App::DocumentObjectExecReturn* Thickness::execute()
         TopoShape(0, getDocument()->getStringHasher())
             .makeElementThickSolid(base, shapes, thickness, tol, inter, self, mode, static_cast<JoinType>(join))
     );
-    return Part::Feature::execute();
+    return Part::ShapeFeature::execute();
 }
 
 int Thickness::rebindFacesFromRefs()
 {
-    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
     const std::vector<std::string>& refs = FaceRefs.getValues();
     std::vector<std::string> subs = Faces.getSubValues();
     if (baseFeat == nullptr || refs.size() != subs.size()) {
@@ -515,7 +516,7 @@ int Thickness::rebindFacesFromRefs()
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(Part::Refine, Part::Feature)
+PROPERTY_SOURCE(Part::Refine, Part::ShapeFeature)
 
 Refine::Refine()
 {
@@ -524,7 +525,7 @@ Refine::Refine()
 
 App::DocumentObjectExecReturn* Refine::execute()
 {
-    Part::Feature* source = Source.getValue<Part::Feature*>();
+    Part::ShapeFeature* source = Source.getValue<Part::ShapeFeature*>();
     if (!source) {
         return new App::DocumentObjectExecReturn("No part object linked.");
     }
@@ -541,7 +542,7 @@ App::DocumentObjectExecReturn* Refine::execute()
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(Part::Reverse, Part::Feature)
+PROPERTY_SOURCE(Part::Reverse, Part::ShapeFeature)
 
 Reverse::Reverse()
 {
@@ -560,10 +561,10 @@ App::DocumentObjectExecReturn* Reverse::execute()
     try {
         TopoDS_Shape myShape = topoShape.getShape();
         if (!myShape.IsNull()) {
-            this->Shape.setValue(myShape.Reversed());
-            Base::Placement p;
-            p.fromMatrix(topoShape.getTransform());
-            this->Placement.setValue(p);
+            // Reversing leaves the source's position in the shape's location, which a
+            // feature that authors no placement cannot keep. Bake it into the geometry
+            // so the result stays where its source is (Amendment 4).
+            this->Shape.setValue(bakeLocationIntoGeometry(myShape).Reversed());
             return App::DocumentObject::StdReturn;
         }
         return new App::DocumentObjectExecReturn("Shape is null.");

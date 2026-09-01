@@ -36,6 +36,7 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeShape.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
 #include <BRepGProp_Face.hxx>
@@ -2005,7 +2006,7 @@ void ShapeFeature::guessNewLink(std::string& replacementName, DocumentObject* ba
 
 // ---------------------------------------------------------
 
-PROPERTY_SOURCE(Part::FilletBase, Part::Feature)
+PROPERTY_SOURCE(Part::FilletBase, Part::ShapeFeature)
 
 FilletBase::FilletBase()
 {
@@ -2312,4 +2313,17 @@ bool Part::checkIntersection(
         xp.Init(mkCommon.Shape(), TopAbs_SOLID);
         return (xp.More() == Standard_True);
     }
+}
+
+TopoDS_Shape Part::bakeLocationIntoGeometry(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull() || shape.Location().IsIdentity()) {
+        return shape;
+    }
+    BRepBuilderAPI_Transform mkTrf(
+        shape.Located(TopLoc_Location()),
+        shape.Location().Transformation(),
+        Standard_True
+    );
+    return mkTrf.Shape();
 }

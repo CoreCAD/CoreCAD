@@ -404,7 +404,8 @@ TopoDS_Shape ProfileBased::getVerifiedFace(bool silent) const
             }
             else {
 
-                const Part::TopoShape& shape = Profile.getValue<Part::Feature*>()->Shape.getShape();
+                const Part::TopoShape& shape
+                    = Profile.getValue<Part::ShapeFeature*>()->Shape.getShape();
                 TopoDS_Shape sub = shape.getSubShape(Profile.getSubValues()[0].c_str());
                 if (sub.ShapeType() == TopAbs_FACE) {
                     return TopoDS::Face(sub);
@@ -481,7 +482,7 @@ std::vector<TopoDS_Wire> ProfileBased::getProfileWires() const
             throw Base::ValueError("No valid subelement linked in Part::Feature");
         }
 
-        shape = Profile.getValue<Part::Feature*>()->Shape.getShape().getSubShape(
+        shape = Profile.getValue<Part::ShapeFeature*>()->Shape.getShape().getSubShape(
             Profile.getSubValues().front().c_str()
         );
     }

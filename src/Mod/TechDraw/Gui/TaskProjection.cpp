@@ -76,10 +76,10 @@ bool TaskProjection::accept()
     float x=0, y=1, z=1;
     dir.getValue(x, y,z);
 
-    std::vector<Part::Feature*> shapes = Gui::Selection().getObjectsOfType<Part::Feature>();
+    std::vector<Part::ShapeFeature*> shapes = Gui::Selection().getObjectsOfType<Part::ShapeFeature>();
     int tid = Gui::Command::openActiveDocumentCommand("Project shape");
     Gui::Command::addModule(Gui::Command::Doc, "TechDraw");
-    for (std::vector<Part::Feature*>::iterator it = shapes.begin(); it != shapes.end(); ++it) {
+    for (std::vector<Part::ShapeFeature*>::iterator it = shapes.begin(); it != shapes.end(); ++it) {
         const char* object = (*it)->getNameInDocument();
         Gui::Command::doCommand(Gui::Command::Doc,
             "FreeCAD.ActiveDocument.addObject('TechDraw::FeatureProjection', '%s_proj')", object);

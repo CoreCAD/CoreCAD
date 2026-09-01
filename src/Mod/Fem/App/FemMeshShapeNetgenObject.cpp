@@ -86,7 +86,7 @@ App::DocumentObjectExecReturn* FemMeshShapeNetgenObject::execute()
 
     Fem::FemMesh newMesh;
 
-    const Part::Feature* feat = Shape.getValue<Part::Feature*>();
+    const Part::ShapeFeature* feat = Shape.getValue<Part::ShapeFeature*>();
     if (!feat) {
         return App::DocumentObject::StdReturn;
     }
