@@ -303,7 +303,12 @@ public:
     ~Feature() override;
 };
 
-class PartExport FilletBase: public Part::Feature
+/** Base of the dress-ups that round or cut back an edge of what they consume.
+ *
+ * Derived, not an anchor (Amendment 4): a fillet sits where its base sits, so
+ * it holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class PartExport FilletBase: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::FilletBase);
 

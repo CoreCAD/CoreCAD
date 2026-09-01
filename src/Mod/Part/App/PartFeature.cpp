@@ -2005,7 +2005,7 @@ void ShapeFeature::guessNewLink(std::string& replacementName, DocumentObject* ba
 
 // ---------------------------------------------------------
 
-PROPERTY_SOURCE(Part::FilletBase, Part::Feature)
+PROPERTY_SOURCE(Part::FilletBase, Part::ShapeFeature)
 
 FilletBase::FilletBase()
 {
