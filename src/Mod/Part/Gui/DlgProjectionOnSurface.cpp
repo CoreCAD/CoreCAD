@@ -428,7 +428,7 @@ void PartGui::DlgProjectionOnSurface::store_current_selected_parts(
     std::vector<Gui::SelectionObject> selObj = Gui::Selection().getSelectionEx();
     if (!selObj.empty()) {
         for (auto it = selObj.begin(); it != selObj.end(); ++it) {
-            auto aPart = it->getObject<Part::Feature>();
+            auto aPart = it->getObject<Part::ShapeFeature>();
             if (!aPart) {
                 continue;
             }
@@ -723,7 +723,7 @@ void PartGui::DlgProjectionOnSurface::enable_ui_elements(
 }
 
 void PartGui::DlgProjectionOnSurface::higlight_object(
-    Part::Feature* iCurrentObject,
+    Part::ShapeFeature* iCurrentObject,
     const std::string& iShapeName,
     bool iHighlight,
     unsigned int iColor
@@ -1086,11 +1086,13 @@ void PartGui::DlgProjectionOnSurface::set_xyz_dir_spinbox(QDoubleSpinBox* icurre
 
 void PartGui::DlgProjectionOnSurface::transform_shape_to_global_position(
     TopoDS_Shape& ioShape,
-    Part::Feature* iPart
+    Part::ShapeFeature* iPart
 )
 {
-    auto currentPos = iPart->Placement.getValue().getPosition();
-    auto currentRotation = iPart->Placement.getValue().getRotation();
+    // getPlacement() answers identity for a feature that authors no placement of
+    // its own -- a derived shape already lives in the world frame (Amendment 4).
+    auto currentPos = iPart->getPlacement().getPosition();
+    auto currentRotation = iPart->getPlacement().getRotation();
     auto globalPlacement = iPart->globalPlacement();
     auto globalPosition = globalPlacement.getPosition();
     auto globalRotation = globalPlacement.getRotation();

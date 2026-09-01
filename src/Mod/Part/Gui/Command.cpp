@@ -2245,8 +2245,10 @@ void CmdPartThickness::activated(int iMsg)
 
 bool CmdPartThickness::isActive()
 {
-    bool objectsSelected
-        = Gui::Selection().countObjectsOfType<Part::Feature>(nullptr, Gui::ResolveMode::FollowLink)
+    bool objectsSelected = Gui::Selection().countObjectsOfType<Part::ShapeFeature>(
+                               nullptr,
+                               Gui::ResolveMode::FollowLink
+                           )
         > 0;
     return (objectsSelected && !Gui::Control().activeDialog());
 }
@@ -2278,7 +2280,7 @@ void CmdShapeInfo::activated(int iMsg)
 bool CmdShapeInfo::isActive()
 {
     App::Document* doc = App::GetApplication().getActiveDocument();
-    if (!doc || doc->countObjectsOfType<Part::Feature>() == 0) {
+    if (!doc || doc->countObjectsOfType<Part::ShapeFeature>() == 0) {
         return false;
     }
 
@@ -2510,7 +2512,7 @@ void CmdColorPerFace::activated(int iMsg)
 
 bool CmdColorPerFace::isActive()
 {
-    bool objectSelected = Gui::Selection().countObjectsOfType<Part::Feature>() == 1;
+    bool objectSelected = Gui::Selection().countObjectsOfType<Part::ShapeFeature>() == 1;
     return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()) && objectSelected);
 }
 
