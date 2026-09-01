@@ -108,7 +108,7 @@ void ProjectOnSurface::tryExecute()
 
 TopoDS_Face ProjectOnSurface::getSupportFace() const
 {
-    auto support = SupportFace.getValue<Part::Feature*>();
+    auto support = SupportFace.getValue<Part::ShapeFeature*>();
     if (!support) {
         throw Base::ValueError("No support face specified");
     }

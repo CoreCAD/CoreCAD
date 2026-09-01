@@ -944,7 +944,7 @@ ResolvedReference resolveReference(App::DocumentObject* value, const std::vector
     splitTypeAndNumber(eltName, r.eltType, r.eltIndex);
     splitTypeAndNumber(r.vtxName, r.vtxType, dummy);
 
-    const auto* base = dynamic_cast<const Part::Feature*>(r.geoObj);
+    const auto* base = dynamic_cast<const Part::ShapeFeature*>(r.geoObj);
     if (!base) {
         r.valid = false;
         return r;
@@ -1029,7 +1029,7 @@ Base::Vector3d axisIntersection(
 
 const Part::TopoShape* objTopoShape(const App::DocumentObject* obj)
 {
-    const auto* base = dynamic_cast<const Part::Feature*>(obj);
+    const auto* base = dynamic_cast<const Part::ShapeFeature*>(obj);
     return base ? &base->Shape.getShape() : nullptr;
 }
 

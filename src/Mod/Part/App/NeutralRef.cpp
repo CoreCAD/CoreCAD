@@ -33,7 +33,7 @@ namespace
 // The primitives whose faces carry a parametric role. An explicit allow-list, not
 // "derives from Primitive": that base also covers leaves with no clean per-face
 // role (a wedge, a helix, a regular polygon), which stay signature-only.
-bool isRoleBearingPrimitive(const Feature& feature)
+bool isRoleBearingPrimitive(const ShapeFeature& feature)
 {
     return feature.isDerivedFrom<Box>() || feature.isDerivedFrom<Cylinder>()
         || feature.isDerivedFrom<Sphere>() || feature.isDerivedFrom<Cone>()
@@ -139,7 +139,7 @@ std::string denormalizeProv(const std::string& prov, const App::Document& doc)
 }
 }  // namespace
 
-NRef captureFaceRef(const Feature& feature, const std::string& subName)
+NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName)
 {
     const TopoShape& stored = feature.Shape.getShape();
     if (stored.isNull() || subName.empty()) {
@@ -164,8 +164,11 @@ NRef captureFaceRef(const Feature& feature, const std::string& subName)
     // centroid direction, so the regime is gated on the feature type -- an explicit
     // allow-list of the primitives whose faces have parametric roles -- not on
     // whether a role string comes back.
+    // A role-bearing primitive is a frame anchor, so it is a placed Part::Feature;
+    // the role regime reads its parametric faces through that placed type. The
+    // guard above establishes the downcast.
     if (isRoleBearingPrimitive(feature)) {
-        ref.role = capturePrimitiveFaceRole(feature, subName);
+        ref.role = capturePrimitiveFaceRole(static_cast<const Feature&>(feature), subName);
     }
 
     // Derived regime: a face produced by an operation carries a provenance name in
@@ -182,15 +185,20 @@ NRef captureFaceRef(const Feature& feature, const std::string& subName)
     return ref;
 }
 
-std::string resolveFaceRef(const NRef& ref, const Feature& feature)
+std::string resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
 {
     if (ref.kind != "face") {
         return {};
     }
 
-    // Regime 1: a role-bearing primitive leaf -- symmetry-proof.
+    // Regime 1: a role-bearing primitive leaf -- symmetry-proof. Only a placed
+    // Part::Feature can carry a role; a ref bearing one that is aimed at an
+    // unplaced derived feature is unbound, never guessed at through another regime.
     if (!ref.role.empty()) {
-        return resolvePrimitiveFaceRole(feature, ref.role);
+        if (!feature.isDerivedFrom<Feature>()) {
+            return {};
+        }
+        return resolvePrimitiveFaceRole(static_cast<const Feature&>(feature), ref.role);
     }
 
     const TopoShape& stored = feature.Shape.getShape();
@@ -284,7 +292,7 @@ NRefBinding bindInDocument(const NRef& ref, const App::Document& doc)
 
     // The Uid is the join key: find the feature that carries this identity, whatever
     // face ordinals its own rebuild produced, and resolve the sub-name on it.
-    for (const Feature* feature : doc.getObjectsOfType<Feature>()) {
+    for (const ShapeFeature* feature : doc.getObjectsOfType<ShapeFeature>()) {
         if (feature->Uid.getValueStr() != ref.featureUid) {
             continue;
         }

@@ -445,7 +445,7 @@ App::DocumentObjectExecReturn* Thickness::execute()
     // fallback: used for a face with no usable ref yet (the first execute) or whose ref
     // no longer resolves. The input property is not mutated; the heal is per-execute.
     std::vector<std::string> subs = Faces.getSubValues();
-    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
     const std::vector<std::string>& refs = FaceRefs.getValues();
     if (baseFeat != nullptr && refs.size() == subs.size()) {
         for (std::size_t i = 0; i < subs.size(); ++i) {
@@ -492,7 +492,7 @@ App::DocumentObjectExecReturn* Thickness::execute()
 
 int Thickness::rebindFacesFromRefs()
 {
-    auto* baseFeat = dynamic_cast<Part::Feature*>(Faces.getValue());
+    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
     const std::vector<std::string>& refs = FaceRefs.getValues();
     std::vector<std::string> subs = Faces.getSubValues();
     if (baseFeat == nullptr || refs.size() != subs.size()) {
@@ -524,7 +524,7 @@ Refine::Refine()
 
 App::DocumentObjectExecReturn* Refine::execute()
 {
-    Part::Feature* source = Source.getValue<Part::Feature*>();
+    Part::ShapeFeature* source = Source.getValue<Part::ShapeFeature*>();
     if (!source) {
         return new App::DocumentObjectExecReturn("No part object linked.");
     }
