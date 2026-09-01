@@ -400,7 +400,9 @@ void CmdPartRefineShape::activated(int iMsg)
     bool parametric = hGrp->GetBool("ParametricRefine", true);
     if (parametric) {
         Gui::WaitCursor wc;
-        Base::Type partid = Base::Type::fromName("Part::Feature");
+        // Any shape-carrying feature can be refined, placed or not (Amendment 4):
+        // narrowing to the placed Part::Feature would skip every derived feature.
+        Base::Type partid = Part::ShapeFeature::getClassTypeId();
         std::vector<App::DocumentObject*> objs = Gui::Selection().getObjectsOfType(partid);
         openCommand(QT_TRANSLATE_NOOP("Command", "Refine shape"));
         std::for_each(objs.begin(), objs.end(), [](App::DocumentObject* obj) {
@@ -470,7 +472,7 @@ void CmdPartDefeaturing::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     Gui::WaitCursor wc;
-    Base::Type partid = Base::Type::fromName("Part::Feature");
+    Base::Type partid = Part::ShapeFeature::getClassTypeId();
     std::vector<Gui::SelectionObject> objs = Gui::Selection().getSelectionEx(nullptr, partid);
     openCommand(QT_TRANSLATE_NOOP("Command", "Defeaturing"));
     for (std::vector<Gui::SelectionObject>::iterator it = objs.begin(); it != objs.end(); ++it) {
@@ -516,7 +518,7 @@ void CmdPartDefeaturing::activated(int iMsg)
 
 bool CmdPartDefeaturing::isActive()
 {
-    Base::Type partid = Base::Type::fromName("Part::Feature");
+    Base::Type partid = Part::ShapeFeature::getClassTypeId();
     std::vector<Gui::SelectionObject> objs = Gui::Selection().getSelectionEx(nullptr, partid);
     for (const auto& obj : objs) {
         std::vector<std::string> subnames = obj.getSubNames();
