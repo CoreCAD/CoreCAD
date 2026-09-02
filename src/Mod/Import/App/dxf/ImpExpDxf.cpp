@@ -83,6 +83,7 @@
 #include <App/Link.h>
 #include <App/FeaturePython.h>
 #include <Base/Tools.h>
+#include <boost/dynamic_bitset.hpp>
 
 #include "ImpExpDxf.h"
 
@@ -401,7 +402,7 @@ void ImpExpDxfRead::CreateParametricPolyline(const TopoDS_Wire& wire, const char
     if (p) {
         // Style the child segments
         for (App::DocumentObject* segment : p->Links.getValues()) {
-            ApplyGuiStyles(static_cast<Part::Feature*>(segment));
+            ApplyGuiStyles(static_cast<Part::ShapeFeature*>(segment));
         }
         // Add the final compound object to the document
         Collector->AddObject(p, name);
@@ -672,15 +673,20 @@ void ImpExpDxfRead::ComposeParametricBlock(const std::string& blockName, std::se
     }
     const Block& blockData = it->second;
 
-    // 3. Create the master Part::Compound for this block definition.
-    std::string compName = "BLOCK_" + blockName;
-    auto blockCompound = document->addObject<Part::Compound>(
-        document->getUniqueObjectName(compName.c_str()).c_str()
+    // 3. Create the container for this block definition. A block is a named gathering
+    // of objects that each INSERT points at; it is not a shape of its own. A compound
+    // would compute and store a second copy of the children's geometry, which nothing
+    // here reads -- the links render the children. A link group gathers and owns
+    // nothing. Registered before the children are composed so a nested block that
+    // references this one can be linked during the recursion below.
+    std::string groupName = "BLOCK_" + blockName;
+    auto blockGroup = document->addObject<App::LinkGroup>(
+        document->getUniqueObjectName(groupName.c_str()).c_str()
     );
-    m_blockDefinitionGroup->addObject(blockCompound);
+    m_blockDefinitionGroup->addObject(blockGroup);
     IncrementCreatedObjectCount();
-    blockCompound->Visibility.setValue(false);
-    this->m_blockDefinitions[blockName] = blockCompound;
+    blockGroup->Visibility.setValue(false);
+    this->m_blockDefinitions[blockName] = blockGroup;
 
     std::vector<App::DocumentObject*> childObjects;
 
@@ -785,18 +791,20 @@ void ImpExpDxfRead::ComposeParametricBlock(const std::string& blockName, std::se
             if (newObject) {
                 IncrementCreatedObjectCount();
                 newObject->Visibility.setValue(false);  // Children of blocks are hidden by default
-                // Layer and color are applied by the block itself (Part::Compound) or its children
-                // if overridden.
-                ApplyGuiStyles(static_cast<Part::Feature*>(newObject));  // Apply style to the child
-                                                                         // object
+                // Layer and color are applied by the block itself or its children if overridden.
+                ApplyGuiStyles(static_cast<Part::ShapeFeature*>(newObject));  // Apply style to the
+                                                                              // child object
                 childObjects.push_back(newObject);  // Add to the block's main children list
             }
         }
     }
 
-    // 6. Finalize the Part::Compound.
+    // 6. Finalize the container. Every child counts as visible *within the block* --
+    // their own Visibility stays false so they do not also draw loose in the document,
+    // which is the split a group's own visibility list exists to express.
     if (!childObjects.empty()) {
-        blockCompound->Links.setValues(childObjects);
+        blockGroup->ElementList.setValues(childObjects);
+        blockGroup->VisibilityList.setValue(boost::dynamic_bitset<>(childObjects.size(), 0).flip());
     }
 
     // 7. Mark this block as composed.
@@ -1449,7 +1457,7 @@ void ImpExpDxfRead::DrawingEntityCollector::AddGeometry(const GeometryBuilder& b
         Reader.IncrementCreatedObjectCount();
         Reader._addOriginalLayerProperty(newDocObj);
         Reader.MoveToLayer(newDocObj);
-        Reader.ApplyGuiStyles(static_cast<Part::Feature*>(newDocObj));
+        Reader.ApplyGuiStyles(static_cast<Part::ShapeFeature*>(newDocObj));
     }
 }
 
@@ -1630,7 +1638,7 @@ void ImpExpDxfRead::DrawingEntityCollector::AddObject(App::DocumentObject* obj, 
 
     // Safely apply styles by checking the object's actual type (only for objects not replaced
     // by Python)
-    if (auto feature = dynamic_cast<Part::Feature*>(obj)) {
+    if (auto feature = dynamic_cast<Part::ShapeFeature*>(obj)) {
         Reader.ApplyGuiStyles(feature);
     }
     else if (auto pyFeature = dynamic_cast<App::FeaturePython*>(obj)) {

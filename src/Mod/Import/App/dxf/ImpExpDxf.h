@@ -268,7 +268,9 @@ protected:
     {
         m_stats.totalEntitiesCreated++;
     }
-    virtual void ApplyGuiStyles(Part::Feature* /*object*/) const
+    // Keyed on the shape-carrying base, not on the placed one: a Part::Compound is a
+    // shape source but is not a Part::Feature, and the styling reaches it through here.
+    virtual void ApplyGuiStyles(Part::ShapeFeature* /*object*/) const
     {}
     virtual void ApplyGuiStyles(App::Link* /*object*/) const
     {}
