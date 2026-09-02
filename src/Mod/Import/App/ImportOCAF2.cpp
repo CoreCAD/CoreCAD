@@ -51,8 +51,8 @@
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Parameter.h>
-#include <Mod/Part/App/FeatureCompound.h>
 #include <Mod/Part/App/Interface.h>
+#include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
 
 #include "ImportOCAF2.h"
@@ -261,10 +261,14 @@ App::DocumentObject* ImportOCAF2::expandShape(App::Document* doc, TDF_Label labe
         if (objs.empty()) {
             return nullptr;
         }
-        auto compound = doc->addObject<Part::Compound2>("Compound");
-        compound->Links.setValues(objs);
-        setPlacement(&compound->Placement, shape);
-        return compound;
+        // A link group, not a compound feature. The expanded solids are separate
+        // objects and this only gathers them and says where the gathering sits, which
+        // is what a container does; a compound would instead own a second copy of
+        // their geometry and carry the position on that.
+        auto group = doc->addObject<App::LinkGroup>("Compound");
+        group->ElementList.setValues(objs);
+        setPlacement(&group->Placement, shape);
+        return group;
     }
     Info info;
     info.obj = nullptr;
@@ -362,8 +366,6 @@ bool ImportOCAF2::createObject(
         }
     }
 
-    Part::Feature* feature;
-
     if (newDoc && (options.mode == ObjectPerDoc || options.mode == ObjectPerDir)) {
         doc = getDocument(doc, label);
     }
@@ -371,13 +373,21 @@ bool ImportOCAF2::createObject(
     if (options.expandCompound
         && (tshape.countSubShapes(TopAbs_SOLID) > 1
             || (!tshape.countSubShapes(TopAbs_SOLID) && tshape.countSubShapes(TopAbs_SHELL) > 1))) {
-        feature = dynamic_cast<Part::Feature*>(expandShape(doc, label, shape));
-        assert(feature);
+        // Expanded into its own solids, gathered by a link group. Each expanded solid
+        // took its own colour on the way in, so tint the group only where this label
+        // carried a colour of its own -- the same rule createGroup follows.
+        auto* group = static_cast<App::LinkGroup*>(expandShape(doc, label, shape));
+        assert(group);
+        if (getColor(shape, info, false, true) && info.hasFaceColor) {
+            applyLinkColor(group, -1, info.faceColor);
+        }
+        info.propPlacement = &group->Placement;
+        info.obj = group;
+        return true;
     }
-    else {
-        feature = doc->addObject<Part::Feature>(tshape.shapeName().c_str());
-        feature->Shape.setValue(shape);
-    }
+
+    auto* feature = doc->addObject<Part::Feature>(tshape.shapeName().c_str());
+    feature->Shape.setValue(shape);
     applyFaceColors(feature, {info.faceColor});
     applyEdgeColors(feature, {info.edgeColor});
     if (hasFaceColors) {
@@ -687,16 +697,16 @@ App::DocumentObject* ImportOCAF2::loadShape(
         auto name = getLabelName(label);
         if (info.faceColor != it->second.faceColor || info.edgeColor != it->second.edgeColor
             || (!name.empty() && !info.baseName.empty() && name != info.baseName)) {
-            auto compound = doc->addObject<Part::Compound2>("Compound");
-            compound->Links.setValue(info.obj);
-            info.propPlacement = &compound->Placement;
+            // A link, not a compound feature -- the same wrapper the shared case below
+            // uses. This instance only wants its own name, colour and position; it
+            // does not want a second copy of the geometry to hang them on.
+            auto link = doc->addObject<App::Link>("Link");
+            link->setLink(-1, info.obj);
+            info.propPlacement = &link->Placement;
             if (info.faceColor != it->second.faceColor) {
-                applyFaceColors(compound, {info.faceColor});
+                applyLinkColor(link, -1, info.faceColor);
             }
-            if (info.edgeColor != it->second.edgeColor) {
-                applyEdgeColors(compound, {info.edgeColor});
-            }
-            info.obj = compound;
+            info.obj = link;
             setObjectName(info, label);
         }
         setPlacement(info.propPlacement, shape);
