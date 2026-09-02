@@ -7,9 +7,16 @@
 
 #include <src/App/InitApplication.h>
 
+#include <BRepGProp.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <GProp_GProps.hxx>
+#include <STEPControl_Writer.hxx>
+#include <gp_Pnt.hxx>
+
 #include <App/Document.h>
 #include <Base/FileInfo.h>
 #include <Mod/Import/App/Feature.h>
+#include <Mod/Part/App/TopoShape.h>
 
 class ImportFeature: public ::testing::Test
 {
@@ -41,6 +48,38 @@ protected:
         out.close();
         _written.push_back(file.filePath());
         return file.filePath();
+    }
+
+    /// Writes a STEP file holding one box of the given size, and returns its path.
+    std::string writeBoxStep(const char* name, double side)
+    {
+        Base::FileInfo file(Base::FileInfo::getTempPath() + name);
+        Part::TopoShape(BRepPrimAPI_MakeBox(side, side, side).Shape())
+            .exportStep(file.filePath().c_str());
+        _written.push_back(file.filePath());
+        return file.filePath();
+    }
+
+    /// Writes a STEP file holding two separate boxes as two top-level shapes.
+    std::string writeTwoBoxStep(const char* name)
+    {
+        Base::FileInfo file(Base::FileInfo::getTempPath() + name);
+        STEPControl_Writer writer;
+        writer.Transfer(BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape(), STEPControl_AsIs);
+        writer.Transfer(
+            BRepPrimAPI_MakeBox(gp_Pnt(50.0, 0.0, 0.0), 10.0, 10.0, 10.0).Shape(),
+            STEPControl_AsIs
+        );
+        writer.Write(file.filePath().c_str());
+        _written.push_back(file.filePath());
+        return file.filePath();
+    }
+
+    static double volumeOf(const Part::TopoShape& shape)
+    {
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(shape.getShape(), props);
+        return props.Mass();
     }
 
     Import::Feature* addImport()
@@ -116,4 +155,106 @@ TEST_F(ImportFeature, anUnreadableSourceFingerprintsAsEmpty)
     feature->SourceFile.setValue(path.c_str());
     EXPECT_TRUE(feature->refreshSourceHash());
     EXPECT_EQ(feature->SourceHash.getStrValue(), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+}
+
+TEST_F(ImportFeature, theSourceFileBecomesTheShape)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_box.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+
+    EXPECT_FALSE(feature->isError());
+    EXPECT_NEAR(volumeOf(feature->Shape.getShape()), 1000.0, 1e-6);
+
+    // Having built the shape, the feature knows which contents it built from.
+    EXPECT_EQ(feature->SourceHash.getStrValue(), Import::Feature::hashFile(path.c_str()));
+}
+
+TEST_F(ImportFeature, aNewRevisionOfTheFileRebuildsTheShape)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_rev.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    const std::string before = feature->SourceHash.getStrValue();
+    ASSERT_NEAR(volumeOf(feature->Shape.getShape()), 1000.0, 1e-6);
+
+    // The supplier sends a bigger bracket under the same name.
+    writeBoxStep("cc_import_rev.step", 20.0);
+    feature->touch();
+    _doc->recompute();
+
+    EXPECT_FALSE(feature->isError());
+    EXPECT_NEAR(volumeOf(feature->Shape.getShape()), 8000.0, 1e-6);
+    EXPECT_NE(feature->SourceHash.getStrValue(), before);
+}
+
+// A guard, not a bug-catcher: this passes whether or not execute() guards its
+// write of SourceHash, because a recompute purges the touched flag on its way
+// out. It is here to catch a future execute() that dirties something the
+// recompute does not clear, which would leave the document unable to settle.
+TEST_F(ImportFeature, aCompletedImportLeavesTheDocumentAtRest)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_settle.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    const std::string first = feature->SourceHash.getStrValue();
+
+    EXPECT_EQ(_doc->recompute(), 0);
+    EXPECT_EQ(feature->SourceHash.getStrValue(), first);
+}
+
+TEST_F(ImportFeature, aMissingSourceFailsRatherThanEmptyingTheShape)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_gone.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    ASSERT_NEAR(volumeOf(feature->Shape.getShape()), 1000.0, 1e-6);
+
+    Base::FileInfo(path).deleteFile();
+    feature->touch();
+    _doc->recompute();
+
+    EXPECT_TRUE(feature->isError());
+    // The geometry it last built stands; a vanished file is not a reason to
+    // silently drop what downstream features are anchored to.
+    EXPECT_NEAR(volumeOf(feature->Shape.getShape()), 1000.0, 1e-6);
+}
+
+TEST_F(ImportFeature, anAssemblyFileIsRefusedRatherThanFused)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeTwoBoxStep("cc_import_two.step");
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+
+    // Two separately-named parts must not arrive as one anonymous lump. Until a
+    // feature can address a node inside the file, refusing is the honest answer.
+    // The message is asserted so the test cannot pass on some unrelated failure
+    // to read the file at all.
+    ASSERT_TRUE(feature->isError());
+    EXPECT_NE(
+        std::string(feature->getStatusString()).find("more than one top-level shape"),
+        std::string::npos
+    );
+    EXPECT_TRUE(feature->Shape.getShape().isNull());
+}
+
+TEST_F(ImportFeature, anUntranslatableFormatFailsHonestly)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeFile("cc_import_notcad.txt", "not a CAD file");
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+
+    EXPECT_TRUE(feature->isError());
 }

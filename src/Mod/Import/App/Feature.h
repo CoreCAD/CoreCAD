@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include <TopoDS_Shape.hxx>
+
 #include <App/PropertyFile.h>
 #include <App/PropertyStandard.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -70,6 +72,19 @@ public:
      * exactly the condition "the source file has changed since import".
      */
     bool refreshSourceHash();
+
+    /**
+     * Reads the one shape a file holds.
+     *
+     * Throws when the format has no translator, when the file holds nothing, or
+     * when it holds more than one top-level shape -- the assembly case, which
+     * needs an address within the file before a single feature can stand for
+     * one of its parts.
+     */
+    static TopoDS_Shape translate(const Base::FileInfo& file);
+
+    /// Re-reads the source file into this feature's shape.
+    App::DocumentObjectExecReturn* execute() override;
 };
 
 }  // namespace Import
