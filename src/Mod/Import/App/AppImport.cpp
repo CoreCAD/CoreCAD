@@ -27,6 +27,7 @@
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 
+#include "Feature.h"
 #include "StepShape.h"
 #include "StepShapePy.h"
 
@@ -50,6 +51,8 @@ PyMOD_INIT_FUNC(Import)
 
     // add mesh elements
     Base::Interpreter().addType(&Import::StepShapePy ::Type, importModule, "StepShape");
+
+    Import::Feature::init();
 
 
     Base::Console().log("Loading Import module... done\n");
