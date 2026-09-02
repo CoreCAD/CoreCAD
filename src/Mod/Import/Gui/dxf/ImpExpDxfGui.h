@@ -41,7 +41,7 @@ public:
     ImpExpDxfReadGui(const std::string& filepath, App::Document* pcDoc);
 
 protected:
-    void ApplyGuiStyles(Part::Feature* object) const override;
+    void ApplyGuiStyles(Part::ShapeFeature* object) const override;
     void ApplyGuiStyles(App::Link* object) const override;
     void ApplyGuiStyles(App::FeaturePython* object) const override;
 

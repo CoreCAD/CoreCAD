@@ -401,7 +401,7 @@ void ImpExpDxfRead::CreateParametricPolyline(const TopoDS_Wire& wire, const char
     if (p) {
         // Style the child segments
         for (App::DocumentObject* segment : p->Links.getValues()) {
-            ApplyGuiStyles(static_cast<Part::Feature*>(segment));
+            ApplyGuiStyles(static_cast<Part::ShapeFeature*>(segment));
         }
         // Add the final compound object to the document
         Collector->AddObject(p, name);
@@ -787,8 +787,8 @@ void ImpExpDxfRead::ComposeParametricBlock(const std::string& blockName, std::se
                 newObject->Visibility.setValue(false);  // Children of blocks are hidden by default
                 // Layer and color are applied by the block itself (Part::Compound) or its children
                 // if overridden.
-                ApplyGuiStyles(static_cast<Part::Feature*>(newObject));  // Apply style to the child
-                                                                         // object
+                ApplyGuiStyles(static_cast<Part::ShapeFeature*>(newObject));  // Apply style to the
+                                                                              // child object
                 childObjects.push_back(newObject);  // Add to the block's main children list
             }
         }
@@ -1449,7 +1449,7 @@ void ImpExpDxfRead::DrawingEntityCollector::AddGeometry(const GeometryBuilder& b
         Reader.IncrementCreatedObjectCount();
         Reader._addOriginalLayerProperty(newDocObj);
         Reader.MoveToLayer(newDocObj);
-        Reader.ApplyGuiStyles(static_cast<Part::Feature*>(newDocObj));
+        Reader.ApplyGuiStyles(static_cast<Part::ShapeFeature*>(newDocObj));
     }
 }
 
@@ -1630,7 +1630,7 @@ void ImpExpDxfRead::DrawingEntityCollector::AddObject(App::DocumentObject* obj, 
 
     // Safely apply styles by checking the object's actual type (only for objects not replaced
     // by Python)
-    if (auto feature = dynamic_cast<Part::Feature*>(obj)) {
+    if (auto feature = dynamic_cast<Part::ShapeFeature*>(obj)) {
         Reader.ApplyGuiStyles(feature);
     }
     else if (auto pyFeature = dynamic_cast<App::FeaturePython*>(obj)) {

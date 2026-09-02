@@ -71,7 +71,7 @@ ImpExpDxfReadGui::ImpExpDxfReadGui(const std::string& filepath, App::Document* p
     , GuiDocument(Gui::Application::Instance->getDocument(pcDoc))
 {}
 
-void ImpExpDxfReadGui::ApplyGuiStyles(Part::Feature* object) const
+void ImpExpDxfReadGui::ApplyGuiStyles(Part::ShapeFeature* object) const
 {
     auto view = static_cast<PartGui::ViewProviderPart*>(GuiDocument->getViewProvider(object));
     Base::Color color = ObjectColor(m_entityAttributes.m_Color);
