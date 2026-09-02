@@ -73,7 +73,9 @@ class ExplodeGroup:
             if obj.isDerivedFrom('Part::Fuse') or \
                     obj.isDerivedFrom('Part::MultiFuse') or \
                     obj.isDerivedFrom('Part::Compound'):
-                plm = obj.Placement
+                # A derived feature holds no placement of its own (Amendment 4);
+                # for those, there is nothing to push down onto the children.
+                plm = getattr(obj, 'Placement', FreeCAD.Placement())
                 outlist = obj.OutList[:]
                 if plm.isNull() or all((len(oo.InList)==1 and \
                         not oo.isDerivedFrom('PartDesign::Feature')) \
