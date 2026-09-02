@@ -34,7 +34,7 @@
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::Compound, Part::Feature)
+PROPERTY_SOURCE(Part::Compound, Part::ShapeFeature)
 
 Compound::Compound()
 {
@@ -74,7 +74,7 @@ App::DocumentObjectExecReturn* Compound::execute()
             App::DocumentObject* link = Links.getValues()[0];
             copyMaterial(link);
         }
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());
@@ -92,8 +92,8 @@ Compound2::Compound2()
 
 void Compound2::onDocumentRestored()
 {
-    Base::Placement pla = Placement.getValue();
+    // The shape is transient, so rebuild it. There is no placement to save and
+    // restore around the rebuild any more: the bundle holds none of its own.
     auto res = execute();
     delete res;
-    Placement.setValue(pla);
 }
