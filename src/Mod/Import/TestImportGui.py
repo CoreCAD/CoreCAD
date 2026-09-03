@@ -306,3 +306,36 @@ class ImportProvenanceGuiTest(unittest.TestCase):
         search.setInterest(coin.SoSearchAction.ALL)
         search.apply(imported.ViewObject.RootNode)
         self.assertEqual(search.getPaths().getLength(), 1)
+
+    def testAnImportedAssemblyStillDrawsEveryPart(self):
+        source = App.newDocument("AssemblySource")
+        try:
+            one = source.addObject("Part::Feature", "One")
+            one.Label = "PartA"
+            one.Shape = Part.makeBox(10, 10, 10)
+            two = source.addObject("Part::Feature", "Two")
+            two.Label = "PartB"
+            two.Shape = Part.makeBox(10, 10, 10, App.Vector(50, 0, 0))
+            source.recompute()
+            path = os.path.join(self.dir, "assembly.step")
+            ImportGui.export([one, two], path)
+        finally:
+            App.closeDocument(source.Name)
+
+        ImportGui.insert(path, self.doc.Name)
+
+        parts = [o for o in self.doc.Objects if o.TypeId == "Import::Feature"]
+        self.assertEqual(len(parts), 2)
+        for part in parts:
+            self.assertNotEqual(part.SourceNode, "")
+
+        drawn = {}
+        for obj in self.doc.Objects:
+            search = coin.SoSearchAction()
+            search.setType(coin.SoType.fromName("SoBrepFaceSet"))
+            search.setInterest(coin.SoSearchAction.ALL)
+            search.apply(obj.ViewObject.RootNode)
+            count = search.getPaths().getLength()
+            if count:
+                drawn[obj.Name] = count
+        self.assertEqual(sum(drawn.values()), 2, drawn)

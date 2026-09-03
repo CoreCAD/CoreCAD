@@ -53,24 +53,51 @@ class ImportProvenanceCase(unittest.TestCase):
         self.assertEqual(self.doc.recompute(), 0)
         self.assertIn("Up-to-date", imported.State)
 
-    def testAssemblyPartsAreNotGivenASourceTheyCannotHonour(self):
-        one = self.doc.addObject("Part::Feature", "One")
-        one.Shape = Part.makeBox(10, 10, 10)
-        two = self.doc.addObject("Part::Feature", "Two")
-        two.Shape = Part.makeBox(10, 10, 10, FreeCAD.Vector(50, 0, 0))
+    def writeAssembly(self, path, secondHeight):
+        """Write a two-part assembly, the second part being the one that changes."""
+        source = FreeCAD.newDocument("AssemblySource")
+        try:
+            one = source.addObject("Part::Feature", "One")
+            one.Label = "PartA"
+            one.Shape = Part.makeBox(10, 10, 10)
+            two = source.addObject("Part::Feature", "Two")
+            two.Label = "PartB"
+            two.Shape = Part.makeBox(10, 10, secondHeight, FreeCAD.Vector(50, 0, 0))
+            source.recompute()
+            Import.export([one, two], path)
+        finally:
+            FreeCAD.closeDocument(source.Name)
+
+    def testEachAssemblyPartRecordsWhichNodeOfTheFileItIs(self):
+        path = self.path("assembly.step")
+        self.writeAssembly(path, 10)
+
+        Import.insert(path, self.doc.Name)
+
+        parts = [o for o in self.doc.Objects if o.TypeId == "Import::Feature"]
+        self.assertEqual(len(parts), 2)
+        for part in parts:
+            self.assertEqual(part.SourceFile, path)
+            # One part among several has to say which node it is, or it would
+            # re-read whatever happened to be first.
+            self.assertNotEqual(part.SourceNode, "")
+            self.assertNotEqual(part.SourceNodeName, "")
+        self.assertEqual(len({p.SourceNode for p in parts}), 2)
+
+    def testARevisedAssemblyRebuildsOnlyThePartThatChanged(self):
+        path = self.path("revised.step")
+        self.writeAssembly(path, 10)
+        Import.insert(path, self.doc.Name)
+
+        parts = {o.SourceNodeName: o for o in self.doc.Objects if o.TypeId == "Import::Feature"}
+        self.assertEqual(sorted(parts), ["PartA", "PartB"])
+        self.assertAlmostEqual(parts["PartB"].Shape.Volume, 1000.0, places=6)
+
+        self.writeAssembly(path, 40)
+        for part in parts.values():
+            part.touch()
         self.doc.recompute()
 
-        path = self.path("assembly.step")
-        Import.export([one, two], path)
-
-        target = FreeCAD.newDocument("ImportedAssembly")
-        try:
-            Import.insert(path, target.Name)
-            imported = [o for o in target.Objects if o.TypeId == "Import::Feature"]
-            self.assertGreater(len(imported), 1)
-            # Each part needs to say which node of the file it is before it can be
-            # re-read; until then it must not claim to know its source.
-            for obj in imported:
-                self.assertEqual(obj.SourceFile, "")
-        finally:
-            FreeCAD.closeDocument(target.Name)
+        self.assertAlmostEqual(parts["PartA"].Shape.Volume, 1000.0, places=6)
+        self.assertAlmostEqual(parts["PartB"].Shape.Volume, 4000.0, places=6)
+        self.assertNotIn("Invalid", parts["PartB"].State)

@@ -7,10 +7,18 @@
 
 #include <src/App/InitApplication.h>
 
+#include <BRepBndLib.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
+#include <STEPCAFControl_Writer.hxx>
 #include <STEPControl_Writer.hxx>
+#include <TDataStd_Name.hxx>
+#include <TDocStd_Document.hxx>
+#include <XCAFApp_Application.hxx>
+#include <XCAFDoc_DocumentTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
 #include <gp_Pnt.hxx>
 
 #include <App/Document.h>
@@ -71,6 +79,35 @@ protected:
             STEPControl_AsIs
         );
         writer.Write(file.filePath().c_str());
+        _written.push_back(file.filePath());
+        return file.filePath();
+    }
+
+    /// Writes a STEP file whose top-level shapes carry the given names.
+    std::string writeNamedStep(const char* name, const std::vector<std::string>& names)
+    {
+        Base::FileInfo file(Base::FileInfo::getTempPath() + name);
+
+        Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
+        Handle(TDocStd_Document) doc;
+        app->NewDocument(TCollection_ExtendedString("MDTV-CAF"), doc);
+        Handle(XCAFDoc_ShapeTool) shapes = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+
+        double offset = 0.0;
+        for (const auto& label : names) {
+            const TDF_Label added = shapes->AddShape(
+                BRepPrimAPI_MakeBox(gp_Pnt(offset, 0.0, 0.0), 10.0, 10.0, 10.0).Shape(),
+                false
+            );
+            TDataStd_Name::Set(added, TCollection_ExtendedString(label.c_str()));
+            offset += 50.0;
+        }
+
+        STEPCAFControl_Writer writer;
+        writer.Transfer(doc, STEPControl_AsIs);
+        writer.Write(file.filePath().c_str());
+        app->Close(doc);
+
         _written.push_back(file.filePath());
         return file.filePath();
     }
@@ -257,4 +294,66 @@ TEST_F(ImportFeature, anUntranslatableFormatFailsHonestly)
     _doc->recompute();
 
     EXPECT_TRUE(feature->isError());
+}
+
+TEST_F(ImportFeature, aNamedNodeIsFoundEvenAfterThePositionsShift)
+{
+    const std::string path = writeNamedStep("cc_import_shift.step", {"PartA", "PartB"});
+    std::string node;
+    ASSERT_NO_THROW(Import::Feature::translate(Base::FileInfo(path), "", "PartB", &node));
+    ASSERT_FALSE(node.empty());
+
+    // The supplier adds a part ahead of PartB, which shifts every position after
+    // it. Trusting the position alone would hand back the new part instead.
+    writeNamedStep("cc_import_shift.step", {"PartA", "PartNew", "PartB"});
+
+    std::string moved;
+    TopoDS_Shape shape;
+    ASSERT_NO_THROW(shape = Import::Feature::translate(Base::FileInfo(path), node, "PartB", &moved));
+    EXPECT_NE(moved, node);
+
+    // Same box, so the test cannot rest on volume alone: the new part sits where
+    // PartB used to be only if the wrong node was taken.
+    Bnd_Box bounds;
+    BRepBndLib::Add(shape, bounds);
+    double xMin {}, yMin {}, zMin {}, xMax {}, yMax {}, zMax {};
+    bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+    EXPECT_NEAR(xMin, 100.0, 1e-6);
+}
+
+TEST_F(ImportFeature, aVanishedNodeSaysWhatIsMissing)
+{
+    const std::string path = writeNamedStep("cc_import_dropped.step", {"Keep", "Gone"});
+    std::string node;
+    ASSERT_NO_THROW(Import::Feature::translate(Base::FileInfo(path), "", "Gone", &node));
+
+    writeNamedStep("cc_import_dropped.step", {"Keep"});
+
+    try {
+        Import::Feature::translate(Base::FileInfo(path), node, "Gone");
+        FAIL() << "a node that is no longer in the file must not resolve";
+    }
+    catch (const Base::Exception& e) {
+        EXPECT_NE(std::string(e.what()).find("no longer holds a node named"), std::string::npos);
+    }
+}
+
+TEST_F(ImportFeature, twoNodesOfTheSameNameAreRefusedRatherThanGuessedBetween)
+{
+    const std::string path = writeNamedStep("cc_import_twin.step", {"Keep", "Twin"});
+    std::string node;
+    ASSERT_NO_THROW(Import::Feature::translate(Base::FileInfo(path), "", "Twin", &node));
+
+    // The next revision has two parts carrying that name, and the position no
+    // longer picks one of them out. Which is meant is a question for the user,
+    // not something to settle by taking the first.
+    writeNamedStep("cc_import_twin.step", {"Twin", "Keep", "Twin"});
+
+    try {
+        Import::Feature::translate(Base::FileInfo(path), "0:1:1:99", "Twin");
+        FAIL() << "an ambiguous name must not resolve";
+    }
+    catch (const Base::Exception& e) {
+        EXPECT_NE(std::string(e.what()).find("several nodes named"), std::string::npos);
+    }
 }

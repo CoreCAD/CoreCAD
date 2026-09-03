@@ -13,6 +13,7 @@
 
 #include <Standard_Failure.hxx>
 #include <TDF_LabelSequence.hxx>
+#include <TDF_Tool.hxx>
 #include <TopoDS_Shape.hxx>
 #include <XCAFApp_Application.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
@@ -24,6 +25,7 @@
 #include "ReaderGltf.h"
 #include "ReaderIges.h"
 #include "ReaderStep.h"
+#include "Tools.h"
 
 using namespace Import;
 
@@ -32,6 +34,20 @@ PROPERTY_SOURCE(Import::Feature, Part::Feature)
 Feature::Feature()
 {
     ADD_PROPERTY_TYPE(SourceFile, (""), "Import", App::Prop_None, "File this geometry was translated from");
+    ADD_PROPERTY_TYPE(
+        SourceNode,
+        (""),
+        "Import",
+        App::Prop_ReadOnly,
+        "Node of the source file this geometry was read from; empty means the whole file"
+    );
+    ADD_PROPERTY_TYPE(
+        SourceNodeName,
+        (""),
+        "Import",
+        App::Prop_ReadOnly,
+        "Name that node carried when it was read"
+    );
     ADD_PROPERTY_TYPE(
         SourceHash,
         (""),
@@ -79,7 +95,52 @@ bool Feature::refreshSourceHash()
     return true;
 }
 
-TopoDS_Shape Feature::translate(const Base::FileInfo& file)
+namespace
+{
+
+/// The label a stored address points at, or a null label when it does not match.
+TDF_Label labelAt(const Handle(TDocStd_Document) & doc, const std::string& node, const std::string& nodeName)
+{
+    if (node.empty()) {
+        return {};
+    }
+
+    TDF_Label label;
+    TDF_Tool::Label(doc->GetData(), node.c_str(), label);
+    if (label.IsNull()) {
+        return {};
+    }
+    if (!nodeName.empty() && Import::Tools::labelName(label) != nodeName) {
+        // Something else stands here now -- almost always because a part was
+        // added ahead of this one and shifted every position after it.
+        return {};
+    }
+    return label;
+}
+
+/// Every shape label in the file carrying the given name.
+TDF_LabelSequence labelsNamed(const Handle(XCAFDoc_ShapeTool) & shapes, const std::string& nodeName)
+{
+    TDF_LabelSequence all;
+    shapes->GetShapes(all);
+
+    TDF_LabelSequence found;
+    for (Standard_Integer i = 1; i <= all.Length(); ++i) {
+        if (Import::Tools::labelName(all.Value(i)) == nodeName) {
+            found.Append(all.Value(i));
+        }
+    }
+    return found;
+}
+
+}  // namespace
+
+TopoDS_Shape Feature::translate(
+    const Base::FileInfo& file,
+    const std::string& node,
+    const std::string& nodeName,
+    std::string* resolvedNode
+)
 {
     Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
     Handle(TDocStd_Document) doc;
@@ -99,14 +160,65 @@ TopoDS_Shape Feature::translate(const Base::FileInfo& file)
         throw Base::RuntimeError("No translator for this file format");
     }
 
+    Handle(XCAFDoc_ShapeTool) shapes = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+
+    if (!node.empty() || !nodeName.empty()) {
+        TDF_Label label = labelAt(doc, node, nodeName);
+
+        if (label.IsNull() && !nodeName.empty()) {
+            // The position no longer holds what it held, so go by name. One match
+            // is the part; none or several is a question this cannot answer on
+            // its own, and guessing is how a chamfer silently lands on the wrong
+            // face three revisions later.
+            const TDF_LabelSequence named = labelsNamed(shapes, nodeName);
+            if (named.Length() == 1) {
+                label = named.First();
+            }
+            else {
+                app->Close(doc);
+                throw Base::RuntimeError(
+                    named.IsEmpty() ? "The source file no longer holds a node named '" + nodeName + "'"
+                                    : "The source file now holds several nodes named '" + nodeName
+                            + "'; which one this is cannot be decided without asking"
+                );
+            }
+        }
+
+        // Hand back where the node was actually found, so a caller storing an
+        // address can correct one the file has moved rather than keep pointing at
+        // a position that now means something else.
+        if (resolvedNode && !label.IsNull()) {
+            TCollection_AsciiString entry;
+            TDF_Tool::Entry(label, entry);
+            *resolvedNode = entry.ToCString();
+        }
+
+        // A reference is an instance placed in an assembly; the geometry lives on
+        // the prototype it points at, so follow the chain to the part itself.
+        while (!label.IsNull() && XCAFDoc_ShapeTool::IsReference(label)) {
+            TDF_Label referred;
+            if (!XCAFDoc_ShapeTool::GetReferredShape(label, referred)) {
+                break;
+            }
+            label = referred;
+        }
+        if (label.IsNull() || !shapes->IsShape(label)) {
+            app->Close(doc);
+            throw Base::RuntimeError("The source file no longer holds this node");
+        }
+        const TopoDS_Shape located = shapes->GetShape(label);
+        app->Close(doc);
+        return located;
+    }
+
     TDF_LabelSequence roots;
-    XCAFDoc_DocumentTool::ShapeTool(doc->Main())->GetFreeShapes(roots);
+    shapes->GetFreeShapes(roots);
 
     // One free shape is the whole answer for a file holding a single part. More
-    // than one means the file is an assembly of separately-named things, and
-    // this feature has no way yet to say which of them it is -- see the class
-    // note. Fusing them into one compound would answer by destroying the very
-    // distinction the addressing has to preserve, so refuse instead.
+    // than one, with no node named, means the caller has not said which of the
+    // file's separately-named things it wants. Fusing them into one compound
+    // would answer by destroying the very distinction the address preserves, so
+    // refuse instead.
     if (roots.Length() != 1) {
         app->Close(doc);
         throw Base::RuntimeError(
@@ -116,7 +228,7 @@ TopoDS_Shape Feature::translate(const Base::FileInfo& file)
         );
     }
 
-    const TopoDS_Shape shape = XCAFDoc_DocumentTool::ShapeTool(doc->Main())->GetShape(roots.First());
+    const TopoDS_Shape shape = shapes->GetShape(roots.First());
     app->Close(doc);
     return shape;
 }
@@ -136,8 +248,9 @@ App::DocumentObjectExecReturn* Feature::execute()
     }
 
     TopoDS_Shape shape;
+    std::string resolvedNode;
     try {
-        shape = translate(file);
+        shape = translate(file, SourceNode.getStrValue(), SourceNodeName.getStrValue(), &resolvedNode);
     }
     catch (const Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString(), this);
@@ -151,6 +264,10 @@ App::DocumentObjectExecReturn* Feature::execute()
     }
 
     Shape.setValue(shape);
+
+    if (!resolvedNode.empty() && resolvedNode != SourceNode.getStrValue()) {
+        SourceNode.setValue(resolvedNode);
+    }
 
     // Record the contents this geometry was actually built from, so the stored
     // fingerprint always describes the shape being held rather than whatever was

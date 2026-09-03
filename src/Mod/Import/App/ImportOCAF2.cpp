@@ -32,6 +32,7 @@
 #include <TDF_AttributeSequence.hxx>
 #include <TDF_Label.hxx>
 #include <TDF_LabelSequence.hxx>
+#include <TDF_Tool.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Iterator.hxx>
@@ -127,6 +128,37 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
 void ImportOCAF2::setImportOptions(ImportOCAFOptions opts)
 {
     options = opts;
+}
+
+void ImportOCAF2::recordSource(Import::Feature* feature, TDF_Label label) const
+{
+    if (sourceFile.empty()) {
+        return;
+    }
+
+    feature->SourceFile.setValue(sourceFile);
+    feature->SourceHash.setValue(Import::Feature::hashFile(sourceFile.c_str()));
+    feature->TranslatorSettings.setValues(describeOptions());
+
+    // A file holding one part needs no address within itself, and leaving the
+    // node empty says exactly that. Anything else is one part among several, and
+    // has to name the node it came from or it cannot re-read itself later.
+    TDF_LabelSequence roots;
+    aShapeTool->GetFreeShapes(roots);
+    if (roots.Length() > 1 || (roots.Length() == 1 && !roots.First().IsEqual(label))) {
+        TCollection_AsciiString entry;
+        TDF_Tool::Entry(label, entry);
+        feature->SourceNode.setValue(entry.ToCString());
+        // The position alone is not a safe address: a supplier who adds a part
+        // shifts every position after it. The name is what says whether the
+        // position still means the same thing on the next read.
+        feature->SourceNodeName.setValue(Tools::labelName(label));
+    }
+
+    // The importer has just built this feature's shape from the file it is being
+    // told about, so it is genuinely up to date; recording that must not leave
+    // the document asking to recompute.
+    feature->purgeTouched();
 }
 
 std::map<std::string, std::string> ImportOCAF2::describeOptions() const
@@ -404,9 +436,9 @@ bool ImportOCAF2::createObject(
 
     // Imported leaf geometry is an Import feature: it came from a file, and that
     // is a property of the object, not a fact that lives only for the duration
-    // of the import. Which file, and which node of it, is stamped on afterwards
-    // in loadShapes() -- and only where the feature can honour a re-read.
+    // of the import.
     auto* feature = doc->addObject<Import::Feature>(tshape.shapeName().c_str());
+    recordSource(feature, label);
     feature->Shape.setValue(shape);
     applyFaceColors(feature, {info.faceColor});
     applyEdgeColors(feature, {info.edgeColor});
@@ -578,19 +610,6 @@ App::DocumentObject* ImportOCAF2::loadShapes()
     }
     if (ret) {
         ret->recomputeFeature(true);
-    }
-
-    // A file holding a single part is the one case an imported feature can
-    // re-read on its own: the file is the whole answer, so no address within it
-    // is needed. An assembly's parts each need to say which node of the file
-    // they are before they can be re-read, so they are left without a source for
-    // now rather than given one they cannot honour.
-    if (auto* imported = freecad_cast<Import::Feature*>(ret);
-        imported && count == 1 && !sourceFile.empty()) {
-        imported->SourceFile.setValue(sourceFile);
-        imported->SourceHash.setValue(Import::Feature::hashFile(sourceFile.c_str()));
-        imported->TranslatorSettings.setValues(describeOptions());
-        imported->purgeTouched();
     }
 
     if (options.merge && ret && !ret->isDerivedFrom<Part::Feature>()) {

@@ -36,10 +36,10 @@ namespace Import
  * references, so it is an anchor and carries a placement of its own, in the same
  * way a primitive does.
  *
- * What this type does *not* yet carry is an address *within* the source file. A
- * file holding a single part needs none — the file is the whole answer. A file
- * holding an assembly becomes many objects, and each one must record which node
- * of the file it is before it can be re-read on its own.
+ * A file holding a single part needs no address within itself — the file is the
+ * whole answer, and SourceNode stays empty. A file holding an assembly becomes
+ * many objects, and each records the node it was read from, so each can re-read
+ * itself without the others.
  */
 class ImportExport Feature: public Part::Feature
 {
@@ -50,6 +50,10 @@ public:
 
     /// Path to the file this geometry was translated from.
     App::PropertyFile SourceFile;
+    /// Which node of the source file this geometry is; empty means the whole file.
+    App::PropertyString SourceNode;
+    /// The name that node carried, which is what survives the file being reordered.
+    App::PropertyString SourceNodeName;
     /// Fingerprint of the source file's contents, as read.
     App::PropertyString SourceHash;
     /// Translator options this geometry was read under.
@@ -74,14 +78,27 @@ public:
     bool refreshSourceHash();
 
     /**
-     * Reads the one shape a file holds.
+     * Reads one shape out of a file.
      *
-     * Throws when the format has no translator, when the file holds nothing, or
-     * when it holds more than one top-level shape -- the assembly case, which
-     * needs an address within the file before a single feature can stand for
-     * one of its parts.
+     * With no node named at all, the file must hold exactly one top-level shape,
+     * which is then the answer.
+     *
+     * Otherwise \a node is a position in the file and \a nodeName is what stood
+     * there when it was read. The position is only trusted while the name still
+     * matches, because a supplier who adds a part shifts every position after it
+     * — trusting position alone would quietly hand back a different part. When
+     * the name has moved, the file is searched for it instead; if it is gone, or
+     * if several nodes now carry it, this throws rather than guessing.
+     *
+     * References are followed through to the prototype they point at, so an
+     * instance and the part it instantiates read the same geometry.
      */
-    static TopoDS_Shape translate(const Base::FileInfo& file);
+    static TopoDS_Shape translate(
+        const Base::FileInfo& file,
+        const std::string& node = {},
+        const std::string& nodeName = {},
+        std::string* resolvedNode = nullptr
+    );
 
     /// Re-reads the source file into this feature's shape.
     App::DocumentObjectExecReturn* execute() override;

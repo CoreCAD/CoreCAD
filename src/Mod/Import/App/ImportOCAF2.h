@@ -61,6 +61,8 @@ class Feature;
 namespace Import
 {
 
+class Feature;
+
 struct ImportExport ImportOCAFOptions
 {
     ImportOCAFOptions();
@@ -203,6 +205,9 @@ private:
     Handle(XCAFDoc_ShapeTool) aShapeTool;
     Handle(XCAFDoc_ColorTool) aColorTool;
     std::string default_name;
+
+    /// Stamps the file, node and settings this feature's geometry was read under.
+    void recordSource(Import::Feature* feature, TDF_Label label) const;
 
     /// The translator options this import ran under, as storable text.
     std::map<std::string, std::string> describeOptions() const;
