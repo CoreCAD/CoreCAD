@@ -9,7 +9,10 @@
 
 #include <BRepBndLib.hxx>
 #include <BRepGProp.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <STEPCAFControl_Writer.hxx>
@@ -22,6 +25,7 @@
 #include <gp_Pnt.hxx>
 
 #include <App/Document.h>
+#include <Base/Placement.h>
 #include <Base/FileInfo.h>
 #include <Mod/Import/App/Feature.h>
 #include <Mod/Part/App/SubShapeSignature.h>
@@ -65,6 +69,15 @@ protected:
         Base::FileInfo file(Base::FileInfo::getTempPath() + name);
         Part::TopoShape(BRepPrimAPI_MakeBox(side, side, side).Shape())
             .exportStep(file.filePath().c_str());
+        _written.push_back(file.filePath());
+        return file.filePath();
+    }
+
+    /// Writes a STEP file holding one box of the given dimensions.
+    std::string writeBoxStep(const char* name, double dx, double dy, double dz)
+    {
+        Base::FileInfo file(Base::FileInfo::getTempPath() + name);
+        Part::TopoShape(BRepPrimAPI_MakeBox(dx, dy, dz).Shape()).exportStep(file.filePath().c_str());
         _written.push_back(file.filePath());
         return file.filePath();
     }
@@ -283,26 +296,113 @@ TEST_F(ImportFeature, theSameFileRecordsTheSameFacesEveryTime)
     EXPECT_EQ(feature->FaceIdentities.getValues(), first);
 }
 
-// A revision that changes the geometry changes the record with it. This is the raw
-// material the green / yellow / red pass will work from: today the faces are simply
-// re-read, so a changed part is a changed record.
-TEST_F(ImportFeature, aChangedPartIsRecordedAsChangedFaces)
+// The point of keeping a record: a revision is matched against it. A part that
+// grew taller keeps the face it did not move, and says plainly that the five faces
+// it did move are not the faces it had before -- rather than quietly renumbering
+// and leaving everything downstream to find out for itself.
+TEST_F(ImportFeature, aRevisionCarriesTheFacesThatDidNotChange)
 {
     auto* feature = addImport();
 
-    const std::string path = writeBoxStep("cc_import_faces_rev.step", 10.0);
+    const std::string path = writeBoxStep("cc_import_faces_rev.step", 10.0, 10.0, 10.0);
     feature->SourceFile.setValue(path.c_str());
     _doc->recompute();
     const auto before = feature->FaceIdentities.getValues();
     ASSERT_EQ(before.size(), 6U);
 
-    writeBoxStep("cc_import_faces_rev.step", 20.0);
+    // Taller, same footprint: the bottom face is untouched, the other five are not
+    // the faces they were -- the walls grew and the top moved.
+    writeBoxStep("cc_import_faces_rev.step", 10.0, 10.0, 20.0);
+    feature->touch();
+    _doc->recompute();
+    ASSERT_FALSE(feature->isError());
+
+    const auto after = feature->FaceIdentities.getValues();
+    EXPECT_EQ(after.size(), 6U) << "a taller box is still a box: six faces";
+
+    std::size_t survived = 0;
+    for (const auto& entry : before) {
+        survived += after.count(entry.first);
+    }
+    EXPECT_EQ(survived, 1U) << "the face that did not move keeps its identity";
+    EXPECT_EQ(feature->LostFaces.getValues().size(), 5U) << "and the five that moved are named";
+    EXPECT_TRUE(feature->AmbiguousFaces.getValues().empty());
+}
+
+// Reading the same file again settles: every identity carries, nothing is lost,
+// nothing is added, and there is nothing to report.
+TEST_F(ImportFeature, anUnchangedRereadCarriesEveryFace)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_faces_same.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    const auto before = feature->FaceIdentities.getValues();
+    ASSERT_EQ(before.size(), 6U);
+
     feature->touch();
     _doc->recompute();
 
-    const auto after = feature->FaceIdentities.getValues();
-    EXPECT_EQ(after.size(), 6U) << "a bigger box is still a box: six faces";
-    EXPECT_NE(after, before) << "and they are not the same six faces";
+    EXPECT_EQ(feature->FaceIdentities.getValues(), before);
+    EXPECT_TRUE(feature->LostFaces.getValues().empty());
+    EXPECT_TRUE(feature->AmbiguousFaces.getValues().empty());
+}
+
+// Where a part sits is not part of what its faces are. Dragging an import across
+// the document must not lose the identity of every face it has -- and the same
+// reading is why an assembly part, whose transform is attached after the importer
+// builds it, used to disagree with its own first re-read about all of its faces.
+TEST_F(ImportFeature, movingAnImportKeepsTheIdentityOfItsFaces)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_moved.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    const auto before = feature->FaceIdentities.getValues();
+    ASSERT_EQ(before.size(), 6U);
+
+    feature->Placement.setValue(Base::Placement(Base::Vector3d(100, -40, 7), Base::Rotation()));
+    feature->touch();
+    _doc->recompute();
+
+    EXPECT_EQ(feature->FaceIdentities.getValues(), before) << "the part moved; its faces did not";
+    EXPECT_TRUE(feature->LostFaces.getValues().empty());
+}
+
+// The yellow case. When a revision holds more than one face answering to an
+// identity, nothing in the geometry says which one was meant -- the four identical
+// bolt holes of a symmetric flange. The identity is set aside for the user to
+// settle, and is neither handed to one of the candidates nor written off as gone.
+TEST_F(ImportFeature, anIdentityWithTwoCandidatesIsSetAsideNotGuessedAt)
+{
+    auto* feature = addImport();
+
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape();
+    feature->Shape.setValue(box);
+    const auto recorded = feature->matchFaceIdentities();
+    ASSERT_EQ(recorded.added, 6);
+    ASSERT_EQ(feature->FaceIdentities.getValues().size(), 6U);
+
+    // The revision holds the same part twice over, in the same place: every face
+    // now has an indistinguishable twin. The copy is a deep one -- the kernel folds
+    // a repeated shape back to a single entry, which would hide the ambiguity.
+    BRep_Builder builder;
+    TopoDS_Compound twins;
+    builder.MakeCompound(twins);
+    builder.Add(twins, box);
+    builder.Add(twins, BRepBuilderAPI_Copy(box).Shape());
+    feature->Shape.setValue(twins);
+
+    const auto match = feature->matchFaceIdentities();
+    EXPECT_EQ(match.carried, 0);
+    EXPECT_EQ(match.added, 0) << "a contested face is not a new face";
+    EXPECT_TRUE(match.lost.empty()) << "the identity is contested, not gone";
+    EXPECT_EQ(match.ambiguous.size(), 6U);
+    EXPECT_EQ(feature->AmbiguousFaces.getValues().size(), 6U);
+    EXPECT_TRUE(feature->FaceIdentities.getValues().empty())
+        << "no identity may be bound to one of two candidates without being asked";
 }
 
 // A guard, not a bug-catcher: this passes whether or not execute() guards its

@@ -291,6 +291,26 @@ TEST_F(NeutralRefTest, tellsAmbiguousApartFromLost)
     EXPECT_EQ(resolveFaceRef(ref, *ell).match, RefMatch::Lost);
 }
 
+// A reference is to a face, not to a place. Moving the feature the reference points
+// at must not lose it -- read in the world frame, every signature would shift with
+// the part and the reference would come back Lost the moment a user dragged it.
+TEST_F(NeutralRefTest, aLeafReferenceSurvivesTheFeatureBeingMoved)
+{
+    Part::Ellipsoid* ell = makeEllipsoid();
+    const NRef ref = captureFaceRef(*ell, "Face1");
+    ASSERT_TRUE(ref.role.empty()) << "the signature regime is the one under test";
+    ASSERT_EQ(resolveFaceRef(ref, *ell).match, RefMatch::Matched);
+
+    ell->Placement.setValue(Base::Placement(Base::Vector3d(120, -35, 8), Base::Rotation()));
+    _doc->recompute();
+
+    const NRefResolution moved = resolveFaceRef(ref, *ell);
+    EXPECT_EQ(moved.match, RefMatch::Matched);
+    EXPECT_EQ(moved.subName, "Face1");
+    EXPECT_EQ(captureFaceRef(*ell, "Face1").signature, ref.signature)
+        << "the same face in a new place is the same face";
+}
+
 // The payoff. Capture a reference on one box, then resolve it against an
 // independently-numbered rebuild of the same box -- the merge situation, where the
 // two branches wrote the same geometry with different kernel face ordinals. The
