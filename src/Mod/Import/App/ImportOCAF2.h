@@ -112,6 +112,17 @@ public:
     {
         options.expandCompound = enable;
     }
+    /**
+     * Path of the file being translated, so imported geometry can record where
+     * it came from.
+     *
+     * Without it an import leaves no provenance at all and there is no way back
+     * to the source when a newer revision arrives.
+     */
+    void setSourceFile(const std::string& path)
+    {
+        sourceFile = path;
+    }
 
     enum ImportMode
     {
@@ -193,8 +204,12 @@ private:
     Handle(XCAFDoc_ColorTool) aColorTool;
     std::string default_name;
 
+    /// The translator options this import ran under, as storable text.
+    std::map<std::string, std::string> describeOptions() const;
+
     ImportOCAFOptions options;
     std::string filePath;
+    std::string sourceFile;
 
     std::unordered_map<TopoDS_Shape, Info, ShapeHasher> myShapes;
     std::unordered_map<TDF_Label, std::string, LabelHasher> myNames;

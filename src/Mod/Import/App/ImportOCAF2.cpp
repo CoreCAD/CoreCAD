@@ -55,6 +55,7 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
 
+#include "Feature.h"
 #include "ImportOCAF2.h"
 
 // See https://dev.opencascade.org/content/occt-3d-viewer-becomes-srgb-aware
@@ -126,6 +127,21 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
 void ImportOCAF2::setImportOptions(ImportOCAFOptions opts)
 {
     options = opts;
+}
+
+std::map<std::string, std::string> ImportOCAF2::describeOptions() const
+{
+    auto text = [](bool value) -> std::string {
+        return value ? "true" : "false";
+    };
+    return {
+        {"merge", text(options.merge)},
+        {"useBaseName", text(options.useBaseName)},
+        {"importHidden", text(options.importHidden)},
+        {"reduceObjects", text(options.reduceObjects)},
+        {"expandCompound", text(options.expandCompound)},
+        {"mode", std::to_string(options.mode)},
+    };
 }
 
 void ImportOCAF2::setMode(int m)
@@ -386,7 +402,11 @@ bool ImportOCAF2::createObject(
         return true;
     }
 
-    auto* feature = doc->addObject<Part::Feature>(tshape.shapeName().c_str());
+    // Imported leaf geometry is an Import feature: it came from a file, and that
+    // is a property of the object, not a fact that lives only for the duration
+    // of the import. Which file, and which node of it, is stamped on afterwards
+    // in loadShapes() -- and only where the feature can honour a re-read.
+    auto* feature = doc->addObject<Import::Feature>(tshape.shapeName().c_str());
     feature->Shape.setValue(shape);
     applyFaceColors(feature, {info.faceColor});
     applyEdgeColors(feature, {info.edgeColor});
@@ -559,6 +579,20 @@ App::DocumentObject* ImportOCAF2::loadShapes()
     if (ret) {
         ret->recomputeFeature(true);
     }
+
+    // A file holding a single part is the one case an imported feature can
+    // re-read on its own: the file is the whole answer, so no address within it
+    // is needed. An assembly's parts each need to say which node of the file
+    // they are before they can be re-read, so they are left without a source for
+    // now rather than given one they cannot honour.
+    if (auto* imported = freecad_cast<Import::Feature*>(ret);
+        imported && count == 1 && !sourceFile.empty()) {
+        imported->SourceFile.setValue(sourceFile);
+        imported->SourceHash.setValue(Import::Feature::hashFile(sourceFile.c_str()));
+        imported->TranslatorSettings.setValues(describeOptions());
+        imported->purgeTouched();
+    }
+
     if (options.merge && ret && !ret->isDerivedFrom<Part::Feature>()) {
         auto shape = Part::Feature::getTopoShape(
             ret,
