@@ -24,6 +24,7 @@
 #include <App/Document.h>
 #include <Base/FileInfo.h>
 #include <Mod/Import/App/Feature.h>
+#include <Mod/Part/App/SubShapeSignature.h>
 #include <Mod/Part/App/TopoShape.h>
 
 class ImportFeature: public ::testing::Test
@@ -227,6 +228,81 @@ TEST_F(ImportFeature, aNewRevisionOfTheFileRebuildsTheShape)
     EXPECT_FALSE(feature->isError());
     EXPECT_NEAR(volumeOf(feature->Shape.getShape()), 8000.0, 1e-6);
     EXPECT_NE(feature->SourceHash.getStrValue(), before);
+}
+
+// An import can say what it produced. Before this, a face of an imported shape had
+// an identity only where some later feature happened to reference it -- the import
+// itself knew nothing about its own faces, so a re-import had nothing to compare
+// against and could not report which faces survived it.
+TEST_F(ImportFeature, anImportRecordsTheFacesItProduced)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_faces.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    ASSERT_FALSE(feature->isError());
+
+    const auto identities = feature->FaceIdentities.getValues();
+    EXPECT_EQ(identities.size(), 6U) << "a box arrives with six faces, each on record";
+    EXPECT_EQ(
+        identities.size(),
+        static_cast<std::size_t>(feature->Shape.getShape().countSubShapes(TopAbs_FACE))
+    ) << "every face of the shape is accounted for, and nothing that is not a face";
+
+    // The identity and the current signature start out as the same reading, and the
+    // reading is the geometry's own: it is what the reference layer captures for a
+    // face of this shape, so an identity here and a reference to that face agree.
+    for (const auto& entry : identities) {
+        EXPECT_FALSE(entry.first.empty());
+        EXPECT_EQ(entry.first, entry.second);
+    }
+    const TopoDS_Shape firstFace
+        = feature->Shape.getShape().getSubShape(TopAbs_FACE, 1, /*silent*/ true);
+    ASSERT_FALSE(firstFace.IsNull());
+    EXPECT_EQ(identities.count(Part::subShapeSignature(firstFace)), 1U)
+        << "the recorded identity has to be the same reading a reference would take";
+}
+
+// Reading the same file again produces the same record. If it did not, the record
+// could not be used to tell what changed between two revisions -- every re-import
+// would look like a wholesale replacement.
+TEST_F(ImportFeature, theSameFileRecordsTheSameFacesEveryTime)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_faces_again.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    const auto first = feature->FaceIdentities.getValues();
+    ASSERT_EQ(first.size(), 6U);
+
+    feature->touch();
+    _doc->recompute();
+
+    EXPECT_EQ(feature->FaceIdentities.getValues(), first);
+}
+
+// A revision that changes the geometry changes the record with it. This is the raw
+// material the green / yellow / red pass will work from: today the faces are simply
+// re-read, so a changed part is a changed record.
+TEST_F(ImportFeature, aChangedPartIsRecordedAsChangedFaces)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeBoxStep("cc_import_faces_rev.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    const auto before = feature->FaceIdentities.getValues();
+    ASSERT_EQ(before.size(), 6U);
+
+    writeBoxStep("cc_import_faces_rev.step", 20.0);
+    feature->touch();
+    _doc->recompute();
+
+    const auto after = feature->FaceIdentities.getValues();
+    EXPECT_EQ(after.size(), 6U) << "a bigger box is still a box: six faces";
+    EXPECT_NE(after, before) << "and they are not the same six faces";
 }
 
 // A guard, not a bug-catcher: this passes whether or not execute() guards its

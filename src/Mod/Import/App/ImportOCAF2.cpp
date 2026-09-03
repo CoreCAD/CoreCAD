@@ -440,6 +440,10 @@ bool ImportOCAF2::createObject(
     auto* feature = doc->addObject<Import::Feature>(tshape.shapeName().c_str());
     recordSource(feature, label);
     feature->Shape.setValue(shape);
+    // The first import never goes through execute(), so the faces have to be put on
+    // record here as well -- otherwise an import would only learn what it produced
+    // once something else made it re-read the file.
+    feature->recordFaceIdentities();
     applyFaceColors(feature, {info.faceColor});
     applyEdgeColors(feature, {info.edgeColor});
     if (hasFaceColors) {

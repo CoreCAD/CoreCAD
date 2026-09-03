@@ -4,6 +4,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <map>
 # include <string>
 #endif
 
@@ -20,6 +21,7 @@
 #include <XCAFDoc_ShapeTool.hxx>
 
 #include <Base/FileInfo.h>
+#include <Mod/Part/App/SubShapeSignature.h>
 
 #include "Feature.h"
 #include "ReaderGltf.h"
@@ -62,6 +64,50 @@ Feature::Feature()
         App::Prop_ReadOnly,
         "Translator options this geometry was read under"
     );
+    // Derived from the shape, not authored: read-only to the user, hidden from the
+    // property view (there is one entry per face, which no one reads by hand), and
+    // marked as output so writing it does not mark the feature as edited.
+    ADD_PROPERTY_TYPE(
+        FaceIdentities,
+        (),
+        "Import",
+        App::PropertyType(App::Prop_ReadOnly | App::Prop_Hidden | App::Prop_Output),
+        "Identity of each face this import produced, and the signature it now carries"
+    );
+}
+
+int Feature::recordFaceIdentities()
+{
+    // The signature is read in the feature-local (stored) frame, the same frame the
+    // reference layer captures in, so an identity recorded here and a reference
+    // captured on the same face agree on what that face is.
+    const Part::TopoShape& stored = Shape.getShape();
+    if (stored.isNull()) {
+        return 0;
+    }
+
+    std::map<std::string, std::string> identities;
+    const int faceCount = static_cast<int>(stored.countSubShapes(TopAbs_FACE));
+    for (int i = 1; i <= faceCount; ++i) {
+        const TopoDS_Shape face = stored.getSubShape(TopAbs_FACE, i, /*silent*/ true);
+        if (face.IsNull()) {
+            continue;
+        }
+        const std::string signature = Part::subShapeSignature(face);
+        if (signature.empty()) {
+            continue;
+        }
+        // A face already recorded under this signature means two faces of one shape
+        // are geometrically indistinguishable. Recording the second over the first
+        // would quietly claim there is one face where there are two, so the first
+        // entry stands and the count reports what was actually recorded.
+        identities.emplace(signature, signature);
+    }
+
+    if (identities != FaceIdentities.getValues()) {
+        FaceIdentities.setValues(identities);
+    }
+    return static_cast<int>(identities.size());
 }
 
 std::string Feature::hashFile(const char* path)
@@ -264,6 +310,10 @@ App::DocumentObjectExecReturn* Feature::execute()
     }
 
     Shape.setValue(shape);
+
+    // What was read is now on record: the import can say what faces it produced,
+    // without waiting for some later feature to reference one of them.
+    recordFaceIdentities();
 
     if (!resolvedNode.empty() && resolvedNode != SourceNode.getStrValue()) {
         SourceNode.setValue(resolvedNode);
