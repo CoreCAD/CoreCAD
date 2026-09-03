@@ -60,6 +60,26 @@ public:
     App::PropertyMap TranslatorSettings;
 
     /**
+     * The faces this import produced, and what each of them is.
+     *
+     * Geometry read from a file arrives with no construction history, so a face has
+     * nothing to be identified by except what it is: its own geometric signature.
+     * Until now that identity existed only where some later feature happened to
+     * capture a reference to a face, which means the import itself could not say
+     * what it had produced, and a re-import could not report which faces survived.
+     *
+     * This is the import's own record of its faces. The key is the face's identity,
+     * the signature it carried when it was first recorded; the value is the
+     * signature it carries now. Today every record is a fresh reading, so the two
+     * always agree -- matching a re-import's faces against the stored keys, which
+     * is what makes the key outlive a face that moves, comes with the green /
+     * yellow / red pass of ARCHITECTURE §7.8.
+     *
+     * Faces only, for now: that is the grain the reference layer works at.
+     */
+    App::PropertyMap FaceIdentities;
+
+    /**
      * Fingerprint of a file's contents.
      *
      * Reads the file's bytes and returns a lowercase hexadecimal SHA-1 digest,
@@ -102,6 +122,18 @@ public:
 
     /// Re-reads the source file into this feature's shape.
     App::DocumentObjectExecReturn* execute() override;
+
+    /**
+     * Record the faces of the shape this feature is holding.
+     *
+     * Reads a geometric signature for every face of the current shape, in the
+     * feature-local frame the reference layer captures in, and writes them to
+     * FaceIdentities. Returns the number of faces recorded.
+     *
+     * The record is written only when it differs from what is stored, so a
+     * recompute that changes nothing leaves the document alone.
+     */
+    int recordFaceIdentities();
 };
 
 }  // namespace Import
