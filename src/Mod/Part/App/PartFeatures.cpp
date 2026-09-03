@@ -442,17 +442,41 @@ App::DocumentObjectExecReturn* Thickness::execute()
     // The durable references drive the selection. Resolve each stored NRef against the
     // current base and use the sub-name it now denotes, so a selection gone stale
     // because the base was rebuilt with a different face numbering (a merge) self-heals
-    // here -- no user action, on the next recompute. The stored positional sub is a
-    // fallback: used for a face with no usable ref yet (the first execute) or whose ref
-    // no longer resolves. The input property is not mutated; the heal is per-execute.
+    // here -- no user action, on the next recompute. The input property is not mutated;
+    // the heal is per-execute.
+    //
+    // A reference that was captured and no longer resolves STOPS the feature. The old
+    // positional sub-name is not a safe fallback there: after the base changed, "Face3"
+    // is simply whatever face now sits at that index, so computing on it would answer
+    // confidently with the wrong face rather than reporting that the face this feature
+    // was built on is gone or is no longer unique. Only a face that has no reference
+    // yet -- the first execute, before anything was captured -- falls back to the
+    // stored selection, and that is not a guess: it is the only record there is.
     std::vector<std::string> subs = Faces.getSubValues();
     auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
     const std::vector<std::string>& refs = FaceRefs.getValues();
     if (baseFeat != nullptr && refs.size() == subs.size()) {
+        const std::string baseName = baseFeat->Label.getStrValue();
         for (std::size_t i = 0; i < subs.size(); ++i) {
             const NRefResolution rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
-            if (rebound.match == RefMatch::Matched) {
-                subs[i] = rebound.subName;
+            const std::string which = "Face " + std::to_string(i + 1) + " of this thickness";
+            switch (rebound.match) {
+                case RefMatch::Matched:
+                    subs[i] = rebound.subName;
+                    break;
+                case RefMatch::None:
+                    break;  // nothing captured for this face yet -- keep the selection as given
+                case RefMatch::Ambiguous:
+                    return new App::DocumentObjectExecReturn(
+                        which + " now matches more than one face of " + baseName
+                            + ", so which face was meant has to be chosen before it can rebuild.",
+                        this
+                    );
+                case RefMatch::Lost:
+                    return new App::DocumentObjectExecReturn(
+                        which + " is no longer in " + baseName + ".",
+                        this
+                    );
             }
         }
     }

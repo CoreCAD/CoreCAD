@@ -44,6 +44,26 @@ TopoDS_Shape withReversedFaceOrder(const TopoDS_Shape& solid)
     builder.Add(rebuilt, shell);
     return rebuilt;
 }
+
+// Rebuild a solid with one face left out -- the base coming back WITHOUT the face a
+// downstream feature was built on, the remaining faces renumbered around the gap.
+TopoDS_Shape withoutFace(const TopoDS_Shape& solid, int index)
+{
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(solid, TopAbs_FACE, faces);
+    BRep_Builder builder;
+    TopoDS_Shell shell;
+    builder.MakeShell(shell);
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        if (i != index) {
+            builder.Add(shell, faces(i));
+        }
+    }
+    TopoDS_Solid rebuilt;
+    builder.MakeSolid(rebuilt);
+    builder.Add(rebuilt, shell);
+    return rebuilt;
+}
 }  // namespace
 
 class PartFeaturesTest: public ::testing::Test, public PartTestHelperClass
@@ -259,6 +279,52 @@ TEST_F(PartFeaturesTest, thicknessSelfHealsSelectionOnExecuteAfterRebuild)
     th->execute();
     EXPECT_EQ(fromNeutralString(th->FaceRefs.getValues()[0]).role, "+X")
         << "execute must compute on the ref-resolved +X face, not the stale positional sub";
+}
+
+// The other half of the self-heal, and the more important half: when the reference
+// CANNOT be resolved, the feature stops. The stored "FaceN" is not a safe fallback
+// once the base has changed -- it is simply whatever face now sits at that index --
+// so falling back to it answers confidently with the wrong face. The failure names
+// the loss and the base, and the last good shape is left standing (§3.6).
+TEST_F(PartFeaturesTest, thicknessStopsWhenItsFaceIsGoneRatherThanUseTheOldNumber)
+{
+    _doc->recompute();
+    Part::Box* box = _boxes[0];
+
+    std::string plusX;
+    int plusXIndex = 0;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string sub = "Face" + std::to_string(i);
+        if (capturePrimitiveFaceRole(*box, sub) == "+X") {
+            plusX = sub;
+            plusXIndex = i;
+        }
+    }
+    ASSERT_FALSE(plusX.empty());
+
+    auto* th = _doc->addObject<Thickness>();
+    th->Faces.setValue(box, {plusX});
+    th->Value.setValue(0.25);
+    th->execute();  // first execute captures the ref and builds the geometry
+    ASSERT_EQ(fromNeutralString(th->FaceRefs.getValues()[0]).role, "+X");
+    const double lastGoodVolume = getVolume(th->Shape.getShape().getShape());
+    ASSERT_GT(lastGoodVolume, 0.0);
+
+    // The base comes back without that face. The stored sub-name still reads, but it
+    // now denotes a different physical face -- exactly the silent substitution.
+    box->Shape.setValue(withoutFace(box->Shape.getValue(), plusXIndex));
+    ASSERT_NE(capturePrimitiveFaceRole(*box, plusX), "+X");
+
+    App::DocumentObjectExecReturn* failure = th->execute();
+    ASSERT_NE(failure, nullptr) << "a lost reference must fail, not compute on another face";
+    const std::string reason = failure->Why;
+    delete failure;
+    EXPECT_NE(reason.find("no longer in"), std::string::npos) << reason;
+    EXPECT_NE(reason.find(box->Label.getStrValue()), std::string::npos)
+        << "the failure has to name the base it lost the face from: " << reason;
+
+    // Last known good: the geometry that was working is still there to look at.
+    EXPECT_DOUBLE_EQ(getVolume(th->Shape.getShape().getShape()), lastGoodVolume);
 }
 
 TEST_F(PartFeaturesTest, testRefine)
