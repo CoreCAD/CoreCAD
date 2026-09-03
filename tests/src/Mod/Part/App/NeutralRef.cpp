@@ -6,8 +6,10 @@
 #include <set>
 #include <string>
 
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRep_Builder.hxx>
 #include <TopExp.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Shell.hxx>
@@ -33,6 +35,8 @@ using Part::capturePrimitiveFaceRole;
 using Part::fromNeutralString;
 using Part::NRef;
 using Part::NRefBinding;
+using Part::NRefResolution;
+using Part::RefMatch;
 using Part::resolveFaceRef;
 using Part::toNeutralString;
 
@@ -172,7 +176,7 @@ TEST_F(NeutralRefTest, roleRegimeRoundTripsAndSurvivesEdit)
     for (const char* sub : faces) {
         const NRef ref = captureFaceRef(*box, sub);
         ASSERT_FALSE(ref.role.empty());
-        EXPECT_EQ(resolveFaceRef(ref, *box), sub);
+        EXPECT_EQ(resolveFaceRef(ref, *box).subName, sub);
     }
 
     const NRef ref = captureFaceRef(*box, "Face3");
@@ -180,7 +184,7 @@ TEST_F(NeutralRefTest, roleRegimeRoundTripsAndSurvivesEdit)
     box->Height.setValue(6.0);
     _doc->recompute();
 
-    const std::string resolved = resolveFaceRef(ref, *box);
+    const std::string resolved = resolveFaceRef(ref, *box).subName;
     ASSERT_FALSE(resolved.empty());
     EXPECT_EQ(captureFaceRef(*box, resolved).role, ref.role);
 }
@@ -201,7 +205,7 @@ TEST_F(NeutralRefTest, roleRegimeForCylinderRoundTrips)
         EXPECT_EQ(ref.kind, "face");
         ASSERT_FALSE(ref.role.empty()) << "a cylinder face should carry a role";
         ASSERT_FALSE(ref.signature.empty());
-        EXPECT_EQ(resolveFaceRef(ref, *cyl), sub);
+        EXPECT_EQ(resolveFaceRef(ref, *cyl).subName, sub);
         roles.insert(ref.role);
     }
     EXPECT_EQ(roles, (std::set<std::string> {"Side", "+Z", "-Z"}));
@@ -223,12 +227,13 @@ TEST_F(NeutralRefTest, signatureRegimeForExcludedPrimitiveRoundTrips)
         EXPECT_EQ(ref.kind, "face");
         EXPECT_TRUE(ref.role.empty()) << "an excluded primitive's face carries no role";
         ASSERT_FALSE(ref.signature.empty());
-        EXPECT_EQ(resolveFaceRef(ref, *ell), sub);
+        EXPECT_EQ(resolveFaceRef(ref, *ell).subName, sub);
     }
 }
 
-// A ref that is not a face, or whose leaf target matches nothing, degrades to the
-// empty string; a capture on a non-existent sub-name yields a null ref.
+// A ref that is not a face, or whose leaf target matches nothing, yields no
+// sub-name; a capture on a non-existent sub-name yields a null ref. The two cases
+// are told apart: one reference asks nothing, the other asked and lost.
 TEST_F(NeutralRefTest, degradesOnBadRef)
 {
     Part::Box* box = makeBox();
@@ -238,12 +243,52 @@ TEST_F(NeutralRefTest, degradesOnBadRef)
     NRef notAFace;
     notAFace.kind = "edge";
     notAFace.role = "+X";
-    EXPECT_TRUE(resolveFaceRef(notAFace, *box).empty());
+    const NRefResolution notAsked = resolveFaceRef(notAFace, *box);
+    EXPECT_EQ(notAsked.match, RefMatch::None);
+    EXPECT_TRUE(notAsked.subName.empty());
 
     NRef goneSignature;
     goneSignature.kind = "face";
     goneSignature.signature = "not-a-real-signature";
-    EXPECT_TRUE(resolveFaceRef(goneSignature, *box).empty());
+    const NRefResolution lost = resolveFaceRef(goneSignature, *box);
+    EXPECT_EQ(lost.match, RefMatch::Lost);
+    EXPECT_TRUE(lost.subName.empty());
+}
+
+// The distinction the protocol turns on: a reference whose target is GONE and one
+// whose target is there SEVERAL TIMES OVER are different answers, and resolution
+// says which. Both withhold a sub-name -- the point is that the caller can now tell
+// an honest failure from a question only the user can settle.
+TEST_F(NeutralRefTest, tellsAmbiguousApartFromLost)
+{
+    Part::Ellipsoid* ell = makeEllipsoid();
+    const NRef ref = captureFaceRef(*ell, "Face1");
+    ASSERT_TRUE(ref.role.empty()) << "the signature regime is the one under test";
+    ASSERT_FALSE(ref.signature.empty());
+    ASSERT_EQ(resolveFaceRef(ref, *ell).match, RefMatch::Matched);
+
+    // Two coincident duplicates of the very same surface: both carry the captured
+    // signature, so nothing in the geometry says which one the reference meant.
+    // This is the four-identical-bolt-holes case in miniature. The duplicate is a
+    // deep copy, not the same shape added twice -- the kernel's sub-shape map folds
+    // a repeated shape back to one entry, which would hide the ambiguity.
+    const TopoDS_Shape one = ell->Shape.getValue();
+    BRep_Builder builder;
+    TopoDS_Compound twins;
+    builder.MakeCompound(twins);
+    builder.Add(twins, one);
+    builder.Add(twins, BRepBuilderAPI_Copy(one).Shape());
+    ell->Shape.setValue(twins);
+
+    const NRefResolution ambiguous = resolveFaceRef(ref, *ell);
+    EXPECT_EQ(ambiguous.match, RefMatch::Ambiguous);
+    EXPECT_TRUE(ambiguous.subName.empty()) << "an ambiguous match must never hand back a face";
+
+    // Now replace the geometry entirely: the captured signature matches nothing at
+    // all, which is the other failure and must not read as ambiguity.
+    Part::Box* box = makeBox();
+    ell->Shape.setValue(box->Shape.getValue());
+    EXPECT_EQ(resolveFaceRef(ref, *ell).match, RefMatch::Lost);
 }
 
 // The payoff. Capture a reference on one box, then resolve it against an
@@ -284,7 +329,7 @@ TEST_F(NeutralRefTest, nRefBindsAcrossIndependentRebuildWhereRawNumberFails)
 
     // The NRef resolves correctly: a different ordinal than was stored, but genuinely
     // the +X face -- the reference survived the renumbering the raw index could not.
-    const std::string resolvedOnB = resolveFaceRef(ref, *branchB);
+    const std::string resolvedOnB = resolveFaceRef(ref, *branchB).subName;
     ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_NE(resolvedOnB, plusXOnA);
     EXPECT_EQ(capturePrimitiveFaceRole(*branchB, resolvedOnB), "+X");
@@ -353,7 +398,7 @@ TEST_F(NeutralRefTest, serializedRefBindsAcrossRebuild)
     Part::Box* branchB = makeBox();
     branchB->Shape.setValue(withReversedFaceOrder(branchA->Shape.getValue()));
 
-    const std::string resolvedOnB = resolveFaceRef(reloaded, *branchB);
+    const std::string resolvedOnB = resolveFaceRef(reloaded, *branchB).subName;
     ASSERT_FALSE(resolvedOnB.empty());
     EXPECT_EQ(capturePrimitiveFaceRole(*branchB, resolvedOnB), "+X");
 }

@@ -450,9 +450,9 @@ App::DocumentObjectExecReturn* Thickness::execute()
     const std::vector<std::string>& refs = FaceRefs.getValues();
     if (baseFeat != nullptr && refs.size() == subs.size()) {
         for (std::size_t i = 0; i < subs.size(); ++i) {
-            const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
-            if (!rebound.empty()) {
-                subs[i] = rebound;
+            const NRefResolution rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+            if (rebound.match == RefMatch::Matched) {
+                subs[i] = rebound.subName;
             }
         }
     }
@@ -502,9 +502,9 @@ int Thickness::rebindFacesFromRefs()
 
     int changed = 0;
     for (std::size_t i = 0; i < subs.size(); ++i) {
-        const std::string rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
-        if (!rebound.empty() && rebound != subs[i]) {
-            subs[i] = rebound;
+        const NRefResolution rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+        if (rebound.match == RefMatch::Matched && rebound.subName != subs[i]) {
+            subs[i] = rebound.subName;
             ++changed;
         }
     }
