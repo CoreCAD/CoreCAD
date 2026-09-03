@@ -273,3 +273,69 @@ class ExportImportTest(unittest.TestCase):
 
         mat = paths.get(1).getTail()
         self.assertEqual(mat.diffuseColor.getNum(), 6)
+
+
+class ImportProvenanceGuiTest(unittest.TestCase):
+    """The GUI import path records the source, and the result still draws."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="cc_importgui_")
+        self.doc = App.newDocument()
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+        for name in os.listdir(self.dir):
+            os.remove(os.path.join(self.dir, name))
+        os.rmdir(self.dir)
+
+    def testAnImportedPartRecordsItsSourceAndStillDraws(self):
+        path = os.path.join(self.dir, "bracket.step")
+        Part.makeBox(10, 20, 30).exportStep(path)
+
+        ImportGui.insert(path, self.doc.Name)
+
+        self.assertEqual(len(self.doc.Objects), 1)
+        imported = self.doc.Objects[0]
+        self.assertEqual(imported.TypeId, "Import::Feature")
+        self.assertEqual(imported.SourceFile, path)
+        self.assertEqual(len(imported.SourceHash), 40)
+
+        # Changing the leaf's type must not cost it its representation.
+        search = coin.SoSearchAction()
+        search.setType(coin.SoType.fromName("SoBrepFaceSet"))
+        search.setInterest(coin.SoSearchAction.ALL)
+        search.apply(imported.ViewObject.RootNode)
+        self.assertEqual(search.getPaths().getLength(), 1)
+
+    def testAnImportedAssemblyStillDrawsEveryPart(self):
+        source = App.newDocument("AssemblySource")
+        try:
+            one = source.addObject("Part::Feature", "One")
+            one.Label = "PartA"
+            one.Shape = Part.makeBox(10, 10, 10)
+            two = source.addObject("Part::Feature", "Two")
+            two.Label = "PartB"
+            two.Shape = Part.makeBox(10, 10, 10, App.Vector(50, 0, 0))
+            source.recompute()
+            path = os.path.join(self.dir, "assembly.step")
+            ImportGui.export([one, two], path)
+        finally:
+            App.closeDocument(source.Name)
+
+        ImportGui.insert(path, self.doc.Name)
+
+        parts = [o for o in self.doc.Objects if o.TypeId == "Import::Feature"]
+        self.assertEqual(len(parts), 2)
+        for part in parts:
+            self.assertNotEqual(part.SourceNode, "")
+
+        drawn = {}
+        for obj in self.doc.Objects:
+            search = coin.SoSearchAction()
+            search.setType(coin.SoType.fromName("SoBrepFaceSet"))
+            search.setInterest(coin.SoSearchAction.ALL)
+            search.apply(obj.ViewObject.RootNode)
+            count = search.getPaths().getLength()
+            if count:
+                drawn[obj.Name] = count
+        self.assertEqual(sum(drawn.values()), 2, drawn)

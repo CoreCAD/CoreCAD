@@ -11,12 +11,12 @@ SET(Import_SRCS
     AppImportPy.cpp
     ExportOCAF.cpp
     ExportOCAF.h
+    Feature.cpp
+    Feature.h
     ExportOCAF2.cpp
     ExportOCAF2.h
     ImportOCAF2.cpp
     ImportOCAF2.h
-    #ImportOCAFAssembly.cpp
-    #ImportOCAFAssembly.h
     ReadAssemblyStructure.cpp
     ReadAssemblyStructure.h
     ReaderGltf.cpp

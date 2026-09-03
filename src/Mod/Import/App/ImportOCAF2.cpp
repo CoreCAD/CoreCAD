@@ -32,6 +32,7 @@
 #include <TDF_AttributeSequence.hxx>
 #include <TDF_Label.hxx>
 #include <TDF_LabelSequence.hxx>
+#include <TDF_Tool.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Iterator.hxx>
@@ -55,6 +56,7 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
 
+#include "Feature.h"
 #include "ImportOCAF2.h"
 
 // See https://dev.opencascade.org/content/occt-3d-viewer-becomes-srgb-aware
@@ -126,6 +128,52 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
 void ImportOCAF2::setImportOptions(ImportOCAFOptions opts)
 {
     options = opts;
+}
+
+void ImportOCAF2::recordSource(Import::Feature* feature, TDF_Label label) const
+{
+    if (sourceFile.empty()) {
+        return;
+    }
+
+    feature->SourceFile.setValue(sourceFile);
+    feature->SourceHash.setValue(Import::Feature::hashFile(sourceFile.c_str()));
+    feature->TranslatorSettings.setValues(describeOptions());
+
+    // A file holding one part needs no address within itself, and leaving the
+    // node empty says exactly that. Anything else is one part among several, and
+    // has to name the node it came from or it cannot re-read itself later.
+    TDF_LabelSequence roots;
+    aShapeTool->GetFreeShapes(roots);
+    if (roots.Length() > 1 || (roots.Length() == 1 && !roots.First().IsEqual(label))) {
+        TCollection_AsciiString entry;
+        TDF_Tool::Entry(label, entry);
+        feature->SourceNode.setValue(entry.ToCString());
+        // The position alone is not a safe address: a supplier who adds a part
+        // shifts every position after it. The name is what says whether the
+        // position still means the same thing on the next read.
+        feature->SourceNodeName.setValue(Tools::labelName(label));
+    }
+
+    // The importer has just built this feature's shape from the file it is being
+    // told about, so it is genuinely up to date; recording that must not leave
+    // the document asking to recompute.
+    feature->purgeTouched();
+}
+
+std::map<std::string, std::string> ImportOCAF2::describeOptions() const
+{
+    auto text = [](bool value) -> std::string {
+        return value ? "true" : "false";
+    };
+    return {
+        {"merge", text(options.merge)},
+        {"useBaseName", text(options.useBaseName)},
+        {"importHidden", text(options.importHidden)},
+        {"reduceObjects", text(options.reduceObjects)},
+        {"expandCompound", text(options.expandCompound)},
+        {"mode", std::to_string(options.mode)},
+    };
 }
 
 void ImportOCAF2::setMode(int m)
@@ -386,7 +434,11 @@ bool ImportOCAF2::createObject(
         return true;
     }
 
-    auto* feature = doc->addObject<Part::Feature>(tshape.shapeName().c_str());
+    // Imported leaf geometry is an Import feature: it came from a file, and that
+    // is a property of the object, not a fact that lives only for the duration
+    // of the import.
+    auto* feature = doc->addObject<Import::Feature>(tshape.shapeName().c_str());
+    recordSource(feature, label);
     feature->Shape.setValue(shape);
     applyFaceColors(feature, {info.faceColor});
     applyEdgeColors(feature, {info.edgeColor});
@@ -559,6 +611,7 @@ App::DocumentObject* ImportOCAF2::loadShapes()
     if (ret) {
         ret->recomputeFeature(true);
     }
+
     if (options.merge && ret && !ret->isDerivedFrom<Part::Feature>()) {
         auto shape = Part::Feature::getTopoShape(
             ret,

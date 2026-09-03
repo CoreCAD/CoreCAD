@@ -227,6 +227,7 @@ private:
             Handle(TDocStd_Document) hDoc;
             hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
             ImportOCAFGui ocaf(hDoc, pcDoc, file.fileNamePure());
+            ocaf.setSourceFile(file.filePath());
             ocaf.setImportOptions(ImportOCAFGui::customImportOptions());
 
             Base::TimeTracker tracker("Import Step");

@@ -244,6 +244,7 @@ private:
             }
 
             ImportOCAFExt ocaf(hDoc, pcDoc, file.fileNamePure());
+            ocaf.setSourceFile(file.filePath());
             ocaf.setImportOptions(ImportOCAFExt::customImportOptions());
             if (merge != Py_None) {
                 ocaf.setMerge(Base::asBoolean(merge));
