@@ -185,10 +185,13 @@ NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName)
     return ref;
 }
 
-std::string resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
+NRefResolution resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
 {
+    // A ref that names no face asks nothing, which is not the same as asking and
+    // getting no answer: a feature holding one has simply never captured a
+    // reference yet, and must not be reported as having lost one.
     if (ref.kind != "face") {
-        return {};
+        return {RefMatch::None, {}};
     }
 
     // Regime 1: a role-bearing primitive leaf -- symmetry-proof. Only a placed
@@ -196,14 +199,18 @@ std::string resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
     // unplaced derived feature is unbound, never guessed at through another regime.
     if (!ref.role.empty()) {
         if (!feature.isDerivedFrom<Feature>()) {
-            return {};
+            return {RefMatch::Lost, {}};
         }
-        return resolvePrimitiveFaceRole(static_cast<const Feature&>(feature), ref.role);
+        std::string sub = resolvePrimitiveFaceRole(static_cast<const Feature&>(feature), ref.role);
+        if (sub.empty()) {
+            return {RefMatch::Lost, {}};
+        }
+        return {RefMatch::Matched, std::move(sub)};
     }
 
     const TopoShape& stored = feature.Shape.getShape();
     if (stored.isNull()) {
-        return {};
+        return {RefMatch::Lost, {}};
     }
 
     // Regime 2: a derived face -- resolve its provenance name through the element
@@ -211,20 +218,21 @@ std::string resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
     if (!ref.prov.empty()) {
         const App::Document* doc = feature.getDocument();
         if (doc == nullptr) {
-            return {};
+            return {RefMatch::Lost, {}};
         }
         const Data::MappedName local(denormalizeProv(ref.prov, *doc));
         const Data::IndexedName idx = stored.getIndexedName(local);
         if (!idx) {
-            return {};  // provenance name no longer maps to any face -> unbound, no guess
+            // provenance name no longer maps to any face -> unbound, no guess
+            return {RefMatch::Lost, {}};
         }
-        return std::string(idx.getType()) + std::to_string(idx.getIndex());
+        return {RefMatch::Matched, std::string(idx.getType()) + std::to_string(idx.getIndex())};
     }
 
     // Regime 3: a history-less leaf -- unique geometric-signature match, read in
     // the same feature-local frame the signature was captured in.
     if (ref.signature.empty()) {
-        return {};
+        return {RefMatch::Lost, {}};
     }
 
     const int faceCount = static_cast<int>(stored.countSubShapes(TopAbs_FACE));
@@ -235,11 +243,15 @@ std::string resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
             continue;
         }
         if (!match.empty()) {
-            return {};  // ambiguous: two faces share one signature -> stop, do not guess
+            // two faces share one signature -> the user's call, not ours to guess
+            return {RefMatch::Ambiguous, {}};
         }
         match = "Face" + std::to_string(i);
     }
-    return match;
+    if (match.empty()) {
+        return {RefMatch::Lost, {}};
+    }
+    return {RefMatch::Matched, std::move(match)};
 }
 
 namespace
@@ -296,11 +308,12 @@ NRefBinding bindInDocument(const NRef& ref, const App::Document& doc)
         if (feature->Uid.getValueStr() != ref.featureUid) {
             continue;
         }
-        const std::string subName = resolveFaceRef(ref, *feature);
-        if (subName.empty()) {
-            return {};  // right feature, but its sub-shape is gone -> unbound, not a guess
+        const NRefResolution resolved = resolveFaceRef(ref, *feature);
+        if (resolved.match != RefMatch::Matched) {
+            // right feature, but its sub-shape is gone or ambiguous -> unbound, not a guess
+            return {};
         }
-        return {feature, subName};
+        return {feature, resolved.subName};
     }
     return {};  // no feature in this document carries the ref's identity
 }

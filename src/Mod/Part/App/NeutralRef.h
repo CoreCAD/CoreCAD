@@ -62,6 +62,36 @@ struct PartExport NRef
 PartExport NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName);
 
 /**
+ * What became of a reference when it was resolved.
+ *
+ * A reference that fails to bind fails in one of two quite different ways, and a
+ * caller cannot answer honestly without knowing which. @c Ambiguous means the
+ * target is still there several times over and only the user can say which one was
+ * meant; @c Lost means it is not there at all. Collapsing both into "no answer"
+ * is what lets a caller quietly fall back to a stale position and bind to whatever
+ * now sits at that index. These are the green / yellow / red outcomes of the
+ * re-import protocol (ARCHITECTURE §7.8), named here in the reference layer's own
+ * terms because they arise wherever a durable reference is resolved, not only on
+ * an import.
+ */
+enum class RefMatch
+{
+    None,       ///< the reference asks nothing: a null ref, or not a face ref
+    Matched,    ///< exactly one sub-shape carries the reference (green)
+    Ambiguous,  ///< several sub-shapes are equally good candidates (yellow)
+    Lost        ///< nothing carries the reference any more (red)
+};
+
+/**
+ * The result of resolving an NRef: what was found, and where.
+ */
+struct PartExport NRefResolution
+{
+    RefMatch match {RefMatch::None};  ///< which of the three answers resolution reached
+    std::string subName;              ///< the sub-name now carrying the ref; empty unless Matched
+};
+
+/**
  * Resolve an NRef against @p feature to the positional sub-name that now carries
  * it -- the inverse of captureFaceRef.
  *
@@ -69,14 +99,14 @@ PartExport NRef captureFaceRef(const ShapeFeature& feature, const std::string& s
  * with a prov name resolves through the element map (the provenance name is first
  * rewritten from durable Uids back to this document's object tags); a bare leaf
  * resolves by a unique geometric-signature match. Either way a lost or ambiguous
- * target yields the empty string, never a guessed binding.
+ * target yields no sub-name, never a guessed binding -- and says which of the two
+ * it was, so the caller can fail honestly or ask.
  *
  * @param ref     an NRef as produced by captureFaceRef
  * @param feature the feature to resolve against (recomputed or moved)
- * @return the current sub-name of the referenced face; empty if @p ref is not a
- *         face ref, or the target is gone or not uniquely matched
+ * @return the outcome, carrying a sub-name only when exactly one face matched
  */
-PartExport std::string resolveFaceRef(const NRef& ref, const ShapeFeature& feature);
+PartExport NRefResolution resolveFaceRef(const NRef& ref, const ShapeFeature& feature);
 
 /**
  * Serialize an NRef to its neutral string form -- the shape it takes when written
