@@ -470,9 +470,13 @@ TEST_F(ImportFeature, rereadingADoubledPartContestsEveryIdentity)
 }
 
 // The case the widened overlap check exists for: two imported parts landing on top
-// of one another. An import is not a Body, so until the check asked about every
-// independent solid rather than only Bodies, nothing in the document looked for
-// this at all.
+// of one another, which nothing looked for while the check asked only about Bodies.
+//
+// These imports stay loose, because this document has no world frame and so can hold
+// no Body -- which is exactly the state the widened check answers for. In a Part
+// document the same two imports each get a Body of their own and the check reports
+// those instead; the answer is the same either way, which is the point of asking the
+// geometry rather than the bookkeeping.
 TEST_F(ImportFeature, twoImportedPartsOverlappingAreReported)
 {
     const std::string path = writeBoxStep("cc_import_overlap.step", 10.0);

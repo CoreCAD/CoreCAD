@@ -185,6 +185,29 @@ public:
      */
     static void retireOrRetreatTippedBodies(App::Document* doc, App::DocumentObject* feature);
 
+    /**
+     * Cruth §4.6 auto-creation. Run after a document recompute, before
+     * reconcileMultiOutput: give a Body to every recomputed feature that produces a solid,
+     * says its output stands as a part of its own (Part::ShapeFeature::spawnsBodyForOutput),
+     * and is claimed by no Body yet.
+     *
+     * The user does not create bodies; a body is the accounting of which connected solids
+     * exist, so a solid that no body claims is a gap in that accounting rather than a
+     * choice anyone made. §7.8 says so of imported geometry directly: it belongs to an
+     * auto-spawned Body "rather than appearing as a loose top-level object outside any
+     * Body".
+     *
+     * One Body per feature here; a feature whose output is several disjoint solids gets the
+     * rest from reconcileMultiOutput on the same pass, which is where the component-id
+     * machinery already lives. A feature something else builds on is skipped -- the result
+     * answers for it, exactly as a body's own features are answered for by the body.
+     * Idempotent: a feature that already has a Body gets nothing.
+     */
+    static void spawnBodiesForUnclaimedOutput(
+        App::Document* doc,
+        const std::vector<App::DocumentObject*>& recomputed
+    );
+
     /// Wire reconcileMultiOutput onto every document's recompute signal. Call once
     /// at module init; idempotent. P8: fires for both UI and API recompute paths.
     static void initMultiOutputObserver();

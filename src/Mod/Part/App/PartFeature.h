@@ -104,6 +104,23 @@ public:
     const char* getViewProviderName() const override;
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
 
+    /// Cruth §4.6: does this feature's output stand as a part of its own -- a Body?
+    ///
+    /// Bodies are not user-managed objects: the user authors features, and a Body is the
+    /// system's accounting of which connected solids exist as a result. §4.6 says every
+    /// connected solid a feature produces that does not extend an existing chain spawns
+    /// one, which makes the honest default here `true` for anything producing a solid --
+    /// there is no such thing, in the model, as a solid belonging to no Body.
+    ///
+    /// It is `false` while that is being built, because flipping it for every shape
+    /// feature at once changes what the whole Part workbench produces. A feature opts in
+    /// by overriding, and when the last one has, this predicate goes away rather than
+    /// being inverted: the model has no room for a shape that opts out.
+    virtual bool spawnsBodyForOutput() const
+    {
+        return false;
+    }
+
     /// A shape-carrying feature is Part-scoped geometry (ARCHITECTURE §7.1, Amendment 8):
     /// only a Part document admits it; Assembly, Drawing, and Spreadsheet documents refuse
     /// it at the admission door. Bodies and sketches narrow this to their own kind.
