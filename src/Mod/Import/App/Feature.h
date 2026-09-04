@@ -5,6 +5,7 @@
 #define IMPORT_FEATURE_H
 
 #include <string>
+#include <vector>
 
 #include <TopoDS_Shape.hxx>
 
@@ -70,14 +71,36 @@ public:
      *
      * This is the import's own record of its faces. The key is the face's identity,
      * the signature it carried when it was first recorded; the value is the
-     * signature it carries now. Today every record is a fresh reading, so the two
-     * always agree -- matching a re-import's faces against the stored keys, which
-     * is what makes the key outlive a face that moves, comes with the green /
-     * yellow / red pass of ARCHITECTURE §7.8.
+     * signature it carries now. A revision is matched against these keys, so an
+     * identity outlives the read that produced it -- which is what makes it worth
+     * anything. The two readings still always agree, because a face is matched to
+     * an identity only by carrying its signature; they part company once a user's
+     * answer to an ambiguity can bind an identity to a face that has moved.
      *
      * Faces only, for now: that is the grain the reference layer works at.
      */
     App::PropertyMap FaceIdentities;
+
+    /**
+     * Identities the last read could not tell apart -- §7.8's yellow.
+     *
+     * The revision has more than one face that answers to this identity, and
+     * nothing in the geometry says which one was meant. The four identical bolt
+     * holes of a symmetric flange are the ordinary case. Guessing here is how a
+     * chamfer ends up on the wrong hole, so the identity is set aside instead, and
+     * this is the list a user will be asked to settle.
+     */
+    App::PropertyStringList AmbiguousFaces;
+
+    /**
+     * Identities the last read could not find at all -- §7.8's red.
+     *
+     * The face is not in the new revision, within tolerance. Anything built on it
+     * fails at its own feature, saying so in its own words; this list is the
+     * import's side of the same fact, and it is what a later revision that brings
+     * the face back would be matched against.
+     */
+    App::PropertyStringList LostFaces;
 
     /**
      * Fingerprint of a file's contents.
@@ -123,17 +146,32 @@ public:
     /// Re-reads the source file into this feature's shape.
     App::DocumentObjectExecReturn* execute() override;
 
+    /// What reading a revision did to the faces of the read before it.
+    struct FaceMatch
+    {
+        int carried {0};                     ///< identities that found their face again (green)
+        int added {0};                       ///< faces in the revision that no identity claimed
+        std::vector<std::string> ambiguous;  ///< identities several faces answer to (yellow)
+        std::vector<std::string> lost;       ///< identities no face answers to (red)
+    };
+
     /**
-     * Record the faces of the shape this feature is holding.
+     * Match the shape this feature is now holding against the faces on record.
      *
      * Reads a geometric signature for every face of the current shape, in the
-     * feature-local frame the reference layer captures in, and writes them to
-     * FaceIdentities. Returns the number of faces recorded.
+     * feature's own frame -- the reference layer's frame -- and asks of each
+     * recorded identity what became of it: exactly one face answers to it and the
+     * identity carries; several do and it is set aside as ambiguous; none do and it
+     * is recorded as lost. Faces the revision brought that no identity claimed are
+     * added under identities of their own.
      *
-     * The record is written only when it differs from what is stored, so a
+     * With nothing on record yet -- a first import -- every face is simply
+     * recorded, which is the same procedure with an empty left-hand side.
+     *
+     * Properties are written only where they differ from what is stored, so a
      * recompute that changes nothing leaves the document alone.
      */
-    int recordFaceIdentities();
+    FaceMatch matchFaceIdentities();
 };
 
 }  // namespace Import

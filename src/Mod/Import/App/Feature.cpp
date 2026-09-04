@@ -5,7 +5,9 @@
 
 #ifndef _PreComp_
 # include <map>
+# include <set>
 # include <string>
+# include <vector>
 #endif
 
 #include <QCryptographicHash>
@@ -15,11 +17,13 @@
 #include <Standard_Failure.hxx>
 #include <TDF_LabelSequence.hxx>
 #include <TDF_Tool.hxx>
+#include <TopLoc_Location.hxx>
 #include <TopoDS_Shape.hxx>
 #include <XCAFApp_Application.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
+#include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Mod/Part/App/SubShapeSignature.h>
 
@@ -74,40 +78,106 @@ Feature::Feature()
         App::PropertyType(App::Prop_ReadOnly | App::Prop_Hidden | App::Prop_Output),
         "Identity of each face this import produced, and the signature it now carries"
     );
+    ADD_PROPERTY_TYPE(
+        AmbiguousFaces,
+        (),
+        "Import",
+        App::PropertyType(App::Prop_ReadOnly | App::Prop_Hidden | App::Prop_Output),
+        "Face identities the last read found more than one candidate for"
+    );
+    ADD_PROPERTY_TYPE(
+        LostFaces,
+        (),
+        "Import",
+        App::PropertyType(App::Prop_ReadOnly | App::Prop_Hidden | App::Prop_Output),
+        "Face identities the last read could not find"
+    );
 }
 
-int Feature::recordFaceIdentities()
+Feature::FaceMatch Feature::matchFaceIdentities()
 {
-    // The signature is read in the feature-local (stored) frame, the same frame the
-    // reference layer captures in, so an identity recorded here and a reference
-    // captured on the same face agree on what that face is.
+    FaceMatch report;
+
+    // The signature is read in the feature's own frame -- the shape's location taken
+    // back off every face -- because where the part sits is not part of what a face
+    // is. Reading it in place would mean dragging an import across the screen lost
+    // the identity of every face it has, and would make the very first re-read of an
+    // assembly part disagree with the read that produced it, since the importer
+    // records before the node's transform is attached and the re-read records after.
+    // It is the same frame the reference layer captures in, so an identity recorded
+    // here and a reference captured on that face agree about what the face is.
     const Part::TopoShape& stored = Shape.getShape();
     if (stored.isNull()) {
-        return 0;
+        return report;
     }
+    const TopLoc_Location toOwnFrame = stored.getShape().Location().Inverted();
 
-    std::map<std::string, std::string> identities;
+    // How many faces of the shape in hand carry each signature. A count above one
+    // is the whole reason the ambiguous case exists: two faces answering to one
+    // identity cannot be told apart by geometry alone.
+    std::map<std::string, int> present;
     const int faceCount = static_cast<int>(stored.countSubShapes(TopAbs_FACE));
     for (int i = 1; i <= faceCount; ++i) {
         const TopoDS_Shape face = stored.getSubShape(TopAbs_FACE, i, /*silent*/ true);
         if (face.IsNull()) {
             continue;
         }
-        const std::string signature = Part::subShapeSignature(face);
-        if (signature.empty()) {
+        const std::string signature = Part::subShapeSignature(face.Moved(toOwnFrame));
+        if (!signature.empty()) {
+            ++present[signature];
+        }
+    }
+
+    // Ask of every identity on record what became of it.
+    std::map<std::string, std::string> identities;
+    std::set<std::string> claimed;
+    for (const auto& entry : FaceIdentities.getValues()) {
+        const std::string& identity = entry.first;
+        const std::string& lastSeen = entry.second;
+        const auto found = present.find(lastSeen);
+        const int count = found == present.end() ? 0 : found->second;
+
+        if (count == 1) {
+            identities.emplace(identity, lastSeen);
+            claimed.insert(lastSeen);
+            ++report.carried;
+        }
+        else if (count > 1) {
+            // Set aside, not guessed at, and not silently dropped either: the
+            // identity is real, it is which face carries it that is unsettled. The
+            // faces answering to it stay unidentified for the same reason -- handing
+            // one of them the identity is the guess, and handing them new identities
+            // would say the old one is gone when it is merely contested.
+            report.ambiguous.push_back(identity);
+            claimed.insert(lastSeen);
+        }
+        else {
+            report.lost.push_back(identity);
+        }
+    }
+
+    // Whatever no identity accounted for is new in this revision, and gets an
+    // identity of its own. A signature already claimed above is not new: it is the
+    // face an existing identity just carried onto.
+    for (const auto& face : present) {
+        if (claimed.count(face.first) > 0) {
             continue;
         }
-        // A face already recorded under this signature means two faces of one shape
-        // are geometrically indistinguishable. Recording the second over the first
-        // would quietly claim there is one face where there are two, so the first
-        // entry stands and the count reports what was actually recorded.
-        identities.emplace(signature, signature);
+        if (identities.emplace(face.first, face.first).second) {
+            ++report.added;
+        }
     }
 
     if (identities != FaceIdentities.getValues()) {
         FaceIdentities.setValues(identities);
     }
-    return static_cast<int>(identities.size());
+    if (report.ambiguous != AmbiguousFaces.getValues()) {
+        AmbiguousFaces.setValues(report.ambiguous);
+    }
+    if (report.lost != LostFaces.getValues()) {
+        LostFaces.setValues(report.lost);
+    }
+    return report;
 }
 
 std::string Feature::hashFile(const char* path)
@@ -311,9 +381,22 @@ App::DocumentObjectExecReturn* Feature::execute()
 
     Shape.setValue(shape);
 
-    // What was read is now on record: the import can say what faces it produced,
-    // without waiting for some later feature to reference one of them.
-    recordFaceIdentities();
+    // What was read is now matched against what was read before, so the import can
+    // say what this revision did to the faces it had -- and say it once, here, in
+    // place of every downstream feature discovering it separately.
+    const FaceMatch match = matchFaceIdentities();
+    if (!match.lost.empty() || !match.ambiguous.empty()) {
+        Base::Console().warning(
+            "%s: %d faces carried over from the previous read, %d added, %d no longer "
+            "present, %d matching more than one face. Anything built on a face that is "
+            "gone will say so at its own feature.\n",
+            Label.getValue(),
+            match.carried,
+            match.added,
+            static_cast<int>(match.lost.size()),
+            static_cast<int>(match.ambiguous.size())
+        );
+    }
 
     if (!resolvedNode.empty() && resolvedNode != SourceNode.getStrValue()) {
         SourceNode.setValue(resolvedNode);

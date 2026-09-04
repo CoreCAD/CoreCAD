@@ -9,6 +9,7 @@
 # include <sstream>
 # include <string>
 
+# include <TopLoc_Location.hxx>
 # include <TopoDS_Shape.hxx>
 #endif
 
@@ -146,12 +147,15 @@ NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName)
         return {};
     }
 
-    // The signature is read in the feature-local (stored) frame per Amendment 4,
-    // the same frame resolveFaceRef reads it back in.
-    const TopoDS_Shape localSub = stored.getSubShape(subName.c_str(), /*silent*/ true);
-    if (localSub.IsNull()) {
+    // The signature is read in the feature's own frame per Amendment 4 -- the shape's
+    // location taken back off the face -- the same frame resolveFaceRef reads it back
+    // in. Where the feature sits is not part of what its face is: read in place, a
+    // reference would be lost the moment the user moved the thing it points at.
+    const TopoDS_Shape sub = stored.getSubShape(subName.c_str(), /*silent*/ true);
+    if (sub.IsNull()) {
         return {};
     }
+    const TopoDS_Shape localSub = sub.Moved(stored.getShape().Location().Inverted());
 
     NRef ref;
     ref.kind = "face";
@@ -236,10 +240,11 @@ NRefResolution resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
     }
 
     const int faceCount = static_cast<int>(stored.countSubShapes(TopAbs_FACE));
+    const TopLoc_Location toOwnFrame = stored.getShape().Location().Inverted();
     std::string match;
     for (int i = 1; i <= faceCount; ++i) {
         const TopoDS_Shape face = stored.getSubShape(TopAbs_FACE, i, /*silent*/ true);
-        if (face.IsNull() || subShapeSignature(face) != ref.signature) {
+        if (face.IsNull() || subShapeSignature(face.Moved(toOwnFrame)) != ref.signature) {
             continue;
         }
         if (!match.empty()) {
