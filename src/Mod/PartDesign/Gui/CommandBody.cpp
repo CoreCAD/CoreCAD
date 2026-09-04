@@ -638,7 +638,7 @@ CmdPartDesignCheckInterference::CmdPartDesignCheckInterference()
     sGroup = QT_TR_NOOP("PartDesign");
     sMenuText = QT_TR_NOOP("Check spatial interference");
     sToolTipText = QT_TR_NOOP(
-        "List pairs of bodies whose volumes overlap in space, and acknowledge intended overlaps"
+        "List pairs of parts whose volumes overlap in space, and acknowledge intended overlaps"
     );
     sWhatsThis = "PartDesign_CheckInterference";
     sStatusTip = sToolTipText;
@@ -659,7 +659,7 @@ void CmdPartDesignCheckInterference::activated(int iMsg)
         QMessageBox::information(
             Gui::getMainWindow(),
             QObject::tr("Spatial interference"),
-            QObject::tr("No unacknowledged overlaps: no two bodies share volume in space.")
+            QObject::tr("No unacknowledged overlaps: no two parts share volume in space.")
         );
         return;
     }
@@ -669,8 +669,10 @@ void CmdPartDesignCheckInterference::activated(int iMsg)
     auto* layout = new QVBoxLayout(&dialog);
     layout->addWidget(new QLabel(
         QObject::tr(
-            "These bodies overlap in space without being merged. Select a pair to highlight "
-            "it, then acknowledge if the overlap is intentional (keep them distinct)."
+            "These parts overlap in space without being merged. Select a pair to highlight "
+            "it, then acknowledge if the overlap is intentional (keep them distinct). An "
+            "overlap can only be acknowledged between two bodies for now; anything else "
+            "stays listed."
         ),
         &dialog
     ));
@@ -699,6 +701,10 @@ void CmdPartDesignCheckInterference::activated(int iMsg)
             );
             item->setData(Qt::UserRole, QString::fromLatin1(pair.first->getNameInDocument()));
             item->setData(Qt::UserRole + 1, QString::fromLatin1(pair.second->getNameInDocument()));
+            item->setData(
+                Qt::UserRole + 2,
+                PartDesign::Body::isInterferenceDismissable(pair.first, pair.second)
+            );
         }
         ackButton->setEnabled(false);
         if (list->count() == 0) {
@@ -707,7 +713,9 @@ void CmdPartDesignCheckInterference::activated(int iMsg)
     };
 
     QObject::connect(list, &QListWidget::currentItemChanged, [&](QListWidgetItem* item) {
-        ackButton->setEnabled(item != nullptr);
+        // Offered only where there is somewhere to record the answer; the alternative is a
+        // button that appears to work and silently does nothing.
+        ackButton->setEnabled(item != nullptr && item->data(Qt::UserRole + 2).toBool());
         Gui::Selection().clearSelection();
         if (!item) {
             return;

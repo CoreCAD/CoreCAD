@@ -61,6 +61,7 @@
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PartPyCXX.h>
+#include <Mod/Part/App/SpatialInterference.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include <App/GeoFeature.h>
@@ -640,82 +641,38 @@ std::string Body::componentKeyOfSolid(
 
 bool Body::toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyShape)
 {
-    if (tool.isNull() || bodyShape.isNull()) {
-        return false;
-    }
     // The reach test is set intersection of the two solids: they are "reached" only if they share
-    // positive volume, so cutting the tool would actually change the Body. A boolean common yields
-    // an empty compound (mass 0) for disjoint solids and a zero-volume face/edge for mere surface
-    // contact — both correctly read as "not reached". A boolean failure is treated as "not reached"
-    // rather than propagated: the reach test is a pre-flight for the gesture, not the cut itself.
-    TopoDS_Shape inter;
-    try {
-        inter = tool.common(bodyShape.getShape());
-    }
-    catch (const Standard_Failure&) {
-        return false;
-    }
-    if (inter.IsNull()) {
-        return false;
-    }
-    GProp_GProps props;
-    BRepGProp::VolumeProperties(inter, props);
-    return props.Mass() > Precision::Confusion();
+    // positive volume, so cutting the tool would actually change the Body. Mere surface contact
+    // reads as not reached. A boolean failure is treated as "not reached" rather than propagated:
+    // the reach test is a pre-flight for the gesture, not the cut itself.
+    return Part::sharesVolume(tool, bodyShape);
 }
 
-std::vector<std::pair<Body*, Body*>> Body::findInterferingPairs(App::Document* doc)
+std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> Body::findInterferingPairs(
+    App::Document* doc
+)
 {
-    // Cruth §8.6: distinct Bodies overlapping in space without a topological merge. A pure geometry
-    // sweep — no state read, no recompute touched (§8.6: detection is a UI concern, not a model one).
-    std::vector<std::pair<Body*, Body*>> pairs;
-    if (!doc) {
-        return pairs;
-    }
-
-    // Collect each candidate Body once with its world-frame shape and bounding box. Skip Bodies
-    // with no solid (a marker mid-edit or a degenerate compute) — there is nothing to interfere.
-    std::vector<Body*> bodies;
-    std::vector<Part::TopoShape> shapes;
-    std::vector<Bnd_Box> boxes;
-    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
-        auto* body = static_cast<Body*>(obj);
-        Part::TopoShape shape = body->derivedTipShape();
-        if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) == 0) {
-            continue;
-        }
-        Bnd_Box box;
-        try {
-            BRepBndLib::Add(shape.getShape(), box);
-        }
-        catch (const Standard_Failure&) {
-            continue;
-        }
-        if (box.IsVoid()) {
-            continue;
-        }
-        bodies.push_back(body);
-        shapes.push_back(shape);
-        boxes.push_back(box);
-    }
-
-    // Every unordered pair; the bounding-box reject keeps the costly boolean off far-apart Bodies.
-    for (std::size_t i = 0; i < bodies.size(); ++i) {
-        for (std::size_t j = i + 1; j < bodies.size(); ++j) {
-            if (boxes[i].IsOut(boxes[j])) {
-                continue;
-            }
-            if (toolReaches(shapes[i], shapes[j])) {
-                pairs.emplace_back(bodies[i], bodies[j]);
-            }
-        }
-    }
-    return pairs;
+    // Cruth §8.6: solids overlapping in space without a topological merge. A pure geometry sweep --
+    // no state read, no recompute touched (§8.6: detection is a UI concern, not a model one). The
+    // sweep asks every independent solid in the document, not only the Bodies: an imported part
+    // occupies space the same way a Body does, and nothing else was looking for it.
+    return Part::overlappingPairs(doc);
 }
 
-bool Body::isInterferenceDismissed(const Body* a, const Body* b)
+bool Body::isInterferenceDismissable(const App::DocumentObject* a, const App::DocumentObject* b)
+{
+    // The acknowledgement is recorded on the two Bodies themselves, so a pair with anything else in
+    // it has nowhere to be recorded. Saying so plainly is what keeps the UI from offering the user
+    // a button that would do nothing.
+    return freecad_cast<const Body*>(a) != nullptr && freecad_cast<const Body*>(b) != nullptr;
+}
+
+bool Body::isInterferenceDismissed(const App::DocumentObject* first, const App::DocumentObject* second)
 {
     // §8.6: the dismissal is symmetric and stored on both sides, but honour either — a one-sided
     // record (e.g. after the other side was edited) still counts. Match on the durable §8.2 Uid.
+    const auto* a = freecad_cast<const Body*>(first);
+    const auto* b = freecad_cast<const Body*>(second);
     if (!a || !b) {
         return false;
     }
@@ -757,9 +714,11 @@ void Body::dismissInterference(Body* a, Body* b)
     add(b, aid);
 }
 
-std::vector<std::pair<Body*, Body*>> Body::liveInterferingPairs(App::Document* doc)
+std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> Body::liveInterferingPairs(
+    App::Document* doc
+)
 {
-    std::vector<std::pair<Body*, Body*>> live;
+    std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> live;
     for (const auto& pair : findInterferingPairs(doc)) {
         if (!isInterferenceDismissed(pair.first, pair.second)) {
             live.push_back(pair);

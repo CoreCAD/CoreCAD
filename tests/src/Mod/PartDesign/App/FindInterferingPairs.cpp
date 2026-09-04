@@ -25,6 +25,7 @@
 #include <gp_Pnt.hxx>
 
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/FeaturePartCut.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
@@ -217,15 +218,60 @@ TEST_F(FindInterferingPairsTest, DismissingOneOverlapLeavesAnotherLive)
     EXPECT_EQ(PartDesign::Body::liveInterferingPairs(_doc).size(), 2U);
 }
 
-// The detector's scope, stated as a test rather than left to be discovered. It
-// collects Bodies, so two overlapping shapes that no Body claims -- two imported
-// parts landing on top of each other is the ordinary way this happens -- are not
-// reported. Nothing else in the document looks for them either.
-TEST_F(FindInterferingPairsTest, OverlappingShapesThatAreNotBodiesAreNotReported)
+// The check no longer stops at Bodies. Two overlapping shapes that no Body claims
+// -- which is what imported parts are -- are reported like any other overlap.
+// Until this widening nothing in the document looked for them at all.
+TEST_F(FindInterferingPairsTest, OverlappingShapesThatAreNotBodiesAreReported)
+{
+    auto* a = makeBoxShape("PartA", 0.0);
+    auto* b = makeBoxShape("PartB", 5.0);  // share a 5x10x10 slab
+
+    const auto pairs = PartDesign::Body::findInterferingPairs(_doc);
+    ASSERT_EQ(pairs.size(), 1U);
+    const bool matches = (pairs[0].first == a && pairs[0].second == b)
+        || (pairs[0].first == b && pairs[0].second == a);
+    EXPECT_TRUE(matches);
+}
+
+// Disjoint shapes stay quiet, so the widened sweep is answering the geometry
+// rather than reporting every pair of loose objects it finds.
+TEST_F(FindInterferingPairsTest, DisjointShapesThatAreNotBodiesAreNotReported)
 {
     makeBoxShape("PartA", 0.0);
-    makeBoxShape("PartB", 5.0);  // would share a 5x10x10 slab
+    makeBoxShape("PartB", 60.0);
     EXPECT_TRUE(PartDesign::Body::findInterferingPairs(_doc).empty());
+}
+
+// The operands of a boolean overlap by design -- that is what a cut is for -- and
+// reporting them would make the check useless noise on ordinary models. They are
+// not counted because something else in the document builds on them; the result
+// answers for them. The same rule is what keeps a Body from being reported
+// against its own features.
+TEST_F(FindInterferingPairsTest, TheOperandsOfABooleanAreNotReportedAgainstEachOther)
+{
+    auto* base = makeBoxShape("Base", 0.0);
+    auto* tool = makeBoxShape("Tool", 5.0);
+
+    auto* cut = _doc->addObject<Part::Cut>("Cut");
+    cut->Base.setValue(base);
+    cut->Tool.setValue(tool);
+    _doc->recompute();
+
+    ASSERT_FALSE(cut->Shape.getShape().isNull());
+    EXPECT_TRUE(PartDesign::Body::findInterferingPairs(_doc).empty());
+}
+
+// An acknowledgement is recorded on the two Bodies, so a pair with anything else
+// in it has nowhere to keep one. It reads as live rather than silently dismissed,
+// and the UI asks first rather than offering a button that would do nothing.
+TEST_F(FindInterferingPairsTest, AnOverlapWithoutABodyCannotYetBeAcknowledged)
+{
+    auto* a = makeBoxShape("PartA", 0.0);
+    auto* b = makeBoxShape("PartB", 5.0);
+
+    EXPECT_FALSE(PartDesign::Body::isInterferenceDismissable(a, b));
+    EXPECT_FALSE(PartDesign::Body::isInterferenceDismissed(a, b));
+    EXPECT_EQ(PartDesign::Body::liveInterferingPairs(_doc).size(), 1U);
 }
 
 // A part delivered twice in the same place, inside a single feature, does get

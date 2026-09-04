@@ -28,6 +28,7 @@
 #include <Base/Placement.h>
 #include <Base/FileInfo.h>
 #include <Mod/Import/App/Feature.h>
+#include <Mod/Part/App/SpatialInterference.h>
 #include <Mod/Part/App/SubShapeSignature.h>
 #include <Mod/Part/App/TopoShape.h>
 
@@ -466,6 +467,35 @@ TEST_F(ImportFeature, rereadingADoubledPartContestsEveryIdentity)
     EXPECT_EQ(feature->AmbiguousFaces.getValues().size(), 6U);
     EXPECT_TRUE(feature->LostFaces.getValues().empty()) << "contested, not gone";
     EXPECT_TRUE(feature->FaceIdentities.getValues().empty());
+}
+
+// The case the widened overlap check exists for: two imported parts landing on top
+// of one another. An import is not a Body, so until the check asked about every
+// independent solid rather than only Bodies, nothing in the document looked for
+// this at all.
+TEST_F(ImportFeature, twoImportedPartsOverlappingAreReported)
+{
+    const std::string path = writeBoxStep("cc_import_overlap.step", 10.0);
+
+    auto* first = addImport();
+    first->SourceFile.setValue(path.c_str());
+    auto* second = addImport();
+    second->SourceFile.setValue(path.c_str());
+    second->Placement.setValue(Base::Placement(Base::Vector3d(5, 0, 0), Base::Rotation()));
+    _doc->recompute();
+
+    const auto pairs = Part::overlappingPairs(_doc);
+    ASSERT_EQ(pairs.size(), 1U);
+    const bool matches = (pairs[0].first == first && pairs[0].second == second)
+        || (pairs[0].first == second && pairs[0].second == first);
+    EXPECT_TRUE(matches);
+
+    // Moved clear of each other, they stop being reported: the answer is the
+    // geometry, not the fact that there are two imports in the document.
+    second->Placement.setValue(Base::Placement(Base::Vector3d(60, 0, 0), Base::Rotation()));
+    second->touch();
+    _doc->recompute();
+    EXPECT_TRUE(Part::overlappingPairs(_doc).empty());
 }
 
 // A guard, not a bug-catcher: this passes whether or not execute() guards its
