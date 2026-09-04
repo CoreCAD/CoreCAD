@@ -82,6 +82,24 @@ protected:
         return file.filePath();
     }
 
+    /// Writes a STEP file holding one box and a second, identical box in the same
+    /// place -- the same part delivered twice, stacked exactly on itself. The copy
+    /// is a deep one, because the kernel folds a repeated shape back to one entry.
+    std::string writeDoubledBoxStep(const char* name, double side)
+    {
+        const TopoDS_Shape box = BRepPrimAPI_MakeBox(side, side, side).Shape();
+        BRep_Builder builder;
+        TopoDS_Compound doubled;
+        builder.MakeCompound(doubled);
+        builder.Add(doubled, box);
+        builder.Add(doubled, BRepBuilderAPI_Copy(box).Shape());
+
+        Base::FileInfo file(Base::FileInfo::getTempPath() + name);
+        Part::TopoShape(doubled).exportStep(file.filePath().c_str());
+        _written.push_back(file.filePath());
+        return file.filePath();
+    }
+
     /// Writes a STEP file holding two separate boxes as two top-level shapes.
     std::string writeTwoBoxStep(const char* name)
     {
@@ -403,6 +421,51 @@ TEST_F(ImportFeature, anIdentityWithTwoCandidatesIsSetAsideNotGuessedAt)
     EXPECT_EQ(feature->AmbiguousFaces.getValues().size(), 6U);
     EXPECT_TRUE(feature->FaceIdentities.getValues().empty())
         << "no identity may be bound to one of two candidates without being asked";
+}
+
+// The same part delivered twice, stacked exactly on itself, is a duplicate a user
+// almost never wants -- and nothing in the document looks for it. The spatial
+// interference check (ARCHITECTURE 8.6) compares whole Bodies against one another,
+// so it cannot see two solids inside a single object, and an import is not a Body
+// in any case. The face record notices it for nothing, because it is already
+// reading every face: a part present twice has two faces answering to every one
+// identity, so the count of identities comes out at half the count of faces.
+TEST_F(ImportFeature, aPartDeliveredTwiceShowsAsFewerIdentitiesThanFaces)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeDoubledBoxStep("cc_import_doubled.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+
+    const Part::TopoShape& shape = feature->Shape.getShape();
+    ASSERT_EQ(shape.countSubShapes(TopAbs_SOLID), 2UL) << "the file holds the part twice";
+    ASSERT_EQ(shape.countSubShapes(TopAbs_FACE), 12UL);
+    EXPECT_EQ(feature->FaceIdentities.getValues().size(), 6U)
+        << "twelve faces, six identities: every face has an indistinguishable twin";
+}
+
+// The same duplicate seen from the other side. Once there is a record to match
+// against, every identity in it has two candidates, so the whole part reads as
+// contested -- nothing carried, nothing added, nothing lost. Two consequences
+// worth naming: this is a distinctive reading no ordinary revision produces, and
+// a doubled import keeps no face record at all, because no identity may be bound
+// to one of two indistinguishable candidates without being asked.
+TEST_F(ImportFeature, rereadingADoubledPartContestsEveryIdentity)
+{
+    auto* feature = addImport();
+
+    const std::string path = writeDoubledBoxStep("cc_import_doubled_reread.step", 10.0);
+    feature->SourceFile.setValue(path.c_str());
+    _doc->recompute();
+    ASSERT_EQ(feature->FaceIdentities.getValues().size(), 6U);
+
+    feature->touch();
+    _doc->recompute();
+
+    EXPECT_EQ(feature->AmbiguousFaces.getValues().size(), 6U);
+    EXPECT_TRUE(feature->LostFaces.getValues().empty()) << "contested, not gone";
+    EXPECT_TRUE(feature->FaceIdentities.getValues().empty());
 }
 
 // A guard, not a bug-catcher: this passes whether or not execute() guards its
