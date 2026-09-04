@@ -228,6 +228,8 @@ SET(Features_SRCS
     PrimitiveFaceRoleRef.h
     SubShapeSignature.cpp
     SubShapeSignature.h
+    SpatialInterference.cpp
+    SpatialInterference.h
     Part2DObject.cpp
     Part2DObject.h
     PrimitiveFeature.cpp

@@ -146,6 +146,24 @@ public:
     /// Re-reads the source file into this feature's shape.
     App::DocumentObjectExecReturn* execute() override;
 
+    /**
+     * Yes: imported geometry belongs to a Body.
+     *
+     * §7.8 rules this directly -- a file holding one solid becomes one import feature and
+     * one auto-spawned Body, and one holding several becomes one Body apiece -- "rather
+     * than appearing as a loose top-level object outside any Body". An import is a
+     * feature like any other by §4, so the accounting §4.6 keeps for a Pad is the same
+     * accounting it keeps here.
+     *
+     * Being loose is what let two imported parts sit inside one another unremarked: the
+     * overlap notice, the state manifest and the bodies column are all addressed to
+     * bodies, and an import reached none of them.
+     */
+    bool spawnsBodyForOutput() const override
+    {
+        return true;
+    }
+
     /// What reading a revision did to the faces of the read before it.
     struct FaceMatch
     {

@@ -45,6 +45,7 @@
 #include <App/Application.h>
 #include <App/Datums.h>
 #include <App/Document.h>
+#include <App/Link.h>
 #include <App/IndexedName.h>
 #include <App/MappedName.h>
 #include <App/VarSet.h>
@@ -61,6 +62,7 @@
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PartPyCXX.h>
+#include <Mod/Part/App/SpatialInterference.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include <App/GeoFeature.h>
@@ -640,82 +642,38 @@ std::string Body::componentKeyOfSolid(
 
 bool Body::toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyShape)
 {
-    if (tool.isNull() || bodyShape.isNull()) {
-        return false;
-    }
     // The reach test is set intersection of the two solids: they are "reached" only if they share
-    // positive volume, so cutting the tool would actually change the Body. A boolean common yields
-    // an empty compound (mass 0) for disjoint solids and a zero-volume face/edge for mere surface
-    // contact — both correctly read as "not reached". A boolean failure is treated as "not reached"
-    // rather than propagated: the reach test is a pre-flight for the gesture, not the cut itself.
-    TopoDS_Shape inter;
-    try {
-        inter = tool.common(bodyShape.getShape());
-    }
-    catch (const Standard_Failure&) {
-        return false;
-    }
-    if (inter.IsNull()) {
-        return false;
-    }
-    GProp_GProps props;
-    BRepGProp::VolumeProperties(inter, props);
-    return props.Mass() > Precision::Confusion();
+    // positive volume, so cutting the tool would actually change the Body. Mere surface contact
+    // reads as not reached. A boolean failure is treated as "not reached" rather than propagated:
+    // the reach test is a pre-flight for the gesture, not the cut itself.
+    return Part::sharesVolume(tool, bodyShape);
 }
 
-std::vector<std::pair<Body*, Body*>> Body::findInterferingPairs(App::Document* doc)
+std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> Body::findInterferingPairs(
+    App::Document* doc
+)
 {
-    // Cruth §8.6: distinct Bodies overlapping in space without a topological merge. A pure geometry
-    // sweep — no state read, no recompute touched (§8.6: detection is a UI concern, not a model one).
-    std::vector<std::pair<Body*, Body*>> pairs;
-    if (!doc) {
-        return pairs;
-    }
-
-    // Collect each candidate Body once with its world-frame shape and bounding box. Skip Bodies
-    // with no solid (a marker mid-edit or a degenerate compute) — there is nothing to interfere.
-    std::vector<Body*> bodies;
-    std::vector<Part::TopoShape> shapes;
-    std::vector<Bnd_Box> boxes;
-    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
-        auto* body = static_cast<Body*>(obj);
-        Part::TopoShape shape = body->derivedTipShape();
-        if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) == 0) {
-            continue;
-        }
-        Bnd_Box box;
-        try {
-            BRepBndLib::Add(shape.getShape(), box);
-        }
-        catch (const Standard_Failure&) {
-            continue;
-        }
-        if (box.IsVoid()) {
-            continue;
-        }
-        bodies.push_back(body);
-        shapes.push_back(shape);
-        boxes.push_back(box);
-    }
-
-    // Every unordered pair; the bounding-box reject keeps the costly boolean off far-apart Bodies.
-    for (std::size_t i = 0; i < bodies.size(); ++i) {
-        for (std::size_t j = i + 1; j < bodies.size(); ++j) {
-            if (boxes[i].IsOut(boxes[j])) {
-                continue;
-            }
-            if (toolReaches(shapes[i], shapes[j])) {
-                pairs.emplace_back(bodies[i], bodies[j]);
-            }
-        }
-    }
-    return pairs;
+    // Cruth §8.6: solids overlapping in space without a topological merge. A pure geometry sweep --
+    // no state read, no recompute touched (§8.6: detection is a UI concern, not a model one). The
+    // sweep asks every independent solid in the document, not only the Bodies: an imported part
+    // occupies space the same way a Body does, and nothing else was looking for it.
+    return Part::overlappingPairs(doc);
 }
 
-bool Body::isInterferenceDismissed(const Body* a, const Body* b)
+bool Body::isInterferenceDismissable(const App::DocumentObject* a, const App::DocumentObject* b)
+{
+    // The acknowledgement is recorded on the two Bodies themselves, so a pair with anything else in
+    // it has nowhere to be recorded. Saying so plainly is what keeps the UI from offering the user
+    // a button that would do nothing.
+    return freecad_cast<const Body*>(a) != nullptr && freecad_cast<const Body*>(b) != nullptr;
+}
+
+bool Body::isInterferenceDismissed(const App::DocumentObject* first, const App::DocumentObject* second)
 {
     // §8.6: the dismissal is symmetric and stored on both sides, but honour either — a one-sided
     // record (e.g. after the other side was edited) still counts. Match on the durable §8.2 Uid.
+    const auto* a = freecad_cast<const Body*>(first);
+    const auto* b = freecad_cast<const Body*>(second);
     if (!a || !b) {
         return false;
     }
@@ -757,9 +715,11 @@ void Body::dismissInterference(Body* a, Body* b)
     add(b, aid);
 }
 
-std::vector<std::pair<Body*, Body*>> Body::liveInterferingPairs(App::Document* doc)
+std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> Body::liveInterferingPairs(
+    App::Document* doc
+)
 {
-    std::vector<std::pair<Body*, Body*>> live;
+    std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> live;
     for (const auto& pair : findInterferingPairs(doc)) {
         if (!isInterferenceDismissed(pair.first, pair.second)) {
             live.push_back(pair);
@@ -930,6 +890,74 @@ std::vector<App::DocumentObject*> Body::gestureSiblings(App::Document* doc, cons
     return out;
 }
 
+void Body::spawnBodiesForUnclaimedOutput(
+    App::Document* doc,
+    const std::vector<App::DocumentObject*>& recomputed
+)
+{
+    if (!doc || g_reconciling) {
+        return;
+    }
+    Base::StateLocker guard(g_reconciling);
+
+    for (auto* obj : recomputed) {
+        const auto* feature = freecad_cast<const Part::ShapeFeature*>(obj);
+        if (!feature || !feature->spawnsBodyForOutput()) {
+            continue;
+        }
+        // Only geometry that stands on its own gets a Body. Something else in the document
+        // already answers for it in two cases: a feature built on it (the operands of a
+        // boolean, or a body's own features), and an instance placed by a link, which is
+        // how an imported assembly presents its leaf parts. Giving those a Body as well
+        // would put the same geometry in the document twice over.
+        //
+        // Leaving an assembly's leaves loose is the honest state of things: §7.8 says an
+        // assembly becomes one document per leaf body rather than one document holding a
+        // link tree, and until that is built there is no Body for a leaf to be the tip of.
+        bool answeredForElsewhere = false;
+        for (const App::DocumentObject* user : obj->getInList()) {
+            if (!user) {
+                continue;
+            }
+            if (user->isDerivedFrom<Part::ShapeFeature>()
+                || user->hasExtension(App::LinkBaseExtension::getExtensionClassTypeId())) {
+                answeredForElsewhere = true;
+                break;
+            }
+        }
+        if (answeredForElsewhere) {
+            continue;
+        }
+        if (feature->Shape.getShape().countSubShapes(TopAbs_SOLID) == 0) {
+            continue;  // nothing solid to account for (yet)
+        }
+        if (!bodiesOf(obj).empty()) {
+            continue;  // already accounted for
+        }
+
+        // A Body needs the document's shared world frame and must never mint one, so a
+        // document that has no frame -- a drawing, a spreadsheet -- simply keeps none. That
+        // is a fact about the document, not a failure of this recompute. Only the spawn is
+        // guarded: a failure to then adopt the feature would be a real defect, and swallowing
+        // it would leave a Body standing that marks nothing.
+        Body* body = nullptr;
+        try {
+            body = spawnAutoBody(doc);
+        }
+        catch (const Base::Exception&) {
+            continue;
+        }
+        if (body) {
+            body->addFeature(obj);
+            // The Body is born after the recompute that prompted it has finished, so nothing
+            // will compute it until the next one: bring it up to date here, or the document
+            // is left touched and the Body shows nothing until something else is edited.
+            body->recomputeFeature();
+            body->purgeTouched();
+        }
+    }
+}
+
 void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::DocumentObject*>& recomputed)
 {
     if (!doc || g_reconciling) {
@@ -947,8 +975,10 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
     }
 
     for (auto* obj : recomputed) {
-        auto* feature = freecad_cast<PartDesign::Feature*>(obj);
-        if (!feature) {
+        // Any feature a Body is tipped by, not only a PartDesign one: an import produces
+        // several solids as readily as a pattern does, and §7.8 gives each of them a Body.
+        auto* feature = freecad_cast<Part::ShapeFeature*>(obj);
+        if (!feature || !isSolidFeature(obj)) {
             continue;
         }
 
@@ -1233,6 +1263,7 @@ private:
         App::Document* docPtr = &doc;
         m_recomputeConns[docPtr] = doc.signalRecomputed.connect(
             [docPtr](const App::Document&, const std::vector<App::DocumentObject*>& objs) {
+                Body::spawnBodiesForUnclaimedOutput(docPtr, objs);
                 Body::reconcileMultiOutput(docPtr, objs);
             }
         );
@@ -1390,6 +1421,14 @@ bool Body::isSolidFeature(const App::DocumentObject* obj)
         }
         return true;
     }
+    // A feature that says its output is a part of its own (§4.6) advances a Body's chain in
+    // exactly the same way, whether or not it was authored in PartDesign. An import is the
+    // first of these: §7.8 gives its geometry a Body rather than leaving it loose in the
+    // document. It carries no BaseFeature, so it can only ever be the start of a chain --
+    // which is what an anchor is.
+    if (const auto* shapeFeature = freecad_cast<const Part::ShapeFeature*>(obj)) {
+        return shapeFeature->spawnsBodyForOutput();
+    }
     return false;  // DeepSOIC: work-in-progress?
 }
 
@@ -1401,6 +1440,14 @@ bool Body::isAllowed(const App::DocumentObject* obj)
 
     // TODO: Should we introduce a PartDesign::FeaturePython class? This should then also return
     // true for isSolidFeature()
+    // A feature whose output stands as a part of its own (§4.6) is a member like any other
+    // solid feature; an import is the first that is not a PartDesign::Feature.
+    if (const auto* shapeFeature = freecad_cast<const Part::ShapeFeature*>(obj)) {
+        if (shapeFeature->spawnsBodyForOutput()) {
+            return true;
+        }
+    }
+
     return (
         obj->isDerivedFrom<PartDesign::Feature>()
         // Lean datums: App::Plane/Line/Point (via App::DatumElement) and the local coordinate
@@ -1693,8 +1740,18 @@ std::vector<App::DocumentObject*> Body::getFullModel()
     std::set<App::DocumentObject*> seen;
     for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
         auto* pd = freecad_cast<PartDesign::Feature*>(cursor);
-        if (!pd || !backsBody(cursor, this)) {
-            break;  // non-PartDesign terminal, or crossed the seam into another Body
+        if (!pd) {
+            // A Tip with no chain of its own (an import, §7.8) is this Body's whole solid
+            // model, and the walk ends with it. Membership is not asked of it -- being the
+            // Tip is what membership means -- which also keeps the query out of the
+            // findBodyOf/getFullModel cycle the guard above exists for.
+            if (cursor == Tip.getValue() && isSolidFeature(cursor)) {
+                rv.push_back(cursor);
+            }
+            break;
+        }
+        if (!backsBody(cursor, this)) {
+            break;  // crossed the seam into another Body
         }
         rv.push_back(cursor);
         cursor = pd->BaseFeature.getValue();
@@ -1780,7 +1837,19 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
     }
 
-    if (isSolidFeature(feature)) {
+    if (isSolidFeature(feature) && !feature->isDerivedFrom<PartDesign::Feature>()) {
+        // A solid feature with no BaseFeature of its own (an import, §7.8) cannot be spliced
+        // into a chain: there is nothing on it to point at the previous Tip. It can only
+        // start one, so it becomes the Tip and nothing else is rewired. Splicing one into an
+        // existing chain would silently drop whatever came before it, so refuse instead.
+        if (Tip.getValue()) {
+            throw Base::ValueError(
+                "Body: this feature has no base of its own, so it can only start a body's chain"
+            );
+        }
+        Tip.setValue(feature);
+    }
+    else if (isSolidFeature(feature)) {
         // Splice the new solid into the chain at the Tip: its base is the old Tip,
         // and the Body now propagates the new feature.
         App::DocumentObject* prevTip = Tip.getValue();
@@ -2053,9 +2122,11 @@ App::DocumentObjectExecReturn* Body::execute()
 
     Part::TopoShape tipShape;
     if (tip) {
-        if (!tip->isDerivedFrom<PartDesign::Feature>()) {
+        // Any feature whose output stands as a part of its own may tip a Body (§4.6); an
+        // import does so without being a PartDesign feature (§7.8).
+        if (!isSolidFeature(tip)) {
             return new App::DocumentObjectExecReturn(
-                QT_TRANSLATE_NOOP("Exception", "Linked object is not a PartDesign feature")
+                QT_TRANSLATE_NOOP("Exception", "Linked object is not a solid feature")
             );
         }
 
@@ -2334,7 +2405,7 @@ PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
 Part::TopoShape Body::derivedTipShape() const
 {
     App::DocumentObject* tip = Tip.getValue();
-    if (!tip || !tip->isDerivedFrom<PartDesign::Feature>()) {
+    if (!tip || !isSolidFeature(tip)) {
         return {};
     }
     Part::TopoShape tipShape = static_cast<Part::ShapeFeature*>(tip)->Shape.getShape();

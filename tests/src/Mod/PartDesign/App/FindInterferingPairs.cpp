@@ -18,8 +18,18 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <BRepBuilderAPI_Copy.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
+#include <gp_Pnt.hxx>
+
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/FeaturePartCut.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureBakedShape.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
@@ -71,6 +81,39 @@ protected:
 
         _doc->recompute();
         return body;
+    }
+
+    // A 10x10x10 box carried by a plain shape object rather than a Body -- what an
+    // imported part is: geometry in the document that no Body claims.
+    Part::Feature* makeBoxShape(const char* name, double x0)
+    {
+        auto* obj = _doc->addObject<Part::Feature>(name);
+        obj->Shape.setValue(BRepPrimAPI_MakeBox(gp_Pnt(x0, 0, 0), 10.0, 10.0, 10.0).Shape());
+        _doc->recompute();
+        return obj;
+    }
+
+    // A Body whose feature emits one part delivered twice, stacked exactly on
+    // itself: two coincident solids out of a single feature. The copy is a deep one,
+    // because the kernel folds a repeated shape back to a single entry. Nothing is
+    // returned: the Body created here does not survive the recompute -- the
+    // body-identity rule gives each solid its own Body and retires this one -- so a
+    // caller must read the document rather than hold on to it.
+    void makeDoubledBody(const char* name)
+    {
+        const TopoDS_Shape box = BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape();
+        BRep_Builder builder;
+        TopoDS_Compound doubled;
+        builder.MakeCompound(doubled);
+        builder.Add(doubled, box);
+        builder.Add(doubled, BRepBuilderAPI_Copy(box).Shape());
+
+        auto* baked = _doc->addObject<PartDesign::BakedShape>();
+        baked->StoredShape.setValue(Part::TopoShape(doubled));
+
+        auto* body = _doc->addObject<PartDesign::Body>(name);
+        body->addFeature(baked);
+        _doc->recompute();
     }
 
     App::Document* _doc = nullptr;
@@ -173,6 +216,79 @@ TEST_F(FindInterferingPairsTest, DismissingOneOverlapLeavesAnotherLive)
     PartDesign::Body::dismissInterference(a, b);
     // Only the A–B pair is silenced; A–C and B–C remain.
     EXPECT_EQ(PartDesign::Body::liveInterferingPairs(_doc).size(), 2U);
+}
+
+// The check no longer stops at Bodies. Two overlapping shapes that no Body claims
+// -- which is what imported parts are -- are reported like any other overlap.
+// Until this widening nothing in the document looked for them at all.
+TEST_F(FindInterferingPairsTest, OverlappingShapesThatAreNotBodiesAreReported)
+{
+    auto* a = makeBoxShape("PartA", 0.0);
+    auto* b = makeBoxShape("PartB", 5.0);  // share a 5x10x10 slab
+
+    const auto pairs = PartDesign::Body::findInterferingPairs(_doc);
+    ASSERT_EQ(pairs.size(), 1U);
+    const bool matches = (pairs[0].first == a && pairs[0].second == b)
+        || (pairs[0].first == b && pairs[0].second == a);
+    EXPECT_TRUE(matches);
+}
+
+// Disjoint shapes stay quiet, so the widened sweep is answering the geometry
+// rather than reporting every pair of loose objects it finds.
+TEST_F(FindInterferingPairsTest, DisjointShapesThatAreNotBodiesAreNotReported)
+{
+    makeBoxShape("PartA", 0.0);
+    makeBoxShape("PartB", 60.0);
+    EXPECT_TRUE(PartDesign::Body::findInterferingPairs(_doc).empty());
+}
+
+// The operands of a boolean overlap by design -- that is what a cut is for -- and
+// reporting them would make the check useless noise on ordinary models. They are
+// not counted because something else in the document builds on them; the result
+// answers for them. The same rule is what keeps a Body from being reported
+// against its own features.
+TEST_F(FindInterferingPairsTest, TheOperandsOfABooleanAreNotReportedAgainstEachOther)
+{
+    auto* base = makeBoxShape("Base", 0.0);
+    auto* tool = makeBoxShape("Tool", 5.0);
+
+    auto* cut = _doc->addObject<Part::Cut>("Cut");
+    cut->Base.setValue(base);
+    cut->Tool.setValue(tool);
+    _doc->recompute();
+
+    ASSERT_FALSE(cut->Shape.getShape().isNull());
+    EXPECT_TRUE(PartDesign::Body::findInterferingPairs(_doc).empty());
+}
+
+// An acknowledgement is recorded on the two Bodies, so a pair with anything else
+// in it has nowhere to keep one. It reads as live rather than silently dismissed,
+// and the UI asks first rather than offering a button that would do nothing.
+TEST_F(FindInterferingPairsTest, AnOverlapWithoutABodyCannotYetBeAcknowledged)
+{
+    auto* a = makeBoxShape("PartA", 0.0);
+    auto* b = makeBoxShape("PartB", 5.0);
+
+    EXPECT_FALSE(PartDesign::Body::isInterferenceDismissable(a, b));
+    EXPECT_FALSE(PartDesign::Body::isInterferenceDismissed(a, b));
+    EXPECT_EQ(PartDesign::Body::liveInterferingPairs(_doc).size(), 1U);
+}
+
+// A part delivered twice in the same place, inside a single feature, does get
+// caught -- but by two rules working together rather than by the detector alone.
+// The body-identity rule (ARCHITECTURE 4.7) sees a feature emitting two separate
+// solids and gives each one its own Body, retiring the one that held both. Only
+// then are there two Bodies for the detector to compare, and it reports them as
+// overlapping. Worth stating as a test because neither half says so on its own:
+// the detector never looks inside a single shape, and the splitting rule is not
+// there to find duplicates.
+TEST_F(FindInterferingPairsTest, ADoubledSolidBecomesTwoBodiesAndIsThenReported)
+{
+    makeDoubledBody("Doubled");
+
+    const auto bodies = _doc->getObjectsOfType(PartDesign::Body::getClassTypeId());
+    ASSERT_EQ(bodies.size(), 2U) << "one solid apiece, so one Body apiece";
+    EXPECT_EQ(PartDesign::Body::findInterferingPairs(_doc).size(), 1U);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

@@ -185,6 +185,29 @@ public:
      */
     static void retireOrRetreatTippedBodies(App::Document* doc, App::DocumentObject* feature);
 
+    /**
+     * Cruth §4.6 auto-creation. Run after a document recompute, before
+     * reconcileMultiOutput: give a Body to every recomputed feature that produces a solid,
+     * says its output stands as a part of its own (Part::ShapeFeature::spawnsBodyForOutput),
+     * and is claimed by no Body yet.
+     *
+     * The user does not create bodies; a body is the accounting of which connected solids
+     * exist, so a solid that no body claims is a gap in that accounting rather than a
+     * choice anyone made. §7.8 says so of imported geometry directly: it belongs to an
+     * auto-spawned Body "rather than appearing as a loose top-level object outside any
+     * Body".
+     *
+     * One Body per feature here; a feature whose output is several disjoint solids gets the
+     * rest from reconcileMultiOutput on the same pass, which is where the component-id
+     * machinery already lives. A feature something else builds on is skipped -- the result
+     * answers for it, exactly as a body's own features are answered for by the body.
+     * Idempotent: a feature that already has a Body gets nothing.
+     */
+    static void spawnBodiesForUnclaimedOutput(
+        App::Document* doc,
+        const std::vector<App::DocumentObject*>& recomputed
+    );
+
     /// Wire reconcileMultiOutput onto every document's recompute signal. Call once
     /// at module init; idempotent. P8: fires for both UI and API recompute paths.
     static void initMultiOutputObserver();
@@ -227,26 +250,47 @@ public:
     /// predicate on two shapes; the caller gathers each Body's Tip shape and asks per Body.
     static bool toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyShape);
 
-    /// Cruth §8.6 Spatial Interference: every unordered pair of distinct Bodies in @p doc whose
-    /// shapes share positive volume. Two Bodies may occupy overlapping space without being
+    /// Cruth §8.6 Spatial Interference: every unordered pair of independent solids in @p doc whose
+    /// shapes share positive volume. Two solids may occupy overlapping space without being
     /// topologically merged (§4.8) — geometrically valid but usually unintended (e.g. keep-distinct
-    /// pattern instances that coincide). This is the pure-geometry detector; per §8.6 it is a UI
-    /// concern surfaced as a NON-blocking notice, never a recompute failure, and is meant to be run
-    /// on demand rather than every recompute (the pairwise boolean is costly). Bounding boxes
-    /// pre-reject far-apart Bodies; the volume test (via toolReaches) ignores bare surface contact.
-    /// Bodies with a null or solid-less Shape are skipped. Dismissal of intentional overlaps is a
+    /// pattern instances that coincide). Per §8.6 it is a UI concern surfaced as a NON-blocking
+    /// notice, never a recompute failure, and is meant to be run on demand rather than every
+    /// recompute (the pairwise boolean is costly). Dismissal of intentional overlaps is a
     /// caller/document-state concern layered above this predicate, not filtered here.
-    static std::vector<std::pair<Body*, Body*>> findInterferingPairs(App::Document* doc);
+    ///
+    /// The sweep itself is Part::overlappingPairs, and it asks the question of every solid that
+    /// stands on its own rather than only of the Bodies. That is not a widening of §8.6: under
+    /// §4.6 every connected solid a feature produces spawns a Body, and §7.8 rules that imported
+    /// geometry belongs to an auto-spawned Body rather than "appearing as a loose top-level object
+    /// outside any Body". An independent solid that no Body claims is therefore something the model
+    /// does not admit — it exists only because auto-spawn for imports is unbuilt. Asking every
+    /// independent solid answers §8.6's question honestly meanwhile, and gives the same answer once
+    /// imports do spawn Bodies, because a Body is an independent solid and its features are not.
+    static std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> findInterferingPairs(
+        App::Document* doc
+    );
 
     /// Cruth §8.6: the interfering pairs in @p doc the user has NOT dismissed —
     /// findInterferingPairs minus every pair whose overlap was acknowledged as intentional (either
-    /// Body listing the other in AcknowledgedOverlaps). This is what the interference notice
+    /// side listing the other in AcknowledgedOverlaps). This is what the interference notice
     /// surfaces; an empty result means nothing needs the user's attention.
-    static std::vector<std::pair<Body*, Body*>> liveInterferingPairs(App::Document* doc);
+    ///
+    /// A dismissal can only be recorded where there is a Body to record it on, so a pair involving
+    /// anything else always reads as live. That is the honest reading — the overlap has not been
+    /// acknowledged and cannot yet be — not a silent pass.
+    static std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> liveInterferingPairs(
+        App::Document* doc
+    );
 
     /// Cruth §8.6: has the overlap between @p a and @p b been dismissed as intentional? True when
-    /// either Body records the other's durable §8.2 Uid in AcknowledgedOverlaps.
-    static bool isInterferenceDismissed(const Body* a, const Body* b);
+    /// either Body records the other's durable §8.2 Uid in AcknowledgedOverlaps. False whenever
+    /// either side is not a Body: there is nowhere to have recorded it.
+    static bool isInterferenceDismissed(const App::DocumentObject* a, const App::DocumentObject* b);
+
+    /// Cruth §8.6: can the overlap between @p a and @p b be acknowledged at all? Only a pair of
+    /// Bodies can, until dismissal has somewhere to live for the rest. The UI asks this rather
+    /// than offering an acknowledgement that would quietly do nothing.
+    static bool isInterferenceDismissable(const App::DocumentObject* a, const App::DocumentObject* b);
 
     /// Cruth §8.6: acknowledge the overlap between @p a and @p b as intentional, silencing its
     /// notice. Records each Body's durable Uid on the other (idempotent). A no-op on null Bodies or
