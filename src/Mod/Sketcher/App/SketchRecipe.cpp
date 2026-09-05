@@ -135,13 +135,40 @@ std::string authoredValue(const SketchObject& sketch, const Constraint* constrai
 }
 
 
-/// The two authored coordinates a person reads a sketch by. The merge deliberately does not
-/// carry these (DESIGN §4 treats an undimensioned position as a regenerable seed, which is
-/// right for reconciling two people's edits and wrong for one person asking what moved), so
-/// they are added here, on the view's side of that line, and nowhere else.
+/// A coordinate as a person reads it. Deliberately *not* canonicalNumber: a coordinate is where
+/// the solver put something, not a value anyone stated, and at seventeen digits an edit to one
+/// dimension buries itself under the drift of every point that moved with it. Authored values --
+/// a dimension's datum, a bound expression -- keep full precision, because those are statements.
+///
+/// The cost is real and accepted: two positions closer together than this round to one string,
+/// so a sub-micron move goes unreported in the view. The document still holds both, and the
+/// merge, which never sees coordinates at all, is unaffected.
+std::string displayNumber(double value)
+{
+    std::ostringstream oss;
+    oss.imbue(std::locale::classic());
+    oss << std::fixed << std::setprecision(4) << value;
+
+    std::string text = oss.str();
+    const std::string::size_type lastKept = text.find_last_not_of('0');
+    if (text.find('.') != std::string::npos && lastKept != std::string::npos) {
+        text.erase(text[lastKept] == '.' ? lastKept : lastKept + 1);
+    }
+    if (text == "-0") {
+        text = "0";
+    }
+
+    return text;
+}
+
+/// The two coordinates a person reads a sketch by. The merge deliberately does not carry these
+/// (DESIGN §4 treats an undimensioned position as a regenerable seed, which is right for
+/// reconciling two people's edits and wrong for one person asking what moved), so they are
+/// added here, on the view's side of that line, and nowhere else -- rounded, per displayNumber,
+/// because where the solver put a point is not a statement anyone made.
 std::string canonicalPoint(const Base::Vector3d& point)
 {
-    return canonicalNumber(point.x) + " " + canonicalNumber(point.y);
+    return displayNumber(point.x) + " " + displayNumber(point.y);
 }
 
 /// The reader's name for a geometry type: "Part::GeomLineSegment" is the factory key, "LineSegment"
@@ -167,19 +194,19 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
         double last = 0.0;
         arc->getRange(first, last, true);
         node.fields["center"] = canonicalPoint(arc->getCenter());
-        node.fields["radius"] = canonicalNumber(arc->getRadius());
-        node.fields["range"] = canonicalNumber(first) + " " + canonicalNumber(last);
+        node.fields["radius"] = displayNumber(arc->getRadius());
+        node.fields["range"] = displayNumber(first) + " " + displayNumber(last);
         return;
     }
     if (const auto* circle = dynamic_cast<const Part::GeomCircle*>(geo)) {
         node.fields["center"] = canonicalPoint(circle->getCenter());
-        node.fields["radius"] = canonicalNumber(circle->getRadius());
+        node.fields["radius"] = displayNumber(circle->getRadius());
         return;
     }
     if (const auto* ellipse = dynamic_cast<const Part::GeomEllipse*>(geo)) {
         node.fields["center"] = canonicalPoint(ellipse->getCenter());
-        node.fields["radius"] = canonicalNumber(ellipse->getMajorRadius()) + " x "
-            + canonicalNumber(ellipse->getMinorRadius());
+        node.fields["radius"] = displayNumber(ellipse->getMajorRadius()) + " x "
+            + displayNumber(ellipse->getMinorRadius());
         return;
     }
     if (const auto* line = dynamic_cast<const Part::GeomLineSegment*>(geo)) {
