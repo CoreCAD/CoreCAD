@@ -307,16 +307,34 @@ App::DocumentObjectExecReturn* LocalCoordinateSystem::execute()
 
 const std::vector<LocalCoordinateSystem::SetupData>& LocalCoordinateSystem::getSetupData()
 {
-    using std::numbers::pi;
+    // Cruth: the world frame's rotations are written as exact quaternions, not derived from an
+    // axis and an angle.
+    //
+    // A third of a turn about (1,1,1) is the quaternion (0.5, 0.5, 0.5, 0.5) exactly, but
+    // reaching it through an angle routes it via cosine, and cos(pi/3) evaluates to
+    // 0.50000000000000011 rather than one half. Trigonometry is the one piece of floating-point
+    // arithmetic platforms are NOT required to agree on to the last digit, so the same document
+    // could hold different numbers for the same fixed plane on Windows and on Linux, and version
+    // control would report a change neither engineer made. Written out, every machine starts
+    // from the same numbers -- and each of these is already unit length, so nothing normalizes
+    // them afterwards either.
+    //
+    // Quaternion component order is (x, y, z, w).
+    // Each component of a 120-degree turn about a diagonal is one half: the axis contributes
+    // sin(60)/sqrt(3) and the angle contributes cos(60), and both are exactly 0.5.
+    constexpr double half = 0.5;
+    const Base::Rotation aboutXYZ(half, half, half, half);        // (1, 1, 1), 120 degrees
+    const Base::Rotation aboutXnYZ(half, -half, half, half);      // (1,-1, 1), 120 degrees
+    const Base::Rotation aboutX90(std::numbers::sqrt2 / 2, 0.0, 0.0, std::numbers::sqrt2 / 2);
 
     static const std::vector<SetupData> setupData = {
         // clang-format off
         {App::Line::getClassTypeId(),  AxisRoles[0],  tr("X-axis"),   Base::Rotation()},
-        {App::Line::getClassTypeId(),  AxisRoles[1],  tr("Y-axis"),   Base::Rotation(Base::Vector3d(1, 1, 1), pi * 2 / 3)},
-        {App::Line::getClassTypeId(),  AxisRoles[2],  tr("Z-axis"),   Base::Rotation(Base::Vector3d(1,-1, 1), pi * 2 / 3)},
+        {App::Line::getClassTypeId(),  AxisRoles[1],  tr("Y-axis"),   aboutXYZ},
+        {App::Line::getClassTypeId(),  AxisRoles[2],  tr("Z-axis"),   aboutXnYZ},
         {App::Plane::getClassTypeId(), PlaneRoles[0], tr("XY-plane"), Base::Rotation()},
-        {App::Plane::getClassTypeId(), PlaneRoles[1], tr("XZ-plane"), Base::Rotation(1.0, 0.0, 0.0, 1.0)},
-        {App::Plane::getClassTypeId(), PlaneRoles[2], tr("YZ-plane"), Base::Rotation(Base::Vector3d(1, 1, 1), pi * 2 / 3)},
+        {App::Plane::getClassTypeId(), PlaneRoles[1], tr("XZ-plane"), aboutX90},
+        {App::Plane::getClassTypeId(), PlaneRoles[2], tr("YZ-plane"), aboutXYZ},
         {App::Point::getClassTypeId(), PointRoles[0], tr("Origin-Point"),   Base::Rotation()}
         // clang-format on
     };

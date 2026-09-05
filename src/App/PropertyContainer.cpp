@@ -223,6 +223,21 @@ void PropertyContainer::beforeSave() const
     }
 }
 
+namespace
+{
+/// Cruth: the status a document records, with the runtime dirty flag taken out.
+///
+/// Touched means "this property has changed since the last recompute" -- it describes the
+/// session, not the design. Written into the file it made a saved document depend on how it got
+/// there: build a part and save, and the flag is clear; open that same file and save it again,
+/// and it is set, so the bytes differ though nothing was designed. A document restored from
+/// disk is not dirty, and its file should not claim it is.
+unsigned long persistedStatus(const App::Property* prop)
+{
+    return prop->getStatus() & ~(1UL << App::Property::Touched);
+}
+}  // namespace
+
 void PropertyContainer::Save (Base::Writer &writer) const
 {
     std::map<std::string,Property*> Map;
@@ -257,7 +272,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
     for(auto prop : transients) {
         writer.Stream() << writer.ind() << "<_Property name=\"" << prop->getName()
             << "\" type=\"" << prop->getTypeId().getName()
-            << "\" status=\"" << prop->getStatus() << "\"/>" << std::endl;
+            << "\" status=\"" << persistedStatus(prop) << "\"/>" << std::endl;
     }
     writer.decInd();
 
@@ -270,7 +285,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
 
         dynamicProps.save(it.second,writer);
 
-        auto status = it.second->getStatus();
+        auto status = persistedStatus(it.second);
         if(status)
             writer.Stream() << "\" status=\"" << status;
         writer.Stream() << "\">";

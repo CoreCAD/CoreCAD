@@ -84,3 +84,6 @@ tsupdate_stdout.log
 # Scratch CAD files saved at repo root during testing (real fixtures live in tests/)
 /test*.FCStd
 /test*.FCBak
+
+# Recipe views written beside saved documents (a view, regenerated on every save)
+*.recipe
