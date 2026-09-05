@@ -39,6 +39,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "ObjectRecipe.h"
+#include "RecipeDetail.h"
 
 using namespace App;
 
@@ -73,6 +74,37 @@ std::string headingLine(const DocumentObject& obj, const std::string& type)
     }
 
     return heading;
+}
+
+
+/// A sub-entity has no name a person could use, so it is identified by the head of its durable
+/// tag -- short enough to read, long enough not to collide within one sketch.
+std::string shortId(const std::string& id)
+{
+    constexpr std::string::size_type shown = 6;
+    return id.size() > shown ? id.substr(0, shown) : id;
+}
+
+/// One line per sub-entity rather than one per field: a line's two ends move together, and
+/// "this line moved" is what a person wants to read. The fields stay in name order, so the
+/// line's shape is a property of the entity and not of the walk.
+std::string detailLine(const RecipeNode& node)
+{
+    std::string line = "    " + node.type + " " + shortId(node.id);
+
+    for (const auto& [name, value] : node.fields) {
+        if (!value.empty()) {
+            line += "  " + name + " = " + value;
+        }
+    }
+    for (const RecipeRef& ref : node.refs) {
+        line += "  -> " + shortId(ref.target);
+        if (ref.pos != 0) {
+            line += ":" + std::to_string(ref.pos);
+        }
+    }
+
+    return line;
 }
 
 }  // namespace
@@ -120,10 +152,30 @@ std::string App::formatDocumentRecipeText(const Document& doc)
             out << "  -> " << reference << "\n";
         }
 
+        // Content the generic walk could only see as an opaque property, said by the module
+        // that owns the type -- a sketch's lines and dimensions, chiefly.
+        const RecipeDetail detail = recipeDetail(*obj);
+        for (const RecipeDetailSection& section : detail.sections) {
+            out << "  " << section.name << ":\n";
+            for (const RecipeNode& node : section.nodes) {
+                out << detailLine(node) << "\n";
+            }
+        }
+
         // What the emitter reached and had no words for. Printed, not hidden: a value listed
         // here is invisible to a diff, and the list is the measurement that decides whether a
-        // recipe could ever stand in for the document.
-        const std::vector<std::string> unrecorded = unrecordedProperties(*obj);
+        // recipe could ever stand in for the document. A property a provider has accounted for
+        // above is no longer missing, so it drops out of the list.
+        std::vector<std::string> unrecorded = unrecordedProperties(*obj);
+        unrecorded.erase(std::remove_if(unrecorded.begin(),
+                                        unrecorded.end(),
+                                        [&detail](const std::string& name) {
+                                            return std::find(detail.coveredProperties.begin(),
+                                                             detail.coveredProperties.end(),
+                                                             name)
+                                                != detail.coveredProperties.end();
+                                        }),
+                         unrecorded.end());
         if (!unrecorded.empty()) {
             out << "  not recorded:";
             for (const std::string& name : unrecorded) {

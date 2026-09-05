@@ -25,6 +25,7 @@
 #define SKETCHER_SKETCHRECIPE_H
 
 #include <App/Recipe.h>
+#include <App/RecipeDetail.h>
 
 #include "SketchObject.h"
 
@@ -56,6 +57,14 @@ struct SketchRecipe
 /// Emit the authored recipe of a sketch (§3). Pure read of authored/stored state; the solver
 /// is not run.
 SketcherExport SketchRecipe emitSketchRecipe(const SketchObject& sketch);
+
+/// The sketch's contribution to a readable document recipe: its geometry and constraints, which
+/// the generic emitter can only see as two opaque properties. Adds the authored coordinates the
+/// merge recipe deliberately omits — a person asking what moved needs them, a merge does not.
+SketcherExport App::RecipeDetail sketchRecipeDetail(const App::DocumentObject& obj);
+
+/// Register sketchRecipeDetail against Sketcher::SketchObject. Called once, at module init.
+SketcherExport void registerSketchRecipeDetail();
 
 /** The outcome of regenerating a recipe onto a live sketch and re-solving with the existing
  *  solver — the CAD analogue of "does the merge compile?" (DESIGN_recipe-merge.md §6 slice 5,
