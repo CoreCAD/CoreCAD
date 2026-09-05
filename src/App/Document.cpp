@@ -71,6 +71,7 @@
 #include <Base/UnitsApi.h>
 
 #include "Document.h"
+#include "RecipeText.h"
 #include "private/DocumentP.h"
 #include "Application.h"
 #include "AutoTransaction.h"
@@ -2315,6 +2316,24 @@ bool Document::saveToFile(const char* filename) const
         }
         backupPolicy.setNumberOfFiles(count_bak);
         backupPolicy.apply(fn, nativePath);
+    }
+
+    // Cruth: alongside the archive, write a readable rendering of the authored recipe -- the
+    // steps a person took, one fact per line -- so a difference between two saves reads as
+    // "this hole moved" instead of "the file changed". It is a view: written here, never read
+    // back, and the archive above remains the file of record. A failure to write it is
+    // reported and swallowed; a convenience must never fail a save.
+    if (hGrp->GetBool("WriteRecipeView", true)) {
+        try {
+            if (!writeDocumentRecipeText(*this, nativePath.c_str())) {
+                Base::Console().warning("Could not write the recipe view for %s\n", filename);
+            }
+        }
+        catch (const Base::Exception& e) {
+            Base::Console().warning("Could not write the recipe view for %s: %s\n",
+                                    filename,
+                                    e.what());
+        }
     }
 
     signalFinishSave(*this, filename);
