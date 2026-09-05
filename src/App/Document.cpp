@@ -1036,7 +1036,26 @@ Document::Document(const char* documentName)
                       Prop_ReadOnly,
                       "Date of creation");
     ADD_PROPERTY_TYPE(LastModifiedBy, (""), 0, Prop_None, 0);
-    ADD_PROPERTY_TYPE(LastModifiedDate, ("Unknown"), 0, Prop_ReadOnly, "Date of last modification");
+    // Cruth: the last-modified date is DERIVED, never stored.
+    //
+    // A save-time clock written into the document made the file a function of when it was
+    // saved rather than of what it contains: two saves of an unchanged document differed,
+    // and every real save carried a spurious change into the file's history alongside the
+    // genuine one. Storing it also duplicated something already known -- the file's own
+    // modification time -- which is a second source of truth for a fact nobody authored.
+    //
+    // The property remains, because consumers legitimately read it (a drawing title block,
+    // a manufacturing report). It is filled from the file it was read from, and refreshed
+    // in memory on save. What a person *does* author about a revision belongs in the
+    // document's metadata, not in a clock.
+    //
+    // CreationDate stays stored: it is set once and never moves, so it does not make the
+    // file depend on when it was written.
+    ADD_PROPERTY_TYPE(LastModifiedDate,
+                      ("Unknown"),
+                      0,
+                      PropertyType(Prop_Transient | Prop_ReadOnly),
+                      "Date of last modification, derived from the file (never stored)");
     ADD_PROPERTY_TYPE(Company,
                       (AuthorComp.c_str()),
                       0,
@@ -2117,6 +2136,10 @@ bool Document::save()
             TipName.setValue(Tip.getValue()->getNameInDocument());
         }
 
+        // Cruth: in memory only -- the property is transient and is not written to the
+        // file, so this keeps a live document's answer current without making the saved
+        // bytes depend on when the save happened. On the next open it is derived from the
+        // file itself (see Document::restore).
         const std::string LastModifiedDateString = Base::Tools::currentDateTimeString();
         LastModifiedDate.setValue(LastModifiedDateString.c_str());
         // set author if needed
@@ -2428,6 +2451,13 @@ void Document::restore(const char* filename,
                               "modified or not recovered at all. Look above for more specific "
                               "information about the objects involved.\n");
     }
+
+    // Cruth: derive the last-modified date from the file we just read, rather than trusting
+    // a value stored inside it. The property is transient, so a document written by this
+    // version carries no such value at all; a document written by an older version still
+    // carries one, and deriving unconditionally means both answer the same way.
+    auto modified = fi.lastModified();
+    LastModifiedDate.setValue(Base::Tools::dateTimeString(modified.getTime_t()).c_str());
 
     if (!delaySignal) {
         afterRestore(true);
