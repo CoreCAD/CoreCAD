@@ -139,18 +139,36 @@ std::string App::formatDocumentRecipeText(const Document& doc)
         }
 
         // References are printed after the values and sorted by the name they resolve to, so
-        // adding a reference never shifts an unrelated line.
+        // adding a reference never shifts an unrelated line. Where a link picked out a
+        // particular face or edge, that element is named too: "attached to Pad" alone cannot
+        // tell a reader the attachment moved to the other side of the part.
+        const std::map<std::string, std::vector<std::string>> picked = linkedElements(*obj);
         std::vector<std::string> references;
         references.reserve(node.refs.size());
         for (const RecipeRef& ref : node.refs) {
             const auto found = names.find(ref.target);
-            std::string rendered = found != names.end() ? found->second : ref.target;
-            if (ref.pos != 0) {
-                rendered += ":" + std::to_string(ref.pos);
+            const std::string target = found != names.end() ? found->second : ref.target;
+
+            bool named = false;
+            const auto elements = picked.find(ref.target);
+            if (elements != picked.end()) {
+                for (const std::string& element : elements->second) {
+                    if (!element.empty()) {
+                        references.push_back(target + "." + element);
+                        named = true;
+                    }
+                }
             }
-            references.push_back(std::move(rendered));
+            if (!named) {
+                std::string rendered = target;
+                if (ref.pos != 0) {
+                    rendered += ":" + std::to_string(ref.pos);
+                }
+                references.push_back(std::move(rendered));
+            }
         }
         std::sort(references.begin(), references.end());
+        references.erase(std::unique(references.begin(), references.end()), references.end());
         for (const std::string& reference : references) {
             out << "  -> " << reference << "\n";
         }

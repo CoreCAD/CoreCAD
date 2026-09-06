@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <iomanip>
 # include <limits>
 # include <locale>
@@ -303,6 +304,53 @@ std::vector<std::string> App::unrecordedProperties(const DocumentObject& obj)
     }
 
     return names;
+}
+
+std::map<std::string, std::vector<std::string>> App::linkedElements(const DocumentObject& obj)
+{
+    std::map<std::string, std::vector<std::string>> picked;
+
+    // The same walk and the same filters the emitter uses, so the view can never name an element
+    // on a link the recipe itself does not carry.
+    std::map<std::string, Property*> properties;
+    obj.getPropertyMap(properties);
+    for (const auto& [propName, prop] : properties) {
+        if (prop == nullptr || isNonRecipeProperty(propName)) {
+            continue;
+        }
+        if ((obj.getPropertyType(prop) & excludedPropertyFlags) != 0) {
+            continue;
+        }
+        if (!prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
+            continue;
+        }
+
+        // Old-style names ("Face6"), not the shape's mapped ones: a mapped name is a hash, and
+        // this exists to be read. Paired by hand rather than through the linkedElements helper,
+        // which asserts the two lists are the same length -- a link with no sub-elements at all
+        // returns none, and that is an ordinary link, not a broken one.
+        std::vector<DocumentObject*> targets;
+        std::vector<std::string> subs;
+        static_cast<const PropertyLinkBase*>(prop)->getLinks(targets,
+                                                             /*all=*/true,
+                                                             &subs,
+                                                             /*newStyle=*/false);
+        for (std::size_t i = 0; i < targets.size(); ++i) {
+            if (targets[i] == nullptr) {
+                continue;
+            }
+            if (i < subs.size() && !subs[i].empty()) {
+                picked[targets[i]->Uid.getValueStr()].push_back(subs[i]);
+            }
+        }
+    }
+
+    for (auto& [id, named] : picked) {
+        std::sort(named.begin(), named.end());
+        named.erase(std::unique(named.begin(), named.end()), named.end());
+    }
+
+    return picked;
 }
 
 RecipeSection App::emitDocumentRecipe(const Document& doc)
