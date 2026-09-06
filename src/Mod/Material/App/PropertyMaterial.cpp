@@ -27,9 +27,11 @@
 
 
 #include <App/Application.h>
+#include <Base/Console.h>
 #include <Base/Writer.h>
 #include <Gui/MetaTypes.h>
 
+#include "Exceptions.h"
 #include "MaterialManager.h"
 #include "MaterialPy.h"
 #include "PropertyMaterial.h"
@@ -92,8 +94,35 @@ void PropertyMaterial::Restore(Base::XMLReader& reader)
     reader.readElement("PropertyMaterial");
     // get the value of my Attribute
     auto uuid = reader.getAttribute<const char*>("uuid");
+    const QString identifier = QString::fromLatin1(uuid);
 
-    setValue(*MaterialManager::getManager().getMaterial(QString::fromLatin1(uuid)));
+    try {
+        setValue(*MaterialManager::getManager().getMaterial(identifier));
+        return;
+    }
+    catch (const MaterialNotFound&) {
+        // Handled below. A document that names a material this machine does not have is not a
+        // damaged document.
+    }
+
+    // The reference is kept, not replaced. Letting the restore fail left the property holding
+    // the default material, and the next save wrote the default's own id over the one the
+    // document came with -- so a part that travelled to a machine without the right library
+    // lost what it was made of permanently, and silently. The values stay at the default, since
+    // they are all this machine has to draw and weigh the part with, but the id is the one the
+    // author chose, so saving preserves it and reopening on a machine that has the library
+    // resolves it.
+    Material unresolved = _material;
+    unresolved.setUUID(identifier);
+    unresolved.setName(QStringLiteral("Unresolved material"));
+    setValue(unresolved);
+
+    Base::Console().warning(
+        "%s refers to material %s, which is not in any library on this system. The reference has "
+        "been kept and the default material's values are being used in its place.\n",
+        getFullName().c_str(),
+        uuid
+    );
 }
 
 const char* PropertyMaterial::getEditorName() const
