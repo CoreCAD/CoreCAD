@@ -78,11 +78,14 @@ std::string headingLine(const DocumentObject& obj, const std::string& type)
 
 
 /// A sub-entity has no name a person could use, so it is identified by the head of its durable
-/// tag -- short enough to read, long enough not to collide within one sketch.
+/// tag -- short enough to read, long enough not to collide within one sketch. A target that
+/// already is a name -- a sketch axis, an edge borrowed from another object -- is left whole:
+/// truncating a name only makes it unreadable.
 std::string shortId(const std::string& id)
 {
+    constexpr std::string::size_type tagLength = 36;  // 8-4-4-4-12, with the dashes
     constexpr std::string::size_type shown = 6;
-    return id.size() > shown ? id.substr(0, shown) : id;
+    return id.size() == tagLength ? id.substr(0, shown) : id;
 }
 
 /// One line per sub-entity rather than one per field: a line's two ends move together, and
