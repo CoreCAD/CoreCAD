@@ -102,6 +102,21 @@ std::string canonicalList(const ListT& values, Render render)
     return out;
 }
 
+/// Properties that are never part of the authored recipe whatever their type: the durable id
+/// itself (it *is* the node's identity, not one of its fields) and the two user-preference
+/// values. A rename or a show/hide toggle is not an authored change, so neither can conflict.
+/// Shared by the emitter and by unrecordedProperties, so both agree on what is out of scope.
+bool isNonRecipeProperty(const std::string& name)
+{
+    return name == "Uid" || name == "Label" || name == "Visibility";
+}
+
+/// Derived and non-persisted state is never authored source, so it is out of the recipe by
+/// its own declaration rather than by this driver's judgement. One definition, read by the
+/// emitter and by unrecordedProperties alike.
+constexpr short excludedPropertyFlags =
+    Prop_Output | Prop_Transient | Prop_NoPersist | Prop_Hidden;
+
 /// The authored value of one property as a canonical string, or nullopt if the property carries
 /// no value this driver can yet canonicalize (list value types are a follow-on increment, each
 /// gated by its own test). A quantity keeps its unit token so a bare-number change and a unit
@@ -204,10 +219,6 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
     node.id = obj.Uid.getValueStr();
     node.type = obj.getTypeId().getName();
 
-    // Derived and non-persisted state is never authored source; Label and Visibility are user
-    // preferences, not geometry, so a rename or a show/hide toggle is never a merge conflict.
-    const short excludedFlags = Prop_Output | Prop_Transient | Prop_NoPersist | Prop_Hidden;
-
     // A property driven by an expression is authored by that expression, not by its resolved
     // number; index the bindings by property so the field records the expression text.
     std::map<const Property*, std::string> expressionByProperty;
@@ -231,10 +242,10 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
         if (prop == nullptr) {
             continue;
         }
-        if (propName == "Label" || propName == "Visibility") {
+        if (isNonRecipeProperty(propName)) {
             continue;
         }
-        if ((obj.getPropertyType(prop) & excludedFlags) != 0) {
+        if ((obj.getPropertyType(prop) & excludedPropertyFlags) != 0) {
             continue;
         }
         if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
@@ -265,6 +276,33 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
     }
 
     return node;
+}
+
+std::vector<std::string> App::unrecordedProperties(const DocumentObject& obj)
+{
+    // Deliberately mirrors emitObjectRecipe's walk, minus the value rendering: a property is
+    // reported here exactly when the emitter reached it and had nothing to say about it. The
+    // two must be read together -- change one filter and this stops telling the truth.
+    std::vector<std::string> names;
+
+    std::map<std::string, Property*> properties;
+    obj.getPropertyMap(properties);
+    for (const auto& [propName, prop] : properties) {
+        if (prop == nullptr || isNonRecipeProperty(propName)) {
+            continue;
+        }
+        if ((obj.getPropertyType(prop) & excludedPropertyFlags) != 0) {
+            continue;
+        }
+        if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
+            continue;
+        }
+        if (!authoredFieldValue(prop).has_value()) {
+            names.push_back(propName);
+        }
+    }
+
+    return names;
 }
 
 RecipeSection App::emitDocumentRecipe(const Document& doc)

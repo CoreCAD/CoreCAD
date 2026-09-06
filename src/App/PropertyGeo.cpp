@@ -863,23 +863,34 @@ void PropertyPlacement::Restore(Base::XMLReader& reader)
     // get the value of my Attribute
     aboutToSetValue();
 
-    if (reader.hasAttribute("A")) {
-        _cPos = Base::Placement(Vector3d(reader.getAttribute<double>("Px"),
-                                         reader.getAttribute<double>("Py"),
-                                         reader.getAttribute<double>("Pz")),
-                                Rotation(Vector3d(reader.getAttribute<double>("Ox"),
-                                                  reader.getAttribute<double>("Oy"),
-                                                  reader.getAttribute<double>("Oz")),
-                                         reader.getAttribute<double>("A")));
-    }
-    else {
-        _cPos = Base::Placement(Vector3d(reader.getAttribute<double>("Px"),
-                                         reader.getAttribute<double>("Py"),
-                                         reader.getAttribute<double>("Pz")),
+    // Cruth: the quaternion is the rotation; the axis and angle beside it are a readable
+    // presentation of the same thing, and reading THOSE was making documents drift.
+    //
+    // Rebuilding a rotation from an angle goes through sine and cosine, so a plane stored as an
+    // exact quarter turn came back a step off and the next save rewrote it -- a change nobody
+    // made, indistinguishable to version control from an edit. Worse, trigonometry is the one
+    // part of floating-point arithmetic platforms are not required to agree on to the last
+    // digit, so the same file could load differently on Windows and on Linux. Reading the
+    // quaternion is exact and identical everywhere.
+    //
+    // The axis-and-angle attributes are still read when a document carries no quaternion.
+    const Vector3d position(reader.getAttribute<double>("Px"),
+                            reader.getAttribute<double>("Py"),
+                            reader.getAttribute<double>("Pz"));
+
+    if (reader.hasAttribute("Q0")) {
+        _cPos = Base::Placement(position,
                                 Rotation(reader.getAttribute<double>("Q0"),
                                          reader.getAttribute<double>("Q1"),
                                          reader.getAttribute<double>("Q2"),
                                          reader.getAttribute<double>("Q3")));
+    }
+    else {
+        _cPos = Base::Placement(position,
+                                Rotation(Vector3d(reader.getAttribute<double>("Ox"),
+                                                  reader.getAttribute<double>("Oy"),
+                                                  reader.getAttribute<double>("Oz")),
+                                         reader.getAttribute<double>("A")));
     }
 
     hasSetValue();

@@ -63,6 +63,18 @@ AppExport RecipeNode emitObjectRecipe(const DocumentObject& obj);
  */
 AppExport RecipeSection emitDocumentRecipe(const Document& doc);
 
+/** The properties emitObjectRecipe walked and could not record — those that survived the emit
+ *  filter (so they are neither derived, transient, hidden, nor a link) but whose value type the
+ *  emitter has no canonical rendering for. Names come back sorted.
+ *
+ *  This is the emitter's own account of what it is silently leaving out, and it exists to be
+ *  read: a value listed here is invisible to a diff and would be lost by anything that tried to
+ *  rebuild a document from its recipe alone. Shrinking this list is how the recipe layer earns
+ *  the right to become a stored form rather than a view.
+ */
+AppExport std::vector<std::string> unrecordedProperties(const DocumentObject& obj);
+
+
 /** The outcome of merging three versions of a model — a common ancestor and two edited copies —
  *  `merged` is the reconciled section; `resolutions` lists objects whose references the merge
  *  left dangling (an object kept on one branch whose referent was deleted on the other), routed

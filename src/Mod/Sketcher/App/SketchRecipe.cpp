@@ -39,6 +39,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/RecipeDetail.h>
 #include <Mod/Part/App/Geometry.h>
 
 #include "SketchRecipe.h"
@@ -131,6 +132,100 @@ std::string authoredValue(const SketchObject& sketch, const Constraint* constrai
         literal += " " + unit;
     }
     return literal;
+}
+
+
+/// A coordinate as a person reads it. Deliberately *not* canonicalNumber: a coordinate is where
+/// the solver put something, not a value anyone stated, and at seventeen digits an edit to one
+/// dimension buries itself under the drift of every point that moved with it. Authored values --
+/// a dimension's datum, a bound expression -- keep full precision, because those are statements.
+///
+/// The cost is real and accepted: two positions closer together than this round to one string,
+/// so a sub-micron move goes unreported in the view. The document still holds both, and the
+/// merge, which never sees coordinates at all, is unaffected.
+std::string displayNumber(double value)
+{
+    std::ostringstream oss;
+    oss.imbue(std::locale::classic());
+    oss << std::fixed << std::setprecision(4) << value;
+
+    std::string text = oss.str();
+    const std::string::size_type lastKept = text.find_last_not_of('0');
+    if (text.find('.') != std::string::npos && lastKept != std::string::npos) {
+        text.erase(text[lastKept] == '.' ? lastKept : lastKept + 1);
+    }
+    if (text == "-0") {
+        text = "0";
+    }
+
+    return text;
+}
+
+/// The two coordinates a person reads a sketch by. The merge deliberately does not carry these
+/// (DESIGN §4 treats an undimensioned position as a regenerable seed, which is right for
+/// reconciling two people's edits and wrong for one person asking what moved), so they are
+/// added here, on the view's side of that line, and nowhere else -- rounded, per displayNumber,
+/// because where the solver put a point is not a statement anyone made.
+std::string canonicalPoint(const Base::Vector3d& point)
+{
+    return displayNumber(point.x) + " " + displayNumber(point.y);
+}
+
+/// The reader's name for a geometry type: "Part::GeomLineSegment" is the factory key, "LineSegment"
+/// is what the entity is. A view may rename what it shows; the recipe node keeps the real type,
+/// which is what a merge report has to quote.
+std::string readableGeometryType(const std::string& typeName)
+{
+    const std::string::size_type sep = typeName.rfind("::");
+    std::string leaf = sep == std::string::npos ? typeName : typeName.substr(sep + 2);
+    if (leaf.rfind("Geom", 0) == 0) {
+        leaf = leaf.substr(4);
+    }
+    return leaf;
+}
+
+void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
+{
+    // Most-derived first: an arc of a circle is not a circle in the type system, but an
+    // ellipse's arc does derive from its conic, so the trimmed forms are matched before the
+    // whole ones either way.
+    if (const auto* arc = dynamic_cast<const Part::GeomArcOfCircle*>(geo)) {
+        double first = 0.0;
+        double last = 0.0;
+        arc->getRange(first, last, true);
+        node.fields["center"] = canonicalPoint(arc->getCenter());
+        node.fields["radius"] = displayNumber(arc->getRadius());
+        node.fields["range"] = displayNumber(first) + " " + displayNumber(last);
+        return;
+    }
+    if (const auto* circle = dynamic_cast<const Part::GeomCircle*>(geo)) {
+        node.fields["center"] = canonicalPoint(circle->getCenter());
+        node.fields["radius"] = displayNumber(circle->getRadius());
+        return;
+    }
+    if (const auto* ellipse = dynamic_cast<const Part::GeomEllipse*>(geo)) {
+        node.fields["center"] = canonicalPoint(ellipse->getCenter());
+        node.fields["radius"] = displayNumber(ellipse->getMajorRadius()) + " x "
+            + displayNumber(ellipse->getMinorRadius());
+        return;
+    }
+    if (const auto* line = dynamic_cast<const Part::GeomLineSegment*>(geo)) {
+        node.fields["from"] = canonicalPoint(line->getStartPoint());
+        node.fields["to"] = canonicalPoint(line->getEndPoint());
+        return;
+    }
+    if (const auto* point = dynamic_cast<const Part::GeomPoint*>(geo)) {
+        node.fields["at"] = canonicalPoint(point->getPoint());
+        return;
+    }
+    if (const auto* spline = dynamic_cast<const Part::GeomBSplineCurve*>(geo)) {
+        // A control point list is too long to read on one line; its size is the fact that
+        // tells a reader the curve was rebuilt rather than nudged.
+        node.fields["poles"] = std::to_string(spline->countPoles());
+        node.fields["from"] = canonicalPoint(spline->getStartPoint());
+        node.fields["to"] = canonicalPoint(spline->getEndPoint());
+        return;
+    }
 }
 
 }  // namespace
@@ -478,4 +573,67 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
     out << "\n";
 
     return out.str();
+}
+
+
+App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
+{
+    App::RecipeDetail detail;
+
+    const auto* sketch = dynamic_cast<const SketchObject*>(&obj);
+    if (sketch == nullptr) {
+        return detail;
+    }
+
+    // The two properties the generic emitter can only see as opaque values. Claimed here, so
+    // the view stops reporting them missing now that it prints what is in them.
+    detail.coveredProperties = {"Geometry", "Constraints"};
+
+    const SketchRecipe recipe = emitSketchRecipe(*sketch);
+
+    // Walked in the sketch's own order rather than the recipe's id order: the merge is keyed by
+    // durable tag and indifferent to sequence, but a person reads a sketch in the order it was
+    // drawn.
+    App::RecipeDetailSection geometry;
+    geometry.name = "geometry";
+    const std::vector<Part::Geometry*>& internals = sketch->getInternalGeometry();
+    for (const Part::Geometry* geo : internals) {
+        const auto found = recipe.geometry.find(tagToString(geo->getTag()));
+        if (found == recipe.geometry.end()) {
+            continue;
+        }
+        App::RecipeNode node = found->second;
+        node.type = readableGeometryType(node.type);
+        addAuthoredCoordinates(geo, node);
+        geometry.nodes.push_back(std::move(node));
+    }
+
+    App::RecipeDetailSection constraints;
+    constraints.name = "constraints";
+    for (const Constraint* constraint : sketch->Constraints.getValues()) {
+        const auto found = recipe.constraints.find(tagToString(constraint->getTag()));
+        if (found == recipe.constraints.end()) {
+            continue;
+        }
+        App::RecipeNode node = found->second;
+        if (!constraint->Name.empty()) {
+            // A named constraint is the handle an expression binds to, so the name is authored
+            // content and a rename is a real change to the model.
+            node.fields["name"] = constraint->Name;
+        }
+        if (!constraint->isDriving) {
+            node.fields["driving"] = "false";
+        }
+        constraints.nodes.push_back(std::move(node));
+    }
+
+    detail.sections.push_back(std::move(geometry));
+    detail.sections.push_back(std::move(constraints));
+
+    return detail;
+}
+
+void Sketcher::registerSketchRecipeDetail()
+{
+    App::registerRecipeDetail(SketchObject::getClassTypeId(), &sketchRecipeDetail);
 }

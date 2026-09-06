@@ -1,0 +1,5 @@
+# Recipe view -- the authored steps in this document, one fact per line.
+# Written on save from the document itself, never read back. Do not edit.
+
+VarSet (App::VarSet)
+  Variable = 123

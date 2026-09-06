@@ -402,13 +402,13 @@ bool FileInfo::setPermissions(Permissions perms)
 
 bool FileInfo::isFile() const
 {
-    fs::path path = stringToPath(FileName);
-    if (fs::exists(path)) {
-        return fs::is_regular_file(path);
-    }
-
-    // TODO: Check for valid file name
-    return true;
+    // Cruth: a path that is not there is not a file. This used to answer "true" for anything
+    // that did not exist, behind a TODO to judge such a path by whether its name looked like a
+    // file name. That reading was never built, and no caller wants it: every one of them either
+    // tests exists() first or walks entries of a real directory. Answering "yes, that is a
+    // file" about something absent is a wrong answer waiting to be believed.
+    std::error_code ec;
+    return fs::is_regular_file(stringToPath(FileName), ec);
 }
 
 bool FileInfo::isDir() const
