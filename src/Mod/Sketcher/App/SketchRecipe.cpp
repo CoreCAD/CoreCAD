@@ -25,6 +25,7 @@
 
 #ifndef _PreComp_
 # include <cctype>
+# include <cmath>
 # include <cstdlib>
 # include <iomanip>
 # include <limits>
@@ -38,6 +39,7 @@
 #endif
 
 #include <App/Application.h>
+#include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/RecipeDetail.h>
 #include <Mod/Part/App/Geometry.h>
@@ -161,6 +163,14 @@ std::string displayNumber(double value)
     return text;
 }
 
+/// An angle as a person reads it: degrees, the unit the sketch's own editor shows, rounded the
+/// same way a coordinate is. The kernel keeps radians; a file nobody can read in radians is a
+/// file nobody checks.
+std::string displayAngle(double radians)
+{
+    return displayNumber(Base::toDegrees(radians));
+}
+
 /// The two coordinates a person reads a sketch by. The merge deliberately does not carry these
 /// (DESIGN §4 treats an undimensioned position as a regenerable seed, which is right for
 /// reconciling two people's edits and wrong for one person asking what moved), so they are
@@ -184,6 +194,17 @@ std::string readableGeometryType(const std::string& typeName)
     return leaf;
 }
 
+/// The turn of a conic's own axes within the sketch. Printed only when it is not zero: an
+/// unrotated conic is the ordinary case, and the field would otherwise repeat on every ellipse
+/// in the drawing. Without it a rotated ellipse read exactly like an upright one.
+void addConicOrientation(double angleXU, App::RecipeNode& node)
+{
+    constexpr double negligible = 1e-10;
+    if (std::abs(angleXU) > negligible) {
+        node.fields["angle"] = displayAngle(angleXU);
+    }
+}
+
 void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
 {
     // Most-derived first: an arc of a circle is not a circle in the type system, but an
@@ -195,7 +216,44 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
         arc->getRange(first, last, true);
         node.fields["center"] = canonicalPoint(arc->getCenter());
         node.fields["radius"] = displayNumber(arc->getRadius());
+        node.fields["range"] = displayAngle(first) + " " + displayAngle(last);
+        return;
+    }
+    if (const auto* arc = dynamic_cast<const Part::GeomArcOfEllipse*>(geo)) {
+        double first = 0.0;
+        double last = 0.0;
+        arc->getRange(first, last, true);
+        node.fields["center"] = canonicalPoint(arc->getCenter());
+        node.fields["radius"] = displayNumber(arc->getMajorRadius()) + " x "
+            + displayNumber(arc->getMinorRadius());
+        node.fields["range"] = displayAngle(first) + " " + displayAngle(last);
+        addConicOrientation(arc->getAngleXU(), node);
+        return;
+    }
+    if (const auto* arc = dynamic_cast<const Part::GeomArcOfHyperbola*>(geo)) {
+        double first = 0.0;
+        double last = 0.0;
+        arc->getRange(first, last, true);
+        node.fields["center"] = canonicalPoint(arc->getCenter());
+        node.fields["radius"] = displayNumber(arc->getMajorRadius()) + " x "
+            + displayNumber(arc->getMinorRadius());
+        // A hyperbola and a parabola are not swept by an angle: the trim bounds are
+        // positions along the curve's own parameter, so they stay bare numbers.
         node.fields["range"] = displayNumber(first) + " " + displayNumber(last);
+        addConicOrientation(arc->getAngleXU(), node);
+        return;
+    }
+    if (const auto* arc = dynamic_cast<const Part::GeomArcOfParabola*>(geo)) {
+        double first = 0.0;
+        double last = 0.0;
+        arc->getRange(first, last, true);
+        node.fields["center"] = canonicalPoint(arc->getCenter());
+        // A parabola has one shape number, not two: the focal distance is the whole of it.
+        node.fields["focal"] = displayNumber(arc->getFocal());
+        // A hyperbola and a parabola are not swept by an angle: the trim bounds are
+        // positions along the curve's own parameter, so they stay bare numbers.
+        node.fields["range"] = displayNumber(first) + " " + displayNumber(last);
+        addConicOrientation(arc->getAngleXU(), node);
         return;
     }
     if (const auto* circle = dynamic_cast<const Part::GeomCircle*>(geo)) {
@@ -207,6 +265,20 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
         node.fields["center"] = canonicalPoint(ellipse->getCenter());
         node.fields["radius"] = displayNumber(ellipse->getMajorRadius()) + " x "
             + displayNumber(ellipse->getMinorRadius());
+        addConicOrientation(ellipse->getAngleXU(), node);
+        return;
+    }
+    if (const auto* hyperbola = dynamic_cast<const Part::GeomHyperbola*>(geo)) {
+        node.fields["center"] = canonicalPoint(hyperbola->getCenter());
+        node.fields["radius"] = displayNumber(hyperbola->getMajorRadius()) + " x "
+            + displayNumber(hyperbola->getMinorRadius());
+        addConicOrientation(hyperbola->getAngleXU(), node);
+        return;
+    }
+    if (const auto* parabola = dynamic_cast<const Part::GeomParabola*>(geo)) {
+        node.fields["center"] = canonicalPoint(parabola->getCenter());
+        node.fields["focal"] = displayNumber(parabola->getFocal());
+        addConicOrientation(parabola->getAngleXU(), node);
         return;
     }
     if (const auto* line = dynamic_cast<const Part::GeomLineSegment*>(geo)) {
