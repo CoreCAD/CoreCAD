@@ -25,7 +25,6 @@
 
 #ifndef _PreComp_
 # include <cctype>
-# include <cmath>
 # include <cstdlib>
 # include <iomanip>
 # include <limits>
@@ -194,15 +193,14 @@ std::string readableGeometryType(const std::string& typeName)
     return leaf;
 }
 
-/// The turn of a conic's own axes within the sketch. Printed only when it is not zero: an
-/// unrotated conic is the ordinary case, and the field would otherwise repeat on every ellipse
-/// in the drawing. Without it a rotated ellipse read exactly like an upright one.
+/// The turn of a conic's own axes within the sketch, always stated. Which way a conic faces is
+/// half of what it is -- an ellipse on its side is a different feature from an upright one --
+/// and unlike a line's construction flag, a conic is a rare entity, so the field costs a reader
+/// almost nothing. An arc of a circle is deliberately not given one: its range already arrives
+/// with the frame's rotation folded in, so a second number would say the same thing twice.
 void addConicOrientation(double angleXU, App::RecipeNode& node)
 {
-    constexpr double negligible = 1e-10;
-    if (std::abs(angleXU) > negligible) {
-        node.fields["angle"] = displayAngle(angleXU);
-    }
+    node.fields["angle"] = displayAngle(angleXU);
 }
 
 void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
