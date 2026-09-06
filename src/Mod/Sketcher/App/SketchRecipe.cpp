@@ -106,6 +106,20 @@ ConstraintType constraintTypeFromString(const std::string& name)
     return ConstraintType::None;
 }
 
+/// Reverse of Constraint::internalAlignmentTypeToString, on the same reasoning: the recipe
+/// stores the authored role name, so a renumbering of the enum cannot silently turn a major
+/// axis into a focus.
+InternalAlignmentType alignmentTypeFromString(const std::string& name)
+{
+    for (int t = 0; t < InternalAlignmentType::NumInternalAlignmentType; ++t) {
+        const auto role = static_cast<InternalAlignmentType>(t);
+        if (Constraint::internalAlignmentTypeToString(role) == name) {
+            return role;
+        }
+    }
+    return InternalAlignmentType::Undef;
+}
+
 /// Parse a recipe value field ("40 mm", "40") to a literal datum. A bound expression is not
 /// re-evaluated here (a named deferral, §4); it parses to 0 and the constraint regenerates with
 /// a placeholder datum.
@@ -182,6 +196,45 @@ std::string displayAngle(double radians)
 std::string canonicalPoint(const Base::Vector3d& point)
 {
     return displayNumber(point.x) + " " + displayNumber(point.y);
+}
+
+/// A run of points on one line, each in brackets so the pairs stay apart: "(1 10) (4 14)".
+std::string canonicalPointList(const std::vector<Base::Vector3d>& points)
+{
+    std::string out;
+    for (const Base::Vector3d& point : points) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += "(" + canonicalPoint(point) + ")";
+    }
+    return out;
+}
+
+/// A run of numbers on one line, rounded as a reader reads them.
+std::string canonicalNumberList(const std::vector<double>& values)
+{
+    std::string out;
+    for (const double value : values) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += displayNumber(value);
+    }
+    return out;
+}
+
+/// A run of whole numbers on one line; no rounding is involved in a count.
+std::string canonicalIntegerList(const std::vector<int>& values)
+{
+    std::string out;
+    for (const int value : values) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += std::to_string(value);
+    }
+    return out;
 }
 
 /// The reader's name for a geometry type: "Part::GeomLineSegment" is the factory key, "LineSegment"
@@ -293,11 +346,23 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
         return;
     }
     if (const auto* spline = dynamic_cast<const Part::GeomBSplineCurve*>(geo)) {
-        // A control point list is too long to read on one line; its size is the fact that
-        // tells a reader the curve was rebuilt rather than nudged.
-        node.fields["poles"] = std::to_string(spline->countPoles());
-        node.fields["from"] = canonicalPoint(spline->getStartPoint());
-        node.fields["to"] = canonicalPoint(spline->getEndPoint());
+        // The control points themselves, not a count of them. A count says the curve was
+        // rebuilt; it cannot see a single pole being nudged, which is how a spline is actually
+        // edited. A spline is a long line in the file because a spline is a long thing.
+        node.fields["degree"] = std::to_string(spline->getDegree());
+        node.fields["poles"] = canonicalPointList(spline->getPoles());
+        if (spline->isPeriodic()) {
+            node.fields["periodic"] = "true";
+        }
+        if (spline->isRational()) {
+            // Only a rational curve has weights worth stating; on every other one they are all
+            // the same number.
+            node.fields["weights"] = canonicalNumberList(spline->getWeights());
+        }
+        // Degree and pole count do not pin down the curve on their own: the knots are where
+        // its pieces meet, and the multiplicities are how sharply.
+        node.fields["knots"] = canonicalNumberList(spline->getKnots());
+        node.fields["multiplicities"] = canonicalIntegerList(spline->getMultiplicities());
         return;
     }
 }
@@ -339,6 +404,17 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
         const std::string value = authoredValue(sketch, constraint, constNum);
         if (!value.empty()) {
             node.fields["value"] = value;
+        }
+
+        // An internal alignment is one constraint type doing eleven different jobs: without the
+        // role, an ellipse's major axis, its minor axis and its two foci are four identical
+        // lines, and a rebuild cannot tell them apart either.
+        if (constraint->Type == InternalAlignment) {
+            node.fields["role"] = constraint->internalAlignmentTypeToString();
+            if (constraint->InternalAlignmentIndex >= 0) {
+                // Which pole or knot of a spline this one is; the role alone does not say.
+                node.fields["index"] = std::to_string(constraint->InternalAlignmentIndex);
+            }
         }
 
         for (size_t i = 0; i < constraint->getElementsSize(); ++i) {
@@ -396,6 +472,15 @@ RegenResult Sketcher::regenerateSketch(
         const auto valueIt = node.fields.find("value");
         if (valueIt != node.fields.end()) {
             constraint->setValue(parseDatum(valueIt->second));
+        }
+
+        const auto roleIt = node.fields.find("role");
+        if (roleIt != node.fields.end()) {
+            constraint->AlignmentType = alignmentTypeFromString(roleIt->second);
+        }
+        const auto indexIt = node.fields.find("index");
+        if (indexIt != node.fields.end()) {
+            constraint->InternalAlignmentIndex = std::atoi(indexIt->second.c_str());
         }
 
         bool placeable = true;
