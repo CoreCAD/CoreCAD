@@ -604,6 +604,15 @@ App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
         }
         App::RecipeNode node = found->second;
         node.type = readableGeometryType(node.type);
+        // A flag left at its default is not something anyone did. The merge carries it on every
+        // entity because it needs a value to rebuild with; the view prints it only where it
+        // departs from ordinary geometry, the same way a constraint prints "driving" only when
+        // the answer is no. Repeated once per line, an untouched flag would outnumber the
+        // authored content of the sketch.
+        const auto construction = node.fields.find("construction");
+        if (construction != node.fields.end() && construction->second == "false") {
+            node.fields.erase(construction);
+        }
         addAuthoredCoordinates(geo, node);
         geometry.nodes.push_back(std::move(node));
     }
