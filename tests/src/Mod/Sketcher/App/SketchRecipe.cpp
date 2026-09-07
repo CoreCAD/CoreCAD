@@ -26,6 +26,12 @@
 
 #include <filesystem>
 #include <functional>
+
+#ifdef FC_OS_WIN32
+# include <process.h>
+#else
+# include <unistd.h>
+#endif
 #include <vector>
 
 namespace
@@ -54,11 +60,41 @@ protected:
             std::filesystem::remove(path, ec);
         }
         _tempFiles.clear();
+
+        std::error_code ec;
+        std::filesystem::remove_all(_scratch, ec);
+        _scratch.clear();
     }
 
+    /// This test process's own id, so two concurrently scheduled cases cannot pick the same
+    /// scratch directory.
+    static long long currentProcessId()
+    {
+#ifdef FC_OS_WIN32
+        return static_cast<long long>(_getpid());
+#else
+        return static_cast<long long>(getpid());
+#endif
+    }
+
+    /// A path under a directory belonging to this test alone. ctest runs each case as its own
+    /// process and may run many at once, so a shared leaf name ("recipe_base.FCStd") had every
+    /// concurrent case saving over its neighbours -- the suite then failed on a different test
+    /// each run. The directory is named for the running case and the process, so no two can
+    /// collide however they are scheduled, and a save's companion files land inside it too.
     std::string tempPath(const char* leaf)
     {
-        auto p = (std::filesystem::temp_directory_path() / leaf).string();
+        if (_scratch.empty()) {
+            const ::testing::TestInfo* running
+                = ::testing::UnitTest::GetInstance()->current_test_info();
+            std::string leafDir = running != nullptr ? std::string(running->name()) : "case";
+            leafDir += '.' + std::to_string(currentProcessId());
+            _scratch = std::filesystem::temp_directory_path() / ("SketchRecipeMerge." + leafDir);
+            std::error_code ec;
+            std::filesystem::remove_all(_scratch, ec);
+            std::filesystem::create_directories(_scratch, ec);
+        }
+        auto p = (_scratch / leaf).string();
         _tempFiles.push_back(p);
         return p;
     }
@@ -106,6 +142,7 @@ protected:
     }
 
     std::vector<std::string> _tempFiles;
+    std::filesystem::path _scratch;
 };
 
 // --- helpers to author sketch content --------------------------------------------------
