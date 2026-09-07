@@ -27,6 +27,8 @@ set(Spreadsheet_SRCS
     PropertyRowHeightsPyImp.cpp
     Sheet.cpp
     Sheet.h
+    SheetRecipe.cpp
+    SheetRecipe.h
     Sheet.pyi
     SheetPyImp.cpp
     SheetObserver.cpp
