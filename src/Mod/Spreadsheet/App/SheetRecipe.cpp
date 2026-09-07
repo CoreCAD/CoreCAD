@@ -69,6 +69,23 @@ void addAlias(const Cell& cell, App::RecipeNode& node)
     }
 }
 
+/// The unit a person chose to work this cell in.
+///
+/// Filed with the content and not with the formatting, because almost everywhere else in a
+/// document the author's chosen unit is destroyed at entry: an ordinary length property keeps a
+/// bare number in the internal unit, so a dimension typed as 2 in and one typed as 50.8 mm are
+/// the same value on disk and nothing records which was written. A cell is one of the few places
+/// the choice survives, and it is a statement about the design -- this is an inches cell -- not a
+/// decoration like a colour. It is also not the reader's preference: switching the application
+/// between metric and imperial leaves this value, and the whole file, untouched.
+void addAuthoredUnit(const Cell& cell, App::RecipeNode& node)
+{
+    DisplayUnit unit;
+    if (cell.getDisplayUnit(unit) && !unit.stringRep.empty()) {
+        node.fields["displayUnit"] = unit.stringRep;
+    }
+}
+
 /// Presentation a person set on purpose. Each getter answers false when the attribute was never
 /// touched, so an ordinary sheet adds nothing here and a formatted one says only what was
 /// deliberate -- the same rule the sketch view applies to an untouched construction flag. They
@@ -92,11 +109,6 @@ void addDeliberateFormatting(const Cell& cell, App::RecipeNode& node)
     }
     if (cell.getBackground(colour)) {
         node.fields["background"] = colour.asHexString();
-    }
-
-    DisplayUnit unit;
-    if (cell.getDisplayUnit(unit) && !unit.stringRep.empty()) {
-        node.fields["displayUnit"] = unit.stringRep;
     }
 
     int rows = 0;
@@ -148,6 +160,7 @@ App::RecipeDetail Spreadsheet::sheetRecipeDetail(const App::DocumentObject& obj)
         node.type = "cell";
         addContent(*cell, node);
         addAlias(*cell, node);
+        addAuthoredUnit(*cell, node);
         addDeliberateFormatting(*cell, node);
 
         // A cell that ended up holding nothing at all is not something anyone authored: the

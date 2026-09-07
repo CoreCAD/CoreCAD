@@ -45,9 +45,13 @@ namespace Spreadsheet
  *
  *  What is emitted is the authored text of each used cell -- the literal or the formula exactly
  *  as a person typed it, never the computed result, which is an outcome the sheet recomputes.
- *  Presentation (alignment, style, colours, spans, display unit) is emitted only where it was
- *  explicitly set, so an ordinary sheet stays quiet and a deliberately formatted one still says
- *  what was deliberate.
+ *  The unit a person chose to work a cell in is recorded with the content, not with the
+ *  formatting: everywhere else in a document that choice is destroyed at entry, so a cell is one
+ *  of the few places it survives, and it says something about the design rather than about how
+ *  the sheet looks. Presentation proper (alignment, style, colours, spans) is emitted only where
+ *  it was explicitly set, so an ordinary sheet stays quiet and a deliberately formatted one still
+ *  says what was deliberate. None of it follows the reader: switching the application between
+ *  metric and imperial leaves the file byte for byte the same.
  *
  *  A note on identity, because it differs from every other provider: a cell has no durable id.
  *  It is addressed by position ("A1"), and inserting a row moves it. An alias is the closest
