@@ -22,6 +22,7 @@
 #include <App/Range.h>
 #include <App/RecipeDetail.h>
 #include <Base/Color.h>
+#include <Mod/Spreadsheet/App/Cell.h>
 #include <Mod/Spreadsheet/App/Sheet.h>
 #include <Mod/Spreadsheet/App/SheetRecipe.h>
 
@@ -165,34 +166,36 @@ TEST_F(SheetRecipeTest, oneEditedCellChangesOneNode)
     EXPECT_EQ(field(*edited, "content"), "55");
 }
 
-// Formatting is emitted only where a person set it. An ordinary sheet would otherwise carry a
-// default alignment, style and pair of colours on every filled cell, drowning its content -- the
-// same reason the sketch view prints a construction flag only where it departs from ordinary
-// geometry.
-TEST_F(SheetRecipeTest, formattingIsEmittedOnlyWhereItWasSet)
+// Presentation is not recipe content. How a cell is shown -- its unit, colour, style, alignment
+// or span -- is a display choice, filed by the architecture alongside colour and visibility, and
+// the generic emitter already leaves Label and Visibility out on the same grounds. A sheet
+// formatted to the hilt and a plain one must describe the same design.
+TEST_F(SheetRecipeTest, presentationIsNotRecipeContent)
 {
-    // Arrange: two identical-content cells, one of them deliberately styled.
+    // Arrange: two cells with identical content, one of them heavily dressed up.
     _sheet->setCell("A1", "'Heading");
     _sheet->setCell("A2", "'Heading");
     _sheet->setStyle(App::CellAddress("A1"), std::set<std::string> {"bold"});
     _sheet->setForeground(App::CellAddress("A1"), Base::Color(1.0F, 0.0F, 0.0F, 1.0F));
+    _sheet->setBackground(App::CellAddress("A1"), Base::Color(0.0F, 0.0F, 1.0F, 1.0F));
+    _sheet->setAlignment(App::CellAddress("A1"), Spreadsheet::Cell::decodeAlignment("center", 0));
+    _sheet->setDisplayUnit(App::CellAddress("A1"), "in");
     _doc->recompute();
 
     // Act
     const App::RecipeDetail emitted = detail();
-    const App::RecipeNode* styled = cellNode(emitted, "A1");
+    const App::RecipeNode* dressed = cellNode(emitted, "A1");
     const App::RecipeNode* plain = cellNode(emitted, "A2");
 
-    // Assert
-    ASSERT_NE(styled, nullptr);
+    // Assert: the two are indistinguishable, because they are the same design.
+    ASSERT_NE(dressed, nullptr);
     ASSERT_NE(plain, nullptr);
-    EXPECT_EQ(field(*styled, "style"), "bold");
-    EXPECT_FALSE(field(*styled, "foreground").empty());
+    EXPECT_EQ(dressed->fields, plain->fields);
 
-    EXPECT_EQ(plain->fields.count("style"), 0u);
-    EXPECT_EQ(plain->fields.count("foreground"), 0u);
-    EXPECT_EQ(plain->fields.count("alignment"), 0u);
-    EXPECT_EQ(plain->fields.count("background"), 0u);
+    for (const char* shown :
+         {"displayUnit", "style", "foreground", "background", "alignment", "spans"}) {
+        EXPECT_EQ(dressed->fields.count(shown), 0u) << shown << " is a display choice, not design";
+    }
 }
 
 // A provider must claim what it accounts for, or the view goes on reporting the property missing

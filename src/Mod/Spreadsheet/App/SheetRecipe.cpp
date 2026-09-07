@@ -25,7 +25,6 @@
 
 #ifndef _PreComp_
 # include <algorithm>
-# include <set>
 # include <string>
 # include <vector>
 #endif
@@ -34,10 +33,8 @@
 
 #include <App/DocumentObject.h>
 #include <App/Range.h>
-#include <Base/Color.h>
 
 #include "Cell.h"
-#include "DisplayUnit.h"
 #include "PropertySheet.h"
 #include "Sheet.h"
 
@@ -69,54 +66,12 @@ void addAlias(const Cell& cell, App::RecipeNode& node)
     }
 }
 
-/// The unit a person chose to work this cell in.
-///
-/// Filed with the content and not with the formatting, because almost everywhere else in a
-/// document the author's chosen unit is destroyed at entry: an ordinary length property keeps a
-/// bare number in the internal unit, so a dimension typed as 2 in and one typed as 50.8 mm are
-/// the same value on disk and nothing records which was written. A cell is one of the few places
-/// the choice survives, and it is a statement about the design -- this is an inches cell -- not a
-/// decoration like a colour. It is also not the reader's preference: switching the application
-/// between metric and imperial leaves this value, and the whole file, untouched.
-void addAuthoredUnit(const Cell& cell, App::RecipeNode& node)
-{
-    DisplayUnit unit;
-    if (cell.getDisplayUnit(unit) && !unit.stringRep.empty()) {
-        node.fields["displayUnit"] = unit.stringRep;
-    }
-}
-
-/// Presentation a person set on purpose. Each getter answers false when the attribute was never
-/// touched, so an ordinary sheet adds nothing here and a formatted one says only what was
-/// deliberate -- the same rule the sketch view applies to an untouched construction flag. They
-/// are emitted at all because this provider claims the whole property: silently dropping the
-/// formatting would put the file back to claiming a completeness it does not have.
-void addDeliberateFormatting(const Cell& cell, App::RecipeNode& node)
-{
-    int alignment = 0;
-    if (cell.getAlignment(alignment)) {
-        node.fields["alignment"] = Cell::encodeAlignment(alignment);
-    }
-
-    std::set<std::string> style;
-    if (cell.getStyle(style) && !style.empty()) {
-        node.fields["style"] = Cell::encodeStyle(style);
-    }
-
-    Base::Color colour;
-    if (cell.getForeground(colour)) {
-        node.fields["foreground"] = colour.asHexString();
-    }
-    if (cell.getBackground(colour)) {
-        node.fields["background"] = colour.asHexString();
-    }
-
-    int rows = 0;
-    int columns = 0;
-    if (cell.getSpans(rows, columns)) {
-        node.fields["spans"] = std::to_string(rows) + " x " + std::to_string(columns);
-    }
-}
+/// Presentation is deliberately not emitted -- not the display unit, not the alignment, style,
+/// colours or spans. A recipe records what a person designed, and how a value is shown is not
+/// part of that: the architecture files "metric vs imperial annotations" as display-only,
+/// alongside colour and visibility, and the generic emitter already leaves Label and Visibility
+/// out for exactly this reason. They are out of scope by declaration, not missing -- the same
+/// standing as a label, which is why nothing reports them as a gap.
 
 }  // namespace
 
@@ -160,8 +115,6 @@ App::RecipeDetail Spreadsheet::sheetRecipeDetail(const App::DocumentObject& obj)
         node.type = "cell";
         addContent(*cell, node);
         addAlias(*cell, node);
-        addAuthoredUnit(*cell, node);
-        addDeliberateFormatting(*cell, node);
 
         // A cell that ended up holding nothing at all is not something anyone authored: the
         // store keeps addresses alive after a clear, and they are not facts about the design.
