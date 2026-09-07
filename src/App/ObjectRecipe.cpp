@@ -104,19 +104,33 @@ std::string canonicalList(const ListT& values, Render render)
 }
 
 /// Properties that are never part of the authored recipe whatever their type: the durable id
-/// itself (it *is* the node's identity, not one of its fields) and the two user-preference
-/// values. A rename or a show/hide toggle is not an authored change, so neither can conflict.
+/// itself (it *is* the node's identity, not one of its fields) and the user-preference values.
+/// A rename, a re-description or a show/hide toggle is not an authored change, so none of them
+/// can conflict -- Label2 is the tree's description column, the same kind of human annotation as
+/// Label. ExpressionEngine is here for the opposite reason: its content is already recorded, each
+/// binding emitted as the value of the property it drives, so naming it keeps one expression from
+/// being stated twice and keeps every object in the document from reporting a gap it does not
+/// have.
 /// Shared by the emitter and by unrecordedProperties, so both agree on what is out of scope.
 bool isNonRecipeProperty(const std::string& name)
 {
-    return name == "Uid" || name == "Label" || name == "Visibility";
+    return name == "Uid" || name == "Label" || name == "Label2" || name == "Visibility"
+        || name == "ExpressionEngine";
 }
 
 /// Derived and non-persisted state is never authored source, so it is out of the recipe by
 /// its own declaration rather than by this driver's judgement. One definition, read by the
 /// emitter and by unrecordedProperties alike.
-constexpr short excludedPropertyFlags =
-    Prop_Output | Prop_Transient | Prop_NoPersist | Prop_Hidden;
+///
+/// Prop_Hidden is deliberately NOT among them. It says only "do not clutter the property
+/// editor" -- a display choice about a dialog, never a statement that a value was not authored.
+/// Excluding it silently dropped load-bearing content: a spreadsheet keeps every cell in one
+/// hidden property, a text document keeps its whole text in one, and the link recording which
+/// page a drawing view belongs to is hidden too -- so a page, a view and a dimension could all
+/// reach the recipe with nothing saying they belong together. Worse, unrecordedProperties shares
+/// this filter, so none of it appeared in the "not recorded" line either: the recipe claimed a
+/// completeness it did not have.
+constexpr short excludedPropertyFlags = Prop_Output | Prop_Transient | Prop_NoPersist;
 
 /// The authored value of one property as a canonical string, or nullopt if the property carries
 /// no value this driver can yet canonicalize (list value types are a follow-on increment, each

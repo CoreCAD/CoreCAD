@@ -9,6 +9,7 @@
 #include <App/DocumentObject.h>
 #include <App/ObjectRecipe.h>
 #include <App/PropertyGeo.h>
+#include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
 #include <App/Recipe.h>
 #include <Base/Interpreter.h>
@@ -18,8 +19,10 @@
 #include <Base/Uuid.h>
 #include <Base/Vector3D.h>
 
+#include <algorithm>
 #include <set>
 #include <string>
+#include <vector>
 
 using namespace App;
 
@@ -409,6 +412,96 @@ TEST_F(ObjectRecipeTest, matrixIsEmittedAndDistinguishesACellEdit)
 
     EXPECT_FALSE(identity.empty());
     EXPECT_NE(identity, translated);
+}
+
+// Prop_Hidden says only "do not clutter the property editor". It is a display choice about a
+// dialog, never a statement that a value was not authored -- so a hidden property that is
+// nonetheless saved belongs in the recipe. A text document keeps its entire content in one such
+// property; excluding hidden properties dropped the whole document and said nothing about it.
+TEST_F(ObjectRecipeTest, hiddenButPersistedValueIsStillAuthoredContent)
+{
+    // Arrange: App::TextDocument declares Text as Prop_Hidden, and it is the object's content.
+    auto* notes = _doc->addObject("App::TextDocument", "Notes");
+    ASSERT_NE(notes, nullptr);
+    auto* text = dynamic_cast<PropertyString*>(notes->getPropertyByName("Text"));
+    ASSERT_NE(text, nullptr);
+    ASSERT_NE(notes->getPropertyType(text) & Prop_Hidden, 0);
+    text->setValue("the authored words");
+
+    // Act
+    const RecipeNode node = emitObjectRecipe(*notes);
+
+    // Assert: the content is a field, and editing it is a change the recipe can see.
+    ASSERT_EQ(node.fields.count("Text"), 1u);
+    EXPECT_EQ(node.fields.at("Text"), "the authored words");
+
+    text->setValue("edited");
+    EXPECT_NE(emitObjectRecipe(*notes).fields.at("Text"), node.fields.at("Text"));
+}
+
+// The same rule applies to structure, not just to values: TechDraw records which page a view
+// belongs to in a hidden link, so excluding hidden properties let a page, a view and a dimension
+// all reach the recipe with nothing saying they belong together.
+TEST_F(ObjectRecipeTest, hiddenLinkIsStillAnAuthoredReference)
+{
+    // Arrange: a box holding a hidden link to another object, as a view holds its page.
+    auto* page = _doc->addObject("Part::Box");
+    auto* view = _doc->addObject("Part::Box");
+    ASSERT_NE(page, nullptr);
+    ASSERT_NE(view, nullptr);
+    auto* belongsTo = dynamic_cast<PropertyLink*>(
+        view->addDynamicProperty("App::PropertyLink", "Page", "Base", nullptr, Prop_Hidden)
+    );
+    ASSERT_NE(belongsTo, nullptr);
+    belongsTo->setValue(page);
+
+    // Act
+    const RecipeNode node = emitObjectRecipe(*view);
+
+    // Assert: the membership edge is a ref, addressed by the target's durable Uid.
+    std::set<std::string> refTargets;
+    for (const auto& ref : node.refs) {
+        refTargets.insert(ref.target);
+    }
+    EXPECT_EQ(refTargets.count(page->Uid.getValueStr()), 1u);
+}
+
+// A property the emitter reaches and cannot render must be named in the unrecorded list, because
+// that list is the measurement of how far the recipe is from standing in for the document. Once
+// hidden properties are walked, a hidden one it cannot render has to be reported like any other.
+TEST_F(ObjectRecipeTest, hiddenPropertyItCannotRenderIsReportedAsAGap)
+{
+    // Arrange: a hidden property of a type the driver has no words for.
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    ASSERT_NE(
+        box->addDynamicProperty("App::PropertyMap", "TitleBlock", "Base", nullptr, Prop_Hidden),
+        nullptr
+    );
+
+    // Act
+    const std::vector<std::string> gaps = unrecordedProperties(*box);
+
+    // Assert: the file states the gap rather than hiding it.
+    EXPECT_NE(std::find(gaps.begin(), gaps.end(), "TitleBlock"), gaps.end());
+}
+
+// Label2 is the tree's description column -- a human annotation like Label, not authored design.
+// It is hidden, so walking hidden properties would otherwise have put it on every single object.
+TEST_F(ObjectRecipeTest, descriptionIsAUserPreferenceNotRecipeContent)
+{
+    // Arrange
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    box->Label2.setValue("a note to myself");
+
+    // Act
+    const RecipeNode node = emitObjectRecipe(*box);
+    const std::vector<std::string> gaps = unrecordedProperties(*box);
+
+    // Assert: neither recorded as content nor reported as a gap -- it is simply out of scope.
+    EXPECT_EQ(node.fields.count("Label2"), 0u);
+    EXPECT_EQ(std::find(gaps.begin(), gaps.end(), "Label2"), gaps.end());
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
