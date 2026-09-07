@@ -84,8 +84,12 @@ void PropertyMaterial::setPyObject(PyObject* value)
 
 void PropertyMaterial::Save(Base::Writer& writer) const
 {
+    // The name is written beside the identifier so that a document opened where the library does
+    // not have this material can say what it was called. It is never read in preference to the
+    // library: the identifier is the material's identity, the name only a handle for a person.
     writer.Stream() << writer.ind() << "<PropertyMaterial uuid=\""
-                    << _material.getUUID().toStdString() << "\"/>" << std::endl;
+                    << _material.getUUID().toStdString() << "\" name=\""
+                    << encodeAttribute(_material.getName().toStdString()) << "\"/>" << std::endl;
 }
 
 void PropertyMaterial::Restore(Base::XMLReader& reader)
@@ -95,6 +99,8 @@ void PropertyMaterial::Restore(Base::XMLReader& reader)
     // get the value of my Attribute
     auto uuid = reader.getAttribute<const char*>("uuid");
     const QString identifier = QString::fromLatin1(uuid);
+    const std::string storedName =
+        reader.hasAttribute("name") ? reader.getAttribute<const char*>("name") : "";
 
     try {
         setValue(*MaterialManager::getManager().getMaterial(identifier));
@@ -112,15 +118,23 @@ void PropertyMaterial::Restore(Base::XMLReader& reader)
     // they are all this machine has to draw and weigh the part with, but the id is the one the
     // author chose, so saving preserves it and reopening on a machine that has the library
     // resolves it.
+    // The author's name is kept exactly as written, with no marker added to say it did not
+    // resolve. A marker would be written back on the next save and grow on every open after that,
+    // corrupting the one record of what the part was made of -- which is the thing this name
+    // exists to protect. That the material is unresolved is said in the warning below, and is
+    // answerable at any time by asking the library for the identifier.
     Material unresolved = _material;
     unresolved.setUUID(identifier);
-    unresolved.setName(QStringLiteral("Unresolved material"));
+    if (!storedName.empty()) {
+        unresolved.setName(QString::fromUtf8(storedName.c_str()));
+    }
     setValue(unresolved);
 
     Base::Console().warning(
-        "%s refers to material %s, which is not in any library on this system. The reference has "
-        "been kept and the default material's values are being used in its place.\n",
+        "%s refers to material \"%s\" (%s), which is not in any library on this system. The "
+        "reference has been kept and the default material's values are being used in its place.\n",
         getFullName().c_str(),
+        storedName.empty() ? "unnamed" : storedName.c_str(),
         uuid
     );
 }

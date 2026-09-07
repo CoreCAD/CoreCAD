@@ -29,6 +29,7 @@
 
 #include <App/Application.h>
 #include <Base/Reader.h>
+#include <Base/Writer.h>
 #include <Gui/MetaTypes.h>
 #include <src/App/InitApplication.h>
 
@@ -64,4 +65,29 @@ TEST_F(PropertyMaterialRestore, keepsAReferenceNoLibraryCanResolve)  // NOLINT
 
     EXPECT_EQ(property.getValue().getUUID().toStdString(), missing)
         << "the reference was replaced rather than kept, so saving would destroy it";
+}
+
+// The name is the only record of what an unresolvable material was called, so it has to come back
+// out of a save exactly as it went in. Decorating it on restore -- to mark that it did not
+// resolve -- writes the decoration back on the next save and grows it on every open after that.
+TEST_F(PropertyMaterialRestore, doesNotRewriteTheNameOfAMaterialItCannotResolve)  // NOLINT
+{
+    const std::string missing = "deadbeef-0000-0000-0000-000000000000";
+    const std::string named = "AISI 1020 Steel";
+    std::istringstream document(
+        "<root><PropertyMaterial uuid=\"" + missing + "\" name=\"" + named + "\"/></root>"
+    );
+
+    Base::XMLReader reader("PropertyMaterial", document);
+    Materials::PropertyMaterial property;
+    ASSERT_NO_THROW(property.Restore(reader));
+
+    EXPECT_EQ(property.getValue().getName().toStdString(), named)
+        << "the author's name for the material was rewritten on the way in";
+
+    Base::StringWriter writer;
+    property.Save(writer);
+    EXPECT_NE(writer.getString().find("name=\"" + named + "\""), std::string::npos)
+        << "a save wrote back something other than the name the document came with: "
+            + writer.getString();
 }
