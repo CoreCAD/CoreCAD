@@ -25,6 +25,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <set>
 # include <string>
 # include <vector>
 #endif
@@ -33,6 +34,7 @@
 
 #include <App/DocumentObject.h>
 #include <App/Range.h>
+#include <Base/Color.h>
 
 #include "Cell.h"
 #include "PropertySheet.h"
@@ -66,12 +68,45 @@ void addAlias(const Cell& cell, App::RecipeNode& node)
     }
 }
 
-/// Presentation is deliberately not emitted -- not the display unit, not the alignment, style,
-/// colours or spans. A recipe records what a person designed, and how a value is shown is not
-/// part of that: the architecture files "metric vs imperial annotations" as display-only,
-/// alongside colour and visibility, and the generic emitter already leaves Label and Visibility
-/// out for exactly this reason. They are out of scope by declaration, not missing -- the same
-/// standing as a label, which is why nothing reports them as a gap.
+/// Formatting a person put on a cell.
+///
+/// A sheet is the exception to the rule that presentation stays out of a recipe, and the reason
+/// is what formatting *means* here. On a solid, a colour is how the thing is drawn. On a sheet it
+/// is a convention that carries information: highlighting marks the inputs somebody is meant to
+/// change, or flags a value that has gone out of range. It is authored once into the shared
+/// document and read by everyone who opens it, so losing it loses part of what the sheet says.
+/// The display unit is not in this group -- the architecture names "metric vs imperial
+/// annotations" as display-only, and it is left out on those grounds.
+///
+/// Each getter answers false for an attribute nobody touched, so an ordinary sheet adds nothing
+/// here and a formatted one says only what was deliberate -- the same rule the sketch view
+/// applies to an untouched construction flag.
+void addFormatting(const Cell& cell, App::RecipeNode& node)
+{
+    int alignment = 0;
+    if (cell.getAlignment(alignment)) {
+        node.fields["alignment"] = Cell::encodeAlignment(alignment);
+    }
+
+    std::set<std::string> style;
+    if (cell.getStyle(style) && !style.empty()) {
+        node.fields["style"] = Cell::encodeStyle(style);
+    }
+
+    Base::Color colour;
+    if (cell.getForeground(colour)) {
+        node.fields["foreground"] = colour.asHexString();
+    }
+    if (cell.getBackground(colour)) {
+        node.fields["background"] = colour.asHexString();
+    }
+
+    int rows = 0;
+    int columns = 0;
+    if (cell.getSpans(rows, columns)) {
+        node.fields["spans"] = std::to_string(rows) + " x " + std::to_string(columns);
+    }
+}
 
 }  // namespace
 
@@ -115,6 +150,7 @@ App::RecipeDetail Spreadsheet::sheetRecipeDetail(const App::DocumentObject& obj)
         node.type = "cell";
         addContent(*cell, node);
         addAlias(*cell, node);
+        addFormatting(*cell, node);
 
         // A cell that ended up holding nothing at all is not something anyone authored: the
         // store keeps addresses alive after a clear, and they are not facts about the design.

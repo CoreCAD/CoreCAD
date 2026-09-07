@@ -45,12 +45,13 @@ namespace Spreadsheet
  *
  *  What is emitted is the authored text of each used cell -- the literal or the formula exactly
  *  as a person typed it, never the computed result, which is an outcome the sheet recomputes.
- *  Presentation is not emitted at all -- not the display unit, not the alignment, style, colours
- *  or spans. A recipe records what a person designed, and how a value is shown is not part of
- *  that. The architecture files "metric vs imperial annotations" as display-only, alongside
- *  colour and visibility, and the generic emitter already leaves Label and Visibility out on the
- *  same grounds. They are out of scope by declaration rather than missing, which is why nothing
- *  reports them as a gap -- exactly the standing a label has.
+ *  Formatting is emitted where a person set it, and a sheet is the deliberate exception to the
+ *  rule that presentation stays out of a recipe. On a solid a colour is how the thing is drawn;
+ *  on a sheet it is a convention that carries information -- highlighting marks the inputs
+ *  somebody is meant to change, or flags a value out of range -- authored once into the shared
+ *  document and read by everyone who opens it. The display unit is NOT in that group: the
+ *  architecture names "metric vs imperial annotations" as display-only, so it is left out on
+ *  those grounds, and is not reported as a gap any more than a label is.
  *
  *  A note on identity, because it differs from every other provider: a cell has no durable id.
  *  It is addressed by position ("A1"), and inserting a row moves it. An alias is the closest

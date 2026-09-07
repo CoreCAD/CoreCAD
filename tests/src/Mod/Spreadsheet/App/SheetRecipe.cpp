@@ -166,36 +166,58 @@ TEST_F(SheetRecipeTest, oneEditedCellChangesOneNode)
     EXPECT_EQ(field(*edited, "content"), "55");
 }
 
-// Presentation is not recipe content. How a cell is shown -- its unit, colour, style, alignment
-// or span -- is a display choice, filed by the architecture alongside colour and visibility, and
-// the generic emitter already leaves Label and Visibility out on the same grounds. A sheet
-// formatted to the hilt and a plain one must describe the same design.
-TEST_F(SheetRecipeTest, presentationIsNotRecipeContent)
+// Formatting a person put on a cell is kept. A sheet is the exception to the rule that
+// presentation stays out: highlighting here is a convention that carries information -- these are
+// the inputs, that value is out of range -- authored into the shared document and read by
+// everyone. The control is the plain cell beside it, which must stay quiet.
+TEST_F(SheetRecipeTest, formattingIsKeptButOnlyWhereItWasSet)
 {
-    // Arrange: two cells with identical content, one of them heavily dressed up.
+    // Arrange: two cells with identical content, one of them deliberately marked up.
     _sheet->setCell("A1", "'Heading");
     _sheet->setCell("A2", "'Heading");
     _sheet->setStyle(App::CellAddress("A1"), std::set<std::string> {"bold"});
     _sheet->setForeground(App::CellAddress("A1"), Base::Color(1.0F, 0.0F, 0.0F, 1.0F));
-    _sheet->setBackground(App::CellAddress("A1"), Base::Color(0.0F, 0.0F, 1.0F, 1.0F));
-    _sheet->setAlignment(App::CellAddress("A1"), Spreadsheet::Cell::decodeAlignment("center", 0));
-    _sheet->setDisplayUnit(App::CellAddress("A1"), "in");
     _doc->recompute();
 
     // Act
     const App::RecipeDetail emitted = detail();
-    const App::RecipeNode* dressed = cellNode(emitted, "A1");
+    const App::RecipeNode* marked = cellNode(emitted, "A1");
     const App::RecipeNode* plain = cellNode(emitted, "A2");
 
-    // Assert: the two are indistinguishable, because they are the same design.
-    ASSERT_NE(dressed, nullptr);
+    // Assert
+    ASSERT_NE(marked, nullptr);
     ASSERT_NE(plain, nullptr);
-    EXPECT_EQ(dressed->fields, plain->fields);
+    EXPECT_EQ(field(*marked, "style"), "bold");
+    EXPECT_FALSE(field(*marked, "foreground").empty());
 
-    for (const char* shown :
-         {"displayUnit", "style", "foreground", "background", "alignment", "spans"}) {
-        EXPECT_EQ(dressed->fields.count(shown), 0u) << shown << " is a display choice, not design";
-    }
+    // An attribute nobody touched is not something anybody did.
+    EXPECT_EQ(plain->fields.count("style"), 0u);
+    EXPECT_EQ(plain->fields.count("foreground"), 0u);
+    EXPECT_EQ(plain->fields.count("alignment"), 0u);
+    EXPECT_EQ(plain->fields.count("background"), 0u);
+}
+
+// The display unit is the one display choice that stays out, because the architecture names
+// "metric vs imperial annotations" as display-only. It is out of scope by declaration -- the same
+// standing a label has -- so it is neither recorded nor reported as a gap.
+TEST_F(SheetRecipeTest, theDisplayUnitIsNotRecipeContent)
+{
+    // Arrange: same content, one cell carrying a display unit.
+    _sheet->setCell("B1", "2");
+    _sheet->setCell("B2", "2");
+    _sheet->setDisplayUnit(App::CellAddress("B1"), "in");
+    _doc->recompute();
+
+    // Act
+    const App::RecipeDetail emitted = detail();
+    const App::RecipeNode* shown = cellNode(emitted, "B1");
+    const App::RecipeNode* plain = cellNode(emitted, "B2");
+
+    // Assert: indistinguishable, and no gap reported either.
+    ASSERT_NE(shown, nullptr);
+    ASSERT_NE(plain, nullptr);
+    EXPECT_EQ(shown->fields.count("displayUnit"), 0u);
+    EXPECT_EQ(shown->fields, plain->fields);
 }
 
 // A provider must claim what it accounts for, or the view goes on reporting the property missing
