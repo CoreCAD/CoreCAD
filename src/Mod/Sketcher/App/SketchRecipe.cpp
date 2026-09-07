@@ -39,12 +39,17 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <Base/Tools.h>
+#include <App/ElementNamingUtils.h>
+#include <App/PropertyLinks.h>
 #include <App/RecipeDetail.h>
 #include <Mod/Part/App/Geometry.h>
 
 #include "SketchRecipe.h"
 
 #include "Constraint.h"
+#include "ExternalGeometryFacade.h"
+#include "GeoEnum.h"
 #include "GeometryFacade.h"
 
 using namespace Sketcher;
@@ -99,6 +104,20 @@ ConstraintType constraintTypeFromString(const std::string& name)
         }
     }
     return ConstraintType::None;
+}
+
+/// Reverse of Constraint::internalAlignmentTypeToString, on the same reasoning: the recipe
+/// stores the authored role name, so a renumbering of the enum cannot silently turn a major
+/// axis into a focus.
+InternalAlignmentType alignmentTypeFromString(const std::string& name)
+{
+    for (int t = 0; t < InternalAlignmentType::NumInternalAlignmentType; ++t) {
+        const auto role = static_cast<InternalAlignmentType>(t);
+        if (Constraint::internalAlignmentTypeToString(role) == name) {
+            return role;
+        }
+    }
+    return InternalAlignmentType::Undef;
 }
 
 /// Parse a recipe value field ("40 mm", "40") to a literal datum. A bound expression is not
@@ -161,6 +180,14 @@ std::string displayNumber(double value)
     return text;
 }
 
+/// An angle as a person reads it: degrees, the unit the sketch's own editor shows, rounded the
+/// same way a coordinate is. The kernel keeps radians; a file nobody can read in radians is a
+/// file nobody checks.
+std::string displayAngle(double radians)
+{
+    return displayNumber(Base::toDegrees(radians));
+}
+
 /// The two coordinates a person reads a sketch by. The merge deliberately does not carry these
 /// (DESIGN §4 treats an undimensioned position as a regenerable seed, which is right for
 /// reconciling two people's edits and wrong for one person asking what moved), so they are
@@ -169,6 +196,45 @@ std::string displayNumber(double value)
 std::string canonicalPoint(const Base::Vector3d& point)
 {
     return displayNumber(point.x) + " " + displayNumber(point.y);
+}
+
+/// A run of points on one line, each in brackets so the pairs stay apart: "(1 10) (4 14)".
+std::string canonicalPointList(const std::vector<Base::Vector3d>& points)
+{
+    std::string out;
+    for (const Base::Vector3d& point : points) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += "(" + canonicalPoint(point) + ")";
+    }
+    return out;
+}
+
+/// A run of numbers on one line, rounded as a reader reads them.
+std::string canonicalNumberList(const std::vector<double>& values)
+{
+    std::string out;
+    for (const double value : values) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += displayNumber(value);
+    }
+    return out;
+}
+
+/// A run of whole numbers on one line; no rounding is involved in a count.
+std::string canonicalIntegerList(const std::vector<int>& values)
+{
+    std::string out;
+    for (const int value : values) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += std::to_string(value);
+    }
+    return out;
 }
 
 /// The reader's name for a geometry type: "Part::GeomLineSegment" is the factory key, "LineSegment"
@@ -184,6 +250,16 @@ std::string readableGeometryType(const std::string& typeName)
     return leaf;
 }
 
+/// The turn of a conic's own axes within the sketch, always stated. Which way a conic faces is
+/// half of what it is -- an ellipse on its side is a different feature from an upright one --
+/// and unlike a line's construction flag, a conic is a rare entity, so the field costs a reader
+/// almost nothing. An arc of a circle is deliberately not given one: its range already arrives
+/// with the frame's rotation folded in, so a second number would say the same thing twice.
+void addConicOrientation(double angleXU, App::RecipeNode& node)
+{
+    node.fields["angle"] = displayAngle(angleXU);
+}
+
 void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
 {
     // Most-derived first: an arc of a circle is not a circle in the type system, but an
@@ -195,7 +271,44 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
         arc->getRange(first, last, true);
         node.fields["center"] = canonicalPoint(arc->getCenter());
         node.fields["radius"] = displayNumber(arc->getRadius());
+        node.fields["range"] = displayAngle(first) + " " + displayAngle(last);
+        return;
+    }
+    if (const auto* arc = dynamic_cast<const Part::GeomArcOfEllipse*>(geo)) {
+        double first = 0.0;
+        double last = 0.0;
+        arc->getRange(first, last, true);
+        node.fields["center"] = canonicalPoint(arc->getCenter());
+        node.fields["radius"] = displayNumber(arc->getMajorRadius()) + " x "
+            + displayNumber(arc->getMinorRadius());
+        node.fields["range"] = displayAngle(first) + " " + displayAngle(last);
+        addConicOrientation(arc->getAngleXU(), node);
+        return;
+    }
+    if (const auto* arc = dynamic_cast<const Part::GeomArcOfHyperbola*>(geo)) {
+        double first = 0.0;
+        double last = 0.0;
+        arc->getRange(first, last, true);
+        node.fields["center"] = canonicalPoint(arc->getCenter());
+        node.fields["radius"] = displayNumber(arc->getMajorRadius()) + " x "
+            + displayNumber(arc->getMinorRadius());
+        // A hyperbola and a parabola are not swept by an angle: the trim bounds are
+        // positions along the curve's own parameter, so they stay bare numbers.
         node.fields["range"] = displayNumber(first) + " " + displayNumber(last);
+        addConicOrientation(arc->getAngleXU(), node);
+        return;
+    }
+    if (const auto* arc = dynamic_cast<const Part::GeomArcOfParabola*>(geo)) {
+        double first = 0.0;
+        double last = 0.0;
+        arc->getRange(first, last, true);
+        node.fields["center"] = canonicalPoint(arc->getCenter());
+        // A parabola has one shape number, not two: the focal distance is the whole of it.
+        node.fields["focal"] = displayNumber(arc->getFocal());
+        // A hyperbola and a parabola are not swept by an angle: the trim bounds are
+        // positions along the curve's own parameter, so they stay bare numbers.
+        node.fields["range"] = displayNumber(first) + " " + displayNumber(last);
+        addConicOrientation(arc->getAngleXU(), node);
         return;
     }
     if (const auto* circle = dynamic_cast<const Part::GeomCircle*>(geo)) {
@@ -207,6 +320,20 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
         node.fields["center"] = canonicalPoint(ellipse->getCenter());
         node.fields["radius"] = displayNumber(ellipse->getMajorRadius()) + " x "
             + displayNumber(ellipse->getMinorRadius());
+        addConicOrientation(ellipse->getAngleXU(), node);
+        return;
+    }
+    if (const auto* hyperbola = dynamic_cast<const Part::GeomHyperbola*>(geo)) {
+        node.fields["center"] = canonicalPoint(hyperbola->getCenter());
+        node.fields["radius"] = displayNumber(hyperbola->getMajorRadius()) + " x "
+            + displayNumber(hyperbola->getMinorRadius());
+        addConicOrientation(hyperbola->getAngleXU(), node);
+        return;
+    }
+    if (const auto* parabola = dynamic_cast<const Part::GeomParabola*>(geo)) {
+        node.fields["center"] = canonicalPoint(parabola->getCenter());
+        node.fields["focal"] = displayNumber(parabola->getFocal());
+        addConicOrientation(parabola->getAngleXU(), node);
         return;
     }
     if (const auto* line = dynamic_cast<const Part::GeomLineSegment*>(geo)) {
@@ -219,11 +346,23 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
         return;
     }
     if (const auto* spline = dynamic_cast<const Part::GeomBSplineCurve*>(geo)) {
-        // A control point list is too long to read on one line; its size is the fact that
-        // tells a reader the curve was rebuilt rather than nudged.
-        node.fields["poles"] = std::to_string(spline->countPoles());
-        node.fields["from"] = canonicalPoint(spline->getStartPoint());
-        node.fields["to"] = canonicalPoint(spline->getEndPoint());
+        // The control points themselves, not a count of them. A count says the curve was
+        // rebuilt; it cannot see a single pole being nudged, which is how a spline is actually
+        // edited. A spline is a long line in the file because a spline is a long thing.
+        node.fields["degree"] = std::to_string(spline->getDegree());
+        node.fields["poles"] = canonicalPointList(spline->getPoles());
+        if (spline->isPeriodic()) {
+            node.fields["periodic"] = "true";
+        }
+        if (spline->isRational()) {
+            // Only a rational curve has weights worth stating; on every other one they are all
+            // the same number.
+            node.fields["weights"] = canonicalNumberList(spline->getWeights());
+        }
+        // Degree and pole count do not pin down the curve on their own: the knots are where
+        // its pieces meet, and the multiplicities are how sharply.
+        node.fields["knots"] = canonicalNumberList(spline->getKnots());
+        node.fields["multiplicities"] = canonicalIntegerList(spline->getMultiplicities());
         return;
     }
 }
@@ -265,6 +404,17 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
         const std::string value = authoredValue(sketch, constraint, constNum);
         if (!value.empty()) {
             node.fields["value"] = value;
+        }
+
+        // An internal alignment is one constraint type doing eleven different jobs: without the
+        // role, an ellipse's major axis, its minor axis and its two foci are four identical
+        // lines, and a rebuild cannot tell them apart either.
+        if (constraint->Type == InternalAlignment) {
+            node.fields["role"] = constraint->internalAlignmentTypeToString();
+            if (constraint->InternalAlignmentIndex >= 0) {
+                // Which pole or knot of a spline this one is; the role alone does not say.
+                node.fields["index"] = std::to_string(constraint->InternalAlignmentIndex);
+            }
         }
 
         for (size_t i = 0; i < constraint->getElementsSize(); ++i) {
@@ -322,6 +472,15 @@ RegenResult Sketcher::regenerateSketch(
         const auto valueIt = node.fields.find("value");
         if (valueIt != node.fields.end()) {
             constraint->setValue(parseDatum(valueIt->second));
+        }
+
+        const auto roleIt = node.fields.find("role");
+        if (roleIt != node.fields.end()) {
+            constraint->AlignmentType = alignmentTypeFromString(roleIt->second);
+        }
+        const auto indexIt = node.fields.find("index");
+        if (indexIt != node.fields.end()) {
+            constraint->InternalAlignmentIndex = std::atoi(indexIt->second.c_str());
         }
 
         bool placeable = true;
@@ -576,6 +735,86 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
 }
 
 
+namespace
+{
+
+/// The name of a sketch element that carries no durable tag of its own: the sketch's own axes
+/// and root point, and an edge borrowed from another object. The merge cannot bind any of these
+/// -- they are not entities of this sketch -- and so drops them, which left the view saying
+/// "coincident" without ever saying with what. A person reading the file needs the other half
+/// of the sentence, so the view names them. Returns empty for an element the sketch cannot
+/// account for at all.
+/// The readable name of every borrowed element, keyed by the reference the sketch stamps on the
+/// projected curve. That stored reference carries the shape's mapped element name -- a hash no
+/// one can read, which says nothing about what was picked -- while the link the person actually
+/// made still holds "Pad" and "Edge1". Both are built from the same two halves, so the readable
+/// one can be found by the other.
+std::map<std::string, std::string> readableBorrowedNames(const SketchObject& sketch)
+{
+    std::map<std::string, std::string> names;
+
+    const std::vector<App::DocumentObject*>& objects = sketch.ExternalGeometry.getValues();
+    const std::vector<std::string>& subs = sketch.ExternalGeometry.getSubValues();
+    const std::vector<App::PropertyLinkBase::ShadowSub>& shadows
+        = sketch.ExternalGeometry.getShadowSubs();
+
+    for (std::size_t i = 0; i < objects.size() && i < subs.size(); ++i) {
+        if (objects[i] == nullptr || objects[i]->getNameInDocument() == nullptr) {
+            continue;
+        }
+        const std::string owner = std::string(objects[i]->getNameInDocument()) + ".";
+        const bool mapped = i < shadows.size() && !shadows[i].newName.empty();
+        const std::string& sub = mapped ? shadows[i].newName : subs[i];
+
+        // The same two halves the sketch itself puts together when it stamps a reference on the
+        // projected curve, so the key here is the key there.
+        const std::string plain = Data::oldElementName(subs[i].c_str());
+        names[owner + Data::newElementName(sub.c_str())] = owner + (plain.empty() ? subs[i] : plain);
+    }
+
+    return names;
+}
+
+std::string borrowedElementName(
+    const SketchObject& sketch,
+    int geoId,
+    const std::map<std::string, std::string>& readable
+)
+{
+    if (geoId == GeoEnum::HAxis) {
+        return "H_Axis";
+    }
+    if (geoId == GeoEnum::VAxis) {
+        return "V_Axis";
+    }
+    // A negative GeoId is a position in the borrowed list, counting back from -1; anything
+    // past its end is an unused constraint slot (a constraint carries a fixed number of
+    // element places and leaves the spare ones undefined), which names nothing.
+    const std::vector<Part::Geometry*>& borrowed = sketch.getExternalGeometry();
+    const int index = -geoId - 1;
+    if (index < 0 || index >= static_cast<int>(borrowed.size())) {
+        return {};
+    }
+
+    const std::string reference = ExternalGeometryFacade::getFacade(borrowed[index])->getRef();
+    const auto found = readable.find(reference);
+    if (found != readable.end()) {
+        return found->second;
+    }
+    // A reference the link list no longer accounts for: say so rather than print the hash.
+    return reference.empty() ? std::string("external") : std::string("external (unresolved)");
+}
+
+/// The sketch's origin, addressed as the start point of the horizontal axis. The two share a
+/// GeoId, so only the point selector tells them apart, and "RootPoint:1" would say the same
+/// thing twice.
+bool isRootPoint(int geoId, int pos)
+{
+    return geoId == GeoEnum::RtPnt && pos != static_cast<int>(PointPos::none);
+}
+
+}  // namespace
+
 App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
 {
     App::RecipeDetail detail;
@@ -604,8 +843,49 @@ App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
         }
         App::RecipeNode node = found->second;
         node.type = readableGeometryType(node.type);
+        // A flag left at its default is not something anyone did. The merge carries it on every
+        // entity because it needs a value to rebuild with; the view prints it only where it
+        // departs from ordinary geometry, the same way a constraint prints "driving" only when
+        // the answer is no. Repeated once per line, an untouched flag would outnumber the
+        // authored content of the sketch.
+        const auto construction = node.fields.find("construction");
+        if (construction != node.fields.end() && construction->second == "false") {
+            node.fields.erase(construction);
+        }
         addAuthoredCoordinates(geo, node);
         geometry.nodes.push_back(std::move(node));
+    }
+
+    // What the sketch borrows from elsewhere in the document. The link itself is already an
+    // object-level reference, but that only names the object; which edge or face was picked is
+    // the authored fact, and it lived nowhere in the view until now.
+    App::RecipeDetailSection external;
+    external.name = "external";
+    const std::map<std::string, std::string> readable = readableBorrowedNames(*sketch);
+    for (const Part::Geometry* geo : sketch->getExternalGeometry()) {
+        const auto facade = ExternalGeometryFacade::getFacade(geo);
+        if (facade->getRef().empty()) {
+            continue;  // the sketch's own two axes, which are not borrowed from anywhere
+        }
+        App::RecipeNode node;
+        const auto found = readable.find(facade->getRef());
+        node.id = found != readable.end() ? found->second : facade->getRef();
+        node.type = readableGeometryType(geo->getTypeId().getName());
+        for (int flag = 0; flag < ExternalGeometryExtension::NumFlags; ++flag) {
+            if (facade->testFlag(flag)) {
+                // A reference the sketch has frozen, detached or lost is a state someone put it
+                // in (or a breakage they need to see), never the ordinary case.
+                node.fields[ExternalGeometryExtension::flag2str.at(flag)] = "true";
+            }
+        }
+        external.nodes.push_back(std::move(node));
+    }
+
+    // The GeoId a constraint stores is a position in the sketch's own geometry list, so the
+    // view needs the same index the merge built to turn one back into a durable tag.
+    std::map<int, std::string> geoIdToTag;
+    for (int geoId = 0; geoId < static_cast<int>(internals.size()); ++geoId) {
+        geoIdToTag[geoId] = tagToString(internals[geoId]->getTag());
     }
 
     App::RecipeDetailSection constraints;
@@ -624,10 +904,42 @@ App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
         if (!constraint->isDriving) {
             node.fields["driving"] = "false";
         }
+
+        // Rebuilt rather than inherited: the merge keeps only what it can bind by durable tag,
+        // which silently dropped every reference to an axis, to the origin, or to a borrowed
+        // edge -- so "point on object" arrived naming one side of a two-sided fact.
+        node.refs.clear();
+        for (size_t i = 0; i < constraint->getElementsSize(); ++i) {
+            const int element = static_cast<int>(i);
+            const int geoId = constraint->getGeoId(element);
+            const int pos = constraint->getPosIdAsInt(element);
+
+            App::RecipeRef ref;
+            const auto own = geoIdToTag.find(geoId);
+            if (own != geoIdToTag.end()) {
+                ref.target = own->second;
+                ref.pos = pos;
+            }
+            else if (isRootPoint(geoId, pos)) {
+                ref.target = "RootPoint";
+            }
+            else {
+                ref.target = borrowedElementName(*sketch, geoId, readable);
+                if (ref.target.empty()) {
+                    continue;  // an element the sketch itself cannot account for
+                }
+                ref.pos = geoId <= GeoEnum::RefExt ? pos : 0;
+            }
+            node.refs.push_back(ref);
+        }
+
         constraints.nodes.push_back(std::move(node));
     }
 
     detail.sections.push_back(std::move(geometry));
+    if (!external.nodes.empty()) {
+        detail.sections.push_back(std::move(external));
+    }
     detail.sections.push_back(std::move(constraints));
 
     return detail;

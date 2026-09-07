@@ -25,6 +25,7 @@
 
 #include <FCGlobal.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,19 @@ AppExport RecipeSection emitDocumentRecipe(const Document& doc);
  *  the right to become a stored form rather than a view.
  */
 AppExport std::vector<std::string> unrecordedProperties(const DocumentObject& obj);
+
+/** The element each of this object's links picks out, keyed by the target's durable id: "Face6"
+ *  for a feature attached to a face, "Edge1" for a borrowed edge, an empty string for a link
+ *  that addresses the whole object. Old-style element names, because these are for a person to
+ *  read.
+ *
+ *  Deliberately separate from emitObjectRecipe. A face number is a position in a shape and never
+ *  an identity, so the recipe's own bindings stay on durable ids alone and must not gain a
+ *  second, weaker key. But a file that says only "attached to Pad" cannot tell a reader that the
+ *  attachment moved to a different face, so the view asks for this and prints it beside the
+ *  reference.
+ */
+AppExport std::map<std::string, std::vector<std::string>> linkedElements(const DocumentObject& obj);
 
 
 /** The outcome of merging three versions of a model — a common ancestor and two edited copies —
