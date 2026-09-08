@@ -16,6 +16,8 @@ generate_from_py(Joint)
 generate_from_py(GroundedJoint)
 generate_from_py(JointGroup)
 generate_from_py(ViewGroup)
+generate_from_py(ExplodedView)
+generate_from_py(ExplodedViewStep)
 generate_from_py(SimulationGroup)
 
 
@@ -36,6 +38,10 @@ SET(Python_SRCS
     JointGroupPyImp.cpp
     ViewGroup.pyi
     ViewGroupPyImp.cpp
+    ExplodedView.pyi
+    ExplodedViewPyImp.cpp
+    ExplodedViewStep.pyi
+    ExplodedViewStepPyImp.cpp
     SimulationGroup.pyi
     SimulationGroupPyImp.cpp
 )
@@ -69,6 +75,10 @@ SET(Assembly_SRCS
     JointGroup.h
     ViewGroup.cpp
     ViewGroup.h
+    ExplodedView.cpp
+    ExplodedView.h
+    ExplodedViewStep.cpp
+    ExplodedViewStep.h
     SimulationGroup.cpp
     SimulationGroup.h
     ${Module_SRCS}

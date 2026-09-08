@@ -32,6 +32,11 @@
 #include <App/FeaturePython.h>
 #include <App/Part.h>
 
+#include <Base/Vector3D.h>
+
+#include <cstddef>
+#include <utility>
+
 namespace App
 {
 class DocumentObject;
@@ -187,6 +192,31 @@ AssemblyExport std::vector<std::string> getSubAsList(
     const App::DocumentObject* joint,
     const char* propName
 );
+// ============================== Reference validity ===============================
+
+// Whether a stored reference can be acted on: it names an object, carries at least
+// minSubs sub-elements, and the topological-naming layer has not marked its first
+// sub-element broken (a "?" in the name). A reference that cannot say what it points
+// at is not a reason to guess -- callers do nothing rather than act on the wrong
+// sub-shape (P7). Ports UtilsAssembly.isRefValid.
+AssemblyExport bool isRefValid(const App::PropertyXLinkSub* prop, std::size_t minSubs = 1);
+
+// ============================== Extent and centre ================================
+
+// World-frame centre of an object's bounding box, taken from its SHAPE.
+//
+// The Python original read this from the object's ViewObject, which made an
+// assembly's extent unavailable headless and put a data-layer computation on top of
+// the view layer. A shape knows its own extent, so the dependency now points the
+// right way (three-level split: need points downward only). Returns the origin for an
+// object with no shape.
+AssemblyExport Base::Vector3d getGlobalBoundBoxCenter(const App::DocumentObject* obj);
+
+// Centre and overall size of an assembly, from the shapes of its components. Used to
+// scale a radial explosion. Falls back to (origin, 100) for an assembly whose extent
+// cannot be determined, matching the former Python behaviour.
+AssemblyExport std::pair<Base::Vector3d, double> getComAndSize(const AssemblyObject* assembly);
+
 AssemblyExport void syncPlacements(App::DocumentObject* src, App::DocumentObject* to);
 AssemblyExport double getJointCurrentValue(App::DocumentObject* joint, bool isAngle);
 
