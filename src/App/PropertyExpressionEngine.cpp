@@ -31,6 +31,10 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
 #include <Base/Reader.h>
+#include <cctype>
+
+#include <Base/Quantity.h>
+#include <Base/Unit.h>
 #include <Base/Tools.h>
 #include <Base/Writer.h>
 #include <CXX/Objects.hxx>
@@ -65,6 +69,74 @@ public:
     }
     std::vector<App::VariableExpression*> nodes;
 };
+
+/// P7 (Robustness Through Honesty): a plain number arriving at a property that carries a
+/// dimension is ambiguous -- two of *what*? The engine used to settle that silently by reading
+/// the bare number as the internal unit, so a sheet a person authored in inches drove a part
+/// twenty-five times too small and said nothing. The ambiguity is surfaced at the moment it
+/// arises instead, naming the dimension that was expected and how to state it.
+///
+/// The target's dimension is read from the value already sitting at the path rather than from
+/// the property's own type, so a sub-path stays honest: `Placement.Base.x` is a length even
+/// though the property it lives on is a placement.
+///
+/// Typing a bare number straight into a length field is untouched -- that is a direct property
+/// set, not an expression, and the field on screen says what the unit is. This governs only a
+/// value crossing a reference, where nothing tells the reader what it landed in.
+///
+/// Zero passes. P7 governs *ambiguity*, and zero is the same value in every unit, so there is
+/// nothing to guess and nothing worth asking about.
+void requireDimensionOnBareNumber(const App::any& value,
+                                  const App::any& current,
+                                  const App::Expression* expression)
+{
+    if (current.type() != typeid(Base::Quantity)) {
+        return;
+    }
+    const Base::Unit expected = boost::any_cast<Base::Quantity>(current).getUnit();
+    if (expected == Base::Unit()) {
+        return;  // the target carries no dimension, so a plain number is exactly right
+    }
+    if (value.type() == typeid(Base::Quantity)) {
+        return;  // the value states its own unit; a mismatch is caught where it is assigned
+    }
+
+    double bare = 0.0;
+    if (value.type() == typeid(int)) {
+        bare = boost::any_cast<int>(value);
+    }
+    else if (value.type() == typeid(long)) {
+        bare = static_cast<double>(boost::any_cast<long>(value));
+    }
+    else if (value.type() == typeid(float)) {
+        bare = boost::any_cast<float>(value);
+    }
+    else if (value.type() == typeid(double)) {
+        bare = boost::any_cast<double>(value);
+    }
+    else {
+        return;  // not a number at all -- that is a different failure, reported where it happens
+    }
+
+    if (bare == 0.0) {
+        return;
+    }
+
+    // "An Angle", not "A Angle" -- the message is the whole point of the rule, so it reads.
+    const std::string dimension = expected.getTypeString();
+    const bool vowel = !dimension.empty()
+        && std::string("AEIOU").find(static_cast<char>(std::toupper(dimension[0])))
+            != std::string::npos;
+
+    std::ostringstream ss;
+    ss << (vowel ? "An " : "A ") << dimension << " was expected, but this gives the plain number "
+       << bare << " with no unit. Say which unit it is -- write it into the value, as in \""
+       << bare << " " << expected.getString() << "\", or multiply by a unit.";
+    if (expression != nullptr) {
+        ss << "\nfrom the expression '" << expression->toString() << "'";
+    }
+    throw Base::TypeError(ss.str().c_str());
+}
 }  // namespace
 
 TYPESYSTEM_SOURCE_ABSTRACT(App::PropertyExpressionContainer, App::PropertyXLinkContainer)
@@ -842,9 +914,11 @@ DocumentObjectExecReturn* App::PropertyExpressionEngine::execute(ExecuteOption o
                 //
                 // if (option == ExecuteOnRestore && prop->testStatus(Property::EvalOnRestore))
                 {
-                    if (isAnyEqual(value, prop->getPathValue(*it))) {
+                    const App::any current = prop->getPathValue(*it);
+                    if (isAnyEqual(value, current)) {
                         continue;
                     }
+                    requireDimensionOnBareNumber(value, current, expression.get());
                     if (touched) {
                         *touched = true;
                     }

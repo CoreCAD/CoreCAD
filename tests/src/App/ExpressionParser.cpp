@@ -503,4 +503,90 @@ TEST_F(ExpressionParserTest, objectRenameNeedsNoRewritingPass)
         << "render re-derives the current label from the UUID, no renameObjectIdentifiers needed";
 }
 
+// P7 -- Robustness Through Honesty. A plain number arriving at a property that carries a
+// dimension is ambiguous: two of *what*? The engine used to settle it silently by reading the
+// bare number as the internal unit, so a sheet authored in inches drove a part twenty-five times
+// too small and said nothing about it. It now stops and says what was expected.
+//
+// The helper binds an expression and returns the complaint, or an empty string if it was allowed
+// through, so each case reads as accepted-or-refused rather than as exception plumbing.
+class BareNumberBindingTest: public ExpressionParserTest
+{
+protected:
+    std::string bindAndReport(const char* property, const char* expressionText)
+    {
+        ObjectIdentifier path(this_obj());
+        std::istringstream steps(property);
+        std::string step;
+        while (std::getline(steps, step, '.')) {
+            path << ObjectIdentifier::SimpleComponent(step);
+        }
+        this_obj()->setExpression(path, std::shared_ptr<Expression>(parse(this_obj(), expressionText)));
+        try {
+            this_obj()->ExpressionEngine.execute();
+            return {};
+        }
+        catch (const Base::Exception& e) {
+            return e.what();
+        }
+    }
+};
+
+// The case the rule exists for, and the control beside it: the very same value, said with its
+// unit, goes straight through. A check that refused both would be no check at all.
+TEST_F(BareNumberBindingTest, aPlainNumberIsRefusedWhereADimensionIsExpected)
+{
+    this_obj()->addDynamicProperty("App::PropertyLength", "Thickness");
+
+    const std::string refused = bindAndReport("Thickness", "2");
+    EXPECT_NE(refused.find("Length was expected"), std::string::npos) << refused;
+    EXPECT_NE(refused.find("2 mm"), std::string::npos)
+        << "the complaint has to show how to say it: " << refused;
+
+    EXPECT_EQ(bindAndReport("Thickness", "2 mm"), "") << "the same value, with its unit, is fine";
+    EXPECT_EQ(bindAndReport("Thickness", "2 in"), "") << "and so is the author's own unit";
+}
+
+// A bare number given its dimension inside the expression is exactly how a count or a ratio is
+// meant to be used. If this were refused the rule would be noise and people would learn to
+// ignore it.
+TEST_F(BareNumberBindingTest, aPlainNumberMadeDimensionedInTheExpressionIsFine)
+{
+    this_obj()->addDynamicProperty("App::PropertyLength", "Spacing");
+    EXPECT_EQ(bindAndReport("Spacing", "3 * 10mm"), "");
+}
+
+// P7 governs *ambiguity*. Zero is the same value in every unit, so there is nothing to guess and
+// nothing worth stopping a person for.
+TEST_F(BareNumberBindingTest, zeroPassesBecauseItIsTheSameInEveryUnit)
+{
+    this_obj()->addDynamicProperty("App::PropertyLength", "Offset");
+    EXPECT_EQ(bindAndReport("Offset", "0"), "");
+}
+
+// A property with no dimension wants a plain number, and must keep getting one.
+TEST_F(BareNumberBindingTest, aPropertyWithNoDimensionStillTakesAPlainNumber)
+{
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Ratio");
+    EXPECT_EQ(bindAndReport("Ratio", "2"), "");
+}
+
+// The target's dimension is read from the value already at the path, not from the property's own
+// type, so a sub-path is covered too: Placement.Base.x is a length even though the property it
+// lives on is a placement. Without that, the rule would guard Length and miss half the model.
+TEST_F(BareNumberBindingTest, aSubPathCarriesItsOwnDimension)
+{
+    const std::string refused = bindAndReport("Placement.Base.x", "2");
+    EXPECT_NE(refused.find("Length was expected"), std::string::npos) << refused;
+}
+
+// The complaint reads as English. It is the entire point of the rule, so "An Angle", never
+// "A Angle".
+TEST_F(BareNumberBindingTest, theComplaintNamesTheDimensionItWanted)
+{
+    const std::string refused = bindAndReport("Placement.Rotation.Angle", "2");
+    EXPECT_NE(refused.find("An Angle was expected"), std::string::npos) << refused;
+    EXPECT_NE(refused.find("2 deg"), std::string::npos) << refused;
+}
+
 }  // namespace App::ExpressionParser::Test
