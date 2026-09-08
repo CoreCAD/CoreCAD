@@ -154,6 +154,14 @@ AssemblyExport double getEdgeRadius(const App::DocumentObject* obj, const std::s
 AssemblyExport DistanceType getDistanceType(App::DocumentObject* joint);
 AssemblyExport JointGroup* getJointGroup(const App::DocumentObject* assemblyOrLink);
 
+// The assembly an object belongs to, found by walking up through whatever containers
+// stand between (a simulation sits in a SimulationGroup, an exploded view in a
+// ViewGroup, and so on). Depth-bounded so a cycle cannot hang the search.
+//
+// The Python originals each looked only ONE level up the InList and so answered
+// "none" for anything not held by the assembly directly.
+AssemblyExport AssemblyObject* getOwningAssembly(const App::DocumentObject* obj);
+
 AssemblyExport std::vector<App::DocumentObject*> getAssemblyComponents(const AssemblyObject* assembly);
 
 // getters to get from properties

@@ -19,6 +19,8 @@ generate_from_py(ViewGroup)
 generate_from_py(ExplodedView)
 generate_from_py(ExplodedViewStep)
 generate_from_py(SimulationGroup)
+generate_from_py(Simulation)
+generate_from_py(Motion)
 
 
 SET(Python_SRCS
@@ -44,6 +46,10 @@ SET(Python_SRCS
     ExplodedViewStepPyImp.cpp
     SimulationGroup.pyi
     SimulationGroupPyImp.cpp
+    Simulation.pyi
+    SimulationPyImp.cpp
+    Motion.pyi
+    MotionPyImp.cpp
 )
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
@@ -81,6 +87,10 @@ SET(Assembly_SRCS
     ExplodedViewStep.h
     SimulationGroup.cpp
     SimulationGroup.h
+    Simulation.cpp
+    Simulation.h
+    Motion.cpp
+    Motion.h
     ${Module_SRCS}
     ${Python_SRCS}
 )

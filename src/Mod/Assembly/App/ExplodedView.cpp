@@ -81,30 +81,7 @@ App::DocumentObjectExecReturn* ExplodedView::execute()
 
 AssemblyObject* ExplodedView::getAssembly() const
 {
-    // An exploded view is not held by the assembly directly: it sits inside the
-    // assembly's ViewGroup. The former Python version looked only one level up and so
-    // never found the assembly at all -- which left a double-click on an exploded
-    // view doing nothing, and a temporary explosion raising. Walk up through whatever
-    // containers stand between, with a depth bound so a cycle cannot hang the search.
-    constexpr int maxDepth = 8;
-
-    const App::DocumentObject* current = this;
-    for (int depth = 0; depth < maxDepth && current; ++depth) {
-        const App::DocumentObject* parent = nullptr;
-
-        for (auto* obj : current->getInList()) {
-            if (auto* assembly = freecad_cast<AssemblyObject*>(obj)) {
-                return assembly;
-            }
-            if (!parent && obj && obj->hasExtension(App::GroupExtension::getExtensionClassTypeId())) {
-                parent = obj;
-            }
-        }
-
-        current = parent;
-    }
-
-    return nullptr;
+    return getOwningAssembly(this);
 }
 
 std::vector<ExplodedViewStep*> ExplodedView::getSteps() const

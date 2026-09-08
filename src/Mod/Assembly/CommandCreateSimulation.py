@@ -100,103 +100,31 @@ class CommandCreateSimulation:
 
 
 ######### Simulation Object ###########
-class Simulation:
-    def __init__(self, feaPy):
-        feaPy.Proxy = self
-        feaPy.addExtension("App::GroupExtensionPython")
+#
+# The simulation itself is Assembly::Simulation, a real C++ type. What lived here was
+# an App::FeaturePython proxy: the solver had to fetch its settings by name and cast
+# blindly, and the panel was called back from the proxy's own onChanged.
 
-        if not hasattr(feaPy, "aTimeStart"):
-            feaPy.addProperty(
-                "App::PropertyTime",
-                "aTimeStart",
-                "Simulation",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Simulation start time.",
-                ),
-                locked=True,
-            )
 
-        if not hasattr(feaPy, "bTimeEnd"):
-            feaPy.addProperty(
-                "App::PropertyTime",
-                "bTimeEnd",
-                "Simulation",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Simulation end time.",
-                ),
-                locked=True,
-            )
+class SimulationMotionsObserver:
+    """Notices motions being added to or removed from a simulation.
 
-        if not hasattr(feaPy, "cTimeStepOutput"):
-            feaPy.addProperty(
-                "App::PropertyTime",
-                "cTimeStepOutput",
-                "Simulation",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Simulation time step for output.",
-                ),
-                locked=True,
-            )
+    The former Python proxy called the panel back from its own onChanged. A typed
+    object holds no reference to a dialog, so the panel watches the document instead,
+    which also catches an undo the proxy never saw.
+    """
 
-        if not hasattr(feaPy, "fGlobalErrorTolerance"):
-            feaPy.addProperty(
-                "App::PropertyFloat",
-                "fGlobalErrorTolerance",
-                "Simulation",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Integration global error tolerance.",
-                ),
-                locked=True,
-            )
+    def __init__(self, simObj, callback):
+        self.simObj = simObj
+        self.callback = callback
 
-        if not hasattr(feaPy, "jFramesPerSecond"):
-            feaPy.addProperty(
-                "App::PropertyInteger",
-                "jFramesPerSecond",
-                "Simulation",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Frames Per Second.",
-                ),
-                locked=True,
-            )
-
-        feaPy.aTimeStart = 0.0
-        feaPy.bTimeEnd = 1.0
-        feaPy.cTimeStepOutput = 1.0e-2
-        feaPy.fGlobalErrorTolerance = 1.0e-6
-        feaPy.jFramesPerSecond = 30
-
-        self.motionsChangedCallback = None
-
-    def dumps(self):
-        return None
-
-    def loads(self, state):
-        return None
-
-    def onChanged(self, feaPy, prop):
-        if prop == "Group" and hasattr(self, "motionsChangedCallback"):
-            if self.motionsChangedCallback is not None:
-                self.motionsChangedCallback()
-
-    def setMotionsChangedCallback(self, callback):
-        self.motionsChangedCallback = callback
-
-    def execute(self, feaPy):
-        """Do something when doing a recomputation, this method is mandatory"""
-        pass
-
-    def getAssembly(self, feaPy):
-        assert feaPy.isDerivedFrom("App::FeaturePython"), "Type error"
-        for obj in feaPy.InList:
-            if obj.isDerivedFrom("Assembly::AssemblyObject"):
-                return obj
-        return None
+    def slotChangedObject(self, obj, prop):
+        if obj == self.simObj and prop == "Group":
+            self.callback()
+        elif prop == "Label" and obj in self.simObj.Group:
+            # A motion is named after what it drives, and that name is set after the
+            # motion has joined the group -- so the list has to follow the label too.
+            self.callback()
 
 
 class ViewProviderSimulation:
@@ -264,7 +192,7 @@ class ViewProviderSimulation:
         if task:
             task.reject()
 
-        assembly = vpDoc.Object.Proxy.getAssembly(vpDoc.Object)
+        assembly = vpDoc.Object.getAssembly()
 
         if assembly is None:
             return False
@@ -287,87 +215,21 @@ class ViewProviderSimulation:
 
 
 ########### Motion Object #############
+#
+# The motion itself is Assembly::Motion, a real C++ type. What lived here was an
+# App::FeaturePython proxy; a motion could only find its simulation by asking every
+# object above it whether its Python proxy happened to own a method of the right name.
+
 MotionTypes = [
     "Angular",
     "Linear",
 ]
 
 
-class Motion:
-    def __init__(self, feaPy, motionType=MotionTypes[0], joint=None, formula=""):
-        feaPy.Proxy = self
-
-        self.createProperties(feaPy)
-
-        feaPy.MotionType = MotionTypes  # sets the list
-        feaPy.MotionType = motionType  # set the initial value
-        feaPy.Joint = joint
-        feaPy.Formula = formula
-
-    def onDocumentRestored(self, feaPy):
-        self.createProperties(feaPy)
-
-    def createProperties(self, feaPy):
-        if not hasattr(feaPy, "Joint"):
-            feaPy.addProperty(
-                "App::PropertyXLinkSubHidden",
-                "Joint",
-                "Motion",
-                QT_TRANSLATE_NOOP("App::Property", "The joint that is moved by the motion"),
-                locked=True,
-            )
-
-        if not hasattr(feaPy, "Formula"):
-            feaPy.addProperty(
-                "App::PropertyString",
-                "Formula",
-                "Motion",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the formula of the motion. For example '1.0*time'.",
-                ),
-                locked=True,
-            )
-
-        if not hasattr(feaPy, "MotionType"):
-            feaPy.addProperty(
-                "App::PropertyEnumeration",
-                "MotionType",
-                "Motion",
-                QT_TRANSLATE_NOOP("App::Property", "The type of the motion"),
-                locked=True,
-            )
-
-    def dumps(self):
-        return None
-
-    def loads(self, state):
-        return None
-
-    def onChanged(self, feaPy, prop):
-        pass
-
-    def execute(self, feaPy):
-        """Do something when doing a recomputation, this method is mandatory"""
-        pass
-
-    def getSimulation(self, feaPy):
-        for obj in feaPy.InList:
-            if hasattr(obj, "Proxy"):
-                if hasattr(obj.Proxy, "setMotionsChangedCallback"):
-                    return obj
-        return None
-
-    def getAssembly(self, feaPy):
-        simulation = self.getSimulation(feaPy)
-        if simulation is not None:
-            return simulation.Proxy.getAssembly(simulation)
-        return None
-
-
 class ViewProviderMotion:
     def __init__(self, vp):
         vp.Proxy = self
+        self.app_obj = vp.Object
         self.updateLabel()
 
     def attach(self, vpDoc):
@@ -444,7 +306,7 @@ class ViewProviderMotion:
         )
 
     def getAssembly(self):
-        assembly = self.app_obj.Proxy.getAssembly(self.app_obj)
+        assembly = self.app_obj.getAssembly()
 
         if assembly is None:
             return None
@@ -838,7 +700,8 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
 
         self.setUiInitialValues()
 
-        self.simFeaturePy.Proxy.setMotionsChangedCallback(self.onMotionsChanged)
+        self.motionsObserver = SimulationMotionsObserver(self.simFeaturePy, self.onMotionsChanged)
+        App.addDocumentObserver(self.motionsObserver)
 
         self.currentFrm = 1
         self.startFrm = 1
@@ -849,15 +712,15 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
         self.index = 0
 
     def setUiInitialValues(self):
-        self.form.TimeStartSpinBox.setProperty("rawValue", self.simFeaturePy.aTimeStart.Value)
-        self.form.TimeEndSpinBox.setProperty("rawValue", self.simFeaturePy.bTimeEnd.Value)
+        self.form.TimeStartSpinBox.setProperty("rawValue", self.simFeaturePy.TimeStart.Value)
+        self.form.TimeEndSpinBox.setProperty("rawValue", self.simFeaturePy.TimeEnd.Value)
         self.form.TimeStepOutputSpinBox.setProperty(
-            "rawValue", self.simFeaturePy.cTimeStepOutput.Value
+            "rawValue", self.simFeaturePy.TimeStepOutput.Value
         )
         self.form.GlobalErrorToleranceSpinBox.setProperty(
-            "rawValue", self.simFeaturePy.fGlobalErrorTolerance
+            "rawValue", self.simFeaturePy.GlobalErrorTolerance
         )
-        self.form.FramesPerSecondSpinBox.setValue(self.simFeaturePy.jFramesPerSecond)
+        self.form.FramesPerSecondSpinBox.setValue(self.simFeaturePy.FramesPerSecond)
 
     def setSpinboxPrecision(self, spinbox, precision, unit=App.Units.TimeSpan):
         q = App.Units.Quantity()
@@ -878,21 +741,21 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
 
     def deactivate(self):
         self.animationTimer.stop()
-        self.simFeaturePy.Proxy.setMotionsChangedCallback(None)
+        App.removeDocumentObserver(self.motionsObserver)
         if Gui.Control.activeDialog():
             Gui.Control.closeDialog()
 
     def onTimeStartChanged(self, quantity):
-        self.simFeaturePy.aTimeStart = self.form.TimeStartSpinBox.property("rawValue")
+        self.simFeaturePy.TimeStart = self.form.TimeStartSpinBox.property("rawValue")
 
     def onTimeEndChanged(self, quantity):
-        self.simFeaturePy.bTimeEnd = self.form.TimeEndSpinBox.property("rawValue")
+        self.simFeaturePy.TimeEnd = self.form.TimeEndSpinBox.property("rawValue")
 
     def onTimeStepOutputChanged(self, quantity):
-        self.simFeaturePy.cTimeStepOutput = self.form.TimeStepOutputSpinBox.property("rawValue")
+        self.simFeaturePy.TimeStepOutput = self.form.TimeStepOutputSpinBox.property("rawValue")
 
     def onGlobalErrorToleranceChanged(self, quantity):
-        self.simFeaturePy.fGlobalErrorTolerance = self.form.GlobalErrorToleranceSpinBox.property(
+        self.simFeaturePy.GlobalErrorTolerance = self.form.GlobalErrorToleranceSpinBox.property(
             "rawValue"
         )
 
@@ -905,18 +768,19 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
 
     def createSimulationObject(self):
         sim_group = UtilsAssembly.getSimulationGroup(self.assembly)
-        self.simFeaturePy = sim_group.newObject("App::FeaturePython", "Simulation")
-        Simulation(self.simFeaturePy)
+        self.simFeaturePy = sim_group.newObject("Assembly::Simulation", "Simulation")
         ViewProviderSimulation(self.simFeaturePy.ViewObject)
 
     def createMotionObject(self, motionType, joint, formula):
-        motion = self.assembly.newObject("App::FeaturePython", "Motion")
-        Motion(motion, motionType, joint, formula)
+        # Created ON the simulation that owns it. The former code created it on the
+        # assembly and then also listed it in the simulation's group, which the
+        # one-object-one-group rule forbids -- unnoticed only because the Python group
+        # extension never ran the check the C++ one does.
+        motion = self.simFeaturePy.newObject("Assembly::Motion", "Motion")
+        motion.MotionType = motionType
+        motion.Joint = joint
+        motion.Formula = formula
         ViewProviderMotion(motion.ViewObject)
-
-        listOfMotions = self.simFeaturePy.Group
-        listOfMotions.append(motion)
-        self.simFeaturePy.Group = listOfMotions
 
     def onMotionsChanged(self):
         self.form.motionList.clear()
@@ -934,11 +798,11 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
     def onFrameChanged(self, val):
         self.assembly.updateForFrame(val)
         self.form.FrameLabel.setText(translate("Assembly", "Frame" + " " + str(val)))
-        time = float(val * self.simFeaturePy.cTimeStepOutput)
+        time = float(val * self.simFeaturePy.TimeStepOutput)
         self.form.FrameTimeLabel.setText(f"{time:.2f} s")
 
     def onFramesPerSecondChanged(self):
-        self.simFeaturePy.jFramesPerSecond = self.form.FramesPerSecondSpinBox.value()
+        self.simFeaturePy.FramesPerSecond = self.form.FramesPerSecondSpinBox.value()
 
     def playBackward(self):
         pass
@@ -959,7 +823,7 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
         if self.startFrm >= self.endFrm:
             return
 
-        self.fps = self.simFeaturePy.jFramesPerSecond
+        self.fps = self.simFeaturePy.FramesPerSecond
         self.deltaTime = 1.0 / self.fps
         self.startTime = time.time()
         self.index = self.currentFrm
@@ -1032,9 +896,8 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
             row = index.row()
             if row < len(self.simFeaturePy.Group):
                 motion = self.simFeaturePy.Group[row]
-                # First remove the link from the viewObj
-                self.simFeaturePy.Group.remove(motion)
-                # Delete the object
+                # Removing the object drops it from the group: the former line calling
+                # remove() on Group mutated a copy of the list and changed nothing.
                 motion.Document.removeObject(motion.Name)
 
     def saveAnimation(self):
