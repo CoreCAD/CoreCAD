@@ -49,6 +49,7 @@
 #include <App/Datums.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/GroupExtension.h>
 #include <App/PropertyStandard.h>
 #include <App/Link.h>
 
@@ -403,6 +404,33 @@ JointGroup* getJointGroup(const App::DocumentObject* assemblyOrLink)
         return nullptr;
     }
     return freecad_cast<JointGroup*>(jointGroups.front());
+}
+
+AssemblyObject* getOwningAssembly(const App::DocumentObject* obj)
+{
+    // An object of the assembly is rarely held by the assembly directly: a simulation
+    // sits inside the assembly's SimulationGroup, an exploded view inside its
+    // ViewGroup, a motion inside its simulation. Walk up through whatever containers
+    // stand between, with a depth bound so a cycle cannot hang the search.
+    constexpr int maxDepth = 8;
+
+    const App::DocumentObject* current = obj;
+    for (int depth = 0; depth < maxDepth && current; ++depth) {
+        const App::DocumentObject* parent = nullptr;
+
+        for (auto* in : current->getInList()) {
+            if (auto* assembly = freecad_cast<AssemblyObject*>(in)) {
+                return assembly;
+            }
+            if (!parent && in && in->hasExtension(App::GroupExtension::getExtensionClassTypeId())) {
+                parent = in;
+            }
+        }
+
+        current = parent;
+    }
+
+    return nullptr;
 }
 
 void setJointActivated(const App::DocumentObject* joint, bool val)

@@ -60,6 +60,7 @@ namespace Assembly
 
 class AssemblyLink;
 class JointGroup;
+class Motion;
 class ViewGroup;
 enum class JointType;
 
@@ -214,7 +215,7 @@ public:
 
     std::vector<AssemblyLink*> getSubAssemblies();
 
-    std::vector<App::DocumentObject*> getMotionsFromSimulation(App::DocumentObject* sim);
+    std::vector<Motion*> getMotionsFromSimulation(App::DocumentObject* sim);
 
     bool isMbDJointValid(App::DocumentObject* joint);
 
@@ -270,7 +271,7 @@ private:
     std::unordered_map<App::DocumentObject*, MbDPartData> objectPartMap;
     std::vector<std::pair<App::DocumentObject*, double>> objMasses;
     std::vector<App::DocumentObject*> draggedParts;
-    std::vector<App::DocumentObject*> motions;
+    std::vector<Motion*> motions;
 
     std::vector<std::pair<App::DocumentObject*, Base::Placement>> previousPositions;
 

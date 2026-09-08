@@ -85,6 +85,8 @@
 #include "AssemblyUtils.h"
 #include "Joint.h"
 #include "JointGroup.h"
+#include "Motion.h"
+#include "Simulation.h"
 #include "ViewGroup.h"
 
 FC_LOG_LEVEL_INIT("Assembly", true, true, true)
@@ -309,18 +311,14 @@ int AssemblyObject::generateSimulation(App::DocumentObject* sim)
     return 0;
 }
 
-std::vector<App::DocumentObject*> AssemblyObject::getMotionsFromSimulation(App::DocumentObject* sim)
+std::vector<Motion*> AssemblyObject::getMotionsFromSimulation(App::DocumentObject* sim)
 {
-    if (!sim) {
+    auto* simulation = freecad_cast<Simulation*>(sim);
+    if (!simulation) {
         return {};
     }
 
-    auto* prop = dynamic_cast<App::PropertyLinkList*>(sim->getPropertyByName("Group"));
-    if (!prop) {
-        return {};
-    }
-
-    return prop->getValue();
+    return simulation->getMotions();
 }
 
 int Assembly::AssemblyObject::updateForFrame(size_t index)
@@ -1160,22 +1158,16 @@ void AssemblyObject::jointParts(std::vector<App::DocumentObject*> joints)
 void Assembly::AssemblyObject::create_mbdSimulationParameters(App::DocumentObject* sim)
 {
     auto mbdSim = mbdAssembly->simulationParameters;
-    if (!sim) {
+    auto* simulation = freecad_cast<Simulation*>(sim);
+    if (!simulation) {
         return;
     }
-    auto valueOf = [](DocumentObject* docObj, const char* propName) {
-        auto* prop = dynamic_cast<App::PropertyFloat*>(docObj->getPropertyByName(propName));
-        if (!prop) {
-            return 0.0;
-        }
-        return prop->getValue();
-    };
-    mbdSim->settstart(valueOf(sim, "aTimeStart"));
-    mbdSim->settend(valueOf(sim, "bTimeEnd"));
-    mbdSim->sethout(valueOf(sim, "cTimeStepOutput"));
+    mbdSim->settstart(simulation->TimeStart.getValue());
+    mbdSim->settend(simulation->TimeEnd.getValue());
+    mbdSim->sethout(simulation->TimeStepOutput.getValue());
     mbdSim->sethmin(1.0e-9);
     mbdSim->sethmax(1.0);
-    mbdSim->seterrorTol(valueOf(sim, "fGlobalErrorTolerance"));
+    mbdSim->seterrorTol(simulation->GlobalErrorTolerance.getValue());
 }
 
 std::shared_ptr<ASMTJoint> AssemblyObject::makeMbdJointOfType(App::DocumentObject* joint, JointType type)
@@ -1552,7 +1544,7 @@ std::vector<std::shared_ptr<MbD::ASMTJoint>> AssemblyObject::makeMbdJoint(App::D
             }
         }
     }
-    std::vector<App::DocumentObject*> done;
+    std::vector<Motion*> done;
 
     auto replaceInitialValue =
         [](std::string& form, App::DocumentObject* jnt, const std::string& mType) {
@@ -1577,52 +1569,30 @@ std::vector<std::shared_ptr<MbD::ASMTJoint>> AssemblyObject::makeMbdJoint(App::D
             continue;  // don't process twice (can happen in case of cylindrical)
         }
 
-        auto* pJoint = dynamic_cast<App::PropertyXLinkSub*>(motion->getPropertyByName("Joint"));
-        if (!pJoint) {
-            continue;
-        }
-        App::DocumentObject* motionJoint = pJoint->getValue();
-        if (joint != motionJoint) {
+        if (joint != motion->getJoint()) {
             continue;
         }
 
-        auto* pType = dynamic_cast<App::PropertyEnumeration*>(motion->getPropertyByName("MotionType"));
-        auto* pFormula = dynamic_cast<App::PropertyString*>(motion->getPropertyByName("Formula"));
-        if (!pType || !pFormula) {
+        std::string formula = motion->Formula.getValue();
+        if (formula.empty()) {
             continue;
         }
-        std::string formula = pFormula->getValue();
-        if (formula == "") {
-            continue;
-        }
-        std::string motionType = pType->getValueAsString();
+        std::string motionType = motion->MotionType.getValueAsString();
 
         replaceInitialValue(formula, joint, motionType);
 
         // check if there is a second motion as cylindrical can have both,
         // in which case the solver needs a general motion.
         for (auto* motion2 : motions) {
-            pJoint = dynamic_cast<App::PropertyXLinkSub*>(motion2->getPropertyByName("Joint"));
-            if (!pJoint) {
-                continue;
-            }
-            motionJoint = pJoint->getValue();
-            if (joint != motionJoint || motion2 == motion) {
+            if (joint != motion2->getJoint() || motion2 == motion) {
                 continue;
             }
 
-            auto* pType2 = dynamic_cast<App::PropertyEnumeration*>(
-                motion2->getPropertyByName("MotionType")
-            );
-            auto* pFormula2 = dynamic_cast<App::PropertyString*>(motion2->getPropertyByName("Formula"));
-            if (!pType2 || !pFormula2) {
+            std::string formula2 = motion2->Formula.getValue();
+            if (formula2.empty()) {
                 continue;
             }
-            std::string formula2 = pFormula2->getValue();
-            if (formula2 == "") {
-                continue;
-            }
-            std::string motionType2 = pType2->getValueAsString();
+            std::string motionType2 = motion2->MotionType.getValueAsString();
             if (motionType2 == motionType) {
                 continue;  // only if both motions are different. ie one angular and one linear.
             }
