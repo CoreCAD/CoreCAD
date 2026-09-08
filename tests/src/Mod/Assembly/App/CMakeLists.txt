@@ -3,5 +3,6 @@
 add_executable(Assembly_tests_run
         AssemblyObject.cpp
         ExplodedView.cpp
+        ReferenceValidity.cpp
         Simulation.cpp
 )

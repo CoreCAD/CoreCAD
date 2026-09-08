@@ -208,6 +208,11 @@ AssemblyExport std::vector<std::string> getSubAsList(
 // sub-element broken (a "?" in the name). A reference that cannot say what it points
 // at is not a reason to guess -- callers do nothing rather than act on the wrong
 // sub-shape (P7). Ports UtilsAssembly.isRefValid.
+// True when a reference names something that can no longer be found: the
+// topological-naming layer marks such a sub-element with a "?". An unset reference
+// is NOT broken -- it is a half nobody has filled in yet.
+AssemblyExport bool hasBrokenReference(const App::PropertyXLinkSub* prop);
+
 AssemblyExport bool isRefValid(const App::PropertyXLinkSub* prop, std::size_t minSubs = 1);
 
 // ============================== Extent and centre ================================

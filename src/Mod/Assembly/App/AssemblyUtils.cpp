@@ -845,21 +845,32 @@ std::vector<App::DocumentObject*> getAssemblyComponents(const AssemblyObject* as
 
 // ============================== Reference validity ===============================
 
-bool isRefValid(const App::PropertyXLinkSub* prop, std::size_t minSubs)
+bool hasBrokenReference(const App::PropertyXLinkSub* prop)
 {
     if (!prop || !prop->getValue()) {
-        return false;
-    }
-
-    const std::vector<std::string>& subs = prop->getSubValues();
-    if (subs.size() < minSubs) {
+        // Referring to nothing is not the same as referring to something that has
+        // gone: an unset reference is a joint half nobody has filled in yet.
         return false;
     }
 
     // A "?" placed in the sub-element name by the topological-naming layer means the
     // reference could not be resolved after an edit. Acting on it would act on some
     // other sub-shape, so the reference counts as unusable.
-    return subs.empty() || subs.front().find('?') == std::string::npos;
+    const std::vector<std::string>& subs = prop->getSubValues();
+    return !subs.empty() && subs.front().find('?') != std::string::npos;
+}
+
+bool isRefValid(const App::PropertyXLinkSub* prop, std::size_t minSubs)
+{
+    if (!prop || !prop->getValue()) {
+        return false;
+    }
+
+    if (prop->getSubValues().size() < minSubs) {
+        return false;
+    }
+
+    return !hasBrokenReference(prop);
 }
 
 // ============================== Extent and centre ================================
