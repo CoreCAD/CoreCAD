@@ -27,66 +27,48 @@
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
-#include <App/DocumentObject.h>
-#include <App/PropertyLinks.h>
-#include <App/PropertyStandard.h>
+#include <Gui/ViewProviderDocumentObject.h>
+#include <Gui/Selection/SoFCSelection.h>
 
+#include <Mod/Assembly/App/ExplodedViewStep.h>
 
-namespace Assembly
+class SoSeparator;
+
+namespace AssemblyGui
 {
-
-class AssemblyObject;
-class Simulation;
 
 /**
- * A driver applied to one joint for the duration of a simulation: a formula
- * giving that joint's angle or displacement as a function of time.
+ * The view provider of an Assembly::ExplodedViewStep: it draws the dashed lines
+ * the moved components travelled along.
  *
- * This is the typed replacement for the former Python `Motion` proxy. The solver
- * already read its three properties by name and cast blindly, and a motion could
- * only find the simulation it belonged to by asking every object above it whether
- * its Python proxy happened to own a method called "setMotionsChangedCallback" --
- * a duck-type that would have matched anything.
+ * The typed replacement for the former Python ViewProviderExplodedViewStep proxy.
+ * The lines are a preview of a move being edited, so they are handed over rather
+ * than computed here -- applying a move displaces the components, which a view
+ * provider must never do on its own. The task panel calls redrawLines with what
+ * ExplodedViewStep::applyStep reported.
  */
-class AssemblyExport Motion: public App::DocumentObject
+class AssemblyGuiExport ViewProviderExplodedViewStep: public Gui::ViewProviderDocumentObject
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Assembly::Motion);
+    PROPERTY_HEADER_WITH_OVERRIDE(AssemblyGui::ViewProviderExplodedViewStep);
 
 public:
-    Motion();
-    ~Motion() override;
+    ViewProviderExplodedViewStep();
+    ~ViewProviderExplodedViewStep() override;
 
-    /// The joint this motion drives.
-    App::PropertyXLinkSubHidden Joint;
-    /// The motion itself as a function of time, for example "1.0*time".
-    App::PropertyString Formula;
-    /// "Angular" (a rotation about the joint axis) or "Linear" (a displacement along it).
-    App::PropertyEnumeration MotionType;
+    void attach(App::DocumentObject* obj) override;
+    void setDisplayMode(const char* ModeName) override;
+    std::vector<std::string> getDisplayModes() const override;
 
-    App::DocumentObjectExecReturn* execute() override;
+    QIcon getIcon() const override;
 
-    /// The joint named by Joint, resolved. Nullptr if the reference is broken.
-    App::DocumentObject* getJoint() const;
-
-    /// True when this motion rotates rather than translates.
-    bool isAngular() const;
-
-    /// The simulation this motion belongs to, or nullptr if it belongs to none.
-    Simulation* getSimulation() const;
-
-    /// The assembly this motion belongs to, or nullptr if it belongs to none.
-    AssemblyObject* getAssembly() const;
+    /// Draw one dashed line per component moved, replacing whatever was drawn before.
+    void redrawLines(const std::vector<Assembly::ExplosionLine>& lines);
 
     PyObject* getPyObject() override;
 
-    const char* getViewProviderName() const override
-    {
-        return "AssemblyGui::ViewProviderMotion";
-    }
-
 private:
-    static const char* MotionTypeEnums[];
+    Gui::SoFCSelection* pcSelectionRoot;
+    SoSeparator* pcLineGroup;
 };
 
-
-}  // namespace Assembly
+}  // namespace AssemblyGui

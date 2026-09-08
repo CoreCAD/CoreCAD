@@ -28,6 +28,7 @@ qt_add_resources(AssemblyResource_SRCS ${_Assembly_Icons_QRC} ${Assembly_TR_QRC}
 SOURCE_GROUP("Resources" FILES ${AssemblyResource_SRCS})
 
 generate_from_py(ViewProviderAssembly)
+generate_from_py(ViewProviderExplodedViewStep)
 
 set(AssemblyGui_UIC_SRCS
     TaskAssemblyCreateBom.ui
@@ -41,6 +42,8 @@ set(AssemblyGui_UIC_SRCS
 SET(Python_SRCS
     ViewProviderAssembly.pyi
     ViewProviderAssemblyPyImp.cpp
+    ViewProviderExplodedViewStep.pyi
+    ViewProviderExplodedViewStepPyImp.cpp
 )
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
@@ -60,6 +63,14 @@ SET(AssemblyGui_SRCS_Module
     ViewProviderBom.h
     ViewProviderBomGroup.cpp
     ViewProviderBomGroup.h
+    ViewProviderExplodedView.cpp
+    ViewProviderExplodedView.h
+    ViewProviderExplodedViewStep.cpp
+    ViewProviderExplodedViewStep.h
+    ViewProviderMotion.cpp
+    ViewProviderMotion.h
+    ViewProviderSimulation.cpp
+    ViewProviderSimulation.h
     ViewProviderJointGroup.cpp
     ViewProviderJointGroup.h
     ViewProviderViewGroup.cpp

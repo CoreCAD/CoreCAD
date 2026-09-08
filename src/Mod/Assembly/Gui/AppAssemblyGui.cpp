@@ -31,6 +31,10 @@
 #include "ViewProviderAssemblyLink.h"
 #include "ViewProviderBom.h"
 #include "ViewProviderBomGroup.h"
+#include "ViewProviderExplodedView.h"
+#include "ViewProviderExplodedViewStep.h"
+#include "ViewProviderMotion.h"
+#include "ViewProviderSimulation.h"
 #include "ViewProviderJointGroup.h"
 #include "ViewProviderViewGroup.h"
 #include "ViewProviderSimulationGroup.h"
@@ -65,6 +69,10 @@ PyMOD_INIT_FUNC(AssemblyGui)
     AssemblyGui::ViewProviderAssemblyLink::init();
     AssemblyGui::ViewProviderBom::init();
     AssemblyGui::ViewProviderBomGroup::init();
+    AssemblyGui::ViewProviderExplodedView::init();
+    AssemblyGui::ViewProviderExplodedViewStep::init();
+    AssemblyGui::ViewProviderMotion::init();
+    AssemblyGui::ViewProviderSimulation::init();
     AssemblyGui::ViewProviderJointGroup::init();
     AssemblyGui::ViewProviderViewGroup::init();
     AssemblyGui::ViewProviderSimulationGroup::init();

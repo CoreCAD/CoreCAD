@@ -92,11 +92,9 @@ public:
 
     PyObject* getPyObject() override;
 
-    /// Hosts the (still-Python) ViewProviderExplodedViewStep over the FeaturePython
-    /// view provider shell, as Joint does. Ported to C++ with the view provider slice.
     const char* getViewProviderName() const override
     {
-        return "Gui::ViewProviderFeaturePython";
+        return "AssemblyGui::ViewProviderExplodedViewStep";
     }
 
 private:

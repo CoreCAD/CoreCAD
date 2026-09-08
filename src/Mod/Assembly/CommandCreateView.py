@@ -25,8 +25,6 @@ import re
 import os
 import FreeCAD as App
 
-from pivy import coin
-from Part import LineSegment, Compound
 
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
@@ -92,9 +90,27 @@ def redrawStepLines(step, positions):
     if step.ViewObject is None:
         return
 
-    vp = getattr(step.ViewObject, "Proxy", None)
-    if vp is not None and hasattr(vp, "redrawLines"):
-        vp.redrawLines(step, positions)
+    step.ViewObject.redrawLines(positions)
+
+
+def editExplodedView(viewObj):
+    """Open the exploded-view panel on a view. Called by its view provider."""
+    task = Gui.Control.activeTaskDialog()
+    if task:
+        task.reject()
+
+    assembly = viewObj.getAssembly()
+    if assembly is None:
+        return
+
+    if UtilsAssembly.activeAssembly() != assembly:
+        Gui.ActiveDocument.setEdit(assembly)
+
+    panel = TaskAssemblyCreateView(viewObj)
+    dialog = Gui.Control.showDialog(panel)
+    if dialog is not None:
+        dialog.setAutoCloseOnDeletedDocument(True)
+        dialog.setDocumentName(App.ActiveDocument.Name)
 
 
 class ExplodedViewStepsObserver:
@@ -112,166 +128,6 @@ class ExplodedViewStepsObserver:
     def slotChangedObject(self, obj, prop):
         if obj == self.viewObj and prop == "Group":
             self.callback()
-
-
-class ViewProviderExplodedView:
-    def __init__(self, vobj):
-        """Set this object to the proxy object of the actual view provider"""
-        vobj.Proxy = self
-
-    def attach(self, vobj):
-        """Setup the scene sub-graph of the view provider, this method is mandatory"""
-        self.app_obj = vobj.Object
-
-        self.display_mode = coin.SoType.fromName("SoFCSelection").createInstance()
-
-        vobj.addDisplayMode(self.display_mode, "Wireframe")
-
-    def updateData(self, joint, prop):
-        """If a property of the handled feature has changed we have the chance to handle this here"""
-        # joint is the handled feature, prop is the name of the property that has changed
-        pass
-
-    def getDisplayModes(self, obj):
-        """Return a list of display modes."""
-        return ["Wireframe"]
-
-    def getDefaultDisplayMode(self):
-        """Return the name of the default display mode. It must be defined in getDisplayModes."""
-        return "Wireframe"
-
-    def onChanged(self, vp, prop):
-        """Here we can do something when a single property got changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-        pass
-
-    def getIcon(self):
-        return ":/icons/Assembly_ExplodedView.svg"
-
-    def dumps(self):
-        """When saving the document this object gets stored using Python's json module.\
-                Since we have some un-serializable parts here -- the Coin stuff -- we must define this method\
-                to return a tuple of all serializable objects or None."""
-        return None
-
-    def loads(self, state):
-        """When restoring the serialized object from document we have the chance to set some internals here.\
-                Since no data were serialized nothing needs to be done here."""
-        return None
-
-    def claimChildren(self):
-        return self.app_obj.Group
-
-    def doubleClicked(self, vobj):
-        task = Gui.Control.activeTaskDialog()
-        if task:
-            task.reject()
-
-        assembly = vobj.Object.getAssembly()
-
-        if assembly is None:
-            return False
-
-        if UtilsAssembly.activeAssembly() != assembly:
-            Gui.ActiveDocument.setEdit(assembly)
-
-        panel = TaskAssemblyCreateView(vobj.Object)
-        dialog = Gui.Control.showDialog(panel)
-        if dialog is not None:
-            dialog.setAutoCloseOnDeletedDocument(True)
-            dialog.setDocumentName(App.ActiveDocument.Name)
-
-        return True
-
-    def onDelete(self, vobj, subelements):
-        for obj in self.claimChildren():
-            obj.Document.removeObject(obj.Name)
-        return True
-
-
-class ViewProviderExplodedViewStep:
-    def __init__(self, vobj):
-        """Set this object to the proxy object of the actual view provider"""
-        vobj.Proxy = self
-
-    def attach(self, vobj):
-        """Setup the scene sub-graph of the view provider, this method is mandatory"""
-        self.app_obj = vobj.Object
-
-        pref = Preferences.preferences()
-
-        self.line_thickness = pref.GetInt("StepLineThickness", 3)
-
-        param_step_line_color = pref.GetUnsigned("StepLineColor", 0xCC333300)
-        self.so_color = coin.SoBaseColor()
-        self.so_color.rgb.setValue(UtilsAssembly.color_from_unsigned(param_step_line_color))
-
-        self.draw_style = coin.SoDrawStyle()
-        self.draw_style.style = coin.SoDrawStyle.LINES
-        self.draw_style.lineWidth = self.line_thickness
-        self.draw_style.linePattern = 0xF0F0  # Dashed line pattern
-
-        # Create a separator to hold all dashed lines
-        self.lineSetGroup = coin.SoSeparator()
-
-        self.display_mode = coin.SoType.fromName("SoFCSelection").createInstance()
-        self.display_mode.addChild(self.lineSetGroup)  # Add the group to the display mode
-        vobj.addDisplayMode(self.display_mode, "Wireframe")
-
-    def updateData(self, stepObj, prop):
-        """If a property of the handled feature has changed we have the chance to handle this here"""
-        # stepObj is the handled feature, prop is the name of the property that has changed
-        pass
-
-    def redrawLines(self, stepObj, positions):
-        # Clear existing lines
-        self.lineSetGroup.removeAllChildren()
-
-        for startPos, endPos in positions:
-            # Create the line
-            line = coin.SoLineSet()
-            line.numVertices.setValue(2)
-            coords = coin.SoCoordinate3()
-            coords.point.setValues(0, [startPos, endPos])
-
-            # Create separator for this line to apply the style
-            line_sep = coin.SoSeparator()
-            line_sep.addChild(self.draw_style)
-            line_sep.addChild(self.so_color)
-            line_sep.addChild(coords)
-            line_sep.addChild(line)
-
-            # Add to the group
-            self.lineSetGroup.addChild(line_sep)
-
-    def getDisplayModes(self, obj):
-        """Return a list of display modes."""
-        modes = []
-        modes.append("Wireframe")
-        return modes
-
-    def getDefaultDisplayMode(self):
-        """Return the name of the default display mode. It must be defined in getDisplayModes."""
-        return "Wireframe"
-
-    def onChanged(self, vp, prop):
-        """Here we can do something when a single property got changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-        pass
-
-    def getIcon(self):
-        return ":/icons/button_add_all.svg"
-
-    def dumps(self):
-        """When saving the document this object gets stored using Python's json module.\
-                Since we have some un-serializable parts here -- the Coin stuff -- we must define this method\
-                to return a tuple of all serializable objects or None."""
-        return None
-
-    def loads(self, state):
-        """When restoring the serialized object from document we have the chance to set some internals here.\
-                Since no data were serialized nothing needs to be done here."""
-        return None
 
 
 class ExplodedViewSelGate:
@@ -570,7 +426,6 @@ class TaskAssemblyCreateView(QtCore.QObject):
         )
         Gui.doCommand(commands)
         self.viewObj = Gui.doCommandEval("viewObj")
-        Gui.doCommandGui("CommandCreateView.ViewProviderExplodedView(viewObj.ViewObject)")
 
     def createExplodedStepObject(self):
         moveType = "Normal"
@@ -589,7 +444,6 @@ class TaskAssemblyCreateView(QtCore.QObject):
         )
         Gui.doCommand(commands)
         self.currentStep = Gui.doCommandEval("currentStep")
-        Gui.doCommandGui("CommandCreateView.ViewProviderExplodedViewStep(currentStep.ViewObject)")
 
         self.currentStep.MoveType = moveType
         self.currentStep.MovementTransform = App.Placement()
