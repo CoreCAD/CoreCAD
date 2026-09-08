@@ -29,8 +29,6 @@ from pathlib import Path
 
 import FreeCAD as App
 
-from pivy import coin
-from Part import LineSegment, Compound
 
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
@@ -127,91 +125,24 @@ class SimulationMotionsObserver:
             self.callback()
 
 
-class ViewProviderSimulation:
-    def __init__(self, vpDoc):
-        vpDoc.Proxy = self
-        self.Object = vpDoc.Object
-        self.setProperties(vpDoc)
+def editSimulation(simObj):
+    """Open the simulation panel on a simulation. Called by its view provider."""
+    task = Gui.Control.activeTaskDialog()
+    if task:
+        task.reject()
 
-    def setProperties(self, vpDoc):
-        if not hasattr(vpDoc, "Decimals"):
-            vpDoc.addProperty(
-                "App::PropertyInteger",
-                "Decimals",
-                "Space",
-                QT_TRANSLATE_NOOP(
-                    "App::Property", "The number of decimals to use for calculated texts"
-                ),
-                locked=True,
-            )
-            vpDoc.Decimals = 9
+    assembly = simObj.getAssembly()
+    if assembly is None:
+        return
 
-    def attach(self, vpDoc):
-        """Setup the scene sub-graph of the view provider, this method is mandatory"""
-        self.app_obj = vpDoc.Object
+    if UtilsAssembly.activeAssembly() != assembly:
+        Gui.ActiveDocument.setEdit(assembly)
 
-        self.display_mode = coin.SoType.fromName("SoFCSelection").createInstance()
-
-        vpDoc.addDisplayMode(self.display_mode, "Wireframe")
-
-    def updateData(self, feaPy, prop):
-        """If a property of the handled feature has changed we have the chance to handle this here"""
-        pass
-
-    def getDisplayModes(self, vpDoc):
-        """Return a list of display modes."""
-        return ["Wireframe"]
-
-    def getDefaultDisplayMode(self):
-        """Return the name of the default display mode. It must be defined in getDisplayModes."""
-        return "Wireframe"
-
-    def onChanged(self, vpDoc, prop):
-        """Here we can do something when a single property got changed"""
-        pass
-
-    def getIcon(self):
-        return ":/icons/Assembly_CreateSimulation.svg"
-
-    def dumps(self):
-        """When saving the document this object gets stored using Python's json module.\
-                Since we have some un-serializable parts here -- the Coin stuff -- we must define this method\
-                to return a tuple of all serializable objects or None."""
-        return None
-
-    def loads(self, state):
-        """When restoring the serialized object from document we have the chance to set some internals here.\
-                Since no data were serialized nothing needs to be done here."""
-        return None
-
-    def claimChildren(self):
-        return self.app_obj.Group
-
-    def doubleClicked(self, vpDoc):
-        task = Gui.Control.activeTaskDialog()
-        if task:
-            task.reject()
-
-        assembly = vpDoc.Object.getAssembly()
-
-        if assembly is None:
-            return False
-
-        if UtilsAssembly.activeAssembly() != assembly:
-            Gui.ActiveDocument.setEdit(assembly)
-
-        panel = TaskAssemblyCreateSimulation(vpDoc.Object)
-        dialog = Gui.Control.showDialog(panel)
-        if dialog is not None:
-            dialog.setAutoCloseOnDeletedDocument(True)
-            dialog.setDocumentName(App.ActiveDocument.Name)
-
-        return True
-
-    def onDelete(self, vobj, subelements):
-        for obj in self.claimChildren():
-            obj.Document.removeObject(obj.Name)
-        return True
+    panel = TaskAssemblyCreateSimulation(simObj)
+    dialog = Gui.Control.showDialog(panel)
+    if dialog is not None:
+        dialog.setAutoCloseOnDeletedDocument(True)
+        dialog.setDocumentName(App.ActiveDocument.Name)
 
 
 ########### Motion Object #############
@@ -226,95 +157,42 @@ MotionTypes = [
 ]
 
 
-class ViewProviderMotion:
-    def __init__(self, vp):
-        vp.Proxy = self
-        self.app_obj = vp.Object
-        self.updateLabel()
+def updateMotionLabel(motion):
+    """Name a motion after the joint it drives and the way it drives it."""
+    if motion.Joint is None:
+        return
 
-    def attach(self, vpDoc):
-        """Setup the scene sub-graph of the view provider, this method is mandatory"""
-        self.app_obj = vpDoc.Object
+    typeStr = "Linear" if motion.MotionType == "Linear" else "Angular"
+    motion.Label = "{label} ({type_})".format(
+        label=motion.Joint[0].Label, type_=translate("Assembly", typeStr)
+    )
 
-        self.display_mode = coin.SoType.fromName("SoFCSelection").createInstance()
 
-        vpDoc.addDisplayMode(self.display_mode, "Wireframe")
+def editMotion(motion):
+    """Open the motion dialog on a motion.
 
-    def updateData(self, feaPy, prop):
-        """If a property of the handled feature has changed we have the chance to handle this here"""
-        pass
+    One entry point for both the view provider's double click and the simulation
+    panel's motion list; the panel used to reach it through the view provider's
+    Python proxy, which a typed view provider does not have.
+    """
+    assembly = motion.getAssembly()
+    if assembly is None:
+        return
 
-    def getDisplayModes(self, vpDoc):
-        """Return a list of display modes."""
-        return ["Wireframe"]
+    if UtilsAssembly.activeAssembly() != assembly:
+        Gui.ActiveDocument.setEdit(assembly)
 
-    def getDefaultDisplayMode(self):
-        """Return the name of the default display mode. It must be defined in getDisplayModes."""
-        return "Wireframe"
+    joint = None
+    if motion.Joint is not None:
+        joint = motion.Joint[0]
 
-    def onChanged(self, vpDoc, prop):
-        """Here we can do something when a single property got changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-        pass
+    dialog = MotionEditDialog(assembly, motion.MotionType, joint, motion.Formula)
+    if dialog.exec_():
+        motion.MotionType = dialog.motionType
+        motion.Joint = dialog.joint
+        motion.Formula = dialog.formula
 
-    def getIcon(self):
-        if self.app_obj.MotionType == "Angular":
-            return ":/icons/button_rotate.svg"
-
-        return ":/icons/button_right.svg"
-
-    def dumps(self):
-        """When saving the document this object gets stored using Python's json module.\
-                Since we have some un-serializable parts here -- the Coin stuff -- we must define this method\
-                to return a tuple of all serializable objects or None."""
-        return None
-
-    def loads(self, state):
-        """When restoring the serialized object from document we have the chance to set some internals here.\
-                Since no data were serialized nothing needs to be done here."""
-        return None
-
-    def doubleClicked(self, vpDoc):
-        self.openEditDialog()
-
-    def openEditDialog(self):
-        assembly = self.getAssembly()
-
-        if assembly is None:
-            return False
-
-        joint = None
-        if self.app_obj.Joint is not None:
-            joint = self.app_obj.Joint[0]
-
-        dialog = MotionEditDialog(assembly, self.app_obj.MotionType, joint, self.app_obj.Formula)
-        if dialog.exec_():
-            self.app_obj.MotionType = dialog.motionType
-            self.app_obj.Joint = dialog.joint
-            self.app_obj.Formula = dialog.formula
-
-            self.updateLabel()
-
-    def updateLabel(self):
-        if self.app_obj.Joint is None:
-            return
-
-        typeStr = "Linear" if self.app_obj.MotionType == "Linear" else "Angular"
-
-        self.app_obj.Label = "{label} ({type_})".format(
-            label=self.app_obj.Joint[0].Label, type_=translate("Assembly", typeStr)
-        )
-
-    def getAssembly(self):
-        assembly = self.app_obj.getAssembly()
-
-        if assembly is None:
-            return None
-
-        if UtilsAssembly.activeAssembly() != assembly:
-            Gui.ActiveDocument.setEdit(assembly)
-
-        return assembly
+        updateMotionLabel(motion)
 
 
 class MotionEditDialog:
@@ -763,13 +641,12 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
         row = self.form.motionList.row(item)
         if row < len(self.simFeaturePy.Group):
             motion = self.simFeaturePy.Group[row]
-            motion.ViewObject.Proxy.openEditDialog()
+            editMotion(motion)
             self.onMotionsChanged()
 
     def createSimulationObject(self):
         sim_group = UtilsAssembly.getSimulationGroup(self.assembly)
         self.simFeaturePy = sim_group.newObject("Assembly::Simulation", "Simulation")
-        ViewProviderSimulation(self.simFeaturePy.ViewObject)
 
     def createMotionObject(self, motionType, joint, formula):
         # Created ON the simulation that owns it. The former code created it on the
@@ -780,7 +657,7 @@ class TaskAssemblyCreateSimulation(QtCore.QObject):
         motion.MotionType = motionType
         motion.Joint = joint
         motion.Formula = formula
-        ViewProviderMotion(motion.ViewObject)
+        updateMotionLabel(motion)
 
     def onMotionsChanged(self):
         self.form.motionList.clear()
