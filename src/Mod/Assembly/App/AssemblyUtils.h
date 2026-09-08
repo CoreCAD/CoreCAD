@@ -35,6 +35,7 @@
 #include <Base/Vector3D.h>
 
 #include <cstddef>
+#include <functional>
 #include <utility>
 
 namespace App
@@ -239,11 +240,15 @@ AssemblyExport Base::Placement findPlacement(
 );
 AssemblyExport Base::Placement findPlacement(const App::PropertyXLinkSub* ref, bool ignoreVertex);
 
-// Ask a joint's (still-Python) ViewProvider to redraw its Coin3D connector glyphs.
-// Reaches the view provider through the object's ViewObject.Proxy at runtime, so the
-// App layer keeps no compile-time dependency on the Gui layer. A no-op headless (no
-// ViewObject) or when no such view provider is attached. Retired once the joint view
-// provider is ported to C++ (#60).
+// Redraw a joint's frames after something has moved: a frame's position depends on
+// where the component is, not only on what the joint stores, so a property change on
+// the joint alone does not cover it.
+//
+// The App layer must not depend on the view layer, so it holds no more than a
+// handler the Gui module registers at start-up. Headless nothing registers one and
+// the call does nothing.
+using JointRedrawHandler = std::function<void(App::DocumentObject*)>;
+AssemblyExport void setJointRedrawHandler(JointRedrawHandler handler);
 AssemblyExport void redrawJointViewProvider(App::DocumentObject* joint);
 
 }  // namespace Assembly

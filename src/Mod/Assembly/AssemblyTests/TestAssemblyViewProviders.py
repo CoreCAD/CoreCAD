@@ -22,7 +22,7 @@
 #                                                                           *
 # **************************************************************************/
 
-"""The exploded-view and simulation objects are shown by typed C++ view providers.
+"""The assembly's objects are shown by typed C++ view providers.
 
 They used to be Python proxies attached by the creation command, which meant an
 object's appearance existed only if that command had run: a document opened without
@@ -124,3 +124,105 @@ class TestAssemblyViewProviders(SceneGraphAssertions, unittest.TestCase):
         self.step.ViewObject.redrawLines([])
 
         self.assertNoNodes(self.step.ViewObject.RootNode, "SoLineSet")
+
+
+@unittest.skipIf(not App.GuiUp, "view providers need a running GUI")
+class TestJointViewProvider(SceneGraphAssertions, unittest.TestCase):
+    """A joint's frames are drawn where its components are.
+
+    A frame's world position is the component's global placement combined with the
+    placement the joint stores against it, so moving the component moves the frame
+    even though nothing on the joint changed. That is why there is an explicit
+    redraw at all, and why these tests place a component away from the origin.
+    """
+
+    def setUp(self):
+        import FreeCADGui as Gui
+
+        self.doc = App.newDocument("jointvptest")
+        self.assembly = self.doc.addObject("Assembly::AssemblyObject", "Assembly")
+
+        self.box = self.doc.addObject("Part::Box", "Box")
+        self.box.Placement = App.Placement(App.Vector(100, 0, 0), App.Rotation())
+        self.assembly.addObject(self.box)
+
+        jointGroup = UtilsAssembly.getJointGroup(self.assembly)
+        self.joint = jointGroup.newObject("Assembly::Joint", "Joint")
+        self.joint.Reference1 = (self.box, ["Face1"])
+
+        self.grounded = jointGroup.newObject("Assembly::GroundedJoint", "GroundedJoint")
+        self.grounded.ObjectToGround = self.box
+
+        self.doc.recompute()
+        Gui.updateGui()
+
+        # After the recompute, which computes the joint's own frames from its
+        # references: setting it here is what the frame is then expected to show.
+        self.joint.Placement1 = App.Placement(App.Vector(5, 0, 0), App.Rotation())
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+
+    def _markerRoot(self):
+        """The node holding the three frames.
+
+        Searching from the view provider's own root would also find the transform
+        and mode switch every view provider has, which are not frames.
+        """
+        from AssemblyTests.scene_graph import find_nodes
+
+        return find_nodes(self.joint.ViewObject.RootNode, "SoFCSelection")[0]
+
+    def _markerTransforms(self):
+        """The three frame transforms, in order: first frame, second, preview."""
+        from AssemblyTests.scene_graph import find_nodes
+
+        return find_nodes(self._markerRoot(), "SoTransform")
+
+    def _markerSwitches(self):
+        from AssemblyTests.scene_graph import find_nodes
+
+        return find_nodes(self._markerRoot(), "SoSwitch")
+
+    def testAJointIsShownByItsOwnTypedViewProvider(self):
+        self.assertEqual(self.joint.ViewObject.TypeId, "AssemblyGui::ViewProviderJoint")
+        self.assertEqual(self.grounded.ViewObject.TypeId, "AssemblyGui::ViewProviderGroundedJoint")
+        self.assertFalse(hasattr(self.joint.ViewObject, "Proxy"))
+        self.assertFalse(hasattr(self.grounded.ViewObject, "Proxy"))
+
+    def testAFrameSitsWhereItsComponentIs(self):
+        """Not at the placement the joint stores: that is measured in the part."""
+        translation = self._markerTransforms()[0].translation.getValue().getValue()
+
+        self.assertEqual(tuple(translation), (105.0, 0.0, 0.0))
+
+    def testRedrawingFollowsAComponentThatMoved(self):
+        """What the solver and a 3D drag both ask for: nothing on the joint changed."""
+        self.box.Placement = App.Placement(App.Vector(200, 0, 0), App.Rotation())
+        self.joint.ViewObject.redrawMarkers()
+
+        translation = self._markerTransforms()[0].translation.getValue().getValue()
+
+        self.assertEqual(tuple(translation), (205.0, 0.0, 0.0))
+
+    def testAFrameWithNoReferenceIsNotDrawn(self):
+        """The second frame of a half-made joint would otherwise sit at the origin."""
+        first, second, preview = self._markerSwitches()
+
+        self.assertEqual(first.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertEqual(second.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.assertEqual(preview.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def testThePreviewFrameFollowsTheReferenceItIsMeasuredAgainst(self):
+        self.joint.ViewObject.showPreviewJcs(
+            App.Placement(App.Vector(0, 7, 0), App.Rotation()), [self.box, ["Face1"]]
+        )
+
+        preview = self._markerSwitches()[2]
+        translation = self._markerTransforms()[2].translation.getValue().getValue()
+
+        self.assertEqual(preview.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertEqual(tuple(translation), (100.0, 7.0, 0.0))
+
+        self.joint.ViewObject.hidePreviewJcs()
+        self.assertEqual(self._markerSwitches()[2].whichChild.getValue(), coin.SO_SWITCH_NONE)

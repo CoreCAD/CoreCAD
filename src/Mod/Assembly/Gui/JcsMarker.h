@@ -23,56 +23,53 @@
  *                                                                          *
  ***************************************************************************/
 
-
 #pragma once
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
-#include <App/DocumentObject.h>
-#include <App/PropertyLinks.h>
+#include <Base/Placement.h>
 
+class SoSwitch;
+class SoTransform;
+class SoPickStyle;
 
-namespace Assembly
+namespace AssemblyGui
 {
 
 /**
- * A grounded joint: it pins one assembly component in place.
+ * The little coordinate frame drawn where a joint meets a component: a translucent
+ * disc for the joint plane and three coloured axis stubs.
  *
- * Structurally distinct from a mate (Assembly::Joint): it carries only the
- * link to the grounded component, no connectors. The assembly solver
- * recognises a grounded joint by the presence of an `ObjectToGround` link
- * property (AssemblyObject::getGroundedJoints), so keeping that property name
- * — and keeping this a separate type — means the solver needs no change.
- *
- * Like a mate it is assembly-scoped content, so a typed document admits or
- * refuses it at the door (ARCHITECTURE §7.1, Amendment 8).
+ * Ported from the Python SoSwitchMarker, which was a pivy subclass of SoSwitch. It
+ * needs to be no such thing: it owns a switch, it is not one. The axis colours come
+ * from the same View preferences the rest of the application uses for X, Y and Z.
  */
-class AssemblyExport GroundedJoint: public App::DocumentObject
+class AssemblyGuiExport JcsMarker
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Assembly::GroundedJoint);
-
 public:
-    GroundedJoint();
-    ~GroundedJoint() override;
+    JcsMarker();
+    ~JcsMarker();
 
-    /// The component this joint fixes in place.
-    App::PropertyLinkGlobal ObjectToGround;
+    JcsMarker(const JcsMarker&) = delete;
+    JcsMarker& operator=(const JcsMarker&) = delete;
 
-    App::DocumentObjectExecReturn* execute() override;
-
-    PyObject* getPyObject() override;
-
-    const char* getViewProviderName() const override
+    /// The node to hang under a view provider's display mode.
+    SoSwitch* node() const
     {
-        return "AssemblyGui::ViewProviderGroundedJoint";
+        return root;
     }
 
-    /// A grounded joint is assembly-scoped content: only an Assembly document admits it.
-    App::DocumentObject::ContentScope getContentScope() const override
-    {
-        return App::DocumentObject::ContentScope::AssemblyItem;
-    }
+    /// Show the marker at a world placement, or hide it.
+    void show(const Base::Placement& worldPlacement);
+    void hide();
+
+    /// Whether the marker can be picked in the 3D view.
+    void setPickable(bool pickable);
+
+private:
+    SoSwitch* root;
+    SoTransform* transform;
+    SoPickStyle* pick;
 };
 
-
-}  // namespace Assembly
+}  // namespace AssemblyGui

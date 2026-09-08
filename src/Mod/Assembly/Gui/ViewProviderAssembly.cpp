@@ -682,16 +682,11 @@ void ViewProviderAssembly::doubleClickedIn3dView()
     auto* joint = getSelectedJoint();
 
     if (joint) {
-        std::string obj_name = joint->getNameInDocument();
-        std::string doc_name = joint->getDocument()->getName();
-
-        std::string cmd = "import JointObject\n"
-                          "obj = App.getDocument('"
-            + doc_name + "').getObject('" + obj_name
-            + "')\n"
-              "Gui.Control.showDialog(JointObject.TaskAssemblyCreateJoint(0, obj))";
-
-        Gui::Command::runCommand(Gui::Command::App, cmd.c_str());
+        // The joint's own view provider knows how to open it: a double click in the
+        // 3D view and one in the tree are the same request.
+        if (auto* vp = Gui::Application::Instance->getViewProvider(joint)) {
+            vp->doubleClicked();
+        }
     }
 }
 

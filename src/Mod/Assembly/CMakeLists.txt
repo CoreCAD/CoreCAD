@@ -33,7 +33,6 @@ set(Assembly_Scripts
     Preferences.py
     AssemblyImport.py
     AssemblyStepImport.py
-    SoSwitchMarker.py
     UtilsAssembly.py
 )
 

@@ -955,10 +955,8 @@ def openEditingPlacementDialog(obj, propName):
 
 def setPickableState(obj, state: bool):
     vobj = obj.ViewObject
-    if hasattr(vobj, "Proxy"):
-        proxy = vobj.Proxy
-        if hasattr(proxy, "setPickableState"):
-            proxy.setPickableState(state)
+    if vobj is not None:
+        vobj.setPickableState(state)
 
 
 def setJointsPickableState(doc, state: bool):

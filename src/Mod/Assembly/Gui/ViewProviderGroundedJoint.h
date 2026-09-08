@@ -23,56 +23,55 @@
  *                                                                          *
  ***************************************************************************/
 
-
 #pragma once
+
+#include <string>
+#include <vector>
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
-#include <App/DocumentObject.h>
-#include <App/PropertyLinks.h>
+#include <Gui/ViewProviderDocumentObject.h>
 
+class SoSeparator;
+class SoTransform;
 
-namespace Assembly
+namespace AssemblyGui
 {
 
 /**
- * A grounded joint: it pins one assembly component in place.
+ * The view provider of an Assembly::GroundedJoint: the padlock drawn on a component
+ * that is held in place.
  *
- * Structurally distinct from a mate (Assembly::Joint): it carries only the
- * link to the grounded component, no connectors. The assembly solver
- * recognises a grounded joint by the presence of an `ObjectToGround` link
- * property (AssemblyObject::getGroundedJoints), so keeping that property name
- * — and keeping this a separate type — means the solver needs no change.
+ * The typed replacement for the former Python ViewProviderGroundedJoint proxy. The
+ * padlock always faces the camera and keeps its size on screen, as before.
  *
- * Like a mate it is assembly-scoped content, so a typed document admits or
- * refuses it at the door (ARCHITECTURE §7.1, Amendment 8).
+ * It is placed on the component when the view provider is built and when the joint
+ * is pointed at a different component. It does not follow a component that moves --
+ * the same as the Python version, which watched for a "Placement" property the
+ * grounded joint has never had.
  */
-class AssemblyExport GroundedJoint: public App::DocumentObject
+class AssemblyGuiExport ViewProviderGroundedJoint: public Gui::ViewProviderDocumentObject
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Assembly::GroundedJoint);
+    PROPERTY_HEADER_WITH_OVERRIDE(AssemblyGui::ViewProviderGroundedJoint);
 
 public:
-    GroundedJoint();
-    ~GroundedJoint() override;
+    ViewProviderGroundedJoint();
+    ~ViewProviderGroundedJoint() override;
 
-    /// The component this joint fixes in place.
-    App::PropertyLinkGlobal ObjectToGround;
+    void attach(App::DocumentObject* obj) override;
+    void setDisplayMode(const char* ModeName) override;
+    std::vector<std::string> getDisplayModes() const override;
 
-    App::DocumentObjectExecReturn* execute() override;
+    void updateData(const App::Property* prop) override;
 
-    PyObject* getPyObject() override;
+    QIcon getIcon() const override;
 
-    const char* getViewProviderName() const override
-    {
-        return "AssemblyGui::ViewProviderGroundedJoint";
-    }
+private:
+    /// Put the padlock on the component this joint grounds.
+    void updateLockPosition();
 
-    /// A grounded joint is assembly-scoped content: only an Assembly document admits it.
-    App::DocumentObject::ContentScope getContentScope() const override
-    {
-        return App::DocumentObject::ContentScope::AssemblyItem;
-    }
+    SoSeparator* pcLockRoot;
+    SoTransform* pcTransform;
 };
 
-
-}  // namespace Assembly
+}  // namespace AssemblyGui

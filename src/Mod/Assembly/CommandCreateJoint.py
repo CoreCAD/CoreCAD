@@ -415,7 +415,6 @@ def createGroundedJoint(obj):
         "ground.ObjectToGround = obj"
     )
     Gui.doCommand(commands)
-    Gui.doCommandGui("JointObject.ViewProviderGroundedJoint(ground.ViewObject)")
 
     Gui.doCommand("UtilsAssembly.activeAssembly().Document.recompute()")
     return Gui.doCommandEval("ground")

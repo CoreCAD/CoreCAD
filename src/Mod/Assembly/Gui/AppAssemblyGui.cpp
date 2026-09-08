@@ -26,12 +26,19 @@
 #include <Base/Interpreter.h>
 #include <Base/PyObjectBase.h>
 
+#include <App/DocumentObject.h>
+#include <Gui/Application.h>
+
+#include <Mod/Assembly/App/AssemblyUtils.h>
+
 #include "Commands.h"
 #include "ViewProviderAssembly.h"
 #include "ViewProviderAssemblyLink.h"
 #include "ViewProviderBom.h"
 #include "ViewProviderBomGroup.h"
 #include "ViewProviderExplodedView.h"
+#include "ViewProviderGroundedJoint.h"
+#include "ViewProviderJoint.h"
 #include "ViewProviderExplodedViewStep.h"
 #include "ViewProviderMotion.h"
 #include "ViewProviderSimulation.h"
@@ -70,12 +77,26 @@ PyMOD_INIT_FUNC(AssemblyGui)
     AssemblyGui::ViewProviderBom::init();
     AssemblyGui::ViewProviderBomGroup::init();
     AssemblyGui::ViewProviderExplodedView::init();
+    AssemblyGui::ViewProviderGroundedJoint::init();
+    AssemblyGui::ViewProviderJoint::init();
     AssemblyGui::ViewProviderExplodedViewStep::init();
     AssemblyGui::ViewProviderMotion::init();
     AssemblyGui::ViewProviderSimulation::init();
     AssemblyGui::ViewProviderJointGroup::init();
     AssemblyGui::ViewProviderViewGroup::init();
     AssemblyGui::ViewProviderSimulationGroup::init();
+
+    // A joint's frames sit where its components are, so the solver and a drag both
+    // have to ask for a redraw. The App layer holds no reference to the view layer,
+    // so it is told here what to do when it needs one.
+    Assembly::setJointRedrawHandler([](App::DocumentObject* joint) {
+        auto* vp = dynamic_cast<AssemblyGui::ViewProviderJoint*>(
+            Gui::Application::Instance->getViewProvider(joint)
+        );
+        if (vp) {
+            vp->redrawMarkers();
+        }
+    });
 
     PyMOD_Return(mod);
 }

@@ -29,6 +29,7 @@ SOURCE_GROUP("Resources" FILES ${AssemblyResource_SRCS})
 
 generate_from_py(ViewProviderAssembly)
 generate_from_py(ViewProviderExplodedViewStep)
+generate_from_py(ViewProviderJoint)
 
 set(AssemblyGui_UIC_SRCS
     TaskAssemblyCreateBom.ui
@@ -44,6 +45,8 @@ SET(Python_SRCS
     ViewProviderAssemblyPyImp.cpp
     ViewProviderExplodedViewStep.pyi
     ViewProviderExplodedViewStepPyImp.cpp
+    ViewProviderJoint.pyi
+    ViewProviderJointPyImp.cpp
 )
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
@@ -63,10 +66,16 @@ SET(AssemblyGui_SRCS_Module
     ViewProviderBom.h
     ViewProviderBomGroup.cpp
     ViewProviderBomGroup.h
+    JcsMarker.cpp
+    JcsMarker.h
     ViewProviderExplodedView.cpp
     ViewProviderExplodedView.h
     ViewProviderExplodedViewStep.cpp
     ViewProviderExplodedViewStep.h
+    ViewProviderGroundedJoint.cpp
+    ViewProviderGroundedJoint.h
+    ViewProviderJoint.cpp
+    ViewProviderJoint.h
     ViewProviderMotion.cpp
     ViewProviderMotion.h
     ViewProviderSimulation.cpp

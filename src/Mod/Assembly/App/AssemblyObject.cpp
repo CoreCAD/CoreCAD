@@ -609,9 +609,8 @@ void AssemblyObject::redrawJointPlacements(std::vector<App::DocumentObject*> joi
 
 void AssemblyObject::redrawJointPlacement(App::DocumentObject* joint)
 {
-    // The joint's Coin3D connector glyphs are still drawn by the Python
-    // ViewProvider (kept over the typed object until #60); reach it through the
-    // ViewObject's Proxy. A no-op headless.
+    // A joint's frames sit where its components are, so moving a component moves
+    // them. The view layer registers how; headless this does nothing.
     redrawJointViewProvider(joint);
 }
 

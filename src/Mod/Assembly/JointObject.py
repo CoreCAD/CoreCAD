@@ -38,12 +38,9 @@ __title__ = "Assembly Joint object"
 __author__ = "Ondsel"
 __url__ = "https://www.freecad.org"
 
-from pivy import coin
 import AssemblyApp
 import UtilsAssembly
 import Preferences
-
-from SoSwitchMarker import SoSwitchMarker
 
 translate = App.Qt.translate
 
@@ -316,7 +313,7 @@ def undoPreSolve(joint):
         activeTask.partsMovedByPresolved = {}
 
         if joint.ViewObject:
-            joint.ViewObject.Proxy.redrawJointPlacements(joint)
+            joint.ViewObject.redrawMarkers()
 
 
 def preventParallel(joint):
@@ -403,336 +400,31 @@ def ensureUnconnectedIsSecondRef(joint):
             activeTask.updateTaskboxFromJoint()
 
 
-class ViewProviderJoint:
-    def __init__(self, vobj):
-        """Set this object to the proxy object of the actual view provider"""
-
-        vobj.Proxy = self
-
-        vobj.addExtension("Gui::ViewProviderSuppressibleExtensionPython")
-
-    def attach(self, vobj):
-        """Setup the scene sub-graph of the view provider, this method is mandatory"""
-        self.app_obj = vobj.Object
-
-        self.switch_JCS1 = SoSwitchMarker(vobj)
-        self.switch_JCS2 = SoSwitchMarker(vobj)
-        self.switch_JCS_preview = SoSwitchMarker(vobj)
-
-        self.display_mode = coin.SoType.fromName("SoFCSelection").createInstance()
-        self.display_mode.addChild(self.switch_JCS1)
-        self.display_mode.addChild(self.switch_JCS2)
-        self.display_mode.addChild(self.switch_JCS_preview)
-        vobj.addDisplayMode(self.display_mode, "Wireframe")
-
-    def updateData(self, joint, prop):
-        """If a property of the handled feature has changed we have the chance to handle this here"""
-        if prop == "Placement1" and hasattr(joint, "Reference1"):
-            self.redrawJointPlacement(self.switch_JCS1, joint.Placement1, joint.Reference1)
-
-        if prop == "Placement2" and hasattr(joint, "Reference2"):
-            self.redrawJointPlacement(self.switch_JCS2, joint.Placement2, joint.Reference2)
-
-    def redrawJointPlacements(self, joint):
-        if not hasattr(joint, "Reference1") or not hasattr(joint, "Reference2"):
-            return
-
-        self.redrawJointPlacement(self.switch_JCS1, joint.Placement1, joint.Reference1)
-        self.redrawJointPlacement(self.switch_JCS2, joint.Placement2, joint.Reference2)
-
-    def redrawJointPlacement(self, jcs, plc, ref):
-        if ref:
-            jcs.whichChild = coin.SO_SWITCH_ALL
-            self.setJCSPosition(jcs, plc, ref)
-        else:
-            jcs.whichChild = coin.SO_SWITCH_NONE
-
-    def showPreviewJCS(self, visible, placement=None, ref=None):
-        if visible:
-            self.switch_JCS_preview.whichChild = coin.SO_SWITCH_ALL
-            self.setJCSPosition(self.switch_JCS_preview, placement, ref)
-        else:
-            self.switch_JCS_preview.whichChild = coin.SO_SWITCH_NONE
-
-    def setJCSPosition(self, jcs, plc, ref):
-        # The assembly is a plain group rooted at the document world frame (identity),
-        # so its components already carry world placements — no assembly-relative
-        # transform is needed. (Previously assembly.getGlobalPlacement() folded a
-        # non-identity assembly frame in; that instance method is gone with the
-        # GeoFeatureGroup -> DocumentObjectGroup migration, and the frame is identity.)
-        jcs.set_marker_placement(plc, ref)
-
-    def setPickableState(self, state: bool):
-        """Set JCS selectable or unselectable in 3D view"""
-        self.switch_JCS1.setPickableState(state)
-        self.switch_JCS2.setPickableState(state)
-        self.switch_JCS_preview.setPickableState(state)
-
-    def getDisplayModes(self, obj):
-        """Return a list of display modes."""
-        modes = []
-        modes.append("Wireframe")
-        return modes
-
-    def getDefaultDisplayMode(self):
-        """Return the name of the default display mode. It must be defined in getDisplayModes."""
-        return "Wireframe"
-
-    def onChanged(self, vp, prop):
-        """Here we can do something when a single property got changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-        if prop == "color_X_axis" or prop == "color_Y_axis" or prop == "color_Z_axis":
-            self.switch_JCS1.onChanged(vp, prop)
-            self.switch_JCS2.onChanged(vp, prop)
-            self.switch_JCS_preview.onChanged(vp, prop)
-
-    def getIcon(self):
-        if self.app_obj.JointType == "Fixed":
-            return ":/icons/Assembly_CreateJointFixed.svg"
-        elif self.app_obj.JointType == "Revolute":
-            return ":/icons/Assembly_CreateJointRevolute.svg"
-        elif self.app_obj.JointType == "Cylindrical":
-            return ":/icons/Assembly_CreateJointCylindrical.svg"
-        elif self.app_obj.JointType == "Slider":
-            return ":/icons/Assembly_CreateJointSlider.svg"
-        elif self.app_obj.JointType == "Ball":
-            return ":/icons/Assembly_CreateJointBall.svg"
-        elif self.app_obj.JointType == "Distance":
-            return ":/icons/Assembly_CreateJointDistance.svg"
-        elif self.app_obj.JointType == "Parallel":
-            return ":/icons/Assembly_CreateJointParallel.svg"
-        elif self.app_obj.JointType == "Perpendicular":
-            return ":/icons/Assembly_CreateJointPerpendicular.svg"
-        elif self.app_obj.JointType == "Angle":
-            return ":/icons/Assembly_CreateJointAngle.svg"
-        elif self.app_obj.JointType == "RackPinion":
-            return ":/icons/Assembly_CreateJointRackPinion.svg"
-        elif self.app_obj.JointType == "Screw":
-            return ":/icons/Assembly_CreateJointScrew.svg"
-        elif self.app_obj.JointType == "Gears":
-            return ":/icons/Assembly_CreateJointGears.svg"
-        elif self.app_obj.JointType == "Belt":
-            return ":/icons/Assembly_CreateJointPulleys.svg"
-
-        return ":/icons/Assembly_CreateJoint.svg"
-
-    def getOverlayIcons(self):
-        """
-        Return a dictionary of overlay icons.
-        Keys are positions from Gui.IconPosition.
-        Values are the icon resource names.
-        """
-
-        overlays = {}
-
-        assembly = UtilsAssembly.getAssembly(self.app_obj)
-        # Assuming Reference1 corresponds to the first part link
-        if hasattr(self.app_obj, "Reference1"):
-            part = UtilsAssembly.getMovingPart(self.app_obj.Reference1)
-            if part is not None and not assembly.isPartConnected(part):
-                overlays[Gui.IconPosition.BottomLeft] = "Part_Detached"
-
-        return overlays
-
-    def dumps(self):
-        """When saving the document this object gets stored using Python's json module.\
-                Since we have some un-serializable parts here -- the Coin stuff -- we must define this method\
-                to return a tuple of all serializable objects or None."""
-        return None
-
-    def loads(self, state):
-        """When restoring the serialized object from document we have the chance to set some internals here.\
-                Since no data were serialized nothing needs to be done here."""
-        return None
-
-    def doubleClicked(self, vobj):
-        App.ActiveDocument.abortTransaction()  # Close the auto-transaction
-
-        task = Gui.Control.activeTaskDialog()
-        if task:
-            task.reject()
-
-        assembly = UtilsAssembly.getAssembly(vobj.Object)
-
-        if assembly is None:
-            return False
-
-        if UtilsAssembly.activeAssembly() != assembly:
-            vobj.Document.setEdit(assembly)
-
-        panel = TaskAssemblyCreateJoint(0, vobj.Object)
-        dialog = Gui.Control.showDialog(panel)
-        if dialog is not None:
-            dialog.setAutoCloseOnTransactionChange(True)
-            dialog.setAutoCloseOnDeletedDocument(True)
-            dialog.setDocumentName(App.ActiveDocument.Name)
-
-        return True
-
-    def canDelete(self, _obj):
-        return True
-
-
-################ Grounded Joint object #################
-
-
-class ViewProviderGroundedJoint:
-    def __init__(self, obj):
-        """Set this object to the proxy object of the actual view provider"""
-        obj.Proxy = self
-
-    def attach(self, vobj):
-        """Setup the scene sub-graph of the view provider, this method is mandatory"""
-        app_obj = vobj.Object
-        if app_obj is None:
-            return
-        groundedObj = app_obj.ObjectToGround
-        if groundedObj is None:
-            return
-
-        self.scaleFactor = 3.0
-
-        lockpadColorInt = Preferences.preferences().GetUnsigned("AssemblyConstraints", 0xCC333300)
-        self.lockpadColor = coin.SoBaseColor()
-        self.lockpadColor.rgb.setValue(UtilsAssembly.color_from_unsigned(lockpadColorInt))
-
-        self.app_obj = vobj.Object
-        app_doc = self.app_obj.Document
-        self.gui_doc = Gui.getDocument(app_doc)
-
-        # Create transformation (position and orientation)
-        self.transform = coin.SoTransform()
-        self.set_lock_position(groundedObj)
-
-        # Create the 2D components of the lockpad: a square and two arcs
-        self.square = self.create_square()
-
-        # Creating the arcs (approximated with line segments)
-        self.arc = self.create_arc(0, 4, 4, 0, 180)
-
-        self.pick = coin.SoPickStyle()
-        self.pick.style.setValue(coin.SoPickStyle.SHAPE_ON_TOP)
-
-        # Assemble the parts into a scenegraph
-        self.lockpadSeparator = coin.SoSeparator()
-        self.lockpadSeparator.addChild(self.lockpadColor)
-        self.lockpadSeparator.addChild(self.square)
-        self.lockpadSeparator.addChild(self.arc)
-
-        # Use SoVRMLBillboard to make sure the lockpad always faces the camera
-        self.billboard = coin.SoVRMLBillboard()
-        self.billboard.addChild(self.lockpadSeparator)
-
-        self.scale = coin.SoType.fromName("SoShapeScale").createInstance()
-        self.scale.setPart("shape", self.billboard)
-        self.scale.scaleFactor = self.scaleFactor
-
-        self.transformSeparator = coin.SoSeparator()
-        self.transformSeparator.addChild(self.transform)
-        self.transformSeparator.addChild(self.pick)
-        self.transformSeparator.addChild(self.scale)
-
-        # Attach the scenegraph to the view provider
-        vobj.addDisplayMode(self.transformSeparator, "Wireframe")
-
-    def create_square(self):
-        coords = [
-            (-5, -4, 0),
-            (5, -4, 0),
-            (5, 4, 0),
-            (-5, 4, 0),
-        ]
-        vertices = coin.SoCoordinate3()
-        vertices.point.setValues(0, 4, coords)
-
-        squareFace = coin.SoFaceSet()
-        squareFace.numVertices.setValue(4)
-
-        square = coin.SoAnnotation()
-        square.addChild(vertices)
-        square.addChild(squareFace)
-
-        return square
-
-    def create_arc(self, centerX, centerY, radius, startAngle, endAngle):
-        coords = []
-        for angle in range(
-            startAngle, endAngle + 1, 5
-        ):  # Increment can be adjusted for smoother arcs
-            rad = math.radians(angle)
-            x = centerX + math.cos(rad) * radius
-            y = centerY + math.sin(rad) * radius
-            coords.append((x, y, 0))
-
-        radius = radius * 0.7
-        for angle in range(endAngle + 1, startAngle - 1, -5):  # Step backward
-            rad = math.radians(angle)
-            x = centerX + math.cos(rad) * radius
-            y = centerY + math.sin(rad) * radius
-            coords.append((x, y, 0))
-
-        vertices = coin.SoCoordinate3()
-        vertices.point.setValues(0, len(coords), coords)
-
-        shapeHints = coin.SoShapeHints()
-        shapeHints.faceType = coin.SoShapeHints.UNKNOWN_FACE_TYPE
-
-        line = coin.SoFaceSet()
-        line.numVertices.setValue(len(coords))
-
-        arc = coin.SoAnnotation()
-        arc.addChild(shapeHints)
-        arc.addChild(vertices)
-        arc.addChild(line)
-
-        return arc
-
-    def set_lock_position(self, groundedObj):
-        bBox = groundedObj.ViewObject.getBoundingBox()
-        if bBox.isValid():
-            pos = bBox.Center
-        else:
-            pos = groundedObj.Placement.Base
-
-        self.transform.translation.setValue(pos.x, pos.y, pos.z)
-
-    def updateData(self, fp, prop):
-        """If a property of the handled feature has changed we have the chance to handle this here"""
-        # fp is the handled feature, prop is the name of the property that has changed
-
-        if prop == "Placement" and fp.ObjectToGround:
-            self.set_lock_position(fp.ObjectToGround)
-
-    def getDisplayModes(self, obj):
-        """Return a list of display modes."""
-        modes = ["Wireframe"]
-        return modes
-
-    def getDefaultDisplayMode(self):
-        """Return the name of the default display mode. It must be defined in getDisplayModes."""
-        return "Wireframe"
-
-    def onChanged(self, vp, prop):
-        """Here we can do something when a single property got changed"""
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
-        pass
-
-    def getIcon(self):
-        return ":/icons/Assembly_ToggleGrounded.svg"
-
-    def dumps(self):
-        """When saving the document this object gets stored using Python's json module.\
-                Since we have some un-serializable parts here -- the Coin stuff -- we must define this method\
-                to return a tuple of all serializable objects or None."""
-        return None
-
-    def loads(self, state):
-        """When restoring the serialized object from document we have the chance to set some internals here.\
-                Since no data were serialized nothing needs to be done here."""
-        return None
-
-    def canDelete(self, _obj):
-        return True
+def editJoint(joint):
+    """Open the joint panel on a joint.
+
+    One entry point for a double click in the tree and one in the 3D view alike;
+    the assembly's view provider used to build a line of Python for the second.
+    """
+    App.ActiveDocument.abortTransaction()  # Close the auto-transaction
+
+    task = Gui.Control.activeTaskDialog()
+    if task:
+        task.reject()
+
+    assembly = UtilsAssembly.getAssembly(joint)
+    if assembly is None:
+        return
+
+    if UtilsAssembly.activeAssembly() != assembly:
+        Gui.ActiveDocument.setEdit(assembly)
+
+    panel = TaskAssemblyCreateJoint(0, joint)
+    dialog = Gui.Control.showDialog(panel)
+    if dialog is not None:
+        dialog.setAutoCloseOnTransactionChange(True)
+        dialog.setAutoCloseOnDeletedDocument(True)
+        dialog.setDocumentName(App.ActiveDocument.Name)
 
 
 class MakeJointSelGate:
@@ -1054,7 +746,6 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         # the connectors (formerly the Python Joint.__init__).
         self.joint.JointType = JointTypes[type_index]
         setJointConnectors(self.joint, [])
-        ViewProviderJoint(self.joint.ViewObject)
         self.joint.purgeTouched()
 
     def onJointTypeChanged(self, index):
@@ -1386,7 +1077,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
                 or self.getMovingPart(self.refs[0]) == self.getMovingPart(self.presel_ref)
             )
         ):
-            self.joint.ViewObject.Proxy.showPreviewJCS(False)
+            self.joint.ViewObject.hidePreviewJcs()
             if len(self.refs) >= 2:
                 self.updateLimits()
             return
@@ -1402,7 +1093,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
             # Removed because they are not equal when hovering a line endpoints.
             # But we don't actually need to test because if there's no preselection then not cursor is None
         ):
-            self.joint.ViewObject.Proxy.showPreviewJCS(False)
+            self.joint.ViewObject.hidePreviewJcs()
             return
 
         ref = self.presel_ref
@@ -1417,7 +1108,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         # so it computes the frame directly rather than via joint.updateJCSPlacements.
         placement = AssemblyApp.findPlacement(ref, self.joint.ignoresVertex())
         placement = placement * self.joint.Offset1
-        self.joint.ViewObject.Proxy.showPreviewJCS(True, placement, ref)
+        self.joint.ViewObject.showPreviewJcs(placement, ref)
         self.previewJCSVisible = True
 
     # 3D view keyboard handler
@@ -1532,7 +1223,7 @@ class TaskAssemblyCreateJoint(QtCore.QObject):
         self.updateJoint()
 
         # We hide the preview JCS if we just added to the selection
-        self.joint.ViewObject.Proxy.showPreviewJCS(False)
+        self.joint.ViewObject.hidePreviewJcs()
 
     def removeSelection(self, doc_name, obj_name, sub_name, mousePos=None):
         # A re-click on a selected feature: GreedySelection fires this as a genuine user
