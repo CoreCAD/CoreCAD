@@ -31,21 +31,6 @@
 
 using namespace Assembly;
 
-namespace
-{
-/// A "?" in the first sub-element name marks a reference the topological-naming
-/// layer could not resolve after an edit — the joint's link is broken.
-bool hasBrokenReference(const App::PropertyXLinkSub& ref)
-{
-    if (!ref.getValue()) {
-        return false;
-    }
-    const std::vector<std::string>& subs = ref.getSubValues();
-    return !subs.empty() && subs.front().find('?') != std::string::npos;
-}
-}  // namespace
-
-
 const char* Joint::JointTypeEnums[] = {
     "Fixed",
     "Revolute",
@@ -228,10 +213,10 @@ App::DocumentObjectExecReturn* Joint::execute()
     // Refuse to recompute over a broken reference, matching the former Python
     // execute. The solve itself is driven at the AssemblyObject level, which
     // reads this joint's properties by name.
-    if (hasBrokenReference(Reference1)) {
+    if (hasBrokenReference(&Reference1)) {
         return new App::DocumentObjectExecReturn("Broken link in: Reference1", this);
     }
-    if (hasBrokenReference(Reference2)) {
+    if (hasBrokenReference(&Reference2)) {
         return new App::DocumentObjectExecReturn("Broken link in: Reference2", this);
     }
 
