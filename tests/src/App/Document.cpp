@@ -74,6 +74,18 @@ private:
 };
 
 
+// Cruth: units are the user's preference, not something a document carries. A document that
+// stored its own unit system overrode the reader's choice and, worse, was edited by the act of
+// looking at it in different units (ARCHITECTURE.md 7.3).
+TEST_F(DocumentTest, documentCarriesNoUnitSystem)
+{
+    // Act
+    App::Property* unitSystem = doc()->getPropertyByName("UnitSystem");
+
+    // Assert
+    EXPECT_EQ(unitSystem, nullptr);
+}
+
 TEST_F(DocumentTest, addStringHasherIndicatesUnwrittenWhenNew)
 {
     // Arrange

@@ -3290,7 +3290,6 @@ void Document::slotChangePropertyEditor(const App::Document& doc, const App::Pro
     if (getDocument() == &doc) {
         FC_LOG(Prop.getFullName() << " editor changed");
         setModified(true);
-        getMainWindow()->setUserSchema(doc.UnitSystem.getValue());
     }
 }
 

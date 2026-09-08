@@ -68,7 +68,6 @@
 #include <Base/Uuid.h>
 #include <Base/Sequencer.h>
 #include <Base/Stream.h>
-#include <Base/UnitsApi.h>
 
 #include "Document.h"
 #include "RecipeText.h"
@@ -1062,14 +1061,6 @@ Document::Document(const char* documentName)
                       0,
                       Prop_None,
                       "Additional tag to save the name of the company");
-    ADD_PROPERTY_TYPE(UnitSystem, (""), 0, Prop_None, "Unit system to use in this project");
-    // Set up the possible enum values for the unit system
-
-    UnitSystem.setEnums(Base::UnitsApi::getDescriptions());
-    // Get the preferences/General unit system as the default for a new document
-    ParameterGrp::handle hGrpu =
-        GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Units");
-    UnitSystem.setValue(hGrpu->GetInt("UserSchema", 0));
     ADD_PROPERTY_TYPE(Comment, (""), 0, Prop_None, "Additional tag to save a comment");
     ADD_PROPERTY_TYPE(Meta, (), 0, Prop_None, "Map with additional meta information");
     ADD_PROPERTY_TYPE(Material, (), 0, Prop_None, "Map with material properties");

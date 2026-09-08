@@ -31,12 +31,10 @@
 
 #include <App/Document.h>
 #include <App/License.h>
-#include <Base/UnitsApi.h>
 
 #include "Dialogs/DlgProjectInformationImp.h"
 #include "ui_DlgProjectInformation.h"
 
-#include "MainWindow.h"
 
 #if 0  // needed for Qt's lupdate utility
     qApp->translate("Gui::Dialog::DlgSettingsDocument", "All rights reserved");
@@ -91,15 +89,6 @@ DlgProjectInformationImp::DlgProjectInformationImp(App::Document* doc, QWidget* 
     ui->lineEditLastMod->setText(QString::fromUtf8(doc->LastModifiedBy.getValue()));
     ui->lineEditLastModDate->setText(convertISODate(doc->LastModifiedDate.getValue()));
     ui->lineEditCompany->setText(QString::fromUtf8(doc->Company.getValue()));
-
-    // Load comboBox with unit systems
-    auto addDesc = [&, index {0}](const std::string& item) mutable {
-        ui->comboBox_unitSystem->addItem(QString::fromStdString(item), index++);
-    };
-    const auto descriptions = Base::UnitsApi::getDescriptions();
-    std::for_each(descriptions.begin(), descriptions.end(), addDesc);
-
-    ui->comboBox_unitSystem->setCurrentIndex(doc->UnitSystem.getValue());
 
     // load comboBox with license names
     for (const auto& item : App::licenseItems) {
@@ -156,7 +145,6 @@ void DlgProjectInformationImp::accept()
     _doc->CreatedBy.setValue(ui->lineEditCreator->text().toUtf8());
     _doc->LastModifiedBy.setValue(ui->lineEditCreator->text().toUtf8());
     _doc->Company.setValue(ui->lineEditCompany->text().toUtf8());
-    getMainWindow()->setUserSchema(ui->comboBox_unitSystem->currentIndex());
     QByteArray licenseName {ui->comboLicense->currentData().toByteArray()};
     // Is this really necessary?
     if (licenseName.isEmpty()) {

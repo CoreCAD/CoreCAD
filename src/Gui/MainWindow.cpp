@@ -259,15 +259,10 @@ public:
 
     void setUserSchema(int userSchema)
     {
-        App::Document* doc = App::GetApplication().getActiveDocument();
-        if (doc) {
-            if (doc->UnitSystem.getValue() != userSchema) {
-                doc->UnitSystem.setValue(userSchema);
-            }
-        }
-        else {
-            getWindowParameter()->SetInt("UserSchema", userSchema);
-        }
+        // Cruth: choosing how to display a dimension is the user's choice, so it is written to
+        // the user's preferences and never into a document. A document that is only being looked
+        // at is not modified (ARCHITECTURE.md §7.3).
+        getWindowParameter()->SetInt("UserSchema", userSchema);
 
         unitChanged();
         Base::UnitsApi::setSchema(userSchema);
@@ -278,15 +273,7 @@ public:
 private:
     void unitChanged()
     {
-        ParameterGrp::handle hGrpu = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Units"
-        );
-        bool ignore = hGrpu->GetBool("IgnoreProjectSchema", false);
-        App::Document* doc = App::GetApplication().getActiveDocument();
         int userSchema = getWindowParameter()->GetInt("UserSchema", 0);
-        if (doc && !ignore) {
-            userSchema = doc->UnitSystem.getValue();
-        }
         auto actions = menu()->actions();
         if (Q_UNLIKELY(userSchema < 0 || userSchema >= actions.size())) {
             userSchema = 0;

@@ -189,8 +189,6 @@ public:
     PropertyString LastModifiedDate;
     /// The company name (utf-8, optional).
     PropertyString Company;
-    /// The Unit System for this document.
-    PropertyEnumeration UnitSystem;
     /// A long comment or description (utf-8 with line breaks).
     PropertyString Comment;
     /// The Id, e.g. a Part number.
