@@ -82,194 +82,36 @@ class CommandCreateView:
 
 
 ######### Exploded View Object ###########
-class ExplodedView:
-    def __init__(self, expView):
-        expView.Proxy = self
-        expView.addExtension("App::GroupExtensionPython")
+def redrawStepLines(step, positions):
+    """Ask a move's view provider to draw the lines its components travelled along.
 
-        self.stepsChangedCallback = None
+    The move used to reach into its own view provider from inside applyStep. A typed
+    object must not depend on the view layer, so it returns the lines instead and the
+    panel hands them over.
+    """
+    if step.ViewObject is None:
+        return
 
-    def onDocumentRestored(self, expView):
-        self.migrationScript(expView)
+    vp = getattr(step.ViewObject, "Proxy", None)
+    if vp is not None and hasattr(vp, "redrawLines"):
+        vp.redrawLines(step, positions)
 
-    def migrationScript(self, expView):
-        if hasattr(expView, "Moves"):
-            expView.addExtension("App::GroupExtensionPython")
-            expView.Group = expView.Moves
-            expView.removeProperty("Moves")
 
-    def dumps(self):
-        return None
+class ExplodedViewStepsObserver:
+    """Notices moves being added to or removed from an exploded view.
 
-    def loads(self, state):
-        return None
+    The former Python proxy called the panel back from its own onChanged. A typed
+    object holds no reference to a dialog, so the panel watches the document instead,
+    which also catches an undo the proxy never saw.
+    """
 
-    def onChanged(self, viewObj, prop):
-        if prop == "Group" and hasattr(self, "stepsChangedCallback"):
-            if self.stepsChangedCallback is not None:
-                self.stepsChangedCallback()
+    def __init__(self, viewObj, callback):
+        self.viewObj = viewObj
+        self.callback = callback
 
-    def setMovesChangedCallback(self, callback):
-        self.stepsChangedCallback = callback
-
-    def execute(self, fp):
-        """Do something when doing a recomputation, this method is mandatory"""
-        # App.Console.PrintMessage("Recompute Python Box feature\n")
-        pass
-
-    def applyMoves(self, viewObj, com=None, size=None):
-        positions = []  # [[p1start, p1end], [p2start, p2end], ...]
-        if com is None:
-            com, size = UtilsAssembly.getComAndSize(self.getAssembly(viewObj))
-        for move in viewObj.Group:
-            positions = positions + move.Proxy.applyStep(move, com, size)
-
-        return positions
-
-    def explodeTemporarily(self, viewObj):
-        self.initialPlcs = UtilsAssembly.saveAssemblyPartsPlacements(self.getAssembly(viewObj))
-        self.applyMoves(viewObj)
-        for move in viewObj.Group:
-            move.Visibility = True
-
-    def getAssembly(self, viewObj):
-        for obj in viewObj.InList:
-            if obj.isDerivedFrom("Assembly::AssemblyObject"):
-                return obj
-        return None
-
-    def _createSafeLine(self, start, end):
-        """Creates a LineSegment shape only if points are not coincident."""
-        from Part import Precision
-
-        if (start - end).Length > Precision.confusion():
-            return LineSegment(start, end).toShape()
-        return None
-
-    def saveAssemblyAndExplode(self, viewObj):
-        self.initialPlcs = UtilsAssembly.saveAssemblyPartsPlacements(self.getAssembly(viewObj))
-
-        self.positions = self.applyMoves(viewObj)
-
-        lines = []
-
-        for startPos, endPos in self.positions:
-            line = self._createSafeLine(startPos, endPos)
-            if line:
-                lines.append(line)
-        if lines:
-            return Compound(lines)
-
-        return None
-
-    def restoreAssembly(self, viewObj):
-        if self.initialPlcs is None:
-            return
-
-        UtilsAssembly.restoreAssemblyPartsPlacements(self.getAssembly(viewObj), self.initialPlcs)
-
-        for move in viewObj.Group:
-            move.Visibility = False
-
-    def _calculateExplodedPlacements(self, viewObj):
-        """
-        Internal helper to calculate final placements for an exploded view without
-        applying them.
-        Returns:
-            - A dictionary mapping {part_object: final_placement}.
-            - A list of [start_pos, end_pos] for explosion lines.
-        """
-        final_placements = {}
-        line_positions = []
-        factor = 1
-
-        assembly = self.getAssembly(viewObj)
-        # Get a snapshot of the assembly's current, un-exploded state
-        calculated_placements = UtilsAssembly.saveAssemblyPartsPlacements(assembly)
-
-        com, size = UtilsAssembly.getComAndSize(assembly)
-
-        for move in viewObj.Group:
-            if not UtilsAssembly.isRefValid(move.References, 1):
-                continue
-
-            if move.MoveType == "Radial":
-                distance = move.MovementTransform.Base.Length
-                factor = 4 * distance / size
-
-            subs = move.References[1]
-            for sub in subs:
-                ref = [move.References[0], [sub]]
-                obj = UtilsAssembly.getObject(ref)
-                if not obj or not hasattr(obj, "Placement"):
-                    continue
-
-                # Use the placement from our calculation dictionary, which tracks
-                # changes from previous steps.
-                current_placement = calculated_placements.get(obj.Name, obj.Placement)
-
-                # The part's shape is already placed, so its BBox.Center is the
-                # correct global starting position for the explosion line.
-                start_pos = obj.Shape.BoundBox.Center
-
-                if move.MoveType == "Radial":
-                    obj_com, obj_size = UtilsAssembly.getComAndSize(obj)
-                    init_vec = obj_com - com
-                    new_base = current_placement.Base + init_vec * factor
-                    new_placement = App.Placement(new_base, current_placement.Rotation)
-                else:
-                    new_placement = move.MovementTransform * current_placement
-
-                # Store the newly calculated placement for this part
-                calculated_placements[obj.Name] = new_placement
-                final_placements[obj] = new_placement
-
-                # To find the end_pos, calculate the transformation that takes the part
-                # from its current_placement to its new_placement...
-                delta_transform = new_placement * current_placement.inverse()
-                # ...and apply that same transformation to the start_pos.
-                end_pos = delta_transform.multVec(start_pos)
-                line_positions.append([start_pos, end_pos])
-
-        return final_placements, line_positions
-
-    def getExplodedShape(self, viewObj):
-        """
-        Generates a compound shape of the exploded assembly in memory
-        without modifying the document. Returns a single Part.Compound.
-        """
-        final_placements, line_positions = self._calculateExplodedPlacements(viewObj)
-
-        exploded_shapes = []
-
-        # We need to include ALL parts of the assembly, not just the moved ones.
-        assembly = self.getAssembly(viewObj)
-        all_parts = UtilsAssembly.getMovablePartsWithin(assembly, True)
-        visible_parts = [
-            part for part in all_parts if hasattr(part, "Visibility") and part.Visibility
-        ]
-
-        for part in visible_parts:
-            # Get the shape. It's crucial to use .copy()
-            shape_copy = part.Shape.copy()
-
-            # If the part was moved, use its calculated final placement.
-            # Otherwise, use its current placement from the document.
-            final_plc = final_placements.get(part, part.Placement)
-
-            shape_copy.Placement = final_plc
-            exploded_shapes.append(shape_copy)
-
-        # Add shapes for the explosion lines
-        for start_pos, end_pos in line_positions:
-            line = self._createSafeLine(start_pos, end_pos)
-            if line:
-                exploded_shapes.append(line)
-
-        if exploded_shapes:
-            return Compound(exploded_shapes)
-
-        return None
+    def slotChangedObject(self, obj, prop):
+        if obj == self.viewObj and prop == "Group":
+            self.callback()
 
 
 class ViewProviderExplodedView:
@@ -325,7 +167,7 @@ class ViewProviderExplodedView:
         if task:
             task.reject()
 
-        assembly = vobj.Object.Proxy.getAssembly(vobj.Object)
+        assembly = vobj.Object.getAssembly()
 
         if assembly is None:
             return False
@@ -345,140 +187,6 @@ class ViewProviderExplodedView:
         for obj in self.claimChildren():
             obj.Document.removeObject(obj.Name)
         return True
-
-
-######### Exploded View Move #########
-ExplodedViewStepTypes = [
-    "Normal",
-    "Radial",
-]
-
-
-class ExplodedViewStep:
-    def __init__(self, evStep, type_index=0):
-        evStep.Proxy = self
-
-        self.createProperties(evStep)
-
-        evStep.MoveType = ExplodedViewStepTypes  # sets the list
-        evStep.MoveType = ExplodedViewStepTypes[type_index]  # set the initial value
-
-    def onDocumentRestored(self, evStep):
-        self.createProperties(evStep)
-
-    def createProperties(self, evStep):
-        self.migrationScript(evStep)
-
-        if not hasattr(evStep, "References"):
-            evStep.addProperty(
-                "App::PropertyXLinkSubHidden",
-                "References",
-                "Exploded Move",
-                QT_TRANSLATE_NOOP("App::Property", "The objects moved by the move"),
-                locked=True,
-            )
-
-        if not hasattr(evStep, "MovementTransform"):
-            evStep.addProperty(
-                "App::PropertyPlacement",
-                "MovementTransform",
-                "Exploded Move",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "This is the movement of the move. The end placement is the result of the start placement * this placement.",
-                ),
-                locked=True,
-            )
-
-        if not hasattr(evStep, "MoveType"):
-            evStep.addProperty(
-                "App::PropertyEnumeration",
-                "MoveType",
-                "Exploded Move",
-                QT_TRANSLATE_NOOP("App::Property", "The type of the move"),
-                locked=True,
-            )
-
-    def migrationScript(self, evStep):
-        if hasattr(evStep, "Parts"):
-            objNames = evStep.ObjNames
-            parts = evStep.Parts
-
-            evStep.removeProperty("ObjNames")
-            evStep.removeProperty("Parts")
-
-            evStep.addProperty(
-                "App::PropertyXLinkSubHidden",
-                "References",
-                "Exploded Move",
-                QT_TRANSLATE_NOOP("App::Property", "The objects moved by the move"),
-                locked=True,
-            )
-
-            rootObj = None
-            paths = []
-
-            for objName, part in zip(objNames, parts):
-                # now we need to get the 'selection-root-obj' and the global path
-                obj = UtilsAssembly.getObjectInPart(objName, part)
-                rootObj, path = UtilsAssembly.getRootPath(obj, part)
-                if rootObj is None:
-                    continue
-                paths.append(path)
-                # Note: all the parts should have the same rootObj.
-
-            evStep.References = [rootObj, paths]
-
-    def dumps(self):
-        return None
-
-    def loads(self, state):
-        return None
-
-    def onChanged(self, evStep, prop):
-        """Do something when a property has changed"""
-        pass
-
-    def execute(self, fp):
-        """Do something when doing a recomputation, this method is mandatory"""
-        # App.Console.PrintMessage("Recompute Python Box feature\n")
-        pass
-
-    def applyStep(self, move, com=App.Vector(), size=100):
-        if not UtilsAssembly.isRefValid(move.References, 1):
-            return
-
-        positions = []
-        if move.MoveType == "Radial":
-            distance = move.MovementTransform.Base.Length
-            factor = 4 * distance / size
-
-        subs = move.References[1]
-        for sub in subs:
-            ref = [move.References[0], [sub]]
-            obj = UtilsAssembly.getObject(ref)
-            if not obj:
-                continue
-
-            if move.ViewObject:
-                startPos = UtilsAssembly.getCenterOfBoundingBox([obj], [ref])
-
-            if move.MoveType == "Radial":
-                objCom, objSize = UtilsAssembly.getComAndSize(obj)
-                init_vec = objCom - com
-                obj.Placement.Base = obj.Placement.Base + init_vec * factor
-            else:
-                obj.Placement = move.MovementTransform * obj.Placement
-
-            if move.ViewObject:
-                endPos = UtilsAssembly.getCenterOfBoundingBox([obj], [ref])
-                positions.append([startPos, endPos])
-            obj.purgeTouched()
-
-        if move.ViewObject:
-            move.ViewObject.Proxy.redrawLines(move, positions)
-
-        return positions
 
 
 class ViewProviderExplodedViewStep:
@@ -644,7 +352,8 @@ class TaskAssemblyCreateView(QtCore.QObject):
         )
         Gui.Selection.addObserver(self, Gui.Selection.ResolveMode.NoResolve)
 
-        self.viewObj.Proxy.setMovesChangedCallback(self.onMovesChanged)
+        self.stepsObserver = ExplodedViewStepsObserver(self.viewObj, self.onMovesChanged)
+        App.addDocumentObserver(self.stepsObserver)
         self.callbackMove = view.addEventCallback("SoLocation2Event", self.moveMouse)
         self.callbackClick = view.addEventCallback("SoMouseButtonEvent", self.clickMouse)
         self.callbackKey = view.addEventCallback("SoKeyboardEvent", self.KeyboardEvent)
@@ -697,7 +406,7 @@ class TaskAssemblyCreateView(QtCore.QObject):
         Gui.Selection.removeObserver(self)
         Gui.Selection.clearSelection()
 
-        self.viewObj.Proxy.setMovesChangedCallback(None)
+        App.removeDocumentObserver(self.stepsObserver)
         view.removeEventCallback("SoLocation2Event", self.callbackMove)
         view.removeEventCallback("SoMouseButtonEvent", self.callbackClick)
         view.removeEventCallback("SoKeyboardEvent", self.callbackKey)
@@ -780,7 +489,8 @@ class TaskAssemblyCreateView(QtCore.QObject):
         # First reset positions
         UtilsAssembly.restoreAssemblyPartsPlacements(self.assembly, self.initialPlcs)
 
-        self.viewObj.Proxy.applyMoves(self.viewObj, self.com, self.size)
+        for move in self.viewObj.Group:
+            redrawStepLines(move, move.applyStep(self.com, self.size))
 
         self.form.stepList.clear()
         for move in self.viewObj.Group:
@@ -856,28 +566,32 @@ class TaskAssemblyCreateView(QtCore.QObject):
         commands = (
             f'assembly = App.ActiveDocument.getObject("{self.assembly.Name}")\n'
             "view_group = UtilsAssembly.getViewGroup(assembly)\n"
-            'viewObj = view_group.newObject("App::FeaturePython", "Exploded View")\n'
-            "CommandCreateView.ExplodedView(viewObj)"
+            'viewObj = view_group.newObject("Assembly::ExplodedView", "Exploded View")'
         )
         Gui.doCommand(commands)
         self.viewObj = Gui.doCommandEval("viewObj")
         Gui.doCommandGui("CommandCreateView.ViewProviderExplodedView(viewObj.ViewObject)")
 
     def createExplodedStepObject(self):
-        moveType_index = 0
+        moveType = "Normal"
         if self.radialExplosion:
             self.radialExplosion = False
-            moveType_index = 1  # 1 = type_index of "Radial"
+            moveType = "Radial"
 
+        # The move is created ON the exploded view, which is the only thing that owns
+        # it. It used to be created on the assembly and then also listed in the view's
+        # group, putting one object in two groups at once -- something the group rule
+        # forbids, and which only went unnoticed because the Python group extension
+        # never ran the check.
         commands = (
-            f'assembly = App.ActiveDocument.getObject("{self.assembly.Name}")\n'
-            'currentStep = assembly.newObject("App::FeaturePython", "Move")\n'
-            f"CommandCreateView.ExplodedViewStep(currentStep, {moveType_index})"
+            f'viewObj = App.ActiveDocument.getObject("{self.viewObj.Name}")\n'
+            'currentStep = viewObj.newObject("Assembly::ExplodedViewStep", "Move")'
         )
         Gui.doCommand(commands)
         self.currentStep = Gui.doCommandEval("currentStep")
         Gui.doCommandGui("CommandCreateView.ViewProviderExplodedViewStep(currentStep.ViewObject)")
 
+        self.currentStep.MoveType = moveType
         self.currentStep.MovementTransform = App.Placement()
 
         # Note: the rootObj of all our refs must be the same since all the
@@ -886,11 +600,6 @@ class TaskAssemblyCreateView(QtCore.QObject):
         for ref in self.selectedRefs:
             listOfSubs.append(ref[1][0])
         self.currentStep.References = [self.selectedRefs[0][0], listOfSubs]
-
-        # Note: self.viewObj.Group.append(self.currentStep) does not work
-        listOfMoves = self.viewObj.Group
-        listOfMoves.append(self.currentStep)
-        self.viewObj.Group = listOfMoves
 
     def dismissCurrentStep(self):
         if self.currentStep is None:
@@ -920,7 +629,7 @@ class TaskAssemblyCreateView(QtCore.QObject):
         self.currentStep.MovementTransform = draggerPlc * self.initialDraggerPlc.inverse()
 
         # Apply the move
-        self.currentStep.Proxy.applyStep(self.currentStep, self.com, self.size)
+        redrawStepLines(self.currentStep, self.currentStep.applyStep(self.com, self.size))
 
     def draggerFinished(self, event):
         isRadial = self.currentStep.MoveType == "Radial"

@@ -71,6 +71,7 @@
 #include <Mod/Assembly/App/AssemblyLink.h>
 #include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Assembly/App/AssemblyObject.h>
+#include <Mod/Assembly/App/ExplodedView.h>
 #include <Mod/Assembly/App/AssemblyUtils.h>
 #include <Mod/Assembly/App/JointGroup.h>
 #include <Mod/Assembly/App/ViewGroup.h>
@@ -1679,67 +1680,33 @@ bool ViewProviderAssembly::explodeTemporarily(App::DocumentObject* explodedView)
         return false;
     }
 
+    // An exploded view is a real type now, so ask it directly. This used to test any
+    // object handed in for a Python attribute that happened to be called
+    // "explodeTemporarily" -- which answered yes for anything that owned that name.
+    auto* view = freecad_cast<Assembly::ExplodedView*>(explodedView);
+    if (!view) {
+        return false;
+    }
+
     clearTemporaryExplosion();
 
-    Base::PyGILStateLocker lock;
-
-    App::PropertyPythonObject* proxy = explodedView
-        ? dynamic_cast<App::PropertyPythonObject*>(explodedView->getPropertyByName("Proxy"))
-        : nullptr;
-
-    if (!proxy) {
-        return false;
-    }
-
-    Py::Object jointPy = proxy->getValue();
-
-    if (!jointPy.hasAttr("explodeTemporarily")) {
-        return false;
-    }
-
-    Py::Object attr = jointPy.getAttr("explodeTemporarily");
-    if (attr.ptr() && attr.isCallable()) {
-        Py::Tuple args(1);
-        args.setItem(0, Py::asObject(explodedView->getPyObject()));
-        Py::Callable(attr).apply(args);
-        temporaryExplosion = explodedView;
-        temporaryExplosion->purgeTouched();
-        return true;
-    }
-
-    return false;
+    view->explodeTemporarily();
+    temporaryExplosion = view;
+    temporaryExplosion->purgeTouched();
+    return true;
 }
 
 void ViewProviderAssembly::clearTemporaryExplosion()
 {
-    if (!temporaryExplosion) {
-        return;
-    }
-
-    Base::PyGILStateLocker lock;
-
-    App::PropertyPythonObject* proxy = temporaryExplosion
-        ? dynamic_cast<App::PropertyPythonObject*>(temporaryExplosion->getPropertyByName("Proxy"))
-        : nullptr;
-
-    if (!proxy) {
-        return;
-    }
-
-    Py::Object jointPy = proxy->getValue();
-
-    if (!jointPy.hasAttr("restoreAssembly")) {
-        return;
-    }
-
-    Py::Object attr = jointPy.getAttr("restoreAssembly");
-    if (attr.ptr() && attr.isCallable()) {
-        Py::Tuple args(1);
-        args.setItem(0, Py::asObject(temporaryExplosion->getPyObject()));
-        Py::Callable(attr).apply(args);
-        temporaryExplosion->purgeTouched();
+    auto* view = freecad_cast<Assembly::ExplodedView*>(temporaryExplosion);
+    if (!view) {
         temporaryExplosion = nullptr;
+        return;
     }
+
+    view->restoreAssembly();
+    view->purgeTouched();
+    temporaryExplosion = nullptr;
 }
 
 // UTILS

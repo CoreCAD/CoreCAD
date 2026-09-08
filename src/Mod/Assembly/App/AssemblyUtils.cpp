@@ -815,6 +815,96 @@ std::vector<App::DocumentObject*> getAssemblyComponents(const AssemblyObject* as
     return components;
 }
 
+// ============================== Reference validity ===============================
+
+bool isRefValid(const App::PropertyXLinkSub* prop, std::size_t minSubs)
+{
+    if (!prop || !prop->getValue()) {
+        return false;
+    }
+
+    const std::vector<std::string>& subs = prop->getSubValues();
+    if (subs.size() < minSubs) {
+        return false;
+    }
+
+    // A "?" placed in the sub-element name by the topological-naming layer means the
+    // reference could not be resolved after an edit. Acting on it would act on some
+    // other sub-shape, so the reference counts as unusable.
+    return subs.empty() || subs.front().find('?') == std::string::npos;
+}
+
+// ============================== Extent and centre ================================
+
+Base::Vector3d getGlobalBoundBoxCenter(const App::DocumentObject* obj)
+{
+    if (!obj) {
+        return Base::Vector3d();
+    }
+
+    // ResolveLink follows a component's App::Link to the part it stands for;
+    // Transform places the result in the world frame, which is the frame an
+    // explosion is measured in.
+    const Part::TopoShape shape = Part::Feature::getTopoShape(
+        obj,
+        Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform
+    );
+    if (shape.isNull()) {
+        return Base::Vector3d();
+    }
+
+    const Base::BoundBox3d bbox = shape.getBoundBox();
+    if (!bbox.IsValid()) {
+        return Base::Vector3d();
+    }
+
+    const Base::Vector3d center = bbox.GetCenter();
+    return center;
+}
+
+std::pair<Base::Vector3d, double> getComAndSize(const AssemblyObject* assembly)
+{
+    // The size a radial explosion is scaled against. Kept as the former Python
+    // fallback so an assembly with no measurable extent explodes by a sane amount
+    // rather than by zero.
+    constexpr double defaultSize = 100.0;
+
+    if (!assembly) {
+        return {Base::Vector3d(), defaultSize};
+    }
+
+    Base::BoundBox3d total;
+    total.SetVoid();
+
+    for (const auto* component : getAssemblyComponents(assembly)) {
+        if (!component) {
+            continue;
+        }
+
+        const Part::TopoShape shape = Part::Feature::getTopoShape(
+            component,
+            Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform
+        );
+        if (shape.isNull()) {
+            continue;
+        }
+
+        const Base::BoundBox3d bbox = shape.getBoundBox();
+        if (bbox.IsValid()) {
+            total.Add(bbox);
+        }
+    }
+
+    if (!total.IsValid()) {
+        return {Base::Vector3d(), defaultSize};
+    }
+
+    const Base::Vector3d center = total.GetCenter();
+    const double size = total.CalcDiagonalLength();
+
+    return {center, size > Precision::Confusion() ? size : defaultSize};
+}
+
 // ============================ Joint coordinate systems ============================
 //
 // findPlacement() computes the local coordinate system a joint connector sits at,

@@ -94,32 +94,6 @@ TopoDS_Shape ShapeExtractor::getShapes(const std::vector<App::DocumentObject*> l
         // Copy the pointer as not const so it can be changed if needed.
         App::DocumentObject* obj = l;
 
-        auto proxy = dynamic_cast<App::PropertyPythonObject*>(l->getPropertyByName("Proxy"));
-        Base::PyGILStateLocker lock;
-        if (proxy && proxy->getValue().hasAttr("getExplodedShape")) {
-            Py::Object explodedViewPy = proxy->getValue();
-            Py::Object attr = explodedViewPy.getAttr("getExplodedShape");
-
-            if (attr.ptr() && attr.isCallable()) {
-                Py::Tuple args(1);
-                args.setItem(0, Py::asObject(l->getPyObject()));
-                Py::Callable methode(attr);
-                Py::Object pyResult = methode.apply(args);
-
-                if (pyResult.ptr()
-                    && PyObject_TypeCheck(pyResult.ptr(), &(Part::TopoShapePy::Type))) {
-                    auto* shapepy = static_cast<Part::TopoShapePy*>(pyResult.ptr());
-                    const TopoDS_Shape& shape = shapepy->getTopoShapePtr()->getShape();
-
-                    // The python script returns the complete exploded view shape (parts + lines).
-                    // We add it and immediately continue to the next object in the source links,
-                    // skipping the default shape extraction logic below.
-                    sourceShapes.push_back(shape);
-                    continue;
-                }
-            }
-        }
-
         if (obj->isDerivedFrom<App::Link>()) {
             App::Link* xLink = static_cast<App::Link*>(obj);
             std::vector<TopoDS_Shape> xShapes = getXShapes(xLink);

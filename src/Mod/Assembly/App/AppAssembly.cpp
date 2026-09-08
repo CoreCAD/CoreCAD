@@ -33,6 +33,8 @@
 #include "GroundedJoint.h"
 #include "Joint.h"
 #include "JointGroup.h"
+#include "ExplodedView.h"
+#include "ExplodedViewStep.h"
 #include "ViewGroup.h"
 #include "SimulationGroup.h"
 
@@ -73,6 +75,8 @@ PyMOD_INIT_FUNC(AssemblyApp)
     Assembly::BomGroup ::init();
     Assembly::JointGroup ::init();
     Assembly::ViewGroup ::init();
+    Assembly::ExplodedView ::init();
+    Assembly::ExplodedViewStep ::init();
     Assembly::SimulationGroup ::init();
 
     PyMOD_Return(mod);
