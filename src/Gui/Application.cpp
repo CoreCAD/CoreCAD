@@ -1350,20 +1350,9 @@ void Application::slotActiveDocument(const App::Document& Doc)
             activateWorkbench(d->activeDocument->workbench().c_str());
         }
 
-        // Update the application to show the unit change
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Units"
-        );
-        if (!hGrp->GetBool("IgnoreProjectSchema")) {
-            int userSchema = Doc.UnitSystem.getValue();
-            Base::UnitsApi::setSchema(userSchema);
-            getMainWindow()->setUserSchema(userSchema);
-            Application::Instance->onUpdate();
-        }
-        else {  // set up Unit system default
-            Base::UnitsApi::setSchema(hGrp->GetInt("UserSchema", 0));
-            Base::UnitsApi::setDecimals(hGrp->GetInt("Decimals", Base::UnitsApi::getDecimals()));
-        }
+        // Cruth: activating a document does not touch the unit schema. Units are the user's
+        // preference (ARCHITECTURE.md §7.3: a project manifest may override them, a document
+        // never does); the preference is applied once at start-up and whenever it changes.
         signalActiveDocument(*doc->second);
         updateActions();
     }

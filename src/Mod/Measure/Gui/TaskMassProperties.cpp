@@ -132,14 +132,9 @@ static int getPreferredUnitsSchemaIndex()
     auto params = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Units"
     );
-    const bool ignoreProjectSchema = params->GetBool("IgnoreProjectSchema", false);
+    // Cruth: the unit system is the user's preference; no document overrides it
+    // (ARCHITECTURE.md §7.3).
     int schemaIndex = params->GetInt("UserSchema", 0);
-
-    if (!ignoreProjectSchema) {
-        if (App::Document* doc = App::GetApplication().getActiveDocument()) {
-            schemaIndex = doc->UnitSystem.getValue();
-        }
-    }
 
     const int schemaCount = static_cast<int>(Base::UnitsApi::count());
     if (schemaIndex < 0 || schemaIndex >= schemaCount) {

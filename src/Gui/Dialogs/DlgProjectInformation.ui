@@ -136,23 +136,6 @@
         </property>
        </widget>
       </item>
-      <item row="4" column="0">
-       <widget class="QLabel" name="textLabelUnitSystem">
-        <property name="text">
-         <string>Unit system</string>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="1">
-        <widget class="QComboBox" name="comboBox_unitSystem">
-         <property name="toolTip">
-          <string>Unit system for this file</string>
-         </property>
-        </widget>
-      </item>
       <item row="5" column="0">
        <widget class="QLabel" name="textLabelCreator">
         <property name="text">
