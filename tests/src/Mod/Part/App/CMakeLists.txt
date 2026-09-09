@@ -26,6 +26,7 @@ add_executable(Part_tests_run
         PrimitiveFaceRole.cpp
         PrimitiveFaceRoleRef.cpp
         PropertyTopoShape.cpp
+        StoredRecipeGeometry.cpp
         SubShapeSignature.cpp
         TopoDS_Shape.cpp
         TopoShape.cpp
