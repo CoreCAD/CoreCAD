@@ -82,6 +82,7 @@
 #include "Origin.h"
 #include "MergeDocuments.h"
 #include "StringHasher.h"
+#include "GeometryCache.h"
 #include "StoredRecipe.h"
 #include "Transactions.h"
 
@@ -2256,6 +2257,19 @@ bool Document::saveToFile(const char* filename) const
         GetApplication().signalSaveDocument(*this);
     }
 
+    // The solids the recipe just described how to make. They are not the record -- the file is --
+    // but rebuilding a hundred features to look at a part that has not changed is a cost with
+    // nothing bought by it, so what a rebuild would produce is kept where a rebuild can find it.
+    try {
+        const fs::path cache = fs::path(nativePath).parent_path() / ".cruth" / Uid.getValueStr();
+        storeBuiltGeometry(*this, cache.string(), assetsFor(nativePath));
+    }
+    catch (const std::exception& e) {
+        Base::Console().warning("Could not keep the built geometry for %s: %s\n",
+                                getName(),
+                                e.what());
+    }
+
     // Display state -- colours, draw style, the camera -- is not what the part is made of, so it
     // is not in the recipe. It is not nothing either: a person chose it. It goes to the project
     // cache, beside the geometry, where it can be deleted without losing anything designed.
@@ -2537,10 +2551,22 @@ bool Document::afterRestore(const bool checkPartial)
     // the point at which every document in the set has been read and can be built in order.
     if (d->rebuildOnOpen) {
         d->rebuildOnOpen = false;
-        // Marked here rather than when the file was read: restoring ends by declaring every
-        // object settled, which is the right answer for a file that carried its geometry and the
-        // wrong one for a file that carried the steps to make it.
-        for (DocumentObject* obj : d->objectArray) {
+        // Only what the project cache cannot hand back. An object whose recipe text and inputs
+        // are the ones that produced the solid last time gets that solid returned to it; every
+        // other object is built. Marked here rather than when the file was read: restoring ends
+        // by declaring every object settled, which is the right answer for a file that carried
+        // its geometry and the wrong one for a file that carried the steps to make it.
+        std::set<DocumentObject*> toBuild;
+        try {
+            toBuild = restoreBuiltGeometry(*this, cacheDirectory(), assetDirectory());
+        }
+        catch (const std::exception& e) {
+            Base::Console().warning("Could not reuse the built geometry for %s: %s\n",
+                                    getName(),
+                                    e.what());
+            toBuild.insert(d->objectArray.begin(), d->objectArray.end());
+        }
+        for (DocumentObject* obj : toBuild) {
             obj->enforceRecompute();
         }
         recompute();
