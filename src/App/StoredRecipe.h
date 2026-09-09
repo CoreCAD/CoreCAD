@@ -52,9 +52,10 @@ class Document;
  *   - **Honest.** What it does not store, it names (`<Unrecorded>`), so the file states its own
  *     gaps instead of quietly dropping content.
  *
- *  Derived output is deliberately absent: geometry is rebuilt from the recipe, never diffed
- *  (§10.4). What it can NOT yet carry is stated in the file itself — references between objects,
- *  and any value bulky enough that its property writes a side file, are named as unrecorded.
+ *  Derived output is deliberately absent: geometry a feature builds is rebuilt from the recipe,
+ *  never diffed (§10.4); geometry the document was merely handed — an import, a mesh, a point
+ *  cloud — is authored content and is carried. What it can NOT yet carry is stated in the file
+ *  itself: a value bulky enough that its property writes a side file is named as unrecorded.
  */
 AppExport std::string formatStoredRecipe(const Document& doc);
 

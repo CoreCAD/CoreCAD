@@ -204,14 +204,13 @@ TEST_F(StoredRecipeTest, theFileDoesNotDependOnCreationOrder)
     EXPECT_EQ(objectsSection(written), objectsSection(writtenInReverse));
 }
 
-// What the form cannot carry, it names. A reference that leaves the document is the remaining
-// case: the file would have to say WHICH document, and naming documents is the job of a project
-// manifest rather than of one document's recipe. It is written down as a gap, because a gap
-// nobody can see is indistinguishable from a value that was never there.
-TEST_F(StoredRecipeTest, contentItCannotCarryIsNamedInTheFile)
+// A reference that leaves the document is carried by the durable pair the link property already
+// writes -- the target document's uuid beside the object's uuid -- with the file path left as a
+// locator hint. The recipe does not invent a second, weaker way of saying it.
+TEST_F(StoredRecipeTest, aReferenceThatLeavesTheDocumentIsCarriedByDurableIds)
 {
     // Arrange: a link that leaves the document. Both documents must be saved first -- a link
-    // between documents is addressed by file, which is itself the reason this case is a gap.
+    // between documents is addressed by file as well as by identity.
     const std::string here = Base::FileInfo::getTempPath() + "stored_recipe_here.FCStd";
     const std::string there = Base::FileInfo::getTempPath() + "stored_recipe_there.FCStd";
     auto* box = _source->addObject("Part::Box", "Block");
@@ -230,14 +229,10 @@ TEST_F(StoredRecipeTest, contentItCannotCarryIsNamedInTheFile)
     // Act
     const std::string written = formatStoredRecipe(*_source);
 
-    // Assert
-    EXPECT_NE(
-        written.find(
-            "<Property name=\"Neighbour\" type=\"App::PropertyXLink\" "
-            "reason=\"cross-document reference\"/>"
-        ),
-        std::string::npos
-    );
+    // Assert -- both halves of the binding are in the file, and it is no longer a stated gap.
+    EXPECT_NE(written.find("docUuid=\"" + _rebuilt->Uid.getValueStr() + "\""), std::string::npos);
+    EXPECT_NE(written.find("uuid=\"" + elsewhere->Uid.getValueStr() + "\""), std::string::npos);
+    EXPECT_EQ(written.find("reason=\"cross-document reference\""), std::string::npos);
 
     Base::FileInfo(here).deleteFile();
     Base::FileInfo(there).deleteFile();

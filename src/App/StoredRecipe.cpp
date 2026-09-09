@@ -115,6 +115,22 @@ public:
     }
 };
 
+/// The property's own serialization of itself, inline.
+///
+/// The one value dialect in the program is the property's own writer, so anything the recipe
+/// cannot say better in its own words is said in that one -- at full precision, and inline,
+/// because a recipe that pointed at a second file would not be one file you can read.
+std::string writtenByItsOwnSerializer(const Property& prop)
+{
+    ScratchWriter scratch;
+    scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
+    scratch.setForceXML(true);
+    scratch.incInd();
+    scratch.incInd();
+    prop.Save(scratch);
+    return scratch.getString();
+}
+
 /// One end of a reference: the target's durable id, and the part of it that was picked.
 ///
 /// A sub-element string ("Face6") names a position in a computed shape, not an identity, so it
@@ -347,13 +363,7 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner)
             // serializer here, and the names inside a formula remain the one binding in this
             // file that is not durable.
             if (prop->isDerivedFrom(PropertyExpressionContainer::getClassTypeId())) {
-                ScratchWriter scratch;
-                scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
-                scratch.setForceXML(true);
-                scratch.incInd();
-                scratch.incInd();
-                prop->Save(scratch);
-                entry.body = scratch.getString();
+                entry.body = writtenByItsOwnSerializer(*prop);
                 stored.push_back(entry);
                 continue;
             }
@@ -367,15 +377,23 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner)
                 continue;
             }
 
-            for (const Binding& binding : *bindings) {
-                if (binding.external) {
-                    entry.reason = "cross-document reference";
-                }
+            const bool leavesTheDocument =
+                std::any_of(bindings->begin(), bindings->end(), [](const Binding& binding) {
+                    return binding.external;
+                });
+            if (leavesTheDocument) {
+                // A reference that leaves the document asks a second question -- which document
+                // -- and the link property already answers it durably: it writes the target
+                // document's uuid beside the object's, keeping the file path as a locator hint
+                // only (Clause 3.7). So the file lets that property speak for itself rather than
+                // inventing a second, weaker way of saying the same thing.
+                entry.body = writtenByItsOwnSerializer(*prop);
+                stored.push_back(entry);
+                continue;
             }
-            if (entry.reason.empty()) {
-                entry.bindings = *bindings;
-                entry.isReference = true;
-            }
+
+            entry.bindings = *bindings;
+            entry.isReference = true;
             stored.push_back(entry);
             continue;
         }
