@@ -3,20 +3,21 @@
 /****************************************************************************
  *   Copyright (c) 2026 Sean Barton (Cruth)                                 *
  *                                                                          *
- *   This file is part of FreeCAD.                                          *
+ *   This file is part of the Cruth CAD development system, a fork of       *
+ *   FreeCAD.                                                               *
  *                                                                          *
- *   FreeCAD is free software: you can redistribute it and/or modify it     *
+ *   Cruth is free software: you can redistribute it and/or modify it       *
  *   under the terms of the GNU Lesser General Public License as            *
  *   published by the Free Software Foundation, either version 2.1 of the   *
  *   License, or (at your option) any later version.                        *
  *                                                                          *
- *   FreeCAD is distributed in the hope that it will be useful, but         *
+ *   Cruth is distributed in the hope that it will be useful, but           *
  *   WITHOUT ANY WARRANTY; without even the implied warranty of             *
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU       *
  *   Lesser General Public License for more details.                        *
  *                                                                          *
  *   You should have received a copy of the GNU Lesser General Public       *
- *   License along with FreeCAD. If not, see                                *
+ *   License along with Cruth. If not, see                                  *
  *   <https://www.gnu.org/licenses/>.                                       *
  *                                                                          *
  ***************************************************************************/
@@ -219,6 +220,21 @@ std::optional<std::string> authoredFieldValue(const Property* prop)
     return std::nullopt;
 }
 
+/// The entries of a name→value property, or nullopt when the property is not map-shaped.
+///
+/// A drawing's title block is the case that forced this: every box on it — title, drawn by,
+/// scale, sheet number — lives as one entry of a single property, so the whole block was
+/// reported as unrecorded and a changed drawing title produced no line at all. Each entry
+/// becomes a field of its own rather than one joined string, so a changed title is one changed
+/// line, and two people filling in different boxes of the same block do not collide.
+std::optional<std::map<std::string, std::string>> authoredMapEntries(const Property* prop)
+{
+    if (const auto* entries = dynamic_cast<const PropertyMap*>(prop)) {
+        return entries->getValues();
+    }
+    return std::nullopt;
+}
+
 /// A short, readable stand-in for a durable Uid in a report line (the full uuid is exact but
 /// unreadable). Never used for identity — only for a person scanning the summary.
 std::string shortId(const std::string& id)
@@ -283,6 +299,15 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
             }
             continue;
         }
+        if (const auto entries = authoredMapEntries(prop)) {
+            // One field per entry, named "property.key", so the block reads as the list of
+            // boxes it is. A map keeps its keys sorted, so the order is a property of the
+            // content and not of the walk.
+            for (const auto& [key, value] : *entries) {
+                node.fields[propName + "." + key] = value;
+            }
+            continue;
+        }
         if (const std::optional<std::string> value = authoredFieldValue(prop)) {
             const auto bound = expressionByProperty.find(prop);
             node.fields[propName] =
@@ -312,7 +337,7 @@ std::vector<std::string> App::unrecordedProperties(const DocumentObject& obj)
         if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
             continue;
         }
-        if (!authoredFieldValue(prop).has_value()) {
+        if (!authoredFieldValue(prop).has_value() && !authoredMapEntries(prop).has_value()) {
             names.push_back(propName);
         }
     }
