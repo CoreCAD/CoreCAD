@@ -27,6 +27,8 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <filesystem>
+# include <fstream>
 # include <limits>
 # include <map>
 # include <optional>
@@ -35,7 +37,13 @@
 # include <vector>
 #endif
 
+#include <QByteArray>
+#include <QCryptographicHash>
+#include <QString>
+
+#include <Base/FileInfo.h>
 #include <Base/Reader.h>
+#include <Base/Stream.h>
 #include <Base/Writer.h>
 
 #include "StoredRecipe.h"
@@ -53,6 +61,8 @@
 #include "PropertyLinks.h"
 
 using namespace App;
+
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -164,6 +174,7 @@ struct StoredProperty
     bool hidden {false};
     bool isReference {false};
     std::vector<Binding> bindings;
+    std::string asset;  ///< the id of the file holding this value, empty when written inline
 };
 
 /// What a reference property points at, or nothing when this form cannot read that kind yet.
@@ -329,8 +340,57 @@ bool isReference(const Property& prop)
     return prop.isDerivedFrom(PropertyLinkBase::getClassTypeId());
 }
 
+/// Put a handed-in value into the project's source folder, and answer by what it holds.
+///
+/// The value is named by a digest of its own bytes, so an imported body used by five parts is
+/// stored once and an unchanged import writes nothing new. It also means the name cannot go
+/// stale: a different body is a different name, never the same name with different contents.
+///
+/// Nothing here removes a file that has stopped being referenced. Collecting those is a separate
+/// operation on a project, not something a single save can decide.
+std::optional<std::string> storeAsset(const Property& prop, const std::string& directory)
+{
+    Base::StringWriter blob;
+    prop.SaveDocFile(blob);
+    const std::string bytes = blob.getString();
+    if (bytes.empty()) {
+        return std::nullopt;
+    }
+
+    const QByteArray digest = QCryptographicHash::hash(
+        QByteArray(bytes.data(), static_cast<int>(bytes.size())),
+        QCryptographicHash::Sha1);
+    const std::string id = QString::fromLatin1(digest.toHex()).toStdString();
+
+    const fs::path file = fs::path(directory) / (id + ".brp");
+    if (!fs::exists(file)) {
+        fs::create_directories(directory);
+        std::ofstream out(file, std::ios::out | std::ios::binary);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        if (!out) {
+            return std::nullopt;
+        }
+    }
+    return id;
+}
+
+/// Read a handed-in value back from the project's source folder.
+bool loadAsset(Property& prop, const std::string& directory, const std::string& id)
+{
+    const std::string name = id + ".brp";
+    Base::FileInfo file(directory + "/" + name);
+    if (!file.exists()) {
+        return false;
+    }
+    Base::ifstream stream(file, std::ios::in | std::ios::binary);
+    Base::Reader reader(stream, name, 0);
+    prop.RestoreDocFile(reader);
+    return true;
+}
+
 /// Everything the stored form has to say about one container's properties, in name order.
-std::vector<StoredProperty> storedProperties(const PropertyContainer& owner)
+std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
+                                            const std::string& assetDirectory)
 {
     std::map<std::string, Property*> properties;
     owner.getPropertyMap(properties);
@@ -406,6 +466,22 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner)
             continue;
         }
 
+        // Geometry the document was handed is the project's source material, not a description
+        // of anything, so it goes to the source folder and the recipe names it. Written into the
+        // recipe it would be thousands of lines of coordinates in the middle of a file whose
+        // whole purpose is to be read.
+        if (prop->isDerivedFrom(PropertyGeometry::getClassTypeId()) && !assetDirectory.empty()) {
+            const std::optional<std::string> id = storeAsset(*prop, assetDirectory);
+            if (!id) {
+                // No geometry to keep. Not a gap and not a value -- the property holds nothing,
+                // and a document rebuilt without it holds nothing too.
+                continue;
+            }
+            entry.asset = *id;
+            stored.push_back(entry);
+            continue;
+        }
+
         ScratchWriter scratch;
         scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
         // Values large enough to be kept beside the archive are written inline here instead: a
@@ -428,9 +504,11 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner)
 
 /// One `<Properties>` block: the values, then the properties this form cannot yet carry, each
 /// with the reason it could not. A reader of the file never has to guess what is missing.
-void writeProperties(Base::Writer& writer, const PropertyContainer& owner)
+void writeProperties(Base::Writer& writer,
+                     const PropertyContainer& owner,
+                     const std::string& assetDirectory)
 {
-    const std::vector<StoredProperty> stored = storedProperties(owner);
+    const std::vector<StoredProperty> stored = storedProperties(owner, assetDirectory);
 
     std::vector<const StoredProperty*> recorded;
     std::vector<const StoredProperty*> unrecorded;
@@ -445,6 +523,9 @@ void writeProperties(Base::Writer& writer, const PropertyContainer& owner)
                         << entry->type << "\"";
         if (entry->isReference) {
             writer.Stream() << " reference=\"1\"";
+        }
+        if (!entry->asset.empty()) {
+            writer.Stream() << " asset=\"" << entry->asset << "\"";
         }
         if (entry->dynamic) {
             writer.Stream() << " dynamic=\"1\" group=\"" << entry->group << "\" doc=\""
@@ -469,7 +550,7 @@ void writeProperties(Base::Writer& writer, const PropertyContainer& owner)
             writer.Stream() << writer.ind() << "</Reference>\n";
             writer.decInd();
         }
-        else {
+        else if (entry->asset.empty()) {
             writer.Stream() << entry->body;
         }
         writer.Stream() << writer.ind() << "</Property>\n";
@@ -495,7 +576,8 @@ using PendingReference = std::pair<Property*, std::vector<Binding>>;
 
 void readProperties(Base::XMLReader& reader,
                     PropertyContainer& owner,
-                    std::vector<PendingReference>& pending)
+                    std::vector<PendingReference>& pending,
+                    const std::string& assetDirectory)
 {
     reader.readElement("Properties");
     const int count = reader.getAttribute<long>("Count");
@@ -518,7 +600,17 @@ void readProperties(Base::XMLReader& reader,
                 reader.getAttribute<long>("hidden", 0) == 1);
         }
         if (prop != nullptr && prop->getTypeId().getName() == type) {
-            if (reader.getAttribute<long>("reference", 0) == 1) {
+            const std::string asset = reader.getAttribute<const char*>("asset", "");
+            if (!asset.empty()) {
+                if (assetDirectory.empty() || !loadAsset(*prop, assetDirectory, asset)) {
+                    // The file names source material this project does not hold. Said out loud,
+                    // because a part quietly missing the body it was built from looks exactly
+                    // like a part that never had one.
+                    Base::Console().warning("Stored recipe: missing source geometry '%s'\n",
+                                            asset.c_str());
+                }
+            }
+            else if (reader.getAttribute<long>("reference", 0) == 1) {
                 std::vector<Binding> bindings;
                 reader.readElement("Reference");
                 const int targets = reader.getAttribute<long>("Count");
@@ -551,7 +643,7 @@ void readProperties(Base::XMLReader& reader,
 
 }  // namespace
 
-std::string App::formatStoredRecipe(const Document& doc)
+std::string App::formatStoredRecipe(const Document& doc, const std::string& assetDirectory)
 {
     Base::StringWriter writer;
     // Full precision, set here because it belongs to the WRITER and not to the value: the
@@ -569,7 +661,7 @@ std::string App::formatStoredRecipe(const Document& doc)
     // view covers objects only, which is why a document's own content had nowhere to go.
     writer.Stream() << writer.ind() << "<Document uuid=\"" << doc.Uid.getValueStr() << "\">\n";
     writer.incInd();
-    writeProperties(writer, doc);
+    writeProperties(writer, doc, assetDirectory);
     writer.decInd();
     writer.Stream() << writer.ind() << "</Document>\n";
 
@@ -595,7 +687,7 @@ std::string App::formatStoredRecipe(const Document& doc)
                         << "\" type=\"" << obj->getTypeId().getName() << "\" name=\""
                         << obj->getNameInDocument() << "\">\n";
         writer.incInd();
-        writeProperties(writer, *obj);
+        writeProperties(writer, *obj, assetDirectory);
         writer.decInd();
         writer.Stream() << writer.ind() << "</Object>\n";
     }
@@ -608,7 +700,10 @@ std::string App::formatStoredRecipe(const Document& doc)
     return writer.getString();
 }
 
-void App::restoreStoredRecipe(Document& doc, std::istream& source, bool finish)
+void App::restoreStoredRecipe(Document& doc,
+                              std::istream& source,
+                              bool finish,
+                              const std::string& assetDirectory)
 {
     Base::XMLReader reader("StoredRecipe", source);
     if (!reader.isValid()) {
@@ -622,7 +717,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, bool finish)
 
     reader.readElement("Document");
     const std::string documentUid = reader.getAttribute<const char*>("uuid");
-    readProperties(reader, doc, pending);
+    readProperties(reader, doc, pending, assetDirectory);
     reader.readEndElement("Document");
     // A document's identity is its own, and the document model refuses to let two open
     // documents share one -- restoring the uuid into a copy of a document that is still open
@@ -645,7 +740,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, bool finish)
         if (obj != nullptr) {
             obj->Uid.setValue(uuid);
             restored.push_back(obj);
-            readProperties(reader, *obj, pending);
+            readProperties(reader, *obj, pending, assetDirectory);
         }
         reader.readEndElement("Object");
     }

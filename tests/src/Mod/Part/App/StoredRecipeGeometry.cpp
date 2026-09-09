@@ -3,12 +3,15 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <iterator>
 #include <sstream>
 #include <string>
 
 #include <BRepPrimAPI_MakeBox.hxx>
 
 #include <App/Application.h>
+#include <Base/FileInfo.h>
 #include <App/Document.h>
 #include <App/StoredRecipe.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -104,6 +107,51 @@ TEST_F(StoredRecipeGeometryTest, aBuiltSolidStaysOutOfTheFileAndIsRebuilt)
     ASSERT_NE(returned, nullptr);
     ASSERT_FALSE(returned->Shape.getShape().isNull());
     EXPECT_NEAR(returned->Shape.getShape().getBoundBox().MaxZ, 30.0, 1e-7);
+}
+
+// Handed-in geometry does not belong inside the recipe: it is source material, not a
+// description of anything, and thousands of lines of coordinates in the middle of the file
+// would defeat the one property the file exists for. It goes to the project's own folder, named
+// by what it holds, and the recipe names it.
+TEST_F(StoredRecipeGeometryTest, anImportedSolidIsKeptBesideTheRecipeNotInsideIt)
+{
+    // Arrange
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* first = _doc->addObject<Part::Feature>("First");
+    first->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    // The same body a second time: one import used twice is one thing, and the file it is kept
+    // in is named after its contents, so it is stored once.
+    auto* second = _doc->addObject<Part::Feature>("Second");
+    second->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    _doc->recompute();
+    const Base::BoundBox3d expected = first->Shape.getShape().getBoundBox();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- the recipe names the geometry and does not contain it.
+    EXPECT_EQ(written.find("DBRep_DrawableShape"), std::string::npos);
+    EXPECT_NE(written.find("asset=\""), std::string::npos);
+    EXPECT_EQ(
+        std::distance(
+            std::filesystem::directory_iterator(assets),
+            std::filesystem::directory_iterator {}
+        ),
+        1
+    );
+
+    // And it comes back.
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+    _rebuilt->recompute();
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("First"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_FALSE(returned->Shape.getShape().isNull());
+    EXPECT_NEAR(returned->Shape.getShape().getBoundBox().MaxZ, expected.MaxZ, 1e-7);
+
+    std::filesystem::remove_all(assets);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
