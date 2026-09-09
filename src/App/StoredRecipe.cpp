@@ -641,6 +641,20 @@ void readProperties(Base::XMLReader& reader,
     reader.readEndElement("Unrecorded");
 }
 
+/// One object's block: what it is, and what it was authored to be.
+void writeObject(Base::Writer& writer,
+                 const DocumentObject& obj,
+                 const std::string& assetDirectory)
+{
+    writer.Stream() << writer.ind() << "<Object uuid=\"" << obj.Uid.getValueStr() << "\" type=\""
+                    << obj.getTypeId().getName() << "\" name=\"" << obj.getNameInDocument()
+                    << "\">\n";
+    writer.incInd();
+    writeProperties(writer, obj, assetDirectory);
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</Object>\n";
+}
+
 }  // namespace
 
 std::string App::formatStoredRecipe(const Document& doc, const std::string& assetDirectory)
@@ -683,13 +697,7 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
     writer.Stream() << writer.ind() << "<Objects Count=\"" << objects.size() << "\">\n";
     writer.incInd();
     for (const DocumentObject* obj : objects) {
-        writer.Stream() << writer.ind() << "<Object uuid=\"" << obj->Uid.getValueStr()
-                        << "\" type=\"" << obj->getTypeId().getName() << "\" name=\""
-                        << obj->getNameInDocument() << "\">\n";
-        writer.incInd();
-        writeProperties(writer, *obj, assetDirectory);
-        writer.decInd();
-        writer.Stream() << writer.ind() << "</Object>\n";
+        writeObject(writer, *obj, assetDirectory);
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</Objects>\n";
@@ -740,7 +748,14 @@ void App::restoreStoredRecipe(Document& doc,
         if (obj != nullptr) {
             obj->Uid.setValue(uuid);
             restored.push_back(obj);
+            // Marked as being restored for the duration, exactly as the archive's own reader does
+            // it. Some features rebuild themselves the moment one of their sizes changes, which is
+            // right when a person types a number and wrong while a file is being read: it builds
+            // the part three times over on the way in, and it builds it before the references it
+            // is built on have been bound.
+            obj->setStatus(ObjectStatus::Restore, true);
             readProperties(reader, *obj, pending, assetDirectory);
+            obj->setStatus(ObjectStatus::Restore, false);
         }
         reader.readEndElement("Object");
     }
@@ -772,4 +787,44 @@ void App::restoreStoredRecipe(Document& doc,
     for (DocumentObject* obj : restored) {
         obj->enforceRecompute();
     }
+}
+
+std::string App::formatStoredRecipeObject(const DocumentObject& obj,
+                                          const std::string& assetDirectory)
+{
+    Base::StringWriter writer;
+    // The same digits the whole-document writer asks for. A block rendered at a different
+    // precision would describe the same object and read as a different one.
+    writer.Stream().precision(std::numeric_limits<double>::max_digits10);
+    writeObject(writer, obj, assetDirectory);
+    return writer.getString();
+}
+
+std::vector<Property*> App::rebuiltProperties(const PropertyContainer& owner)
+{
+    std::map<std::string, Property*> properties;
+    owner.getPropertyMap(properties);
+
+    std::vector<Property*> rebuilt;
+    for (const auto& [name, prop] : properties) {
+        if (prop == nullptr) {
+            continue;
+        }
+        // Nothing the archive itself refuses to keep. A value declared transient is regenerated
+        // by whatever produces it, and a store that claimed to hold it would be lying about a
+        // value that was never written.
+        if (prop->testStatus(Property::PropNoPersist) || prop->testStatus(Property::Transient)
+            || (owner.getPropertyType(prop) & Prop_Transient) != 0) {
+            continue;
+        }
+        // Output, in the two ways an object says it: geometry it builds, and a value it declares
+        // is a result rather than a setting. `Label` says the second and means neither -- it is
+        // the one authored value wearing the output flag, and the recipe keeps it.
+        if (isBuiltGeometry(*prop, owner)
+            || ((owner.getPropertyType(prop) & Prop_Output) != 0
+                && !isAuthoredDespiteItsFlags(name))) {
+            rebuilt.push_back(prop);
+        }
+    }
+    return rebuilt;
 }
