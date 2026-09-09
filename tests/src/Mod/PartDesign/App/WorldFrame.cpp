@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 #include <gtest/gtest.h>
 #include "src/App/InitApplication.h"

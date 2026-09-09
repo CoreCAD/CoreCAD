@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
-// SPDX-FileCopyrightText: 2026 The CoreCAD contributors
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 #ifndef IMPORT_FEATURE_H
 #define IMPORT_FEATURE_H

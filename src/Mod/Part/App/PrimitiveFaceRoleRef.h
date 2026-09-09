@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
-// SPDX-FileCopyrightText: 2026 The CoreCAD contributors
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 #ifndef PART_PRIMITIVEFACEROLEREF_H
 #define PART_PRIMITIVEFACEROLEREF_H

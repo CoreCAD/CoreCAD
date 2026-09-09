@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 // Locks the ARCHITECTURE Amendment 5 §5.1 reach test implemented by Body::toolReaches: a Body is
 // "reached" by a multi-body subtractive/intersective tool only when the two solids share positive

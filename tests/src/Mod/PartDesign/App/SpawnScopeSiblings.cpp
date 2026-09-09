@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 // Locks the ARCHITECTURE Amendment 5 §5.1 multi-body fan-out implemented by
 // Body::spawnScopeSiblings: one shared tool reaching several Bodies resolves to one ordinary Cut/
