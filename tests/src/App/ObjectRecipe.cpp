@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 #include "gtest/gtest.h"
 
@@ -475,7 +476,7 @@ TEST_F(ObjectRecipeTest, hiddenPropertyItCannotRenderIsReportedAsAGap)
     auto* box = _doc->addObject("Part::Box");
     ASSERT_NE(box, nullptr);
     ASSERT_NE(
-        box->addDynamicProperty("App::PropertyMap", "TitleBlock", "Base", nullptr, Prop_Hidden),
+        box->addDynamicProperty("App::PropertyMaterial", "Finish", "Base", nullptr, Prop_Hidden),
         nullptr
     );
 
@@ -483,7 +484,66 @@ TEST_F(ObjectRecipeTest, hiddenPropertyItCannotRenderIsReportedAsAGap)
     const std::vector<std::string> gaps = unrecordedProperties(*box);
 
     // Assert: the file states the gap rather than hiding it.
-    EXPECT_NE(std::find(gaps.begin(), gaps.end(), "TitleBlock"), gaps.end());
+    EXPECT_NE(std::find(gaps.begin(), gaps.end(), "Finish"), gaps.end());
+}
+
+// A drawing's title block is one property holding every box on it: title, drawn by, scale, sheet
+// number. Each entry has to reach the recipe as a field of its own, or a changed drawing title
+// produces no line at all and the whole block is reported as missing.
+TEST_F(ObjectRecipeTest, titleBlockEntriesEachBecomeAFieldAndDistinguishAnEdit)
+{
+    // Arrange
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    auto* block = dynamic_cast<PropertyMap*>(
+        box->addDynamicProperty("App::PropertyMap", "EditableTexts", "Base", nullptr, Prop_Hidden)
+    );
+    ASSERT_NE(block, nullptr);
+    block->setValue("DRAWING_TITLE", "Gearbox housing");
+    block->setValue("DRAWN_BY", "S. Barton");
+
+    // Act
+    const RecipeNode before = emitObjectRecipe(*box);
+
+    // Assert: one field per box, named for the box it is.
+    EXPECT_EQ(before.fields.count("EditableTexts.DRAWING_TITLE"), 1u);
+    EXPECT_EQ(before.fields.at("EditableTexts.DRAWING_TITLE"), "Gearbox housing");
+    EXPECT_EQ(before.fields.at("EditableTexts.DRAWN_BY"), "S. Barton");
+
+    // ...and the block is no longer reported as content the recipe could not say.
+    const std::vector<std::string> gaps = unrecordedProperties(*box);
+    EXPECT_EQ(std::find(gaps.begin(), gaps.end(), "EditableTexts"), gaps.end());
+
+    // Act: retitle the drawing, leaving every other box alone.
+    block->setValue("DRAWING_TITLE", "Gearbox housing, rev B");
+    const RecipeNode after = emitObjectRecipe(*box);
+
+    // Assert: exactly the retitled field changed -- so a diff shows the retitle and nothing else,
+    // and two people filling in different boxes of one block do not collide.
+    EXPECT_NE(
+        after.fields.at("EditableTexts.DRAWING_TITLE"),
+        before.fields.at("EditableTexts.DRAWING_TITLE")
+    );
+    EXPECT_EQ(after.fields.at("EditableTexts.DRAWN_BY"), before.fields.at("EditableTexts.DRAWN_BY"));
+}
+
+// An empty title block is an authored state -- a template whose boxes nobody has filled in yet.
+// It carries no fields, but it is not a gap either: nothing is missing from the record.
+TEST_F(ObjectRecipeTest, anEmptyTitleBlockIsNotReportedAsMissingContent)
+{
+    // Arrange
+    auto* box = _doc->addObject("Part::Box");
+    ASSERT_NE(box, nullptr);
+    ASSERT_NE(
+        box->addDynamicProperty("App::PropertyMap", "EditableTexts", "Base", nullptr, Prop_Hidden),
+        nullptr
+    );
+
+    // Act
+    const std::vector<std::string> gaps = unrecordedProperties(*box);
+
+    // Assert
+    EXPECT_EQ(std::find(gaps.begin(), gaps.end(), "EditableTexts"), gaps.end());
 }
 
 // Label2 is the tree's description column -- a human annotation like Label, not authored design.
