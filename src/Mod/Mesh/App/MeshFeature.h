@@ -85,6 +85,12 @@ public:
     {
         return &Mesh;
     }
+    /// A mesh is scanned or imported, never derived from other content in the document, so the
+    /// mesh itself is the authored input. A subclass that COMPUTES a mesh overrides this back.
+    bool holdsAuthoredGeometry() const override
+    {
+        return true;
+    }
 
     /// handles the MeshPy object
     PyObject* getPyObject() override;

@@ -77,6 +77,12 @@ public:
     {
         return &Points;
     }
+    /// A point cloud is measured, never derived from other content in the document, so the
+    /// points themselves are the authored input.
+    bool holdsAuthoredGeometry() const override
+    {
+        return true;
+    }
 
 protected:
     void onChanged(const App::Property* prop) override;

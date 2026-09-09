@@ -45,6 +45,7 @@
 #include "Document.h"
 #include "DynamicProperty.h"
 #include "DocumentObject.h"
+#include "GeoFeature.h"
 #include "Property.h"
 #include "PropertyContainer.h"
 #include "PropertyExpressionEngine.h"
@@ -74,18 +75,28 @@ bool isAuthoredDespiteItsFlags(const std::string& name)
     return name == "Label";
 }
 
-/// Built geometry, whatever its flags say.
+/// Geometry the recipe BUILDS, as opposed to geometry it was handed.
 ///
 /// A part's shape is declared `Prop_None` -- it claims to be neither output nor transient -- so
 /// the flags do not keep it out, and asking the writer to inline bulky values put the whole solid
-/// into the recipe as text. That is not a big file, it is a wrong one: the recipe is the source
-/// and the shape is what the source builds, and a file carrying both can disagree with itself.
-/// Measured: with the shape inline, a test that rebuilt a part from the recipe with none of its
-/// references restored still produced the right solid -- the file was answering with the old
-/// geometry instead of rebuilding.
-bool isBuiltGeometry(const Property& prop)
+/// into the recipe as text. That is not a big file, it is a wrong one: for a feature the recipe
+/// is the source and the shape is what the source builds, and a file carrying both can disagree
+/// with itself. Measured: with the shape inline, a test that rebuilt a part from the recipe with
+/// none of its references restored still produced the right solid -- the file was answering with
+/// the old geometry instead of rebuilding.
+///
+/// An imported solid, a scanned mesh, a measured point cloud are the opposite case: no property
+/// of the document produces them, so the geometry IS the authored content. Excluding those by
+/// kind dropped them without a word -- an imported part came back empty. The object answers for
+/// itself (`holdsAuthoredGeometry`), because whether geometry is source or output is a fact
+/// about the type that holds it and not about the property's class.
+bool isBuiltGeometry(const Property& prop, const PropertyContainer& owner)
 {
-    return prop.isDerivedFrom(PropertyGeometry::getClassTypeId());
+    if (!prop.isDerivedFrom(PropertyGeometry::getClassTypeId())) {
+        return false;
+    }
+    const auto* feature = dynamic_cast<const GeoFeature*>(&owner);
+    return feature == nullptr || !feature->holdsAuthoredGeometry();
 }
 
 /// A writer that can be asked whether the property just written wanted a file of its own.
@@ -312,7 +323,7 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner)
         if (prop->testStatus(Property::PropNoPersist)) {
             continue;
         }
-        if (isBuiltGeometry(*prop)) {
+        if (isBuiltGeometry(*prop, owner)) {
             continue;
         }
 
