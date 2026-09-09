@@ -154,4 +154,45 @@ TEST_F(StoredRecipeGeometryTest, anImportedSolidIsKeptBesideTheRecipeNotInsideIt
     std::filesystem::remove_all(assets);
 }
 
+// A handed-in shape carries the names of its faces, and those names are the whole basis on which a
+// later feature says which face it was attached to. Nothing can rebuild them -- unlike a built
+// shape's, which come back with the rebuild -- so losing them on the way to the source store is the
+// exact failure durable identity exists to prevent. Measured before the fix: 26 names in, 0 back.
+TEST_F(StoredRecipeGeometryTest, handedInGeometryKeepsTheNamesOfItsFaces)
+{
+    // Arrange -- a shape that carries mapped element names, handed to a plain feature, which is
+    // what a copy and a bake leave behind.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* box = _doc->addObject<Part::Box>("Block");  // NOLINT
+    box->Length.setValue(10.0);
+    box->Width.setValue(20.0);
+    box->Height.setValue(30.0);
+    _doc->recompute();
+    auto* handed = _doc->addObject<Part::Feature>("Handed");
+    handed->Shape.setValue(box->Shape.getShape());
+    _doc->recompute();
+    const size_t named = handed->Shape.getShape().getElementMapSize();
+    ASSERT_GT(named, 0U) << "the arrangement itself is wrong if there are no names to lose";
+    const Data::MappedName first = handed->Shape.getShape().getMappedName(Data::IndexedName("Face", 1));
+    ASSERT_FALSE(first.empty());
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+
+    // Assert -- the same count and the same name, not merely a shape of the right size.
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("Handed"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(returned->Shape.getShape().getElementMapSize(), named);
+    EXPECT_EQ(
+        returned->Shape.getShape().getMappedName(Data::IndexedName("Face", 1)).toString(),
+        first.toString()
+    );
+
+    std::filesystem::remove_all(assets);
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
