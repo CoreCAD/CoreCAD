@@ -8,6 +8,12 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <Base/FileInfo.h>
+
+#include <App/Expression.h>
+#include <App/ObjectIdentifier.h>
+#include <App/PropertyExpressionEngine.h>
+#include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
 #include <App/StoredRecipe.h>
@@ -198,27 +204,174 @@ TEST_F(StoredRecipeTest, theFileDoesNotDependOnCreationOrder)
     EXPECT_EQ(objectsSection(written), objectsSection(writtenInReverse));
 }
 
-// What the form cannot carry, it names. A reference between objects is not stored yet -- and the
-// file has to say so, because a gap nobody can see is indistinguishable from a value that was
-// never there.
+// What the form cannot carry, it names. A reference that leaves the document is the remaining
+// case: the file would have to say WHICH document, and naming documents is the job of a project
+// manifest rather than of one document's recipe. It is written down as a gap, because a gap
+// nobody can see is indistinguishable from a value that was never there.
 TEST_F(StoredRecipeTest, contentItCannotCarryIsNamedInTheFile)
 {
-    // Arrange: a link, and a shape the recipe never stores because it is rebuilt.
+    // Arrange: a link that leaves the document. Both documents must be saved first -- a link
+    // between documents is addressed by file, which is itself the reason this case is a gap.
+    const std::string here = Base::FileInfo::getTempPath() + "stored_recipe_here.FCStd";
+    const std::string there = Base::FileInfo::getTempPath() + "stored_recipe_there.FCStd";
     auto* box = _source->addObject("Part::Box", "Block");
+    auto* elsewhere = _rebuilt->addObject("Part::Box", "Elsewhere");
     ASSERT_NE(box, nullptr);
-    ASSERT_NE(box->addDynamicProperty("App::PropertyLink", "Origin"), nullptr);
+    ASSERT_NE(elsewhere, nullptr);
+    _source->saveAs(here.c_str());
+    _rebuilt->saveAs(there.c_str());
+
+    auto* link = static_cast<PropertyXLink*>(
+        box->addDynamicProperty("App::PropertyXLink", "Neighbour")
+    );
+    ASSERT_NE(link, nullptr);
+    link->setValue(elsewhere);
 
     // Act
     const std::string written = formatStoredRecipe(*_source);
 
-    // Assert: the link is named as unrecorded, with the reason.
+    // Assert
     EXPECT_NE(
         written.find(
-            "<Property name=\"Origin\" type=\"App::PropertyLink\" "
-            "reason=\"reference\"/>"
+            "<Property name=\"Neighbour\" type=\"App::PropertyXLink\" "
+            "reason=\"cross-document reference\"/>"
         ),
         std::string::npos
     );
+
+    Base::FileInfo(here).deleteFile();
+    Base::FileInfo(there).deleteFile();
+    Base::FileInfo(here + ".recipe").deleteFile();
+    Base::FileInfo(there + ".recipe").deleteFile();
+}
+
+// A reference comes back pointing at the same object, and the file says so by durable id rather
+// than by the target's name.
+TEST_F(StoredRecipeTest, aReferenceReturnsAndIsWrittenByDurableId)
+{
+    // Arrange
+    auto* target = _source->addObject("Part::Box", "Block");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* link = static_cast<PropertyLink*>(
+        holder->addDynamicProperty("App::PropertyLink", "BuiltOn", "Base", "what it sits on")
+    );
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert: the file binds by identity, not by the name "Block"...
+    EXPECT_NE(
+        written.find("<Target uuid=\"" + target->Uid.getValueStr() + "\" sub=\"\"/>"),
+        std::string::npos
+    );
+
+    // ...and the rebuilt reference points at the rebuilt object.
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    auto* rebuiltTarget = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    ASSERT_NE(rebuiltTarget, nullptr);
+    auto* returned = static_cast<PropertyLink*>(rebuiltHolder->getPropertyByName("BuiltOn"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(returned->getValue(), rebuiltTarget);
+}
+
+// The binding survives the objects being renamed on the way in. This is the whole reason for
+// binding by durable id: read the same file into a document that already holds a "Block" and the
+// rebuilt objects get different names -- a reference written by name would land on the wrong
+// object or on nothing at all.
+TEST_F(StoredRecipeTest, aReferenceSurvivesTheObjectsBeingRenamed)
+{
+    // Arrange: the source, and a destination that already uses the names it will ask for.
+    auto* target = _source->addObject("Part::Box", "Block");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "BuiltOn"))
+        ->setValue(target);
+
+    auto* squatter = _rebuilt->addObject("Part::Box", "Block");
+    ASSERT_NE(squatter, nullptr);
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert: the rebuilt target took a different name...
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    auto* returned = static_cast<PropertyLink*>(rebuiltHolder->getPropertyByName("BuiltOn"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_NE(returned->getValue(), nullptr);
+    EXPECT_NE(std::string(returned->getValue()->getNameInDocument()), std::string("Block"));
+
+    // ...and the reference still found it, because it was bound to its identity.
+    EXPECT_EQ(returned->getValue()->Uid.getValueStr(), target->Uid.getValueStr());
+    EXPECT_NE(returned->getValue(), squatter);
+}
+
+// Which face was picked rides along with the identity. A reference binds by durable id, but a
+// sketch drawn on one face of a part and the same sketch on the opposite face are not the same
+// design, and only the picked element tells them apart.
+TEST_F(StoredRecipeTest, thePickedFaceRidesAlongsideTheIdentity)
+{
+    // Arrange
+    auto* target = _source->addObject("Part::Box", "Block");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* link = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "Face")
+    );
+    ASSERT_NE(link, nullptr);
+    link->setValue(target, {"Face6"});
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    auto* returned = static_cast<PropertyLinkSub*>(rebuiltHolder->getPropertyByName("Face"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_EQ(returned->getSubValues().size(), 1u);
+    EXPECT_EQ(returned->getSubValues().front(), std::string("Face6"));
+    EXPECT_EQ(returned->getValue(), _rebuilt->getObject("Block"));
+}
+
+// A formula is authored content -- the value a person typed is the formula, not the number it
+// produced -- so it has to come back as a formula.
+TEST_F(StoredRecipeTest, aFormulaReturnsAsAFormula)
+{
+    // Arrange
+    auto* driver = _source->addObject("Part::Box", "Driver");
+    auto* driven = _source->addObject("Part::Box", "Driven");
+    ASSERT_NE(driver, nullptr);
+    ASSERT_NE(driven, nullptr);
+    static_cast<PropertyLength*>(driver->getPropertyByName("Length"))->setValue(30.0);
+    driven->setExpression(
+        App::ObjectIdentifier::parse(driven, "Length"),
+        std::shared_ptr<App::Expression>(App::Expression::parse(driven, "Driver.Length * 2"))
+    );
+    _source->recompute();
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Driven");
+    ASSERT_NE(rebuilt, nullptr);
+    const App::ObjectIdentifier path = App::ObjectIdentifier::parse(rebuilt, "Length");
+    const App::PropertyExpressionEngine::ExpressionInfo info = rebuilt->getExpression(path);
+    ASSERT_NE(info.expression, nullptr);
+    EXPECT_EQ(info.expression->toString(), std::string("Driver.Length * 2"));
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
