@@ -92,6 +92,11 @@ struct DocumentP
     // pointer to the python class
     Py::Object DocumentPythonObject;
     int iTransactionMode {0};
+    /// The document was read from a recipe, so its geometry has yet to be built.
+    ///
+    /// A recipe holds the steps, never the solid they make, so opening one includes building
+    /// it. The flag is cleared by the build, so a document is never rebuilt twice for one open.
+    bool rebuildOnOpen {false};
     bool rollback {false};
     bool undoing {false};  ///< document in the middle of undo or redo
     bool committing {false};
