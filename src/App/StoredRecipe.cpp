@@ -175,16 +175,24 @@ struct StoredProperty
 std::optional<std::vector<Binding>> referenceBindings(const Property& prop, const Document* home)
 {
     const auto bind = [home](const DocumentObject* target, const std::string& sub) {
-        Binding binding {target != nullptr ? target->Uid.getValueStr() : std::string(), sub};
-        // A target in another document is a different question: the file would have to name the
-        // document as well, and which document a name refers to is exactly what the project
-        // manifest is for. Marked here so it is carried openly as a gap rather than written as
-        // an id this document cannot resolve.
-        binding.external = target != nullptr && home != nullptr && target->getDocument() != home;
+        Binding binding {target->Uid.getValueStr(), sub};
+        // A target in another document is a second question -- which document -- and the link
+        // property answers it in its own writing. Marked here so the caller can hand the whole
+        // property over rather than saying half of it in this file's words.
+        binding.external = home != nullptr && target->getDocument() != home;
         return binding;
     };
 
     std::vector<Binding> bindings;
+
+    // A link that points at nothing is written as nothing. Recording an empty target would say
+    // "this reference points somewhere I could not name", which is a different fact and one the
+    // reader would rightly refuse to restore.
+    const auto add = [&bindings, &bind](const DocumentObject* target, const std::string& sub) {
+        if (target != nullptr) {
+            bindings.push_back(bind(target, sub));
+        }
+    };
 
     // Most-derived first: an XLink IS a PropertyLink, and a sub-list link is neither.
     if (const auto* link = dynamic_cast<const PropertyXLinkSubList*>(&prop)) {
@@ -192,10 +200,10 @@ std::optional<std::vector<Binding>> referenceBindings(const Property& prop, cons
             const std::vector<std::string> subs =
                 link->getSubValues(const_cast<DocumentObject*>(target));
             if (subs.empty()) {
-                bindings.push_back(bind(target, {}));
+                add(target, {});
             }
             for (const std::string& sub : subs) {
-                bindings.push_back(bind(target, sub));
+                add(target, sub);
             }
         }
         return bindings;
@@ -203,10 +211,10 @@ std::optional<std::vector<Binding>> referenceBindings(const Property& prop, cons
     if (const auto* link = dynamic_cast<const PropertyXLink*>(&prop)) {
         const std::vector<std::string>& subs = link->getSubValues();
         if (subs.empty()) {
-            bindings.push_back(bind(link->getValue(), {}));
+            add(link->getValue(), {});
         }
         for (const std::string& sub : subs) {
-            bindings.push_back(bind(link->getValue(), sub));
+            add(link->getValue(), sub);
         }
         return bindings;
     }
@@ -214,28 +222,28 @@ std::optional<std::vector<Binding>> referenceBindings(const Property& prop, cons
         const std::vector<DocumentObject*>& targets = link->getValues();
         const std::vector<std::string>& subs = link->getSubValues();
         for (std::size_t i = 0; i < targets.size(); ++i) {
-            bindings.push_back(bind(targets[i], i < subs.size() ? subs[i] : std::string()));
+            add(targets[i], i < subs.size() ? subs[i] : std::string());
         }
         return bindings;
     }
     if (const auto* link = dynamic_cast<const PropertyLinkSub*>(&prop)) {
         const std::vector<std::string>& subs = link->getSubValues();
         if (subs.empty()) {
-            bindings.push_back(bind(link->getValue(), {}));
+            add(link->getValue(), {});
         }
         for (const std::string& sub : subs) {
-            bindings.push_back(bind(link->getValue(), sub));
+            add(link->getValue(), sub);
         }
         return bindings;
     }
     if (const auto* link = dynamic_cast<const PropertyLinkList*>(&prop)) {
         for (const DocumentObject* target : link->getValues()) {
-            bindings.push_back(bind(target, {}));
+            add(target, {});
         }
         return bindings;
     }
     if (const auto* link = dynamic_cast<const PropertyLink*>(&prop)) {
-        bindings.push_back(bind(link->getValue(), {}));
+        add(link->getValue(), {});
         return bindings;
     }
 
@@ -600,7 +608,7 @@ std::string App::formatStoredRecipe(const Document& doc)
     return writer.getString();
 }
 
-void App::restoreStoredRecipe(Document& doc, std::istream& source)
+void App::restoreStoredRecipe(Document& doc, std::istream& source, bool finish)
 {
     Base::XMLReader reader("StoredRecipe", source);
     if (!reader.isValid()) {
@@ -657,8 +665,11 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source)
 
     // A formula cannot be bound while the objects it names are still arriving, so the document
     // has a second pass for exactly this and the archive's own load path uses it. Reading a
-    // recipe is reading a document, and it finishes the same way.
-    doc.afterRestore(restored, false);
+    // recipe is reading a document, and it finishes the same way -- unless the caller is a
+    // document being opened, which runs that pass itself once every document in the set is read.
+    if (finish) {
+        doc.afterRestore(restored, false);
+    }
 
     // Everything read from a recipe still has to be built: the file carries the steps, never the
     // geometry they produce. So each object is marked as needing a rebuild -- a document read

@@ -65,7 +65,11 @@ AppExport std::string formatStoredRecipe(const Document& doc);
  *  stored property is restored by its own serializer. The caller recomputes: reading the source
  *  and rebuilding the output are separate steps, and keeping them separate is what lets a failed
  *  rebuild be reported rather than silently producing an empty document.
+ *
+ *  `finish` runs the document's own second pass, the one that lets formulas bind once every
+ *  object exists. A document being opened does that pass itself, later and in dependency order
+ *  across all the documents being opened together, so it asks for it to be left undone here.
  */
-AppExport void restoreStoredRecipe(Document& doc, std::istream& source);
+AppExport void restoreStoredRecipe(Document& doc, std::istream& source, bool finish = true);
 
 }  // namespace App

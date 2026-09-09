@@ -82,6 +82,7 @@
 #include "Origin.h"
 #include "MergeDocuments.h"
 #include "StringHasher.h"
+#include "StoredRecipe.h"
 #include "Transactions.h"
 
 #ifdef _MSC_VER
@@ -2163,25 +2164,9 @@ bool Document::saveToFile(const char* filename) const
 {
     signalStartSave(*this, filename);
 
-    auto hGrp = GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Document");
-    // Cruth: documents are written UNCOMPRESSED by default (was 7).
-    //
-    // The archive holds text -- the model in XML and the geometry in OCCT's ASCII BRep
-    // form -- and compressing it is what makes a saved document opaque to byte-level
-    // differencing. Compression rewrites the whole stream after the first changed byte, so
-    // two saves of a part with one edited parameter share almost none of their bytes and
-    // version control has to store the entire file again. Written raw, the entries that did
-    // not change are still there verbatim, and only the edited region costs anything.
-    //
-    // Measured on a 400-shape document over six saves, each changing one parameter:
-    // compressed cost ~24 kB of repository per save, uncompressed ~1.3 kB. The repository
-    // is smaller in absolute terms too, because version control compresses its own storage
-    // -- compressing here only blinds it. The cost is the file on disk, which grows by
-    // roughly the compression ratio it used to enjoy.
-    int compression = static_cast<int>(hGrp->GetInt("CompressionLevel", 0));
-    compression = Base::clamp<int>(compression, Z_NO_COMPRESSION, Z_BEST_COMPRESSION);
-
+    // Documents used to be written as an archive, uncompressed, so that version control could
+    // at least see which bytes changed. Writing the recipe as plain text finishes that thought:
+    // there is no container left to see through.
     bool policy = GetApplication()
                       .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")
                       ->GetBool("BackupPolicy", true);
@@ -2235,42 +2220,39 @@ bool Document::saveToFile(const char* filename) const
     }
 
 
-    // open extra scope to close ZipWriter properly
+    // Cruth: the document file IS the recipe.
+    //
+    // What a part is made of -- its features, their values, what each one was built on -- is the
+    // record; the solid those steps produce is what the record builds, and is rebuilt on opening.
+    // Written as one readable text file, a saved document can be read, differenced and merged by
+    // ordinary tools with nothing installed to interpret it, which an archive of compressed
+    // members never could. A sealed archive remains the right shape for a release or for a
+    // records system, and is a separate operation rather than the everyday save.
     {
         Base::FileInfo tmp(fn);
         Base::ofstream file(tmp, std::ios::out | std::ios::binary);
-
-        Base::ZipWriter writer(file);
         if (!file.is_open()) {
             throw Base::FileException("Failed to open file", tmp);
         }
 
-        writer.setComment("FreeCAD Document");
-        writer.setLevel(compression);
-        writer.putNextEntry("Document.xml");
-
-        if (hGrp->GetBool("SaveBinaryBrep", false)) {
-            writer.setMode("BinaryBrep");
+        for (const auto o : d->objectArray) {
+            o->beforeSave();
         }
+        beforeSave();
 
-        writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>" << '\n'
-                        << "<!--" << '\n'
-                        << " FreeCAD Document, see https://www.freecad.org for more information..."
-                        << '\n'
-                        << "-->" << '\n';
-        Document::Save(writer);
+        file << formatStoredRecipe(*this);
+        if (file.fail()) {
+            throw Base::FileException("Failed to write the document", tmp);
+        }
+        file.close();
 
-        // Special handling for Gui document.
-        signalSaveDocument(writer);
-
-        // write additional files
-        writer.writeFiles();
-        if (writer.hasErrors()) {
-            // retrieve Writer error strings
-            std::stringstream message;
-            message << "Failed to write all data to file ";
-            message << writer.getErrors().front();
-            throw Base::FileException(message.str().c_str(), tmp);
+        // Display state -- colours, draw style, the camera -- travelled in the old archive and
+        // has nowhere to go yet. It is not part of the recipe and never will be: it is not what
+        // the part is made of. It belongs with the built geometry, in the project's cache, and
+        // is named here rather than dropped in silence.
+        if (signalSaveDocument.num_slots() > 0) {
+            Base::Console().warning(
+                "Saved %s: colours, draw style and the camera are not stored yet.\n", getName());
         }
 
         GetApplication().signalSaveDocument(*this);
@@ -2309,23 +2291,11 @@ bool Document::saveToFile(const char* filename) const
         backupPolicy.apply(fn, nativePath);
     }
 
-    // Cruth: alongside the archive, write a readable rendering of the authored recipe -- the
-    // steps a person took, one fact per line -- so a difference between two saves reads as
-    // "this hole moved" instead of "the file changed". It is a view: written here, never read
-    // back, and the archive above remains the file of record. A failure to write it is
-    // reported and swallowed; a convenience must never fail a save.
-    if (hGrp->GetBool("WriteRecipeView", true)) {
-        try {
-            if (!writeDocumentRecipeText(*this, nativePath.c_str())) {
-                Base::Console().warning("Could not write the recipe view for %s\n", filename);
-            }
-        }
-        catch (const Base::Exception& e) {
-            Base::Console().warning("Could not write the recipe view for %s: %s\n",
-                                    filename,
-                                    e.what());
-        }
-    }
+    // The readable rendering of the recipe -- the steps a person took, one fact per line -- used
+    // to be written beside every save, because the file of record was an archive nobody could
+    // read. The record is now the recipe itself, so a second file saying the same thing in
+    // softer words would only be one more file in the folder and one more thing to disagree
+    // with. The rendering remains available to anyone who asks for it (RecipeText.h).
 
     signalFinishSave(*this, filename);
 
@@ -2414,6 +2384,42 @@ void Document::restore(const char* filename,
         throw Base::FileException("Invalid project file", filename);
     }
 
+    // Which of the two shapes a document file can have: the recipe this program writes, or a
+    // sealed archive -- what a release, a records system, or an older version hands over. The
+    // file says which itself; nothing has to be configured or remembered.
+    const bool sealedArchive = buf->sgetc() == 'P';
+    buf->pubseekoff(0, std::ios::beg, std::ios::in);
+    if (!sealedArchive) {
+        GetApplication().signalStartRestoreDocument(*this);
+        setStatus(Document::Restoring, true);
+
+        const std::string filePath = FileName.getValue();
+        const std::string docLabel = Label.getValue();
+        d->rebuildOnOpen = true;
+        try {
+            restoreStoredRecipe(*this, file, /*finish=*/false);
+        }
+        catch (const DocumentContentScopeError&) {
+            throw;
+        }
+        catch (const Base::Exception& e) {
+            Base::Console().error("Invalid recipe: %s\n", e.what());
+            setStatus(Document::RestoreError, true);
+        }
+        // The file names the document it came from, and reading it must not rename the document
+        // it is being read into or point it at some other file.
+        FileName.setValue(filePath.c_str());
+        Label.setValue(docLabel.c_str());
+
+        LastModifiedDate.setValue(
+            Base::Tools::dateTimeString(fi.lastModified().getTime_t()).c_str());
+
+        if (!delaySignal) {
+            afterRestore(true);
+        }
+        return;
+    }
+
     zipios::ZipInputStream zipstream(file);
     Base::XMLReader reader(filename, zipstream);
 
@@ -2484,6 +2490,21 @@ bool Document::afterRestore(const bool checkPartial)
     }
     GetApplication().signalFinishRestoreDocument(*this);
     setStatus(Document::Restoring, false);
+
+    // A document read from a recipe carries the steps and not the solid they make, so opening
+    // it includes building it. Reading and rebuilding stay separate acts -- that is what lets a
+    // rebuild that fails be reported instead of quietly producing an empty part -- and this is
+    // the point at which every document in the set has been read and can be built in order.
+    if (d->rebuildOnOpen) {
+        d->rebuildOnOpen = false;
+        // Marked here rather than when the file was read: restoring ends by declaring every
+        // object settled, which is the right answer for a file that carried its geometry and the
+        // wrong one for a file that carried the steps to make it.
+        for (DocumentObject* obj : d->objectArray) {
+            obj->enforceRecompute();
+        }
+        recompute();
+    }
     return true;
 }
 

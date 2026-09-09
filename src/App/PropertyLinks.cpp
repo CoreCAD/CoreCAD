@@ -4017,11 +4017,12 @@ void PropertyXLink::setValue(App::DocumentObject* lValue,
 
 namespace
 {
-// Read a project file's document-level durable UUID (Clause 3.7 step 3b) without
-// opening the whole document: crack the zip, read the head of Document.xml, and
-// pull the first name="Uid" PropertyUUID value -- the document's own, which
-// precedes any object data. Returns an empty string if the file cannot be read
-// or carries no UUID.
+// Read a document file's own durable UUID (Clause 3.7 step 3b) without opening the whole
+// document. A document written by this program is a recipe in plain text and names its uuid in
+// the first few lines; a sealed archive -- a release, or a file from an older version -- keeps
+// the same fact inside Document.xml. Both are read here, because a link has to find its target
+// whichever shape the target happens to have. Returns an empty string if the file cannot be
+// read or carries no UUID.
 std::string peekDocumentUuid(const QString& filePath)
 {
     try {
@@ -4033,22 +4034,50 @@ std::string peekDocumentUuid(const QString& filePath)
         if (!file) {
             return {};
         }
-        zipios::ZipInputStream zip(file);  // positioned at the first entry, Document.xml
+        const bool sealedArchive = file.peek() == 'P';
+        std::unique_ptr<zipios::ZipInputStream> zip;
+        std::istream* source = &file;
+        if (sealedArchive) {
+            // positioned at the first entry, Document.xml
+            zip = std::make_unique<zipios::ZipInputStream>(file);
+            source = zip.get();
+        }
+
+        // The recipe says it outright; the archive says it as the first Uid property, which
+        // precedes any object data.
+        const std::string recipeTag = "<Document uuid=\"";
         const std::string uidTag = "name=\"Uid\"";
         const std::string valueTag = "<Uuid value=\"";
+
+        const auto found = [&](const std::string& content) {
+            if (content.find(recipeTag) != std::string::npos) {
+                return true;
+            }
+            const auto uidPos = content.find(uidTag);
+            return uidPos != std::string::npos
+                && content.find(valueTag, uidPos) != std::string::npos;
+        };
+        const auto valueAfter = [](const std::string& content, std::string::size_type pos) {
+            const auto end = content.find('"', pos);
+            return end == std::string::npos ? std::string() : content.substr(pos, end - pos);
+        };
+
         std::string content;
         constexpr std::string::size_type cap = 1u << 20;  // 1 MiB safety cap
         std::array<char, 4096> buf {};
-        while (zip.good() && content.size() < cap) {
-            zip.read(buf.data(), static_cast<std::streamsize>(buf.size()));
-            content.append(buf.data(), static_cast<std::size_t>(zip.gcount()));
-            auto uidPos = content.find(uidTag);
-            if (uidPos != std::string::npos
-                && content.find(valueTag, uidPos) != std::string::npos) {
-                break;  // enough read to extract the document UUID
+        while (source->good() && content.size() < cap) {
+            source->read(buf.data(), static_cast<std::streamsize>(buf.size()));
+            content.append(buf.data(), static_cast<std::size_t>(source->gcount()));
+            if (found(content)) {
+                break;
             }
         }
-        auto pos = content.find(uidTag);
+
+        auto pos = content.find(recipeTag);
+        if (pos != std::string::npos) {
+            return valueAfter(content, pos + recipeTag.size());
+        }
+        pos = content.find(uidTag);
         if (pos == std::string::npos) {
             return {};
         }
@@ -4056,14 +4085,9 @@ std::string peekDocumentUuid(const QString& filePath)
         if (pos == std::string::npos) {
             return {};
         }
-        pos += valueTag.size();
-        auto end = content.find('"', pos);
-        if (end == std::string::npos) {
-            return {};
-        }
-        return content.substr(pos, end - pos);
+        return valueAfter(content, pos + valueTag.size());
     }
-    catch (...) {
+    catch (const std::exception&) {
         return {};
     }
 }
