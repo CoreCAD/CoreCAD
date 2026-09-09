@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 // Locks the ARCHITECTURE Amendment 3 §3.3 fail-safe body-identity rule enforced by
 // Body::reconcileMultiOutput: a stored body UUID is re-acquired across a recompute ONLY when the
