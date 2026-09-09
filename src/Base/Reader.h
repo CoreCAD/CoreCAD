@@ -277,6 +277,8 @@ public:
     const char* addFile(const char* Name, Base::Persistence* Object);
     /// process the requested file writes
     void readFiles(zipios::ZipInputStream& zipstream) const;
+    /// process the requested file reads from a directory rather than an archive
+    void readFiles(const std::string& directory) const;
     /// Returns whether reader has any registered filenames
     bool hasFilenames() const;
     /// returns true if reading the file \a filename has failed

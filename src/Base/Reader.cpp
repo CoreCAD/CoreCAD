@@ -36,6 +36,7 @@
 #include "Base64Filter.h"
 #include "Console.h"
 #include "Exception.h"
+#include "FileInfo.h"
 #include "InputSource.h"
 #include "Persistence.h"
 #include "Sequencer.h"
@@ -431,6 +432,34 @@ void Base::XMLReader::readBinFile(const char* filename)
 
     to << Base::base64_decode(Characters);
     to.close();
+}
+
+/// Read the registered files from a directory.
+///
+/// The archive form above walks the entries of a zip and matches them against what was
+/// registered. A directory has no order to walk, so this asks for each registered file by name
+/// -- and a file that is not there is simply absent, which is the normal case for a cache: it
+/// can be deleted at any time and everything it held is rebuilt.
+void Base::XMLReader::readFiles(const std::string& directory) const
+{
+    for (const FileEntry& entry : FileList) {
+        Base::FileInfo fi(directory + "/" + entry.FileName);
+        if (!fi.exists() || entry.Object == nullptr) {
+            continue;
+        }
+        try {
+            Base::ifstream file(fi, std::ios::in | std::ios::binary);
+            Base::Reader reader(file, entry.FileName, FileVersion);
+            entry.Object->RestoreDocFile(reader);
+            if (reader.getLocalReader()) {
+                reader.getLocalReader()->readFiles(directory);
+            }
+        }
+        catch (...) {
+            Base::Console().error("Reading failed from cached file: %s\n", entry.FileName.c_str());
+            FailedFiles.push_back(entry.FileName);
+        }
+    }
 }
 
 void Base::XMLReader::readFiles(zipios::ZipInputStream& zipstream) const
