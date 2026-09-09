@@ -2164,6 +2164,13 @@ bool Document::saveToFile(const char* filename) const
 {
     signalStartSave(*this, filename);
 
+    // Where the handed-in geometry goes. Derived from the path being written rather than from
+    // the document's own FileName, because Save As writes somewhere the document does not live
+    // yet, and its source material has to arrive with it.
+    const auto assetsFor = [](const std::string& path) {
+        return (fs::path(path).parent_path() / "assets").string();
+    };
+
     // Documents used to be written as an archive, uncompressed, so that version control could
     // at least see which bytes changed. Writing the recipe as plain text finishes that thought:
     // there is no container left to see through.
@@ -2240,7 +2247,7 @@ bool Document::saveToFile(const char* filename) const
         }
         beforeSave();
 
-        file << formatStoredRecipe(*this);
+        file << formatStoredRecipe(*this, assetsFor(nativePath));
         if (file.fail()) {
             throw Base::FileException("Failed to write the document", tmp);
         }
@@ -2409,7 +2416,10 @@ void Document::restore(const char* filename,
         const std::string docLabel = Label.getValue();
         d->rebuildOnOpen = true;
         try {
-            restoreStoredRecipe(*this, file, /*finish=*/false);
+            restoreStoredRecipe(*this,
+                                file,
+                                /*finish=*/false,
+                                (fs::path(filename).parent_path() / "assets").string());
         }
         catch (const DocumentContentScopeError&) {
             throw;
@@ -2716,6 +2726,18 @@ std::string Document::cacheDirectory() const
     // and one line in a version-control ignore file covers everything that is rebuildable.
     const fs::path directory = fs::path(Base::FileInfo(file).filePath()).parent_path();
     return (directory / ".cruth" / Uid.getValueStr()).string();
+}
+
+std::string Document::assetDirectory() const
+{
+    const std::string file = FileName.getStrValue();
+    if (file.empty()) {
+        return {};
+    }
+    // Visible and shared by the whole project: this is source material, and it is versioned and
+    // handed over with the recipes that name it.
+    const fs::path directory = fs::path(Base::FileInfo(file).filePath()).parent_path();
+    return (directory / "assets").string();
 }
 
 /// Remove all modifications. After this call The document becomes valid again.

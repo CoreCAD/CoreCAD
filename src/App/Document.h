@@ -514,6 +514,18 @@ public:
      * identity, so renaming or moving the file leaves nothing behind that claims to be its cache.
      */
     std::string cacheDirectory() const;
+
+    /**
+     * @brief Where the project keeps the geometry it was handed.
+     *
+     * An imported solid, a scanned mesh, a measured point cloud: nothing in the project produces
+     * them, so they are source material and belong with the recipes rather than with the cache.
+     * One folder serves the whole project, and a body used by five parts is kept once.
+     *
+     * Empty for a document that has never been saved -- with no place on disk, such a value has
+     * to travel inside the recipe itself.
+     */
+    std::string assetDirectory() const;
     /// @}
 
     void Save(Base::Writer& writer) const override;

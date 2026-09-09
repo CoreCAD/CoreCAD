@@ -56,8 +56,15 @@ class Document;
  *  never diffed (§10.4); geometry the document was merely handed — an import, a mesh, a point
  *  cloud — is authored content and is carried. What it can NOT yet carry is stated in the file
  *  itself: a value bulky enough that its property writes a side file is named as unrecorded.
+ *
+ *  `assetDirectory` is where handed-in geometry is kept — a folder of the project's own source
+ *  material, which the recipe then names by the content it holds rather than describes in full.
+ *  That keeps the recipe a file a person reads, and stores one imported body once however many
+ *  parts use it. Left empty, such a value is written into the recipe itself, which is what a
+ *  document with no place on disk yet has to do.
  */
-AppExport std::string formatStoredRecipe(const Document& doc);
+AppExport std::string formatStoredRecipe(const Document& doc,
+                                         const std::string& assetDirectory = {});
 
 /** Rebuild a document's authored content from a stored recipe, into `doc`.
  *
@@ -70,6 +77,9 @@ AppExport std::string formatStoredRecipe(const Document& doc);
  *  object exists. A document being opened does that pass itself, later and in dependency order
  *  across all the documents being opened together, so it asks for it to be left undone here.
  */
-AppExport void restoreStoredRecipe(Document& doc, std::istream& source, bool finish = true);
+AppExport void restoreStoredRecipe(Document& doc,
+                                   std::istream& source,
+                                   bool finish = true,
+                                   const std::string& assetDirectory = {});
 
 }  // namespace App
