@@ -500,6 +500,20 @@ public:
      * content of property 'TransientDir'.
      */
     const char* getFileName() const;
+
+    /**
+     * @brief Where this document's rebuildable files are kept.
+     *
+     * The document file holds what a part is made of. Everything the program can produce from
+     * it -- the built geometry, the colours and camera the last session left behind -- is kept
+     * apart from it, in one directory for the whole project, so that a folder of parts is a list
+     * of parts and a comparison of two versions is a comparison of designs. Nothing in there is
+     * a record: it can be deleted at any moment and rebuilt from the file it belongs to.
+     *
+     * Empty for a document that has never been saved, and keyed by the document's durable
+     * identity, so renaming or moving the file leaves nothing behind that claims to be its cache.
+     */
+    std::string cacheDirectory() const;
     /// @}
 
     void Save(Base::Writer& writer) const override;

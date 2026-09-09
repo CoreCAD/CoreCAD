@@ -2246,16 +2246,28 @@ bool Document::saveToFile(const char* filename) const
         }
         file.close();
 
-        // Display state -- colours, draw style, the camera -- travelled in the old archive and
-        // has nowhere to go yet. It is not part of the recipe and never will be: it is not what
-        // the part is made of. It belongs with the built geometry, in the project's cache, and
-        // is named here rather than dropped in silence.
-        if (signalSaveDocument.num_slots() > 0) {
-            Base::Console().warning(
-                "Saved %s: colours, draw style and the camera are not stored yet.\n", getName());
-        }
-
         GetApplication().signalSaveDocument(*this);
+    }
+
+    // Display state -- colours, draw style, the camera -- is not what the part is made of, so it
+    // is not in the recipe. It is not nothing either: a person chose it. It goes to the project
+    // cache, beside the geometry, where it can be deleted without losing anything designed.
+    if (signalSaveDocument.num_slots() > 0) {
+        try {
+            const fs::path cache = fs::path(nativePath).parent_path() / ".cruth"
+                / Uid.getValueStr();
+            fs::create_directories(cache);
+            Base::FileWriter writer(cache.string().c_str());
+            signalSaveDocument(writer);
+            writer.writeFiles();
+        }
+        catch (const std::exception& e) {
+            // A cache that cannot be written costs a redraw, never a design. Saving the file
+            // itself has already succeeded and must not be undone by this.
+            Base::Console().warning("Could not store the display state for %s: %s\n",
+                                    getName(),
+                                    e.what());
+        }
     }
 
     if (policy) {
@@ -2410,6 +2422,24 @@ void Document::restore(const char* filename,
         // it is being read into or point it at some other file.
         FileName.setValue(filePath.c_str());
         Label.setValue(docLabel.c_str());
+
+        // The display state the last session left behind, if the cache still holds it. Its
+        // absence is ordinary -- a cache is disposable -- and costs only default colours.
+        const std::string cache = cacheDirectory();
+        if (signalRestoreDocument.num_slots() > 0 && !cache.empty()
+            && Base::FileInfo(cache).isDir()) {
+            try {
+                std::istringstream head("<?xml version='1.0' encoding='utf-8'?><Display/>");
+                Base::XMLReader viewReader("DisplayState", head);
+                signalRestoreDocument(viewReader);
+                viewReader.readFiles(cache);
+            }
+            catch (const std::exception& e) {
+                Base::Console().warning("Could not read the display state for %s: %s\n",
+                                        getName(),
+                                        e.what());
+            }
+        }
 
         LastModifiedDate.setValue(
             Base::Tools::dateTimeString(fi.lastModified().getTime_t()).c_str());
@@ -2674,6 +2704,18 @@ const char* Document::getProgramVersion() const
 const char* Document::getFileName() const
 {
     return testStatus(TempDoc) ? TransientDir.getValue() : FileName.getValue();
+}
+
+std::string Document::cacheDirectory() const
+{
+    const std::string file = FileName.getStrValue();
+    if (file.empty()) {
+        return {};
+    }
+    // Hidden and named once for the whole project, so a folder of parts stays a list of parts
+    // and one line in a version-control ignore file covers everything that is rebuildable.
+    const fs::path directory = fs::path(Base::FileInfo(file).filePath()).parent_path();
+    return (directory / ".cruth" / Uid.getValueStr()).string();
 }
 
 /// Remove all modifications. After this call The document becomes valid again.
