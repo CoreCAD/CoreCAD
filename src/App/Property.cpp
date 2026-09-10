@@ -287,6 +287,10 @@ void Property::hasSetValue()
 {
     PropertyCleaner guard(this);
     if (father) {
+        // A value has been given, so any note that this property's source material could not be
+        // loaded is spent -- what follows is the value in front of us, not the one that was
+        // missing.
+        father->forgetMissingSource(this);
         if (isNotifyEnabled()) {
             father->onChanged(this);
         }

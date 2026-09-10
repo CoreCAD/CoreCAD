@@ -12,6 +12,7 @@
 
 #include <App/Application.h>
 #include <Base/FileInfo.h>
+#include <Base/Stream.h>
 #include <App/Document.h>
 #include <App/StoredRecipe.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -233,6 +234,79 @@ TEST_F(StoredRecipeGeometryTest, aSaveThatChangedNothingWritesNothingNew)
     );
 
     std::filesystem::remove_all(folder);
+}
+
+// A record that names source material it cannot find KEEPS the name and reports the gap. The
+// alternative is what this replaces: the save re-derived the record from what was in memory, a
+// property holding nothing produced nothing to store, and the file came back saying a plain shape
+// holder was authored empty -- with the digest that named the body gone, so putting the folder
+// back could never recover the design. Loading failure and authored emptiness are different facts.
+TEST_F(StoredRecipeGeometryTest, aRecordKeepsTheNameOfSourceMaterialItCannotFind)
+{
+    // Arrange -- a part built from a handed-in body, then carried away from its source folder,
+    // which is what emailing one file or dragging it in a file manager does.
+    const std::string home = Base::FileInfo::getTempFileName();
+    Base::FileInfo(home).createDirectory();
+    const std::string file = home + "/Part.FCStd";
+    auto* box = _doc->addObject<Part::Box>("Block");  // NOLINT
+    box->Length.setValue(10.0);
+    box->Width.setValue(20.0);
+    box->Height.setValue(30.0);
+    _doc->recompute();
+    auto* handed = _doc->addObject<Part::Feature>("Handed");
+    handed->Shape.setValue(box->Shape.getShape());
+    _doc->recompute();
+    _doc->saveAs(file.c_str());
+
+    const auto textOf = [](const std::string& path) {
+        Base::ifstream stream(Base::FileInfo(path), std::ios::in | std::ios::binary);
+        return std::string {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    };
+    const std::string saved = textOf(file);
+    const std::string::size_type names = saved.find("asset=\"");
+    ASSERT_NE(names, std::string::npos) << "the arrangement is wrong if nothing was stored";
+    const std::string::size_type from = names + std::string("asset=\"").size();
+    const std::string id = saved.substr(from, saved.find('"', from) - from);
+
+    const std::string elsewhere = Base::FileInfo::getTempFileName();
+    Base::FileInfo(elsewhere).createDirectory();
+    const std::string moved = elsewhere + "/Part.FCStd";
+    std::filesystem::copy_file(file, moved);
+
+    // Act -- opened where its source material is not, and saved again.
+    App::Document* away = App::GetApplication().openDocument(moved.c_str());
+    ASSERT_NE(away, nullptr);
+    auto* orphaned = dynamic_cast<Part::Feature*>(away->getObject("Handed"));
+    ASSERT_NE(orphaned, nullptr);
+    ASSERT_TRUE(orphaned->Shape.getShape().isNull()) << "the material was supposed to be missing";
+    away->save();
+    const std::string rewritten = textOf(moved);
+    App::GetApplication().closeDocument(away->getName());
+
+    // Assert -- the name survived the round trip, and the file says the value is not there.
+    EXPECT_NE(rewritten.find("asset=\"" + id + "\""), std::string::npos)
+        << "the record must not overwrite the name of its source material with its absence";
+    EXPECT_NE(rewritten.find("<Unrecorded"), std::string::npos);
+    const std::string::size_type gap = rewritten.find("<Unrecorded");
+    EXPECT_NE(rewritten.find(id, gap), std::string::npos)
+        << "the gap must be reported, not silently claimed to be nothing";
+
+    // And the document is still repairable: put the source material back and the body returns.
+    std::filesystem::copy(
+        std::filesystem::path(home) / "assets",
+        std::filesystem::path(elsewhere) / "assets",
+        std::filesystem::copy_options::recursive
+    );
+    App::Document* repaired = App::GetApplication().openDocument(moved.c_str());
+    ASSERT_NE(repaired, nullptr);
+    auto* returned = dynamic_cast<Part::Feature*>(repaired->getObject("Handed"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_FALSE(returned->Shape.getShape().isNull())
+        << "reuniting the file with its source folder must recover the design";
+    App::GetApplication().closeDocument(repaired->getName());
+
+    std::filesystem::remove_all(home);
+    std::filesystem::remove_all(elsewhere);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

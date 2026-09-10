@@ -598,6 +598,33 @@ public:
    */
   virtual void editProperty([[maybe_unused]] const char* propName) {}
 
+  /** Remember source material a stored record named and this session could not load.
+   *
+   * A property holding nothing cannot say why. "The author left it empty" and "the file that
+   * held it was not there" are different facts, and a save that re-derives the record from what
+   * is in memory writes the second one out as the first -- the name of the missing material is
+   * gone, and putting the material back can never recover the design. So the container keeps the
+   * name it was given, the writer emits it again, and the file reports the gap instead of
+   * denying it.
+   */
+  void rememberMissingSource(const char* name, const std::string& id);
+
+  /// The id a stored record gave for this property's value when that value could not be loaded.
+  std::string missingSource(const char* name) const;
+
+  /** Discharge that note, because the property has been given a value since.
+   *
+   * Called wherever a value is set, so the note can only ever outlive a load that nothing has
+   * superseded -- which is what lets the writer treat a remembered name as certain rather than
+   * as a guess about an empty property.
+   */
+  void forgetMissingSource(const Property* prop)
+  {
+      if (!_missingSources.empty()) {
+          eraseMissingSource(prop);
+      }
+  }
+
   /**
    * @brief Get the prefix for property names.
    *
@@ -730,7 +757,10 @@ protected:
   DynamicProperty dynamicProps;
 
 private:
+  void eraseMissingSource(const Property* prop);
+
   std::string _propertyPrefix;
+  std::map<std::string, std::string> _missingSources;
   static PropertyData propertyData;
 };
 
