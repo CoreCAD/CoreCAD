@@ -17,7 +17,10 @@
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
 #include <App/StoredRecipe.h>
+#include <App/Services.h>
+#include <Base/ServiceProvider.h>
 
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -427,6 +430,113 @@ TEST_F(StoredRecipeTest, theFileDeclaresNoLengths)
 
     // Assert
     EXPECT_EQ(written.find("Count=\""), std::string::npos);
+}
+
+/// A stand-in for the view layer, so that the App half of the appearance question can be tested
+/// where there is no GUI to answer it.
+///
+/// The container it hands back is another document object, because what matters here is that the
+/// file asks, carries what it is given, and hands it back to whoever answers the same question on
+/// the way in -- not what kind of container the answer happens to be.
+class StubAppearance: public App::DisplayStateProvider
+{
+public:
+    App::PropertyContainer* appearanceOf(const App::DocumentObject& object) const override
+    {
+        const char* name = object.getNameInDocument();
+        if (name == nullptr) {
+            return nullptr;
+        }
+        const auto found = _byName.find(name);
+        return found == _byName.end() ? nullptr : found->second;
+    }
+
+    void answerFor(const std::string& name, App::PropertyContainer* container)
+    {
+        _byName[name] = container;
+    }
+
+    /// A session with no view layer answers nothing, which is what a headless save does.
+    void answerNothing()
+    {
+        _byName.clear();
+    }
+
+    static StubAppearance& theOne()
+    {
+        static StubAppearance* stub = [] {
+            auto* made = new StubAppearance;
+            Base::registerServiceImplementation<App::DisplayStateProvider>(made);
+            return made;
+        }();
+        return *stub;
+    }
+
+private:
+    std::map<std::string, App::PropertyContainer*> _byName;
+};
+
+// A colour a person chose is authored content: nothing in the document produces it, and a record
+// that dropped it would come back a different-looking part. So the file of record carries it, in a
+// block of its own inside the object -- and the deletable project cache, which is where the whole
+// of the display state used to live, no longer decides whether it survives.
+TEST_F(StoredRecipeTest, theChosenAppearanceIsCarriedInTheFile)
+{
+    // Arrange -- an object, and somewhere the view layer keeps how it looks.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    auto* colour = static_cast<PropertyLength*>(chosen->getPropertyByName("Length"));
+    ASSERT_NE(colour, nullptr);
+    colour->setValue(0.75);
+    StubAppearance::theOne().answerFor("Block", chosen);
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+
+    // Assert -- the object's block names an appearance and carries it.
+    EXPECT_NE(written.find("display=\"1\""), std::string::npos);
+    EXPECT_NE(written.find("<Display>"), std::string::npos);
+
+    // And it is handed back to whoever answers the same question on the way in.
+    auto* returned = _rebuilt->addObject("Part::Box", "Returned");
+    ASSERT_NE(returned, nullptr);
+    StubAppearance::theOne().answerFor("Block", returned);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    EXPECT_DOUBLE_EQ(
+        static_cast<PropertyLength*>(returned->getPropertyByName("Length"))->getValue(),
+        0.75
+    );
+
+    StubAppearance::theOne().answerNothing();
+}
+
+// A session with nowhere to put an appearance steps over the block rather than guessing at a place
+// for it -- and one with nowhere to GET an appearance writes no block at all, which is honest: it
+// chose none.
+TEST_F(StoredRecipeTest, aSessionWithNoViewLayerNeitherWritesNorReadsAnAppearance)
+{
+    // Arrange -- a file written WITH an appearance.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    StubAppearance::theOne().answerFor("Block", chosen);
+    const std::string withAppearance = formatStoredRecipe(*_source);
+    ASSERT_NE(withAppearance.find("<Display>"), std::string::npos);
+
+    // Act -- read and written again by a session that has no view layer.
+    StubAppearance::theOne().answerNothing();
+    std::istringstream text(withAppearance);
+    restoreStoredRecipe(*_rebuilt, text);
+    const std::string withoutAppearance = formatStoredRecipe(*_rebuilt);
+
+    // Assert -- the block was stepped over on the way in, and none was invented on the way out.
+    EXPECT_NE(_rebuilt->getObject("Block"), nullptr);
+    EXPECT_EQ(withoutAppearance.find("<Display>"), std::string::npos);
+    EXPECT_EQ(withoutAppearance.find("display=\"1\""), std::string::npos);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

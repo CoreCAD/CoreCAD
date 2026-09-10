@@ -62,6 +62,9 @@
 #include "PropertyExpressionEngine.h"
 #include "PropertyGeo.h"
 #include "PropertyLinks.h"
+#include "Services.h"
+
+#include <Base/ServiceProvider.h>
 
 using namespace App;
 
@@ -347,7 +350,8 @@ bool isReference(const Property& prop)
     return prop.isDerivedFrom(PropertyLinkBase::getClassTypeId());
 }
 
-/// Put a handed-in value into the project's source folder, and answer by what it holds.
+/// Put a value the recipe cannot say inline into the project's source folder, and answer by what
+/// it holds.
 ///
 /// The value is written **the way the document archive writes it** -- the property's own `Save`,
 /// producing a small element that names its side files, and the side files themselves. The earlier
@@ -441,7 +445,7 @@ AssetOutcome storeAsset(const Property& prop, const std::string& directory)
         files.push_back(entry.path());
     }
     std::sort(files.begin(), files.end());
-    bool holdsGeometry = false;
+    bool holdsBulk = false;
     for (const fs::path& file : files) {
         const std::string name = file.filename().string();
         digest.addData(QByteArray(name.data(), static_cast<int>(name.size())));
@@ -449,11 +453,11 @@ AssetOutcome storeAsset(const Property& prop, const std::string& directory)
         const std::string bytes {std::istreambuf_iterator<char>(stream),
                                 std::istreambuf_iterator<char>()};
         if (name != assetContentFile && !bytes.empty()) {
-            holdsGeometry = true;
+            holdsBulk = true;
         }
         digest.addData(QByteArray(bytes.data(), static_cast<int>(bytes.size())));
     }
-    if (!holdsGeometry) {
+    if (!holdsBulk) {
         // No value to keep. Not a gap and not a value -- the property holds nothing, and a document
         // rebuilt without it holds nothing too.
         return abandon(AssetOutcome::Result::NothingToKeep);
@@ -574,56 +578,80 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
             continue;
         }
 
-        // Geometry the document was handed is the project's source material, not a description
-        // of anything, so it goes to the source folder and the recipe names it. Written into the
-        // recipe it would be thousands of lines of coordinates in the middle of a file whose
-        // whole purpose is to be read.
-        if (prop->isDerivedFrom(PropertyGeometry::getClassTypeId())) {
-            // Source material this session was told about and could not find. The property holds
-            // nothing as a result, and re-deriving the record from what is in memory would write
-            // that emptiness over the name -- destroying the one thing that could reunite the
-            // document with its material. The record keeps the name and states the gap.
-            const std::string missing = owner.missingSource(name.c_str());
-            if (!missing.empty()) {
-                entry.asset = missing;
-                entry.reason = "source geometry '" + missing + "' was not found";
-                stored.push_back(entry);
-                continue;
-            }
-
-            if (!assetDirectory.empty()) {
-                const AssetOutcome outcome = storeAsset(*prop, assetDirectory);
-                if (outcome.result == AssetOutcome::Result::NothingToKeep) {
-                    // Not a gap and not a value -- the property holds nothing, and a document
-                    // rebuilt without it holds nothing too.
-                    continue;
-                }
-                if (outcome.result == AssetOutcome::Result::Failed) {
-                    // The value is real and the store would not take it. Named, because a write
-                    // that failed and a property that was empty must not read the same on disk.
-                    entry.reason = "source geometry could not be written to the project store";
-                    stored.push_back(entry);
-                    continue;
-                }
-                entry.asset = outcome.id;
-                stored.push_back(entry);
-                continue;
-            }
+        // Source material this session was told about and could not find. The property holds
+        // nothing as a result, and re-deriving the record from what is in memory would write that
+        // emptiness over the name -- destroying the one thing that could reunite the document
+        // with its material. The record keeps the name and states the gap.
+        const std::string missing = owner.missingSource(name.c_str());
+        if (!missing.empty()) {
+            entry.asset = missing;
+            entry.reason = "source material '" + missing + "' was not found";
+            stored.push_back(entry);
+            continue;
         }
 
+        // The property's own serialization of itself. Anything that says its whole value in the
+        // element is written right there, which is nearly everything and is what keeps the recipe
+        // one file a person reads.
         ScratchWriter scratch;
         scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
-        // Values large enough to be kept beside the archive are written inline here instead: a
-        // recipe that pointed at a second file would not be one file you can read.
-        scratch.setForceXML(true);
         scratch.incInd();
         scratch.incInd();
         prop->Save(scratch);
-        if (scratch.wantedSideFile()) {
-            entry.reason = "value stored beside the document";
+        if (!scratch.wantedSideFile()) {
+            if (scratch.getString().empty()) {
+                // The property wrote nothing and asked for nowhere to put it. An empty block is
+                // not a value: its own reader looks for an element that is not there and reports
+                // the whole document as corrupt. Named as a gap, which is what it is.
+                entry.reason = "the property wrote no value";
+            }
+            else {
+                entry.body = scratch.getString();
+            }
+            stored.push_back(entry);
+            continue;
+        }
+
+        // A property that keeps its value in a file of its own -- a solid, a mesh, a per-face
+        // colour array. That file goes to the project's source store and the recipe names it by
+        // what it holds, which stores one imported body once however many parts use it and
+        // collapses a hundred objects wearing the same material to one entry.
+        if (!assetDirectory.empty()) {
+            const AssetOutcome outcome = storeAsset(*prop, assetDirectory);
+            if (outcome.result == AssetOutcome::Result::NothingToKeep) {
+                // Not a gap and not a value -- the property holds nothing, and a document rebuilt
+                // without it holds nothing too.
+                continue;
+            }
+            if (outcome.result == AssetOutcome::Result::Failed) {
+                // The value is real and the store would not take it. Named, because a write that
+                // failed and a property that was empty must not read the same on disk.
+                entry.reason = "value could not be written to the project store";
+                stored.push_back(entry);
+                continue;
+            }
+            entry.asset = outcome.id;
+            stored.push_back(entry);
+            continue;
+        }
+
+        // No store to put it in -- a document with no folder yet. Whatever the property can say
+        // inline is better than nothing, and for a solid that is the whole solid as text.
+        //
+        // It is NOT better than nothing for every property, which is why this is the fallback and
+        // not the rule: a colour array asked to write itself as XML writes no element at all, so
+        // making this the first choice silently dropped every per-face colour a person picked.
+        ScratchWriter inlined;
+        inlined.Stream().precision(std::numeric_limits<double>::max_digits10);
+        inlined.setForceXML(true);
+        inlined.incInd();
+        inlined.incInd();
+        prop->Save(inlined);
+        if (!inlined.wantedSideFile() && !inlined.getString().empty()) {
+            entry.body = inlined.getString();
         }
         else {
-            entry.body = scratch.getString();
+            entry.reason = "value kept beside the document, which has no folder yet";
         }
         stored.push_back(entry);
     }
@@ -779,7 +807,7 @@ void readProperties(Base::XMLReader& reader,
                     // like a part that never had one -- and remembered, because the next save
                     // would otherwise write the absence over the name and make the loss
                     // permanent even after the material came back.
-                    Base::Console().warning("Stored recipe: missing source geometry '%s'\n",
+                    Base::Console().warning("Stored recipe: missing source material '%s'\n",
                                             asset.c_str());
                     owner.rememberMissingSource(name.c_str(), asset);
                 }
@@ -819,16 +847,44 @@ void readProperties(Base::XMLReader& reader,
     reader.readEndElement("Unrecorded");
 }
 
+/// The container holding an object's chosen appearance, or null when this session has none.
+///
+/// A colour a person chose is authored content and belongs in the file of record, not in the
+/// deletable project cache -- but only the view layer knows where that state lives, so the file
+/// asks for it rather than reaching for it. A headless session gets no answer and writes no
+/// appearance, which is honest: it chose none.
+PropertyContainer* appearanceOf(const DocumentObject& obj)
+{
+    auto* display = Base::provideService<DisplayStateProvider>();
+    return display != nullptr ? display->appearanceOf(obj) : nullptr;
+}
+
 /// One object's block: what it is, and what it was authored to be.
 void writeObject(Base::Writer& writer,
                  const DocumentObject& obj,
-                 const std::string& assetDirectory)
+                 const std::string& assetDirectory,
+                 bool withAppearance)
 {
+    const PropertyContainer* appearance = withAppearance ? appearanceOf(obj) : nullptr;
+
     writer.Stream() << writer.ind() << "<Object uuid=\"" << obj.Uid.getValueStr() << "\" type=\""
                     << obj.getTypeId().getName() << "\" name=\"" << obj.getNameInDocument()
-                    << "\">\n";
+                    << "\"";
+    if (appearance != nullptr) {
+        // Marked on the object, so a reader knows whether to expect the block without having to
+        // look ahead for it.
+        writer.Stream() << " display=\"1\"";
+    }
+    writer.Stream() << ">\n";
     writer.incInd();
     writeProperties(writer, obj, assetDirectory);
+    if (appearance != nullptr) {
+        writer.Stream() << writer.ind() << "<Display>\n";
+        writer.incInd();
+        writeProperties(writer, *appearance, assetDirectory);
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</Display>\n";
+    }
     writer.decInd();
     writer.Stream() << writer.ind() << "</Object>\n";
 }
@@ -875,7 +931,7 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
     writer.Stream() << writer.ind() << "<Objects>\n";
     writer.incInd();
     for (const DocumentObject* obj : objects) {
-        writeObject(writer, *obj, assetDirectory);
+        writeObject(writer, *obj, assetDirectory, /*withAppearance=*/true);
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</Objects>\n";
@@ -920,6 +976,7 @@ void App::restoreStoredRecipe(Document& doc,
         const std::string uuid = reader.getAttribute<const char*>("uuid");
         const std::string type = reader.getAttribute<const char*>("type");
         const std::string name = reader.getAttribute<const char*>("name");
+        const bool display = reader.getAttribute<long>("display", 0) == 1;
 
         // The in-document name is restored, not regenerated: expressions and the document's own
         // reporting speak it, so a rebuilt document that renamed everything would be a different
@@ -936,6 +993,17 @@ void App::restoreStoredRecipe(Document& doc,
             obj->setStatus(ObjectStatus::Restore, true);
             readProperties(reader, *obj, pending, assetDirectory);
             obj->setStatus(ObjectStatus::Restore, false);
+
+            if (display) {
+                // The appearance the file carries. A session with nowhere to put it -- a headless
+                // one -- steps over the block rather than guessing at a place for it.
+                reader.readElement("Display");
+                PropertyContainer* appearance = appearanceOf(*obj);
+                if (appearance != nullptr) {
+                    readProperties(reader, *appearance, pending, assetDirectory);
+                }
+                reader.readEndElement("Display");
+            }
         }
         reader.readEndElement("Object");
     }
@@ -976,7 +1044,7 @@ std::string App::formatStoredRecipeObject(const DocumentObject& obj,
     // The same digits the whole-document writer asks for. A block rendered at a different
     // precision would describe the same object and read as a different one.
     writer.Stream().precision(std::numeric_limits<double>::max_digits10);
-    writeObject(writer, obj, assetDirectory);
+    writeObject(writer, obj, assetDirectory, /*withAppearance=*/false);
     return writer.getString();
 }
 

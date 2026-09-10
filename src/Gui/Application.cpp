@@ -151,6 +151,7 @@
 #include <OverlayManager.h>
 #include <ParamHandler.h>
 #include <Base/ServiceProvider.h>
+#include <App/Services.h>
 
 #ifdef BUILD_TRACY_FRAME_PROFILER
 # include <tracy/Tracy.hpp>
@@ -445,6 +446,28 @@ void qtInvokeOnMain(std::function<void()>&& fn, bool blocking)
 
 }  // namespace Gui
 
+namespace
+{
+
+/// Where an object's chosen appearance lives, for the file of record to carry.
+///
+/// The view provider IS the container: it is an ordinary property container, so the recipe's own
+/// writer and reader handle it without a second dialect for display values.
+class GuiDisplayState final: public App::DisplayStateProvider
+{
+public:
+    App::PropertyContainer* appearanceOf(const App::DocumentObject& object) const override
+    {
+        if (Application::Instance == nullptr) {
+            return nullptr;
+        }
+        Gui::Document* document = Application::Instance->getDocument(object.getDocument());
+        return document != nullptr ? document->getViewProvider(&object) : nullptr;
+    }
+};
+
+}  // namespace
+
 void Application::initStyleParameterManager()
 {
     static ParamHandlers handlers;
@@ -521,6 +544,10 @@ void Application::initStyleParameterManager()
     }
 
     Base::registerServiceImplementation(d->styleParameterManager);
+
+    // A colour a person chose is authored content, so the file of record carries it. That file is
+    // written in App and the state lives here, so App asks and this answers.
+    Base::registerServiceImplementation<App::DisplayStateProvider>(new GuiDisplayState);
 }
 
 // clang-format off

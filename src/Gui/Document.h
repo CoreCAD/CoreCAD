@@ -175,6 +175,14 @@ public:
     void Restore(Base::XMLReader& reader) override;
     /// This method is used to save large amounts of data to a binary file.
     void SaveDocFile(Base::Writer& writer) const override;
+    /** The stored form of the view layer, with or without the appearance a person chose.
+     *
+     * The project cache may not hold it: a colour somebody picked is authored content and the
+     * cache is deletable by design, so the file of record carries it instead. The sealed archive
+     * -- what a release or a records system hands over as one self-contained file -- must hold
+     * it. Hence a parameter rather than a deletion.
+     */
+    void saveDocFile(Base::Writer& writer, bool withAppearance) const;
     /// This method is used to restore large amounts of data from a binary file.
     void RestoreDocFile(Base::Reader& reader) override;
     void exportObjects(const std::vector<App::DocumentObject*>&, Base::Writer&);

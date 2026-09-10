@@ -1974,6 +1974,12 @@ void Document::RestoreDocFile(Base::Reader& reader)
     localreader->DocumentSchema = scheme;
     localreader->ProgramVersion = d->_pcDocument->getProgramVersion();
 
+    // Whether this file carries the appearance a person chose, or only view state. A sealed
+    // archive carries it and says nothing, because every one ever written predates the question.
+    // The project cache says so outright, and its appearance comes from the recipe instead --
+    // which matters, because the cache is read AFTER the recipe and a copy here would win.
+    const bool hasAppearance = localreader->getAttribute<long>("Appearance", 1) == 1;
+
     bool hasExpansion = localreader->hasAttribute("HasExpansion");
     if (hasExpansion) {
         auto tree = TreeWidget::instance();
@@ -2013,7 +2019,12 @@ void Document::RestoreDocFile(Base::Reader& reader)
             auto pObj = freecad_cast<ViewProviderDocumentObject*>(getViewProviderByName(name.c_str()));
             // check if this feature has been registered
             if (pObj) {
-                pObj->Restore(*localreader);
+                if (hasAppearance) {
+                    pObj->Restore(*localreader);
+                }
+                else {
+                    pObj->restoreExtensions(*localreader);
+                }
             }
 
             if (pObj && treeRank >= 0) {
@@ -2105,6 +2116,18 @@ void Document::slotShowHidden(const App::Document& doc)
  */
 void Document::SaveDocFile(Base::Writer& writer) const
 {
+    // The project cache, which is deletable by design and therefore may not hold anything a
+    // person authored. The chosen appearance goes to the file of record instead; what is left
+    // here is view state -- how this session happened to be looking at the part.
+    saveDocFile(writer, /*withAppearance=*/false);
+}
+
+/// The stored form of the view layer, with or without the appearance a person chose.
+///
+/// The sealed archive -- what a release or a records system hands over -- is one self-contained
+/// file and wants the full form, so the choice is a parameter rather than a deletion.
+void Document::saveDocFile(Base::Writer& writer, bool withAppearance) const
+{
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>" << std::endl
                     << "<!--" << std::endl
                     << " FreeCAD Document, see https://www.freecad.org for more information…"
@@ -2112,6 +2135,11 @@ void Document::SaveDocFile(Base::Writer& writer) const
                     << "-->" << std::endl;
 
     writer.Stream() << "<Document SchemaVersion=\"1\"";
+    if (!withAppearance) {
+        // Said on the file, so a reader knows which form it is holding. Absent means the full
+        // form, which is what every sealed archive ever written says.
+        writer.Stream() << " Appearance=\"0\"";
+    }
 
     writer.incInd();
 
@@ -2147,7 +2175,15 @@ void Document::SaveDocFile(Base::Writer& writer) const
         }
 
         writer.Stream() << ">" << std::endl;
-        obj->Save(writer);
+        if (withAppearance) {
+            obj->Save(writer);
+        }
+        else {
+            // The extensions only. They are a declaration of what this view provider IS rather
+            // than of how it looks, and re-creating a dynamic one is not something the recipe
+            // can do for us.
+            obj->saveExtensions(writer);
+        }
         writer.Stream() << writer.ind() << "</ViewProvider>" << std::endl;
     }
     writer.setForceXML(xml);
