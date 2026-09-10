@@ -285,6 +285,13 @@ bool DocumentObject::mustRecompute() const
     return mustExecute() > 0;
 }
 
+bool DocumentObject::holdsAuthoredGeometry() const
+{
+    // An object computes its geometry from its recipe, or holds none at all; only one that was
+    // handed geometry nothing can produce again overrides this.
+    return false;
+}
+
 short DocumentObject::mustExecute() const
 {
     if (ExpressionEngine.isTouched()) {

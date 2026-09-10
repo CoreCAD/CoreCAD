@@ -88,13 +88,6 @@ bool GeoFeature::holdsAuthoredPlacement() const
     return getPlacementProperty() != nullptr;
 }
 
-bool GeoFeature::holdsAuthoredGeometry() const
-{
-    // A feature computes its geometry from the recipe; only a type that is handed geometry it
-    // cannot produce overrides this.
-    return false;
-}
-
 PyObject* GeoFeature::getPyObject()
 {
     if (PythonObject.is(Py::_None())) {

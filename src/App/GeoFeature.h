@@ -79,18 +79,6 @@ public:
      */
     virtual const PropertyComplexGeoData* getPropertyOfGeometry() const;
     /**
-     * @brief Whether this object's geometry is authored input rather than something it builds.
-     *
-     * A feature's shape is the OUTPUT of its recipe: the sizes, profiles and references it was
-     * given are the source, and the solid is what they produce. An imported solid is the
-     * opposite -- nothing in the document can produce it, so the geometry IS the authored
-     * content and a file of record that dropped it would describe a part nobody can rebuild.
-     *
-     * The default is false, because the common case is a feature that computes its own geometry.
-     * A type that merely holds geometry it was handed says so by overriding this.
-     */
-    virtual bool holdsAuthoredGeometry() const;
-    /**
      * @brief getPyObject returns the Python binding object
      * @return the Python binding object
      */

@@ -15,6 +15,8 @@
 #include <Base/Stream.h>
 #include <App/Document.h>
 #include <App/StoredRecipe.h>
+#include <App/PropertyPythonObject.h>
+#include <Base/Interpreter.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/FeaturePartBox.h>
 #include <src/App/InitApplication.h>
@@ -307,6 +309,76 @@ TEST_F(StoredRecipeGeometryTest, aRecordKeepsTheNameOfSourceMaterialItCannotFind
 
     std::filesystem::remove_all(home);
     std::filesystem::remove_all(elsewhere);
+}
+
+// Where geometry lives is decided by what PRODUCED it, and the object answers -- never its class.
+// A scripted object is the case that proves it: the same class parks a shape it was handed when
+// its script has no execute, and computes one when it has. Deciding by exact type dropped every
+// shape a script ever parked, silently, because a scripted object is a subclass of the plain
+// holder rather than the holder itself.
+TEST_F(StoredRecipeGeometryTest, aShapeParkedOnAScriptedFeatureIsCarried)
+{
+    // Arrange -- a scripted object with no execute: nothing will ever produce this shape again.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    App::DocumentObject* parked = _doc->addObject("Part::FeaturePython", "Parked");
+    ASSERT_NE(parked, nullptr);
+    auto* holder = dynamic_cast<Part::Feature*>(parked);
+    ASSERT_NE(holder, nullptr);
+    holder->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    _doc->recompute();
+    const Base::BoundBox3d expected = holder->Shape.getShape().getBoundBox();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- carried, and it comes back.
+    EXPECT_NE(written.find("asset=\""), std::string::npos)
+        << "a shape nothing rebuilds is the authored content and may not be dropped";
+
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+    _rebuilt->recompute();
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("Parked"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_FALSE(returned->Shape.getShape().isNull());
+    EXPECT_NEAR(returned->Shape.getShape().getBoundBox().MaxZ, expected.MaxZ, 1e-7);
+
+    std::filesystem::remove_all(assets);
+}
+
+// The other side of the same question. A script that supplies an execute rebuilds the shape from
+// the recipe, so the shape is output: keeping it would put the answer next to the question and
+// let the file disagree with itself.
+TEST_F(StoredRecipeGeometryTest, aShapeAScriptRebuildsStaysOutOfTheFile)
+{
+    // Arrange
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    App::DocumentObject* scripted = _doc->addObject("Part::FeaturePython", "Scripted");
+    ASSERT_NE(scripted, nullptr);
+    auto* proxy = dynamic_cast<App::PropertyPythonObject*>(scripted->getPropertyByName("Proxy"));
+    ASSERT_NE(proxy, nullptr);
+    proxy->setValue(
+        Base::Interpreter().runStringObject(
+            "type('Rebuilds', (object,), {'execute': lambda self, obj: None})()"
+        )
+    );
+    auto* holder = dynamic_cast<Part::Feature*>(scripted);
+    ASSERT_NE(holder, nullptr);
+    holder->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    _doc->recompute();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- nothing stored, and nothing inlined either.
+    EXPECT_EQ(written.find("asset=\""), std::string::npos)
+        << "a shape the script rebuilds is output, not source material";
+    EXPECT_EQ(written.find("DBRep_DrawableShape"), std::string::npos);
+
+    std::filesystem::remove_all(assets);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
