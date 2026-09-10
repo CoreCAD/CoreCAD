@@ -877,13 +877,10 @@ void PropertyPlacement::Save(Base::Writer& writer) const
                     << " Q1=\"" << _cPos.getRotation()[1] << "\""
                     << " Q2=\"" << _cPos.getRotation()[2] << "\""
                     << " Q3=\"" << _cPos.getRotation()[3] << "\"";
-    Vector3d axis;
-    double rfAngle {};
-    _cPos.getRotation().getRawValue(axis, rfAngle);
-    writer.Stream() << " A=\"" << rfAngle << "\""
-                    << " Ox=\"" << axis.x << "\""
-                    << " Oy=\"" << axis.y << "\""
-                    << " Oz=\"" << axis.z << "\"";
+    // Cruth: the quaternion, and nothing beside it. The axis and angle used to be written here
+    // too, as a readable presentation of the same rotation -- a second statement of one fact,
+    // which can only ever agree or be wrong. Nothing reads them: the loader has preferred the
+    // quaternion since reading the angle was found to drift a rotation on every reopen.
     writer.Stream() << "/>" << std::endl;
     // clang-format on
 }
@@ -895,8 +892,7 @@ void PropertyPlacement::Restore(Base::XMLReader& reader)
     // get the value of my Attribute
     aboutToSetValue();
 
-    // Cruth: the quaternion is the rotation; the axis and angle beside it are a readable
-    // presentation of the same thing, and reading THOSE was making documents drift.
+    // Cruth: the quaternion IS the rotation, and it is the only form stored.
     //
     // Rebuilding a rotation from an angle goes through sine and cosine, so a plane stored as an
     // exact quarter turn came back a step off and the next save rewrote it -- a change nobody
@@ -904,26 +900,14 @@ void PropertyPlacement::Restore(Base::XMLReader& reader)
     // part of floating-point arithmetic platforms are not required to agree on to the last
     // digit, so the same file could load differently on Windows and on Linux. Reading the
     // quaternion is exact and identical everywhere.
-    //
-    // The axis-and-angle attributes are still read when a document carries no quaternion.
     const Vector3d position(reader.getAttribute<double>("Px"),
                             reader.getAttribute<double>("Py"),
                             reader.getAttribute<double>("Pz"));
-
-    if (reader.hasAttribute("Q0")) {
-        _cPos = Base::Placement(position,
-                                Rotation(reader.getAttribute<double>("Q0"),
-                                         reader.getAttribute<double>("Q1"),
-                                         reader.getAttribute<double>("Q2"),
-                                         reader.getAttribute<double>("Q3")));
-    }
-    else {
-        _cPos = Base::Placement(position,
-                                Rotation(Vector3d(reader.getAttribute<double>("Ox"),
-                                                  reader.getAttribute<double>("Oy"),
-                                                  reader.getAttribute<double>("Oz")),
-                                         reader.getAttribute<double>("A")));
-    }
+    _cPos = Base::Placement(position,
+                            Rotation(reader.getAttribute<double>("Q0"),
+                                     reader.getAttribute<double>("Q1"),
+                                     reader.getAttribute<double>("Q2"),
+                                     reader.getAttribute<double>("Q3")));
 
     hasSetValue();
 }
@@ -1327,15 +1311,14 @@ void PropertyRotation::setPyObject(PyObject* value)
 
 void PropertyRotation::Save(Base::Writer& writer) const
 {
-    Vector3d axis;
-    double rfAngle {};
-    _rot.getRawValue(axis, rfAngle);
-
+    // Cruth: the quaternion, as a placement stores it. This property used to store the axis and
+    // the angle INSTEAD -- the very form a placement was fixed for -- so a rotation stored here
+    // went through sine and cosine on every load and drifted a step on every reopen.
     writer.Stream() << writer.ind() << "<PropertyRotation";
-    writer.Stream() << " A=\"" << rfAngle << "\""
-                    << " Ox=\"" << axis.x << "\""
-                    << " Oy=\"" << axis.y << "\""
-                    << " Oz=\"" << axis.z << "\""
+    writer.Stream() << " Q0=\"" << _rot[0] << "\""
+                    << " Q1=\"" << _rot[1] << "\""
+                    << " Q2=\"" << _rot[2] << "\""
+                    << " Q3=\"" << _rot[3] << "\""
                     << "/>\n";
 }
 
@@ -1344,10 +1327,10 @@ void PropertyRotation::Restore(Base::XMLReader& reader)
     reader.readElement("PropertyRotation");
     aboutToSetValue();
 
-    _rot = Rotation(Vector3d(reader.getAttribute<double>("Ox"),
-                             reader.getAttribute<double>("Oy"),
-                             reader.getAttribute<double>("Oz")),
-                    reader.getAttribute<double>("A"));
+    _rot = Rotation(reader.getAttribute<double>("Q0"),
+                    reader.getAttribute<double>("Q1"),
+                    reader.getAttribute<double>("Q2"),
+                    reader.getAttribute<double>("Q3"));
     hasSetValue();
 }
 

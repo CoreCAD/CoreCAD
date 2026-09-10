@@ -8,6 +8,7 @@
 #include <App/Datums.h>
 #include <App/Document.h>
 #include <App/PlacementExtension.h>
+#include <App/PropertyGeo.h>
 #include <Base/Placement.h>
 #include <Base/Rotation.h>
 #include <Base/Vector3D.h>
@@ -99,6 +100,54 @@ TEST_F(DocumentByteStabilityTest, lastModifiedDateIsDerivedFromTheFileNotStoredI
 
     const std::string reopenedName = reopened->getName();
     App::GetApplication().closeDocument(reopenedName.c_str());
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(DocumentByteStabilityTest, aStoredRotationIsTheQuaternionItWasGiven)
+{
+    // The same defect as the placement below, in the one property that had no quaternion at all:
+    // `App::PropertyRotation` stored ONLY an axis and an angle. Recovering those from a rotation
+    // and rebuilding it goes through sine and cosine, so a rotation that arrived as a quaternion
+    // came back a step off -- measured on five quaternions, four of them moved.
+    //
+    // The rotation is stated as a quaternion here for the reason the placement test gives: an
+    // axis and an angle rebuilt from the angle they were built from return the same value, and
+    // would test nothing.
+    const std::string path = Base::FileInfo::getTempFileName() + ".FCStd";
+
+    auto& app = App::GetApplication();
+    App::Document* doc = app.newDocument(Base::FileInfo(path).fileNamePure().c_str(), "testUser");
+    auto* thing = doc->addObject("App::VarSet", "Turned");
+    ASSERT_NE(thing, nullptr);
+
+    auto* rotation = static_cast<App::PropertyRotation*>(
+        thing->addDynamicProperty("App::PropertyRotation", "Rot", "Data", "")
+    );
+    ASSERT_NE(rotation, nullptr);
+    const Base::Rotation given(1.0, 0.0, 0.0, 1.0);
+    rotation->setValue(given);
+
+    doc->recompute();
+    ASSERT_TRUE(doc->saveAs(path.c_str()));
+
+    const std::string saved = readAll(path);
+    const std::string docName = doc->getName();
+    app.closeDocument(docName.c_str());
+
+    App::Document* reopened = app.openDocument(path.c_str());
+    ASSERT_NE(reopened, nullptr);
+    const std::string reopenedName = reopened->getName();
+
+    auto* readBack = static_cast<App::PropertyRotation*>(
+        reopened->getObject("Turned")->getPropertyByName("Rot")
+    );
+    ASSERT_NE(readBack, nullptr);
+    EXPECT_EQ(readBack->getValue(), given) << "a stored rotation came back changed";
+
+    ASSERT_TRUE(reopened->save());
+    EXPECT_EQ(saved, readAll(path)) << "opening a document and saving it rewrote the file";
+
+    app.closeDocument(reopenedName.c_str());
     Base::FileInfo(path).deleteFile();
 }
 
