@@ -369,4 +369,64 @@ TEST_F(StoredRecipeTest, aFormulaReturnsAsAFormula)
     EXPECT_EQ(info.expression->toString(), std::string("Driver.Length * 2"));
 }
 
+// The file states its content and never a count of it, because a count is a landmine in a file
+// whose whole purpose is that people diff and merge it.
+//
+// This is the measured failure, reconstructed exactly. One ancestor part; two people each add one
+// independent feature; both sides therefore write the SAME larger number on the line that declares
+// how many objects there are, so a textual merge takes that line without even raising a conflict.
+// Resolved the natural way -- keep both sides' objects -- the document used to open with no warning
+// of any kind and one of the two added features simply absent.
+TEST_F(StoredRecipeTest, aTextualMergeThatKeepsBothSidesLosesNothing)
+{
+    // Arrange -- the common ancestor, and the two blocks the two people each added.
+    auto* shared = _source->addObject("Part::Box", "Shared");
+    ASSERT_NE(shared, nullptr);
+    auto* mine = _source->addObject("Part::Box", "Mine");
+    auto* yours = _source->addObject("Part::Box", "Yours");
+    ASSERT_NE(mine, nullptr);
+    ASSERT_NE(yours, nullptr);
+    const std::string minesBlock = formatStoredRecipeObject(*mine);
+    const std::string yoursBlock = formatStoredRecipeObject(*yours);
+    _source->removeObject("Mine");
+    _source->removeObject("Yours");
+
+    // The ancestor, plus both added blocks: what a person or a merge tool produces by keeping
+    // both sides. Any declared length the file still carried would name one fewer than is there.
+    std::string merged = formatStoredRecipe(*_source);
+    const std::string::size_type close = merged.find("</Objects>");
+    ASSERT_NE(close, std::string::npos);
+    merged.insert(close, minesBlock + yoursBlock);
+
+    const std::string identity = _source->Uid.getValueStr();
+    App::GetApplication().closeDocument(_sourceName.c_str());
+    _source = nullptr;
+
+    // Act
+    std::istringstream text(merged);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- both people's work is there.
+    EXPECT_NE(_rebuilt->getObject("Shared"), nullptr);
+    EXPECT_NE(_rebuilt->getObject("Mine"), nullptr) << "one side's added feature was dropped";
+    EXPECT_NE(_rebuilt->getObject("Yours"), nullptr) << "one side's added feature was dropped";
+    EXPECT_EQ(_rebuilt->Uid.getValueStr(), identity);
+}
+
+// A file that restated its own content could disagree with itself. Nothing in the recipe declares
+// how many of anything follows, so there is no second answer to keep in step.
+TEST_F(StoredRecipeTest, theFileDeclaresNoLengths)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    box->Label.setValue("Bearing block");
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+
+    // Assert
+    EXPECT_EQ(written.find("Count=\""), std::string::npos);
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

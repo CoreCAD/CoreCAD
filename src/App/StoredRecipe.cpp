@@ -27,6 +27,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <cstring>
 # include <filesystem>
 # include <fstream>
 # include <iterator>
@@ -653,7 +654,7 @@ void writeProperties(Base::Writer& writer,
         }
     }
 
-    writer.Stream() << writer.ind() << "<Properties Count=\"" << recorded.size() << "\">\n";
+    writer.Stream() << writer.ind() << "<Properties>\n";
     writer.incInd();
     for (const StoredProperty* entry : recorded) {
         writer.Stream() << writer.ind() << "<Property name=\"" << entry->name << "\" type=\""
@@ -676,8 +677,7 @@ void writeProperties(Base::Writer& writer,
             // name, which is the document's own bookkeeping and does not survive being merged
             // into another document (§10.1).
             writer.incInd();
-            writer.Stream() << writer.ind() << "<Reference Count=\"" << entry->bindings.size()
-                            << "\">\n";
+            writer.Stream() << writer.ind() << "<Reference>\n";
             writer.incInd();
             for (const Binding& binding : entry->bindings) {
                 writer.Stream() << writer.ind() << "<Target uuid=\"" << binding.uuid
@@ -695,7 +695,7 @@ void writeProperties(Base::Writer& writer,
     writer.decInd();
     writer.Stream() << writer.ind() << "</Properties>\n";
 
-    writer.Stream() << writer.ind() << "<Unrecorded Count=\"" << unrecorded.size() << "\">\n";
+    writer.Stream() << writer.ind() << "<Unrecorded>\n";
     writer.incInd();
     for (const StoredProperty* entry : unrecorded) {
         writer.Stream() << writer.ind() << "<Property name=\"" << entry->name << "\" type=\""
@@ -703,6 +703,38 @@ void writeProperties(Base::Writer& writer,
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</Unrecorded>\n";
+}
+
+/// Step to the next child of the element the reader has just entered, or say it has closed.
+///
+/// A shared file states content, never a count of its own content. A declared length is a number
+/// restating what the same file already holds, and in a file whose whole purpose is that people
+/// diff and merge it that is a landmine: two people each adding one feature to a common ancestor
+/// both write the same larger number, a textual merge takes it without even a conflict, and a
+/// reader that loops that many times and stops drops one of the two added features without a
+/// word. So structure is derived from what is there.
+///
+/// The LEVEL decides when to stop, not the name: a self-closing child ends at an event a reader
+/// would otherwise mistake for the end of the list.
+bool nextChildOf(Base::XMLReader& reader, int containerLevel)
+{
+    while (!reader.readNextElement()) {
+        if (reader.isEndOfDocument() || reader.level() < containerLevel) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// The file said something this form does not know how to read there.
+///
+/// Refused rather than skipped. Passing over an element a reader does not recognise is how a
+/// document quietly comes back smaller than it was written, which is the one failure the whole
+/// stored form exists to prevent.
+void refuse(const char* expected, const Base::XMLReader& reader)
+{
+    throw Base::XMLParseException(std::string("Stored recipe: expected <") + expected
+                                  + "> and found <" + reader.localName() + ">");
 }
 
 /// Restore the values of one `<Properties>` block onto a container, then step over the
@@ -717,9 +749,11 @@ void readProperties(Base::XMLReader& reader,
                     const std::string& assetDirectory)
 {
     reader.readElement("Properties");
-    const int count = reader.getAttribute<long>("Count");
-    for (int i = 0; i < count; ++i) {
-        reader.readElement("Property");
+    const int properties = reader.level();
+    while (nextChildOf(reader, properties)) {
+        if (std::strcmp(reader.localName(), "Property") != 0) {
+            refuse("Property", reader);
+        }
         const std::string name = reader.getAttribute<const char*>("name");
         const std::string type = reader.getAttribute<const char*>("type");
 
@@ -753,9 +787,11 @@ void readProperties(Base::XMLReader& reader,
             else if (reader.getAttribute<long>("reference", 0) == 1) {
                 std::vector<Binding> bindings;
                 reader.readElement("Reference");
-                const int targets = reader.getAttribute<long>("Count");
-                for (int t = 0; t < targets; ++t) {
-                    reader.readElement("Target");
+                const int reference = reader.level();
+                while (nextChildOf(reader, reference)) {
+                    if (std::strcmp(reader.localName(), "Target") != 0) {
+                        refuse("Target", reader);
+                    }
                     bindings.push_back({reader.getAttribute<const char*>("uuid"),
                                         reader.getAttribute<const char*>("sub")});
                 }
@@ -774,9 +810,11 @@ void readProperties(Base::XMLReader& reader,
     reader.readEndElement("Properties");
 
     reader.readElement("Unrecorded");
-    const int unrecorded = reader.getAttribute<long>("Count");
-    for (int i = 0; i < unrecorded; ++i) {
-        reader.readElement("Property");
+    const int unrecorded = reader.level();
+    while (nextChildOf(reader, unrecorded)) {
+        if (std::strcmp(reader.localName(), "Property") != 0) {
+            refuse("Property", reader);
+        }
     }
     reader.readEndElement("Unrecorded");
 }
@@ -834,7 +872,7 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
                   return left->Uid.getValueStr() < right->Uid.getValueStr();
               });
 
-    writer.Stream() << writer.ind() << "<Objects Count=\"" << objects.size() << "\">\n";
+    writer.Stream() << writer.ind() << "<Objects>\n";
     writer.incInd();
     for (const DocumentObject* obj : objects) {
         writeObject(writer, *obj, assetDirectory);
@@ -874,9 +912,11 @@ void App::restoreStoredRecipe(Document& doc,
     doc.Uid.setValue(documentUid);
 
     reader.readElement("Objects");
-    const int count = reader.getAttribute<long>("Count");
-    for (int i = 0; i < count; ++i) {
-        reader.readElement("Object");
+    const int objects = reader.level();
+    while (nextChildOf(reader, objects)) {
+        if (std::strcmp(reader.localName(), "Object") != 0) {
+            refuse("Object", reader);
+        }
         const std::string uuid = reader.getAttribute<const char*>("uuid");
         const std::string type = reader.getAttribute<const char*>("type");
         const std::string name = reader.getAttribute<const char*>("name");
