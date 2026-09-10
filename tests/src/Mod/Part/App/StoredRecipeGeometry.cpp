@@ -195,4 +195,44 @@ TEST_F(StoredRecipeGeometryTest, handedInGeometryKeepsTheNamesOfItsFaces)
     std::filesystem::remove_all(assets);
 }
 
+// A save that changed nothing must write nothing new. The source store names an entry by what it
+// holds, so the same body has to reach the same name every time -- otherwise a document nobody
+// edited is stored twice, the line in the recipe that names it changes, and two people who saved
+// the identical part get a conflicting diff on a line that means the same thing. Measured before
+// the fix: one document, two saves, two entries.
+TEST_F(StoredRecipeGeometryTest, aSaveThatChangedNothingWritesNothingNew)
+{
+    // Arrange -- a handed-in shape carrying mapped names, which is what brings a hasher table with
+    // it, and the hasher table is what was being written once and then left out.
+    const std::string folder = Base::FileInfo::getTempFileName();
+    Base::FileInfo(folder).createDirectory();
+    const std::string file = folder + "/Part.FCStd";
+    auto* box = _doc->addObject<Part::Box>("Block");  // NOLINT
+    box->Length.setValue(10.0);
+    box->Width.setValue(20.0);
+    box->Height.setValue(30.0);
+    _doc->recompute();
+    auto* handed = _doc->addObject<Part::Feature>("Handed");
+    handed->Shape.setValue(box->Shape.getShape());
+    _doc->recompute();
+    ASSERT_GT(handed->Shape.getShape().getElementMapSize(), 0U);
+
+    // Act -- saved twice, with nothing changed in between.
+    _doc->saveAs(file.c_str());
+    _doc->save();
+
+    // Assert
+    const std::filesystem::path assets = std::filesystem::path(folder) / "assets";
+    ASSERT_TRUE(std::filesystem::is_directory(assets));
+    EXPECT_EQ(
+        std::distance(
+            std::filesystem::directory_iterator(assets),
+            std::filesystem::directory_iterator {}
+        ),
+        1
+    );
+
+    std::filesystem::remove_all(folder);
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
