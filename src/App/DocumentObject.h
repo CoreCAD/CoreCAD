@@ -797,6 +797,25 @@ public:
     virtual short mustExecute() const;
 
     /**
+     * @brief Whether this object's geometry is authored input rather than something it builds.
+     *
+     * A feature's shape is the OUTPUT of its recipe: the sizes, profiles and references it was
+     * given are the source, and the solid is what they produce. An imported solid is the
+     * opposite -- nothing in the document can produce it, so the geometry IS the authored
+     * content and a file of record that dropped it would describe a part nobody can rebuild.
+     *
+     * Asked of the OBJECT and never of its class, because for a scripted object the honest
+     * answer is not fixed by its type: the same class parks a handed-in shape when its script
+     * has no execute and computes one when it has. That is also why the question lives here
+     * rather than on the geometric base -- a scripted object is generic over what it derives
+     * from, and half of those types are not geometric at all.
+     *
+     * The default is false, because the common case is a feature that computes its own geometry.
+     * An object that merely holds geometry it was handed says so by overriding this.
+     */
+    virtual bool holdsAuthoredGeometry() const;
+
+    /**
      * @brief Recompute only this feature.
      *
      * @param recursive: set to true to recompute any dependent objects as well.

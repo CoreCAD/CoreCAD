@@ -104,6 +104,11 @@ bool FeaturePythonImp::execute()
     return false;
 }
 
+bool FeaturePythonImp::rebuildsItself() const
+{
+    return !py_execute.isNone();
+}
+
 bool FeaturePythonImp::mustExecute() const
 {
     FC_PY_CALL_CHECK(mustExecute)

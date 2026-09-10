@@ -49,6 +49,8 @@ public:
     ~FeaturePythonImp();
 
     bool execute();
+    /// Whether the proxy supplied an execute -- that is, whether the script rebuilds this object.
+    bool rebuildsItself() const;
     bool mustExecute() const;
     void onBeforeChange(const Property* prop);
     bool onBeforeChangeLabel(std::string& newLabel);
@@ -221,6 +223,21 @@ public:
             return new App::DocumentObjectExecReturn(e.what());
         }
         return DocumentObject::StdReturn;
+    }
+    /// Whether the geometry parked on this object is authored input or something it rebuilds.
+    ///
+    /// A scripted object has to answer for itself, because its class cannot: what rebuilds its
+    /// geometry is the script, and the same class covers both cases. A proxy that supplies an
+    /// execute regenerates the shape, so the shape is output and the recipe rebuilds it. A proxy
+    /// that supplies none parks a shape nothing will ever produce again -- that shape IS the
+    /// authored content, and the plain-holder types cannot see it, because each recognises only
+    /// its own exact type as the holder and a scripted object is a subclass of it.
+    ///
+    /// Where the script does rebuild, the answer is left to the type underneath, which is the
+    /// conservative direction: over-carrying costs file size and under-carrying costs the design.
+    bool holdsAuthoredGeometry() const override
+    {
+        return imp->rebuildsItself() ? FeatureT::holdsAuthoredGeometry() : true;
     }
     const char* getViewProviderNameOverride() const override
     {

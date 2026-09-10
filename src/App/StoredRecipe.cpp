@@ -112,8 +112,8 @@ bool isBuiltGeometry(const Property& prop, const PropertyContainer& owner)
     if (!prop.isDerivedFrom(PropertyGeometry::getClassTypeId())) {
         return false;
     }
-    const auto* feature = dynamic_cast<const GeoFeature*>(&owner);
-    return feature == nullptr || !feature->holdsAuthoredGeometry();
+    const auto* object = dynamic_cast<const DocumentObject*>(&owner);
+    return object == nullptr || !object->holdsAuthoredGeometry();
 }
 
 /// A writer that can be asked whether the property just written wanted a file of its own.
