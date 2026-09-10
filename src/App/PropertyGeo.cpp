@@ -310,6 +310,24 @@ Base::Vector3d PropertyVectorList::getPyValue(PyObject* item) const
 
 void PropertyVectorList::Save(Base::Writer& writer) const
 {
+    if (writer.isForceXML()) {
+        // Cruth: stated in the record itself, in the same words the single-valued vector
+        // property uses. Naming a file for authored positions could lose them while the record
+        // still looked complete.
+        writer.Stream() << writer.ind() << "<VectorList>" << std::endl;
+        writer.incInd();
+        for (const auto& value : _lValueList) {
+            writer.Stream() << writer.ind() << "<Vector"
+                            << " valueX=\"" << value.x << "\""
+                            << " valueY=\"" << value.y << "\""
+                            << " valueZ=\"" << value.z << "\""
+                            << "/>" << std::endl;
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</VectorList>" << std::endl;
+        return;
+    }
+
     if (!writer.isForceXML()) {
         writer.Stream() << writer.ind() << "<VectorList file=\"" << writer.addFile(getName(), this)
                         << "\"/>" << std::endl;
@@ -319,6 +337,20 @@ void PropertyVectorList::Save(Base::Writer& writer) const
 void PropertyVectorList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("VectorList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the positions stated in the element itself.
+        std::vector<Base::Vector3d> values;
+        const int list = reader.level();
+        while (App::nextChildElement(reader, list)) {
+            App::expectElement(reader, "Vector");
+            values.emplace_back(reader.getAttribute<double>("valueX"),
+                                reader.getAttribute<double>("valueY"),
+                                reader.getAttribute<double>("valueZ"));
+        }
+        setValues(values);
+        return;
+    }
+
     std::string file(reader.getAttribute<const char*>("file"));
 
     if (!file.empty()) {
@@ -948,6 +980,31 @@ Base::Placement PropertyPlacementList::getPyValue(PyObject* item) const
 
 void PropertyPlacementList::Save(Base::Writer& writer) const
 {
+    if (writer.isForceXML()) {
+        // Cruth: stated in the record itself. The rotation is written as a quaternion only: the
+        // axis and angle beside it in the archive form are a readable presentation of the same
+        // thing, and reading THOSE back goes through sine and cosine, which is what was making
+        // saved placements drift a step on every reopen.
+        writer.Stream() << writer.ind() << "<PlacementList>" << std::endl;
+        writer.incInd();
+        for (const auto& value : _lValueList) {
+            const Base::Vector3d position = value.getPosition();
+            const Base::Rotation& rotation = value.getRotation();
+            writer.Stream() << writer.ind() << "<Placement"
+                            << " Px=\"" << position.x << "\""
+                            << " Py=\"" << position.y << "\""
+                            << " Pz=\"" << position.z << "\""
+                            << " Q0=\"" << rotation[0] << "\""
+                            << " Q1=\"" << rotation[1] << "\""
+                            << " Q2=\"" << rotation[2] << "\""
+                            << " Q3=\"" << rotation[3] << "\""
+                            << "/>" << std::endl;
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</PlacementList>" << std::endl;
+        return;
+    }
+
     if (!writer.isForceXML()) {
         writer.Stream() << writer.ind() << "<PlacementList file=\""
                         << writer.addFile(getName(), this) << "\"/>" << std::endl;
@@ -957,6 +1014,25 @@ void PropertyPlacementList::Save(Base::Writer& writer) const
 void PropertyPlacementList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("PlacementList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the placements stated in the element itself.
+        std::vector<Base::Placement> values;
+        const int list = reader.level();
+        while (App::nextChildElement(reader, list)) {
+            App::expectElement(reader, "Placement");
+            const Base::Vector3d position(reader.getAttribute<double>("Px"),
+                                          reader.getAttribute<double>("Py"),
+                                          reader.getAttribute<double>("Pz"));
+            const Base::Rotation rotation(reader.getAttribute<double>("Q0"),
+                                          reader.getAttribute<double>("Q1"),
+                                          reader.getAttribute<double>("Q2"),
+                                          reader.getAttribute<double>("Q3"));
+            values.emplace_back(position, rotation);
+        }
+        setValues(values);
+        return;
+    }
+
     std::string file(reader.getAttribute<const char*>("file"));
 
     if (!file.empty()) {

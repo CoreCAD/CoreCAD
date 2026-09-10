@@ -590,32 +590,41 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
             continue;
         }
 
-        // The property's own serialization of itself. Anything that says its whole value in the
-        // element is written right there, which is nearly everything and is what keeps the recipe
-        // one file a person reads.
-        ScratchWriter scratch;
-        scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
-        scratch.incInd();
-        scratch.incInd();
-        prop->Save(scratch);
-        if (!scratch.wantedSideFile()) {
-            if (scratch.getString().empty()) {
-                // The property wrote nothing and asked for nowhere to put it. An empty block is
-                // not a value: its own reader looks for an element that is not there and reports
-                // the whole document as corrupt. Named as a gap, which is what it is.
-                entry.reason = "the property wrote no value";
+        // The property states its own value in the file. That is the rule and not the exception:
+        // a colour, a placement, a list of numbers is authored content, and a record that pointed
+        // at a second file for it could lose the value while still looking complete.
+        if (!prop->holdsOpaqueBulk()) {
+            ScratchWriter scratch;
+            scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
+            scratch.setForceXML(true);
+            scratch.incInd();
+            scratch.incInd();
+            prop->Save(scratch);
+            if (!scratch.wantedSideFile()) {
+                if (scratch.getString().empty()) {
+                    // The property wrote nothing and asked for nowhere to put it. An empty block
+                    // is not a value: its own reader looks for an element that is not there and
+                    // reports the whole document as corrupt. Named as a gap, which is what it is.
+                    entry.reason = "the property wrote no value";
+                }
+                else {
+                    entry.body = scratch.getString();
+                }
+                stored.push_back(entry);
+                continue;
             }
-            else {
-                entry.body = scratch.getString();
-            }
-            stored.push_back(entry);
-            continue;
+            // It says it is not bulk and then asks for a file anyway. That is a fault in the
+            // property, not a reason to drop the value, so it goes to the store like bulk does
+            // and the fault stays visible in the file.
+            Base::Console().warning("Stored recipe: property '%s' (%s) states no value inline "
+                                    "yet asks for a file of its own.\n",
+                                    name.c_str(),
+                                    entry.type.c_str());
         }
 
-        // A property that keeps its value in a file of its own -- a solid, a mesh, a per-face
-        // colour array. That file goes to the project's source store and the recipe names it by
-        // what it holds, which stores one imported body once however many parts use it and
-        // collapses a hundred objects wearing the same material to one entry.
+        // Compiled bulk -- a solid, a mesh, a point cloud, an embedded file. It goes to the
+        // project's source store and the recipe names it by the content it holds, which stores
+        // one imported body once however many parts use it.
         if (!assetDirectory.empty()) {
             const AssetOutcome outcome = storeAsset(*prop, assetDirectory);
             if (outcome.result == AssetOutcome::Result::NothingToKeep) {
@@ -637,10 +646,6 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
 
         // No store to put it in -- a document with no folder yet. Whatever the property can say
         // inline is better than nothing, and for a solid that is the whole solid as text.
-        //
-        // It is NOT better than nothing for every property, which is why this is the fallback and
-        // not the rule: a colour array asked to write itself as XML writes no element at all, so
-        // making this the first choice silently dropped every per-face colour a person picked.
         ScratchWriter inlined;
         inlined.Stream().precision(std::numeric_limits<double>::max_digits10);
         inlined.setForceXML(true);
@@ -746,12 +751,7 @@ void writeProperties(Base::Writer& writer,
 /// would otherwise mistake for the end of the list.
 bool nextChildOf(Base::XMLReader& reader, int containerLevel)
 {
-    while (!reader.readNextElement()) {
-        if (reader.isEndOfDocument() || reader.level() < containerLevel) {
-            return false;
-        }
-    }
-    return true;
+    return App::nextChildElement(reader, containerLevel);
 }
 
 /// The file said something this form does not know how to read there.

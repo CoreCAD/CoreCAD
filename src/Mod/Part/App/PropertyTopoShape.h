@@ -165,6 +165,12 @@ class PartExport PropertyShapeHistory: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: a per-sub-shape trace of what an operation did.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyShapeHistory();
     ~PropertyShapeHistory() override;
 
@@ -239,6 +245,14 @@ class PartExport PropertyFilletEdges: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// AUTHORED content, kept beside the record only because it has no text form yet. Which
+    /// edges were filleted and at what radius is a design decision and belongs in the file of
+    /// record; it is owed a text form of its own.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyFilletEdges();
     ~PropertyFilletEdges() override;
 

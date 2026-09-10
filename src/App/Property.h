@@ -524,6 +524,24 @@ public:
     virtual bool isSame(const Property& other) const;
 
     /**
+     * @brief Whether this property's value is compiled bulk rather than something a person reads.
+     *
+     * The file of record states its values in full: a colour, a placement, a list of numbers is
+     * authored content, and a record that pointed elsewhere for it could lose it while still
+     * looking complete. A few values cannot be stated that way at any length -- a solid, a mesh,
+     * a point cloud, an embedded file -- and those are kept beside the record in the project's
+     * source store, named by what they hold.
+     *
+     * The default is to state the value, because a property that forgets to declare itself bulk
+     * makes the record larger, which is visible and repairable, while the opposite mistake makes
+     * authored content vanish quietly.
+     */
+    virtual bool holdsOpaqueBulk() const
+    {
+        return false;
+    }
+
+    /**
      * @brief Return a unique ID for the property.
      *
      * The ID of a property is generated from a monotonically increasing
@@ -1154,5 +1172,26 @@ protected:
 protected:
     ListT _lValueList;
 };
+
+
+/** Step to the next child of the element the reader has just entered, or say it has closed.
+ *
+ * A shared file states content, never a count of its own content. A declared length is a number
+ * restating what the same file already holds, and in a file people diff and merge that is a
+ * landmine: two people each adding one item to a common ancestor both write the same larger
+ * number, a textual merge takes it without a conflict, and a reader that loops that many times
+ * drops one of the two additions without a word. So structure is derived from what is there.
+ *
+ * The LEVEL decides when to stop, not the name: a self-closing child ends at an event a reader
+ * would otherwise mistake for the end of the list.
+ */
+AppExport bool nextChildElement(Base::XMLReader& reader, int containerLevel);
+
+/** Require the element the reader is on to be the expected one, and refuse it if not.
+ *
+ * Refused rather than skipped. Passing over an element a reader does not recognise is how a
+ * document quietly comes back smaller than it was written.
+ */
+AppExport void expectElement(Base::XMLReader& reader, const char* expected);
 
 }  // namespace App
