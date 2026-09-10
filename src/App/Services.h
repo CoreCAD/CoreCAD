@@ -82,6 +82,26 @@ public:
 };
 
 /**
+* The container holding an object's chosen appearance -- the colours, the draw style, the
+* transparency a person picked for it.
+*
+* A colour a person chose is authored content: nothing in the document produces it, and a record
+* that dropped it would come back a different-looking part. It therefore belongs in the file of
+* record rather than in the deletable project cache. But where that state lives is a question only
+* the view layer can answer, and the file of record is written in App -- so the file asks through
+* this service. With no GUI nothing answers, and the file simply carries no appearance, which is
+* the honest result: a headless session chose none.
+*/
+class DisplayStateProvider
+{
+public:
+    virtual ~DisplayStateProvider() = default;
+
+    /// The object's appearance container, or null when this session has none for it.
+    virtual PropertyContainer* appearanceOf(const DocumentObject& object) const = 0;
+};
+
+/**
 * This service should provide access to shape elements
 */
 class PseudoShapeProvider
