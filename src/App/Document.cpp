@@ -2243,6 +2243,14 @@ bool Document::saveToFile(const char* filename) const
             throw Base::FileException("Failed to open file", tmp);
         }
 
+        // The registry of string hashers is reset first, exactly as the archive's own writer
+        // resets it. Without this the first save of a session writes a shape's hasher table into
+        // the source store and every later save leaves it out, so a document nobody edited is
+        // stored twice under two names -- and the line in the recipe that names it changes, which
+        // is the diff noise this whole form exists to remove.
+        d->hashers.clear();
+        addStringHasher(d->Hasher);
+
         for (const auto o : d->objectArray) {
             o->beforeSave();
         }
