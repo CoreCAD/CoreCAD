@@ -49,6 +49,12 @@ class PartExport PropertyTopoShapeList: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: a list of whole solids.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     /**
      * A constructor.
      * A more elaborate description of the constructor.

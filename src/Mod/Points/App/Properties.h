@@ -52,6 +52,12 @@ class PointsExport PropertyGreyValueList: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: one intensity per scanned point.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyGreyValueList();
 
     void setSize(int newSize) override;
@@ -105,6 +111,12 @@ class PointsExport PropertyNormalList: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: one normal per scanned point.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyNormalList();
 
     void setSize(int newSize) override;
@@ -168,6 +180,12 @@ class PointsExport PropertyCurvatureList: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: one curvature measurement per scanned point.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     enum
     {
         MeanCurvature = 0,  /**< Mean curvature */

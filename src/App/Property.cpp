@@ -22,11 +22,14 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <cstring>
 #include <cassert>
 #include <array>
 #include <tuple>
 
 #include <atomic>
+#include <Base/Exception.h>
+#include <Base/Reader.h>
 #include <Base/Tools.h>
 #include <Base/Writer.h>
 #include <CXX/Objects.hxx>
@@ -444,3 +447,21 @@ void PropertyListsBase::_setPyObject(PyObject* value)
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 TYPESYSTEM_SOURCE_ABSTRACT(App::PropertyLists, App::Property)
+
+bool App::nextChildElement(Base::XMLReader& reader, int containerLevel)
+{
+    while (!reader.readNextElement()) {
+        if (reader.isEndOfDocument() || reader.level() < containerLevel) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void App::expectElement(Base::XMLReader& reader, const char* expected)
+{
+    if (std::strcmp(reader.localName(), expected) != 0) {
+        throw Base::XMLParseException(std::string("Expected <") + expected + "> and found <"
+                                      + reader.localName() + ">");
+    }
+}

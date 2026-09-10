@@ -1432,7 +1432,11 @@ double PropertyFloatList::getPyValue(PyObject* item) const
 void PropertyFloatList::Save(Base::Writer& writer) const
 {
     if (writer.isForceXML()) {
-        writer.Stream() << writer.ind() << "<FloatList count=\"" << getSize() << "\">" << endl;
+        // Cruth: stated in full, and without a declared length. These numbers are authored, so
+        // a record that named a file instead could lose them while still looking complete; and a
+        // count is a second statement of what the same element already holds, which two people
+        // merging a file would both raise and neither would be warned about.
+        writer.Stream() << writer.ind() << "<FloatList>" << endl;
         writer.incInd();
         for (int i = 0; i < getSize(); i++) {
             writer.Stream() << writer.ind() << "<F v=\"" << _lValueList[i] << "\"/>" << endl;
@@ -1450,6 +1454,20 @@ void PropertyFloatList::Save(Base::Writer& writer) const
 void PropertyFloatList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("FloatList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the values stated in the element itself. Without this the form the writer has
+        // always been able to produce could not be read back at all, so a value written that way
+        // restored as nothing.
+        std::vector<double> values;
+        const int list = reader.level();
+        while (nextChildElement(reader, list)) {
+            expectElement(reader, "F");
+            values.push_back(reader.getAttribute<double>("v"));
+        }
+        setValues(values);
+        return;
+    }
+
     string file(reader.getAttribute<const char*>("file"));
 
     if (!file.empty()) {
@@ -2595,6 +2613,22 @@ Base::Color PropertyColorList::getPyValue(PyObject* item) const
 
 void PropertyColorList::Save(Base::Writer& writer) const
 {
+    if (writer.isForceXML()) {
+        // Cruth: a colour a person chose is authored content and is stated in the record itself.
+        // Naming a file for it instead left the record looking complete while the colours could
+        // go missing, and this property wrote no element at all when asked for text -- so every
+        // per-face colour left the record without a word.
+        writer.Stream() << writer.ind() << "<ColorList>" << std::endl;
+        writer.incInd();
+        for (const auto& colour : _lValueList) {
+            writer.Stream() << writer.ind() << "<Color value=\"" << colour.getPackedValue()
+                            << "\"/>" << std::endl;
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</ColorList>" << std::endl;
+        return;
+    }
+
     if (!writer.isForceXML()) {
         writer.Stream() << writer.ind() << "<ColorList file=\""
                         << (getSize() ? writer.addFile(getName(), this) : "") << "\"/>"
@@ -2605,6 +2639,27 @@ void PropertyColorList::Save(Base::Writer& writer) const
 void PropertyColorList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("ColorList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the colours stated in the element itself.
+        const bool convertAlpha = readerRequiresAlphaConversion(reader);
+        std::vector<Base::Color> colours;
+        const int list = reader.level();
+        while (App::nextChildElement(reader, list)) {
+            App::expectElement(reader, "Color");
+            unsigned long rgba = reader.getAttribute<unsigned long>("value");
+            if (convertAlpha) {
+                constexpr unsigned long alphaMax = 0xff;
+                const unsigned long alpha = alphaMax - (rgba & alphaMax);
+                rgba = rgba - (rgba & alphaMax) + alpha;
+            }
+            Base::Color colour;
+            colour.setPackedValue(static_cast<uint32_t>(rgba));
+            colours.push_back(colour);
+        }
+        setValues(colours);
+        return;
+    }
+
     if (reader.hasAttribute("file")) {
         std::string file(reader.getAttribute<const char*>("file"));
 
@@ -3403,6 +3458,31 @@ Material PropertyMaterialList::getPyValue(PyObject* value) const
 
 void PropertyMaterialList::Save(Base::Writer& writer) const
 {
+    if (writer.isForceXML()) {
+        // Cruth: an appearance a person chose is authored content and is stated in the record
+        // itself, in the same words the single-valued material property uses.
+        writer.Stream() << writer.ind() << "<MaterialList>" << std::endl;
+        writer.incInd();
+        for (const auto& material : _lValueList) {
+            writer.Stream() << writer.ind() << "<Material"
+                            << " ambientColor=\"" << material.ambientColor.getPackedValue() << "\""
+                            << " diffuseColor=\"" << material.diffuseColor.getPackedValue() << "\""
+                            << " specularColor=\"" << material.specularColor.getPackedValue()
+                            << "\""
+                            << " emissiveColor=\"" << material.emissiveColor.getPackedValue()
+                            << "\""
+                            << " shininess=\"" << material.shininess << "\""
+                            << " transparency=\"" << material.transparency << "\""
+                            << " image=\"" << encodeAttribute(material.image) << "\""
+                            << " imagePath=\"" << encodeAttribute(material.imagePath) << "\""
+                            << " uuid=\"" << encodeAttribute(material.uuid) << "\""
+                            << "/>" << std::endl;
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</MaterialList>" << std::endl;
+        return;
+    }
+
     if (!writer.isForceXML()) {
         writer.Stream() << writer.ind() << "<MaterialList file=\""
                         << (getSize() ? writer.addFile(getName(), this) : "") << "\""
@@ -3413,6 +3493,36 @@ void PropertyMaterialList::Save(Base::Writer& writer) const
 void PropertyMaterialList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("MaterialList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the appearances stated in the element itself.
+        const bool convertAlpha = readerRequiresAlphaConversion(reader);
+        std::vector<Material> materials;
+        const int list = reader.level();
+        while (App::nextChildElement(reader, list)) {
+            App::expectElement(reader, "Material");
+            Material material;
+            material.ambientColor.setPackedValue(
+                reader.getAttribute<unsigned long>("ambientColor"));
+            material.diffuseColor.setPackedValue(
+                reader.getAttribute<unsigned long>("diffuseColor"));
+            material.specularColor.setPackedValue(
+                reader.getAttribute<unsigned long>("specularColor"));
+            material.emissiveColor.setPackedValue(
+                reader.getAttribute<unsigned long>("emissiveColor"));
+            material.shininess = static_cast<float>(reader.getAttribute<double>("shininess"));
+            material.transparency = static_cast<float>(reader.getAttribute<double>("transparency"));
+            material.image = reader.getAttribute<const char*>("image", "");
+            material.imagePath = reader.getAttribute<const char*>("imagePath", "");
+            material.uuid = reader.getAttribute<const char*>("uuid", "");
+            materials.push_back(material);
+        }
+        if (convertAlpha) {
+            this->convertAlpha(materials);
+        }
+        setValues(materials);
+        return;
+    }
+
     if (reader.hasAttribute("file")) {
         std::string file(reader.getAttribute<const char*>("file"));
         if (reader.hasAttribute("version")) {
