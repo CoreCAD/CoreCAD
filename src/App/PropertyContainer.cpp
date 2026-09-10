@@ -186,6 +186,31 @@ const char* PropertyContainer::getPropertyName(const Property* prop)const
     return res;
 }
 
+void PropertyContainer::rememberMissingSource(const char* name, const std::string& id)
+{
+    if (name == nullptr || id.empty()) {
+        return;
+    }
+    _missingSources[name] = id;
+}
+
+std::string PropertyContainer::missingSource(const char* name) const
+{
+    if (name == nullptr) {
+        return {};
+    }
+    const auto found = _missingSources.find(name);
+    return found == _missingSources.end() ? std::string {} : found->second;
+}
+
+void PropertyContainer::eraseMissingSource(const Property* prop)
+{
+    const char* name = getPropertyName(prop);
+    if (name != nullptr) {
+        _missingSources.erase(name);
+    }
+}
+
 const PropertyData * PropertyContainer::getPropertyDataPtr(){return &propertyData;}
 const PropertyData & PropertyContainer::getPropertyData() const{return propertyData;}
 

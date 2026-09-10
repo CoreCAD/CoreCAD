@@ -387,17 +387,36 @@ private:
     int _given {0};
 };
 
-std::optional<std::string> storeAsset(const Property& prop, const std::string& directory)
+/// What became of a handed-in value on its way to the project's source folder.
+///
+/// "There was nothing to keep" and "it could not be written" were one answer before, and the
+/// caller could only act on the first meaning -- so a store that failed dropped the value from
+/// the record exactly as if the object had never held one. They are different facts and the file
+/// has to be able to state each of them.
+struct AssetOutcome
+{
+    enum class Result
+    {
+        Stored,
+        NothingToKeep,
+        Failed
+    };
+
+    Result result {Result::NothingToKeep};
+    std::string id;
+};
+
+AssetOutcome storeAsset(const Property& prop, const std::string& directory)
 {
     // Written to one side first, because the entry cannot be named until everything in it exists.
     const fs::path staging = fs::path(directory) / (".staging-" + Base::Uuid::createUuid());
     std::error_code failed;
     fs::create_directories(staging, failed);
 
-    const auto abandon = [&staging]() {
+    const auto abandon = [&staging](AssetOutcome::Result result) {
         std::error_code ignored;
         fs::remove_all(staging, ignored);
-        return std::nullopt;
+        return AssetOutcome {result, {}};
     };
 
     try {
@@ -410,7 +429,7 @@ std::optional<std::string> storeAsset(const Property& prop, const std::string& d
         writer.writeFiles();
     }
     catch (const std::exception&) {
-        return abandon();
+        return abandon(AssetOutcome::Result::Failed);
     }
 
     // The digest covers every file and its name, in a fixed order, so the same value reaches the
@@ -436,7 +455,7 @@ std::optional<std::string> storeAsset(const Property& prop, const std::string& d
     if (!holdsGeometry) {
         // No value to keep. Not a gap and not a value -- the property holds nothing, and a document
         // rebuilt without it holds nothing too.
-        return abandon();
+        return abandon(AssetOutcome::Result::NothingToKeep);
     }
 
     const std::string id = QString::fromLatin1(digest.result().toHex()).toStdString();
@@ -445,13 +464,13 @@ std::optional<std::string> storeAsset(const Property& prop, const std::string& d
         // The name is the content: an entry that is there already holds exactly this value.
         std::error_code ignored;
         fs::remove_all(staging, ignored);
-        return id;
+        return AssetOutcome {AssetOutcome::Result::Stored, id};
     }
     fs::rename(staging, entry, failed);
     if (failed) {
-        return abandon();
+        return abandon(AssetOutcome::Result::Failed);
     }
-    return id;
+    return AssetOutcome {AssetOutcome::Result::Stored, id};
 }
 
 /// Read a handed-in value back from the project's source folder, by the same path that wrote it.
@@ -558,16 +577,37 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
         // of anything, so it goes to the source folder and the recipe names it. Written into the
         // recipe it would be thousands of lines of coordinates in the middle of a file whose
         // whole purpose is to be read.
-        if (prop->isDerivedFrom(PropertyGeometry::getClassTypeId()) && !assetDirectory.empty()) {
-            const std::optional<std::string> id = storeAsset(*prop, assetDirectory);
-            if (!id) {
-                // No geometry to keep. Not a gap and not a value -- the property holds nothing,
-                // and a document rebuilt without it holds nothing too.
+        if (prop->isDerivedFrom(PropertyGeometry::getClassTypeId())) {
+            // Source material this session was told about and could not find. The property holds
+            // nothing as a result, and re-deriving the record from what is in memory would write
+            // that emptiness over the name -- destroying the one thing that could reunite the
+            // document with its material. The record keeps the name and states the gap.
+            const std::string missing = owner.missingSource(name.c_str());
+            if (!missing.empty()) {
+                entry.asset = missing;
+                entry.reason = "source geometry '" + missing + "' was not found";
+                stored.push_back(entry);
                 continue;
             }
-            entry.asset = *id;
-            stored.push_back(entry);
-            continue;
+
+            if (!assetDirectory.empty()) {
+                const AssetOutcome outcome = storeAsset(*prop, assetDirectory);
+                if (outcome.result == AssetOutcome::Result::NothingToKeep) {
+                    // Not a gap and not a value -- the property holds nothing, and a document
+                    // rebuilt without it holds nothing too.
+                    continue;
+                }
+                if (outcome.result == AssetOutcome::Result::Failed) {
+                    // The value is real and the store would not take it. Named, because a write
+                    // that failed and a property that was empty must not read the same on disk.
+                    entry.reason = "source geometry could not be written to the project store";
+                    stored.push_back(entry);
+                    continue;
+                }
+                entry.asset = outcome.id;
+                stored.push_back(entry);
+                continue;
+            }
         }
 
         ScratchWriter scratch;
@@ -598,10 +638,19 @@ void writeProperties(Base::Writer& writer,
 {
     const std::vector<StoredProperty> stored = storedProperties(owner, assetDirectory);
 
+    // A property can be in both lists at once, and one of them is exactly why: a record that
+    // names source material it cannot find still CARRIES the name -- so the value block keeps it
+    // and can be resolved by putting the material back -- while the gap is reported alongside,
+    // because a file that carried the name and said nothing would read as a file with no gap.
     std::vector<const StoredProperty*> recorded;
     std::vector<const StoredProperty*> unrecorded;
     for (const StoredProperty& entry : stored) {
-        (entry.reason.empty() ? recorded : unrecorded).push_back(&entry);
+        if (entry.reason.empty() || !entry.asset.empty()) {
+            recorded.push_back(&entry);
+        }
+        if (!entry.reason.empty()) {
+            unrecorded.push_back(&entry);
+        }
     }
 
     writer.Stream() << writer.ind() << "<Properties Count=\"" << recorded.size() << "\">\n";
@@ -693,9 +742,12 @@ void readProperties(Base::XMLReader& reader,
                 if (assetDirectory.empty() || !loadAsset(*prop, assetDirectory, asset)) {
                     // The file names source material this project does not hold. Said out loud,
                     // because a part quietly missing the body it was built from looks exactly
-                    // like a part that never had one.
+                    // like a part that never had one -- and remembered, because the next save
+                    // would otherwise write the absence over the name and make the loss
+                    // permanent even after the material came back.
                     Base::Console().warning("Stored recipe: missing source geometry '%s'\n",
                                             asset.c_str());
+                    owner.rememberMissingSource(name.c_str(), asset);
                 }
             }
             else if (reader.getAttribute<long>("reference", 0) == 1) {
