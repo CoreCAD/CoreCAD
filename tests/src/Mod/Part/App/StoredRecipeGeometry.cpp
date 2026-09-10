@@ -18,6 +18,7 @@
 #include <App/PropertyPythonObject.h>
 #include <Base/Interpreter.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/FeatureFillet.h>
 #include <Mod/Part/App/FeaturePartBox.h>
 #include <src/App/InitApplication.h>
 
@@ -377,6 +378,57 @@ TEST_F(StoredRecipeGeometryTest, aShapeAScriptRebuildsStaysOutOfTheFile)
     EXPECT_EQ(written.find("asset=\""), std::string::npos)
         << "a shape the script rebuilds is output, not source material";
     EXPECT_EQ(written.find("DBRep_DrawableShape"), std::string::npos);
+
+    std::filesystem::remove_all(assets);
+}
+
+// Which edges a person rounded, and how far, is a design decision -- it is not derivable from
+// anything else in the document, and nothing rebuilds it. It had no text form at all, so it was
+// declared bulk and went to the source store: the record named a file for a handful of numbers a
+// person chose. Measured before the fix: the recipe stated no fillet and the store held a file.
+TEST_F(StoredRecipeGeometryTest, theEdgesAPersonRoundedAreStatedInTheRecipe)
+{
+    // Arrange -- a rounded box. The box itself is BUILT, so nothing else is competing for the
+    // store and an empty folder means exactly one thing.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* box = _doc->addObject<Part::Box>("Box");
+    auto* fillet = _doc->addObject<Part::Fillet>("Fillet");
+    fillet->Base.setValue(box);
+    // Two radii that differ, because a fillet may open out along the edge: they are two values,
+    // not one value said twice, and a form that carried only the first would pass a test using
+    // equal ones.
+    fillet->Edges.setValues({Part::FilletElement(1, 1.5, 2.5), Part::FilletElement(3, 0.5, 0.5)});
+    _doc->recompute();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- said in the record, and nothing filed away.
+    EXPECT_NE(written.find("<Fillet edge=\"1\""), std::string::npos)
+        << "the recipe does not state which edges were rounded";
+    EXPECT_EQ(written.find("asset=\""), std::string::npos)
+        << "an authored value was filed beside the record instead of stated in it";
+    EXPECT_EQ(
+        std::distance(
+            std::filesystem::directory_iterator(assets),
+            std::filesystem::directory_iterator {}
+        ),
+        0
+    );
+
+    // And it comes back, both radii intact.
+    App::Document* rebuilt = readBack(written);
+    auto* returned = dynamic_cast<Part::Fillet*>(rebuilt->getObject("Fillet"));
+    ASSERT_NE(returned, nullptr);
+    const std::vector<Part::FilletElement>& back = returned->Edges.getValues();
+    ASSERT_EQ(back.size(), 2U) << "a stored fillet came back with a different number of edges";
+    EXPECT_EQ(back[0].edgeid, 1);
+    EXPECT_DOUBLE_EQ(back[0].radius1, 1.5);
+    EXPECT_DOUBLE_EQ(back[0].radius2, 2.5);
+    EXPECT_EQ(back[1].edgeid, 3);
+    EXPECT_DOUBLE_EQ(back[1].radius1, 0.5);
+    EXPECT_DOUBLE_EQ(back[1].radius2, 0.5);
 
     std::filesystem::remove_all(assets);
 }

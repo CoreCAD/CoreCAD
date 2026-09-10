@@ -38,6 +38,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectIdentifier.h>
+#include <App/Property.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
@@ -991,15 +992,50 @@ void PropertyFilletEdges::setPyObject(PyObject* value)
 
 void PropertyFilletEdges::Save(Base::Writer& writer) const
 {
-    if (!writer.isForceXML()) {
-        writer.Stream() << writer.ind() << "<FilletEdges file=\"" << writer.addFile(getName(), this)
-                        << "\"/>" << std::endl;
+    if (writer.isForceXML()) {
+        // Cruth: which edges were rounded, and how far, is a design decision. It is stated here
+        // rather than named as a file beside the record, because a record that points elsewhere
+        // for something a person chose can lose it while still reading as complete. The two radii
+        // are not one value said twice -- a fillet may open out along the edge -- so both are said.
+        writer.Stream() << writer.ind() << "<FilletEdges>" << std::endl;
+        writer.incInd();
+        for (const auto& fillet : _lValueList) {
+            writer.Stream() << writer.ind() << "<Fillet"
+                            << " edge=\"" << fillet.edgeid << "\""
+                            << " radius1=\"" << fillet.radius1 << "\""
+                            << " radius2=\"" << fillet.radius2 << "\""
+                            << "/>" << std::endl;
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</FilletEdges>" << std::endl;
+        return;
     }
+
+    writer.Stream() << writer.ind() << "<FilletEdges file=\"" << writer.addFile(getName(), this)
+                    << "\"/>" << std::endl;
 }
 
 void PropertyFilletEdges::Restore(Base::XMLReader& reader)
 {
     reader.readElement("FilletEdges");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the fillets stated in the element itself. No count is declared and nothing
+        // unexpected is passed over -- an element this reader does not know is refused, so a
+        // document cannot come back quietly smaller than it was written.
+        std::vector<FilletElement> values;
+        const int list = reader.level();
+        while (App::nextChildElement(reader, list)) {
+            App::expectElement(reader, "Fillet");
+            values.emplace_back(
+                reader.getAttribute<int>("edge"),
+                reader.getAttribute<double>("radius1"),
+                reader.getAttribute<double>("radius2")
+            );
+        }
+        setValues(values);
+        return;
+    }
+
     std::string file(reader.getAttribute<const char*>("file"));
 
     if (!file.empty()) {
