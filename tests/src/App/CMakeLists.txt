@@ -27,6 +27,7 @@ add_executable(App_tests_run
         PropertyExpressionEngine.cpp
         ObjectRecipe.cpp
         Recipe.cpp
+        RecoverySnapshot.cpp
         StoredRecipe.cpp
         StringHasher.cpp
         VarSet.cpp

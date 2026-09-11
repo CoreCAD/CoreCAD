@@ -54,7 +54,6 @@ public:
 protected:
     void closeEvent(QCloseEvent*) override;
     void contextMenuEvent(QContextMenuEvent*) override;
-    QString createProjectFile(const QString&);
     void cleanup(QDir&, const QList<QFileInfo>&, const QString&);
 
 protected:
@@ -62,7 +61,6 @@ protected:
     void onDeleteSection();
 
 private:
-    static std::string doctools;
     QScopedPointer<DocumentRecoveryPrivate> d_ptr;
     Q_DISABLE_COPY(DocumentRecovery)
     Q_DECLARE_PRIVATE(DocumentRecovery)

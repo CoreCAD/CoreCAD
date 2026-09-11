@@ -21,7 +21,7 @@
 # *                                                                         *
 # ***************************************************************************/
 
-import FreeCAD, os, unittest, tempfile, zipfile
+import FreeCAD, os, unittest, tempfile
 from FreeCAD import Base
 import math
 import xml.etree.ElementTree as ET
@@ -852,30 +852,25 @@ class DocumentRecoveryCases(unittest.TestCase):
         if self.savedFileName and os.path.exists(self.savedFileName):
             os.remove(self.savedFileName)
 
-    def testWriteCompressedRecoverySnapshot(self):
+    def testSnapshotIsWrittenAsTheDocumentItself(self):
+        """A snapshot can become the record -- recovery binds it to the original document's
+        path -- so it is written in the record's own form, by the record's own writer."""
         self.assertTrue(self.Doc.canWriteRecoverySnapshot())
         self.assertTrue(FreeCAD.writeRecoverySnapshotToTransientDir(self.Doc))
 
         metadata = os.path.join(self.Doc.TransientDir, "fc_recovery_file.xml")
-        archive = os.path.join(self.Doc.TransientDir, "fc_recovery_file.fcstd")
+        snapshot = os.path.join(self.Doc.TransientDir, "fc_recovery_file.cpart")
 
         self.assertTrue(os.path.isfile(metadata))
-        self.assertTrue(os.path.isfile(archive))
+        self.assertTrue(os.path.isfile(snapshot))
 
         root = ET.parse(metadata).getroot()
         self.assertEqual(root.tag, "AutoRecovery")
 
-        with zipfile.ZipFile(archive) as recovery:
-            self.assertIn("Document.xml", recovery.namelist())
-
-    def testWriteUncompressedRecoverySnapshot(self):
-        self.assertTrue(FreeCAD.writeRecoverySnapshotToTransientDir(self.Doc, compressed=False))
-
-        metadata = os.path.join(self.Doc.TransientDir, "fc_recovery_file.xml")
-        document_xml = os.path.join(self.Doc.TransientDir, "fc_recovery_files", "Document.xml")
-
-        self.assertTrue(os.path.isfile(metadata))
-        self.assertTrue(os.path.isfile(document_xml))
+        with open(snapshot) as written:
+            recipe = written.read()
+        self.assertIn("<Recipe", recipe)
+        self.assertIn('name="RecoveryObject"', recipe)
 
     def testRecoveryMetadataEscapesXml(self):
         self.Doc.Label = 'Recovery <Label> & "Name"'

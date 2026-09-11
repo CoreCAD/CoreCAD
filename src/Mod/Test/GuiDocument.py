@@ -25,7 +25,6 @@ import os
 import threading
 import time
 import unittest
-import zipfile
 
 import FreeCAD
 import FreeCADGui
@@ -57,7 +56,8 @@ class TestGuiDocument(unittest.TestCase):
         raise self.failureException("Gui::AutoSaver was not found in the QApplication object tree")
 
     def _recoveryArchive(self):
-        return os.path.join(self.doc.TransientDir, "fc_recovery_file.fcstd")
+        # A snapshot is written as the document itself, in the record's own form.
+        return os.path.join(self.doc.TransientDir, "fc_recovery_file.cpart")
 
     def _removeRecoveryArchive(self):
         archive = self._recoveryArchive()
@@ -87,13 +87,16 @@ class TestGuiDocument(unittest.TestCase):
         archive = self._recoveryArchive()
         self.assertTrue(os.path.isfile(archive))
 
-        with zipfile.ZipFile(archive) as recovery:
-            self.assertIn("Document.xml", recovery.namelist())
-            self.assertIn("GuiDocument.xml", recovery.namelist())
+        with open(archive, encoding="utf-8", errors="replace") as written:
+            recipe = written.read()
 
-            if expected_label is not None:
-                document_xml = recovery.read("Document.xml").decode("utf-8", errors="replace")
-                self.assertIn(expected_label, document_xml)
+        self.assertIn("<Recipe", recipe)
+        # The chosen appearance rides in the record itself, so a session with a view layer
+        # writes it into the snapshot rather than into a second file beside it.
+        self.assertIn('display="1"', recipe)
+
+        if expected_label is not None:
+            self.assertIn(expected_label, recipe)
 
     def testGetTreeRootObject(self):
         # Create objects at the root level
@@ -162,7 +165,7 @@ class TestGuiDocument(unittest.TestCase):
         self.assertEqual(proxy.executed_thread_id, threading.get_ident())
         self.assertGreaterEqual(elapsed, 0.04)
 
-    def testRecoverySnapshotIncludesGuiDocument(self):
+    def testRecoverySnapshotCarriesTheChosenAppearance(self):
         self.doc.addObject("App::FeaturePython", "RecoveryGuiObject")
 
         self.assertTrue(FreeCAD.writeRecoverySnapshotToTransientDir(self.doc))
