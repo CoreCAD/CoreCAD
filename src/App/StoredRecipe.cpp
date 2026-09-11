@@ -1331,6 +1331,11 @@ void App::restoreStoredRecipe(Document& doc,
     for (DocumentObject* obj : restored) {
         obj->enforceRecompute();
     }
+
+    // A node is blocked by what it holds, not by having been asked to rebuild: an object whose
+    // geometry comes back from the rebuild store is never asked, and would otherwise report itself
+    // up to date while its file states something this session could not produce (Amendment 19).
+    doc.blockWhatCouldNotBeHonoured();
 }
 
 std::string App::formatStoredRecipeObject(const DocumentObject& obj,

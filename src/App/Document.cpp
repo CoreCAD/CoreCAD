@@ -1212,6 +1212,20 @@ bool Document::holdsUnreadContent() const
     });
 }
 
+void Document::blockWhatCouldNotBeHonoured()
+{
+    for (DocumentObject* obj : d->objectArray) {
+        if (obj == nullptr || !obj->holdsUnhonouredStatement()) {
+            continue;
+        }
+        std::string why = "Blocked: this build could not honour what the file states here.";
+        for (const auto& [name, reason] : obj->unhonouredStatements()) {
+            why += " '" + name + "': " + reason + ".";
+        }
+        d->addRecomputeLog(why, obj);
+    }
+}
+
 void Document::Save(Base::Writer& writer) const
 {
     d->hashers.clear();
@@ -3615,6 +3629,21 @@ const char* Document::getErrorDescription(const DocumentObject* Obj) const
 int Document::_recomputeFeature(DocumentObject* Feat) // NOLINT
 {
     FC_LOG("Recomputing " << Feat->getFullName());
+
+    if (Feat->holdsUnhonouredStatement()) {
+        // Cruth (Amendment 19): this object's file states something this session could not
+        // honour, so this build cannot produce what depends on it. Executing the step from the
+        // part of its input that happened to be legible produces a shape nobody designed, and a
+        // document that presented it as finished would be denying what its own file says. The
+        // node is blocked instead, and says which statement blocked it (§3.6).
+        std::string why = "Blocked: this build could not honour what the file states here.";
+        for (const auto& [name, reason] : Feat->unhonouredStatements()) {
+            why += " '" + name + "': " + reason + ".";
+        }
+        d->addRecomputeLog(why, Feat);
+        FC_LOG("Blocked " << Feat->getFullName() << ": " << why);
+        return 1;
+    }
 
     DocumentObjectExecReturn* returnCode = nullptr;
     try {

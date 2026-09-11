@@ -26,6 +26,7 @@
 #pragma once
 
 #include <map>
+#include <utility>
 #include <vector>
 #include <string>
 #include <memory>
@@ -660,6 +661,13 @@ public:
   {
       return _statedProperties;
   }
+
+  /** What this container's file stated and this session could not honour: each name, and why.
+   *
+   * Named rather than counted, because a report that says a document is incomplete without saying
+   * what is missing cannot be acted on -- by a person or by a script reading it (P8, §3.6).
+   */
+  std::vector<std::pair<std::string, std::string>> unhonouredStatements() const;
 
   /// True while this container holds any statement its file made and this session could not honour.
   bool holdsUnhonouredStatement() const

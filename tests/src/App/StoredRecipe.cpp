@@ -778,4 +778,50 @@ TEST_F(StoredRecipeTest, aPropertyOfATypeThisBuildDoesNotHaveKeepsItsNeighboursA
         << "a document that changed nothing did not write back what it was given";
 }
 
+// Keeping a statement is half the duty; the other half is not pretending the result is finished
+// without it. Measured before this: an object holding a statement this session could not honour
+// recomputed anyway, from the part of its input that happened to be legible, and reported success.
+TEST_F(StoredRecipeTest, anObjectHoldingWhatCouldNotBeHonouredIsNotRecomputed)
+{
+    // Arrange -- a box with a property whose declaration is then struck out, so this build has no
+    // place for what the file states.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        box->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type declares = written.find(" dynamic=\"1\"");
+    ASSERT_NE(declares, std::string::npos);
+    written.erase(declares, std::strlen(" dynamic=\"1\""));
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    DocumentObject* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+
+    // Blocked by what it holds, before anything asks it to rebuild -- an object whose geometry
+    // came back from the rebuild store is never asked.
+    EXPECT_TRUE(rebuilt->isError())
+        << "an object reported itself sound while holding a statement it could not honour";
+
+    // Act
+    _rebuilt->recompute();
+
+    // Assert -- blocked at the node that holds the statement, and said in the model.
+    EXPECT_TRUE(rebuilt->isError())
+        << "an object built something from input it could not read in full, and reported success";
+    EXPECT_TRUE(rebuilt->isTouched())
+        << "the object was marked up to date while holding a statement it could not honour";
+    const auto unhonoured = rebuilt->unhonouredStatements();
+    ASSERT_EQ(unhonoured.size(), 1U);
+    EXPECT_EQ(unhonoured.front().first, std::string("Clearance"))
+        << "the report does not name what could not be honoured";
+    EXPECT_FALSE(unhonoured.front().second.empty()) << "the report does not say why";
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
