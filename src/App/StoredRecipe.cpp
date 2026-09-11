@@ -183,6 +183,7 @@ struct StoredProperty
     bool readOnly {false};
     bool hidden {false};
     bool isReference {false};
+    std::string verbatim;  ///< the file's own words for a property this build has no place for
     std::vector<Binding> bindings;
     std::string asset;  ///< the id of the file holding this value, empty when written inline
 };
@@ -523,6 +524,12 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
             continue;
         }
 
+        if (owner.statedProperties().count(name) != 0) {
+            // The file's own words stand for this name until something supersedes them, and they
+            // are written below. Saying it twice would be a file that disagrees with itself.
+            continue;
+        }
+
         StoredProperty entry;
         entry.name = name;
         entry.type = prop->getTypeId().getName();
@@ -674,6 +681,20 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
         stored.push_back(entry);
     }
 
+    // Given back in their own place among the properties this build does understand, so a save
+    // that changed nothing changes nothing (Amendment 18 Clause 18.1).
+    for (const auto& [name, words] : owner.statedProperties()) {
+        StoredProperty kept;
+        kept.name = name;
+        kept.verbatim = words;
+        stored.push_back(kept);
+    }
+    std::stable_sort(stored.begin(),
+                     stored.end(),
+                     [](const StoredProperty& left, const StoredProperty& right) {
+                         return left.name < right.name;
+                     });
+
     return stored;
 }
 
@@ -703,6 +724,12 @@ void writeProperties(Base::Writer& writer,
     writer.Stream() << writer.ind() << "<Properties>\n";
     writer.incInd();
     for (const StoredProperty* entry : recorded) {
+        if (!entry->verbatim.empty()) {
+            // Exactly as the file said it, at the depth the file said it: this form writes a
+            // property at one depth, so its own words are already the words that belong here.
+            writer.Stream() << entry->verbatim;
+            continue;
+        }
         writer.Stream() << writer.ind() << "<Property name=\"" << entry->name << "\" type=\""
                         << entry->type << "\"";
         if (entry->isReference) {
@@ -778,6 +805,64 @@ void refuse(const char* expected, const Base::XMLReader& reader)
                                   + "> and found <" + reader.localName() + ">");
 }
 
+std::string liftObjectWords(const std::string& source, const std::string& uuid);
+
+/// One property's block, exactly as the file states it, indentation and all.
+///
+/// Taken from the file's own words rather than rebuilt from what the reader understood, because a
+/// block this build has no place for is a statement it cannot re-derive. It is kept at the depth
+/// the file wrote it at and given back at that depth: this form writes a property at one depth
+/// and only one, so the words the file used are the words that belong there.
+std::string liftPropertyBlock(const std::string& objectWords, const std::string& name)
+{
+    const std::string opening = "<Property name=\"" + name + "\"";
+    const std::size_t at = objectWords.find(opening);
+    if (at == std::string::npos) {
+        return {};
+    }
+    std::size_t lineStart = objectWords.rfind('\n', at);
+    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
+    if (objectWords.find_first_not_of(" \t", lineStart) != at) {
+        // Something else shares the line. Not a shape this writer produces, and not a block to
+        // guess the extent of.
+        return {};
+    }
+
+    // Counted rather than searched for, so a value that states properties of its own inside its
+    // body cannot end the block early.
+    std::size_t depth = 0;
+    std::size_t scan = at;
+    while (scan < objectWords.size()) {
+        const std::size_t open = objectWords.find("<Property", scan);
+        const std::size_t close = objectWords.find("</Property>", scan);
+        if (close == std::string::npos) {
+            return {};
+        }
+        if (open != std::string::npos && open < close) {
+            const std::size_t ends = objectWords.find('>', open);
+            if (ends == std::string::npos) {
+                return {};
+            }
+            // A self-closing declaration opens nothing.
+            if (objectWords[ends - 1] != '/') {
+                ++depth;
+            }
+            scan = ends + 1;
+            continue;
+        }
+        --depth;
+        scan = close + std::strlen("</Property>");
+        if (depth == 0) {
+            const std::size_t lineEnd = objectWords.find('\n', scan);
+            return objectWords.substr(lineStart,
+                                      (lineEnd == std::string::npos ? objectWords.size()
+                                                                    : lineEnd + 1)
+                                          - lineStart);
+        }
+    }
+    return {};
+}
+
 /// Restore the values of one `<Properties>` block onto a container, then step over the
 /// `<Unrecorded>` block that follows it: what the writer could not say, the reader cannot
 /// invent.
@@ -787,8 +872,26 @@ using PendingReference = std::pair<Property*, std::vector<Binding>>;
 void readProperties(Base::XMLReader& reader,
                     PropertyContainer& owner,
                     std::vector<PendingReference>& pending,
-                    const std::string& assetDirectory)
+                    const std::string& assetDirectory,
+                    const std::string& sourceText,
+                    const std::string& objectUuid)
 {
+    // The object's own words, lifted only if something here cannot be honoured -- which is almost
+    // never, and scanning the whole file for every object read would be a cost paid on every load.
+    std::string objectWords;
+    bool lifted = false;
+    const auto wordsFor = [&](const std::string& name) {
+        if (!lifted) {
+            // The file's words as written, indentation and all -- not the dedented form a kept
+            // object is stored in, because a property block is given back at the depth it was
+            // read at.
+            objectWords =
+                sourceText.empty() ? std::string {} : liftObjectWords(sourceText, objectUuid);
+            lifted = true;
+        }
+        return objectWords.empty() ? std::string {} : liftPropertyBlock(objectWords, name);
+    };
+
     reader.readElement("Properties");
     const int properties = reader.level();
     while (nextChildOf(reader, properties)) {
@@ -802,14 +905,22 @@ void readProperties(Base::XMLReader& reader,
         if (prop == nullptr && reader.getAttribute<long>("dynamic", 0) == 1) {
             // A property the object was given at runtime has to be declared before it can hold
             // anything, so the file carries the declaration and the reader replays it.
-            prop = owner.addDynamicProperty(
-                type.c_str(),
-                name.c_str(),
-                reader.getAttribute<const char*>("group", ""),
-                reader.getAttribute<const char*>("doc", ""),
-                static_cast<short>(reader.getAttribute<long>("attributes", 0)),
-                reader.getAttribute<long>("readonly", 0) == 1,
-                reader.getAttribute<long>("hidden", 0) == 1);
+            try {
+                prop = owner.addDynamicProperty(
+                    type.c_str(),
+                    name.c_str(),
+                    reader.getAttribute<const char*>("group", ""),
+                    reader.getAttribute<const char*>("doc", ""),
+                    static_cast<short>(reader.getAttribute<long>("attributes", 0)),
+                    reader.getAttribute<long>("readonly", 0) == 1,
+                    reader.getAttribute<long>("hidden", 0) == 1);
+            }
+            catch (const Base::Exception&) {
+                // A property type this build does not have -- an add-on's own kind. Declaring it
+                // fails, and the read used to stop there, taking the rest of the document with
+                // it. The block is kept as stated instead (Amendment 19).
+                prop = nullptr;
+            }
         }
         if (prop != nullptr && prop->getTypeId().getName() == type) {
             const std::string asset = reader.getAttribute<const char*>("asset", "");
@@ -844,6 +955,27 @@ void readProperties(Base::XMLReader& reader,
             }
             else {
                 prop->Restore(reader);
+            }
+        }
+        else {
+            // This build has no place for what the file states here: no property of that name, or
+            // one of a different type. Stepping over it is how a document quietly comes back
+            // smaller than it was written, so the file's own words are kept and given back.
+            std::string words = wordsFor(name);
+            if (words.empty()) {
+                Base::Console().warning(
+                    "Stored recipe: '%s' (%s) is not a property this build has, and its words "
+                    "could not be kept. Saving this document would lose it.\n",
+                    name.c_str(),
+                    type.c_str());
+            }
+            else {
+                owner.rememberStatedProperty(name.c_str(), std::move(words));
+                Base::Console().warning(
+                    "Stored recipe: '%s' (%s) is not a property this build has. It is kept as "
+                    "written and the document is not whole.\n",
+                    name.c_str(),
+                    type.c_str());
             }
         }
         reader.readEndElement("Property");
@@ -990,6 +1122,24 @@ namespace
 /// Object blocks are siblings and never nest, so the first `</Object>` after the opening tag is
 /// this object's own end. The leading indentation is removed so the block can be given back at
 /// whatever depth the writer is at, and restored on the way out.
+/// One object's block, exactly as the file states it, indentation and all.
+std::string liftObjectWords(const std::string& source, const std::string& uuid)
+{
+    const std::string opening = "<Object uuid=\"" + uuid + "\"";
+    const std::size_t start = source.find(opening);
+    if (start == std::string::npos) {
+        return {};
+    }
+    const std::string closing = "</Object>";
+    const std::size_t end = source.find(closing, start);
+    if (end == std::string::npos) {
+        return {};
+    }
+    std::size_t lineStart = source.rfind('\n', start);
+    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
+    return source.substr(lineStart, end + closing.size() - lineStart);
+}
+
 std::string liftObjectBlock(const std::string& source, const std::string& uuid)
 {
     const std::string opening = "<Object uuid=\"" + uuid + "\"";
@@ -1058,7 +1208,10 @@ void App::restoreStoredRecipe(Document& doc,
 
     reader.readElement("Document");
     const std::string documentUid = reader.getAttribute<const char*>("uuid");
-    readProperties(reader, doc, pending, assetDirectory);
+    // The document's own properties are read without its words to fall back on: this reader lifts
+    // a block by the object it belongs to, and the document is not one. A statement here that this
+    // build has no place for is reported and not kept, which is the honest half of the duty.
+    readProperties(reader, doc, pending, assetDirectory, std::string {}, std::string {});
     reader.readEndElement("Document");
     // A document's identity is its own, and the document model refuses to let two open
     // documents share one -- restoring the uuid into a copy of a document that is still open
@@ -1111,7 +1264,7 @@ void App::restoreStoredRecipe(Document& doc,
             // the part three times over on the way in, and it builds it before the references it
             // is built on have been bound.
             obj->setStatus(ObjectStatus::Restore, true);
-            readProperties(reader, *obj, pending, assetDirectory);
+            readProperties(reader, *obj, pending, assetDirectory, sourceText, uuid);
             obj->setStatus(ObjectStatus::Restore, false);
 
             if (display) {
@@ -1120,7 +1273,15 @@ void App::restoreStoredRecipe(Document& doc,
                 reader.readElement("Display");
                 PropertyContainer* appearance = appearanceOf(*obj);
                 if (appearance != nullptr) {
-                    readProperties(reader, *appearance, pending, assetDirectory);
+                    // Without the object's words: a name inside this block may also name one of
+                    // the object's own properties, and keeping the wrong one of the two would be
+                    // worse than reporting the gap.
+                    readProperties(reader,
+                                   *appearance,
+                                   pending,
+                                   assetDirectory,
+                                   std::string {},
+                                   std::string {});
                 }
                 reader.readEndElement("Display");
             }

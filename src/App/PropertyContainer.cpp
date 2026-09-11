@@ -222,12 +222,21 @@ PropertyContainer::unresolvedReference(const char* name) const
     return found == _unresolvedReferences.end() ? nullptr : &found->second;
 }
 
+void PropertyContainer::rememberStatedProperty(const char* name, std::string words)
+{
+    if (name == nullptr || words.empty()) {
+        return;
+    }
+    _statedProperties[name] = std::move(words);
+}
+
 void PropertyContainer::eraseUnhonouredStatement(const Property* prop)
 {
     const char* name = getPropertyName(prop);
     if (name != nullptr) {
         _missingSources.erase(name);
         _unresolvedReferences.erase(name);
+        _statedProperties.erase(name);
     }
 }
 

@@ -641,10 +641,31 @@ public:
   /// Where a stored record said this reference pointed, when this session could not resolve it.
   const std::vector<StatedTarget>* unresolvedReference(const char* name) const;
 
+  /** Keep a property block exactly as the file stated it, because this build has no place for it.
+   *
+   * A class may simply not declare the property a file names -- an add-on version that had one
+   * more, a property renamed since, a type this build does not have. The reader used to step over
+   * it in silence and the next save wrote the object without it, so a value a person authored was
+   * gone and the file no longer said it had ever been there. What is owed is the statement itself
+   * and not this session's reading of it, so the file's own words are kept and given back
+   * unchanged.
+   *
+   * The kept words stand for that name until something supersedes them: a value set on a property
+   * of the same name discharges them like any other kept statement.
+   */
+  void rememberStatedProperty(const char* name, std::string words);
+
+  /// The property blocks kept as stated, by property name -- in name order, as the file has them.
+  const std::map<std::string, std::string>& statedProperties() const
+  {
+      return _statedProperties;
+  }
+
   /// True while this container holds any statement its file made and this session could not honour.
   bool holdsUnhonouredStatement() const
   {
-      return !_missingSources.empty() || !_unresolvedReferences.empty();
+      return !_missingSources.empty() || !_unresolvedReferences.empty()
+          || !_statedProperties.empty();
   }
 
   /** Discharge those notes, because the property has been given a value since.
@@ -655,7 +676,8 @@ public:
    */
   void forgetUnhonouredStatement(const Property* prop)
   {
-      if (!_missingSources.empty() || !_unresolvedReferences.empty()) {
+      if (!_missingSources.empty() || !_unresolvedReferences.empty()
+          || !_statedProperties.empty()) {
           eraseUnhonouredStatement(prop);
       }
   }
@@ -797,6 +819,7 @@ private:
   std::string _propertyPrefix;
   std::map<std::string, std::string> _missingSources;
   std::map<std::string, std::vector<StatedTarget>> _unresolvedReferences;
+  std::map<std::string, std::string> _statedProperties;
   static PropertyData propertyData;
 };
 
