@@ -68,74 +68,6 @@ using namespace Gui;
 using namespace Gui::Dialog;
 namespace sp = std::placeholders;
 
-// taken from the script doctools.py
-std::string DocumentRecovery::doctools
-    = "import os,sys,string\n"
-      "from defusedxml import sax as defused_sax\n"
-      "from xml.sax.handler import ContentHandler\n"
-      "import zipfile\n"
-      "\n"
-      "# SAX handler to parse the Document.xml\n"
-      "class DocumentHandler(ContentHandler):\n"
-      "	def __init__(self, dirname):\n"
-      "		self.files = []\n"
-      "		self.dirname = dirname\n"
-      "\n"
-      "	def startElement(self, name, attributes):\n"
-      "		if name == 'XLink':\n"
-      "			return\n"
-      "		item=attributes.get(\"file\")\n"
-      "		if item:\n"
-      "			self.files.append(os.path.join(self.dirname,str(item)))\n"
-      "\n"
-      "	def characters(self, data):\n"
-      "		return\n"
-      "\n"
-      "	def endElement(self, name):\n"
-      "		return\n"
-      "\n"
-      "def extractDocument(filename, outpath):\n"
-      "	zfile=zipfile.ZipFile(filename)\n"
-      "	files=zfile.namelist()\n"
-      "\n"
-      "	for i in files:\n"
-      "		data=zfile.read(i)\n"
-      "		dirs=i.split(\"/\")\n"
-      "		if len(dirs) > 1:\n"
-      "			dirs.pop()\n"
-      "			curpath=outpath\n"
-      "			for j in dirs:\n"
-      "				curpath=curpath+\"/\"+j\n"
-      "				os.mkdir(curpath)\n"
-      "		output=open(outpath+\"/\"+i,'wb')\n"
-      "		output.write(data)\n"
-      "		output.close()\n"
-      "\n"
-      "def createDocument(filename, outpath):\n"
-      "	files=getFilesList(filename)\n"
-      "	dirname=os.path.dirname(filename)\n"
-      "	guixml=os.path.join(dirname,\"GuiDocument.xml\")\n"
-      "	if os.path.exists(guixml):\n"
-      "		files.extend(getFilesList(guixml))\n"
-      "	compress=zipfile.ZipFile(outpath,'w',zipfile.ZIP_DEFLATED)\n"
-      "	for i in files:\n"
-      "		dirs=os.path.split(i)\n"
-      "		#print i, dirs[-1]\n"
-      "		compress.write(i,dirs[-1],zipfile.ZIP_DEFLATED)\n"
-      "	compress.close()\n"
-      "\n"
-      "def getFilesList(filename):\n"
-      "	dirname=os.path.dirname(filename)\n"
-      "	handler=DocumentHandler(dirname)\n"
-      "	parser=defused_sax.make_parser()\n"
-      "	parser.setContentHandler(handler)\n"
-      "	parser.parse(filename)\n"
-      "\n"
-      "	files=[]\n"
-      "	files.append(filename)\n"
-      "	files.extend(iter(handler.files))\n"
-      "	return files\n";
-
 
 namespace Gui
 {
@@ -221,21 +153,6 @@ bool DocumentRecovery::foundDocuments() const
     return (!d->recoveryInfo.isEmpty());
 }
 
-QString DocumentRecovery::createProjectFile(const QString& documentXml)
-{
-    QString source = documentXml;
-    QFileInfo fi(source);
-    QString dest = fi.dir().absoluteFilePath(QStringLiteral("fc_recovery_file.fcstd"));
-
-    std::stringstream str;
-    str << doctools << "\n";
-    str << "createDocument(\"" << (const char*)source.toUtf8() << "\", \""
-        << (const char*)dest.toUtf8() << "\")";
-    Gui::Command::runCommand(Gui::Command::App, str.str().c_str());
-
-    return dest;
-}
-
 void DocumentRecovery::closeEvent(QCloseEvent* e)
 {
     // Do not disable the X button in the title bar
@@ -258,13 +175,7 @@ void DocumentRecovery::accept()
             QTreeWidgetItem* item = d_ptr->ui.treeWidget->topLevelItem(index);
 
             try {
-                QString file = info.projectFile;
-                QFileInfo fi(file);
-                if (fi.fileName() == QLatin1String("Document.xml")) {
-                    file = createProjectFile(info.projectFile);
-                }
-
-                paths.emplace_back(file.toUtf8().constData());
+                paths.emplace_back(info.projectFile.toUtf8().constData());
                 filenames.emplace_back(info.fileName.toUtf8().constData());
                 labels.emplace_back(info.label.toUtf8().constData());
                 indices.push_back(index);
@@ -328,14 +239,8 @@ void DocumentRecovery::accept()
                 QFileInfo fi(info.projectFile);
                 bool res = false;
 
-                if (fi.fileName() == QLatin1String("fc_recovery_file.fcstd")) {
-                    transDir.remove(fi.fileName());
-                    res = transDir.rename(fi.absoluteFilePath(), fi.fileName());
-                }
-                else {
-                    transDir.rmdir(fi.dir().dirName());
-                    res = transDir.rename(fi.absolutePath(), fi.dir().dirName());
-                }
+                transDir.remove(fi.fileName());
+                res = transDir.rename(fi.absoluteFilePath(), fi.fileName());
 
                 if (res) {
                     transDir.remove(xfi.fileName());
@@ -413,15 +318,11 @@ DocumentRecoveryPrivate::Info DocumentRecoveryPrivate::getRecoveryInfo(const QFi
 
     QString file;
     QDir doc_dir(fi.absoluteFilePath());
-    QDir rec_dir(doc_dir.absoluteFilePath(QLatin1String("fc_recovery_files")));
 
-    // compressed recovery file
-    if (doc_dir.exists(QLatin1String("fc_recovery_file.fcstd"))) {
-        file = doc_dir.absoluteFilePath(QLatin1String("fc_recovery_file.fcstd"));
-    }
-    // separate files for recovery
-    else if (rec_dir.exists(QLatin1String("Document.xml"))) {
-        file = rec_dir.absoluteFilePath(QLatin1String("Document.xml"));
+    // A snapshot is written as the document itself, in the record's own form, so recovery opens
+    // it the way any document is opened (Amendment 19 Clause 19.5).
+    if (doc_dir.exists(QLatin1String("fc_recovery_file.cpart"))) {
+        file = doc_dir.absoluteFilePath(QLatin1String("fc_recovery_file.cpart"));
     }
 
     info.status = DocumentRecoveryPrivate::Created;
@@ -738,7 +639,7 @@ void DocumentRecoveryFinder::checkDocumentDirs(QDir& tmp, const QList<QFileInfo>
     }
     else {
         int countDeletedDocs = 0;
-        QString recovery_files = QStringLiteral("fc_recovery_files");
+        QString recovery_files = QStringLiteral("assets");
         for (QList<QFileInfo>::const_iterator it = dirs.cbegin(); it != dirs.cend(); ++it) {
             QDir doc_dir(it->absoluteFilePath());
             doc_dir.setFilter(QDir::NoDotAndDotDot | QDir::AllEntries);

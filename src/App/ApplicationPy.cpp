@@ -190,9 +190,10 @@ PyMethodDef ApplicationPy::Methods[] = {
          reinterpret_cast<void (*)()>(ApplicationPy::sWriteRecoverySnapshotToTransientDir)
      ),
      METH_VARARGS | METH_KEYWORDS,
-     "writeRecoverySnapshotToTransientDir(document, *, compressed=True, "
-     "save_binary_brep=True, save_thumbnail=False) -> bool\n\n"
-     "Write a recovery snapshot for the given document into its transient directory."},
+     "writeRecoverySnapshotToTransientDir(document) -> bool\n\n"
+     "Write a recovery snapshot for the given document into its transient directory.\n"
+     "The snapshot is written as the document itself -- the same form and the same writer --\n"
+     "because recovery can turn it back into the record."},
     {"activeDocument",
      (PyCFunction)ApplicationPy::sActiveDocument,
      METH_VARARGS,
@@ -545,28 +546,13 @@ PyObject* ApplicationPy::sWriteRecoverySnapshotToTransientDir(PyObject* /*self*/
                                                               PyObject* kwd)
 {
     PyObject* document {};
-    PyObject* compressed = Py_True;
-    PyObject* saveBinaryBrep = Py_True;
-    PyObject* saveThumbnail = Py_False;
-    static constexpr std::array<const char*, 5> kwlist {
-        "document",
-        "compressed",
-        "save_binary_brep",
-        "save_thumbnail",
-        nullptr
-    };
+    static constexpr std::array<const char*, 2> kwlist {"document", nullptr};
     if (!Base::Wrapped_ParseTupleAndKeywords(args,
                                              kwd,
-                                             "O!|O!O!O!",
+                                             "O!",
                                              kwlist,
                                              &App::DocumentPy::Type,
-                                             &document,
-                                             &PyBool_Type,
-                                             &compressed,
-                                             &PyBool_Type,
-                                             &saveBinaryBrep,
-                                             &PyBool_Type,
-                                             &saveThumbnail)) {
+                                             &document)) {
         return nullptr;
     }
 
@@ -578,13 +564,8 @@ PyObject* ApplicationPy::sWriteRecoverySnapshotToTransientDir(PyObject* /*self*/
 
     PY_TRY
     {
-        App::RecoverySnapshotSaveOptions options;
-        options.compressed = Base::asBoolean(compressed);
-        options.saveBinaryBrep = Base::asBoolean(saveBinaryBrep);
-        options.saveThumbnail = Base::asBoolean(saveThumbnail);
-
         return Py::new_reference_to(
-            Py::Boolean(App::writeRecoverySnapshotToTransientDir(*doc, options))
+            Py::Boolean(App::writeRecoverySnapshotToTransientDir(*doc))
         );
     }
     PY_CATCH

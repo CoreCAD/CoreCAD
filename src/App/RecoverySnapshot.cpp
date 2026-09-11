@@ -31,38 +31,16 @@
 #include "Application.h"
 #include "Document.h"
 #include "RecoverySnapshot.h"
+#include "StoredRecipe.h"
 
 namespace
 {
 
-class ScopedSaveThumbnailPreference
+/// Where a snapshot's handed-in geometry goes: beside the snapshot, under the name the recipe
+/// reader looks for when it opens a file from that directory.
+std::string recoveryAssetsFor(const App::Document& doc)
 {
-public:
-    ScopedSaveThumbnailPreference(ParameterGrp::handle params, bool enabled)
-        : params(std::move(params))
-        , originalValue(this->params->GetBool("SaveThumbnail", true))
-    {
-        this->params->SetBool("SaveThumbnail", enabled);
-    }
-
-    ScopedSaveThumbnailPreference(const ScopedSaveThumbnailPreference&) = delete;
-    ScopedSaveThumbnailPreference& operator=(const ScopedSaveThumbnailPreference&) = delete;
-
-    ~ScopedSaveThumbnailPreference()
-    {
-        params->SetBool("SaveThumbnail", originalValue);
-    }
-
-private:
-    ParameterGrp::handle params;
-    bool originalValue;
-};
-
-std::string recoveryDirectoryFor(const App::Document& doc)
-{
-    std::string dirName = doc.TransientDir.getValue();
-    dirName += "/fc_recovery_files";
-    return dirName;
+    return std::string(doc.TransientDir.getValue()) + "/assets";
 }
 
 void writeRecoveryMetadataFile(const App::Document& doc)
@@ -86,68 +64,17 @@ void writeRecoveryMetadataFile(const App::Document& doc)
          << "</AutoRecovery>\n";
 }
 
-template<typename WriterT>
-void writeRecoverySnapshotContents(const App::Document& doc, WriterT& writer)
-{
-    writer.putNextEntry("Document.xml");
-    doc.Save(writer);
-
-    // Special handling for Gui document state.
-    doc.signalSaveDocument(writer);
-    writer.writeFiles();
-
-    if (writer.hasErrors()) {
-        std::stringstream message;
-        message << "Failed to write all data to auto-recovery output ";
-        message << writer.getErrors().front();
-        throw Base::FileException(message.str().c_str());
-    }
-}
-
-void writeUncompressedRecoverySnapshot(const App::Document& doc, bool saveBinaryBrep)
-{
-    std::string dirName = recoveryDirectoryFor(doc);
-    Base::FileInfo dir(dirName);
-    if (!dir.exists() && !dir.createDirectory()) {
-        throw Base::FileException("Failed to create auto-recovery directory", dir);
-    }
-
-    Base::FileWriter writer(dirName.c_str());
-    if (saveBinaryBrep) {
-        writer.setMode("BinaryBrep");
-    }
-
-    writeRecoverySnapshotContents(doc, writer);
-}
-
-void writeCompressedRecoverySnapshot(const App::Document& doc, bool saveBinaryBrep)
-{
-    std::string fileName = doc.TransientDir.getValue();
-    fileName += "/fc_recovery_file.fcstd";
-
-    Base::FileInfo fileInfo(fileName);
-    Base::ofstream file(fileInfo, std::ios::out | std::ios::binary);
-    if (!file.is_open()) {
-        throw Base::FileException("Failed to open auto-recovery archive", fileInfo);
-    }
-
-    Base::ZipWriter writer(file);
-    if (saveBinaryBrep) {
-        writer.setMode("BinaryBrep");
-    }
-
-    writer.setComment("AutoRecovery file");
-    writer.setLevel(1);  // Prefer lower latency over compression ratio for autosave.
-    writeRecoverySnapshotContents(doc, writer);
-}
-
 }  // namespace
 
 namespace App
 {
 
-bool writeRecoverySnapshotToTransientDir(const Document& doc,
-                                         const RecoverySnapshotSaveOptions& options)
+std::string recoverySnapshotPath(const Document& doc)
+{
+    return std::string(doc.TransientDir.getValue()) + "/fc_recovery_file.cpart";
+}
+
+bool writeRecoverySnapshotToTransientDir(const Document& doc)
 {
     if (!doc.canWriteRecoverySnapshot()) {
         std::stringstream message;
@@ -156,19 +83,33 @@ bool writeRecoverySnapshotToTransientDir(const Document& doc,
         throw Base::RuntimeError(message.str().c_str());
     }
 
-    auto params = GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Document"
-    );
-    ScopedSaveThumbnailPreference saveThumbnailPreference(params, options.saveThumbnail);
-
     writeRecoveryMetadataFile(doc);
 
-    if (!options.compressed) {
-        writeUncompressedRecoverySnapshot(doc, options.saveBinaryBrep);
-        return true;
+    // Cruth (Amendment 19 Clause 19.5): a snapshot can become the record -- recovery binds what it
+    // reads to the original document's path, and an ordinary save then writes it there. So it is
+    // written AS the record, through the record's own writer. It used to be written as the archive
+    // Amendment 18 replaced, which knows nothing of a kept statement or a remembered name, and a
+    // crash cycle therefore erased what the record's writer had carefully kept.
+    const std::string path = recoverySnapshotPath(doc);
+    const std::string assets = recoveryAssetsFor(doc);
+    Base::FileInfo dir(assets);
+    if (!dir.exists() && !dir.createDirectory()) {
+        throw Base::FileException("Failed to create auto-recovery directory", dir);
     }
 
-    writeCompressedRecoverySnapshot(doc, options.saveBinaryBrep);
+    Base::FileInfo fileInfo(path);
+    Base::ofstream file(fileInfo, std::ios::out | std::ios::binary);
+    if (!file.is_open()) {
+        throw Base::FileException("Failed to open auto-recovery file", fileInfo);
+    }
+    // A snapshot may hold more than the record -- material beside it, so that recovering is cheap
+    // -- but never the record in a second form.
+    file << formatStoredRecipe(doc, assets);
+    file.close();
+
+    if (!Base::FileInfo(path).exists()) {
+        throw Base::FileException("Failed to write auto-recovery file", fileInfo);
+    }
     return true;
 }
 
