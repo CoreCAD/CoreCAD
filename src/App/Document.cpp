@@ -1212,6 +1212,77 @@ bool Document::holdsUnreadContent() const
     });
 }
 
+std::vector<std::string> Document::whatASaveWouldLose() const
+{
+    // Only a fragment loses anything. A document holding statements it could not honour keeps them
+    // and gives them back, so its save costs nothing and is not gated here -- gating it would trap
+    // a person's work to protect content that is not in danger.
+    if (!testStatus(Document::RestoreError)) {
+        return {};
+    }
+
+    std::string said = "everything '" + FileName.getStrValue()
+        + "' states that this session did not read";
+    if (!_restoreFailure.empty()) {
+        said += ": the read failed at " + _restoreFailure;
+    }
+    return {said};
+}
+
+bool Document::mayWrite()
+{
+    const std::vector<std::string> losing = whatASaveWouldLose();
+    if (losing.empty() || _acceptedLoss) {
+        return true;
+    }
+
+    // Cruth (Amendment 19 Clause 19.3): this document is what could be read before the read
+    // failed, not what its file says -- measured on a truncated file and on one left holding the
+    // markers of an unfinished merge, both of which open as their own beginning. Writing it
+    // anywhere publishes that beginning as a document, and the file on disk is the only remaining
+    // copy of what is missing from it. Refused unless the caller says what it is losing.
+    std::string why = "'" + std::string(Label.getValue()) + "' did not come back whole. A save "
+        "would lose:";
+    for (const std::string& loss : losing) {
+        why += "\n  " + loss;
+    }
+    why += "\nTo write it anyway, accept that by name (saveAcceptingLoss).";
+    FC_ERR(why);
+    return false;
+}
+
+bool Document::saveAcceptingLoss(const std::vector<std::string>& losing, const std::string& path)
+{
+    const std::vector<std::string> cost = whatASaveWouldLose();
+    if (losing != cost) {
+        // An answer to a question nobody asked is not an acceptance. Named back, so a caller that
+        // asked in good faith can see what it should have said.
+        std::string why = "This write was not allowed through: what was accepted is not what it "
+                          "would lose. It would lose:";
+        for (const std::string& loss : cost) {
+            why += "\n  " + loss;
+        }
+        if (cost.empty()) {
+            why += " nothing";
+        }
+        FC_ERR(why);
+        return false;
+    }
+
+    // For this write and no other. A standing permission is the formality this clause forbids.
+    _acceptedLoss = true;
+    bool written = false;
+    try {
+        written = path.empty() ? save() : saveAs(path.c_str());
+    }
+    catch (...) {
+        _acceptedLoss = false;
+        throw;
+    }
+    _acceptedLoss = false;
+    return written;
+}
+
 void Document::blockWhatCouldNotBeHonoured()
 {
     for (DocumentObject* obj : d->objectArray) {
@@ -2133,6 +2204,12 @@ bool Document::saveAs(const char* _file)
 {
     const std::string file = checkFileName(_file, documentFileExtension());
     const Base::FileInfo fi(file.c_str());
+    // Asked before the document is renamed, not after: a refusal that has already pointed the
+    // document at the file it declined to write has performed half of that write (Amendment 19
+    // Clause 19.3 -- a refused save changes nothing).
+    if (!mayWrite()) {
+        return false;
+    }
     if (this->FileName.getStrValue() != file) {
         this->FileName.setValue(file);
         this->Label.setValue(fi.fileNamePure());
@@ -2142,8 +2219,13 @@ bool Document::saveAs(const char* _file)
     return save();
 }
 
-bool Document::saveCopy(const char* file) const
+bool Document::saveCopy(const char* file)
 {
+    // A rule attached to the destination is walked around by writing elsewhere and writing back,
+    // and a fragment written to a new path is still a document that denies what it states.
+    if (!mayWrite()) {
+        return false;
+    }
     const std::string checked = checkFileName(file, documentFileExtension());
     return this->FileName.getStrValue() != checked ? saveToFile(checked.c_str()) : false;
 }
@@ -2158,15 +2240,7 @@ bool Document::canWriteRecoverySnapshot() const
 // Save the document under the name it has been opened
 bool Document::save()
 {
-    if (testStatus(Document::RestoreError)) {
-        // Cruth (Amendment 19): this document is what could be read before the read failed, not
-        // what its file says. Writing it back publishes that prefix over the record -- measured
-        // on a truncated file and on one left holding merge markers, both of which open as their
-        // own beginning and are made permanent by an ordinary save. A save is refused rather than
-        // performed, because the file on disk is the only remaining copy of what was lost.
-        FC_ERR("'" << Label.getValue()
-                   << "' did not come back whole and will not be written over its own file. "
-                      "Save a copy under another name to keep this session's work.");
+    if (!mayWrite()) {
         return false;
     }
 
@@ -2503,6 +2577,10 @@ void Document::restore(const char* filename,
         catch (const Base::Exception& e) {
             Base::Console().error("Invalid recipe: %s\n", e.what());
             setStatus(Document::RestoreError, true);
+            // Kept, not only printed: a save from here would publish this session's beginning of
+            // the file over the whole of it, and a caller asked to accept that has to be able to
+            // read what it is accepting (Amendment 19 Clause 19.3).
+            _restoreFailure = e.what();
         }
         // The file names the document it came from, and reading it must not rename the document
         // it is being read into or point it at some other file.
@@ -2563,6 +2641,7 @@ void Document::restore(const char* filename,
     catch (const Base::Exception& e) {
         Base::Console().error("Invalid Document.xml: %s\n", e.what());
         setStatus(Document::RestoreError, true);
+        _restoreFailure = e.what();
     }
 
     d->partialLoadObjects.clear();
