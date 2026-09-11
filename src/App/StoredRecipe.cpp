@@ -930,9 +930,31 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
 
     writer.Stream() << writer.ind() << "<Objects>\n";
     writer.incInd();
+    // Blocks this build could not construct are given back in the same durable-id order as the
+    // objects it could, so each one lands exactly where it was and a save that changed nothing
+    // changes nothing (Amendment 19, Amendment 18 Clause 18.1).
+    const auto& kept = doc.unreadObjects();
+    std::size_t nextKept = 0;
+    const auto writeKeptUpTo = [&](const std::string& limit, bool toEnd) {
+        while (nextKept < kept.size() && (toEnd || kept[nextKept][0] < limit)) {
+            std::istringstream block(kept[nextKept][2]);
+            std::string line;
+            while (std::getline(block, line)) {
+                if (line.empty()) {
+                    writer.Stream() << "\n";
+                }
+                else {
+                    writer.Stream() << writer.ind() << line << "\n";
+                }
+            }
+            ++nextKept;
+        }
+    };
     for (const DocumentObject* obj : objects) {
+        writeKeptUpTo(obj->Uid.getValueStr(), false);
         writeObject(writer, *obj, assetDirectory, /*withAppearance=*/true);
     }
+    writeKeptUpTo(std::string {}, true);
     writer.decInd();
     writer.Stream() << writer.ind() << "</Objects>\n";
 
@@ -942,12 +964,76 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
     return writer.getString();
 }
 
+namespace
+{
+
+/// One object's block, lifted from the file exactly as the file states it.
+///
+/// Cruth (Amendment 19): a document may name an object this build cannot construct -- a module
+/// that was not compiled in, an add-on that is absent, a scripted class that is gone. The block is
+/// taken from the source text rather than rebuilt from what the reader understood, because what is
+/// owed here is the statement itself and not this session's reading of it.
+///
+/// Object blocks are siblings and never nest, so the first `</Object>` after the opening tag is
+/// this object's own end. The leading indentation is removed so the block can be given back at
+/// whatever depth the writer is at, and restored on the way out.
+std::string liftObjectBlock(const std::string& source, const std::string& uuid)
+{
+    const std::string opening = "<Object uuid=\"" + uuid + "\"";
+    const std::size_t start = source.find(opening);
+    if (start == std::string::npos) {
+        return {};
+    }
+    const std::string closing = "</Object>";
+    const std::size_t end = source.find(closing, start);
+    if (end == std::string::npos) {
+        return {};
+    }
+
+    std::string block = source.substr(start, end + closing.size() - start);
+
+    // The depth this block was written at, taken from the line it starts on.
+    std::size_t lineStart = source.rfind('\n', start);
+    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
+    const std::string indent = source.substr(lineStart, start - lineStart);
+    if (indent.find_first_not_of(" \t") != std::string::npos) {
+        return block;
+    }
+
+    std::string dedented;
+    dedented.reserve(block.size());
+    std::size_t at = 0;
+    while (at <= block.size()) {
+        std::size_t nl = block.find('\n', at);
+        const std::size_t stop = (nl == std::string::npos) ? block.size() : nl;
+        std::string line = block.substr(at, stop - at);
+        if (!indent.empty() && line.rfind(indent, 0) == 0) {
+            line.erase(0, indent.size());
+        }
+        dedented += line;
+        if (nl == std::string::npos) {
+            break;
+        }
+        dedented += '\n';
+        at = nl + 1;
+    }
+    return dedented;
+}
+
+}  // namespace
+
 void App::restoreStoredRecipe(Document& doc,
                               std::istream& source,
                               bool finish,
                               const std::string& assetDirectory)
 {
-    Base::XMLReader reader("StoredRecipe", source);
+    // Read once and kept, because a block this build cannot construct is given back from the
+    // file's own words rather than from this session's reading of them (Amendment 19).
+    const std::string sourceText((std::istreambuf_iterator<char>(source)),
+                                 std::istreambuf_iterator<char>());
+    std::istringstream parsed(sourceText);
+
+    Base::XMLReader reader("StoredRecipe", parsed);
     if (!reader.isValid()) {
         return;
     }
@@ -981,7 +1067,28 @@ void App::restoreStoredRecipe(Document& doc,
         // The in-document name is restored, not regenerated: expressions and the document's own
         // reporting speak it, so a rebuilt document that renamed everything would be a different
         // document wearing the same values.
-        DocumentObject* obj = doc.addObject(type.c_str(), name.c_str(), /*isNew=*/false);
+        DocumentObject* obj = nullptr;
+        try {
+            obj = doc.addObject(type.c_str(), name.c_str(), /*isNew=*/false);
+        }
+        catch (const Base::Exception&) {
+            // This build has no such type. The object is not dropped and the read does not stop:
+            // dropping it would take every object stated after it as well, and the next save would
+            // write all of that away. The block is kept exactly as stated, and the document reports
+            // itself not whole (Amendment 19).
+            std::string block = liftObjectBlock(sourceText, uuid);
+            if (block.empty()) {
+                throw;
+            }
+            doc.keepUnreadObject(uuid, type, std::move(block));
+            Base::Console().warning(
+                "Stored recipe: '%s' is of type '%s', which this build cannot construct. "
+                "Its content is kept as written and the document is not whole.\n",
+                name.c_str(),
+                type.c_str());
+            reader.readEndElement("Object");
+            continue;
+        }
         if (obj != nullptr) {
             obj->Uid.setValue(uuid);
             restored.push_back(obj);

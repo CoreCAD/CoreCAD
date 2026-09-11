@@ -1184,6 +1184,21 @@ std::string Document::getTransientDirectoryName(const std::string& uuid,
 // Exported functions
 //--------------------------------------------------------------------------
 
+void Document::keepUnreadObject(std::string uuid, std::string type, std::string text)
+{
+    // Kept in durable-id order, which is the order the file states objects in, so a block goes
+    // back exactly where it was rather than being appended -- a save that changed nothing has to
+    // change nothing, or the file stops being diffable (Amendment 18 Clause 18.1).
+    std::array<std::string, 3> kept {std::move(uuid), std::move(type), std::move(text)};
+    const auto at = std::lower_bound(_unreadObjects.begin(),
+                                     _unreadObjects.end(),
+                                     kept,
+                                     [](const auto& left, const auto& right) {
+                                         return left[0] < right[0];
+                                     });
+    _unreadObjects.insert(at, std::move(kept));
+}
+
 void Document::Save(Base::Writer& writer) const
 {
     d->hashers.clear();
@@ -2116,6 +2131,18 @@ bool Document::canWriteRecoverySnapshot() const
 // Save the document under the name it has been opened
 bool Document::save()
 {
+    if (testStatus(Document::RestoreError)) {
+        // Cruth (Amendment 19): this document is what could be read before the read failed, not
+        // what its file says. Writing it back publishes that prefix over the record -- measured
+        // on a truncated file and on one left holding merge markers, both of which open as their
+        // own beginning and are made permanent by an ordinary save. A save is refused rather than
+        // performed, because the file on disk is the only remaining copy of what was lost.
+        FC_ERR("'" << Label.getValue()
+                   << "' did not come back whole and will not be written over its own file. "
+                      "Save a copy under another name to keep this session's work.");
+        return false;
+    }
+
     if (testStatus(Document::PartialDoc)) {
         FC_ERR("Partial loaded document '" << Label.getValue() << "' cannot be saved");
         // TODO We don't make this a fatal error and return 'true' to make it possible to
