@@ -367,7 +367,7 @@ public:
      *
      * @param[in] file: The file name to save the copy to.
      */
-    bool saveCopy(const char* file) const;
+    bool saveCopy(const char* file);
 
     /**
      * @brief Return whether App-side document state allows a recovery write.
@@ -559,6 +559,41 @@ public:
      * up to date while its file states something this session could not produce.
      */
     void blockWhatCouldNotBeHonoured();
+
+    /** What a save from this document would take out of its file, each named (Amendment 19).
+     *
+     * Empty for an ordinary document, including one holding statements it could not honour: those
+     * are kept and given back, so a save loses nothing. It is not empty when this document is a
+     * FRAGMENT -- when the read failed part way and what is in this session is the beginning of a
+     * file that still holds the rest.
+     */
+    std::vector<std::string> whatASaveWouldLose() const;
+
+    /** Write this document, accepting the loss by name.
+     *
+     * The way past the guard, which has to exist: a person may publish a fragment when that is
+     * what they want, and P8 requires a script be able to do what a person can. What is forbidden
+     * is not automation but a write that proceeds on an ASSUMED answer, so the caller states what
+     * it is losing and is refused unless that is what it would lose. Given per write; there is no
+     * way to turn it off.
+     *
+     * @param losing what the caller accepts losing -- must name what whatASaveWouldLose() reports
+     * @param path where to write, or empty to write over the document's own file
+     */
+    bool saveAcceptingLoss(const std::vector<std::string>& losing, const std::string& path);
+
+private:
+    /// True when this document may be written at all: a fragment may not, unless the loss was
+    /// accepted for this write (Amendment 19 Clause 19.3).
+    bool mayWrite();
+
+public:
+
+    /// Why the read of this document failed, when it did: the loss a save would publish.
+    const std::string& restoreFailure() const
+    {
+        return _restoreFailure;
+    }
     //@}
 
     unsigned int getMemSize() const override;
@@ -1606,6 +1641,8 @@ private:
 
     /// uuid, type, and the block's own text -- see keepUnreadObject().
     std::vector<std::array<std::string, 3>> _unreadObjects;
+    std::string _restoreFailure;
+    bool _acceptedLoss {false};
 
     std::string oldLabel;
     std::string myName;

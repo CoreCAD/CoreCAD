@@ -97,6 +97,25 @@ class Document(PropertyContainer):
         """
         ...
 
+    def saveAcceptingLoss(self, losing: List[str], path: str = "", /) -> None:
+        """
+        Write this document, accepting by name what the write will lose.
+
+        A document that did not come back whole -- a truncated file, or one still carrying the
+        markers of an unfinished merge -- is the beginning of its file and nothing more, and an
+        ordinary save of it is refused, to any path. This is the way past that: state what you
+        are losing, as WhatASaveWouldLose reports it, and the write goes through. The acceptance
+        is for this write and no other.
+
+        Pass a path to write elsewhere, or leave it out to write over the document's own file.
+        """
+        ...
+
+    WhatASaveWouldLose: Final[List[str]] = []
+    """What a save from this document would take out of its file, each named. Empty for an
+    ordinary document -- including one holding statements this build could not honour, since
+    those are kept and given back, so saving loses nothing."""
+
     def saveAs(self, path: str, /) -> None:
         """
         Save the document under a new name to disk.

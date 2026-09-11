@@ -123,6 +123,42 @@ std::string DocumentPy::representation() const
     return str.str();
 }
 
+PyObject* DocumentPy::saveAcceptingLoss(PyObject* args)
+{
+    PyObject* losing = nullptr;
+    const char* path = "";
+    if (!PyArg_ParseTuple(args, "O|s", &losing, &path)) {
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        std::vector<std::string> accepted;
+        Py::Sequence items(losing);
+        for (const auto& item : items) {
+            accepted.push_back(Py::String(item).as_std_string("utf-8"));
+        }
+        if (!getDocumentPtr()->saveAcceptingLoss(accepted, path)) {
+            PyErr_SetString(PyExc_ValueError,
+                            "This write was refused: what was accepted is not what it would lose. "
+                            "Read Document.WhatASaveWouldLose and pass that.");
+            return nullptr;
+        }
+    }
+    PY_CATCH;
+
+    Py_Return;
+}
+
+Py::List DocumentPy::getWhatASaveWouldLose() const
+{
+    Py::List losing;
+    for (const std::string& loss : getDocumentPtr()->whatASaveWouldLose()) {
+        losing.append(Py::String(loss));
+    }
+    return losing;
+}
+
 PyObject* DocumentPy::save(PyObject* args)
 {
     if (!PyArg_ParseTuple(args, "")) {
