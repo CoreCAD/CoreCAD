@@ -677,4 +677,105 @@ TEST_F(StoredRecipeTest, aReferencePointedSomewhereRealNoLongerStatesWhatWasKept
         << "the document still reported itself not whole after the gap was filled";
 }
 
+// A file may state a property this build's class does not declare -- an add-on version that had
+// one more, a property renamed since, a type this build does not have. Measured before this: the
+// reader stepped over it in silence and the next save wrote the object without it, so a value a
+// person authored was gone and the file no longer said it had ever been there.
+TEST_F(StoredRecipeTest, aPropertyThisBuildDoesNotDeclareIsKeptAsStated)
+{
+    // Arrange -- an authored value on a property this build will not know about, by striking the
+    // declaration the file carries for it: what a build without that add-on sees.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    ASSERT_NE(holder, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        holder->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type declares = written.find(" dynamic=\"1\"");
+    ASSERT_NE(declares, std::string::npos);
+    written.erase(declares, std::strlen(" dynamic=\"1\""));
+
+    // The words the file states for it, which are what must come back.
+    const std::string::size_type opens = written.find("<Property name=\"Clearance\"");
+    ASSERT_NE(opens, std::string::npos);
+    const std::string::size_type lineStart = written.rfind('\n', opens) + 1;
+    const std::string::size_type closes = written.find("</Property>", opens);
+    ASSERT_NE(closes, std::string::npos);
+    const std::string stated = written.substr(lineStart, written.find('\n', closes) + 1 - lineStart);
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control, and the statement itself is the claim.
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    EXPECT_EQ(std::string(rebuilt->Label.getValue()), std::string("Holder"))
+        << "a property stated beside the unknown one was lost";
+    EXPECT_EQ(rebuilt->getPropertyByName("Clearance"), nullptr)
+        << "a property this build does not declare was declared anyway";
+
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(stated), std::string::npos)
+        << "a save dropped, or reworded, a property the file states that this build has no place "
+           "for";
+
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a property it could not honour";
+
+    // Given back in its own place, so a save that changed nothing changes nothing.
+    EXPECT_EQ(objectsSection(again), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+}
+
+// The severe half of the same case: a property of a TYPE this build does not have -- an add-on's
+// own kind of value. Declaring it fails, and measured before this the failure escaped the reader,
+// so the read stopped at that property and every object stated after it was lost with it.
+TEST_F(StoredRecipeTest, aPropertyOfATypeThisBuildDoesNotHaveKeepsItsNeighboursAndItself)
+{
+    // Arrange -- three objects, the middle one carrying a property whose type is then retyped to
+    // something no build here registers.
+    for (const char* name : {"Alpha", "Beta", "Gamma"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    auto* beta = _source->getObject("Beta");
+    ASSERT_NE(beta, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        beta->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.find("name=\"Clearance\" type=\"App::PropertyLength\"");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(
+        at + std::strlen("name=\"Clearance\" "),
+        std::strlen("type=\"App::PropertyLength\""),
+        "type=\"Absent::PropertyThing\""
+    );
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control. Losing them is the measured failure.
+    EXPECT_NE(_rebuilt->getObject("Alpha"), nullptr)
+        << "an object stated before the unreadable property was lost";
+    EXPECT_NE(_rebuilt->getObject("Gamma"), nullptr)
+        << "an object stated after the unreadable property was lost";
+    ASSERT_NE(_rebuilt->getObject("Beta"), nullptr)
+        << "the object carrying the unreadable property was lost";
+
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a property it could not honour";
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
