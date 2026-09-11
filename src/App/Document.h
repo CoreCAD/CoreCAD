@@ -39,6 +39,7 @@
 #include "ExportInfo.h"
 #include "TransactionDefs.h"
 
+#include <array>
 #include <map>
 #include <vector>
 #include <utility>
@@ -530,6 +531,30 @@ public:
 
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
+
+    /** @name Statements this build could not honour (Amendment 19)
+     *
+     * Cruth: a document's file may state an object this build cannot construct -- a module that
+     * was not compiled in, an add-on that is absent, a scripted class that is gone. Dropping it
+     * is not available: the next save would write the absence over the record and the design
+     * would be gone for everyone, not only for this build. So the block is kept exactly as the
+     * file stated it, given back in its own place on save, and the document says it is not whole
+     * for as long as it holds one.
+     */
+    //@{
+    /// Keep an object's block exactly as its file stated it, because it could not be constructed.
+    void keepUnreadObject(std::string uuid, std::string type, std::string text);
+    /// The kept blocks, in the durable-id order the file states objects in.
+    const std::vector<std::array<std::string, 3>>& unreadObjects() const
+    {
+        return _unreadObjects;
+    }
+    /// True while this document holds a statement it could not honour.
+    bool holdsUnreadContent() const
+    {
+        return !_unreadObjects.empty();
+    }
+    //@}
 
     unsigned int getMemSize() const override;
 
@@ -1573,6 +1598,9 @@ private:
     std::map<int, Transaction*> mRedoMap;
 
     struct DocumentP* d;
+
+    /// uuid, type, and the block's own text -- see keepUnreadObject().
+    std::vector<std::array<std::string, 3>> _unreadObjects;
 
     std::string oldLabel;
     std::string myName;

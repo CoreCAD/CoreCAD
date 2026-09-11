@@ -20,6 +20,7 @@
 #include <App/Services.h>
 #include <Base/ServiceProvider.h>
 
+#include <cstring>
 #include <map>
 #include <sstream>
 #include <string>
@@ -537,6 +538,47 @@ TEST_F(StoredRecipeTest, aSessionWithNoViewLayerNeitherWritesNorReadsAnAppearanc
     EXPECT_NE(_rebuilt->getObject("Block"), nullptr);
     EXPECT_EQ(withoutAppearance.find("<Display>"), std::string::npos);
     EXPECT_EQ(withoutAppearance.find("display=\"1\""), std::string::npos);
+}
+
+// A file may name an object of a type this build cannot construct -- a module not compiled in, an
+// add-on absent, a scripted class gone. Measured before this: the read ABORTED at that object, so
+// the objects stated after it were lost too (three objects in, one out), and an ordinary save then
+// wrote that loss into the file permanently. The object's own content is not this build's to
+// discard, and neither is its neighbours'.
+TEST_F(StoredRecipeTest, anObjectThisBuildCannotConstructKeepsItsNeighboursAndItself)
+{
+    // Arrange -- three objects, then one of them retyped to something no build here registers.
+    for (const char* name : {"Alpha", "Beta", "Gamma"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.find("type=\"App::VarSet\" name=\"Beta\"");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, std::strlen("type=\"App::VarSet\""), "type=\"Absent::Feature\"");
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control. Losing them is the measured failure.
+    EXPECT_NE(_rebuilt->getObject("Alpha"), nullptr)
+        << "an object stated before the unreadable one was lost";
+    EXPECT_NE(_rebuilt->getObject("Gamma"), nullptr)
+        << "an object stated after the unreadable one was lost";
+    EXPECT_EQ(_rebuilt->getObject("Beta"), nullptr)
+        << "a type this build cannot construct was constructed anyway";
+
+    // The document says what it is: holding something its file states that it could not honour.
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a statement it could not honour";
+    ASSERT_EQ(_rebuilt->unreadObjects().size(), 1U);
+
+    // And it gives the statement back exactly, in its own place: writing what was just read
+    // reproduces the file it was read from.
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

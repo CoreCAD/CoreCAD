@@ -1194,6 +1194,11 @@ PyObject* DocumentPy::getBookedTransactionID(PyObject* args)
 }
 
 
+Py::Boolean DocumentPy::getIsWhole() const
+{
+    return {!getDocumentPtr()->holdsUnreadContent()};
+}
+
 Py::Boolean DocumentPy::getRestoring() const
 {
     return {getDocumentPtr()->testStatus(Document::Status::Restoring)};
