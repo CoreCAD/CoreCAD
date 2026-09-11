@@ -549,11 +549,8 @@ public:
     {
         return _unreadObjects;
     }
-    /// True while this document holds a statement it could not honour.
-    bool holdsUnreadContent() const
-    {
-        return !_unreadObjects.empty();
-    }
+    /// True while this document holds a statement its file made and this session could not honour.
+    bool holdsUnreadContent() const;
     //@}
 
     unsigned int getMemSize() const override;

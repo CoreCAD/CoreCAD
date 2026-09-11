@@ -203,11 +203,31 @@ std::string PropertyContainer::missingSource(const char* name) const
     return found == _missingSources.end() ? std::string {} : found->second;
 }
 
-void PropertyContainer::eraseMissingSource(const Property* prop)
+void PropertyContainer::rememberUnresolvedReference(const char* name,
+                                                    std::vector<StatedTarget> stated)
+{
+    if (name == nullptr || stated.empty()) {
+        return;
+    }
+    _unresolvedReferences[name] = std::move(stated);
+}
+
+const std::vector<PropertyContainer::StatedTarget>*
+PropertyContainer::unresolvedReference(const char* name) const
+{
+    if (name == nullptr) {
+        return nullptr;
+    }
+    const auto found = _unresolvedReferences.find(name);
+    return found == _unresolvedReferences.end() ? nullptr : &found->second;
+}
+
+void PropertyContainer::eraseUnhonouredStatement(const Property* prop)
 {
     const char* name = getPropertyName(prop);
     if (name != nullptr) {
         _missingSources.erase(name);
+        _unresolvedReferences.erase(name);
     }
 }
 

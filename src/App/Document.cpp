@@ -1199,6 +1199,19 @@ void Document::keepUnreadObject(std::string uuid, std::string type, std::string 
     _unreadObjects.insert(at, std::move(kept));
 }
 
+bool Document::holdsUnreadContent() const
+{
+    if (!_unreadObjects.empty()) {
+        return true;
+    }
+    // An object whose file stated something this session could not honour -- source material that
+    // would not load, a reference whose target is not here -- is a document that is not whole.
+    // A script that opens documents and saves them has to be able to ask (Amendment 19).
+    return std::any_of(d->objectArray.begin(), d->objectArray.end(), [](const DocumentObject* obj) {
+        return obj != nullptr && obj->holdsUnhonouredStatement();
+    });
+}
+
 void Document::Save(Base::Writer& writer) const
 {
     d->hashers.clear();

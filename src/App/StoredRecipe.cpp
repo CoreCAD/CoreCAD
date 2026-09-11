@@ -548,6 +548,19 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
                 continue;
             }
 
+            // Where this session could not resolve what the file stated, the file says it again.
+            // The live property holds nothing, so deriving the reference from memory would write
+            // "points at nothing" over "points at that object" -- a fact about this session
+            // published as a fact about the design (Amendment 19).
+            if (const auto* kept = owner.unresolvedReference(name.c_str())) {
+                for (const PropertyContainer::StatedTarget& target : *kept) {
+                    entry.bindings.push_back({target.uuid, target.sub, /*external=*/false});
+                }
+                entry.isReference = true;
+                stored.push_back(entry);
+                continue;
+            }
+
             const auto* asObject = dynamic_cast<const DocumentObject*>(&owner);
             const std::optional<std::vector<Binding>> bindings =
                 referenceBindings(*prop, asObject != nullptr ? asObject->getDocument() : nullptr);
@@ -1123,8 +1136,23 @@ void App::restoreStoredRecipe(Document& doc,
     // nothing is the exact failure durable ids exist to prevent.
     for (const auto& [prop, bindings] : pending) {
         if (!restoreReference(*prop, bindings, doc)) {
-            Base::Console().warning("Stored recipe: could not restore the reference '%s'\n",
-                                    prop->getName() != nullptr ? prop->getName() : "");
+            // Kept rather than dropped: the target may be absent because a branch deleted it, and
+            // a save that wrote the emptiness back would erase where the reference pointed -- the
+            // one thing a merge needs to tell a deletion from a reference nobody ever made.
+            PropertyContainer* owner = prop->getContainer();
+            const char* name = prop->getName();
+            if (owner != nullptr && name != nullptr) {
+                std::vector<PropertyContainer::StatedTarget> stated;
+                stated.reserve(bindings.size());
+                for (const Binding& binding : bindings) {
+                    stated.push_back({binding.uuid, binding.sub});
+                }
+                owner->rememberUnresolvedReference(name, std::move(stated));
+            }
+            Base::Console().warning(
+                "Stored recipe: '%s' names an object this document does not hold. Where it "
+                "pointed is kept as written and the document is not whole.\n",
+                name != nullptr ? name : "");
         }
     }
 
