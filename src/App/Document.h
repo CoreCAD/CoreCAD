@@ -551,6 +551,14 @@ public:
     }
     /// True while this document holds a statement its file made and this session could not honour.
     bool holdsUnreadContent() const;
+
+    /** Record every object holding such a statement as a blocked node (Amendment 19).
+     *
+     * A node is blocked by what it holds, not by having been asked to rebuild. An object whose
+     * geometry came back from the rebuild store is never asked, and would otherwise report itself
+     * up to date while its file states something this session could not produce.
+     */
+    void blockWhatCouldNotBeHonoured();
     //@}
 
     unsigned int getMemSize() const override;

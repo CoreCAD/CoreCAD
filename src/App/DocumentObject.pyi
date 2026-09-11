@@ -41,6 +41,13 @@ class DocumentObject(ExtensionContainer):
     State: Final[List[Any]] = []
     """State of the object in the document"""
 
+    UnhonouredStatements: Final[dict] = {}
+    """What this object's file states that this session could not honour, as {property name: why}.
+    Empty when the object holds everything its file says. The content is kept and given back on
+    save, but nothing is built from it: an object holding one of these is blocked, not computed,
+    because a result assembled from the part of the input that happened to be legible is one
+    nobody designed."""
+
     ViewObject: Final[Any] = None
     """
     If the GUI is loaded the associated view provider is returned

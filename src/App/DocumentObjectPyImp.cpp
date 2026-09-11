@@ -219,6 +219,19 @@ PyObject* DocumentObjectPy::enforceRecompute(PyObject* args)
     Py_Return;
 }
 
+Py::Dict DocumentObjectPy::getUnhonouredStatements() const
+{
+    // Cruth (Amendment 19): a script that opens documents and saves them is the tool most able to
+    // do damage at scale, so what could not be honoured is state of the model and not of an
+    // interface. Named, never counted -- a report that will not say what is missing cannot be
+    // acted on.
+    Py::Dict said;
+    for (const auto& [name, why] : getDocumentObjectPtr()->unhonouredStatements()) {
+        said.setItem(name, Py::String(why));
+    }
+    return said;
+}
+
 Py::List DocumentObjectPy::getState() const
 {
     DocumentObject* object = this->getDocumentObjectPtr();

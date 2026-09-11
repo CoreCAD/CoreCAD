@@ -22,7 +22,9 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
 #include <map>
+#include <utility>
 #include <vector>
 #include <string>
 
@@ -228,6 +230,22 @@ void PropertyContainer::rememberStatedProperty(const char* name, std::string wor
         return;
     }
     _statedProperties[name] = std::move(words);
+}
+
+std::vector<std::pair<std::string, std::string>> PropertyContainer::unhonouredStatements() const
+{
+    std::vector<std::pair<std::string, std::string>> said;
+    for (const auto& [name, id] : _missingSources) {
+        said.emplace_back(name, "the source material '" + id + "' named for it was not found");
+    }
+    for (const auto& [name, targets] : _unresolvedReferences) {
+        said.emplace_back(name, "it names an object this document does not hold");
+    }
+    for (const auto& [name, words] : _statedProperties) {
+        said.emplace_back(name, "this build has no property of that name and type");
+    }
+    std::sort(said.begin(), said.end());
+    return said;
 }
 
 void PropertyContainer::eraseUnhonouredStatement(const Property* prop)
