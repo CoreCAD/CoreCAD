@@ -290,10 +290,10 @@ void Property::hasSetValue()
 {
     PropertyCleaner guard(this);
     if (father) {
-        // A value has been given, so any note that this property's source material could not be
-        // loaded is spent -- what follows is the value in front of us, not the one that was
-        // missing.
-        father->forgetMissingSource(this);
+        // A value has been given, so any note that the file's statement could not be honoured --
+        // source material that would not load, a reference whose target was not there -- is
+        // spent. What follows is the value in front of us, not the one that was missing.
+        father->forgetUnhonouredStatement(this);
         if (isNotifyEnabled()) {
             father->onChanged(this);
         }

@@ -581,4 +581,100 @@ TEST_F(StoredRecipeTest, anObjectThisBuildCannotConstructKeepsItsNeighboursAndIt
         << "a document that changed nothing did not write back what it was given";
 }
 
+// A file may state a reference to an object the document does not hold -- the ordinary result of
+// a branch that deleted the target, which is the workflow this format exists for. Measured before
+// this: the link resolved to nothing, and the next save wrote an empty reference over the uuid,
+// so where it pointed was gone and no merge could ever see that anything had been lost.
+TEST_F(StoredRecipeTest, aReferenceWhoseTargetIsAbsentKeepsWhereItPointed)
+{
+    // Arrange -- one object pointing at another.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    auto* target = _source->addObject("App::VarSet", "Target");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_NE(target, nullptr);
+    auto* link = static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "Uses"));
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+    _source->recompute();
+    const std::string targetUuid = target->Uid.getValueStr();
+
+    // ... and the target's block struck out of the file, leaving the reference naming something
+    // this document does not have.
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type names = written.find("uuid=\"" + targetUuid + "\" type=");
+    ASSERT_NE(names, std::string::npos);
+    const std::string::size_type start = written.rfind('\n', names) + 1;
+    const std::string::size_type closes = written.find("</Object>", names);
+    ASSERT_NE(closes, std::string::npos);
+    const std::string::size_type end = written.find('\n', closes) + 1;
+    written.erase(start, end - start);
+    ASSERT_EQ(written.find("name=\"Target\""), std::string::npos);
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the holder is back, and the statement it carries is still where it pointed.
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(targetUuid), std::string::npos)
+        << "a save erased the target a reference named because this document could not resolve it";
+
+    // Said again exactly as it was stated, and in its own place: reading a file and writing it
+    // back changes nothing, which is what lets a merge see a deletion as a deletion.
+    EXPECT_EQ(objectsSection(again), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+
+    // The document says what it is, rather than presenting a reference to nothing as authored.
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a reference it could not resolve";
+}
+
+// The other half of keeping a statement: it is kept only until something supersedes it. A person
+// who points the reference somewhere real has authored a value, and the file must say THAT --
+// otherwise the note that protected their work starts overwriting it.
+TEST_F(StoredRecipeTest, aReferencePointedSomewhereRealNoLongerStatesWhatWasKept)
+{
+    // Arrange -- the same absent target, kept.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    auto* target = _source->addObject("App::VarSet", "Target");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_NE(target, nullptr);
+    auto* link = static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "Uses"));
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+    _source->recompute();
+    const std::string targetUuid = target->Uid.getValueStr();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type names = written.find("uuid=\"" + targetUuid + "\" type=");
+    ASSERT_NE(names, std::string::npos);
+    const std::string::size_type start = written.rfind('\n', names) + 1;
+    const std::string::size_type closes = written.find("</Object>", names);
+    ASSERT_NE(closes, std::string::npos);
+    written.erase(start, written.find('\n', closes) + 1 - start);
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    ASSERT_TRUE(_rebuilt->holdsUnreadContent());
+
+    // Act -- the person points it at an object that is here.
+    auto* replacement = _rebuilt->addObject("App::VarSet", "Replacement");
+    ASSERT_NE(replacement, nullptr);
+    static_cast<PropertyLink*>(rebuilt->getPropertyByName("Uses"))->setValue(replacement);
+
+    // Assert -- the file states what they authored, and no longer states what was kept.
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(replacement->Uid.getValueStr()), std::string::npos)
+        << "a reference a person authored was not written";
+    EXPECT_EQ(again.find(targetUuid), std::string::npos)
+        << "a kept statement outlived the value that superseded it and was written over it";
+    EXPECT_FALSE(_rebuilt->holdsUnreadContent())
+        << "the document still reported itself not whole after the gap was filled";
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

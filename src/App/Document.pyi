@@ -67,10 +67,11 @@ class Document(PropertyContainer):
     """Indicate if the document is restoring"""
 
     IsWhole: Final[bool] = True
-    """False while this document holds something its file states that this build could not
-    honour -- an object of a type it cannot construct, for instance. The content is kept and
-    given back on save, but the document is not everything its file says it is, and anything
-    that opens documents and saves them should ask before it writes."""
+    """False while this document holds something its file states that this session could not
+    honour -- an object of a type this build cannot construct, a reference to an object that is
+    not here, source material that would not load. The content is kept and given back on save,
+    but the document is not everything its file says it is, and anything that opens documents
+    and saves them should ask before it writes."""
 
     Partial: Final[bool] = False
     """Indicate if the document is partially loaded"""

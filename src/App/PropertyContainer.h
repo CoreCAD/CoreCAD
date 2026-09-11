@@ -598,6 +598,17 @@ public:
    */
   virtual void editProperty([[maybe_unused]] const char* propName) {}
 
+  /** One target a stored record stated for a reference property: what it pointed at.
+   *
+   * Held as the durable identity rather than the target's in-document name, because a name is
+   * the document's own bookkeeping and does not survive being merged into another document.
+   */
+  struct StatedTarget
+  {
+      std::string uuid;  ///< the target object's durable identity
+      std::string sub;   ///< the sub-element named within it, empty when the whole object
+  };
+
   /** Remember source material a stored record named and this session could not load.
    *
    * A property holding nothing cannot say why. "The author left it empty" and "the file that
@@ -612,16 +623,40 @@ public:
   /// The id a stored record gave for this property's value when that value could not be loaded.
   std::string missingSource(const char* name) const;
 
-  /** Discharge that note, because the property has been given a value since.
+  /** Remember where a reference pointed, when this session could not resolve the target.
    *
-   * Called wherever a value is set, so the note can only ever outlive a load that nothing has
-   * superseded -- which is what lets the writer treat a remembered name as certain rather than
-   * as a guess about an empty property.
+   * A reference that resolved to nothing holds nothing, and a property holding nothing cannot
+   * say why. "The author pointed this at nothing" and "the object it named is not in this
+   * document" are different facts -- the second is ordinary when a branch deleted the target --
+   * and a save that re-derives the file from what is in memory writes the first one out. Where
+   * it pointed is then gone, and a merge sees a reference nobody ever made rather than a
+   * deletion to reconcile. So the container keeps what the file stated, the writer states it
+   * again, and the reference is honoured the moment the target comes back.
+   *
+   * The whole stated list is kept, never the part that resolved: a reference assembled from the
+   * targets that happened to be present is one nobody authored.
    */
-  void forgetMissingSource(const Property* prop)
+  void rememberUnresolvedReference(const char* name, std::vector<StatedTarget> stated);
+
+  /// Where a stored record said this reference pointed, when this session could not resolve it.
+  const std::vector<StatedTarget>* unresolvedReference(const char* name) const;
+
+  /// True while this container holds any statement its file made and this session could not honour.
+  bool holdsUnhonouredStatement() const
   {
-      if (!_missingSources.empty()) {
-          eraseMissingSource(prop);
+      return !_missingSources.empty() || !_unresolvedReferences.empty();
+  }
+
+  /** Discharge those notes, because the property has been given a value since.
+   *
+   * Called wherever a value is set, so a note can only ever outlive a load that nothing has
+   * superseded -- which is what lets the writer treat a remembered statement as certain rather
+   * than as a guess about an empty property.
+   */
+  void forgetUnhonouredStatement(const Property* prop)
+  {
+      if (!_missingSources.empty() || !_unresolvedReferences.empty()) {
+          eraseUnhonouredStatement(prop);
       }
   }
 
@@ -757,10 +792,11 @@ protected:
   DynamicProperty dynamicProps;
 
 private:
-  void eraseMissingSource(const Property* prop);
+  void eraseUnhonouredStatement(const Property* prop);
 
   std::string _propertyPrefix;
   std::map<std::string, std::string> _missingSources;
+  std::map<std::string, std::vector<StatedTarget>> _unresolvedReferences;
   static PropertyData propertyData;
 };
 
