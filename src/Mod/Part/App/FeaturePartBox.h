@@ -24,7 +24,10 @@
 
 #pragma once
 
+#include <memory>
+
 #include <App/PropertyStandard.h>
+#include <App/PropertyGeo.h>
 
 #include <Mod/Part/PartGlobal.h>
 
@@ -77,10 +80,58 @@ public:
     ) const override;
 
 protected:
+    /** @name Reading a file older than the words this feature uses now
+     *
+     * Cruth: reading a property is the reader's work, and a feature that does it again is a
+     * second reader that drifts from the first -- this one had no error handling, so a value it
+     * could not read ended the object's read where it stood and every size stated after it came
+     * back at its default, silently. What is left here is only what the reader cannot know: which
+     * of this feature's own older words a name in the file means. The reader asks; the feature
+     * answers.
+     */
+    //@{
+    /// A name this feature no longer has: the sizes and positions of the 0.7 and 0.8 releases.
+    void handleChangedPropertyName(
+        Base::XMLReader& reader,
+        const char* TypeName,
+        const char* PropName
+    ) override;
+    /// A name this feature still has, said in a type it no longer uses.
+    void handleChangedPropertyType(
+        Base::XMLReader& reader,
+        const char* TypeName,
+        App::Property* prop
+    ) override;
+    /// The reader's work first; then what those older words add up to.
     void Restore(Base::XMLReader& reader) override;
+    //@}
+
     /// get called by the container when a property has changed
     void onChanged(const App::Property* prop) override;
     //@}
+
+private:
+    /** What an older file stated in words this build no longer uses, gathered as it is read.
+     *
+     * Absent -- and never built -- for an ordinary file. A size or a position only means something
+     * once the whole block has been read, so it is held until then and applied in one place.
+     */
+    struct OlderWords
+    {
+        bool sizes {false};
+        bool positionXyz {false};
+        bool positionAxis {false};
+        App::PropertyDistance length, width, height;
+        App::PropertyDistance x, y, z;
+        App::PropertyVector axis, location;
+    };
+    std::unique_ptr<OlderWords> _olderWords;
+
+    /// The older words being gathered, made on first use.
+    OlderWords& olderWords();
+    /// Restore into `into` only if the file states the type it is -- the check the shared reader
+    /// makes for every other property, kept here because these properties are not the container's.
+    static bool restoreLegacy(Base::XMLReader& reader, const char* TypeName, App::Property& into);
 };
 
 }  // namespace Part

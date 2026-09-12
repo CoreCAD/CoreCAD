@@ -7,6 +7,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <Mod/Part/App/FeaturePartBox.h>
 #include <Base/FileInfo.h>
 #include <Base/Writer.h>
 
@@ -15,17 +16,18 @@
 
 #include <src/App/InitApplication.h>
 
-/** An object whose own read stops part way through loses everything its file says after that.
+/** A value a feature's file states and this session cannot read back is named, and costs only
+ *  itself.
  *
- *  Several feature types read their own properties with no handling of their own -- Part::Box is
- *  one, carrying a hand-written reader for the shapes its properties used to have. A value it
- *  cannot read ends the object's read where it stands, and the properties stated after it come
- *  back at their defaults. Nothing throws out of the load: the document opens, looks ordinary, and
- *  an ordinary save writes those defaults over what the file says (Amendment 19 Clause 19.3).
+ *  Part::Box used to carry a hand-written copy of the shared property reader, with none of its
+ *  handling: one unreadable value ended the object's read where it stood and every property stated
+ *  after it came back at its default, with nothing thrown and nothing said at the moment of a save.
+ *  Found by opening such a file in the real program, not by a test -- a document of App-layer
+ *  objects alone cannot reach that path.
  *
- *  Found by opening such a file in the real program, not by a test: a document of App-layer
- *  objects alone cannot reach this path, because the shared property reader catches what they
- *  raise.
+ *  The second reader is gone. The shared reader loses the one value it cannot read, says so, and
+ *  reads on, and a save from the document is refused until the loss is accepted by name
+ *  (Amendment 19 Clause 19.3).
  */
 class ArchiveObjectLossTest: public ::testing::Test
 {
@@ -61,7 +63,7 @@ protected:
     App::Document* _doc {};
 };
 
-TEST_F(ArchiveObjectLossTest, anObjectWhoseReadStoppedIsNamedAsACostOfSaving)
+TEST_F(ArchiveObjectLossTest, aValueThatWouldNotReadBackIsNamedAndCostsOnlyItself)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".FCStd";
     // The first size will not read back; the second is stated after it, and is reached only if
@@ -97,11 +99,14 @@ TEST_F(ArchiveObjectLossTest, anObjectWhoseReadStoppedIsNamedAsACostOfSaving)
     ASSERT_FALSE(_doc->testStatus(App::Document::RestoreError))
         << "this loss is supposed to be the one that does NOT throw out of the load";
 
+    EXPECT_DOUBLE_EQ(static_cast<Part::Box*>(box)->Width.getValue(), 7.0)
+        << "the size stated after the unreadable one was lost with it";
+
     const std::vector<std::string> losing = _doc->whatASaveWouldLose();
-    ASSERT_FALSE(losing.empty()) << "a save that would drop stated sizes said it would cost "
+    ASSERT_FALSE(losing.empty()) << "a save that would drop a stated size said it would cost "
                                     "nothing";
-    EXPECT_NE(losing.front().find("Box"), std::string::npos)
-        << "the cost did not name the object it belongs to: " << losing.front();
+    EXPECT_NE(losing.front().find("Length"), std::string::npos)
+        << "the cost did not name the value that would be lost: " << losing.front();
     EXPECT_FALSE(_doc->holdsUnreadContent() == false) << "the document called itself whole";
 
     const std::string before = readAll(path);

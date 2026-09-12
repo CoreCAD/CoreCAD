@@ -20,6 +20,7 @@ add_executable(Part_tests_run
         FeatureRevolution.cpp
         FuzzyBoolean.cpp
         Geometry.cpp
+        LegacyBoxWords.cpp
         NeutralRef.cpp
         PartFeature.cpp
         PartFeatures.cpp

@@ -46,6 +46,7 @@ public:
     App::PropertyFloat        MaxWidth;
     App::PropertyBool         OriginCentered;
 
+    /// Only what the file's silence means; the reading itself is the reader's.
     void Restore(Base::XMLReader& reader) override;
     short mustExecute() const override;
     App::DocumentObjectExecReturn *execute() override;
