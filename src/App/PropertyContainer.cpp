@@ -248,6 +248,46 @@ std::vector<std::pair<std::string, std::string>> PropertyContainer::unhonouredSt
     return said;
 }
 
+PropertyContainer::KeptStatement
+PropertyContainer::keptStatementFor(const Property* prop) const
+{
+    KeptStatement kept;
+    const char* name = getPropertyName(prop);
+    if (name == nullptr) {
+        return kept;
+    }
+    if (const auto found = _missingSources.find(name); found != _missingSources.end()) {
+        kept.missingSource = found->second;
+    }
+    if (const auto found = _unresolvedReferences.find(name); found != _unresolvedReferences.end()) {
+        kept.unresolvedTargets = found->second;
+    }
+    if (const auto found = _statedProperties.find(name); found != _statedProperties.end()) {
+        kept.statedWords = found->second;
+    }
+    return kept;
+}
+
+void PropertyContainer::restoreKeptStatement(const Property* prop, const KeptStatement& kept)
+{
+    const char* name = getPropertyName(prop);
+    if (name == nullptr) {
+        return;
+    }
+    // Cleared first, so restoring an empty statement arrives at exactly the state that was
+    // captured. A property's own Paste may or may not discharge the note on the way through.
+    eraseUnhonouredStatement(prop);
+    if (!kept.missingSource.empty()) {
+        _missingSources[name] = kept.missingSource;
+    }
+    if (!kept.unresolvedTargets.empty()) {
+        _unresolvedReferences[name] = kept.unresolvedTargets;
+    }
+    if (!kept.statedWords.empty()) {
+        _statedProperties[name] = kept.statedWords;
+    }
+}
+
 void PropertyContainer::eraseUnhonouredStatement(const Property* prop)
 {
     const char* name = getPropertyName(prop);

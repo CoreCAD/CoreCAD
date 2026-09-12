@@ -254,6 +254,10 @@ protected:
         const Property* propertyOrig = nullptr;
         // for property renaming
         std::string nameOrig;
+        // Cruth (Amendment 19 Clause 19.1): what the container was keeping for this property when
+        // the change was recorded. A statement the file made and this session could not honour is
+        // part of the state undo restores, not a side effect of the value it sat beside.
+        PropertyContainer::KeptStatement kept;
     };
 
     /// A map to maintain the properties of the object.

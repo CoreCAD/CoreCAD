@@ -692,6 +692,65 @@ TEST_F(StoredRecipeTest, aReferencePointedSomewhereRealNoLongerStatesWhatWasKept
         << "the document still reported itself not whole after the gap was filled";
 }
 
+// A kept statement is part of an object's state, so undo restores it (§10.6).
+//
+// Measured before this: an edit discharged the note -- correctly, the person had supplied a value
+// -- and undoing the edit did not bring it back, because every value set discharges the note and
+// undo restores a value by setting it. The document then said it was whole, and the next save wrote
+// the absence over the uuid the file stated. A keystroke and a second keystroke, and another
+// person's deleted-target reference was gone for everyone.
+TEST_F(StoredRecipeTest, undoingAnEditBringsBackTheStatementItDischarged)
+{
+    // Arrange -- a reference to a target this document does not hold, kept.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    auto* target = _source->addObject("App::VarSet", "Target");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_NE(target, nullptr);
+    auto* link = static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "Uses"));
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+    _source->recompute();
+    const std::string targetUuid = target->Uid.getValueStr();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type names = written.find("uuid=\"" + targetUuid + "\" type=");
+    ASSERT_NE(names, std::string::npos);
+    const std::string::size_type start = written.rfind('\n', names) + 1;
+    const std::string::size_type closes = written.find("</Object>", names);
+    ASSERT_NE(closes, std::string::npos);
+    written.erase(start, written.find('\n', closes) + 1 - start);
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    ASSERT_TRUE(_rebuilt->holdsUnreadContent());
+
+    // Act -- the person points it somewhere real, then changes their mind.
+    auto* replacement = _rebuilt->addObject("App::VarSet", "Replacement");
+    ASSERT_NE(replacement, nullptr);
+    _rebuilt->setUndoMode(1);
+    _rebuilt->openTransaction("Point it somewhere real");
+    static_cast<PropertyLink*>(rebuilt->getPropertyByName("Uses"))->setValue(replacement);
+    _rebuilt->commitTransaction();
+    ASSERT_FALSE(_rebuilt->holdsUnreadContent()) << "the edit did not discharge the kept statement";
+
+    _rebuilt->undo();
+
+    // Assert -- the file's own statement is back, and the file states it again.
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "undo reported the document whole while the reference it restored resolves to nothing";
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(targetUuid), std::string::npos)
+        << "undo erased where the reference pointed, and the save wrote the absence over it";
+
+    // And redoing the edit discharges it again: restoring state means arriving at the state that
+    // was captured, in both directions.
+    _rebuilt->redo();
+    EXPECT_FALSE(_rebuilt->holdsUnreadContent())
+        << "redo brought back a statement the value it restored had superseded";
+}
+
 // A file may state a property this build's class does not declare -- an add-on version that had
 // one more, a property renamed since, a type this build does not have. Measured before this: the
 // reader stepped over it in silence and the next save wrote the object without it, so a value a
