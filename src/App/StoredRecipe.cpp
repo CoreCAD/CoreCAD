@@ -30,6 +30,7 @@
 # include <cstring>
 # include <filesystem>
 # include <fstream>
+# include <functional>
 # include <iterator>
 # include <limits>
 # include <map>
@@ -806,6 +807,7 @@ void refuse(const char* expected, const Base::XMLReader& reader)
 }
 
 std::string liftObjectWords(const std::string& source, const std::string& uuid);
+std::string liftDocumentWords(const std::string& source);
 
 /// One object's appearance block, exactly as the file states it, indentation and all.
 ///
@@ -900,23 +902,24 @@ void readProperties(Base::XMLReader& reader,
                     PropertyContainer& owner,
                     std::vector<PendingReference>& pending,
                     const std::string& assetDirectory,
-                    const std::string& sourceText,
-                    const std::string& objectUuid)
+                    const std::function<std::string()>& ownWords)
 {
-    // The object's own words, lifted only if something here cannot be honoured -- which is almost
-    // never, and scanning the whole file for every object read would be a cost paid on every load.
-    std::string objectWords;
+    // This container's own words, lifted only if something here cannot be honoured -- which is
+    // almost never, and scanning the whole file for every container read would be a cost paid on
+    // every load. Each container is given a lift of its OWN block and no more: a name inside an
+    // appearance may also name one of the object's own properties, and keeping the wrong one of
+    // the two would be worse than losing it.
+    std::string containerWords;
     bool lifted = false;
     const auto wordsFor = [&](const std::string& name) {
         if (!lifted) {
             // The file's words as written, indentation and all -- not the dedented form a kept
             // object is stored in, because a property block is given back at the depth it was
             // read at.
-            objectWords =
-                sourceText.empty() ? std::string {} : liftObjectWords(sourceText, objectUuid);
+            containerWords = ownWords ? ownWords() : std::string {};
             lifted = true;
         }
-        return objectWords.empty() ? std::string {} : liftPropertyBlock(objectWords, name);
+        return containerWords.empty() ? std::string {} : liftPropertyBlock(containerWords, name);
     };
 
     reader.readElement("Properties");
@@ -1159,6 +1162,26 @@ namespace
 /// this object's own end. The leading indentation is removed so the block can be given back at
 /// whatever depth the writer is at, and restored on the way out.
 /// One object's block, exactly as the file states it, indentation and all.
+/// The document's own block, exactly as the file states it, indentation and all.
+///
+/// The document is not an object and has no durable id to be found by, but it states properties
+/// like any other container and they are kept on the same terms.
+std::string liftDocumentWords(const std::string& source)
+{
+    const std::size_t start = source.find("<Document ");
+    if (start == std::string::npos) {
+        return {};
+    }
+    const std::string closing = "</Document>";
+    const std::size_t end = source.find(closing, start);
+    if (end == std::string::npos) {
+        return {};
+    }
+    std::size_t lineStart = source.rfind('\n', start);
+    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
+    return source.substr(lineStart, end + closing.size() - lineStart);
+}
+
 std::string liftObjectWords(const std::string& source, const std::string& uuid)
 {
     const std::string opening = "<Object uuid=\"" + uuid + "\"";
@@ -1244,10 +1267,13 @@ void App::restoreStoredRecipe(Document& doc,
 
     reader.readElement("Document");
     const std::string documentUid = reader.getAttribute<const char*>("uuid");
-    // The document's own properties are read without its words to fall back on: this reader lifts
-    // a block by the object it belongs to, and the document is not one. A statement here that this
-    // build has no place for is reported and not kept, which is the honest half of the duty.
-    readProperties(reader, doc, pending, assetDirectory, std::string {}, std::string {});
+    // The document states properties of its own -- what it is called, who made it, what it is
+    // for, and anything a tool of someone else's added to it. They are kept on the same terms as
+    // an object's: from the document's own block, so a name here cannot be confused with the same
+    // name on an object.
+    readProperties(reader, doc, pending, assetDirectory, [&] {
+        return liftDocumentWords(sourceText);
+    });
     reader.readEndElement("Document");
     // A document's identity is its own, and the document model refuses to let two open
     // documents share one -- restoring the uuid into a copy of a document that is still open
@@ -1300,7 +1326,9 @@ void App::restoreStoredRecipe(Document& doc,
             // the part three times over on the way in, and it builds it before the references it
             // is built on have been bound.
             obj->setStatus(ObjectStatus::Restore, true);
-            readProperties(reader, *obj, pending, assetDirectory, sourceText, uuid);
+            readProperties(reader, *obj, pending, assetDirectory, [&] {
+                return liftObjectWords(sourceText, uuid);
+            });
             obj->setStatus(ObjectStatus::Restore, false);
 
             if (display) {
@@ -1321,15 +1349,11 @@ void App::restoreStoredRecipe(Document& doc,
                     }
                 }
                 if (appearance != nullptr) {
-                    // Without the object's words: a name inside this block may also name one of
-                    // the object's own properties, and keeping the wrong one of the two would be
-                    // worse than reporting the gap.
-                    readProperties(reader,
-                                   *appearance,
-                                   pending,
-                                   assetDirectory,
-                                   std::string {},
-                                   std::string {});
+                    // From the appearance block's own words: a name in here may also name one of
+                    // the object's own properties, and the two are different statements.
+                    readProperties(reader, *appearance, pending, assetDirectory, [&] {
+                        return liftDisplayBlock(liftObjectWords(sourceText, uuid));
+                    });
                 }
                 reader.readEndElement("Display");
             }

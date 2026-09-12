@@ -1204,6 +1204,12 @@ bool Document::holdsUnreadContent() const
     if (!_unreadObjects.empty()) {
         return true;
     }
+    // The document states properties of its own, and one of those may be a statement this build
+    // had no place for -- a tracking code from a records system, a field an add-on added. It is
+    // kept like any other, and it counts like any other.
+    if (holdsUnhonouredStatement()) {
+        return true;
+    }
     // An object whose file stated something this session could not honour -- source material that
     // would not load, a reference whose target is not here -- is a document that is not whole.
     // A script that opens documents and saves them has to be able to ask (Amendment 19).

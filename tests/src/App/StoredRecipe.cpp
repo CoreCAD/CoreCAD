@@ -747,6 +747,101 @@ TEST_F(StoredRecipeTest, aPropertyThisBuildDoesNotDeclareIsKeptAsStated)
         << "a document that changed nothing did not write back what it was given";
 }
 
+// The same duty one level up: a property the DOCUMENT ITSELF states.
+//
+// Measured before this: the document's own block was read with no words to fall back on, so a
+// statement here was reported and then dropped -- a tracking code from a records system, a field an
+// add-on added -- and the next save wrote the absence over it. The reader now lifts the document's
+// own block for the same reason it lifts an object's.
+TEST_F(StoredRecipeTest, aPropertyTheDocumentItselfStatesIsKeptAsStated)
+{
+    // Arrange -- a file whose document block states a property this build does not declare.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    std::string written = formatStoredRecipe(*_source);
+
+    const std::string stated
+        = "            <Property name=\"ZZTrackingCode\" type=\"App::PropertyString\">\n"
+          "        <String value=\"ACME-PART-0042\"/>\n"
+          "            </Property>\n";
+    const std::string::size_type documentEnds = written.find("</Properties>");
+    ASSERT_NE(documentEnds, std::string::npos);
+    const std::string::size_type lineStart = written.rfind('\n', documentEnds) + 1;
+    written.insert(lineStart, stated);
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control, the statement itself is the claim.
+    EXPECT_NE(_rebuilt->getObject("Block"), nullptr) << "an object stated after the unknown "
+                                                        "document property was lost";
+    EXPECT_EQ(_rebuilt->getPropertyByName("ZZTrackingCode"), nullptr)
+        << "a property this build does not declare was declared anyway";
+
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(stated), std::string::npos)
+        << "a save dropped, or reworded, a property the document's own block states";
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a statement of its own that it could "
+           "not honour";
+}
+
+// And one level across: a property stated inside an appearance block. The block belongs to whoever
+// answers for the object's display, and a name in there may also name one of the object's OWN
+// properties -- so the words are lifted from the appearance block alone. Lifting them from the
+// object would give the appearance back a value the object stated, which nobody authored.
+TEST_F(StoredRecipeTest, aPropertyStatedInsideAnAppearanceIsKeptFromTheAppearancesOwnWords)
+{
+    // Arrange -- an object with a Length of its own, and an appearance that has no such property.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    static_cast<PropertyLength*>(box->getPropertyByName("Length"))->setValue(10);
+    auto* chosen = _source->addObject("App::VarSet", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    StubAppearance::theOne().answerFor("Block", chosen);
+    std::string written = formatStoredRecipe(*_source);
+
+    // The appearance states a Length too, and a different one. This build has no place for it
+    // there, so it is the file's own words that must come back -- not the object's.
+    const std::string stated
+        = "                    <Property name=\"Length\" type=\"App::PropertyLength\">\n"
+          "        <Float value=\"42\"/>\n"
+          "                    </Property>\n";
+    const std::string::size_type display = written.find("<Display>");
+    ASSERT_NE(display, std::string::npos);
+    const std::string::size_type closes = written.find("</Properties>", display);
+    ASSERT_NE(closes, std::string::npos);
+    written.insert(written.rfind('\n', closes) + 1, stated);
+
+    // Act -- read by a session that does have somewhere to put an appearance.
+    auto* returned = _rebuilt->addObject("App::VarSet", "Returned");
+    ASSERT_NE(returned, nullptr);
+    StubAppearance::theOne().answerFor("Block", returned);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the appearance's own words come back, in the appearance's own block.
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    const std::string::size_type displayAgain = again.find("<Display>");
+    ASSERT_NE(displayAgain, std::string::npos);
+    const std::string appearanceBlock
+        = again.substr(displayAgain, again.find("</Display>", displayAgain) - displayAgain);
+    EXPECT_NE(appearanceBlock.find(stated), std::string::npos)
+        << "a save dropped, or reworded, a property stated inside an appearance";
+    EXPECT_EQ(appearanceBlock.find("<Float value=\"10\"/>"), std::string::npos)
+        << "the appearance was given back a value lifted from the object's own words";
+
+    // And the object's own statement is untouched by the one that shares its name.
+    EXPECT_DOUBLE_EQ(
+        static_cast<PropertyLength*>(_rebuilt->getObject("Block")->getPropertyByName("Length"))
+            ->getValue(),
+        10
+    );
+
+    StubAppearance::theOne().answerNothing();
+}
+
 // The severe half of the same case: a property of a TYPE this build does not have -- an add-on's
 // own kind of value. Declaring it fails, and measured before this the failure escaped the reader,
 // so the read stopped at that property and every object stated after it was lost with it.
