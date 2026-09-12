@@ -656,6 +656,37 @@ public:
    */
   void rememberStatedProperty(const char* name, std::string words);
 
+  /** Everything this container kept for one property, so it can be put back exactly as it was.
+   *
+   * Cruth (Amendment 19 Clause 19.1): a kept statement is part of an object's state, and undo
+   * restores state (§10.6). An edit discharges the note, which is right -- but undoing the edit
+   * has to bring it back, or the file's own statement is lost to a keystroke and the next save
+   * writes the absence over it. Measured before this: a reference to an absent target was edited
+   * and undone, and the stated uuid was gone.
+   */
+  struct KeptStatement
+  {
+      std::string missingSource;                      ///< source material named and not found
+      std::vector<StatedTarget> unresolvedTargets;    ///< where a reference said it pointed
+      std::string statedWords;                        ///< a property block kept as written
+
+      /// True where the container was holding something for that property.
+      bool holdsAnything() const
+      {
+          return !missingSource.empty() || !unresolvedTargets.empty() || !statedWords.empty();
+      }
+  };
+
+  /// What this container is keeping for one property, if anything.
+  KeptStatement keptStatementFor(const Property* prop) const;
+
+  /** Put back what was kept for one property, replacing whatever is held for it now.
+   *
+   * Given an empty statement it clears instead: restoring state means arriving at exactly the
+   * state that was captured, whether or not that state held a note.
+   */
+  void restoreKeptStatement(const Property* prop, const KeptStatement& kept);
+
   /// The property blocks kept as stated, by property name -- in name order, as the file has them.
   const std::map<std::string, std::string>& statedProperties() const
   {

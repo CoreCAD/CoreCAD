@@ -373,6 +373,9 @@ void TransactionObject::applyChn(Document& /*Doc*/, TransactionalObject* pcObj, 
             // }
             try {
                 prop->Paste(*data.property);
+                // Restored beside the value, and after it: setting a value discharges a kept
+                // statement, so the note has to be put back once the value is in place.
+                pcObj->restoreKeptStatement(prop, data.kept);
             }
             catch (Base::Exception& e) {
                 e.reportException();
@@ -394,6 +397,7 @@ void TransactionObject::setProperty(const Property* pcProp)
         static_cast<DynamicProperty::PropData&>(data) =
             pcProp->getContainer()->getDynamicPropertyData(pcProp);
         data.propertyOrig = pcProp;
+        data.kept = pcProp->getContainer()->keptStatementFor(pcProp);
         data.property = pcProp->Copy();
         data.propertyType = pcProp->getTypeId();
         data.property->setStatusValue(pcProp->getStatus());
