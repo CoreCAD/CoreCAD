@@ -101,135 +101,122 @@ App::DocumentObjectExecReturn* Box::execute()
  * of Box we had the properties x,y,z and l,h,w which have changed to
  * Location -- as replacement for x,y and z and Length, Height and Width.
  */
+Box::OlderWords& Box::olderWords()
+{
+    if (!_olderWords) {
+        _olderWords = std::make_unique<OlderWords>();
+        // The direction the box was built along before a placement said it.
+        _olderWords->axis.setValue(0.0F, 0.0F, 1.0F);
+    }
+    return *_olderWords;
+}
+
+bool Box::restoreLegacy(Base::XMLReader& reader, const char* TypeName, App::Property& into)
+{
+    // Older files name the type without its module: "PropertyDistance", not "App::PropertyDistance".
+    std::string stated = TypeName;
+    if (stated == "PropertyDistance") {
+        stated = "App::" + stated;
+    }
+    if (into.getTypeId().getName() != stated) {
+        return false;
+    }
+    into.Restore(reader);
+    return true;
+}
+
+void Box::handleChangedPropertyName(Base::XMLReader& reader, const char* TypeName, const char* PropName)
+{
+    // In case this comes from an old document we must use the new properties. Width and height
+    // were the wrong way round when these names were written, and are read back that way.
+    if (strcmp(PropName, "l") == 0) {
+        olderWords().sizes |= restoreLegacy(reader, TypeName, olderWords().length);
+        return;
+    }
+    if (strcmp(PropName, "w") == 0) {  // by mistake w was considered as height
+        olderWords().sizes |= restoreLegacy(reader, TypeName, olderWords().height);
+        return;
+    }
+    if (strcmp(PropName, "h") == 0) {  // by mistake h was considered as width
+        olderWords().sizes |= restoreLegacy(reader, TypeName, olderWords().width);
+        return;
+    }
+    if (strcmp(PropName, "x") == 0) {
+        olderWords().positionXyz |= restoreLegacy(reader, TypeName, olderWords().x);
+        return;
+    }
+    if (strcmp(PropName, "y") == 0) {
+        olderWords().positionXyz |= restoreLegacy(reader, TypeName, olderWords().y);
+        return;
+    }
+    if (strcmp(PropName, "z") == 0) {
+        olderWords().positionXyz |= restoreLegacy(reader, TypeName, olderWords().z);
+        return;
+    }
+    if (strcmp(PropName, "Axis") == 0) {
+        olderWords().positionAxis |= restoreLegacy(reader, TypeName, olderWords().axis);
+        return;
+    }
+    if (strcmp(PropName, "Location") == 0) {
+        olderWords().positionAxis |= restoreLegacy(reader, TypeName, olderWords().location);
+        return;
+    }
+
+    Part::Primitive::handleChangedPropertyName(reader, TypeName, PropName);
+}
+
+void Box::handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop)
+{
+    // The sizes kept their names and changed their type. Read into the older kind and converted
+    // with the rest, so a file that mixes the old names with the new ones arrives the same way.
+    if (strcmp(TypeName, "PropertyDistance") == 0) {
+        if (prop == &this->Length) {
+            olderWords().sizes |= restoreLegacy(reader, TypeName, olderWords().length);
+            return;
+        }
+        if (prop == &this->Height) {
+            olderWords().sizes |= restoreLegacy(reader, TypeName, olderWords().height);
+            return;
+        }
+        if (prop == &this->Width) {
+            olderWords().sizes |= restoreLegacy(reader, TypeName, olderWords().width);
+            return;
+        }
+    }
+
+    Part::Primitive::handleChangedPropertyType(reader, TypeName, prop);
+}
+
 void Box::Restore(Base::XMLReader& reader)
 {
-    reader.readElement("Properties");
-    int Cnt = reader.getAttribute<long>("Count");
-    int transientCount = 0;
-    if (reader.hasAttribute("TransientCount")) {
-        transientCount = reader.getAttribute<unsigned long>("TransientCount");
+    // A read is answered from the file in front of it, never from what an earlier one left here.
+    _olderWords.reset();
+
+    Part::Primitive::Restore(reader);
+
+    if (!_olderWords) {
+        return;
     }
 
-    for (int i = 0; i < transientCount; ++i) {
-        reader.readElement("_Property");
-        App::Property* prop = getPropertyByName(reader.getAttribute<const char*>("name"));
-        if (prop && reader.hasAttribute("status")) {
-            prop->setStatusValue(reader.getAttribute<unsigned long>("status"));
-        }
+    if (_olderWords->sizes) {
+        this->Length.setValue(_olderWords->length.getValue());
+        this->Height.setValue(_olderWords->height.getValue());
+        this->Width.setValue(_olderWords->width.getValue());
     }
 
-    bool location_xyz = false;
-    bool location_axis = false;
-    bool distance_lhw = false;
     Base::Placement plm;
-    App::PropertyDistance x, y, z;
-    App::PropertyDistance l, w, h;
-    App::PropertyVector Axis, Location;
-    Axis.setValue(0.0f, 0.0f, 1.0f);
-    for (int i = 0; i < Cnt; i++) {
-        reader.readElement("Property");
-        const char* PropName = reader.getAttribute<const char*>("name");
-        const char* TypeName = reader.getAttribute<const char*>("type");
-        auto prop = dynamicProps.restore(*this, PropName, TypeName, reader);
-        if (!prop) {
-            prop = getPropertyByName(PropName);
-        }
-
-        std::bitset<32> status;
-        if (reader.hasAttribute("status")) {
-            status = reader.getAttribute<unsigned long>("status");
-            if (prop) {
-                prop->setStatusValue(status.to_ulong());
-            }
-        }
-        if (prop && strcmp(prop->getTypeId().getName(), TypeName) == 0) {
-            if (!prop->testStatus(App::Property::Transient) && !status.test(App::Property::Transient)
-                && !status.test(App::Property::PropTransient)
-                && !(getPropertyType(prop) & App::Prop_Transient)) {
-                prop->Restore(reader);
-            }
-            reader.readEndElement("Property");
-            continue;
-        }
-        if (!prop) {
-            // in case this comes from an old document we must use the new properties
-            if (strcmp(PropName, "l") == 0) {
-                distance_lhw = true;
-                prop = &l;
-            }
-            else if (strcmp(PropName, "w") == 0) {
-                distance_lhw = true;
-                prop = &h;  // by mistake w was considered as height
-            }
-            else if (strcmp(PropName, "h") == 0) {
-                distance_lhw = true;
-                prop = &w;  // by mistake h was considered as width
-            }
-            else if (strcmp(PropName, "x") == 0) {
-                location_xyz = true;
-                prop = &x;
-            }
-            else if (strcmp(PropName, "y") == 0) {
-                location_xyz = true;
-                prop = &y;
-            }
-            else if (strcmp(PropName, "z") == 0) {
-                location_xyz = true;
-                prop = &z;
-            }
-            else if (strcmp(PropName, "Axis") == 0) {
-                location_axis = true;
-                prop = &Axis;
-            }
-            else if (strcmp(PropName, "Location") == 0) {
-                location_axis = true;
-                prop = &Location;
-            }
-        }
-        else if (strcmp(PropName, "Length") == 0 && strcmp(TypeName, "PropertyDistance") == 0) {
-            distance_lhw = true;
-            prop = &l;
-        }
-        else if (strcmp(PropName, "Height") == 0 && strcmp(TypeName, "PropertyDistance") == 0) {
-            distance_lhw = true;
-            prop = &h;
-        }
-        else if (strcmp(PropName, "Width") == 0 && strcmp(TypeName, "PropertyDistance") == 0) {
-            distance_lhw = true;
-            prop = &w;
-        }
-
-        // NOTE: We must also check the type of the current property because a subclass
-        // of PropertyContainer might change the type of a property but not its name.
-        // In this case we would force to read-in a wrong property type and the behaviour
-        // would be undefined.
-        std::string tn = TypeName;
-        if (strcmp(TypeName, "PropertyDistance") == 0) {  // missing prefix App::
-            tn = std::string("App::") + tn;
-        }
-        if (prop && strcmp(prop->getTypeId().getName(), tn.c_str()) == 0) {
-            prop->Restore(reader);
-        }
-
-        reader.readEndElement("Property");
-    }
-
-    if (distance_lhw) {
-        this->Length.setValue(l.getValue());
-        this->Height.setValue(h.getValue());
-        this->Width.setValue(w.getValue());
-    }
-
     // for 0.7 releases or earlier
-    if (location_xyz) {
-        plm.setPosition(Base::Vector3d(x.getValue(), y.getValue(), z.getValue()));
+    if (_olderWords->positionXyz) {
+        plm.setPosition(
+            Base::Vector3d(_olderWords->x.getValue(), _olderWords->y.getValue(), _olderWords->z.getValue())
+        );
         this->Placement.setValue(this->Placement.getValue() * plm);
         this->Shape.setStatus(App::Property::User1, true);  // override the shape's location later on
     }
     // for 0.8 releases
-    else if (location_axis) {
-        Base::Vector3d d = Axis.getValue();
-        Base::Vector3d p = Location.getValue();
+    else if (_olderWords->positionAxis) {
+        Base::Vector3d d = _olderWords->axis.getValue();
+        Base::Vector3d p = _olderWords->location.getValue();
         Base::Rotation rot(Base::Vector3d(0.0, 0.0, 1.0), Base::Vector3d(d.x, d.y, d.z));
         plm.setRotation(rot);
         plm.setPosition(Base::Vector3d(p.x, p.y, p.z));
@@ -237,7 +224,7 @@ void Box::Restore(Base::XMLReader& reader)
         this->Shape.setStatus(App::Property::User1, true);  // override the shape's location later on
     }
 
-    reader.readEndElement("Properties");
+    _olderWords.reset();
 }
 
 void Box::onChanged(const App::Property* prop)
