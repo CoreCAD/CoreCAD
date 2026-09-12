@@ -994,3 +994,82 @@ TEST_F(StoredRecipeTest, anObjectHoldingWhatCouldNotBeHonouredIsNotRecomputed)
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
+
+// A value whose element is well formed and whose content this build cannot turn into a value --
+// a number that is not one, a list whose contents changed shape. The obstacle is different from a
+// property this build has no place for; the duty is the same (Amendment 19 Clause 19.1).
+//
+// Measured before this: one such value and the document did not open AT ALL -- the failure came
+// out of the standard library rather than ours, so nothing on the way up named it, and the opener
+// reported an invalid project file. Every object in the document was lost with it.
+TEST_F(StoredRecipeTest, aValueThisBuildCannotReadKeepsItsNeighboursAndItself)
+{
+    // Arrange -- three objects, the middle one stating a length that is not a number.
+    for (const char* name : {"Alpha", "Beta", "Gamma"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    auto* beta = _source->getObject("Beta");
+    ASSERT_NE(beta, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        beta->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.find("value=\"2.5");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, std::strlen("value=\"2.5"), "value=\"two point five");
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control.
+    EXPECT_NE(_rebuilt->getObject("Alpha"), nullptr)
+        << "an object stated before the unreadable value was lost";
+    EXPECT_NE(_rebuilt->getObject("Gamma"), nullptr)
+        << "an object stated after the unreadable value was lost";
+    ASSERT_NE(_rebuilt->getObject("Beta"), nullptr)
+        << "the object carrying the unreadable value was lost";
+
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a value it could not read";
+    EXPECT_TRUE(_rebuilt->whatASaveWouldLose().empty())
+        << "a statement that is kept and given back is not a cost of saving";
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+}
+
+// The live property does not keep what half a read left in it. What the file states is what the
+// save writes either way; what is at stake here is the value the rest of the session sees.
+TEST_F(StoredRecipeTest, aValueThisBuildCannotReadLeavesNoDebrisInTheProperty)
+{
+    auto* varset = _source->addObject("App::VarSet", "Alpha");
+    ASSERT_NE(varset, nullptr);
+    auto* sizes = static_cast<PropertyFloatList*>(
+        varset->addDynamicProperty("App::PropertyFloatList", "Sizes")
+    );
+    ASSERT_NE(sizes, nullptr);
+    sizes->setValues({1.0, 2.0, 3.0});
+    _source->recompute();
+
+    // The third of three is not a number: a list that reads half way and then cannot go on.
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.rfind("<F v=\"3\"/>");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, std::strlen("<F v=\"3\"/>"), "<F v=\"three\"/>");
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    auto* rebuilt = _rebuilt->getObject("Alpha");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* rebuiltSizes = dynamic_cast<PropertyFloatList*>(rebuilt->getPropertyByName("Sizes"));
+    ASSERT_NE(rebuiltSizes, nullptr);
+    EXPECT_TRUE(rebuiltSizes->getValues().empty())
+        << "the property kept the part of the list that happened to read";
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "the file's own words were not what the save wrote back";
+}
