@@ -1364,6 +1364,31 @@ public:
     /// Returns the Placement property to use if any.
     virtual App::PropertyPlacement* getPlacementProperty() const;
 
+    /** @name The appearance this object's file stated (Amendment 19)
+     *
+     * Cruth: a colour or a transparency a person chose is authored content and lives in the file
+     * of record, but only a session with a display layer has anywhere to put it. A headless one
+     * has nowhere -- and stepping over the block is how an ordinary open-and-save strips every
+     * colour from every part in a directory without a word. So the block is kept exactly as the
+     * file stated it and given back in its own place, unread and unchanged.
+     *
+     * It is kept, never honoured: nothing in this session depends on it, so it blocks nothing
+     * (Clause 19.6) and the document is still whole. What would make the document not whole is
+     * losing it.
+     */
+    //@{
+    /// Keep the appearance block exactly as this object's file stated it.
+    void keepStatedAppearance(std::string words)
+    {
+        _statedAppearance = std::move(words);
+    }
+    /// The kept block, or empty where this session had somewhere to put the appearance.
+    const std::string& statedAppearance() const
+    {
+        return _statedAppearance;
+    }
+    //@}
+
 protected:
     /// Recompute only this object.
     virtual App::DocumentObjectExecReturn* recompute();
@@ -1464,6 +1489,9 @@ private:
 
     // unique identifier (among a document) of this object.
     long _Id {0};
+
+    // the appearance block this object's file stated, kept verbatim -- see keepStatedAppearance().
+    std::string _statedAppearance;
 
 private:
     // Back pointer to all the fathers in a DAG of the document
