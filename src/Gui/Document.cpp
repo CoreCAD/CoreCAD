@@ -1778,6 +1778,11 @@ bool Document::saveAs()
                 QObject::tr("Saving document failed"),
                 QString::fromLatin1(e.what())
             );
+            // Cruth (Amendment 19 Clause 19.3): a write that did not happen is never reported as
+            // one that did. Measured, this returned true after the write was refused, so the
+            // document was marked unmodified, added to the recent files, and the close prompt
+            // accepted that as saved and threw the session's work away.
+            return false;
         }
         return true;
     }
@@ -1883,12 +1888,25 @@ bool Document::saveCopy()
         // save as new file name
         Gui::WaitCursor wc;
         std::string pyfn = Base::Tools::escapeEncodeFilename(fn.toUtf8().constData());
-        Command::doCommand(
-            Command::Doc,
-            "App.getDocument(\"%s\").saveCopy(\"%s\")",
-            DocName,
-            pyfn.c_str()
-        );
+        try {
+            Command::doCommand(
+                Command::Doc,
+                "App.getDocument(\"%s\").saveCopy(\"%s\")",
+                DocName,
+                pyfn.c_str()
+            );
+        }
+        catch (const Base::Exception& e) {
+            // A copy of a fragment is a copy of the beginning of a file, and this path reaches
+            // the same guard as a save (Amendment 19 Clause 19.3). Said here rather than thrown
+            // past the caller, and never reported as a copy that was written.
+            QMessageBox::critical(
+                getMainWindow(),
+                QObject::tr("Saving document failed"),
+                QString::fromLatin1(e.what())
+            );
+            return false;
+        }
 
         return true;
     }

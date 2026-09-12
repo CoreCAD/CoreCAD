@@ -39,6 +39,38 @@
 
 using namespace App;
 
+namespace
+{
+/** Say why a write was refused, in a form the caller can act on.
+ *
+ * Cruth (Amendment 19 Clause 19.3): a write from a document that did not come back whole is
+ * refused, and a refusal a script cannot see is a refusal it cannot act on -- measured, a caller
+ * got None back and no file written, which is indistinguishable from success. P8 requires the
+ * refusal reach the API on the same terms it reaches a person, so the cost is named here along
+ * with the one way past it.
+ *
+ * Returns true when an exception has been set, false where the refusal had some other cause and
+ * the caller should say so itself.
+ */
+bool refuseTheWrite(const App::Document* doc)
+{
+    const std::vector<std::string> losing = doc->whatASaveWouldLose();
+    if (losing.empty()) {
+        return false;
+    }
+
+    std::string why = "This write was refused: '" + std::string(doc->Label.getValue())
+        + "' did not come back whole. It would lose:";
+    for (const std::string& loss : losing) {
+        why += "\n  " + loss;
+    }
+    why += "\nTo write it anyway, accept by name what it loses: "
+           "saveAcceptingLoss(doc.WhatASaveWouldLose, path).";
+    PyErr_SetString(PyExc_RuntimeError, why.c_str());
+    return true;
+}
+}  // namespace
+
 
 PyObject* DocumentPy::addProperty(PyObject* args, PyObject* kwd)
 {
@@ -168,7 +200,9 @@ PyObject* DocumentPy::save(PyObject* args)
     PY_TRY
     {
         if (!getDocumentPtr()->save()) {
-            PyErr_SetString(PyExc_ValueError, "Object attribute 'FileName' is not set");
+            if (!refuseTheWrite(getDocumentPtr())) {
+                PyErr_SetString(PyExc_ValueError, "Object attribute 'FileName' is not set");
+            }
             return nullptr;
         }
     }
@@ -196,7 +230,14 @@ PyObject* DocumentPy::saveAs(PyObject* args)
 
     PY_TRY
     {
-        getDocumentPtr()->saveAs(utf8Name.c_str());
+        if (!getDocumentPtr()->saveAs(utf8Name.c_str())) {
+            if (!refuseTheWrite(getDocumentPtr())) {
+                PyErr_Format(PyExc_IOError,
+                             "The document was not written to '%s'",
+                             utf8Name.c_str());
+            }
+            return nullptr;
+        }
         Py_Return;
     }
     PY_CATCH
@@ -211,7 +252,12 @@ PyObject* DocumentPy::saveCopy(PyObject* args)
 
     PY_TRY
     {
-        getDocumentPtr()->saveCopy(fn);
+        if (!getDocumentPtr()->saveCopy(fn)) {
+            if (!refuseTheWrite(getDocumentPtr())) {
+                PyErr_Format(PyExc_IOError, "No copy was written to '%s'", fn);
+            }
+            return nullptr;
+        }
         Py_Return;
     }
     PY_CATCH
