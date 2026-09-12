@@ -514,10 +514,14 @@ TEST_F(StoredRecipeTest, theChosenAppearanceIsCarriedInTheFile)
     StubAppearance::theOne().answerNothing();
 }
 
-// A session with nowhere to put an appearance steps over the block rather than guessing at a place
-// for it -- and one with nowhere to GET an appearance writes no block at all, which is honest: it
-// chose none.
-TEST_F(StoredRecipeTest, aSessionWithNoViewLayerNeitherWritesNorReadsAnAppearance)
+// A session with nowhere to put an appearance KEEPS the block rather than stepping over it.
+//
+// Measured before this: a headless open-and-save -- the batch script Clause 19.6 names as the actor
+// most able to cause damage at scale -- stripped every colour a person had chosen from every part
+// it touched, silently, and a test asserted that was correct. Nothing in this session depends on an
+// appearance, so the block is kept, not honoured: it blocks nothing and the document is still
+// whole. What would make the document less than its file is losing it.
+TEST_F(StoredRecipeTest, aSessionWithNoViewLayerKeepsTheAppearanceItCannotApply)
 {
     // Arrange -- a file written WITH an appearance.
     auto* box = _source->addObject("Part::Box", "Block");
@@ -532,12 +536,23 @@ TEST_F(StoredRecipeTest, aSessionWithNoViewLayerNeitherWritesNorReadsAnAppearanc
     StubAppearance::theOne().answerNothing();
     std::istringstream text(withAppearance);
     restoreStoredRecipe(*_rebuilt, text);
-    const std::string withoutAppearance = formatStoredRecipe(*_rebuilt);
+    const std::string written = formatStoredRecipe(*_rebuilt);
 
-    // Assert -- the block was stepped over on the way in, and none was invented on the way out.
+    // Assert -- the words the file stated come back, in their own place, byte for byte. Byte
+    // identity is the assertion that matters: a block re-emitted correctly but relocated produces
+    // a diff on a save that changed nothing (Clause 18.1). Compared from <Objects> on, because a
+    // second live copy of a document is minted a fresh identity by the model's own rule, so the
+    // document block is the one part that is meant to differ here.
     EXPECT_NE(_rebuilt->getObject("Block"), nullptr);
-    EXPECT_EQ(withoutAppearance.find("<Display>"), std::string::npos);
-    EXPECT_EQ(withoutAppearance.find("display=\"1\""), std::string::npos);
+    EXPECT_NE(written.find("<Display>"), std::string::npos);
+    EXPECT_NE(written.find("display=\"1\""), std::string::npos);
+    const std::string objects = written.substr(written.find("<Objects>"));
+    const std::string stated = withAppearance.substr(withAppearance.find("<Objects>"));
+    EXPECT_EQ(objects, stated);
+
+    // And it costs the document nothing: nothing in this session depends on an appearance, so no
+    // node is blocked by one and the document does not report itself short of its file.
+    EXPECT_FALSE(_rebuilt->holdsUnreadContent());
 }
 
 // A file may name an object of a type this build cannot construct -- a module not compiled in, an

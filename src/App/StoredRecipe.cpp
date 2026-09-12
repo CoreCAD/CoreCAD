@@ -807,6 +807,33 @@ void refuse(const char* expected, const Base::XMLReader& reader)
 
 std::string liftObjectWords(const std::string& source, const std::string& uuid);
 
+/// One object's appearance block, exactly as the file states it, indentation and all.
+///
+/// Lifted rather than rebuilt for the same reason a property block is: a session with no display
+/// layer never read what is in there, so the only honest source for it is the file's own words.
+std::string liftDisplayBlock(const std::string& objectWords)
+{
+    const std::size_t at = objectWords.find("<Display>");
+    if (at == std::string::npos) {
+        return {};
+    }
+    std::size_t lineStart = objectWords.rfind('\n', at);
+    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
+    if (objectWords.find_first_not_of(" \t", lineStart) != at) {
+        // Something else shares the line. Not a shape this writer produces.
+        return {};
+    }
+    const std::string closing = "</Display>";
+    const std::size_t end = objectWords.find(closing, at);
+    if (end == std::string::npos) {
+        return {};
+    }
+    const std::size_t lineEnd = objectWords.find('\n', end);
+    return objectWords.substr(lineStart,
+                              (lineEnd == std::string::npos ? objectWords.size() : lineEnd + 1)
+                                  - lineStart);
+}
+
 /// One property's block, exactly as the file states it, indentation and all.
 ///
 /// Taken from the file's own words rather than rebuilt from what the reader understood, because a
@@ -1011,11 +1038,17 @@ void writeObject(Base::Writer& writer,
                  bool withAppearance)
 {
     const PropertyContainer* appearance = withAppearance ? appearanceOf(obj) : nullptr;
+    // What the file stated and this session had nowhere to put. Given back exactly as it was
+    // read, and only where nothing live supersedes it: a session that applied the block writes
+    // what it holds, and would say the same thing twice otherwise.
+    const std::string& kept = obj.statedAppearance();
+    const bool keepsAppearance = withAppearance && !kept.empty();
+    const bool statesAppearance = appearance != nullptr || keepsAppearance;
 
     writer.Stream() << writer.ind() << "<Object uuid=\"" << obj.Uid.getValueStr() << "\" type=\""
                     << obj.getTypeId().getName() << "\" name=\"" << obj.getNameInDocument()
                     << "\"";
-    if (appearance != nullptr) {
+    if (statesAppearance) {
         // Marked on the object, so a reader knows whether to expect the block without having to
         // look ahead for it.
         writer.Stream() << " display=\"1\"";
@@ -1029,6 +1062,9 @@ void writeObject(Base::Writer& writer,
         writeProperties(writer, *appearance, assetDirectory);
         writer.decInd();
         writer.Stream() << writer.ind() << "</Display>\n";
+    }
+    else if (keepsAppearance) {
+        writer.Stream() << kept;
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</Object>\n";
@@ -1269,9 +1305,21 @@ void App::restoreStoredRecipe(Document& doc,
 
             if (display) {
                 // The appearance the file carries. A session with nowhere to put it -- a headless
-                // one -- steps over the block rather than guessing at a place for it.
+                // one -- keeps the file's own words rather than guessing at a place for it: an
+                // ordinary open-and-save would otherwise strip every colour a person chose, and
+                // say nothing (Amendment 19 Clause 19.1).
                 reader.readElement("Display");
                 PropertyContainer* appearance = appearanceOf(*obj);
+                if (appearance == nullptr) {
+                    obj->keepStatedAppearance(liftDisplayBlock(liftObjectWords(sourceText, uuid)));
+                    if (obj->statedAppearance().empty()) {
+                        Base::Console().warning(
+                            "Stored recipe: '%s' states an appearance this session has nowhere "
+                            "to put, and its words could not be kept. Saving this document would "
+                            "lose it.\n",
+                            name.c_str());
+                    }
+                }
                 if (appearance != nullptr) {
                     // Without the object's words: a name inside this block may also name one of
                     // the object's own properties, and keeping the wrong one of the two would be
