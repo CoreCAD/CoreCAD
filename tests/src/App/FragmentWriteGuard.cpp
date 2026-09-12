@@ -10,6 +10,7 @@
 #include <Base/FileInfo.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
+#include <Base/Writer.h>
 
 #include <fstream>
 #include <string>
@@ -142,9 +143,102 @@ TEST_F(FragmentWriteGuardTest, aWriteThatNamesWhatItLosesIsAllowedThrough)
     EXPECT_TRUE(doc->saveAcceptingLoss(losing, ""))
         << "a caller that accepted the loss was refused";
     EXPECT_NE(readAll(path), before) << "an accepted write did not happen";
+}
 
-    // Per write: the acceptance does not carry to the next one.
+// The acceptance is given per write, and a write from here still costs what it costs: the file
+// that holds what is missing is untouched by a write that went somewhere else.
+TEST_F(FragmentWriteGuardTest, acceptingAWriteElsewhereDoesNotSettleTheAccountWithTheFile)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    App::Document* doc = openTruncated(path);
+    ASSERT_NE(doc, nullptr);
+
+    const std::string elsewhere = Base::FileInfo::getTempFileName() + ".cpart";
+    ASSERT_TRUE(doc->saveAcceptingLoss(doc->whatASaveWouldLose(), elsewhere));
+
+    EXPECT_FALSE(doc->whatASaveWouldLose().empty())
+        << "a write to another path was treated as having settled what the first file holds";
     EXPECT_FALSE(doc->save()) << "accepting one write turned the guard off";
+}
+
+// The other half of the same rule: a cost that is no longer real is not a cost. Once the accepted
+// write has landed on the very file the loss was measured against, that file holds nothing more
+// than this document does, and going on refusing would be refusing over content that no longer
+// exists anywhere.
+//
+// Measured before this: the guard read a status bit that a read set and nothing ever cleared, so
+// every later save of the document was refused for a loss that had already happened.
+TEST_F(FragmentWriteGuardTest, anAcceptedWriteOverItsOwnFileSettlesTheAccount)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    App::Document* doc = openTruncated(path);
+    ASSERT_NE(doc, nullptr);
+
+    ASSERT_TRUE(doc->saveAcceptingLoss(doc->whatASaveWouldLose(), ""));
+
+    EXPECT_TRUE(doc->whatASaveWouldLose().empty())
+        << "a document still named a cost its own file no longer holds";
+    EXPECT_TRUE(doc->holdsUnreadContent() == false)
+        << "a document that is now exactly its own file still called itself not whole";
+
+    const std::string written = readAll(path);
+    EXPECT_TRUE(doc->save()) << "an ordinary save was refused over a loss already taken";
+    EXPECT_FALSE(readAll(path).empty()) << "the save that was allowed through wrote nothing";
+}
+
+// A fragment is the worst case the amendment describes, and asking whether the document is whole
+// has to answer for it. Measured before this: `IsWhole` was True for a truncated document,
+// because the question was answered from the statements the read KEPT and a fragment keeps
+// nothing -- the content never arrived to be kept.
+TEST_F(FragmentWriteGuardTest, aFragmentDoesNotCallItselfWhole)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    App::Document* doc = openTruncated(path);
+    ASSERT_NE(doc, nullptr);
+
+    EXPECT_TRUE(doc->holdsUnreadContent()) << "a truncated document said it was whole";
+}
+
+// An ordinary document is not gated. The guard exists to stop a quiet loss, not to make a person
+// argue with their own files.
+TEST_F(FragmentWriteGuardTest, anOrdinaryDocumentSavesWithoutBeingAskedAnything)
+{
+    auto& app = App::GetApplication();
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    _doc = app.newDocument(app.getUniqueDocumentName("whole").c_str(), "testUser");
+    _doc->addObject("App::VarSet", "Alpha");
+
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));
+    EXPECT_TRUE(_doc->whatASaveWouldLose().empty()) << "an ordinary document named a cost";
+    EXPECT_TRUE(_doc->save()) << "an ordinary save was refused";
+}
+
+// Reading a file is a fresh account of that file. A document read once as a fragment and then read
+// again from a whole file carries nothing of the first read into the second.
+TEST_F(FragmentWriteGuardTest, readingAgainStartsTheAccountOver)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    App::Document* doc = openTruncated(path);
+    ASSERT_NE(doc, nullptr);
+    ASSERT_FALSE(doc->whatASaveWouldLose().empty());
+
+    // The whole file put back under the same document, and read again.
+    App::Document* whole = App::GetApplication().newDocument(
+        App::GetApplication().getUniqueDocumentName("rebuilt").c_str(),
+        "testUser"
+    );
+    for (const char* name : {"Alpha", "Beta", "Gamma"}) {
+        whole->addObject("App::VarSet", name);
+    }
+    const std::string elsewhere = Base::FileInfo::getTempFileName() + ".cpart";
+    ASSERT_TRUE(whole->saveAs(elsewhere.c_str()));
+    App::GetApplication().closeDocument(whole->getName());
+    writeAll(path, readAll(elsewhere));
+
+    doc->restore();
+    EXPECT_TRUE(doc->whatASaveWouldLose().empty())
+        << "a document read back whole was still charged for an earlier read";
+    EXPECT_TRUE(doc->save()) << "a document read back whole was still refused";
 }
 
 // A refusal a script cannot see is a refusal it cannot act on (P8).
@@ -187,4 +281,167 @@ TEST_F(FragmentWriteGuardTest, aRefusedWriteReachesTheCallerThatAskedForIt)
     }
 
     EXPECT_TRUE(readAll(elsewhere).empty()) << "a refused write left something on disk";
+}
+
+
+/** A read that steps over what it cannot understand loses it just as completely as a read that
+ *  stops, and it does so without raising anything at all.
+ *
+ *  These hold the other half of Clause 19.3: what a write would cost is measured from what the
+ *  read could not bring back, not from a bit set when a read threw. A sealed archive -- what an
+ *  older version or a records system hands over -- is where such a read still happens, and its
+ *  reader has always carried on past a property it could not read and an object it could not
+ *  create.
+ */
+class SilentLossGuardTest: public ::testing::Test
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+
+    void TearDown() override
+    {
+        if (_doc != nullptr) {
+            App::GetApplication().closeDocument(_doc->getName());
+            _doc = nullptr;
+        }
+    }
+
+    /// A sealed archive stating exactly what the test wants a reader to trip over.
+    static void writeArchive(const std::string& path, const std::string& documentXml)
+    {
+        Base::ZipWriter writer(path.c_str());
+        writer.putNextEntry("Document.xml");
+        writer.Stream() << documentXml;
+        writer.writeFiles();
+    }
+
+    static std::string readAll(const std::string& path)
+    {
+        std::ifstream in(path, std::ios::in | std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
+    App::Document* _doc {};
+};
+
+// A property whose value will not read back. The reader says so and carries on, the document opens
+// looking ordinary, and an ordinary save writes the absence of that value over the file.
+//
+// Measured before this: the document reported nothing to lose, called itself whole, and saved.
+TEST_F(SilentLossGuardTest, aPropertyThatWouldNotReadBackIsNamedAsACostOfSaving)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".FCStd";
+    writeArchive(
+        path,
+        "<?xml version='1.0' encoding='utf-8'?>\n"
+        "<Document SchemaVersion=\"4\" ProgramVersion=\"0.21\" FileVersion=\"1\">\n"
+        "  <Properties Count=\"0\">\n"
+        "  </Properties>\n"
+        "  <Objects Count=\"1\">\n"
+        "    <Object type=\"App::VarSet\" name=\"Alpha\" />\n"
+        "  </Objects>\n"
+        "  <ObjectData Count=\"1\">\n"
+        "    <Object name=\"Alpha\">\n"
+        "      <Properties Count=\"1\">\n"
+        "        <Property name=\"Label\" type=\"App::PropertyString\">\n"
+        "          <String/>\n"
+        "        </Property>\n"
+        "      </Properties>\n"
+        "    </Object>\n"
+        "  </ObjectData>\n"
+        "</Document>\n"
+    );
+
+    _doc = App::GetApplication().openDocument(path.c_str());
+    ASSERT_NE(_doc, nullptr);
+    ASSERT_NE(_doc->getObject("Alpha"), nullptr) << "the read stopped instead of carrying on";
+    ASSERT_FALSE(_doc->testStatus(App::Document::RestoreError))
+        << "this loss is supposed to be the one that does NOT throw";
+
+    const std::vector<std::string> losing = _doc->whatASaveWouldLose();
+    ASSERT_FALSE(losing.empty()) << "a save that would drop a stated value said it would cost "
+                                    "nothing";
+    EXPECT_NE(losing.front().find("Label"), std::string::npos)
+        << "the cost did not name what would be lost: " << losing.front();
+    EXPECT_FALSE(_doc->holdsUnreadContent() == false) << "the document called itself whole";
+
+    const std::string before = readAll(path);
+    EXPECT_FALSE(_doc->save()) << "a value stated in the file was written away without a word";
+    EXPECT_EQ(readAll(path), before) << "a refused save changed the file on disk";
+}
+
+// An object of a type this build cannot construct. The archive reader drops it and carries on;
+// everything the file says about it -- and every value it held -- goes with it.
+TEST_F(SilentLossGuardTest, anObjectThisBuildCannotConstructIsNamedAsACostOfSaving)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".FCStd";
+    writeArchive(
+        path,
+        "<?xml version='1.0' encoding='utf-8'?>\n"
+        "<Document SchemaVersion=\"4\" ProgramVersion=\"0.21\" FileVersion=\"1\">\n"
+        "  <Properties Count=\"0\">\n"
+        "  </Properties>\n"
+        "  <Objects Count=\"2\">\n"
+        "    <Object type=\"App::VarSet\" name=\"Alpha\" />\n"
+        "    <Object type=\"NoSuchModule::NoSuchThing\" name=\"Beta\" />\n"
+        "  </Objects>\n"
+        "  <ObjectData Count=\"1\">\n"
+        "    <Object name=\"Alpha\">\n"
+        "      <Properties Count=\"0\">\n"
+        "      </Properties>\n"
+        "    </Object>\n"
+        "  </ObjectData>\n"
+        "</Document>\n"
+    );
+
+    _doc = App::GetApplication().openDocument(path.c_str());
+    ASSERT_NE(_doc, nullptr);
+    EXPECT_EQ(_doc->getObject("Beta"), nullptr) << "this build constructed the unconstructable";
+
+    const std::vector<std::string> losing = _doc->whatASaveWouldLose();
+    ASSERT_FALSE(losing.empty()) << "a save that would drop a whole object said it would cost "
+                                    "nothing";
+    EXPECT_NE(losing.front().find("Beta"), std::string::npos)
+        << "the cost did not name the object that would be lost: " << losing.front();
+
+    const std::string before = readAll(path);
+    EXPECT_FALSE(_doc->save()) << "an object stated in the file was written away without a word";
+    EXPECT_EQ(readAll(path), before) << "a refused save changed the file on disk";
+}
+
+// An archive that reads back entirely is not charged for anything. The guard is keyed to loss, and
+// an ordinary file from an older version loses nothing by being opened and saved.
+TEST_F(SilentLossGuardTest, anArchiveThatReadsBackWholeIsNotCharged)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".FCStd";
+    writeArchive(
+        path,
+        "<?xml version='1.0' encoding='utf-8'?>\n"
+        "<Document SchemaVersion=\"4\" ProgramVersion=\"0.21\" FileVersion=\"1\">\n"
+        "  <Properties Count=\"0\">\n"
+        "  </Properties>\n"
+        "  <Objects Count=\"1\">\n"
+        "    <Object type=\"App::VarSet\" name=\"Alpha\" />\n"
+        "  </Objects>\n"
+        "  <ObjectData Count=\"1\">\n"
+        "    <Object name=\"Alpha\">\n"
+        "      <Properties Count=\"1\">\n"
+        "        <Property name=\"Label\" type=\"App::PropertyString\">\n"
+        "          <String value=\"Alpha\"/>\n"
+        "        </Property>\n"
+        "      </Properties>\n"
+        "    </Object>\n"
+        "  </ObjectData>\n"
+        "</Document>\n"
+    );
+
+    _doc = App::GetApplication().openDocument(path.c_str());
+    ASSERT_NE(_doc, nullptr);
+    EXPECT_TRUE(_doc->whatASaveWouldLose().empty())
+        << "a file that read back whole was charged for saving";
+    EXPECT_TRUE(_doc->save()) << "a file that read back whole was refused";
 }

@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
 #include <map>
 #include <vector>
 #include <iostream>
@@ -698,6 +699,18 @@ bool Base::XMLReader::testStatus(ReaderStatus pos) const
 void Base::XMLReader::setStatus(ReaderStatus pos, bool on)
 {
     StatusBits.set(static_cast<size_t>(pos), on);
+}
+
+void Base::XMLReader::recordUnreadStatement(std::string said)
+{
+    if (said.empty()) {
+        return;
+    }
+    // Said once. A file may state the same thing on many objects, and a cost a person has to read
+    // through repetitions of is a cost they stop reading.
+    if (std::find(UnreadStatements.begin(), UnreadStatements.end(), said) == UnreadStatements.end()) {
+        UnreadStatements.push_back(std::move(said));
+    }
 }
 
 void Base::XMLReader::setPartialRestore(bool on)

@@ -308,6 +308,20 @@ public:
     /// set the status bits
     void setStatus(ReaderStatus pos, bool on);
 
+    /** Name a statement this read could not bring back (Amendment 19).
+     *
+     * Cruth: a read that steps over what it cannot understand leaves a document stating less than
+     * its file does, and the next write publishes that difference over the file. What was stepped
+     * over is named here, so the document it is read into can say what a save would COST rather
+     * than only that something once went wrong.
+     */
+    void recordUnreadStatement(std::string said);
+    /// What this read could not bring back, each named.
+    const std::vector<std::string>& unreadStatements() const
+    {
+        return UnreadStatements;
+    }
+
 protected:
     /// read the next element
     bool read();
@@ -393,6 +407,9 @@ public:
 
 private:
     mutable std::vector<std::string> FailedFiles;
+
+    /// What this read could not bring back -- see recordUnreadStatement().
+    std::vector<std::string> UnreadStatements;
 
     std::bitset<32> StatusBits;
 
