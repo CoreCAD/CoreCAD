@@ -442,6 +442,24 @@ void PropertyContainer::Save (Base::Writer &writer) const
     writer.decInd(); // indentation for 'Properties Count'
 }
 
+namespace
+{
+/// A property the file states and this read could not bring back: said out loud, marked on the
+/// read, and named so a write from this document can say what it would lose (Amendment 19).
+void lostThisProperty(Base::XMLReader& reader,
+                      const std::string& name,
+                      const std::string& type)
+{
+    reader.setPartialRestore(true);
+    reader.clearPartialRestoreProperty();
+    Base::Console().error("Property %s of type %s was subject to a partial restore.\n",
+                          name.c_str(),
+                          type.c_str());
+    reader.recordUnreadStatement("'" + name + "' (" + type + "), which this session could not "
+                                 "read back");
+}
+}  // namespace
+
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {
     reader.clearPartialRestoreProperty();
@@ -511,23 +529,31 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
         catch (const Base::XMLParseException&) {
             throw; // re-throw
         }
+        // Cruth (Amendment 19): every way of failing to read a property ends the same way -- the
+        // value the file states is not in this document, and an ordinary save would write its
+        // absence over the file. Each of these swallowed the failure and carried on, and only the
+        // first of them said so; a document cannot name what a save would cost if the read did
+        // not record it.
         catch (const Base::RestoreError &) {
-            reader.setPartialRestore(true);
             reader.clearPartialRestoreProperty();
-            Base::Console().error("Property %s of type %s was subject to a partial restore.\n",PropName.c_str(),TypeName.c_str());
+            lostThisProperty(reader, PropName, TypeName);
         }
         catch (const Base::Exception &e) {
             Base::Console().error("%s\n", e.what());
+            lostThisProperty(reader, PropName, TypeName);
         }
         catch (const std::exception &e) {
             Base::Console().error("%s\n", e.what());
+            lostThisProperty(reader, PropName, TypeName);
         }
         catch (const char* e) {
             Base::Console().error("%s\n", e);
+            lostThisProperty(reader, PropName, TypeName);
         }
 #ifndef FC_DEBUG
         catch (...) {
             Base::Console().error("PropertyContainer::Restore: Unknown C++ exception thrown\n");
+            lostThisProperty(reader, PropName, TypeName);
         }
 #endif
         reader.readEndElement("Property");

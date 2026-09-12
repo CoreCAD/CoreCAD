@@ -899,6 +899,7 @@ std::string liftPropertyBlock(const std::string& objectWords, const std::string&
 using PendingReference = std::pair<Property*, std::vector<Binding>>;
 
 void readProperties(Base::XMLReader& reader,
+                    Document& doc,
                     PropertyContainer& owner,
                     std::vector<PendingReference>& pending,
                     const std::string& assetDirectory,
@@ -998,6 +999,11 @@ void readProperties(Base::XMLReader& reader,
                     "could not be kept. Saving this document would lose it.\n",
                     name.c_str(),
                     type.c_str());
+                // Warned about AND recorded: what a save would lose has to be answerable at the
+                // moment of the save, and a message printed at load time is gone by then.
+                doc.recordUnkeptStatement("'" + name + "' (" + type
+                                          + "), which this build has no property for and whose "
+                                            "words could not be kept");
             }
             else {
                 owner.rememberStatedProperty(name.c_str(), std::move(words));
@@ -1271,7 +1277,7 @@ void App::restoreStoredRecipe(Document& doc,
     // for, and anything a tool of someone else's added to it. They are kept on the same terms as
     // an object's: from the document's own block, so a name here cannot be confused with the same
     // name on an object.
-    readProperties(reader, doc, pending, assetDirectory, [&] {
+    readProperties(reader, doc, doc, pending, assetDirectory, [&] {
         return liftDocumentWords(sourceText);
     });
     reader.readEndElement("Document");
@@ -1326,7 +1332,7 @@ void App::restoreStoredRecipe(Document& doc,
             // the part three times over on the way in, and it builds it before the references it
             // is built on have been bound.
             obj->setStatus(ObjectStatus::Restore, true);
-            readProperties(reader, *obj, pending, assetDirectory, [&] {
+            readProperties(reader, doc, *obj, pending, assetDirectory, [&] {
                 return liftObjectWords(sourceText, uuid);
             });
             obj->setStatus(ObjectStatus::Restore, false);
@@ -1346,12 +1352,15 @@ void App::restoreStoredRecipe(Document& doc,
                             "to put, and its words could not be kept. Saving this document would "
                             "lose it.\n",
                             name.c_str());
+                        doc.recordUnkeptStatement("the appearance '" + name
+                                                  + "' states, which this session has nowhere to "
+                                                    "put and whose words could not be kept");
                     }
                 }
                 if (appearance != nullptr) {
                     // From the appearance block's own words: a name in here may also name one of
                     // the object's own properties, and the two are different statements.
-                    readProperties(reader, *appearance, pending, assetDirectory, [&] {
+                    readProperties(reader, doc, *appearance, pending, assetDirectory, [&] {
                         return liftDisplayBlock(liftObjectWords(sourceText, uuid));
                     });
                 }

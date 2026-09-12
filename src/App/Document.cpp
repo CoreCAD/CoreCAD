@@ -1204,6 +1204,12 @@ bool Document::holdsUnreadContent() const
     if (!_unreadObjects.empty()) {
         return true;
     }
+    // A fragment is the worst case this asks about, and it holds nothing at all of what is
+    // missing from it: the content never arrived to be kept. Measured -- a truncated document
+    // used to answer that it was whole.
+    if (!_unkeptStatements.empty()) {
+        return true;
+    }
     // The document states properties of its own, and one of those may be a statement this build
     // had no place for -- a tracking code from a records system, a field an add-on added. It is
     // kept like any other, and it counts like any other.
@@ -1218,21 +1224,25 @@ bool Document::holdsUnreadContent() const
     });
 }
 
+void Document::recordUnkeptStatement(std::string said)
+{
+    if (said.empty()) {
+        return;
+    }
+    // Said once, however many times the file states it.
+    if (std::find(_unkeptStatements.begin(), _unkeptStatements.end(), said)
+        == _unkeptStatements.end()) {
+        _unkeptStatements.push_back(std::move(said));
+    }
+}
+
 std::vector<std::string> Document::whatASaveWouldLose() const
 {
-    // Only a fragment loses anything. A document holding statements it could not honour keeps them
-    // and gives them back, so its save costs nothing and is not gated here -- gating it would trap
-    // a person's work to protect content that is not in danger.
-    if (!testStatus(Document::RestoreError)) {
-        return {};
-    }
-
-    std::string said = "everything '" + FileName.getStrValue()
-        + "' states that this session did not read";
-    if (!_restoreFailure.empty()) {
-        said += ": the read failed at " + _restoreFailure;
-    }
-    return {said};
+    // What the read could not bring back and could not keep, and nothing else. A document holding
+    // statements it could not honour keeps them and gives them back, so its save costs nothing and
+    // is not gated here -- gating it would trap a person's work to protect content that is not in
+    // danger.
+    return _unkeptStatements;
 }
 
 bool Document::mayWrite()
@@ -1276,6 +1286,7 @@ bool Document::saveAcceptingLoss(const std::vector<std::string>& losing, const s
     }
 
     // For this write and no other. A standing permission is the formality this clause forbids.
+    const std::string mine = FileName.getStrValue();
     _acceptedLoss = true;
     bool written = false;
     try {
@@ -1286,6 +1297,16 @@ bool Document::saveAcceptingLoss(const std::vector<std::string>& losing, const s
         throw;
     }
     _acceptedLoss = false;
+
+    // The cost was real until this write. Where the write landed on the very file the losses were
+    // measured against, that file no longer holds them and the account is settled: going on to
+    // refuse every later save would be refusing over content that no longer exists anywhere.
+    // Where it landed anywhere else, the file that holds them is still out there and every write
+    // from here still has to be accepted on its own.
+    if (written && !_unkeptAgainst.empty() && (path.empty() ? mine : path) == _unkeptAgainst) {
+        _unkeptStatements.clear();
+        _unkeptAgainst.clear();
+    }
     return written;
 }
 
@@ -1908,6 +1929,12 @@ std::vector<DocumentObject*> Document::readObjects(Base::XMLReader& reader)
         }
         catch (const Base::Exception& e) {
             Base::Console().error("Cannot create object '%s': (%s)\n", name.c_str(), e.what());
+            // Recorded on the read, not on the document: this same path reads objects being
+            // imported from someone else's file, and what that file loses is not what a write
+            // from THIS document would lose. Document::restore() is what takes it over.
+            reader.setPartialRestore(true);
+            reader.recordUnreadStatement("the object '" + name + "' (" + type
+                                         + "), which this session could not create");
         }
     }
     if (!testStatus(Status::Importing)) {
@@ -1918,6 +1945,11 @@ std::vector<DocumentObject*> Document::readObjects(Base::XMLReader& reader)
     setStatus(Document::KeepTrailingDigits, keepDigits);
 
     // read the features itself
+    const auto lostTheRestOf = [&reader](const std::string& name, const Base::Exception& why) {
+        reader.setPartialRestore(true);
+        reader.recordUnreadStatement("everything '" + name + "' states from where its read "
+                                     "stopped: " + why.what());
+    };
     reader.clearPartialRestoreDocumentObject();
     reader.readElement("ObjectData");
     Cnt = static_cast<int>(reader.getAttribute<long>("Count"));
@@ -1934,20 +1966,31 @@ std::vector<DocumentObject*> Document::readObjects(Base::XMLReader& reader)
             }
             // Try to continue only for certain exception types if not handled
             // by the feature type. For all other exception types abort the process.
+            // Cruth (Amendment 19): an object's read that stops part way through takes every
+            // statement its file makes after that point with it, and several types read their own
+            // properties with no handling of their own -- the failure surfaces here or nowhere.
+            // What was not read is named on the READ, which Document::restore() then takes over;
+            // this path also reads objects imported from someone else's file, and what that file
+            // loses is not what a write from THIS document would lose.
             catch (const Base::UnicodeError& e) {
                 e.reportException();
+                lostTheRestOf(name, e);
             }
             catch (const Base::ValueError& e) {
                 e.reportException();
+                lostTheRestOf(name, e);
             }
             catch (const Base::IndexError& e) {
                 e.reportException();
+                lostTheRestOf(name, e);
             }
             catch (const Base::RuntimeError& e) {
                 e.reportException();
+                lostTheRestOf(name, e);
             }
             catch (const Base::XMLAttributeError& e) {
                 e.reportException();
+                lostTheRestOf(name, e);
             }
 
             pObj->setStatus(ObjectStatus::Restore, false);
@@ -2529,6 +2572,13 @@ void Document::restore(const char* filename,
     Base::FlagToggler<> flag(globalIsRestoring, false);
 
     setStatus(Document::PartialDoc, false);
+    // A read is a fresh account of a file. What an earlier read of this document could not bring
+    // back, or kept because it could not honour it, belongs to that read and not to this one.
+    setStatus(Document::PartialRestore, false);
+    setStatus(Document::RestoreError, false);
+    _unkeptStatements.clear();
+    _unkeptAgainst.clear();
+    _unreadObjects.clear();
 
     d->clearRecomputeLog();
     d->objectLabelManager.clear();
@@ -2583,15 +2633,22 @@ void Document::restore(const char* filename,
         catch (const Base::Exception& e) {
             Base::Console().error("Invalid recipe: %s\n", e.what());
             setStatus(Document::RestoreError, true);
-            // Kept, not only printed: a save from here would publish this session's beginning of
+            // Named, not only printed: a save from here would publish this session's beginning of
             // the file over the whole of it, and a caller asked to accept that has to be able to
             // read what it is accepting (Amendment 19 Clause 19.3).
-            _restoreFailure = e.what();
+            recordUnkeptStatement("everything '" + filePath
+                                  + "' states from where the read stopped: " + e.what());
         }
         // The file names the document it came from, and reading it must not rename the document
         // it is being read into or point it at some other file.
         FileName.setValue(filePath.c_str());
         Label.setValue(docLabel.c_str());
+
+        // Whatever this read could not bring back is missing from here and present there. A write
+        // over that same file is what would destroy it; a write anywhere else leaves it standing.
+        if (!_unkeptStatements.empty()) {
+            _unkeptAgainst = FileName.getStrValue();
+        }
 
         // The display state the last session left behind, if the cache still holds it. Its
         // absence is ordinary -- a cache is disposable -- and costs only default colours.
@@ -2647,7 +2704,8 @@ void Document::restore(const char* filename,
     catch (const Base::Exception& e) {
         Base::Console().error("Invalid Document.xml: %s\n", e.what());
         setStatus(Document::RestoreError, true);
-        _restoreFailure = e.what();
+        recordUnkeptStatement("everything '" + std::string(filename)
+                              + "' states from where the read stopped: " + e.what());
     }
 
     d->partialLoadObjects.clear();
@@ -2662,11 +2720,29 @@ void Document::restore(const char* filename,
 
     DocumentP::checkStringHasher(reader);
 
+    // The read said which statements it could not bring back. They are this document's to carry
+    // now: what is in this session is what was read, the file is what was written, and an ordinary
+    // save replaces the second with the first (Amendment 19 Clause 19.3). Asked of the read
+    // itself, not of a status bit -- a bit says that something once went wrong, and the question
+    // at the moment of a write is what that write would take out of the file.
+    for (const std::string& lost : reader.unreadStatements()) {
+        recordUnkeptStatement(lost);
+    }
     if (reader.testStatus(Base::XMLReader::ReaderStatus::PartialRestore)) {
         setStatus(Document::PartialRestore, true);
         Base::Console().error("There were errors while loading the file. Some data might have been "
                               "modified or not recovered at all. Look above for more specific "
                               "information about the objects involved.\n");
+        if (reader.unreadStatements().empty()) {
+            recordUnkeptStatement("content of '" + std::string(filename)
+                                  + "' this session could not read back; the messages above name "
+                                    "what was involved");
+        }
+    }
+
+    // Whatever this read could not bring back is missing from here and present there.
+    if (!_unkeptStatements.empty()) {
+        _unkeptAgainst = FileName.getStrValue();
     }
 
     // Cruth: derive the last-modified date from the file we just read, rather than trusting

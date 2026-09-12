@@ -563,11 +563,22 @@ public:
     /** What a save from this document would take out of its file, each named (Amendment 19).
      *
      * Empty for an ordinary document, including one holding statements it could not honour: those
-     * are kept and given back, so a save loses nothing. It is not empty when this document is a
-     * FRAGMENT -- when the read failed part way and what is in this session is the beginning of a
-     * file that still holds the rest.
+     * are kept and given back, so a save loses nothing.
+     *
+     * It is what the READ recorded that it could not bring back and could not keep -- a file that
+     * ended part way through, a property whose value would not read back, an object dropped by an
+     * older reader. A status bit set when a read THREW cannot answer this: most losses do not
+     * throw, and a load-time flag says what once happened rather than what a write would now cost.
      */
     std::vector<std::string> whatASaveWouldLose() const;
+
+    /** Name content the file states that this session neither honoured nor kept (Amendment 19).
+     *
+     * Called by whoever reads the file, at the point the content is stepped over. Anything
+     * recorded here is what the next write would take out of the file, so it is worded as the
+     * person about to be asked to accept it would need to read it.
+     */
+    void recordUnkeptStatement(std::string said);
 
     /** Write this document, accepting the loss by name.
      *
@@ -588,12 +599,6 @@ private:
     bool mayWrite();
 
 public:
-
-    /// Why the read of this document failed, when it did: the loss a save would publish.
-    const std::string& restoreFailure() const
-    {
-        return _restoreFailure;
-    }
     //@}
 
     unsigned int getMemSize() const override;
@@ -1641,7 +1646,10 @@ private:
 
     /// uuid, type, and the block's own text -- see keepUnreadObject().
     std::vector<std::array<std::string, 3>> _unreadObjects;
-    std::string _restoreFailure;
+    /// What the file states and this session neither honoured nor kept -- recordUnkeptStatement().
+    std::vector<std::string> _unkeptStatements;
+    /// The file those losses were measured against: the one that still holds what is missing here.
+    std::string _unkeptAgainst;
     bool _acceptedLoss {false};
 
     std::string oldLabel;
