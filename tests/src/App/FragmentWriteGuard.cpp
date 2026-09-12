@@ -8,6 +8,8 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/FileInfo.h>
+#include <Base/Exception.h>
+#include <Base/Interpreter.h>
 
 #include <fstream>
 #include <string>
@@ -143,4 +145,46 @@ TEST_F(FragmentWriteGuardTest, aWriteThatNamesWhatItLosesIsAllowedThrough)
 
     // Per write: the acceptance does not carry to the next one.
     EXPECT_FALSE(doc->save()) << "accepting one write turned the guard off";
+}
+
+// A refusal a script cannot see is a refusal it cannot act on (P8).
+//
+// Measured before this: saveAs and saveCopy discarded the refusal and handed the caller None back
+// with no file written -- indistinguishable from success -- and save() named the wrong cause
+// entirely ("Object attribute 'FileName' is not set"). A script that opens a directory of
+// documents and saves them is the tool most able to cause damage at scale, and it has to be able
+// to tell a write that happened from one that did not.
+TEST_F(FragmentWriteGuardTest, aRefusedWriteReachesTheCallerThatAskedForIt)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    App::Document* doc = openTruncated(path);
+    ASSERT_NE(doc, nullptr);
+
+    const std::string name = doc->getName();
+    const std::string elsewhere = Base::FileInfo::getTempFileName() + ".cpart";
+
+    // Each of the three write paths raises, and says what the write would lose.
+    for (const std::string& call :
+         {std::string("save()"), "saveAs(u'" + elsewhere + "')", "saveCopy('" + elsewhere + "')"}) {
+        std::string raised;
+        try {
+            Base::Interpreter().runString(
+                ("import FreeCAD\nFreeCAD.getDocument('" + name + "')." + call + "\n").c_str()
+            );
+        }
+        catch (const Base::Exception& e) {
+            // Raised through the exception factory, which maps a Python RuntimeError onto the
+            // matching C++ type -- so it is caught as what every refusal here is: an exception.
+            raised = e.what();
+        }
+        EXPECT_FALSE(raised.empty()) << "a refused " << call
+                                     << " was reported as a write that "
+                                        "happened";
+        EXPECT_NE(raised.find("did not come back whole"), std::string::npos)
+            << "a refused " << call << " did not say why: " << raised;
+        EXPECT_NE(raised.find("saveAcceptingLoss"), std::string::npos)
+            << "a refused " << call << " did not name the way past the guard: " << raised;
+    }
+
+    EXPECT_TRUE(readAll(elsewhere).empty()) << "a refused write left something on disk";
 }
