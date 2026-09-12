@@ -34,6 +34,7 @@
 # include <iterator>
 # include <limits>
 # include <map>
+# include <memory>
 # include <optional>
 # include <sstream>
 # include <string>
@@ -493,12 +494,24 @@ bool loadAsset(Property& prop, const std::string& directory, const std::string& 
     if (!reader.isValid()) {
         return false;
     }
-    reader.readElement("Value");
-    prop.Restore(reader);
-    reader.readEndElement("Value");
-    // The bulk the element named -- the shape, its mapped element names, its hasher table -- is
-    // asked for by name, exactly as the archive asks the zip for it.
-    reader.readFiles(entry.string());
+    try {
+        reader.readElement("Value");
+        prop.Restore(reader);
+        reader.readEndElement("Value");
+        // The bulk the element named -- the shape, its mapped element names, its hasher table --
+        // is asked for by name, exactly as the archive asks the zip for it.
+        reader.readFiles(entry.string());
+    }
+    catch (const Base::Exception&) {
+        // Material that is here but will not read back is material this session does not have.
+        // Said with the same words as material that is absent, and kept the same way: the name
+        // the file gives it is what the next save writes, so it comes back when the material
+        // does (Amendment 19 Clause 19.1).
+        return false;
+    }
+    catch (const std::exception&) {
+        return false;
+    }
     return true;
 }
 
@@ -898,6 +911,56 @@ std::string liftPropertyBlock(const std::string& objectWords, const std::string&
 /// A reference read from the file, waiting for the objects it points at to exist.
 using PendingReference = std::pair<Property*, std::vector<Binding>>;
 
+/// A value the file states, whose element is well formed and whose content this build cannot turn
+/// into a value. Kept as the file states it, and never half applied (Amendment 19 Clause 19.1).
+void keepUnreadValue(Document& doc,
+                     PropertyContainer& owner,
+                     Property& prop,
+                     const std::string& name,
+                     const std::string& type,
+                     const std::string& why,
+                     std::string words)
+{
+    // Not half applied. A value assembled from the legible part of a statement is one nobody
+    // authored, so what the half-read left behind is cleared to the value a property of this kind
+    // holds before anything is put in it -- this session's choice, deliberately, and cheap because
+    // it is paid only when a value fails. What the file states is what the next save writes, which
+    // is where the duty actually binds.
+    try {
+        std::unique_ptr<Property> fresh(static_cast<Property*>(prop.getTypeId().createInstance()));
+        if (fresh) {
+            if (std::unique_ptr<Property> untouched {fresh->Copy()}) {
+                prop.Paste(*untouched);
+            }
+        }
+    }
+    catch (const Base::Exception&) {
+        // A property that cannot say what it would have been keeps what it has. The kept
+        // statement is what the save emits either way, which is the duty this clause places.
+    }
+
+    if (words.empty()) {
+        Base::Console().warning(
+            "Stored recipe: '%s' (%s) states a value this build could not read (%s), and its "
+            "words could not be kept. Saving this document would lose it.\n",
+            name.c_str(),
+            type.c_str(),
+            why.c_str());
+        doc.recordUnkeptStatement("'" + name + "' (" + type
+                                  + "), a value this build could not read and whose words could "
+                                    "not be kept");
+        return;
+    }
+
+    owner.rememberStatedProperty(name.c_str(), std::move(words));
+    Base::Console().warning(
+        "Stored recipe: '%s' (%s) states a value this build could not read (%s). It is kept as "
+        "written and the document is not whole.\n",
+        name.c_str(),
+        type.c_str(),
+        why.c_str());
+}
+
 void readProperties(Base::XMLReader& reader,
                     Document& doc,
                     PropertyContainer& owner,
@@ -985,7 +1048,25 @@ void readProperties(Base::XMLReader& reader,
                 pending.emplace_back(prop, std::move(bindings));
             }
             else {
-                prop->Restore(reader);
+                try {
+                    prop->Restore(reader);
+                }
+                catch (const Base::XMLParseException&) {
+                    // The file's STRUCTURE is broken here, which is not a value this build cannot
+                    // read: a refusal for that is total and belongs to the reader, not here
+                    // (Amendment 19 Clause 19.2).
+                    throw;
+                }
+                catch (const Base::Exception& e) {
+                    keepUnreadValue(doc, owner, *prop, name, type, e.what(), wordsFor(name));
+                }
+                catch (const std::exception& e) {
+                    // A value that fails in the standard library rather than in ours -- a number
+                    // that is not one reaches `stod`, which throws something no catch of ours
+                    // used to name. Measured: one such value and the document did not open at
+                    // all, not even as its own beginning.
+                    keepUnreadValue(doc, owner, *prop, name, type, e.what(), wordsFor(name));
+                }
             }
         }
         else {
