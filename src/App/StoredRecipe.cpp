@@ -27,6 +27,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <array>
 # include <cstring>
 # include <filesystem>
 # include <fstream>
@@ -1162,7 +1163,9 @@ void writeObject(Base::Writer& writer,
 
 }  // namespace
 
-std::string App::formatStoredRecipe(const Document& doc, const std::string& assetDirectory)
+std::string App::formatStoredRecipe(const Document& doc,
+                                    const std::string& assetDirectory,
+                                    const RecipeScope& scope)
 {
     Base::StringWriter writer;
     // Full precision, set here because it belongs to the WRITER and not to the value: the
@@ -1178,19 +1181,35 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
     // The document's own authored facts -- who wrote it, when it was created, what it is called
     // -- belong to the recipe as much as any object does. The walk that produces the readable
     // view covers objects only, which is why a document's own content had nowhere to go.
-    writer.Stream() << writer.ind() << "<Document uuid=\"" << doc.Uid.getValueStr() << "\">\n";
-    writer.incInd();
-    writeProperties(writer, doc, assetDirectory);
-    writer.decInd();
-    writer.Stream() << writer.ind() << "</Document>\n";
+    //
+    // A rendering that carries objects alone states no block here at all rather than an empty
+    // one: "this rendering says nothing about a document" and "the document states nothing" are
+    // different facts, and only the first one is true of a copy.
+    if (scope.withDocumentProperties) {
+        writer.Stream() << writer.ind() << "<Document uuid=\"" << doc.Uid.getValueStr() << "\">\n";
+        writer.incInd();
+        writeProperties(writer, doc, assetDirectory);
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</Document>\n";
+    }
 
     // Objects in durable-id order. Creation order is a fact about the session that produced the
     // document, not about the design, and letting it set the order in the file is what makes an
     // inserted feature read as a rewritten file.
+    const bool wholeDocument = scope.objects.empty();
     std::vector<const DocumentObject*> objects;
-    for (const DocumentObject* obj : doc.getObjects()) {
-        if (obj != nullptr) {
-            objects.push_back(obj);
+    if (wholeDocument) {
+        for (const DocumentObject* obj : doc.getObjects()) {
+            if (obj != nullptr) {
+                objects.push_back(obj);
+            }
+        }
+    }
+    else {
+        for (const DocumentObject* obj : scope.objects) {
+            if (obj != nullptr) {
+                objects.push_back(obj);
+            }
         }
     }
     std::sort(objects.begin(),
@@ -1204,7 +1223,11 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
     // Blocks this build could not construct are given back in the same durable-id order as the
     // objects it could, so each one lands exactly where it was and a save that changed nothing
     // changes nothing (Amendment 19, Amendment 18 Clause 18.1).
-    const auto& kept = doc.unreadObjects();
+    // A rendering of part of the document carries none of them: a block this build could not
+    // construct is not an object anybody can pick, and putting every one of them into a copy of
+    // two features would state content nobody asked to copy.
+    const std::vector<std::array<std::string, 3>> noneKept;
+    const auto& kept = wholeDocument ? doc.unreadObjects() : noneKept;
     std::size_t nextKept = 0;
     const auto writeKeptUpTo = [&](const std::string& limit, bool toEnd) {
         while (nextKept < kept.size() && (toEnd || kept[nextKept][0] < limit)) {
@@ -1351,24 +1374,38 @@ void App::restoreStoredRecipe(Document& doc,
     std::vector<DocumentObject*> restored;
 
     reader.readElement("Recipe");
+    const int recipe = reader.level();
 
-    reader.readElement("Document");
-    const std::string documentUid = reader.getAttribute<const char*>("uuid");
-    // The document states properties of its own -- what it is called, who made it, what it is
-    // for, and anything a tool of someone else's added to it. They are kept on the same terms as
-    // an object's: from the document's own block, so a name here cannot be confused with the same
-    // name on an object.
-    readProperties(reader, doc, doc, pending, assetDirectory, [&] {
-        return liftDocumentWords(sourceText);
-    });
-    reader.readEndElement("Document");
-    // A document's identity is its own, and the document model refuses to let two open
-    // documents share one -- restoring the uuid into a copy of a document that is still open
-    // mints a fresh one instead. That is the model's rule, not this reader's, and it is right:
-    // the file names the document it came from, and a second live copy is not that document.
-    doc.Uid.setValue(documentUid);
+    // The `<Document>` block is what the file says about the document itself, and a rendering
+    // that carries objects alone states none. Read from whichever element is actually there
+    // rather than from the one a whole-document file would have: demanding it would make a copy
+    // unreadable, and assuming it would read the first object as if it were the document.
+    if (!nextChildOf(reader, recipe)) {
+        refuse("Objects", reader);
+    }
+    if (std::strcmp(reader.localName(), "Document") == 0) {
+        const std::string documentUid = reader.getAttribute<const char*>("uuid");
+        // The document states properties of its own -- what it is called, who made it, what it is
+        // for, and anything a tool of someone else's added to it. They are kept on the same terms
+        // as an object's: from the document's own block, so a name here cannot be confused with
+        // the same name on an object.
+        readProperties(reader, doc, doc, pending, assetDirectory, [&] {
+            return liftDocumentWords(sourceText);
+        });
+        reader.readEndElement("Document");
+        // A document's identity is its own, and the document model refuses to let two open
+        // documents share one -- restoring the uuid into a copy of a document that is still open
+        // mints a fresh one instead. That is the model's rule, not this reader's, and it is right:
+        // the file names the document it came from, and a second live copy is not that document.
+        doc.Uid.setValue(documentUid);
 
-    reader.readElement("Objects");
+        if (!nextChildOf(reader, recipe)) {
+            refuse("Objects", reader);
+        }
+    }
+    if (std::strcmp(reader.localName(), "Objects") != 0) {
+        refuse("Objects", reader);
+    }
     const int objects = reader.level();
     while (nextChildOf(reader, objects)) {
         if (std::strcmp(reader.localName(), "Object") != 0) {

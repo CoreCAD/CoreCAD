@@ -1073,3 +1073,59 @@ TEST_F(StoredRecipeTest, aValueThisBuildCannotReadLeavesNoDebrisInTheProperty)
     EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
         << "the file's own words were not what the save wrote back";
 }
+
+// Slice one of the copy path (Amendment 19 Clause 19.5): the writer that makes the record is the
+// one that makes a copy, so it has to be able to render part of a document. What a copy carries is
+// the objects a person picked -- not the document's own name, licence or identity, which belong to
+// the document they came from.
+TEST_F(StoredRecipeTest, aRenderingOfPartOfADocumentCarriesOnlyTheObjectsChosen)
+{
+    // Arrange
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    auto* other = _source->addObject("Part::Box", "Other");
+    ASSERT_NE(other, nullptr);
+    _source->recompute();
+
+    // Act
+    const std::string written
+        = formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false});
+
+    // Assert
+    EXPECT_NE(written.find("name=\"Chosen\""), std::string::npos)
+        << "the object that was picked is not in what the writer produced";
+    EXPECT_EQ(written.find("name=\"Other\""), std::string::npos)
+        << "an object nobody picked was carried along with it";
+    EXPECT_EQ(written.find("<Document "), std::string::npos)
+        << "a copy states facts about the document it came from";
+}
+
+// The other half of the same slice: a rendering with no document block reads back, and reading it
+// leaves the receiving document's own facts exactly as they were.
+TEST_F(StoredRecipeTest, aRenderingWithNoDocumentBlockLeavesTheReceivingDocumentsOwnFacts)
+{
+    // Arrange
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    static_cast<PropertyLength*>(chosen->getPropertyByName("Length"))->setValue(7.5);
+    _source->Comment.setValue("the document it came from");
+    _source->recompute();
+
+    _rebuilt->Comment.setValue("the document it is going to");
+    const std::string receivingUid = _rebuilt->Uid.getValueStr();
+
+    // Act
+    std::istringstream text(
+        formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false})
+    );
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    DocumentObject* arrived = _rebuilt->getObject("Chosen");
+    ASSERT_NE(arrived, nullptr) << "the object never arrived";
+    EXPECT_DOUBLE_EQ(static_cast<PropertyLength*>(arrived->getPropertyByName("Length"))->getValue(), 7.5);
+    EXPECT_EQ(std::string(_rebuilt->Comment.getValue()), std::string("the document it is going to"))
+        << "the receiving document was overwritten with the sending document's own facts";
+    EXPECT_EQ(_rebuilt->Uid.getValueStr(), receivingUid)
+        << "the receiving document took on the identity of the one the objects came from";
+}
