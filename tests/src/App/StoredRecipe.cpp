@@ -1129,3 +1129,70 @@ TEST_F(StoredRecipeTest, aRenderingWithNoDocumentBlockLeavesTheReceivingDocument
     EXPECT_EQ(_rebuilt->Uid.getValueStr(), receivingUid)
         << "the receiving document took on the identity of the one the objects came from";
 }
+
+// A reference says where it points and can be pointed there again, and the file asks it rather
+// than working out which of a dozen link classes it is. The list-shaped kinds are here because
+// they are the ones a class ladder is most likely to miss: each holds its targets and the parts of
+// them that were picked in a shape of its own.
+TEST_F(StoredRecipeTest, listShapedReferencesComeBackPointingWhereTheyPointed)
+{
+    // Arrange
+    auto* first = _source->addObject("Part::Box", "First");
+    auto* second = _source->addObject("Part::Box", "Second");
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    ASSERT_NE(holder, nullptr);
+
+    auto* list = static_cast<PropertyLinkList*>(
+        holder->addDynamicProperty("App::PropertyLinkList", "Parts")
+    );
+    ASSERT_NE(list, nullptr);
+    list->setValues({first, second});
+
+    auto* subList = static_cast<PropertyLinkSubList*>(
+        holder->addDynamicProperty("App::PropertyLinkSubList", "Faces")
+    );
+    ASSERT_NE(subList, nullptr);
+    subList->setValues({first, second}, {std::string("Face2"), std::string("Face5")});
+
+    auto* xSubList = static_cast<PropertyXLinkSubList*>(
+        holder->addDynamicProperty("App::PropertyXLinkSubList", "Edges")
+    );
+    ASSERT_NE(xSubList, nullptr);
+    xSubList->setValues({first}, {std::string("Edge3")});
+
+    _source->recompute();
+
+    // Act
+    roundTrip();
+
+    // Assert
+    DocumentObject* rebuiltFirst = _rebuilt->getObject("First");
+    DocumentObject* rebuiltSecond = _rebuilt->getObject("Second");
+    DocumentObject* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltFirst, nullptr);
+    ASSERT_NE(rebuiltSecond, nullptr);
+    ASSERT_NE(rebuiltHolder, nullptr);
+
+    auto* returnedList = static_cast<PropertyLinkList*>(rebuiltHolder->getPropertyByName("Parts"));
+    ASSERT_NE(returnedList, nullptr);
+    EXPECT_EQ(returnedList->getValues(), (std::vector<DocumentObject*> {rebuiltFirst, rebuiltSecond}))
+        << "a list of references did not come back pointing where it pointed";
+
+    auto* returnedSubList = static_cast<PropertyLinkSubList*>(
+        rebuiltHolder->getPropertyByName("Faces")
+    );
+    ASSERT_NE(returnedSubList, nullptr);
+    EXPECT_EQ(
+        returnedSubList->getValues(),
+        (std::vector<DocumentObject*> {rebuiltFirst, rebuiltSecond})
+    );
+    EXPECT_EQ(returnedSubList->getSubValues(), (std::vector<std::string> {"Face2", "Face5"}))
+        << "the parts that were picked did not come back beside the objects they were picked on";
+
+    auto* returnedEdges = static_cast<PropertyXLinkSubList*>(rebuiltHolder->getPropertyByName("Edges"));
+    ASSERT_NE(returnedEdges, nullptr);
+    EXPECT_EQ(returnedEdges->getValues(), (std::vector<DocumentObject*> {rebuiltFirst}));
+    EXPECT_EQ(returnedEdges->getSubValues(rebuiltFirst), (std::vector<std::string> {"Edge3"}));
+}

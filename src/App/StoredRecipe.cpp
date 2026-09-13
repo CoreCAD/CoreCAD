@@ -191,101 +191,75 @@ struct StoredProperty
     std::string asset;  ///< the id of the file holding this value, empty when written inline
 };
 
-/// What a reference property points at, or nothing when this form cannot read that kind yet.
+/// What a reference property points at, or nothing when that kind of reference cannot say.
 ///
 /// The archive writes a link as the target's in-document name. A stored recipe may not: a name
 /// is the document's own bookkeeping and changes when a document is merged into another, which
 /// is precisely the positional addressing this direction exists to remove (§10.1). So a link is
 /// read here as durable ids, and written as durable ids.
+///
+/// The property answers for itself. This used to be a ladder of class tests, written out twice --
+/// once here and once to point a reference again -- which is the file knowing what a property IS
+/// instead of asking what it can DO, and which says nothing at all about the one link class
+/// nobody remembered to add to both lists.
 std::optional<std::vector<Binding>> referenceBindings(const Property& prop, const Document* home)
 {
-    const auto bind = [home](const DocumentObject* target, const std::string& sub) {
-        Binding binding {target->Uid.getValueStr(), sub};
+    const auto* link = dynamic_cast<const PropertyLinkBase*>(&prop);
+    if (link == nullptr) {
+        return std::nullopt;
+    }
+    std::vector<PropertyLinkBase::Pointing> pointing;
+    if (!link->statesWhereItPoints(pointing)) {
+        return std::nullopt;
+    }
+
+    std::vector<Binding> bindings;
+    bindings.reserve(pointing.size());
+    for (const PropertyLinkBase::Pointing& one : pointing) {
+        // A link that points at nothing is written as nothing. Recording an empty target would say
+        // "this reference points somewhere I could not name", which is a different fact and one the
+        // reader would rightly refuse to restore.
+        if (one.target == nullptr) {
+            continue;
+        }
+        Binding binding {one.target->Uid.getValueStr(), one.sub};
         // A target in another document is a second question -- which document -- and the link
         // property answers it in its own writing. Marked here so the caller can hand the whole
         // property over rather than saying half of it in this file's words.
-        binding.external = home != nullptr && target->getDocument() != home;
-        return binding;
-    };
-
-    std::vector<Binding> bindings;
-
-    // A link that points at nothing is written as nothing. Recording an empty target would say
-    // "this reference points somewhere I could not name", which is a different fact and one the
-    // reader would rightly refuse to restore.
-    const auto add = [&bindings, &bind](const DocumentObject* target, const std::string& sub) {
-        if (target != nullptr) {
-            bindings.push_back(bind(target, sub));
-        }
-    };
-
-    // Most-derived first: an XLink IS a PropertyLink, and a sub-list link is neither.
-    if (const auto* link = dynamic_cast<const PropertyXLinkSubList*>(&prop)) {
-        for (const DocumentObject* target : link->getValues()) {
-            const std::vector<std::string> subs =
-                link->getSubValues(const_cast<DocumentObject*>(target));
-            if (subs.empty()) {
-                add(target, {});
-            }
-            for (const std::string& sub : subs) {
-                add(target, sub);
-            }
-        }
-        return bindings;
+        binding.external = home != nullptr && one.target->getDocument() != home;
+        bindings.push_back(std::move(binding));
     }
-    if (const auto* link = dynamic_cast<const PropertyXLink*>(&prop)) {
-        const std::vector<std::string>& subs = link->getSubValues();
-        if (subs.empty()) {
-            add(link->getValue(), {});
-        }
-        for (const std::string& sub : subs) {
-            add(link->getValue(), sub);
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLinkSubList*>(&prop)) {
-        const std::vector<DocumentObject*>& targets = link->getValues();
-        const std::vector<std::string>& subs = link->getSubValues();
-        for (std::size_t i = 0; i < targets.size(); ++i) {
-            add(targets[i], i < subs.size() ? subs[i] : std::string());
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLinkSub*>(&prop)) {
-        const std::vector<std::string>& subs = link->getSubValues();
-        if (subs.empty()) {
-            add(link->getValue(), {});
-        }
-        for (const std::string& sub : subs) {
-            add(link->getValue(), sub);
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLinkList*>(&prop)) {
-        for (const DocumentObject* target : link->getValues()) {
-            add(target, {});
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLink*>(&prop)) {
-        add(link->getValue(), {});
-        return bindings;
-    }
-
-    return std::nullopt;
+    return bindings;
 }
 
 /// Point a reference property at objects again, given what the file said it pointed at.
-bool restoreReference(Property& prop, const std::vector<Binding>& bindings, const Document& doc)
+///
+/// `arrived` is what this read brought in, by the durable id the file stated for it. It is asked
+/// first: an object pasted beside the one it was copied from references the copy that arrived with
+/// it, not the original, even while the two still wear the same id.
+bool restoreReference(Property& prop,
+                      const std::vector<Binding>& bindings,
+                      const Document& doc,
+                      const std::map<std::string, DocumentObject*>& arrived)
 {
-    std::vector<DocumentObject*> targets;
-    std::vector<std::string> subs;
+    auto* link = dynamic_cast<PropertyLinkBase*>(&prop);
+    if (link == nullptr) {
+        return false;
+    }
+
+    std::vector<PropertyLinkBase::Pointing> pointing;
+    pointing.reserve(bindings.size());
     for (const Binding& binding : bindings) {
         DocumentObject* target = nullptr;
-        for (DocumentObject* candidate : doc.getObjects()) {
-            if (candidate != nullptr && candidate->Uid.getValueStr() == binding.uuid) {
-                target = candidate;
-                break;
+        if (const auto found = arrived.find(binding.uuid); found != arrived.end()) {
+            target = found->second;
+        }
+        else {
+            for (DocumentObject* candidate : doc.getObjects()) {
+                if (candidate != nullptr && candidate->Uid.getValueStr() == binding.uuid) {
+                    target = candidate;
+                    break;
+                }
             }
         }
         if (target == nullptr) {
@@ -294,59 +268,10 @@ bool restoreReference(Property& prop, const std::vector<Binding>& bindings, cons
             // binding exists to prevent.
             return false;
         }
-        targets.push_back(target);
-        subs.push_back(binding.sub);
+        pointing.push_back({target, binding.sub});
     }
 
-    const bool anySub =
-        std::any_of(subs.begin(), subs.end(), [](const std::string& sub) { return !sub.empty(); });
-
-    if (auto* link = dynamic_cast<PropertyXLinkSubList*>(&prop)) {
-        std::map<DocumentObject*, std::vector<std::string>> picked;
-        for (std::size_t i = 0; i < targets.size(); ++i) {
-            if (!subs[i].empty()) {
-                picked[targets[i]].push_back(subs[i]);
-            }
-            else {
-                picked.emplace(targets[i], std::vector<std::string> {});
-            }
-        }
-        link->setValues(picked);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyXLink*>(&prop)) {
-        std::vector<std::string> picked;
-        std::copy_if(subs.begin(), subs.end(), std::back_inserter(picked), [](const auto& sub) {
-            return !sub.empty();
-        });
-        link->setValue(targets.empty() ? nullptr : targets.front(), picked);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLinkSubList*>(&prop)) {
-        link->setValues(targets, subs);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLinkSub*>(&prop)) {
-        std::vector<std::string> picked;
-        std::copy_if(subs.begin(), subs.end(), std::back_inserter(picked), [](const auto& sub) {
-            return !sub.empty();
-        });
-        link->setValue(targets.empty() ? nullptr : targets.front(), picked);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLinkList*>(&prop)) {
-        link->setValues(targets);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLink*>(&prop)) {
-        if (anySub) {
-            return false;
-        }
-        link->setValue(targets.empty() ? nullptr : targets.front());
-        return true;
-    }
-
-    return false;
+    return link->pointAt(pointing);
 }
 
 bool isReference(const Property& prop)
@@ -1372,6 +1297,10 @@ void App::restoreStoredRecipe(Document& doc,
 
     std::vector<PendingReference> pending;
     std::vector<DocumentObject*> restored;
+    // What this read brought in, by the durable id the file stated for it. A reference is pointed
+    // at these before anything already in the document: an object arriving beside the one it was
+    // copied from must reference the copy, even while the two still wear the same id.
+    std::map<std::string, DocumentObject*> arrived;
 
     reader.readElement("Recipe");
     const int recipe = reader.level();
@@ -1444,6 +1373,7 @@ void App::restoreStoredRecipe(Document& doc,
         if (obj != nullptr) {
             obj->Uid.setValue(uuid);
             restored.push_back(obj);
+            arrived.emplace(uuid, obj);
             // Marked as being restored for the duration, exactly as the archive's own reader does
             // it. Some features rebuild themselves the moment one of their sizes changes, which is
             // right when a person types a number and wrong while a file is being read: it builds
@@ -1495,7 +1425,7 @@ void App::restoreStoredRecipe(Document& doc,
     // in the document is reported rather than passed over: a reference that quietly points at
     // nothing is the exact failure durable ids exist to prevent.
     for (const auto& [prop, bindings] : pending) {
-        if (!restoreReference(*prop, bindings, doc)) {
+        if (!restoreReference(*prop, bindings, doc, arrived)) {
             // Kept rather than dropped: the target may be absent because a branch deleted it, and
             // a save that wrote the emptiness back would erase where the reference pointed -- the
             // one thing a merge needs to tell a deletion from a reference nobody ever made.
