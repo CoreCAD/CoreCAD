@@ -693,7 +693,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_CloseAllWindows" << "Separator" << "Std_Save" << "Std_SaveAs"
           << "Std_SaveCopy" << "Std_SaveAll" << "Std_Revert" << "Separator" << "Std_Import"
           << "Std_Export" << "Std_MergeProjects" << "Std_MergeDocumentVersions"
-          << "Std_ProjectInfo"
+          << "Std_ProjectInfo" << "Std_HeldStatements"
           << "Separator" << "Std_Print" << "Std_PrintPreview" << "Std_PrintPdf"
           << "Separator" << "Std_Quit";
 

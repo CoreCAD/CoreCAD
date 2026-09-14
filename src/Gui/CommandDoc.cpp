@@ -32,6 +32,7 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QTextStream>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -61,6 +62,7 @@
 #include "MainWindow.h"
 #include "Selection.h"
 #include "Dialogs/DlgObjectSelection.h"
+#include "Dialogs/DlgHeldStatements.h"
 #include "Dialogs/DlgProjectInformationImp.h"
 #include "Dialogs/DlgProjectUtility.h"
 #include "GraphvizView.h"
@@ -1078,6 +1080,41 @@ bool StdCmdProjectInfo::isActive()
 }
 
 //===========================================================================
+// Std_HeldStatements
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdHeldStatements)
+
+StdCmdHeldStatements::StdCmdHeldStatements()
+    : Command("Std_HeldStatements")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Statements This Document &Holds...");
+    sToolTipText = QT_TR_NOOP(
+        "Shows what the file states that this build could not honour, and lets you "
+        "discard one"
+    );
+    sWhatsThis = "Std_HeldStatements";
+    sStatusTip = sToolTipText;
+    sPixmap = "document-properties";
+}
+
+void StdCmdHeldStatements::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Dialog::DlgHeldStatements dlg(getActiveGuiDocument()->getDocument(), getMainWindow());
+    dlg.exec();
+}
+
+bool StdCmdHeldStatements::isActive()
+{
+    // Offered whenever there is a document to ask about, held or not: a person has to be able to
+    // find out that the answer is nothing, and a door that appears only once a document is stuck
+    // is a door nobody knows is there.
+    return getActiveGuiDocument() != nullptr;
+}
+
+//===========================================================================
 // Std_ProjectUtil
 //===========================================================================
 
@@ -1472,11 +1509,33 @@ void StdCmdDuplicateSelection::activated(int iMsg)
         App::Document::refuseDuplicationThatCannotBeRewired(sel);
     }
     catch (const Base::Exception& e) {
-        QMessageBox::warning(
-            getMainWindow(),
-            qApp->translate("Std_DuplicateSelection", "Duplicate"),
-            QString::fromUtf8(e.what())
-        );
+        // The refusal tells a person to discard the statement first. Telling someone to perform
+        // an act and leaving them no way to reach it is the half of P8 that was missing here, so
+        // the refusal carries the door to it (Amendment 19 Clause 19.4).
+        App::Document* frozen = nullptr;
+        for (const App::DocumentObject* obj : sel) {
+            if (obj->getDocument() != nullptr && !obj->getDocument()->seesEveryReference()) {
+                frozen = obj->getDocument();
+                break;
+            }
+        }
+        QMessageBox refused(getMainWindow());
+        refused.setIcon(QMessageBox::Warning);
+        refused.setWindowTitle(qApp->translate("Std_DuplicateSelection", "Duplicate"));
+        refused.setText(QString::fromUtf8(e.what()));
+        QPushButton* show = nullptr;
+        if (frozen != nullptr) {
+            show = refused.addButton(
+                qApp->translate("Std_DuplicateSelection", "Statements This Document Holds..."),
+                QMessageBox::ActionRole
+            );
+        }
+        refused.addButton(QMessageBox::Close);
+        refused.exec();
+        if (show != nullptr && refused.clickedButton() == show) {
+            Gui::Dialog::DlgHeldStatements dlg(frozen, getMainWindow());
+            dlg.exec();
+        }
         return;
     }
 
@@ -2527,6 +2586,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdSaveAll());
     rcCmdMgr.addCommand(new StdCmdRevert());
     rcCmdMgr.addCommand(new StdCmdProjectInfo());
+    rcCmdMgr.addCommand(new StdCmdHeldStatements());
     rcCmdMgr.addCommand(new StdCmdProjectUtil());
     rcCmdMgr.addCommand(new StdCmdUndo());
     rcCmdMgr.addCommand(new StdCmdRedo());
