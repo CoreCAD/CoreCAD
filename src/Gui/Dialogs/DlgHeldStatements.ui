@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Gui::Dialog::DlgHeldStatements</class>
+ <widget class="QDialog" name="Gui::Dialog::DlgHeldStatements">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>460</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Statements This Document Holds</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="explanation">
+     <property name="text">
+      <string>Each of these was stated by the file and could not be honoured by this build. Every one is kept exactly as stated and written back unchanged, so nothing is lost by leaving it here.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="consequence">
+     <property name="text">
+      <string>While one is held, this document cannot see every reference to its own objects, so some edits are refused. Discarding one is your decision and no one else's: it is recorded in the document's history and can be undone.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTreeWidget" name="statements">
+     <property name="rootIsDecorated">
+      <bool>false</bool>
+     </property>
+     <property name="uniformRowHeights">
+      <bool>true</bool>
+     </property>
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SingleSelection</enum>
+     </property>
+     <column>
+      <property name="text">
+       <string>Held by</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Statement</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Why it could not be honoured</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="wordsLabel">
+     <property name="text">
+      <string>What the file states:</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="words">
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+     <property name="maximumHeight">
+      <number>120</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Close</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
