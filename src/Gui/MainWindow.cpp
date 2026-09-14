@@ -54,6 +54,8 @@
 #include <QWhatsThis>
 #include <QWindow>
 #include <QPushButton>
+#include <filesystem>
+#include <sstream>
 #include <string>
 
 // CoreCAD build option: controlled via CORECAD_SHOW_SPLASH in cMake/CoreCAD_Options.cmake
@@ -80,10 +82,12 @@ static constexpr bool defaultShowSplash = false;
 #include <App/DocumentObjectGroup.h>
 #include <App/ImagePlane.h>
 #include <App/SafeMode.h>
+#include <App/StoredRecipe.h>
 #include <Base/ConsoleObserver.h>
 #include <Base/Parameter.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
+#include <Base/Uuid.h>
 #include <Base/Interpreter.h>
 #include <Base/Stream.h>
 #include <Base/Tools.h>
@@ -121,7 +125,6 @@ static constexpr bool defaultShowSplash = false;
 #include "WorkbenchManager.h"
 #include "Workbench.h"
 
-#include "MergeDocuments.h"
 #include "ViewProviderExtern.h"
 
 #include "SpaceballEvent.h"
@@ -1678,14 +1681,9 @@ void MainWindow::closeEvent(QCloseEvent* e)
         delete d->assistant;
         d->assistant = nullptr;
 
-        // See createMimeDataFromSelection
-        QVariant prop = this->property("x-documentobject-file");
-        if (!prop.isNull()) {
-            Base::FileInfo fi((const char*)prop.toByteArray());
-            if (fi.exists()) {
-                fi.deleteFile();
-            }
-        }
+        // See createMimeDataFromSelection. The material a copy left waiting outlives the
+        // selection on purpose, so it is this that has to let go of it.
+        discardWaitingMaterial();
 
         if (this->property("QuitOnClosed").isValid()) {
             QApplication::closeAllWindows();
@@ -2221,10 +2219,26 @@ void MainWindow::dragEnterEvent(QDragEnterEvent* e)
     }
 }
 
+// What the clipboard carries: the objects in the record's own form, written by the record's own
+// writer (Amendment 19 Clause 19.5). The "-x" variant says the selection reaches outside its
+// document, which the paste side needs to know before it can accept it.
 static QLatin1String _MimeDocObj("application/x-documentobject");
 static QLatin1String _MimeDocObjX("application/x-documentobject-x");
-static QLatin1String _MimeDocObjFile("application/x-documentobject-file");
-static QLatin1String _MimeDocObjXFile("application/x-documentobject-x-file");
+// Where the material rides. Anything the record names by content rather than stating in full --
+// an imported solid, a mesh -- is written beside the rendering exactly as it sits beside a
+// document on disk, and the clipboard carries the way there.
+static QLatin1String _MimeDocObjMaterial("application/x-documentobject-material");
+
+void MainWindow::discardWaitingMaterial()
+{
+    const QVariant waiting = this->property("x-documentobject-material");
+    if (waiting.isNull()) {
+        return;
+    }
+    std::error_code ignored;
+    std::filesystem::remove_all(std::filesystem::path(waiting.toByteArray().toStdString()), ignored);
+    this->setProperty("x-documentobject-material", QVariant());
+}
 
 QMimeData* MainWindow::createMimeDataFromSelection() const
 {
@@ -2263,54 +2277,67 @@ QMimeData* MainWindow::createMimeDataFromSelection() const
         return nullptr;
     }
 
-    unsigned int memsize = 1000;  // ~ for the meta-information
-    for (const auto& it : sel) {
-        memsize += it->getMemSize();
-    }
-
-    // if less than ~10 MB
-    bool use_buffer = (memsize < 0xA00000);
-    QByteArray res;
-    std::string buffer;
-    if (use_buffer) {
-        try {
-            buffer.reserve(memsize);
-        }
-        catch (const std::bad_alloc&) {
-            use_buffer = false;
-        }
-    }
-
     WaitCursor wc;
-    QString mime;
-    if (use_buffer) {
-        mime = hasXLink ? _MimeDocObjX : _MimeDocObj;
-        Base::StringOStreambuf sbuf(buffer);
-        std::ostream str(&sbuf);
-        // need this instance to call MergeDocuments::Save()
-        App::Document* doc = sel.front()->getDocument();
-        MergeDocuments mimeView(doc);
-        doc->exportObjects(sel, str);
-        res = QByteArray(buffer.data(), static_cast<int>(buffer.size()));
-    }
-    else {
-        mime = hasXLink ? _MimeDocObjXFile : _MimeDocObjFile;
-        static Base::FileInfo fi(App::Application::getTempFileName());
-        Base::ofstream str(fi, std::ios::out | std::ios::binary);
-        // need this instance to call MergeDocuments::Save()
-        App::Document* doc = sel.front()->getDocument();
-        MergeDocuments mimeView(doc);
-        doc->exportObjects(sel, str);
-        str.close();
-        res = fi.filePath().c_str();
 
-        // store the path name as a custom property and
-        // delete this file when closing the application
-        const_cast<MainWindow*>(this)->setProperty("x-documentobject-file", res);
+    // The objects go on the clipboard in the record's own form, made by the writer that makes the
+    // record (Amendment 19 Clause 19.5). They used to go through a writer of their own -- the
+    // legacy archive, each property saying itself -- which knows nothing of a statement the record
+    // is keeping on a property's behalf, so a pasted object asserted as authored what the original
+    // only failed to honour.
+    //
+    // The rendering itself is small whatever is selected, because anything the record cannot state
+    // in full is named by its content and written beside it. So the text always rides on the
+    // clipboard as bytes, and only the material needs a place to wait -- which is what the earlier
+    // ten-megabyte threshold was really working around, using the size of the objects in memory as
+    // a stand-in for how much of them a file would have to hold.
+    const std::filesystem::path envelope = std::filesystem::path(Base::FileInfo::getTempPath())
+        / ("clipboard-" + Base::Uuid::createUuid());
+    std::error_code ignored;
+    std::filesystem::create_directories(envelope, ignored);
+
+    const std::vector<const App::DocumentObject*> carried(sel.begin(), sel.end());
+    std::string rendering;
+    try {
+        rendering = App::formatStoredRecipe(
+            *sel.front()->getDocument(),
+            envelope.string(),
+            App::RecipeScope {carried, /*withDocumentProperties=*/false}
+        );
+    }
+    catch (const Base::Exception& e) {
+        std::error_code failed;
+        std::filesystem::remove_all(envelope, failed);
+        e.reportException();
+        return nullptr;
     }
 
     auto mimeData = new QMimeData();
-    mimeData->setData(mime, res);
+    mimeData->setData(
+        hasXLink ? _MimeDocObjX : _MimeDocObj,
+        QByteArray(rendering.data(), static_cast<int>(rendering.size()))
+    );
+
+    // Whatever the last copy left waiting is now unreachable: the clipboard holds one thing at a
+    // time, and it is about to hold this. Letting go here rather than only at closing time is what
+    // keeps a long session of copying from filling the temporary folder -- and it belongs before
+    // the decision below, because a copy that needs no material makes the last one unreachable
+    // just as surely as one that does.
+    const_cast<MainWindow*>(this)->discardWaitingMaterial();
+
+    // An envelope nobody put anything in is not carried. A selection of ordinary features states
+    // itself entirely in the rendering, and a clipboard entry pointing at an empty folder would
+    // make a paste look as if its material had gone missing.
+    if (std::filesystem::is_empty(envelope, ignored)) {
+        std::error_code failed;
+        std::filesystem::remove_all(envelope, failed);
+    }
+    else {
+        const QByteArray where = QByteArray::fromStdString(envelope.string());
+        mimeData->setData(_MimeDocObjMaterial, where);
+        // Kept until the program closes, and released then: the clipboard may outlive the
+        // selection it was taken from, and a paste an hour later has to find the material there.
+        const_cast<MainWindow*>(this)->setProperty("x-documentobject-material", where);
+    }
     return mimeData;
 }
 
@@ -2320,8 +2347,7 @@ bool MainWindow::canInsertFromMimeData(const QMimeData* source) const
         return false;
     }
     return source->hasUrls() || source->hasImage() || source->hasFormat(_MimeDocObj)
-        || source->hasFormat(_MimeDocObjX) || source->hasFormat(_MimeDocObjFile)
-        || source->hasFormat(_MimeDocObjXFile);
+        || source->hasFormat(_MimeDocObjX);
 }
 
 void MainWindow::insertFromMimeData(const QMimeData* mimeData)
@@ -2376,7 +2402,6 @@ void MainWindow::insertFromMimeData(const QMimeData* mimeData)
         return;
     }
 
-    bool fromDoc = false;
     bool hasXLink = false;
     QString format;
     if (mimeData->hasFormat(_MimeDocObj)) {
@@ -2384,15 +2409,6 @@ void MainWindow::insertFromMimeData(const QMimeData* mimeData)
     }
     else if (mimeData->hasFormat(_MimeDocObjX)) {
         format = _MimeDocObjX;
-        hasXLink = true;
-    }
-    else if (mimeData->hasFormat(_MimeDocObjFile)) {
-        format = _MimeDocObjFile;
-        fromDoc = true;
-    }
-    else if (mimeData->hasFormat(_MimeDocObjXFile)) {
-        format = _MimeDocObjXFile;
-        fromDoc = true;
         hasXLink = true;
     }
     else {
@@ -2420,45 +2436,32 @@ void MainWindow::insertFromMimeData(const QMimeData* mimeData)
             return;
         }
     }
-    if (!fromDoc) {
-        QByteArray res = mimeData->data(format);
-        std::string buffer(res.constData(), static_cast<std::size_t>(res.size()));
+    const QByteArray res = mimeData->data(format);
+    std::string rendering(res.constData(), static_cast<std::size_t>(res.size()));
 
-        doc->openTransaction("Paste");
-        Base::StringIStreambuf buf(buffer);
-        std::istream in(nullptr);
-        in.rdbuf(&buf);
-        MergeDocuments mimeView(doc);
-        std::vector<App::DocumentObject*> newObj = mimeView.importObjects(in);
-        std::vector<App::DocumentObjectGroup*> grp
-            = Gui::Selection().getObjectsOfType<App::DocumentObjectGroup>();
-        if (grp.size() == 1) {
-            Gui::Document* gui = Application::Instance->getDocument(doc);
-            if (gui) {
-                gui->addRootObjectsToGroup(newObj, grp.front());
-            }
-        }
-        doc->commitTransaction();
+    // Where the material is waiting, when the selection carried any. Absent is the ordinary case
+    // and not a gap: a selection that states itself entirely has nothing to put there.
+    std::string material;
+    if (mimeData->hasFormat(_MimeDocObjMaterial)) {
+        const QByteArray where = mimeData->data(_MimeDocObjMaterial);
+        material.assign(where.constData(), static_cast<std::size_t>(where.size()));
     }
-    else {
-        QByteArray res = mimeData->data(format);
 
-        doc->openTransaction("Paste");
-        Base::FileInfo fi((const char*)res);
-        Base::ifstream str(fi, std::ios::in | std::ios::binary);
-        MergeDocuments mimeView(doc);
-        std::vector<App::DocumentObject*> newObj = mimeView.importObjects(str);
-        str.close();
-        std::vector<App::DocumentObjectGroup*> grp
-            = Gui::Selection().getObjectsOfType<App::DocumentObjectGroup>();
-        if (grp.size() == 1) {
-            Gui::Document* gui = Application::Instance->getDocument(doc);
-            if (gui) {
-                gui->addRootObjectsToGroup(newObj, grp.front());
-            }
-        }
-        doc->commitTransaction();
+    doc->openTransaction("Paste");
+    std::istringstream in(rendering);
+    std::vector<App::DocumentObject*> newObj;
+    for (const auto& [stated, obj] : doc->acceptStoredRecipeObjects(in, material)) {
+        newObj.push_back(obj);
     }
+    std::vector<App::DocumentObjectGroup*> grp
+        = Gui::Selection().getObjectsOfType<App::DocumentObjectGroup>();
+    if (grp.size() == 1) {
+        Gui::Document* gui = Application::Instance->getDocument(doc);
+        if (gui) {
+            gui->addRootObjectsToGroup(newObj, grp.front());
+        }
+    }
+    doc->commitTransaction();
 }
 
 void MainWindow::setUrlHandler(const QString& scheme, Gui::UrlHandler* handler)
