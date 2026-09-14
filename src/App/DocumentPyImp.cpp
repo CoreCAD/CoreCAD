@@ -292,6 +292,13 @@ PyObject* DocumentPy::load(PyObject* args)
     try {
         getDocumentPtr()->restore();
     }
+    catch (const DocumentMalformedError& e) {
+        // Said in full, not reduced to "reading failed". The file is there and readable; what it
+        // states cannot be determined, and where that starts is the one thing a person needs in
+        // order to repair it (Amendment 19 Clause 19.2).
+        e.setPyException();
+        return nullptr;
+    }
     catch (...) {
         PyErr_Format(PyExc_IOError, "Reading from file '%s' failed", filename);
         return nullptr;
@@ -316,6 +323,13 @@ PyObject* DocumentPy::restore(PyObject* args)
     }
     try {
         getDocumentPtr()->restore();
+    }
+    catch (const DocumentMalformedError& e) {
+        // Said in full, not reduced to "reading failed". The file is there and readable; what it
+        // states cannot be determined, and where that starts is the one thing a person needs in
+        // order to repair it (Amendment 19 Clause 19.2).
+        e.setPyException();
+        return nullptr;
     }
     catch (...) {
         PyErr_Format(PyExc_IOError, "Reading from file '%s' failed", filename);

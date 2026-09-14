@@ -398,6 +398,14 @@ PyObject* ApplicationPy::sOpenDocument(PyObject* /*self*/, PyObject* args, PyObj
         e.setPyException();
         return nullptr;
     }
+    catch (const DocumentMalformedError& e) {
+        // Told apart from a file that is missing or unreadable, which is what the generic
+        // IOError below means. A script is entitled to know that the file IS there and states
+        // something it cannot determine, and to read where -- that is the difference between
+        // retrying and opening a text editor (Amendment 19 Clause 19.2, P8).
+        e.setPyException();
+        return nullptr;
+    }
     catch (const Base::Exception& e) {
         PyErr_SetString(PyExc_IOError, e.what());
         return nullptr;

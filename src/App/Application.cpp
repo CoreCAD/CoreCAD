@@ -1304,6 +1304,16 @@ Document* Application::openDocumentPrivate(const char * FileName,
         closeDocument(newDoc->getName());
         throw;
     }
+    // A file whose record cannot be determined does not open at all (Amendment 19
+    // Clause 19.2): discard what was read rather than hand back the beginning of the
+    // file as though it were the document. Leaving it open is the leniency that makes
+    // sense for a document that merely failed to rebuild, and is exactly wrong here --
+    // the fragment looks like the part, and a save would publish it over the whole of
+    // the only remaining copy. The exception carries what was wrong and where.
+    catch (const DocumentMalformedError&) {
+        closeDocument(newDoc->getName());
+        throw;
+    }
     // but for any other exceptions leave it open to give the
     // user a chance to fix it
     catch (...) {

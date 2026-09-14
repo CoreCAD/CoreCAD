@@ -6,6 +6,7 @@ add_executable(App_tests_run
         ApplicationDirectories.cpp
         BackupPolicy.cpp
         Branding.cpp
+        BrokenFileRefusal.cpp
         ComplexGeoData.cpp
         CopyObject.cpp
         Document.cpp

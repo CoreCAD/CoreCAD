@@ -2690,6 +2690,41 @@ void Document::restore(const char* filename,
             // read what it is accepting (Amendment 19 Clause 19.3).
             recordUnkeptStatement("everything '" + filePath
                                   + "' states from where the read stopped: " + e.what());
+            // The file names the document it came from, and a read that stopped must not leave
+            // this document renamed or pointed at some other file -- true whether it goes on or
+            // refuses, so it is done before the refusal.
+            FileName.setValue(filePath.c_str());
+            Label.setValue(docLabel.c_str());
+            _unkeptAgainst = FileName.getStrValue();
+            // What the stopped read did manage to build is thrown away, not kept. The opener
+            // discards the whole document when the file is one it is opening; a REVERT has no
+            // such door -- the document existed before and goes on existing -- so a fragment
+            // would be left sitting in it, wearing the file's name and looking like the part.
+            // An empty document is visibly not the record; a nearly complete one is not.
+            if (!d->objectArray.empty()) {
+                GetApplication().signalDeleteDocument(*this);
+                d->clearDocument();
+                d->objectLabelManager.clear();
+                d->objectArray.clear();
+                d->objectNameManager.clear();
+                d->objectMap.clear();
+                d->objectIdMap.clear();
+                d->objectUuidMap.clear();
+                d->objectUuidMapDirty = true;
+                d->lastObjectId = 0;
+                GetApplication().signalNewDocument(*this, true);
+            }
+            // And now the refusal itself, which is TOTAL. What has been read so far is the
+            // beginning of a file, not a document: it looks like one, a save publishes it, and
+            // the file it came from is the only remaining copy of the rest. The write guard of
+            // Clause 19.3 stands behind this and would refuse that save, but a second line of
+            // defence is not the first one -- a person should never be holding the fragment
+            // (Amendment 19 Clause 19.2). The opener discards it; what was wrong and where is
+            // carried in the message so the file can be repaired in a text editor.
+            throw DocumentMalformedError("'" + filePath
+                                         + "' does not state a record this reader can determine, "
+                                           "and a part of one is not a document: "
+                                         + e.what());
         }
         // The file names the document it came from, and reading it must not rename the document
         // it is being read into or point it at some other file.
