@@ -2340,10 +2340,17 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
 #endif
             break;
         case QtWarningMsg:
-            Base::Console().warning("%s\n", output.constData());
+            // Cruth: addressed to a developer, not to a person using the program. Qt's own
+            // diagnostics ("this plugin does not support raise()") mean nothing to someone
+            // drawing a part, and routing them at a person put every warning raised from inside
+            // GUI code back into the notification area -- which is how showing a notification
+            // came to raise a warning that re-entered the notification area (measured as a
+            // deadlock). They still reach the report view and the log; a developer who wants
+            // them in the notification area subscribes to developer warnings.
+            Base::Console().developerWarning("Qt", "%s\n", output.constData());
             break;
         case QtCriticalMsg:
-            Base::Console().error("%s\n", output.constData());
+            Base::Console().developerError("Qt", "%s\n", output.constData());
             break;
         case QtFatalMsg:
             Base::Console().error("%s\n", output.constData());
