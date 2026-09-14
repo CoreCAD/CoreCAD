@@ -29,6 +29,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace App
@@ -38,6 +39,27 @@ class Document;
 class DocumentObject;
 class Property;
 class PropertyContainer;
+
+/** How much of a document one rendering of the stored form carries.
+ *
+ *  A document of record carries all of it, which is the default and the only case the format was
+ *  first written for. A copy carries less: the objects a person picked and nothing else. It is
+ *  still the same form written by the same writer -- one place decides what a record is and how
+ *  it is framed (Amendment 19 Clause 19.5) -- because a second writer for copying is exactly how
+ *  a copy came to assert as authored what the original only failed to honour.
+ *
+ *  `withDocumentProperties` is false for a copy because a document's own authored facts -- its
+ *  name, its licence, who wrote it -- belong to the document they came from and not to the one
+ *  the objects are going to. A rendering that leaves them out states no `<Document>` block at
+ *  all, so it says what it carries rather than carrying an empty claim about a document.
+ */
+struct RecipeScope
+{
+    /// The objects to state. Empty means every object the document holds.
+    std::vector<const DocumentObject*> objects;
+    /// Whether the document's own authored properties are part of this rendering.
+    bool withDocumentProperties {true};
+};
 
 /** The authored content of a document in a form meant to be READ BACK.
  *
@@ -75,9 +97,14 @@ class PropertyContainer;
  *  person reads, stores one imported body once however many parts use it, and collapses a
  *  hundred objects wearing the same material to one entry. Left empty — a document with no
  *  folder yet — such a value is named as a gap rather than dropped.
+ *
+ *  `scope` narrows what is rendered; see RecipeScope. A block this build could not construct is
+ *  given back only by a rendering of the whole document, because nothing can pick one for a copy:
+ *  it is not an object in the document, it is the file's own words held for the file's sake.
  */
 AppExport std::string formatStoredRecipe(const Document& doc,
-                                         const std::string& assetDirectory = {});
+                                         const std::string& assetDirectory = {},
+                                         const RecipeScope& scope = {});
 
 /** Rebuild a document's authored content from a stored recipe, into `doc`.
  *
@@ -94,6 +121,39 @@ AppExport void restoreStoredRecipe(Document& doc,
                                    std::istream& source,
                                    bool finish = true,
                                    const std::string& assetDirectory = {});
+
+/** The terms on which a stored recipe arrives in a document.
+ *
+ *  A document being opened arrives on the plain terms above: the document is empty, so every name
+ *  the file states is free and every durable id in it is the only one of its kind here. A copy
+ *  does not. The objects land in a document that already holds content, and may land beside the
+ *  very objects they were copied from.
+ */
+struct RecipeArrival
+{
+    /// Run the document's own second pass here -- see `restoreStoredRecipe`.
+    bool finish {true};
+
+    /// Where material the recipe names by content is read from.
+    std::string assetDirectory;
+
+    /** The objects are arriving in a document that already holds content.
+     *
+     *  A name the file states may already be taken here, so the document gives the object one of
+     *  its own and the reader keeps the pair. That is what lets a formula naming an object follow
+     *  it: a formula binds by name, and a name this document had to change is the one thing it
+     *  cannot see for itself.
+     */
+    bool intoExistingContent {false};
+
+    /** Filled in with what arrived, in the order the file states it, each paired with the durable
+     *  id the file gave it -- which is not necessarily the id it now wears, because an object
+     *  arriving as a copy is a new object and mints one of its own (§10.7).
+     */
+    std::vector<std::pair<std::string, DocumentObject*>>* arrived {nullptr};
+};
+
+AppExport void restoreStoredRecipe(Document& doc, std::istream& source, const RecipeArrival& how);
 
 /** One object's block of the stored recipe, byte for byte as `formatStoredRecipe` writes it.
  *

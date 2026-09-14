@@ -1073,3 +1073,126 @@ TEST_F(StoredRecipeTest, aValueThisBuildCannotReadLeavesNoDebrisInTheProperty)
     EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
         << "the file's own words were not what the save wrote back";
 }
+
+// Slice one of the copy path (Amendment 19 Clause 19.5): the writer that makes the record is the
+// one that makes a copy, so it has to be able to render part of a document. What a copy carries is
+// the objects a person picked -- not the document's own name, licence or identity, which belong to
+// the document they came from.
+TEST_F(StoredRecipeTest, aRenderingOfPartOfADocumentCarriesOnlyTheObjectsChosen)
+{
+    // Arrange
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    auto* other = _source->addObject("Part::Box", "Other");
+    ASSERT_NE(other, nullptr);
+    _source->recompute();
+
+    // Act
+    const std::string written
+        = formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false});
+
+    // Assert
+    EXPECT_NE(written.find("name=\"Chosen\""), std::string::npos)
+        << "the object that was picked is not in what the writer produced";
+    EXPECT_EQ(written.find("name=\"Other\""), std::string::npos)
+        << "an object nobody picked was carried along with it";
+    EXPECT_EQ(written.find("<Document "), std::string::npos)
+        << "a copy states facts about the document it came from";
+}
+
+// The other half of the same slice: a rendering with no document block reads back, and reading it
+// leaves the receiving document's own facts exactly as they were.
+TEST_F(StoredRecipeTest, aRenderingWithNoDocumentBlockLeavesTheReceivingDocumentsOwnFacts)
+{
+    // Arrange
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    static_cast<PropertyLength*>(chosen->getPropertyByName("Length"))->setValue(7.5);
+    _source->Comment.setValue("the document it came from");
+    _source->recompute();
+
+    _rebuilt->Comment.setValue("the document it is going to");
+    const std::string receivingUid = _rebuilt->Uid.getValueStr();
+
+    // Act
+    std::istringstream text(
+        formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false})
+    );
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    DocumentObject* arrived = _rebuilt->getObject("Chosen");
+    ASSERT_NE(arrived, nullptr) << "the object never arrived";
+    EXPECT_DOUBLE_EQ(static_cast<PropertyLength*>(arrived->getPropertyByName("Length"))->getValue(), 7.5);
+    EXPECT_EQ(std::string(_rebuilt->Comment.getValue()), std::string("the document it is going to"))
+        << "the receiving document was overwritten with the sending document's own facts";
+    EXPECT_EQ(_rebuilt->Uid.getValueStr(), receivingUid)
+        << "the receiving document took on the identity of the one the objects came from";
+}
+
+// A reference says where it points and can be pointed there again, and the file asks it rather
+// than working out which of a dozen link classes it is. The list-shaped kinds are here because
+// they are the ones a class ladder is most likely to miss: each holds its targets and the parts of
+// them that were picked in a shape of its own.
+TEST_F(StoredRecipeTest, listShapedReferencesComeBackPointingWhereTheyPointed)
+{
+    // Arrange
+    auto* first = _source->addObject("Part::Box", "First");
+    auto* second = _source->addObject("Part::Box", "Second");
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    ASSERT_NE(holder, nullptr);
+
+    auto* list = static_cast<PropertyLinkList*>(
+        holder->addDynamicProperty("App::PropertyLinkList", "Parts")
+    );
+    ASSERT_NE(list, nullptr);
+    list->setValues({first, second});
+
+    auto* subList = static_cast<PropertyLinkSubList*>(
+        holder->addDynamicProperty("App::PropertyLinkSubList", "Faces")
+    );
+    ASSERT_NE(subList, nullptr);
+    subList->setValues({first, second}, {std::string("Face2"), std::string("Face5")});
+
+    auto* xSubList = static_cast<PropertyXLinkSubList*>(
+        holder->addDynamicProperty("App::PropertyXLinkSubList", "Edges")
+    );
+    ASSERT_NE(xSubList, nullptr);
+    xSubList->setValues({first}, {std::string("Edge3")});
+
+    _source->recompute();
+
+    // Act
+    roundTrip();
+
+    // Assert
+    DocumentObject* rebuiltFirst = _rebuilt->getObject("First");
+    DocumentObject* rebuiltSecond = _rebuilt->getObject("Second");
+    DocumentObject* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltFirst, nullptr);
+    ASSERT_NE(rebuiltSecond, nullptr);
+    ASSERT_NE(rebuiltHolder, nullptr);
+
+    auto* returnedList = static_cast<PropertyLinkList*>(rebuiltHolder->getPropertyByName("Parts"));
+    ASSERT_NE(returnedList, nullptr);
+    EXPECT_EQ(returnedList->getValues(), (std::vector<DocumentObject*> {rebuiltFirst, rebuiltSecond}))
+        << "a list of references did not come back pointing where it pointed";
+
+    auto* returnedSubList = static_cast<PropertyLinkSubList*>(
+        rebuiltHolder->getPropertyByName("Faces")
+    );
+    ASSERT_NE(returnedSubList, nullptr);
+    EXPECT_EQ(
+        returnedSubList->getValues(),
+        (std::vector<DocumentObject*> {rebuiltFirst, rebuiltSecond})
+    );
+    EXPECT_EQ(returnedSubList->getSubValues(), (std::vector<std::string> {"Face2", "Face5"}))
+        << "the parts that were picked did not come back beside the objects they were picked on";
+
+    auto* returnedEdges = static_cast<PropertyXLinkSubList*>(rebuiltHolder->getPropertyByName("Edges"));
+    ASSERT_NE(returnedEdges, nullptr);
+    EXPECT_EQ(returnedEdges->getValues(), (std::vector<DocumentObject*> {rebuiltFirst}));
+    EXPECT_EQ(returnedEdges->getSubValues(rebuiltFirst), (std::vector<std::string> {"Edge3"}));
+}

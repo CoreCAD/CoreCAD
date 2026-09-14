@@ -7,6 +7,7 @@ add_executable(App_tests_run
         BackupPolicy.cpp
         Branding.cpp
         ComplexGeoData.cpp
+        CopyObject.cpp
         Document.cpp
         DocumentByteStability.cpp
         DocumentObject.cpp

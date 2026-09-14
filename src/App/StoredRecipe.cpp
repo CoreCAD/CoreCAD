@@ -27,6 +27,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <array>
 # include <cstring>
 # include <filesystem>
 # include <fstream>
@@ -57,6 +58,7 @@
 
 #include "Document.h"
 #include "DynamicProperty.h"
+#include "ExpressionParser.h"
 #include "DocumentObject.h"
 #include "GeoFeature.h"
 #include "Property.h"
@@ -190,101 +192,75 @@ struct StoredProperty
     std::string asset;  ///< the id of the file holding this value, empty when written inline
 };
 
-/// What a reference property points at, or nothing when this form cannot read that kind yet.
+/// What a reference property points at, or nothing when that kind of reference cannot say.
 ///
 /// The archive writes a link as the target's in-document name. A stored recipe may not: a name
 /// is the document's own bookkeeping and changes when a document is merged into another, which
 /// is precisely the positional addressing this direction exists to remove (§10.1). So a link is
 /// read here as durable ids, and written as durable ids.
+///
+/// The property answers for itself. This used to be a ladder of class tests, written out twice --
+/// once here and once to point a reference again -- which is the file knowing what a property IS
+/// instead of asking what it can DO, and which says nothing at all about the one link class
+/// nobody remembered to add to both lists.
 std::optional<std::vector<Binding>> referenceBindings(const Property& prop, const Document* home)
 {
-    const auto bind = [home](const DocumentObject* target, const std::string& sub) {
-        Binding binding {target->Uid.getValueStr(), sub};
+    const auto* link = dynamic_cast<const PropertyLinkBase*>(&prop);
+    if (link == nullptr) {
+        return std::nullopt;
+    }
+    std::vector<PropertyLinkBase::Pointing> pointing;
+    if (!link->statesWhereItPoints(pointing)) {
+        return std::nullopt;
+    }
+
+    std::vector<Binding> bindings;
+    bindings.reserve(pointing.size());
+    for (const PropertyLinkBase::Pointing& one : pointing) {
+        // A link that points at nothing is written as nothing. Recording an empty target would say
+        // "this reference points somewhere I could not name", which is a different fact and one the
+        // reader would rightly refuse to restore.
+        if (one.target == nullptr) {
+            continue;
+        }
+        Binding binding {one.target->Uid.getValueStr(), one.sub};
         // A target in another document is a second question -- which document -- and the link
         // property answers it in its own writing. Marked here so the caller can hand the whole
         // property over rather than saying half of it in this file's words.
-        binding.external = home != nullptr && target->getDocument() != home;
-        return binding;
-    };
-
-    std::vector<Binding> bindings;
-
-    // A link that points at nothing is written as nothing. Recording an empty target would say
-    // "this reference points somewhere I could not name", which is a different fact and one the
-    // reader would rightly refuse to restore.
-    const auto add = [&bindings, &bind](const DocumentObject* target, const std::string& sub) {
-        if (target != nullptr) {
-            bindings.push_back(bind(target, sub));
-        }
-    };
-
-    // Most-derived first: an XLink IS a PropertyLink, and a sub-list link is neither.
-    if (const auto* link = dynamic_cast<const PropertyXLinkSubList*>(&prop)) {
-        for (const DocumentObject* target : link->getValues()) {
-            const std::vector<std::string> subs =
-                link->getSubValues(const_cast<DocumentObject*>(target));
-            if (subs.empty()) {
-                add(target, {});
-            }
-            for (const std::string& sub : subs) {
-                add(target, sub);
-            }
-        }
-        return bindings;
+        binding.external = home != nullptr && one.target->getDocument() != home;
+        bindings.push_back(std::move(binding));
     }
-    if (const auto* link = dynamic_cast<const PropertyXLink*>(&prop)) {
-        const std::vector<std::string>& subs = link->getSubValues();
-        if (subs.empty()) {
-            add(link->getValue(), {});
-        }
-        for (const std::string& sub : subs) {
-            add(link->getValue(), sub);
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLinkSubList*>(&prop)) {
-        const std::vector<DocumentObject*>& targets = link->getValues();
-        const std::vector<std::string>& subs = link->getSubValues();
-        for (std::size_t i = 0; i < targets.size(); ++i) {
-            add(targets[i], i < subs.size() ? subs[i] : std::string());
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLinkSub*>(&prop)) {
-        const std::vector<std::string>& subs = link->getSubValues();
-        if (subs.empty()) {
-            add(link->getValue(), {});
-        }
-        for (const std::string& sub : subs) {
-            add(link->getValue(), sub);
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLinkList*>(&prop)) {
-        for (const DocumentObject* target : link->getValues()) {
-            add(target, {});
-        }
-        return bindings;
-    }
-    if (const auto* link = dynamic_cast<const PropertyLink*>(&prop)) {
-        add(link->getValue(), {});
-        return bindings;
-    }
-
-    return std::nullopt;
+    return bindings;
 }
 
 /// Point a reference property at objects again, given what the file said it pointed at.
-bool restoreReference(Property& prop, const std::vector<Binding>& bindings, const Document& doc)
+///
+/// `arrived` is what this read brought in, by the durable id the file stated for it. It is asked
+/// first: an object pasted beside the one it was copied from references the copy that arrived with
+/// it, not the original, even while the two still wear the same id.
+bool restoreReference(Property& prop,
+                      const std::vector<Binding>& bindings,
+                      const Document& doc,
+                      const std::map<std::string, DocumentObject*>& arrived)
 {
-    std::vector<DocumentObject*> targets;
-    std::vector<std::string> subs;
+    auto* link = dynamic_cast<PropertyLinkBase*>(&prop);
+    if (link == nullptr) {
+        return false;
+    }
+
+    std::vector<PropertyLinkBase::Pointing> pointing;
+    pointing.reserve(bindings.size());
     for (const Binding& binding : bindings) {
         DocumentObject* target = nullptr;
-        for (DocumentObject* candidate : doc.getObjects()) {
-            if (candidate != nullptr && candidate->Uid.getValueStr() == binding.uuid) {
-                target = candidate;
-                break;
+        if (const auto found = arrived.find(binding.uuid); found != arrived.end()) {
+            target = found->second;
+        }
+        else {
+            for (DocumentObject* candidate : doc.getObjects()) {
+                if (candidate != nullptr && candidate->Uid.getValueStr() == binding.uuid) {
+                    target = candidate;
+                    break;
+                }
             }
         }
         if (target == nullptr) {
@@ -293,59 +269,10 @@ bool restoreReference(Property& prop, const std::vector<Binding>& bindings, cons
             // binding exists to prevent.
             return false;
         }
-        targets.push_back(target);
-        subs.push_back(binding.sub);
+        pointing.push_back({target, binding.sub});
     }
 
-    const bool anySub =
-        std::any_of(subs.begin(), subs.end(), [](const std::string& sub) { return !sub.empty(); });
-
-    if (auto* link = dynamic_cast<PropertyXLinkSubList*>(&prop)) {
-        std::map<DocumentObject*, std::vector<std::string>> picked;
-        for (std::size_t i = 0; i < targets.size(); ++i) {
-            if (!subs[i].empty()) {
-                picked[targets[i]].push_back(subs[i]);
-            }
-            else {
-                picked.emplace(targets[i], std::vector<std::string> {});
-            }
-        }
-        link->setValues(picked);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyXLink*>(&prop)) {
-        std::vector<std::string> picked;
-        std::copy_if(subs.begin(), subs.end(), std::back_inserter(picked), [](const auto& sub) {
-            return !sub.empty();
-        });
-        link->setValue(targets.empty() ? nullptr : targets.front(), picked);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLinkSubList*>(&prop)) {
-        link->setValues(targets, subs);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLinkSub*>(&prop)) {
-        std::vector<std::string> picked;
-        std::copy_if(subs.begin(), subs.end(), std::back_inserter(picked), [](const auto& sub) {
-            return !sub.empty();
-        });
-        link->setValue(targets.empty() ? nullptr : targets.front(), picked);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLinkList*>(&prop)) {
-        link->setValues(targets);
-        return true;
-    }
-    if (auto* link = dynamic_cast<PropertyLink*>(&prop)) {
-        if (anySub) {
-            return false;
-        }
-        link->setValue(targets.empty() ? nullptr : targets.front());
-        return true;
-    }
-
-    return false;
+    return link->pointAt(pointing);
 }
 
 bool isReference(const Property& prop)
@@ -822,6 +749,44 @@ void refuse(const char* expected, const Base::XMLReader& reader)
 std::string liftObjectWords(const std::string& source, const std::string& uuid);
 std::string liftDocumentWords(const std::string& source);
 
+/// A reader that answers what this document called the objects a file named.
+///
+/// A recipe read into an empty document keeps every name the file states, so nothing is remapped
+/// and each name answers with itself. A recipe arriving in a document that already holds content
+/// cannot: a name may be taken, and the document gives the object one of its own. A formula binds
+/// by name and has no way to see that, so the pair is kept here and the formula follows the object
+/// -- the same service the document archive's own merge reader provides.
+class ArrivingReader: public Base::XMLReader
+{
+public:
+    ArrivingReader(const char* name, std::istream& stream, bool mapping)
+        : Base::XMLReader(name, stream)
+        , _mapping(mapping)
+    {}
+
+    void addName(const char* stated, const char* given) override
+    {
+        if (stated != nullptr && given != nullptr && std::strcmp(stated, given) != 0) {
+            _names[stated] = given;
+        }
+    }
+
+    const char* getName(const char* stated) const override
+    {
+        const auto found = _names.find(stated);
+        return found != _names.end() ? found->second.c_str() : stated;
+    }
+
+    bool doNameMapping() const override
+    {
+        return _mapping;
+    }
+
+private:
+    bool _mapping;
+    std::map<std::string, std::string> _names;
+};
+
 /// One object's appearance block, exactly as the file states it, indentation and all.
 ///
 /// Lifted rather than rebuilt for the same reason a property block is: a session with no display
@@ -1162,7 +1127,9 @@ void writeObject(Base::Writer& writer,
 
 }  // namespace
 
-std::string App::formatStoredRecipe(const Document& doc, const std::string& assetDirectory)
+std::string App::formatStoredRecipe(const Document& doc,
+                                    const std::string& assetDirectory,
+                                    const RecipeScope& scope)
 {
     Base::StringWriter writer;
     // Full precision, set here because it belongs to the WRITER and not to the value: the
@@ -1178,19 +1145,35 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
     // The document's own authored facts -- who wrote it, when it was created, what it is called
     // -- belong to the recipe as much as any object does. The walk that produces the readable
     // view covers objects only, which is why a document's own content had nowhere to go.
-    writer.Stream() << writer.ind() << "<Document uuid=\"" << doc.Uid.getValueStr() << "\">\n";
-    writer.incInd();
-    writeProperties(writer, doc, assetDirectory);
-    writer.decInd();
-    writer.Stream() << writer.ind() << "</Document>\n";
+    //
+    // A rendering that carries objects alone states no block here at all rather than an empty
+    // one: "this rendering says nothing about a document" and "the document states nothing" are
+    // different facts, and only the first one is true of a copy.
+    if (scope.withDocumentProperties) {
+        writer.Stream() << writer.ind() << "<Document uuid=\"" << doc.Uid.getValueStr() << "\">\n";
+        writer.incInd();
+        writeProperties(writer, doc, assetDirectory);
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</Document>\n";
+    }
 
     // Objects in durable-id order. Creation order is a fact about the session that produced the
     // document, not about the design, and letting it set the order in the file is what makes an
     // inserted feature read as a rewritten file.
+    const bool wholeDocument = scope.objects.empty();
     std::vector<const DocumentObject*> objects;
-    for (const DocumentObject* obj : doc.getObjects()) {
-        if (obj != nullptr) {
-            objects.push_back(obj);
+    if (wholeDocument) {
+        for (const DocumentObject* obj : doc.getObjects()) {
+            if (obj != nullptr) {
+                objects.push_back(obj);
+            }
+        }
+    }
+    else {
+        for (const DocumentObject* obj : scope.objects) {
+            if (obj != nullptr) {
+                objects.push_back(obj);
+            }
         }
     }
     std::sort(objects.begin(),
@@ -1204,7 +1187,11 @@ std::string App::formatStoredRecipe(const Document& doc, const std::string& asse
     // Blocks this build could not construct are given back in the same durable-id order as the
     // objects it could, so each one lands exactly where it was and a save that changed nothing
     // changes nothing (Amendment 19, Amendment 18 Clause 18.1).
-    const auto& kept = doc.unreadObjects();
+    // A rendering of part of the document carries none of them: a block this build could not
+    // construct is not an object anybody can pick, and putting every one of them into a copy of
+    // two features would state content nobody asked to copy.
+    const std::vector<std::array<std::string, 3>> noneKept;
+    const auto& kept = wholeDocument ? doc.unreadObjects() : noneKept;
     std::size_t nextKept = 0;
     const auto writeKeptUpTo = [&](const std::string& limit, bool toEnd) {
         while (nextKept < kept.size() && (toEnd || kept[nextKept][0] < limit)) {
@@ -1336,39 +1323,75 @@ void App::restoreStoredRecipe(Document& doc,
                               bool finish,
                               const std::string& assetDirectory)
 {
+    RecipeArrival how;
+    how.finish = finish;
+    how.assetDirectory = assetDirectory;
+    restoreStoredRecipe(doc, source, how);
+}
+
+void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeArrival& how)
+{
+    const std::string& assetDirectory = how.assetDirectory;
     // Read once and kept, because a block this build cannot construct is given back from the
     // file's own words rather than from this session's reading of them (Amendment 19).
     const std::string sourceText((std::istreambuf_iterator<char>(source)),
                                  std::istreambuf_iterator<char>());
     std::istringstream parsed(sourceText);
 
-    Base::XMLReader reader("StoredRecipe", parsed);
+    ArrivingReader reader("StoredRecipe", parsed, how.intoExistingContent);
     if (!reader.isValid()) {
         return;
     }
 
+    // What the name map is for. A formula names the object it reads a value from, so a formula
+    // arriving beside an object this document had to rename has to be told the new name; the
+    // expression layer asks the reader that is currently reading, which is this one. Installed
+    // only for an arrival, because a document being opened renames nothing.
+    std::optional<ExpressionParser::ExpressionImporter> naming;
+    if (how.intoExistingContent) {
+        naming.emplace(reader);
+    }
+
     std::vector<PendingReference> pending;
     std::vector<DocumentObject*> restored;
+    // What this read brought in, by the durable id the file stated for it. A reference is pointed
+    // at these before anything already in the document: an object arriving beside the one it was
+    // copied from must reference the copy, even while the two still wear the same id.
+    std::map<std::string, DocumentObject*> arrived;
 
     reader.readElement("Recipe");
+    const int recipe = reader.level();
 
-    reader.readElement("Document");
-    const std::string documentUid = reader.getAttribute<const char*>("uuid");
-    // The document states properties of its own -- what it is called, who made it, what it is
-    // for, and anything a tool of someone else's added to it. They are kept on the same terms as
-    // an object's: from the document's own block, so a name here cannot be confused with the same
-    // name on an object.
-    readProperties(reader, doc, doc, pending, assetDirectory, [&] {
-        return liftDocumentWords(sourceText);
-    });
-    reader.readEndElement("Document");
-    // A document's identity is its own, and the document model refuses to let two open
-    // documents share one -- restoring the uuid into a copy of a document that is still open
-    // mints a fresh one instead. That is the model's rule, not this reader's, and it is right:
-    // the file names the document it came from, and a second live copy is not that document.
-    doc.Uid.setValue(documentUid);
+    // The `<Document>` block is what the file says about the document itself, and a rendering
+    // that carries objects alone states none. Read from whichever element is actually there
+    // rather than from the one a whole-document file would have: demanding it would make a copy
+    // unreadable, and assuming it would read the first object as if it were the document.
+    if (!nextChildOf(reader, recipe)) {
+        refuse("Objects", reader);
+    }
+    if (std::strcmp(reader.localName(), "Document") == 0) {
+        const std::string documentUid = reader.getAttribute<const char*>("uuid");
+        // The document states properties of its own -- what it is called, who made it, what it is
+        // for, and anything a tool of someone else's added to it. They are kept on the same terms
+        // as an object's: from the document's own block, so a name here cannot be confused with
+        // the same name on an object.
+        readProperties(reader, doc, doc, pending, assetDirectory, [&] {
+            return liftDocumentWords(sourceText);
+        });
+        reader.readEndElement("Document");
+        // A document's identity is its own, and the document model refuses to let two open
+        // documents share one -- restoring the uuid into a copy of a document that is still open
+        // mints a fresh one instead. That is the model's rule, not this reader's, and it is right:
+        // the file names the document it came from, and a second live copy is not that document.
+        doc.Uid.setValue(documentUid);
 
-    reader.readElement("Objects");
+        if (!nextChildOf(reader, recipe)) {
+            refuse("Objects", reader);
+        }
+    }
+    if (std::strcmp(reader.localName(), "Objects") != 0) {
+        refuse("Objects", reader);
+    }
     const int objects = reader.level();
     while (nextChildOf(reader, objects)) {
         if (std::strcmp(reader.localName(), "Object") != 0) {
@@ -1407,6 +1430,13 @@ void App::restoreStoredRecipe(Document& doc,
         if (obj != nullptr) {
             obj->Uid.setValue(uuid);
             restored.push_back(obj);
+            arrived.emplace(uuid, obj);
+            // The name the file stated and the name this document gave it. The same for a document
+            // being opened; different wherever the stated one was already taken.
+            reader.addName(name.c_str(), obj->getNameInDocument());
+            if (how.arrived != nullptr) {
+                how.arrived->emplace_back(uuid, obj);
+            }
             // Marked as being restored for the duration, exactly as the archive's own reader does
             // it. Some features rebuild themselves the moment one of their sizes changes, which is
             // right when a person types a number and wrong while a file is being read: it builds
@@ -1458,7 +1488,7 @@ void App::restoreStoredRecipe(Document& doc,
     // in the document is reported rather than passed over: a reference that quietly points at
     // nothing is the exact failure durable ids exist to prevent.
     for (const auto& [prop, bindings] : pending) {
-        if (!restoreReference(*prop, bindings, doc)) {
+        if (!restoreReference(*prop, bindings, doc, arrived)) {
             // Kept rather than dropped: the target may be absent because a branch deleted it, and
             // a save that wrote the emptiness back would erase where the reference pointed -- the
             // one thing a merge needs to tell a deletion from a reference nobody ever made.
@@ -1483,7 +1513,7 @@ void App::restoreStoredRecipe(Document& doc,
     // has a second pass for exactly this and the archive's own load path uses it. Reading a
     // recipe is reading a document, and it finishes the same way -- unless the caller is a
     // document being opened, which runs that pass itself once every document in the set is read.
-    if (finish) {
+    if (how.finish) {
         doc.afterRestore(restored, false);
     }
 

@@ -756,6 +756,27 @@ void PropertyLink::resetLink()
     _pcLink = nullptr;
 }
 
+bool PropertyLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    if (_pcLink != nullptr) {
+        pointing.push_back({_pcLink, {}});
+    }
+    return true;
+}
+
+bool PropertyLink::pointAt(const std::vector<Pointing>& pointing)
+{
+    // A plain link points at an object and cannot say which part of one. Refusing is the honest
+    // answer: setting the object and dropping the part would keep a reference nobody authored.
+    for (const Pointing& one : pointing) {
+        if (!one.sub.empty()) {
+            return false;
+        }
+    }
+    setValue(pointing.empty() ? nullptr : pointing.front().target);
+    return true;
+}
+
 void PropertyLink::setValue(App::DocumentObject* lValue)
 {
     auto parent = dynamic_cast<App::DocumentObject*>(getContainer());
@@ -1031,6 +1052,27 @@ void PropertyLinkList::set1Value(int idx, DocumentObject* const& value)
     }
 
     inherited::set1Value(idx, value);
+}
+
+bool PropertyLinkList::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    for (DocumentObject* target : getValues()) {
+        if (target != nullptr) {
+            pointing.push_back({target, {}});
+        }
+    }
+    return true;
+}
+
+bool PropertyLinkList::pointAt(const std::vector<Pointing>& pointing)
+{
+    std::vector<DocumentObject*> targets;
+    targets.reserve(pointing.size());
+    for (const Pointing& one : pointing) {
+        targets.push_back(one.target);
+    }
+    setValues(targets);
+    return true;
 }
 
 void PropertyLinkList::setValues(const std::vector<DocumentObject*>& value)
@@ -1374,6 +1416,33 @@ PropertyLinkSub::~PropertyLinkSub()
 void PropertyLinkSub::setSyncSubObject(bool enable)
 {
     _Flags.set((std::size_t)LinkSyncSubObject, enable);
+}
+
+bool PropertyLinkSub::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    if (_pcLinkSub == nullptr) {
+        return true;
+    }
+    if (_cSubList.empty()) {
+        pointing.push_back({_pcLinkSub, {}});
+        return true;
+    }
+    for (const std::string& sub : _cSubList) {
+        pointing.push_back({_pcLinkSub, sub});
+    }
+    return true;
+}
+
+bool PropertyLinkSub::pointAt(const std::vector<Pointing>& pointing)
+{
+    std::vector<std::string> subs;
+    for (const Pointing& one : pointing) {
+        if (!one.sub.empty()) {
+            subs.push_back(one.sub);
+        }
+    }
+    setValue(pointing.empty() ? nullptr : pointing.front().target, subs);
+    return true;
 }
 
 void PropertyLinkSub::setValue(App::DocumentObject* lValue,
@@ -2325,6 +2394,34 @@ void PropertyLinkSubList::setValue(DocumentObject* lValue, const char* SubName)
     updateElementReference(nullptr);
     checkLabelReferences(_lSubList);
     hasSetValue();
+}
+
+bool PropertyLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    const std::vector<DocumentObject*>& targets = getValues();
+    const std::vector<std::string>& subs = getSubValues();
+    for (std::size_t i = 0; i < targets.size(); ++i) {
+        if (targets[i] != nullptr) {
+            pointing.push_back({targets[i], i < subs.size() ? subs[i] : std::string()});
+        }
+    }
+    return true;
+}
+
+bool PropertyLinkSubList::pointAt(const std::vector<Pointing>& pointing)
+{
+    // Target and part are kept side by side, one entry each, because this property says a whole
+    // object by pairing it with an empty part rather than by leaving it out.
+    std::vector<DocumentObject*> targets;
+    std::vector<std::string> subs;
+    targets.reserve(pointing.size());
+    subs.reserve(pointing.size());
+    for (const Pointing& one : pointing) {
+        targets.push_back(one.target);
+        subs.push_back(one.sub);
+    }
+    setValues(targets, subs);
+    return true;
 }
 
 void PropertyLinkSubList::setValues(const std::vector<DocumentObject*>& lValue,
@@ -3902,6 +3999,33 @@ void PropertyXLink::setSubValues(std::vector<std::string>&& subs, std::vector<Sh
     checkLabelReferences(_SubList);
 }
 
+bool PropertyXLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    if (_pcLink == nullptr) {
+        return true;
+    }
+    if (_SubList.empty()) {
+        pointing.push_back({_pcLink, {}});
+        return true;
+    }
+    for (const std::string& sub : _SubList) {
+        pointing.push_back({_pcLink, sub});
+    }
+    return true;
+}
+
+bool PropertyXLink::pointAt(const std::vector<Pointing>& pointing)
+{
+    std::vector<std::string> subs;
+    for (const Pointing& one : pointing) {
+        if (!one.sub.empty()) {
+            subs.push_back(one.sub);
+        }
+    }
+    setValue(pointing.empty() ? nullptr : pointing.front().target, std::move(subs));
+    return true;
+}
+
 void PropertyXLink::setValue(App::DocumentObject* lValue)
 {
     setValue(lValue, nullptr);
@@ -5089,6 +5213,41 @@ void PropertyXLinkSubList::setValue(DocumentObject* lValue, const char* SubName)
         }
     }
     setValues(std::move(values));
+}
+
+bool PropertyXLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    for (DocumentObject* target : getValues()) {
+        if (target == nullptr) {
+            continue;
+        }
+        const std::vector<std::string> subs = getSubValues(target);
+        if (subs.empty()) {
+            pointing.push_back({target, {}});
+            continue;
+        }
+        for (const std::string& sub : subs) {
+            pointing.push_back({target, sub});
+        }
+    }
+    return true;
+}
+
+bool PropertyXLinkSubList::pointAt(const std::vector<Pointing>& pointing)
+{
+    // Gathered per target, because this property holds the parts of one object together rather
+    // than as a flat list of pairs.
+    std::map<DocumentObject*, std::vector<std::string>> picked;
+    for (const Pointing& one : pointing) {
+        if (one.sub.empty()) {
+            picked.emplace(one.target, std::vector<std::string> {});
+        }
+        else {
+            picked[one.target].push_back(one.sub);
+        }
+    }
+    setValues(picked);
+    return true;
 }
 
 void PropertyXLinkSubList::setValues(const std::vector<DocumentObject*>& lValue,
