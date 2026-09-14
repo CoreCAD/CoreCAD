@@ -116,6 +116,38 @@ class Document(PropertyContainer):
     ordinary document -- including one holding statements this build could not honour, since
     those are kept and given back, so saving loses nothing."""
 
+    HeldStatements: Final[List[Tuple[str, str, str]]] = []
+    """Everything this document is holding that its file states and this session could not honour,
+    each as (holder, name, why). The holder is an object's name, or empty for the document's own
+    statements; for a whole object block this build cannot construct, the name is its durable id.
+
+    Named rather than counted, because deciding whether to discard one means reading what it is."""
+
+    def discardStatement(self, holder: Optional[DocumentObject], name: str, /) -> bool:
+        """
+        Discard a statement this build cannot honour. Only a person may.
+
+        A statement nothing here can honour binds the document: while one is held, no cleanup,
+        sweep or duplication may act on the assumption that it can see every reference. This is
+        the only way out -- a deliberate act that names what it drops and is recorded in the
+        document's history, so it can be undone.
+
+        Pass the object holding it, or None for the document's own statements, and the name it is
+        held under, as HeldStatements reports it. Returns False if nothing was held under that
+        name. Raises if called while the document is reading, rebuilding, importing or undoing:
+        those callers are not a person, and no save, sweep, recompute or repair routine may
+        discard on a person's behalf.
+        """
+        ...
+
+    def discardUnreadObject(self, uuid: str, /) -> bool:
+        """
+        Discard the block kept for an object this build cannot construct, named by its durable id.
+
+        The same act as discardStatement, for a whole object rather than one of its properties.
+        """
+        ...
+
     def saveAs(self, path: str, /) -> None:
         """
         Save the document under a new name to disk.

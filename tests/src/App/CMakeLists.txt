@@ -17,6 +17,7 @@ add_executable(App_tests_run
         ExpressionParser.cpp
         FragmentWriteGuard.cpp
         ElementMap.cpp
+        HeldStatements.cpp
         ElementNamingUtils.cpp
         IndexedName.cpp
         License.cpp

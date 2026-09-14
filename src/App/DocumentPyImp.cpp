@@ -191,6 +191,59 @@ Py::List DocumentPy::getWhatASaveWouldLose() const
     return losing;
 }
 
+Py::List DocumentPy::getHeldStatements() const
+{
+    Py::List held;
+    for (const auto& [holder, name, why] : getDocumentPtr()->heldStatements()) {
+        Py::Tuple one(3);
+        one.setItem(0, Py::String(holder));
+        one.setItem(1, Py::String(name));
+        one.setItem(2, Py::String(why));
+        held.append(one);
+    }
+    return held;
+}
+
+PyObject* DocumentPy::discardStatement(PyObject* args)
+{
+    PyObject* holder {};
+    const char* name {};
+    if (!PyArg_ParseTuple(args, "Os", &holder, &name)) {
+        return nullptr;
+    }
+    App::DocumentObject* obj {};
+    if (holder != Py_None) {
+        if (!PyObject_TypeCheck(holder, &DocumentObjectPy::Type)) {
+            PyErr_SetString(PyExc_TypeError, "first argument must be a DocumentObject or None");
+            return nullptr;
+        }
+        obj = static_cast<DocumentObjectPy*>(holder)->getDocumentObjectPtr();
+    }
+    try {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->discardStatement(obj, name)));
+    }
+    catch (const Base::Exception& e) {
+        // The refusal itself is the answer here, so it reaches the caller as one (P8).
+        e.setPyException();
+        return nullptr;
+    }
+}
+
+PyObject* DocumentPy::discardUnreadObject(PyObject* args)
+{
+    const char* uuid {};
+    if (!PyArg_ParseTuple(args, "s", &uuid)) {
+        return nullptr;
+    }
+    try {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->discardUnreadObject(uuid)));
+    }
+    catch (const Base::Exception& e) {
+        e.setPyException();
+        return nullptr;
+    }
+}
+
 PyObject* DocumentPy::save(PyObject* args)
 {
     if (!PyArg_ParseTuple(args, "")) {

@@ -129,7 +129,9 @@ int Transaction::getID() const
 
 bool Transaction::isEmpty() const
 {
-    return _Objects.empty();
+    // A transaction that discarded a statement and touched nothing else is not empty: a discard
+    // is an edit, and an edit that never reaches the undo stack cannot be undone (Clause 19.4).
+    return _Objects.empty() && _Discarded.empty();
 }
 
 bool Transaction::hasObject(const TransactionalObject* Obj) const
@@ -176,10 +178,36 @@ void Transaction::addOrRemoveProperty(TransactionalObject* Obj, const Property* 
 // separator for other implementation aspects
 
 
+void Transaction::recordDiscard(DiscardedStatement discarded)
+{
+    _Discarded.push_back(std::move(discarded));
+}
+
+void Transaction::applyDiscards(Document& Doc) const
+{
+    for (const DiscardedStatement& record : _Discarded) {
+        // What is there now goes into whichever transaction is active, so the other direction has
+        // its half. Done before the restore, for the same reason a property change is captured
+        // before the new value lands.
+        Doc.recordStatementBeforeDiscard(record.holder, record.name, record.wholeObject);
+        if (record.wholeObject) {
+            // An empty block means nothing was held before -- which is the state a redo puts
+            // back, so this is how a discard is performed again as well as undone.
+            Doc.putBackUnreadObject(record.name, record.block);
+            continue;
+        }
+        PropertyContainer* holder = Doc.holderOfStatements(record.holder);
+        if (holder != nullptr) {
+            holder->restoreKeptStatement(record.name, record.kept);
+        }
+    }
+}
+
 void Transaction::apply(Document& Doc, bool forward)
 {
     std::string errMsg;
     try {
+        applyDiscards(Doc);
         auto& index = _Objects.get<0>();
         for (auto& info : index) {
             info.second->applyDel(Doc, const_cast<TransactionalObject*>(info.first));

@@ -597,6 +597,77 @@ public:
     /// True while this document holds a statement its file made and this session could not honour.
     bool holdsUnreadContent() const;
 
+    /** Whether a sweep here may act on the assumption that it can see every reference.
+     *
+     * False while this document holds a statement it could not honour -- whether or not any save
+     * would lose it. What could not be honoured may name anything, so an absence of resolvable
+     * references is no longer evidence that nothing references an object: §3.5's cleanup may not
+     * conclude from it, and no sweep may remove what nothing appears to reference (Amendment 19
+     * Clause 19.3). The way out is Clause 19.4's discard, which only a person may perform.
+     */
+    bool seesEveryReference() const;
+
+    /// What is being held, said in one line, for a refusal that has to explain itself.
+    std::string whyReferencesAreFrozen() const;
+
+    /** Refuse a duplication that would carry a statement this session could not honour.
+     *
+     * Duplication mints fresh identities and rewires the references among the copies (§10.7).
+     * A reference that could not be resolved cannot be rewired -- it names a durable id, and the
+     * copy would go on naming the ORIGINAL rather than its counterpart in the new set. So such a
+     * duplication is refused with its reason rather than quietly producing that copy. Throws;
+     * a relocation is not duplication and is not bound by this.
+     */
+    static void refuseDuplicationThatCannotBeRewired(const std::vector<DocumentObject*>& objs);
+
+    /** Everything being held here, named: who holds it, under what name, and why.
+     *
+     * Named rather than counted, because a person deciding whether to discard one has to be able
+     * to read what it is, and a script asking the same question reads the same answer (P8). The
+     * holder is an object's in-document name, or empty for the document's own statements; for a
+     * whole object block this build could not construct, the name is its durable id.
+     */
+    std::vector<std::array<std::string, 3>> heldStatements() const;
+
+    /** Discard a statement this build cannot honour -- a person's act, and only a person's.
+     *
+     * A statement nothing here can honour would otherwise bind the document forever, holding the
+     * reference freeze of Clause 19.3 closed over it. Clause 19.4 gives exactly one way out: a
+     * person drops it deliberately, the act names what it dropped, and it is recorded in the
+     * document's history like any other edit.
+     *
+     * **Only a person may.** No save, no sweep, no recompute and no repair routine may discard on
+     * a person's behalf, however confident it is that nothing needs the statement -- the whole of
+     * the amendment is the claim that the system cannot tell a value it failed to honour from a
+     * value nobody authored. So a call arriving while the document is reading, rebuilding,
+     * importing, or undoing is refused rather than obeyed: those are the callers that are not a
+     * person. Returns false where nothing was held under that name; throws where the caller is
+     * not in a position to be a person.
+     *
+     * `holder` is the object holding it, or null for the document's own statements.
+     */
+    bool discardStatement(DocumentObject* holder, const char* name);
+
+    /// The same act for a whole object block this build could not construct, named by durable id.
+    bool discardUnreadObject(const char* uuid);
+
+    /// Which container holds statements under that name -- an object, or the document itself.
+    PropertyContainer* holderOfStatements(const std::string& holder);
+
+    /** Put the state a discard replaced into whichever transaction is active.
+     *
+     * @warning This function is only for internal use, by the undo machinery and by the act above.
+     */
+    void recordStatementBeforeDiscard(const std::string& holder,
+                                      const std::string& name,
+                                      bool wholeObject);
+
+    /** Put back, or take away, the kept block for one durable id.
+     *
+     * @warning This function is only for internal use, by the undo machinery.
+     */
+    void putBackUnreadObject(const std::string& uuid, const std::array<std::string, 3>& block);
+
     /** Record every object holding such a statement as a blocked node (Amendment 19).
      *
      * A node is blocked by what it holds, not by having been asked to rebuild. An object whose
@@ -1658,6 +1729,16 @@ protected:
      * AutoTransaction setting.
      */
     int _openTransaction(std::string name = "", int id = 0);
+
+    /** Open a transaction of this document's own for a deliberate act, if none is already open.
+     *
+     * A transaction is booked lazily and only becomes real when a change is recorded through the
+     * property machinery. A discard does not go through that machinery -- the statement it drops
+     * may have no property at all -- so it opens the transaction itself, or the act would never
+     * reach the undo stack (Amendment 19 Clause 19.4). Returns whether this call opened it, and
+     * therefore whether this call should commit it.
+     */
+    bool openTransactionForAct(const std::string& title);
     /**
      * @brief Commit the Command transaction.
      *

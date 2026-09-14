@@ -1224,6 +1224,247 @@ bool Document::holdsUnreadContent() const
     });
 }
 
+namespace
+{
+/// The refusal Clause 19.4 requires, said once wherever it is needed.
+[[noreturn]] void notAPerson(const char* doing)
+{
+    throw Base::RuntimeError(
+        std::string("A statement this build cannot honour is discarded only by a person's "
+                    "deliberate act (Amendment 19 Clause 19.4). This document is ")
+        + doing
+        + ", and a read, a rebuild, an import or an undo may not discard on a person's behalf.");
+}
+}  // namespace
+
+bool Document::seesEveryReference() const
+{
+    return !holdsUnreadContent();
+}
+
+std::string Document::whyReferencesAreFrozen() const
+{
+    const std::vector<std::array<std::string, 3>> held = heldStatements();
+    if (held.empty()) {
+        // A fragment holds nothing -- the content never arrived to be kept -- and is exactly the
+        // document that has seen the fewest of its own references.
+        return "it did not come back whole";
+    }
+    std::string why = "it holds ";
+    why += held.front()[0].empty() ? "'" + held.front()[1] + "'"
+                                   : "'" + held.front()[1] + "' on " + held.front()[0];
+    why += ": " + held.front()[2];
+    if (held.size() > 1) {
+        why += ", and " + std::to_string(held.size() - 1) + " more";
+    }
+    return why;
+}
+
+void Document::refuseDuplicationThatCannotBeRewired(const std::vector<DocumentObject*>& objs)
+{
+    for (const DocumentObject* obj : objs) {
+        if (obj == nullptr || !obj->holdsUnhonouredStatement()) {
+            continue;
+        }
+        // Not every kept statement stands in the way. A value this build had no place for is
+        // carried across verbatim and states on the copy exactly what it states on the original,
+        // which is Clause 19.1's whole point and must keep working. What cannot be carried is a
+        // statement that NAMES something: duplication answers, for every reference among the
+        // copied objects, whether it should now point at the copy or still at the original, and
+        // for a name that never resolved there is no way to answer it.
+        const std::vector<std::string> unresolved = obj->unresolvedReferenceNames();
+        std::string naming = unresolved.empty() ? std::string {} : unresolved.front();
+        if (naming.empty()) {
+            for (const auto& [name, words] : obj->statedProperties()) {
+                // The kept words are in this program's own form, so whether they name anything is
+                // read rather than guessed at.
+                if (words.find("<Target ") != std::string::npos) {
+                    naming = name;
+                    break;
+                }
+            }
+        }
+        if (naming.empty()) {
+            continue;
+        }
+        throw Base::RuntimeError(
+            std::string("This duplication is refused: '")
+            + (obj->isAttachedToDocument() ? obj->getNameInDocument() : "?") + "' states '" + naming
+            + "', a reference this session could not resolve. A copy mints new identities and "
+              "rewires the references between the copies, and a reference that never resolved "
+              "cannot be rewired -- nothing can say whether it should follow the copy or stay "
+              "with the original, so the copy would quietly go on naming the original "
+              "(Amendment 19 Clause 19.3). Discard the statement first, deliberately, if it is no "
+              "longer wanted.");
+    }
+}
+
+std::vector<std::array<std::string, 3>> Document::heldStatements() const
+{
+    std::vector<std::array<std::string, 3>> held;
+    for (const auto& [name, why] : PropertyContainer::unhonouredStatements()) {
+        held.push_back({std::string {}, name, why});
+    }
+    for (const auto& kept : _unreadObjects) {
+        held.push_back({std::string {},
+                        kept[0],
+                        "this build cannot construct an object of type '" + kept[1] + "'"});
+    }
+    for (const DocumentObject* obj : d->objectArray) {
+        if (obj == nullptr || !obj->isAttachedToDocument()) {
+            continue;
+        }
+        for (const auto& [name, why] : obj->unhonouredStatements()) {
+            held.push_back({obj->getNameInDocument(), name, why});
+        }
+    }
+    return held;
+}
+
+bool Document::openTransactionForAct(const std::string& title)
+{
+    if (d->iUndoMode == 0 || isPerformingTransaction() || d->activeUndoTransaction != nullptr) {
+        return false;
+    }
+    const int booked = openTransaction(title);
+    _openTransaction(title, booked);
+    return d->activeUndoTransaction != nullptr;
+}
+
+PropertyContainer* Document::holderOfStatements(const std::string& holder)
+{
+    if (holder.empty()) {
+        return this;
+    }
+    return getObject(holder.c_str());
+}
+
+void Document::recordStatementBeforeDiscard(const std::string& holder,
+                                            const std::string& name,
+                                            bool wholeObject)
+{
+    if (d->activeUndoTransaction == nullptr || d->rollback) {
+        return;
+    }
+    Transaction::DiscardedStatement record;
+    record.holder = holder;
+    record.name = name;
+    record.wholeObject = wholeObject;
+    if (wholeObject) {
+        const auto at = std::find_if(_unreadObjects.begin(),
+                                     _unreadObjects.end(),
+                                     [&](const auto& kept) {
+                                         return kept[0] == name;
+                                     });
+        if (at != _unreadObjects.end()) {
+            record.block = *at;
+        }
+    }
+    else if (PropertyContainer* held = holderOfStatements(holder); held != nullptr) {
+        record.kept = held->keptStatementFor(name);
+    }
+    d->activeUndoTransaction->recordDiscard(std::move(record));
+}
+
+void Document::putBackUnreadObject(const std::string& uuid,
+                                   const std::array<std::string, 3>& block)
+{
+    const auto at = std::find_if(_unreadObjects.begin(),
+                                 _unreadObjects.end(),
+                                 [&](const auto& kept) {
+                                     return kept[0] == uuid;
+                                 });
+    if (at != _unreadObjects.end()) {
+        _unreadObjects.erase(at);
+    }
+    if (!block[0].empty()) {
+        keepUnreadObject(block[0], block[1], block[2]);
+    }
+}
+
+/// What every discard does around the drop itself: refuse the callers that are not a person, name
+/// the act in the document's history, and record what it is about to replace.
+bool Document::discardStatement(DocumentObject* holder, const char* name)
+{
+    if (name == nullptr || *name == '\0') {
+        return false;
+    }
+    if (holder != nullptr && holder->getDocument() != this) {
+        return false;
+    }
+    PropertyContainer* held = holder != nullptr ? static_cast<PropertyContainer*>(holder) : this;
+    if (!held->keptStatementFor(name).holdsAnything()) {
+        return false;
+    }
+    if (testStatus(Restoring) || isAnyRestoring()) {
+        notAPerson("being read");
+    }
+    if (testStatus(Recomputing)) {
+        notAPerson("rebuilding");
+    }
+    if (testStatus(Importing)) {
+        notAPerson("importing objects");
+    }
+    if (isPerformingTransaction()) {
+        notAPerson("undoing or redoing an edit");
+    }
+
+    const std::string holderName =
+        holder != nullptr ? std::string(holder->getNameInDocument()) : std::string {};
+    // Named by what it drops, because a history entry that says only "discard" cannot be read
+    // back a week later, and the whole point of the act is that it was deliberate.
+    const bool ownTransaction = openTransactionForAct("Discard '" + std::string(name) + "'");
+    recordStatementBeforeDiscard(holderName, name, false);
+    held->dropStatement(name);
+    if (ownTransaction) {
+        commitTransaction();
+    }
+    Base::Console().message("Discarded the statement kept for '%s'%s%s.\n",
+                            name,
+                            holderName.empty() ? "" : " on ",
+                            holderName.c_str());
+    return true;
+}
+
+bool Document::discardUnreadObject(const char* uuid)
+{
+    if (uuid == nullptr || *uuid == '\0') {
+        return false;
+    }
+    const auto at = std::find_if(_unreadObjects.begin(),
+                                 _unreadObjects.end(),
+                                 [&](const auto& kept) {
+                                     return kept[0] == uuid;
+                                 });
+    if (at == _unreadObjects.end()) {
+        return false;
+    }
+    if (testStatus(Restoring) || isAnyRestoring()) {
+        notAPerson("being read");
+    }
+    if (testStatus(Recomputing)) {
+        notAPerson("rebuilding");
+    }
+    if (testStatus(Importing)) {
+        notAPerson("importing objects");
+    }
+    if (isPerformingTransaction()) {
+        notAPerson("undoing or redoing an edit");
+    }
+
+    const std::string type = (*at)[1];
+    const bool ownTransaction = openTransactionForAct("Discard the kept '" + type + "'");
+    recordStatementBeforeDiscard({}, uuid, true);
+    putBackUnreadObject(uuid, {});
+    if (ownTransaction) {
+        commitTransaction();
+    }
+    Base::Console().message("Discarded the block kept for the '%s' this build cannot "
+                            "construct.\n",
+                            type.c_str());
+    return true;
+}
+
 void Document::recordUnkeptStatement(std::string said)
 {
     if (said.empty()) {
@@ -4369,6 +4610,13 @@ Document::copyObject(const std::vector<DocumentObject*>& objs, bool recursive, b
             "Document must be saved at least once before link to external objects");
     }
 
+    // A relocation keeps the identities it arrived with and rewires nothing, so it is not bound
+    // here; a duplication mints fresh ones and must rewire, which is the thing that cannot be
+    // done for a reference that never resolved (Amendment 19 Clause 19.3).
+    if (!testStatus(Relocating)) {
+        refuseDuplicationThatCannotBeRewired(deps);
+    }
+
     if (deps.empty()) {
         return {};
     }
@@ -4571,9 +4819,27 @@ DocumentObject* Document::moveObject(DocumentObject* obj, const bool recursive)
         if (!o) {
             continue;
         }
-        if (iter == ids.rbegin() || o->getInList().empty()) {
+        if (iter == ids.rbegin()) {
             that->removeObject(o->getNameInDocument());
+            continue;
         }
+        if (!o->getInList().empty()) {
+            continue;
+        }
+        // An empty inList means nothing that this session could READ references the object. That
+        // is not the same as nothing referencing it: a statement the source document could not
+        // honour may name anything, including this (Amendment 19 Clause 19.3). So the object
+        // stays where it is, and the reason is said rather than left to be noticed.
+        if (!that->seesEveryReference()) {
+            Base::Console().warning(
+                "'%s' was left in '%s' rather than cleaned up: %s, so an absence of references "
+                "is not evidence that nothing references it.\n",
+                o->getNameInDocument(),
+                that->getName(),
+                that->whyReferencesAreFrozen().c_str());
+            continue;
+        }
+        that->removeObject(o->getNameInDocument());
     }
     return objs.back();
 }
