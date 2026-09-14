@@ -2075,6 +2075,58 @@ std::vector<DocumentObject*> Document::importObjects(Base::XMLReader& reader)
     return objs;
 }
 
+std::vector<std::pair<std::string, DocumentObject*>>
+Document::acceptStoredRecipeObjects(std::istream& rendering, const std::string& assetDirectory)
+{
+    d->hashers.clear();
+    Base::FlagToggler<> flag(globalIsRestoring, false);
+    Base::ObjectStatusLocker<Status, Document> restoreBit(Status::Restoring, this);
+    Base::ObjectStatusLocker<Status, Document> restoreBit2(Status::Importing, this);
+
+    // A copy drops NEW authored objects into a document, so they must not inherit the source's
+    // durable identity (§10.7) -- two coexisting objects sharing one id would break "same id means
+    // the same object". A relocation is not duplication and keeps the identity it arrived with.
+    const bool isDuplication = !testStatus(Relocating);
+
+    std::vector<std::pair<std::string, DocumentObject*>> arrived;
+    RecipeArrival how;
+    // The second pass runs below instead, because the new identities have to be in place before
+    // anything binds against them -- the order the archive path already uses.
+    how.finish = false;
+    how.assetDirectory = assetDirectory;
+    how.intoExistingContent = true;
+    how.arrived = &arrived;
+    restoreStoredRecipe(*this, rendering, how);
+
+    std::vector<DocumentObject*> objs;
+    objs.reserve(arrived.size());
+    for (const auto& [stated, obj] : arrived) {
+        objs.push_back(obj);
+    }
+
+    for (auto o : objs) {
+        if (o && o->isAttachedToDocument()) {
+            o->setStatus(ObjImporting, true);
+            FC_LOG("importing " << o->getFullName());
+            if (isDuplication) {
+                o->mintDurableIdentity();
+            }
+        }
+    }
+
+    afterRestore(objs, true);
+    signalFinishImportObjects(objs);
+
+    for (auto o : objs) {
+        if (o && o->isAttachedToDocument()) {
+            o->setStatus(ObjImporting, false);
+        }
+    }
+
+    d->hashers.clear();
+    return arrived;
+}
+
 unsigned int Document::getMemSize() const
 {
     unsigned int size = 0;
@@ -4282,44 +4334,60 @@ Document::copyObject(const std::vector<DocumentObject*>& objs, bool recursive, b
             "Document must be saved at least once before link to external objects");
     }
 
-    MergeDocuments md(this);
-    // if not copying recursively then suppress possible warnings
-    md.setVerbose(recursive);
-
-    unsigned int memsize = 1000;  // ~ for the meta-information
-    for (auto it : deps) {
-        memsize += it->getMemSize();
+    if (deps.empty()) {
+        return {};
     }
 
-    // if less than ~10 MB
-    bool use_buffer = (memsize < 0xA00000);
-    std::string res;
+    // A copy becomes objects in a document, so it is a thing that can become the record, and it
+    // is written by the writer that writes the record and read by that reader (Amendment 19
+    // Clause 19.5). It used to go out through a second writer -- the legacy archive and each
+    // property's own Save -- and an object holding a statement this build could not honour was
+    // copied without it, so the copy asserted as authored what the original only failed to honour.
+    //
+    // Material rides beside the rendering rather than inside it, exactly as it does beside a
+    // document on disk. It goes in an envelope of its own and not in either document's project
+    // folder: rendering into the source's folder would leave entries there as a side effect of
+    // copying, and a document that has never been saved has no folder at all -- which is the
+    // ordinary case for the document a person is pasting into.
+    const fs::path envelope =
+        fs::path(Base::FileInfo::getTempPath()) / ("copy-" + Base::Uuid::createUuid());
+    std::error_code ignored;
+    fs::create_directories(envelope, ignored);
+    const auto discardEnvelope = [&envelope] {
+        std::error_code failed;
+        fs::remove_all(envelope, failed);
+    };
+
+    std::vector<std::pair<std::string, DocumentObject*>> arrived;
     try {
-        res.reserve(memsize);
-    }
-    catch (const std::bad_alloc&) {
-        use_buffer = false;
-    }
+        // The rendering names the document it came from; the objects in it may come from more
+        // than one, and each says which is its own.
+        const std::vector<const DocumentObject*> carried(deps.begin(), deps.end());
+        const std::string rendering =
+            formatStoredRecipe(*deps.front()->getDocument(),
+                               envelope.string(),
+                               RecipeScope {carried, /*withDocumentProperties=*/false});
 
+        std::istringstream text(rendering);
+        arrived = acceptStoredRecipeObjects(text, envelope.string());
+    }
+    catch (...) {
+        discardEnvelope();
+        throw;
+    }
+    discardEnvelope();
+
+    // Each copy, found by the durable id its original still wears. The rendering states objects
+    // in durable-id order rather than the order they were asked for, so position cannot say which
+    // copy came from which original.
+    std::map<std::string, DocumentObject*> byOriginal(arrived.begin(), arrived.end());
     std::vector<DocumentObject*> imported;
-    if (use_buffer) {
-        Base::StringOStreambuf obuf(res);
-        std::ostream ostr(&obuf);
-        exportObjects(deps, ostr);
-
-        Base::StringIStreambuf ibuf(res);
-        std::istream istr(nullptr);
-        istr.rdbuf(&ibuf);
-        imported = md.importObjects(istr);
-    }
-    else {
-        static Base::FileInfo fi(Application::getTempFileName());
-        Base::ofstream ostr(fi, std::ios::out | std::ios::binary);
-        exportObjects(deps, ostr);
-        ostr.close();
-
-        Base::ifstream istr(fi, std::ios::in | std::ios::binary);
-        imported = md.importObjects(istr);
+    imported.reserve(deps.size());
+    for (DocumentObject* source : deps) {
+        const auto found = byOriginal.find(source->Uid.getValueStr());
+        if (found != byOriginal.end()) {
+            imported.push_back(found->second);
+        }
     }
 
     if (returnAll || imported.size() != deps.size()) {

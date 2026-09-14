@@ -58,6 +58,7 @@
 
 #include "Document.h"
 #include "DynamicProperty.h"
+#include "ExpressionParser.h"
 #include "DocumentObject.h"
 #include "GeoFeature.h"
 #include "Property.h"
@@ -748,6 +749,44 @@ void refuse(const char* expected, const Base::XMLReader& reader)
 std::string liftObjectWords(const std::string& source, const std::string& uuid);
 std::string liftDocumentWords(const std::string& source);
 
+/// A reader that answers what this document called the objects a file named.
+///
+/// A recipe read into an empty document keeps every name the file states, so nothing is remapped
+/// and each name answers with itself. A recipe arriving in a document that already holds content
+/// cannot: a name may be taken, and the document gives the object one of its own. A formula binds
+/// by name and has no way to see that, so the pair is kept here and the formula follows the object
+/// -- the same service the document archive's own merge reader provides.
+class ArrivingReader: public Base::XMLReader
+{
+public:
+    ArrivingReader(const char* name, std::istream& stream, bool mapping)
+        : Base::XMLReader(name, stream)
+        , _mapping(mapping)
+    {}
+
+    void addName(const char* stated, const char* given) override
+    {
+        if (stated != nullptr && given != nullptr && std::strcmp(stated, given) != 0) {
+            _names[stated] = given;
+        }
+    }
+
+    const char* getName(const char* stated) const override
+    {
+        const auto found = _names.find(stated);
+        return found != _names.end() ? found->second.c_str() : stated;
+    }
+
+    bool doNameMapping() const override
+    {
+        return _mapping;
+    }
+
+private:
+    bool _mapping;
+    std::map<std::string, std::string> _names;
+};
+
 /// One object's appearance block, exactly as the file states it, indentation and all.
 ///
 /// Lifted rather than rebuilt for the same reason a property block is: a session with no display
@@ -1284,15 +1323,33 @@ void App::restoreStoredRecipe(Document& doc,
                               bool finish,
                               const std::string& assetDirectory)
 {
+    RecipeArrival how;
+    how.finish = finish;
+    how.assetDirectory = assetDirectory;
+    restoreStoredRecipe(doc, source, how);
+}
+
+void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeArrival& how)
+{
+    const std::string& assetDirectory = how.assetDirectory;
     // Read once and kept, because a block this build cannot construct is given back from the
     // file's own words rather than from this session's reading of them (Amendment 19).
     const std::string sourceText((std::istreambuf_iterator<char>(source)),
                                  std::istreambuf_iterator<char>());
     std::istringstream parsed(sourceText);
 
-    Base::XMLReader reader("StoredRecipe", parsed);
+    ArrivingReader reader("StoredRecipe", parsed, how.intoExistingContent);
     if (!reader.isValid()) {
         return;
+    }
+
+    // What the name map is for. A formula names the object it reads a value from, so a formula
+    // arriving beside an object this document had to rename has to be told the new name; the
+    // expression layer asks the reader that is currently reading, which is this one. Installed
+    // only for an arrival, because a document being opened renames nothing.
+    std::optional<ExpressionParser::ExpressionImporter> naming;
+    if (how.intoExistingContent) {
+        naming.emplace(reader);
     }
 
     std::vector<PendingReference> pending;
@@ -1374,6 +1431,12 @@ void App::restoreStoredRecipe(Document& doc,
             obj->Uid.setValue(uuid);
             restored.push_back(obj);
             arrived.emplace(uuid, obj);
+            // The name the file stated and the name this document gave it. The same for a document
+            // being opened; different wherever the stated one was already taken.
+            reader.addName(name.c_str(), obj->getNameInDocument());
+            if (how.arrived != nullptr) {
+                how.arrived->emplace_back(uuid, obj);
+            }
             // Marked as being restored for the duration, exactly as the archive's own reader does
             // it. Some features rebuild themselves the moment one of their sizes changes, which is
             // right when a person types a number and wrong while a file is being read: it builds
@@ -1450,7 +1513,7 @@ void App::restoreStoredRecipe(Document& doc,
     // has a second pass for exactly this and the archive's own load path uses it. Reading a
     // recipe is reading a document, and it finishes the same way -- unless the caller is a
     // document being opened, which runs that pass itself once every document in the set is read.
-    if (finish) {
+    if (how.finish) {
         doc.afterRestore(restored, false);
     }
 

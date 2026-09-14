@@ -466,6 +466,27 @@ public:
      */
     std::vector<DocumentObject*> importObjects(Base::XMLReader& reader);
 
+    /** Take objects rendered by the record's own writer into this document.
+     *
+     * The arrival half of a copy. What `copyObject` renders is the stored form of the objects a
+     * person picked, and it is read back by the stored form's own reader -- one writer and one
+     * reader for anything that can become the record (Amendment 19 Clause 19.5).
+     *
+     * Everything an arrival does whatever form it arrived in is here: marking the objects as
+     * importing, minting each a durable identity of its own unless this is a relocation, and the
+     * second pass that lets formulas bind once every object exists. That is the same work
+     * `importObjects` does around the archive reader, in the same order -- a new identity has to
+     * be in place before the pass that binds against it.
+     *
+     * Answers with what arrived, each paired with the durable id the file stated for it, which
+     * is what lets a caller say which copy came from which original.
+     *
+     * @param[in, out] rendering: the stored form of the objects, as `formatStoredRecipe` wrote it.
+     * @param[in] assetDirectory: where material the rendering names by content is read from.
+     */
+    std::vector<std::pair<std::string, DocumentObject*>>
+    acceptStoredRecipeObjects(std::istream& rendering, const std::string& assetDirectory = {});
+
     /**
      * @brief Import any externally linked objects
      *

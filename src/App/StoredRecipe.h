@@ -29,6 +29,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace App
@@ -120,6 +121,39 @@ AppExport void restoreStoredRecipe(Document& doc,
                                    std::istream& source,
                                    bool finish = true,
                                    const std::string& assetDirectory = {});
+
+/** The terms on which a stored recipe arrives in a document.
+ *
+ *  A document being opened arrives on the plain terms above: the document is empty, so every name
+ *  the file states is free and every durable id in it is the only one of its kind here. A copy
+ *  does not. The objects land in a document that already holds content, and may land beside the
+ *  very objects they were copied from.
+ */
+struct RecipeArrival
+{
+    /// Run the document's own second pass here -- see `restoreStoredRecipe`.
+    bool finish {true};
+
+    /// Where material the recipe names by content is read from.
+    std::string assetDirectory;
+
+    /** The objects are arriving in a document that already holds content.
+     *
+     *  A name the file states may already be taken here, so the document gives the object one of
+     *  its own and the reader keeps the pair. That is what lets a formula naming an object follow
+     *  it: a formula binds by name, and a name this document had to change is the one thing it
+     *  cannot see for itself.
+     */
+    bool intoExistingContent {false};
+
+    /** Filled in with what arrived, in the order the file states it, each paired with the durable
+     *  id the file gave it -- which is not necessarily the id it now wears, because an object
+     *  arriving as a copy is a new object and mints one of its own (§10.7).
+     */
+    std::vector<std::pair<std::string, DocumentObject*>>* arrived {nullptr};
+};
+
+AppExport void restoreStoredRecipe(Document& doc, std::istream& source, const RecipeArrival& how);
 
 /** One object's block of the stored recipe, byte for byte as `formatStoredRecipe` writes it.
  *
