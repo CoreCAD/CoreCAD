@@ -74,6 +74,18 @@ public:
 
 private:
     void showInNotificationArea();
+
+    /** Everything that touches the notification list, and nothing that touches a widget.
+     *
+     * The two must not overlap. Showing a widget can raise a warning, a warning can become a
+     * notification, and a notification arriving here takes the same lock this holds -- measured
+     * as a deadlock of the interface thread against itself. So the list work finishes and the
+     * lock is released before anything is shown. Nothing may move a widget call back inside it.
+     *
+     * Returns the text to show, empty where there is no room for another notification.
+     */
+    QString buildNotificationText();
+
     bool confirmationRequired(Base::LogStyle level);
     void showConfirmationDialog(const QString& notifiername, const QString& message);
     void slotRestoreFinished(const App::Document&);
