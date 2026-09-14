@@ -108,6 +108,30 @@ public:
 };
 
 /**
+ * @brief Thrown when a file states a record that cannot be determined from it
+ * (Amendment 19 Clause 19.2).
+ *
+ * A refusal is total. Where the reader genuinely cannot continue -- a truncated
+ * file, one still carrying the markers of an unfinished merge, anything whose
+ * structure is broken such that what was written cannot be read back -- the
+ * document does not open: not as the part that was read before the failure, and
+ * not as an empty document. A partially-read document standing in for the record
+ * is how the record is destroyed, because it looks like a document and a save
+ * publishes it.
+ *
+ * A distinct type so the open door can tell this apart from the ordinary
+ * failures it is right to be lenient about, and discard the half-built document
+ * rather than hand it over. The message says what was wrong and where, because
+ * refusing to open a file is not refusing to say anything about it. Reaches
+ * Python as a catchable RuntimeError (P7).
+ */
+class DocumentMalformedError: public Base::RuntimeError
+{
+public:
+    using Base::RuntimeError::RuntimeError;
+};
+
+/**
  * @brief A class that represents a FreeCAD document.
  *
  * A document is a container for all objects that are part of a FreeCAD

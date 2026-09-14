@@ -1340,7 +1340,14 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
 
     ArrivingReader reader("StoredRecipe", parsed, how.intoExistingContent);
     if (!reader.isValid()) {
-        return;
+        // Nothing in this file could be read at all -- it is not a recipe, or its very first
+        // element is broken. Returning here left the caller holding an empty document that looked
+        // like the file, which is the failure Clause 19.2 forbids most plainly: a refusal is
+        // total, and a document that never opened is not an empty one.
+        throw Base::XMLParseException(
+            reader.whyInvalid().empty()
+                ? std::string("Stored recipe: the file could not be read as a recipe")
+                : "Stored recipe: " + reader.whyInvalid());
     }
 
     // What the name map is for. A formula names the object it reads a value from, so a formula

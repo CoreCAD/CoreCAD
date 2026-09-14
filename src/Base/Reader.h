@@ -146,6 +146,17 @@ public:
     {
         return _valid;
     }
+    /** Why the reader is not valid, and where in the file.
+     *
+     *  Empty on a reader that opened. A reader that failed on the very first element throws
+     *  nothing -- it simply is not valid -- so this is the only account of what was wrong, and a
+     *  file that will not open still has to be repairable in a text editor (Amendment 19
+     *  Clause 19.2).
+     */
+    const std::string& whyInvalid() const
+    {
+        return _whyInvalid;
+    }
     bool isVerbose() const
     {
         return _verbose;
@@ -395,6 +406,7 @@ private:
     XERCES_CPP_NAMESPACE::SAX2XMLReader* parser;
     XERCES_CPP_NAMESPACE::XMLPScanToken token;
     bool _valid {false};
+    std::string _whyInvalid;
     bool _verbose {true};
 
 public:

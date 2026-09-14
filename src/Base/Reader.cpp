@@ -31,6 +31,7 @@
 #include <xercesc/sax2/Attributes.hpp>
 
 #include <locale>
+#include <sstream>
 
 #include "Reader.h"
 #include "Base64.h"
@@ -54,6 +55,24 @@ using namespace std;
 using namespace XERCES_CPP_NAMESPACE;
 
 
+namespace
+{
+/// What went wrong and WHERE, in one sentence.
+///
+/// A parser says both, and until now only the reason travelled: the position went to the error
+/// stream and was gone by the time anything could report it. A file that will not open has to be
+/// repairable in a text editor, and "element name expected" without a line number is not enough
+/// to find the place (Amendment 19 Clause 19.2).
+std::string reasonAndPlace(const XERCES_CPP_NAMESPACE::SAXParseException& e)
+{
+    char* message = XMLString::transcode(e.getMessage());
+    std::ostringstream what;
+    what << message << " (line " << e.getLineNumber() << ", column " << e.getColumnNumber() << ')';
+    XMLString::release(&message);
+    return what.str();
+}
+}  // namespace
+
 // ---------------------------------------------------------------------------
 //  Base::XMLReader: Constructors and Destructor
 // ---------------------------------------------------------------------------
@@ -76,17 +95,18 @@ Base::XMLReader::XMLReader(const char* FileName, std::istream& str)
     }
     catch (const XMLException& toCatch) {
         char* message = XMLString::transcode(toCatch.getMessage());
-        cerr << "Exception message is: \n" << message << "\n";
+        _whyInvalid = message;
         XMLString::release(&message);
     }
     catch (const SAXParseException& toCatch) {
-        char* message = XMLString::transcode(toCatch.getMessage());
-        cerr << "Exception message is: \n" << message << "\n";
-        XMLString::release(&message);
+        // Kept, not only printed. A reader that failed on the very first element is the one case
+        // where nothing is thrown, so whoever asked for the read has no other way to learn why --
+        // and answering "it would not open" without saying where is not a diagnosis.
+        _whyInvalid = reasonAndPlace(toCatch);
     }
 #ifndef FC_DEBUG
     catch (...) {
-        cerr << "Unexpected Exception \n";
+        _whyInvalid = "unexpected XML exception";
     }
 #endif
 }
@@ -210,11 +230,7 @@ bool Base::XMLReader::read()
         throw Base::XMLBaseException(what);
     }
     catch (const SAXParseException& toCatch) {
-
-        char* message = XMLString::transcode(toCatch.getMessage());
-        std::string what = message;
-        XMLString::release(&message);
-        throw Base::XMLParseException(what);
+        throw Base::XMLParseException(reasonAndPlace(toCatch));
     }
     catch (...) {
         throw Base::XMLBaseException("Unexpected XML exception");

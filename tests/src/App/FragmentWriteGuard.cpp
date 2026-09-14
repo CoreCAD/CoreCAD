@@ -18,11 +18,16 @@
 #include <src/App/InitApplication.h>
 
 /** A document that did not come back whole is a fragment, and the file it came from is the only
- *  remaining copy of what is missing from it.
+ *  remaining copy of what is missing from it. An ordinary save publishes the fragment over the
+ *  whole record. These tests hold the guard, and the way past it, in place (Amendment 19
+ *  Clause 19.3).
  *
- *  A truncated file, or one still carrying the markers of an unfinished merge, opens as its own
- *  beginning. An ordinary save then publishes that beginning over the whole record. These tests
- *  hold the guard, and the way past it, in place (Amendment 19 Clause 19.3).
+ *  Where a fragment comes from, now that Clause 19.2's refusal is total: not from OPENING a
+ *  truncated file -- that is refused outright and no document is handed back -- but from a
+ *  document already open whose file changed under it and was read again. A branch switched, a
+ *  copy synchronised, a recovery re-read. The document existed before that read and goes on
+ *  existing after it, so there is no open door to discard it at; the guard is what stands between
+ *  it and the file.
  */
 class FragmentWriteGuardTest: public ::testing::Test
 {
@@ -52,25 +57,30 @@ protected:
         out << text;
     }
 
-    /// A saved three-object document, cut off part way through -- what a truncated write or an
-    /// interrupted transfer leaves behind.
-    App::Document* openTruncated(const std::string& path)
+    /// A document holding less than its own file states: three objects saved, the file then cut
+    /// off part way through -- a truncated write, an interrupted transfer, a half-finished merge
+    /// -- and read again under the same document.
+    App::Document* holdingAFragmentOf(const std::string& path)
     {
         auto& app = App::GetApplication();
-        App::Document* whole
-            = app.newDocument(app.getUniqueDocumentName("fragment").c_str(), "testUser");
+        _doc = app.newDocument(app.getUniqueDocumentName("fragment").c_str(), "testUser");
         for (const char* name : {"Alpha", "Beta", "Gamma"}) {
-            whole->addObject("App::VarSet", name);
+            _doc->addObject("App::VarSet", name);
         }
-        EXPECT_TRUE(whole->saveAs(path.c_str()));
+        EXPECT_TRUE(_doc->saveAs(path.c_str()));
         const std::string full = readAll(path);
-        app.closeDocument(whole->getName());
 
         const std::string::size_type at = full.find("name=\"Gamma\"");
         EXPECT_NE(at, std::string::npos);
         writeAll(path, full.substr(0, at));
 
-        _doc = app.openDocument(path.c_str());
+        // The re-read refuses, because what it read is not a record (Clause 19.2). The document
+        // survives it holding nothing, still pointed at the file that holds everything.
+        try {
+            _doc->restore();
+        }
+        catch (const Base::Exception&) {
+        }
         return _doc;
     }
 
@@ -83,10 +93,10 @@ protected:
 TEST_F(FragmentWriteGuardTest, savingAFragmentOverItsOwnFileIsRefusedAndChangesNothing)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
     ASSERT_TRUE(doc->testStatus(App::Document::RestoreError))
-        << "a truncated file opened as a whole document";
+        << "a read that stopped part way was recorded as a read that did not";
 
     const std::string before = readAll(path);
     EXPECT_FALSE(doc->save()) << "a fragment was published over the record";
@@ -98,7 +108,7 @@ TEST_F(FragmentWriteGuardTest, savingAFragmentOverItsOwnFileIsRefusedAndChangesN
 TEST_F(FragmentWriteGuardTest, savingAFragmentToAnyOtherPathIsRefusedToo)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
 
     const std::string elsewhere = Base::FileInfo::getTempFileName() + ".cpart";
@@ -112,7 +122,7 @@ TEST_F(FragmentWriteGuardTest, savingAFragmentToAnyOtherPathIsRefusedToo)
 TEST_F(FragmentWriteGuardTest, aRefusedSaveAsLeavesTheDocumentWhereItWas)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
 
     const std::string name = doc->FileName.getStrValue();
@@ -130,7 +140,7 @@ TEST_F(FragmentWriteGuardTest, aRefusedSaveAsLeavesTheDocumentWhereItWas)
 TEST_F(FragmentWriteGuardTest, aWriteThatNamesWhatItLosesIsAllowedThrough)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
 
     const std::vector<std::string> losing = doc->whatASaveWouldLose();
@@ -150,7 +160,7 @@ TEST_F(FragmentWriteGuardTest, aWriteThatNamesWhatItLosesIsAllowedThrough)
 TEST_F(FragmentWriteGuardTest, acceptingAWriteElsewhereDoesNotSettleTheAccountWithTheFile)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
 
     const std::string elsewhere = Base::FileInfo::getTempFileName() + ".cpart";
@@ -171,7 +181,7 @@ TEST_F(FragmentWriteGuardTest, acceptingAWriteElsewhereDoesNotSettleTheAccountWi
 TEST_F(FragmentWriteGuardTest, anAcceptedWriteOverItsOwnFileSettlesTheAccount)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
 
     ASSERT_TRUE(doc->saveAcceptingLoss(doc->whatASaveWouldLose(), ""));
@@ -193,10 +203,10 @@ TEST_F(FragmentWriteGuardTest, anAcceptedWriteOverItsOwnFileSettlesTheAccount)
 TEST_F(FragmentWriteGuardTest, aFragmentDoesNotCallItselfWhole)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
 
-    EXPECT_TRUE(doc->holdsUnreadContent()) << "a truncated document said it was whole";
+    EXPECT_TRUE(doc->holdsUnreadContent()) << "a document holding a fragment said it was whole";
 }
 
 // An ordinary document is not gated. The guard exists to stop a quiet loss, not to make a person
@@ -218,7 +228,7 @@ TEST_F(FragmentWriteGuardTest, anOrdinaryDocumentSavesWithoutBeingAskedAnything)
 TEST_F(FragmentWriteGuardTest, readingAgainStartsTheAccountOver)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
     ASSERT_FALSE(doc->whatASaveWouldLose().empty());
 
@@ -251,7 +261,7 @@ TEST_F(FragmentWriteGuardTest, readingAgainStartsTheAccountOver)
 TEST_F(FragmentWriteGuardTest, aRefusedWriteReachesTheCallerThatAskedForIt)
 {
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
-    App::Document* doc = openTruncated(path);
+    App::Document* doc = holdingAFragmentOf(path);
     ASSERT_NE(doc, nullptr);
 
     const std::string name = doc->getName();
