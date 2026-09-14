@@ -26,7 +26,9 @@
 
 #pragma once
 
+#include <array>
 #include <unordered_map>
+#include <vector>
 #include <Base/Factory.h>
 #include <Base/Persistence.h>
 #include <App/PropertyContainer.h>
@@ -152,12 +154,45 @@ public:
      */
     void addObjectChange(const TransactionalObject* Obj, const Property* Prop);
 
+    /** What a person discarded, kept so the act can be undone (Amendment 19 Clause 19.4).
+     *
+     * Recorded here rather than with an object's properties because the statements that most need
+     * discarding are not reachable through a property at all: one kept because this build has no
+     * property of that name has no property, and the document's own statements and the blocks
+     * held for objects this build could not construct belong to no object.
+     */
+    struct DiscardedStatement
+    {
+        /// The in-document name of the object that held it; empty means the document itself.
+        std::string holder;
+        /// The property name it was held under, or the durable id of a kept object block.
+        std::string name;
+        /// Whether this record is about a whole object block rather than a property's statement.
+        bool wholeObject {false};
+        /// What was held under that name.
+        PropertyContainer::KeptStatement kept;
+        /// The object block: uuid, type, and its own words. Empty when nothing was held.
+        std::array<std::string, 3> block;
+    };
+
+    /** Record the state a discard is about to replace, so applying this transaction puts it back.
+     *
+     * The record holds what was there BEFORE, exactly as a property change does. Applying it
+     * restores that, and captures what is there at the time into whichever transaction is
+     * active -- which is how redo gets its half without a second kind of record.
+     */
+    void recordDiscard(DiscardedStatement discarded);
+
 private:
     void changeProperty(TransactionalObject* Obj,
                         std::function<void(TransactionObject* to)> changeFunc);
 
+    /// Put back what a discard dropped, recording the inverse for the other direction.
+    void applyDiscards(Document& Doc) const;
+
 private:
     int transID;
+    std::vector<DiscardedStatement> _Discarded;
     using Info = std::pair<const TransactionalObject*, TransactionObject*>;
     bmi::multi_index_container<
         Info,

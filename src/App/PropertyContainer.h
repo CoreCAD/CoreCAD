@@ -680,12 +680,43 @@ public:
   /// What this container is keeping for one property, if anything.
   KeptStatement keptStatementFor(const Property* prop) const;
 
+  /** What this container is keeping under one NAME, whether or not a property of that name exists.
+   *
+   * The name form is the one that reaches everything: a statement kept because this build has no
+   * property of that name is, by definition, not reachable through a property. The property form
+   * above is a convenience for the paths that already hold one.
+   */
+  KeptStatement keptStatementFor(const std::string& name) const;
+
   /** Put back what was kept for one property, replacing whatever is held for it now.
    *
    * Given an empty statement it clears instead: restoring state means arriving at exactly the
    * state that was captured, whether or not that state held a note.
    */
   void restoreKeptStatement(const Property* prop, const KeptStatement& kept);
+
+  /// Put back what was kept under one name -- see the name form of keptStatementFor().
+  void restoreKeptStatement(const std::string& name, const KeptStatement& kept);
+
+  /** Drop what is kept under one name, and hand back what was dropped.
+   *
+   * The mechanism only. WHO may call it is the whole of Amendment 19 Clause 19.4: a person, and
+   * nothing else. The act lives on the document (`Document::discardStatement`), which is where
+   * the refusals and the entry in the document's history are; nothing in a save, a sweep, a
+   * recompute or a repair routine may reach either of them.
+   */
+  KeptStatement dropStatement(const std::string& name);
+
+  /// The names of the references this container states and this session could not resolve.
+  std::vector<std::string> unresolvedReferenceNames() const
+  {
+      std::vector<std::string> names;
+      names.reserve(_unresolvedReferences.size());
+      for (const auto& [name, targets] : _unresolvedReferences) {
+          names.push_back(name);
+      }
+      return names;
+  }
 
   /// The property blocks kept as stated, by property name -- in name order, as the file has them.
   const std::map<std::string, std::string>& statedProperties() const

@@ -1464,6 +1464,22 @@ void StdCmdDuplicateSelection::activated(int iMsg)
         return;
     }
 
+    // Duplicating mints fresh identities and rewires the references between the copies, which
+    // cannot be done for a reference that never resolved -- the copy would go on naming the
+    // original (Amendment 19 Clause 19.3). Asked here as well as at the document's own copy path,
+    // because this command renders the objects through the legacy archive and never reaches it.
+    try {
+        App::Document::refuseDuplicationThatCannotBeRewired(sel);
+    }
+    catch (const Base::Exception& e) {
+        QMessageBox::warning(
+            getMainWindow(),
+            qApp->translate("Std_DuplicateSelection", "Duplicate"),
+            QString::fromUtf8(e.what())
+        );
+        return;
+    }
+
     bool hasXLink = false;
     Base::FileInfo fi(App::Application::getTempFileName());
     {
@@ -1662,6 +1678,23 @@ void StdCmdDelete::activated(int iMsg)
             auto sels = Selection().getSelectionEx();
             bool autoDeletion = true;
             bool forceDeletion = false;
+            // Where the document holds a statement it could not honour, the list below is what
+            // this session can SEE referencing the object, which is not the same as what does:
+            // what could not be honoured may name anything, including this (Amendment 19
+            // Clause 19.3). So the question is asked rather than answered on the list's behalf.
+            std::set<QString> cannotSeeEveryReference;
+            for (auto& sel : sels) {
+                const App::DocumentObject* obj = sel.getObject();
+                if (obj != nullptr && obj->getDocument() != nullptr
+                    && !obj->getDocument()->seesEveryReference()) {
+                    cannotSeeEveryReference.insert(
+                        QString::fromUtf8(obj->getDocument()->whyReferencesAreFrozen().c_str())
+                    );
+                }
+            }
+            if (!cannotSeeEveryReference.empty()) {
+                autoDeletion = false;
+            }
             for (auto& sel : sels) {
                 auto obj = sel.getObject();
                 if (!obj) {
@@ -1704,16 +1737,31 @@ void StdCmdDelete::activated(int iMsg)
             if (!autoDeletion) {
                 QString bodyMessage;
                 QTextStream bodyMessageStream(&bodyMessage);
-                bodyMessageStream << qApp->translate(
-                    "Std_Delete",
-                    "The following referencing objects might break.\n\n"
-                    "Continue?\n"
-                );
-                for (const auto& currentLabel : affectedLabels) {
-                    bodyMessageStream << '\n' << currentLabel;
+                if (!affectedLabels.empty()) {
+                    bodyMessageStream << qApp->translate(
+                        "Std_Delete",
+                        "The following referencing objects might break.\n\n"
+                        "Continue?\n"
+                    );
+                    for (const auto& currentLabel : affectedLabels) {
+                        bodyMessageStream << '\n' << currentLabel;
+                    }
+                    if (more) {
+                        bodyMessageStream << "\n...";
+                    }
                 }
-                if (more) {
-                    bodyMessageStream << "\n...";
+                for (const QString& why : cannotSeeEveryReference) {
+                    if (!bodyMessage.isEmpty()) {
+                        bodyMessageStream << '\n';
+                    }
+                    bodyMessageStream
+                        << qApp->translate(
+                                   "Std_Delete",
+                                   "\nThis document cannot see every reference to what "
+                                   "you are deleting, because %1. Something it could not "
+                                   "read may name this object.\n\nContinue?\n"
+                           )
+                               .arg(why);
                 }
 
                 auto ret = QMessageBox::warning(

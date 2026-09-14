@@ -268,6 +268,49 @@ PropertyContainer::keptStatementFor(const Property* prop) const
     return kept;
 }
 
+PropertyContainer::KeptStatement
+PropertyContainer::keptStatementFor(const std::string& name) const
+{
+    KeptStatement kept;
+    if (const auto found = _missingSources.find(name); found != _missingSources.end()) {
+        kept.missingSource = found->second;
+    }
+    if (const auto found = _unresolvedReferences.find(name); found != _unresolvedReferences.end()) {
+        kept.unresolvedTargets = found->second;
+    }
+    if (const auto found = _statedProperties.find(name); found != _statedProperties.end()) {
+        kept.statedWords = found->second;
+    }
+    return kept;
+}
+
+void PropertyContainer::restoreKeptStatement(const std::string& name, const KeptStatement& kept)
+{
+    // Cleared first, so restoring an empty statement arrives at exactly the state that was
+    // captured -- the same rule as the property form.
+    _missingSources.erase(name);
+    _unresolvedReferences.erase(name);
+    _statedProperties.erase(name);
+    if (!kept.missingSource.empty()) {
+        _missingSources[name] = kept.missingSource;
+    }
+    if (!kept.unresolvedTargets.empty()) {
+        _unresolvedReferences[name] = kept.unresolvedTargets;
+    }
+    if (!kept.statedWords.empty()) {
+        _statedProperties[name] = kept.statedWords;
+    }
+}
+
+PropertyContainer::KeptStatement PropertyContainer::dropStatement(const std::string& name)
+{
+    KeptStatement dropped = keptStatementFor(name);
+    _missingSources.erase(name);
+    _unresolvedReferences.erase(name);
+    _statedProperties.erase(name);
+    return dropped;
+}
+
 void PropertyContainer::restoreKeptStatement(const Property* prop, const KeptStatement& kept)
 {
     const char* name = getPropertyName(prop);
