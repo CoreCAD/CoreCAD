@@ -2965,16 +2965,10 @@ void Document::restore(const char* filename,
         const std::string filePath = FileName.getValue();
         const std::string docLabel = Label.getValue();
         d->rebuildOnOpen = true;
-        try {
-            restoreStoredRecipe(*this,
-                                file,
-                                /*finish=*/false,
-                                (fs::path(filename).parent_path() / "assets").string());
-        }
-        catch (const DocumentContentScopeError&) {
-            throw;
-        }
-        catch (const Base::Exception& e) {
+        // What a read that will not finish leaves behind, whatever stopped it: the reasons differ
+        // and the protection does not. Written once so the two refusals below cannot drift into
+        // protecting the document to different degrees.
+        const auto refuseWhatWasRead = [&](const Base::Exception& e) {
             Base::Console().error("Invalid recipe: %s\n", e.what());
             setStatus(Document::RestoreError, true);
             // Named, not only printed: a save from here would publish this session's beginning of
@@ -3013,6 +3007,28 @@ void Document::restore(const char* filename,
             // defence is not the first one -- a person should never be holding the fragment
             // (Amendment 19 Clause 19.2). The opener discards it; what was wrong and where is
             // carried in the message so the file can be repaired in a text editor.
+        };
+
+        try {
+            restoreStoredRecipe(*this,
+                                file,
+                                /*finish=*/false,
+                                (fs::path(filename).parent_path() / "assets").string());
+        }
+        catch (const DocumentContentScopeError&) {
+            throw;
+        }
+        // The file is written to a format this build does not read (Clause 19.7). Protected on
+        // exactly the terms above -- a document read by rules it was not written to is the same
+        // danger as one read half way -- but said in its own words and kept as its own type. "This
+        // file is broken" is the wrong thing to tell a person whose file is fine and whose program
+        // is the wrong one for it.
+        catch (const DocumentFormatUnknownError& e) {
+            refuseWhatWasRead(e);
+            throw DocumentFormatUnknownError("'" + filePath + "' did not open: " + e.what());
+        }
+        catch (const Base::Exception& e) {
+            refuseWhatWasRead(e);
             throw DocumentMalformedError("'" + filePath
                                          + "' does not state a record this reader can determine, "
                                            "and a part of one is not a document: "

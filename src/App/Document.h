@@ -132,6 +132,30 @@ public:
 };
 
 /**
+ * @brief Thrown when a file is written to a format this build does not read
+ * (Amendment 19 Clause 19.7).
+ *
+ * A file states the version of the format it was written to, and a reader
+ * consults it before interpreting. This is the version that answers the question
+ * a person actually has when a document will not open -- whether this build can
+ * read this file at all -- and answering it once, at the top, is what stops every
+ * other rule from having to catch the damage one case at a time.
+ *
+ * A refusal here is total for the same reason Clause 19.2's is: a file read as a
+ * format it was not written to yields a document that looks like the part and is
+ * not it. Hence the derivation -- every door that already discards a half-built
+ * document on a malformed file does the same on an unreadable format, without
+ * having to learn about this separately. The two say different things, though,
+ * and the message is the difference: the file is not broken, this build is not
+ * the one that reads it.
+ */
+class DocumentFormatUnknownError: public DocumentMalformedError
+{
+public:
+    using DocumentMalformedError::DocumentMalformedError;
+};
+
+/**
  * @brief A class that represents a FreeCAD document.
  *
  * A document is a container for all objects that are part of a FreeCAD

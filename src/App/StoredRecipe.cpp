@@ -28,6 +28,7 @@
 #ifndef _PreComp_
 # include <algorithm>
 # include <array>
+# include <charconv>
 # include <cstring>
 # include <filesystem>
 # include <fstream>
@@ -746,6 +747,42 @@ void refuse(const char* expected, const Base::XMLReader& reader)
                                   + "> and found <" + reader.localName() + ">");
 }
 
+/// The file is written to a format this build does not read, and so it does not open at all.
+///
+/// Cruth (Amendment 19 Clause 19.7). The refusal is total and says which version was asked for
+/// and which this build reads, because "this file will not open" without either number leaves a
+/// person with nothing to do about it. Measured before this: a file stating version 99 opened
+/// exactly as though it had stated version 1, and every value in it was interpreted by rules it
+/// was never written to.
+///
+/// A file that states no version at all is refused on the same terms rather than assumed to be
+/// the current one. Every file this program has ever written states it, so the assumption would
+/// only ever be made about a file this program did not write.
+void refuseAFormatThisBuildDoesNotRead(const Base::XMLReader& reader)
+{
+    const std::string said = "This build reads recipe format version "
+        + std::to_string(App::storedRecipeFormat) + ".";
+    if (!reader.hasAttribute("Version")) {
+        throw App::DocumentFormatUnknownError(
+            "Stored recipe: the file states no format version, so what it holds cannot be "
+            "interpreted. " + said);
+    }
+    const std::string stated = reader.getAttribute<const char*>("Version");
+    // Read whole or not at all: "1.0" and "1x" are not version 1, and a parse that took the
+    // leading digits and went on would be interpreting a file by a rule it made up.
+    int version = 0;
+    const auto* const from = stated.data();
+    const auto* const to = from + stated.size();
+    const auto parsed = std::from_chars(from, to, version);
+    const bool whole = parsed.ec == std::errc {} && parsed.ptr == to && !stated.empty();
+    if (!whole || version != App::storedRecipeFormat) {
+        throw App::DocumentFormatUnknownError("Stored recipe: the file is written to format "
+                                              "version '"
+                                              + stated + "', which this build does not read. "
+                                              + said);
+    }
+}
+
 std::string liftObjectWords(const std::string& source, const std::string& uuid);
 std::string liftDocumentWords(const std::string& source);
 
@@ -1138,8 +1175,11 @@ std::string App::formatStoredRecipe(const Document& doc,
     // 12.345678901234567 came back as 12.3457 before this line existed.
     writer.Stream().precision(std::numeric_limits<double>::max_digits10);
 
+    // The format the statements below are written to, stated so that a reader can ask whether it
+    // reads this file at all before it starts interpreting it (Clause 19.7). The one constant the
+    // reader checks against, so the stamp can never come to mean something the check does not.
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
-                    << "<Recipe Version=\"1\">\n";
+                    << "<Recipe Version=\"" << storedRecipeFormat << "\">\n";
     writer.incInd();
 
     // The document's own authored facts -- who wrote it, when it was created, what it is called
@@ -1367,6 +1407,11 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
     std::map<std::string, DocumentObject*> arrived;
 
     reader.readElement("Recipe");
+    // Consulted before a single statement below it is interpreted (Clause 19.7). Read as the
+    // format it was written to, or not read at all: a file interpreted as a format it was not
+    // written to gives back a document that looks like the part and is not it, and every rule
+    // after this one would be left catching that damage one case at a time.
+    refuseAFormatThisBuildDoesNotRead(reader);
     const int recipe = reader.level();
 
     // The `<Document>` block is what the file says about the document itself, and a rendering
