@@ -29,6 +29,7 @@
 #endif
 
 #include <map>
+#include <set>
 #include <string>
 #include <memory>
 #include <vector>
@@ -114,6 +115,13 @@ struct DocumentP
     mutable HasherMap hashers;
     std::multimap<const App::DocumentObject*, std::unique_ptr<App::DocumentObjectExecReturn>>
         _RecomputeLog;
+    /// The objects reported blocked last time anything was asked what it could not honour, by id.
+    ///
+    /// Kept so that a block can be RELEASED. A failure that is no longer stated has to stop being
+    /// reported, and nothing else in the log says which entries came from a statement rather than
+    /// from a rebuild that failed on its own terms (Amendment 19 Clause 19.6). By id and not by
+    /// pointer: an object that has left the document since is one this must not follow.
+    std::set<long> blockedByStatement;
     ExportInfo exportInfo;
 
     StringHasherRef Hasher {new StringHasher};
@@ -145,6 +153,9 @@ struct DocumentP
     {
         if (!obj) {
             _RecomputeLog.clear();
+            // Nothing is reported blocked any more, so nothing is owed a release either. Kept in
+            // step or a later pass would go looking for objects that are no longer there.
+            blockedByStatement.clear();
         }
         else {
             _RecomputeLog.erase(obj);

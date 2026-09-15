@@ -226,7 +226,7 @@ Py::Dict DocumentObjectPy::getUnhonouredStatements() const
     // interface. Named, never counted -- a report that will not say what is missing cannot be
     // acted on.
     Py::Dict said;
-    for (const auto& [name, why] : getDocumentObjectPtr()->unhonouredStatements()) {
+    for (const auto& [name, why] : getDocumentObjectPtr()->whatCouldNotBeHonoured()) {
         said.setItem(name, Py::String(why));
     }
     return said;

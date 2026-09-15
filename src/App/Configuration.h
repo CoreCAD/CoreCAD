@@ -74,8 +74,23 @@ public:
 
     const char* getViewProviderName() const override;
 
+    /** Block the objects whose values this configuration states and could not honour.
+     *
+     * Cruth (Amendment 19 Clause 19.6): a configuration sets values on OTHER objects from outside
+     * the dependency graph, so an override that cannot be honoured has to block the object whose
+     * value it would have set. Blocking only this holder would leave that part rebuilding at its
+     * base value and reporting success under the name of the option that failed to apply.
+     *
+     * Checks without applying: a document is read with its values already in it, and the option
+     * they were written under is the option it is still under.
+     */
+    void blockWhatItSetsElsewhere() override;
+
 protected:
     void onChanged(const App::Property* prop) override;
+
+    /// Release what this configuration states about other objects -- it is leaving the document.
+    void unsetupObject() override;
 
     /** Apply the active option's overrides over the live property values.
      *
@@ -85,6 +100,17 @@ protected:
      * for each overridden property, so switching always restores cleanly.
      */
     void applyActiveOption();
+
+    /** Walk the active option's overrides, applying them or only asking whether they can be.
+     *
+     * One walk for both, because an override that is honoured when applied and refused when
+     * merely read -- or the reverse -- would make a document's report of itself depend on which
+     * of the two last happened.
+     *
+     * Whatever it cannot honour it states on the object whose value it would have set, or, where
+     * this document holds no such object, on itself: nothing else is left to block.
+     */
+    void stateActiveOption(bool apply);
 
     /// Separator used to join the Overrides map key fields. Must be XML-legal
     /// (a control char like 0x1f is stripped on serialise and corrupts the keys).

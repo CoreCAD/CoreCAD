@@ -597,6 +597,15 @@ public:
     /// True while this document holds a statement its file made and this session could not honour.
     bool holdsUnreadContent() const;
 
+    /** Whether this document can present what it holds as the whole of what its file states.
+     *
+     * False while anything it read could not be honoured -- content it had to keep rather than
+     * read, and equally a value one object states for another that could not be applied. The two
+     * are different failures and only the first hides references, so they are asked separately;
+     * this is the question a script asks before it saves a directory of documents (P8).
+     */
+    bool isWhole() const;
+
     /** Whether a sweep here may act on the assumption that it can see every reference.
      *
      * False while this document holds a statement it could not honour -- whether or not any save
@@ -673,8 +682,19 @@ public:
      * A node is blocked by what it holds, not by having been asked to rebuild. An object whose
      * geometry came back from the rebuild store is never asked, and would otherwise report itself
      * up to date while its file states something this session could not produce.
+     *
+     * Asks every object first what it states about OTHER objects and could not honour, so that a
+     * configuration option naming a property this build does not have blocks the part whose value
+     * it would have set rather than only itself (Clause 19.6).
      */
     void blockWhatCouldNotBeHonoured();
+
+    /** Say which nodes are blocked now, and release the ones that no longer are.
+     *
+     * The half of the above that does not re-ask the holders, for the moment a holder has just
+     * said what it could not honour and nothing else has changed.
+     */
+    void recordWhatIsBlocked();
 
     /** What a save from this document would take out of its file, each named (Amendment 19).
      *

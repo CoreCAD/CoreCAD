@@ -42,11 +42,15 @@ class DocumentObject(ExtensionContainer):
     """State of the object in the document"""
 
     UnhonouredStatements: Final[dict] = {}
-    """What this object's file states that this session could not honour, as {property name: why}.
-    Empty when the object holds everything its file says. The content is kept and given back on
-    save, but nothing is built from it: an object holding one of these is blocked, not computed,
-    because a result assembled from the part of the input that happened to be legible is one
-    nobody designed."""
+    """What could not be honoured about this object's values, as {property name: why}. Empty when
+    the object holds everything its file says and nothing else states a value for it that failed.
+    The content is kept and given back on save, but nothing is built from it: an object holding
+    one of these is blocked, not computed, because a result assembled from the part of the input
+    that happened to be legible is one nobody designed.
+
+    Blocking follows the value, so this also carries what ANOTHER object states for this one and
+    could not apply -- a configuration option, a spreadsheet driver. Those entries name the holder
+    in their reason, because that is where the value is changed."""
 
     ViewObject: Final[Any] = None
     """

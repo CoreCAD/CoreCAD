@@ -71,7 +71,11 @@ class Document(PropertyContainer):
     honour -- an object of a type this build cannot construct, a reference to an object that is
     not here, source material that would not load. The content is kept and given back on save,
     but the document is not everything its file says it is, and anything that opens documents
-    and saves them should ask before it writes."""
+    and saves them should ask before it writes.
+
+    Also false while a value one object states for another could not be applied -- a configuration
+    option naming a property this build has no place for. Nothing is unread there, but the object
+    whose value it would have set is not the object its file describes."""
 
     Partial: Final[bool] = False
     """Indicate if the document is partially loaded"""

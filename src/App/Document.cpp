@@ -1237,6 +1237,22 @@ namespace
 }
 }  // namespace
 
+bool Document::isWhole() const
+{
+    if (holdsUnreadContent()) {
+        return false;
+    }
+    // A value one object states for another and this session could not apply leaves nothing
+    // unread -- the words are the holder's and are written back with it -- but the object whose
+    // value it would have set is not the object its file describes, and the document may not
+    // present it as finished (Amendment 19 Clause 19.6).
+    return std::none_of(d->objectArray.begin(),
+                        d->objectArray.end(),
+                        [](const DocumentObject* obj) {
+                            return obj != nullptr && !obj->statementsSetFromElsewhere().empty();
+                        });
+}
+
 bool Document::seesEveryReference() const
 {
     return !holdsUnreadContent();
@@ -1553,16 +1569,51 @@ bool Document::saveAcceptingLoss(const std::vector<std::string>& losing, const s
 
 void Document::blockWhatCouldNotBeHonoured()
 {
+    // A statement that sets a value on another object is known only to the object that makes it,
+    // and the object it blocks is the one whose value it would have set (Clause 19.6). So the
+    // holders are asked before anything is reported, or a part left at its base value by an
+    // option that failed to apply would pass for finished.
     for (DocumentObject* obj : d->objectArray) {
-        if (obj == nullptr || !obj->holdsUnhonouredStatement()) {
+        if (obj != nullptr) {
+            obj->blockWhatItSetsElsewhere();
+        }
+    }
+    recordWhatIsBlocked();
+}
+
+void Document::recordWhatIsBlocked()
+{
+    std::set<long> blocked;
+    for (DocumentObject* obj : d->objectArray) {
+        if (obj == nullptr || !obj->isBlockedByAStatement()) {
             continue;
         }
+        blocked.insert(obj->getID());
         std::string why = "Blocked: this build could not honour what the file states here.";
-        for (const auto& [name, reason] : obj->unhonouredStatements()) {
+        for (const auto& [name, reason] : obj->whatCouldNotBeHonoured()) {
             why += " '" + name + "': " + reason + ".";
         }
+        d->clearRecomputeLog(obj);
         d->addRecomputeLog(why, obj);
     }
+
+    // What a holder no longer states no longer blocks. The record has to go with it: an object
+    // left reporting a failure that has been dealt with is as dishonest as one reporting none.
+    for (long was : d->blockedByStatement) {
+        if (blocked.count(was) != 0) {
+            continue;
+        }
+        DocumentObject* obj = getObjectByID(was);
+        if (obj == nullptr) {
+            continue;  // gone from the document since; nothing of it to correct
+        }
+        d->clearRecomputeLog(obj);
+        obj->setStatus(ObjectStatus::Error, false);
+        // Released, not resolved: the value it was denied is the value it was never built with,
+        // so it is built again rather than left standing at what the block froze it at.
+        obj->touch();
+    }
+    d->blockedByStatement = std::move(blocked);
 }
 
 void Document::Save(Base::Writer& writer) const
@@ -4119,14 +4170,15 @@ int Document::_recomputeFeature(DocumentObject* Feat) // NOLINT
 {
     FC_LOG("Recomputing " << Feat->getFullName());
 
-    if (Feat->holdsUnhonouredStatement()) {
-        // Cruth (Amendment 19): this object's file states something this session could not
-        // honour, so this build cannot produce what depends on it. Executing the step from the
-        // part of its input that happened to be legible produces a shape nobody designed, and a
-        // document that presented it as finished would be denying what its own file says. The
-        // node is blocked instead, and says which statement blocked it (§3.6).
+    if (Feat->isBlockedByAStatement()) {
+        // Cruth (Amendment 19): something this session could not honour states a value here --
+        // this object's own file, or another object setting a value on it (Clause 19.6) -- so
+        // this build cannot produce what depends on it. Executing the step from the part of its
+        // input that happened to be legible produces a shape nobody designed, and a document that
+        // presented it as finished would be denying what its own file says. The node is blocked
+        // instead, and says which statement blocked it, and where it is stated (§3.6).
         std::string why = "Blocked: this build could not honour what the file states here.";
-        for (const auto& [name, reason] : Feat->unhonouredStatements()) {
+        for (const auto& [name, reason] : Feat->whatCouldNotBeHonoured()) {
             why += " '" + name + "': " + reason + ".";
         }
         d->addRecomputeLog(why, Feat);
