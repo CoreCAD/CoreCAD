@@ -102,6 +102,19 @@ struct RecipeScope
  *  given back only by a rendering of the whole document, because nothing can pick one for a copy:
  *  it is not an object in the document, it is the file's own words held for the file's sake.
  */
+/** The version of the recipe format this build writes, and the only one it reads.
+ *
+ *  Cruth (Amendment 19 Clause 19.7): a file states the version of the format it was written to,
+ *  and a reader consults it before interpreting. It identifies an ENCODING -- how the statements
+ *  are written down -- and never the program that wrote them: which release last saved a document
+ *  does not determine whether it can be read, and a stamp rewritten on every save by a different
+ *  person is churn in a file that exists to be diffed and merged.
+ *
+ *  One constant for both the writing and the reading, so the stamp and the check cannot drift
+ *  apart into a build that writes a version it would refuse to open.
+ */
+constexpr int storedRecipeFormat = 1;
+
 AppExport std::string formatStoredRecipe(const Document& doc,
                                          const std::string& assetDirectory = {},
                                          const RecipeScope& scope = {});

@@ -16,6 +16,7 @@ add_executable(App_tests_run
         DocumentObserver.cpp
         Expression.cpp
         ExpressionParser.cpp
+        FormatVersion.cpp
         FragmentWriteGuard.cpp
         ElementMap.cpp
         HeldStatements.cpp
