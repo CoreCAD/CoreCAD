@@ -26,6 +26,7 @@
 
 #include <iosfwd>
 #include <list>
+#include <optional>
 #include <unordered_map>
 
 #include <App/ComplexGeoData.h>
@@ -223,6 +224,19 @@ enum class ChamferType
     twoDistances,
     distanceAngle
 };
+
+/** The three kinds of chamfer, in the words a person chooses one by.
+ *
+ * Cruth: which kind was chosen is a decision a person made, so it is named wherever it is stated
+ * and never kept as a position in this list. The names live beside the enumeration they name, so
+ * that the Part operation and the PartDesign feature cannot drift into calling one kind by two
+ * different words.
+ */
+PartExport const char** chamferTypeNames();
+/// What one kind is called. Never null.
+PartExport const char* chamferTypeName(ChamferType kind);
+/// The kind that goes by this name, or nothing if no kind does.
+PartExport std::optional<ChamferType> chamferTypeFromName(const char* name);
 
 enum class CheckScale
 {

@@ -54,7 +54,10 @@ TEST_F(ChamferStatesItsOwnWordsTest, aChamferStatesDistancesRatherThanRadii)
 
     const std::string words = statedForm(measured);
     EXPECT_NE(words.find("<ChamferEdges>"), std::string::npos) << words;
-    EXPECT_NE(words.find("<Chamfer edge=\"1\" size=\"2\" size2=\"3\"/>"), std::string::npos) << words;
+    EXPECT_NE(
+        words.find("<Chamfer edge=\"1\" kind=\"Two distances\" size=\"2\" size2=\"3\"/>"),
+        std::string::npos
+    ) << words;
     EXPECT_EQ(words.find("Fillet"), std::string::npos)
         << "the chamfer still calls itself a fillet: " << words;
     EXPECT_EQ(words.find("radius"), std::string::npos)
@@ -103,6 +106,8 @@ TEST_F(ChamferStatesItsOwnWordsTest, aCopiedChamferIsStillAChamfer)
     const std::unique_ptr<App::Property> copied(measured.Copy());
     ASSERT_NE(copied, nullptr);
     EXPECT_EQ(copied->getTypeId(), Part::PropertyChamferEdges::getClassTypeId());
-    EXPECT_NE(statedForm(*copied).find("<Chamfer edge=\"4\" size=\"5\" size2=\"6\"/>"), std::string::npos)
-        << statedForm(*copied);
+    EXPECT_NE(
+        statedForm(*copied).find("<Chamfer edge=\"4\" kind=\"Two distances\" size=\"5\" size2=\"6\"/>"),
+        std::string::npos
+    ) << statedForm(*copied);
 }
