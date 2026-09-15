@@ -1291,10 +1291,10 @@ void Document::refuseDuplicationThatCannotBeRewired(const std::vector<DocumentOb
         const std::vector<std::string> unresolved = obj->unresolvedReferenceNames();
         std::string naming = unresolved.empty() ? std::string {} : unresolved.front();
         if (naming.empty()) {
-            for (const auto& [name, words] : obj->statedProperties()) {
+            for (const auto& [name, stated] : obj->statedProperties()) {
                 // The kept words are in this program's own form, so whether they name anything is
                 // read rather than guessed at.
-                if (words.find("<Target ") != std::string::npos) {
+                if (stated.words.find("<Target ") != std::string::npos) {
                     naming = name;
                     break;
                 }

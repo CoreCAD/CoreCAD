@@ -225,12 +225,14 @@ PropertyContainer::unresolvedReference(const char* name) const
     return found == _unresolvedReferences.end() ? nullptr : &found->second;
 }
 
-void PropertyContainer::rememberStatedProperty(const char* name, std::string words)
+void PropertyContainer::rememberStatedProperty(const char* name,
+                                               std::string words,
+                                               std::string why)
 {
     if (name == nullptr || words.empty()) {
         return;
     }
-    _statedProperties[name] = std::move(words);
+    _statedProperties[name] = StatedProperty {std::move(words), std::move(why)};
 }
 
 std::vector<std::pair<std::string, std::string>> PropertyContainer::unhonouredStatements() const
@@ -242,8 +244,11 @@ std::vector<std::pair<std::string, std::string>> PropertyContainer::unhonouredSt
     for (const auto& [name, targets] : _unresolvedReferences) {
         said.emplace_back(name, "it names an object this document does not hold");
     }
-    for (const auto& [name, words] : _statedProperties) {
-        said.emplace_back(name, "this build has no property of that name and type");
+    for (const auto& [name, stated] : _statedProperties) {
+        // The reason the reader composed, not a guess made here: a block is kept for more than
+        // one kind of failure, and a person deciding whether to discard it is deciding on the
+        // reason (Amendment 19 Clause 19.4).
+        said.emplace_back(name, stated.why);
     }
     std::sort(said.begin(), said.end());
     return said;
@@ -305,7 +310,8 @@ PropertyContainer::keptStatementFor(const Property* prop) const
         kept.unresolvedTargets = found->second;
     }
     if (const auto found = _statedProperties.find(name); found != _statedProperties.end()) {
-        kept.statedWords = found->second;
+        kept.statedWords = found->second.words;
+        kept.statedReason = found->second.why;
     }
     return kept;
 }
@@ -321,7 +327,8 @@ PropertyContainer::keptStatementFor(const std::string& name) const
         kept.unresolvedTargets = found->second;
     }
     if (const auto found = _statedProperties.find(name); found != _statedProperties.end()) {
-        kept.statedWords = found->second;
+        kept.statedWords = found->second.words;
+        kept.statedReason = found->second.why;
     }
     return kept;
 }
@@ -340,7 +347,7 @@ void PropertyContainer::restoreKeptStatement(const std::string& name, const Kept
         _unresolvedReferences[name] = kept.unresolvedTargets;
     }
     if (!kept.statedWords.empty()) {
-        _statedProperties[name] = kept.statedWords;
+        _statedProperties[name] = StatedProperty {kept.statedWords, kept.statedReason};
     }
 }
 
@@ -369,7 +376,7 @@ void PropertyContainer::restoreKeptStatement(const Property* prop, const KeptSta
         _unresolvedReferences[name] = kept.unresolvedTargets;
     }
     if (!kept.statedWords.empty()) {
-        _statedProperties[name] = kept.statedWords;
+        _statedProperties[name] = StatedProperty {kept.statedWords, kept.statedReason};
     }
 }
 

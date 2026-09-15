@@ -654,7 +654,21 @@ public:
    * The kept words stand for that name until something supersedes them: a value set on a property
    * of the same name discharges them like any other kept statement.
    */
-  void rememberStatedProperty(const char* name, std::string words);
+  void rememberStatedProperty(const char* name, std::string words, std::string why);
+
+  /** A property block this build could not honour: the file's words, and what went wrong.
+   *
+   * Two different failures keep a block verbatim -- a name this build has no property for, and a
+   * value this build could not read for a property it does have -- and they send a person to
+   * different places. The reader composes the reason at the moment it knows it; keeping it beside
+   * the words is what lets the report say what actually happened instead of one guess for both
+   * (Amendment 19 Clause 19.4, §3.6).
+   */
+  struct StatedProperty
+  {
+      std::string words;  ///< the property block exactly as the file has it
+      std::string why;    ///< what could not be honoured about it, in concrete terms
+  };
 
   /** Everything this container kept for one property, so it can be put back exactly as it was.
    *
@@ -669,6 +683,7 @@ public:
       std::string missingSource;                      ///< source material named and not found
       std::vector<StatedTarget> unresolvedTargets;    ///< where a reference said it pointed
       std::string statedWords;                        ///< a property block kept as written
+      std::string statedReason;                       ///< why that block could not be honoured
 
       /// True where the container was holding something for that property.
       bool holdsAnything() const
@@ -719,7 +734,7 @@ public:
   }
 
   /// The property blocks kept as stated, by property name -- in name order, as the file has them.
-  const std::map<std::string, std::string>& statedProperties() const
+  const std::map<std::string, StatedProperty>& statedProperties() const
   {
       return _statedProperties;
   }
@@ -945,7 +960,7 @@ private:
   std::string _propertyPrefix;
   std::map<std::string, std::string> _missingSources;
   std::map<std::string, std::vector<StatedTarget>> _unresolvedReferences;
-  std::map<std::string, std::string> _statedProperties;
+  std::map<std::string, StatedProperty> _statedProperties;
   std::vector<StatedElsewhere> _statedElsewhere;
   static PropertyData propertyData;
 };

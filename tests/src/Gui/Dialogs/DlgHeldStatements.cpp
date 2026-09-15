@@ -100,7 +100,11 @@ private Q_SLOTS:
     {
         App::DocumentObject* alpha = doc->addObject("App::VarSet", "Alpha");
         alpha->Label.setValue("First");
-        alpha->rememberStatedProperty("Sparkle", "<Property name=\"Sparkle\"/>");
+        alpha->rememberStatedProperty(
+            "Sparkle",
+            "<Property name=\"Sparkle\"/>",
+            "this build has no property of that name and type"
+        );
 
         Gui::Dialog::DlgHeldStatements dlg(doc);
         QCOMPARE(
@@ -116,7 +120,11 @@ private Q_SLOTS:
     void test_theViewShowsTheWordsTheFileStates()  // NOLINT
     {
         App::DocumentObject* alpha = doc->addObject("App::VarSet", "Alpha");
-        alpha->rememberStatedProperty("Sparkle", "<Glitter value=\"lots\"/>");
+        alpha->rememberStatedProperty(
+            "Sparkle",
+            "<Glitter value=\"lots\"/>",
+            "this build has no property of that name and type"
+        );
 
         Gui::Dialog::DlgHeldStatements dlg(doc);
         auto* tree = dlg.findChild<QTreeWidget*>(QStringLiteral("statements"));
