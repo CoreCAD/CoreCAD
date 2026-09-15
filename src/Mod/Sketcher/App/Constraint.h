@@ -163,6 +163,14 @@ public:
     /// element went dangling this way, so the caller can disclose it.
     bool bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId);
 
+private:
+    /// Read the references a document written to this form states, one element each.
+    void restoreElementsStatedOnce(Base::XMLReader& reader);
+
+    /// Read the references a document written by an older program states, positionally.
+    void restoreElementsStatedPositionally(Base::XMLReader& reader);
+
+public:
     PyObject* getPyObject() override;
 
     Base::Quantity getPresentationValue() const;
@@ -296,6 +304,9 @@ public:
     void addElement(GeoElementId element);
     bool hasElement(int index) const;
     size_t getElementsSize() const;
+
+    /// How many elements the stored form states -- the trailing ones that hold nothing are not.
+    size_t statedElementCount() const;
     bool isElementsEmpty() const;
     void truncateElements(size_t newSize);
     int getGeoId(int index) const;

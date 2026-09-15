@@ -74,7 +74,7 @@ TEST_F(ConstraintTypesByNameTest, aConstraintStatesWhatItIsByName)
     const std::string words = statedForm(constraint);
     EXPECT_NE(words.find("Type=\"Perpendicular\""), std::string::npos)
         << "the constraint does not say what it is: " << words;
-    EXPECT_NE(words.find("FirstPos=\"end\""), std::string::npos)
+    EXPECT_NE(words.find("at=\"end\""), std::string::npos)
         << "the point it holds is still a number: " << words;
     EXPECT_NE(words.find("Orientation=\"None\""), std::string::npos)
         << "the orientation is still a number: " << words;
@@ -108,7 +108,8 @@ TEST_F(ConstraintTypesByNameTest, whatWasStatedByNameIsWhatComesBack)
     // says "DistanceX" or "7", so a test that only reads it back cannot tell the two apart.
     const std::string words = statedForm(constraint);
     EXPECT_NE(words.find("Type=\"DistanceX\""), std::string::npos) << words;
-    EXPECT_NE(words.find("ElementPositions=\"start mid"), std::string::npos) << words;
+    EXPECT_NE(words.find("at=\"start\""), std::string::npos) << words;
+    EXPECT_NE(words.find("at=\"mid\""), std::string::npos) << words;
 
     Sketcher::Constraint read;
     restoreFrom(read, words);

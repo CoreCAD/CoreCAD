@@ -1386,11 +1386,16 @@ void SketchObject::rebindConstraintsToDurableGeometry()
 void SketchObject::onSketchRestore()
 {
     try {
+        // First, before anything reads a constraint's references. Resolving a reference is part
+        // of reading it, not a repair afterwards: the file states the durable identity of the
+        // geometry a constraint holds and not the index it currently occupies, so until this has
+        // run every reference reads as GeoUndef. A pass that runs ahead of it is not looking at
+        // the sketch the file describes.
+        rebindConstraintsToDurableGeometry();
+
         migrateSketch();
 
         updateGeometryRefs();
-
-        rebindConstraintsToDurableGeometry();
 
         fixMissingAxisInExternalGeo();
 

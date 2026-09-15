@@ -36,12 +36,12 @@
 
 #include "json.hpp"
 
-#include <fmt/ranges.h>
 
 #include <Base/FileInfo.h>
 #include <Base/Reader.h>
 #include <Base/Tools.h>
 #include <Base/Writer.h>
+#include <App/Property.h>
 
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
@@ -241,6 +241,26 @@ unsigned int Constraint::getMemSize() const
     return 0;
 }
 
+/// How many of this constraint's elements the file has anything to say about.
+///
+/// The three-element shape is how the constraint is held in memory, not a fact about the
+/// constraint: a Horizontal holds one line and the other two slots are a sentinel standing in for
+/// nothing. Padding them into the file made a constraint's line mostly sentinels, which is most of
+/// what a person diffing two sketches has to read past. An element that holds nothing at the end
+/// is simply not stated; one in the middle is, because its position is what says which reference
+/// it is.
+size_t Constraint::statedElementCount() const
+{
+    size_t stated = 0;
+    for (size_t i = 0; i < getElementsSize(); ++i) {
+        const GeoElementId element = getElement(i);
+        if (element.GeoId != GeoEnum::GeoUndef || element.Pos != PointPos::none) {
+            stated = i + 1;
+        }
+    }
+    return stated;
+}
+
 void Constraint::Save(Writer& writer) const
 {
     // No geometry context here: every element resolves to a nil tag, so nothing is
@@ -274,43 +294,36 @@ void Constraint::Save(Writer& writer, const GeoIdToTagFn& geoIdToTag) const
     // The tag is the constraint's durable identity. It is written here so that two
     // versions of a sketch can be lined up on a merge; without it a constraint is
     // located only by its position in the list, which shifts on any edit.
-    writer.Stream() << "Tag=\"" << boost::uuids::to_string(tag) << "\" ";
+    writer.Stream() << "Tag=\"" << boost::uuids::to_string(tag) << "\"";
 
-    // Save elements
-    {
-        // Ensure backwards compatibility with old versions
-        writer.Stream() << "First=\"" << getElement(0).GeoId << "\" "
-                        << "FirstPos=\"" << posToString(getElement(0).Pos) << "\" "
-                        << "Second=\"" << getElement(1).GeoId << "\" "
-                        << "SecondPos=\"" << posToString(getElement(1).Pos) << "\" "
-                        << "Third=\"" << getElement(2).GeoId << "\" "
-                        << "ThirdPos=\"" << posToString(getElement(2).Pos) << "\" ";
-#if SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
-        auto elements = std::views::iota(size_t {0}, this->elements.size())
-            | std::views::transform([&](size_t i) { return getElement(i); });
-#endif
-        auto geoIds = elements | std::views::transform([](const GeoElementId& e) { return e.GeoId; });
-        auto posIds = elements
-            | std::views::transform([](const GeoElementId& e) { return posToString(e.Pos); });
-
-        const std::string ids = fmt::format("{}", fmt::join(geoIds, " "));
-        const std::string positions = fmt::format("{}", fmt::join(posIds, " "));
-
-        writer.Stream() << "ElementIds=\"" << ids << "\" "
-                        << "ElementPositions=\"" << positions << "\" ";
-
-        // The durable geometry handle for each element: the authoritative reference the
-        // GeoId above only annotates. A "-" marks an element with no durable identity
-        // (axes, external geometry, undefined), whose GeoId stays as written.
-        auto tagStrings = geoIds | std::views::transform([&](int geoId) {
-                              const boost::uuids::uuid tag = geoIdToTag(geoId);
-                              return tag.is_nil() ? std::string("-") : boost::uuids::to_string(tag);
-                          });
-        const std::string tags = fmt::format("{}", fmt::join(tagStrings, " "));
-        writer.Stream() << "ElementTags=\"" << tags << "\" ";
+    // Each reference the constraint holds, stated once.
+    //
+    // Cruth: this used to be said three times over -- the deprecated First/FirstPos pair, the
+    // parallel ElementIds/ElementPositions lists, and the durable ElementTags -- and the
+    // authoritative one was the one that did not win first, since the positional GeoIds loaded on
+    // restore were overwritten from the tags afterwards. Three statements of one fact can
+    // disagree, and a merge is exactly where they do. Measured before this: a file whose
+    // positional statement said geometry 1 while its tag still named geometry 0 opened as
+    // geometry 0, with nothing said and the document reporting itself whole.
+    //
+    // The durable identity is the reference. A GeoId appears only where there is no durable
+    // identity to state -- the axes and external geometry, which the sketch does not author.
+    writer.Stream() << ">\n";
+    writer.incInd();
+    for (size_t i = 0; i < statedElementCount(); ++i) {
+        const GeoElementId element = getElement(i);
+        const boost::uuids::uuid geoTag = geoIdToTag(element.GeoId);
+        writer.Stream() << writer.ind() << "<Element ";
+        if (!geoTag.is_nil()) {
+            writer.Stream() << "tag=\"" << boost::uuids::to_string(geoTag) << "\" ";
+        }
+        else if (element.GeoId != GeoEnum::GeoUndef) {
+            writer.Stream() << "geoId=\"" << element.GeoId << "\" ";
+        }
+        writer.Stream() << "at=\"" << posToString(element.Pos) << "\"/>\n";
     }
-
-    writer.Stream() << "/>\n";
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</Constrain>\n";
 }
 
 void Constraint::Restore(XMLReader& reader)
@@ -427,94 +440,96 @@ void Constraint::Restore(XMLReader& reader)
         }
     }
 
-    if (reader.hasAttribute("ElementIds") && reader.hasAttribute("ElementPositions")) {
-        auto splitAndClean = [](std::string_view input) {
-            const char delimiter = ' ';
-
-            auto tokens = input | std::views::split(delimiter)
-                | std::views::transform([](auto&& subrange) {
-                              // workaround due to lack of std::ranges::to in c++20
-                              std::string token;
-                              auto size = std::ranges::distance(subrange);
-                              token.reserve(size);
-                              for (char c : subrange) {
-                                  token.push_back(c);
-                              }
-                              return token;
-                          })
-                | std::views::filter([](const std::string& s) { return !s.empty(); });
-
-            return std::vector<std::string>(tokens.begin(), tokens.end());
-        };
-
-        const std::string elementIds = reader.getAttribute<const char*>("ElementIds");
-        const std::string elementPositions = reader.getAttribute<const char*>("ElementPositions");
-
-        const auto ids = splitAndClean(elementIds);
-        const auto positions = splitAndClean(elementPositions);
-
-        if (ids.size() != positions.size()) {
-            throw Base::ParserError(
-                fmt::format(
-                    "ElementIds and ElementPositions do not match in "
-                    "size. Got {} ids and {} positions.",
-                    ids.size(),
-                    positions.size()
-                )
-            );
-        }
-
-        elements.clear();
-        for (size_t i = 0; i < std::min(ids.size(), positions.size()); ++i) {
-            const int geoId {std::stoi(ids[i])};
-            const std::optional<PointPos> named = posFromString(positions[i]);
-            if (!named && !statedAsANumber(positions[i])) {
-                FC_THROWM(Base::ValueError, "'" << positions[i] << "' is not a point on a geometry");
-            }
-            const PointPos pos = named ? *named : static_cast<PointPos>(std::stoi(positions[i]));
-            addElement(GeoElementId(geoId, pos));
-        }
-
-        // The durable geometry handle per element, if the file carries it. Held until
-        // the owning SketchObject re-binds GeoIds from these tags after restore.
-        // Files written before tag persistence have no attribute; those elements keep
-        // the positional GeoId loaded above.
-        restoredElementGeoTags.clear();
-        if (reader.hasAttribute("ElementTags")) {
-            const auto tags = splitAndClean(reader.getAttribute<const char*>("ElementTags"));
-            boost::uuids::string_generator stringToUuid;
-            for (const std::string& t : tags) {
-                restoredElementGeoTags.push_back(t == "-" ? boost::uuids::nil_uuid() : stringToUuid(t));
-            }
-        }
+    // The references this constraint holds.
+    //
+    // A document written to this form states each one once, as a child element, and the durable
+    // identity is the reference itself -- see Save(). A document written by an older program
+    // states them as positional attributes instead; that is read the only way a position can be
+    // read, and stated by durable identity on the next save.
+    if (reader.hasAttribute("First")) {
+        restoreElementsStatedPositionally(reader);
+    }
+    else {
+        restoreElementsStatedOnce(reader);
     }
 
-    // Ensure we have at least 3 elements
+    // Three is the shape the constraint is held in, whatever the file stated: the deprecated
+    // First/Second/Third members are the same storage seen through another name, and they have to
+    // exist to be read.
     while (getElementsSize() < 3) {
         addElement(GeoElementId(GeoEnum::GeoUndef, PointPos::none));
     }
+}
 
-    // Load deprecated First, Second, Third elements
-    // These take precedence over the new elements
-    // Even though these are deprecated, we still need to read them
-    // for compatibility with old files.
-    {
-        constexpr std::array<const char*, 3> names = {"First", "Second", "Third"};
-        constexpr std::array<const char*, 3> posNames = {"FirstPos", "SecondPos", "ThirdPos"};
-        static_assert(names.size() == posNames.size());
+/// One element, stated once, as a document written to this form has it.
+///
+/// `tag` is the durable identity of geometry the sketch authors; the GeoId it currently occupies
+/// is not in the file at all, and is resolved by bindElementsToDurableGeometry once the geometry
+/// is loaded. `geoId` appears only for a reference with no durable identity -- an axis, external
+/// geometry -- where the number is all there is to state.
+void Constraint::restoreElementsStatedOnce(XMLReader& reader)
+{
+    const int constrain = reader.level();
+    elements.clear();
+    restoredElementGeoTags.clear();
+    boost::uuids::string_generator stringToUuid;
 
-        for (size_t i = 0; i < names.size(); ++i) {
-            if (reader.hasAttribute(names[i])) {
-                const int geoId {reader.getAttribute<int>(names[i])};
-                const std::string statedPos = reader.getAttribute<const char*>(posNames[i]);
-                const std::optional<PointPos> named = posFromString(statedPos);
-                if (!named && !statedAsANumber(statedPos)) {
-                    FC_THROWM(Base::ValueError, "'" << statedPos << "' is not a point on a geometry");
-                }
-                const PointPos pos = named ? *named : static_cast<PointPos>(std::stoi(statedPos));
-                setElement(i, GeoElementId(geoId, pos));
+    while (App::nextChildElement(reader, constrain)) {
+        App::expectElement(reader, "Element");
+
+        PointPos pos = PointPos::none;
+        if (reader.hasAttribute("at")) {
+            const std::string statedPos = reader.getAttribute<const char*>("at");
+            const std::optional<PointPos> named = posFromString(statedPos);
+            if (!named) {
+                FC_THROWM(Base::ValueError, "'" << statedPos << "' is not a point on a geometry");
+            }
+            pos = *named;
+        }
+
+        boost::uuids::uuid geoTag = boost::uuids::nil_uuid();
+        int geoId = GeoEnum::GeoUndef;
+        if (reader.hasAttribute("tag")) {
+            const std::string statedTag = reader.getAttribute<const char*>("tag");
+            try {
+                geoTag = stringToUuid(statedTag);
+            }
+            catch (const std::exception&) {
+                // Refused rather than quietly turned into a reference to nothing. A durable
+                // identity that cannot be read is a reference this build cannot honour, and the
+                // constraint it belongs to is kept as the file worded it (Amendment 19).
+                FC_THROWM(Base::ValueError, "'" << statedTag << "' is not a durable identity");
             }
         }
+        else if (reader.hasAttribute("geoId")) {
+            geoId = reader.getAttribute<int>("geoId");
+        }
+
+        addElement(GeoElementId(geoId, pos));
+        restoredElementGeoTags.push_back(geoTag);
+    }
+}
+
+/// The references as a document written by an older program states them: a GeoId per slot, padded
+/// to three with a sentinel, and the durable identity nowhere in the file.
+void Constraint::restoreElementsStatedPositionally(XMLReader& reader)
+{
+    constexpr std::array<const char*, 3> names = {"First", "Second", "Third"};
+    constexpr std::array<const char*, 3> posNames = {"FirstPos", "SecondPos", "ThirdPos"};
+    static_assert(names.size() == posNames.size());
+
+    for (size_t i = 0; i < names.size(); ++i) {
+        if (!reader.hasAttribute(names[i])) {
+            continue;
+        }
+        const int geoId {reader.getAttribute<int>(names[i])};
+        const std::string statedPos = reader.getAttribute<const char*>(posNames[i]);
+        const std::optional<PointPos> named = posFromString(statedPos);
+        if (!named && !statedAsANumber(statedPos)) {
+            FC_THROWM(Base::ValueError, "'" << statedPos << "' is not a point on a geometry");
+        }
+        const PointPos pos = named ? *named : static_cast<PointPos>(std::stoi(statedPos));
+        setElement(i, GeoElementId(geoId, pos));
     }
 }
 

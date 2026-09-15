@@ -222,16 +222,15 @@ TEST_F(ConstraintPointsAccess, testElementSerializationWhenAccessingOldWay)  // 
     Base::StringWriter writer = {};
     constraint.Save(writer);
 
-    // Assert
+    // Assert -- each reference stated once, in its own element. No geometry context here, so
+    // there is no durable identity to state and the GeoId is all there is.
     std::string serialized = writer.getString();
-    EXPECT_TRUE(serialized.find("First=\"23\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("FirstPos=\"start\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("Second=\"34\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("SecondPos=\"end\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("Third=\"45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ThirdPos=\"mid\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementIds=\"23 34 45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementPositions=\"start end mid\"") != std::string::npos);
+    EXPECT_NE(serialized.find("<Element geoId=\"23\" at=\"start\"/>"), std::string::npos)
+        << serialized;
+    EXPECT_NE(serialized.find("<Element geoId=\"34\" at=\"end\"/>"), std::string::npos) << serialized;
+    EXPECT_NE(serialized.find("<Element geoId=\"45\" at=\"mid\"/>"), std::string::npos) << serialized;
+    EXPECT_EQ(serialized.find("First="), std::string::npos)
+        << "the reference is stated a second time: " << serialized;
 }
 #endif
 
@@ -248,16 +247,15 @@ TEST_F(ConstraintPointsAccess, testElementSerializationWhenAccessingNewWay)  // 
     Base::StringWriter writer = {};
     constraint.Save(writer);
 
-    // Assert
+    // Assert -- each reference stated once, in its own element. No geometry context here, so
+    // there is no durable identity to state and the GeoId is all there is.
     std::string serialized = writer.getString();
-    EXPECT_TRUE(serialized.find("First=\"23\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("FirstPos=\"start\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("Second=\"34\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("SecondPos=\"end\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("Third=\"45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ThirdPos=\"mid\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementIds=\"23 34 45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementPositions=\"start end mid\"") != std::string::npos);
+    EXPECT_NE(serialized.find("<Element geoId=\"23\" at=\"start\"/>"), std::string::npos)
+        << serialized;
+    EXPECT_NE(serialized.find("<Element geoId=\"34\" at=\"end\"/>"), std::string::npos) << serialized;
+    EXPECT_NE(serialized.find("<Element geoId=\"45\" at=\"mid\"/>"), std::string::npos) << serialized;
+    EXPECT_EQ(serialized.find("First="), std::string::npos)
+        << "the reference is stated a second time: " << serialized;
 }
 
 #if SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
@@ -277,19 +275,21 @@ TEST_F(ConstraintPointsAccess, testElementSerializationWhenMixingOldAndNew)  // 
 
     // Assert
     std::string serialized = writer.getString();
-    EXPECT_TRUE(serialized.find("First=\"23\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("FirstPos=\"start\"") != std::string::npos);
+    EXPECT_NE(serialized.find("<Element geoId=\"23\" at=\"start\"/>"), std::string::npos)
+        << serialized;
 
-    // Old way wrote this data, and a position is named rather than numbered.
-    EXPECT_TRUE(serialized.find("SecondPos=\"mid\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("Second=\"45\"") != std::string::npos);
+    // The old members are the same storage under another name, so what was set through them is
+    // what the file states.
+    EXPECT_NE(serialized.find("<Element geoId=\"45\" at=\"mid\"/>"), std::string::npos) << serialized;
 
-    EXPECT_TRUE(serialized.find("Third=\"-2000\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ThirdPos=\"none\"") != std::string::npos);
-
-    // Second and SecondPos is reflected in the elements data too
-    EXPECT_TRUE(serialized.find("ElementIds=\"23 45 -2000\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementPositions=\"start mid none\"") != std::string::npos);
+    // The third element holds nothing, and what stands in for nothing is not stated. Counted
+    // rather than searched for: a padded element states neither an identity nor an index, so
+    // looking for the sentinel's number would pass either way.
+    EXPECT_EQ(
+        serialized.find("<Element", serialized.find("<Element", serialized.find("<Element") + 1) + 1),
+        std::string::npos
+    ) << "an element holding nothing was padded into the file: "
+      << serialized;
 }
 #endif
 
@@ -330,16 +330,19 @@ TEST_F(ConstraintPointsAccess, testElementsRestoredFromSerialization)  // NOLINT
     inputFile.close();
 }
 
-TEST_F(
-    ConstraintPointsAccess,
-    testElementsRestoredFromSerializationWithoutNewElementStorage
-)  // NOLINT
+/** A document written by an older program states its references positionally, and is read.
+ *
+ *  Cruth: the positional GeoId is no longer how this build states a reference -- see the element
+ *  form above -- but a file written before that still says First/FirstPos, and a position can only
+ *  be read as a position. It is read here and stated by durable identity on the next save.
+ *
+ *  What was here before this was a pair of tests pinning down WHICH of three competing statements
+ *  of the same reference won. That question is what the change removed: there is one statement now,
+ *  so there is nothing to prefer.
+ */
+TEST_F(ConstraintPointsAccess, testAnOlderDocumentsPositionalReferenceIsRead)  // NOLINT
 {
-    // Arrange
-
-    // Manually craft a serialized version, only parts in "{}" are important.
-    // New way of storing elements is not present, like if it is an older file.
-    std::string serializedConstraint = fmt::format(
+    const std::string serializedConstraint = fmt::format(
         "<Constrain "
         R"(Name="" )"
         R"(Type="0" )"
@@ -349,16 +352,13 @@ TEST_F(
         R"(IsDriving="1" )"
         R"(IsInVirtualSpace="0" )"
         R"(IsActive="1" )"
-
         R"(First="{}" )"
         R"(Second="{}" )"
         R"(Third="{}" )"
         R"(FirstPos="{}" )"
         R"(SecondPos="{}" )"
         R"(ThirdPos="{}" )"
-
         "/>",
-
         67,
         78,
         89,
@@ -373,15 +373,13 @@ TEST_F(
     stream << serializedConstraint;
     stream << "</root>";
 
-    // Write to temporary file
     QTemporaryFile tempFile;
     tempFile.setAutoRemove(true);
     ASSERT_TRUE(tempFile.open());
     tempFile.write(writer.getString().c_str(), writer.getString().size());
     tempFile.flush();
 
-    // Open with std::ifstream and parse
-    std::string filename = tempFile.fileName().toStdString();
+    const std::string filename = tempFile.fileName().toStdString();
     std::ifstream inputFile(filename);
     ASSERT_TRUE(inputFile.is_open());
 
@@ -389,148 +387,6 @@ TEST_F(
     Sketcher::Constraint restoredConstraint;
     restoredConstraint.Restore(reader);
 
-    // Assert
-    EXPECT_EQ(restoredConstraint.getElement(0), Sketcher::GeoElementId(67, Sketcher::PointPos::mid));
-    EXPECT_EQ(restoredConstraint.getElement(1), Sketcher::GeoElementId(78, Sketcher::PointPos::start));
-    EXPECT_EQ(restoredConstraint.getElement(2), Sketcher::GeoElementId(89, Sketcher::PointPos::end));
-
-    inputFile.close();
-}
-
-TEST_F(
-    ConstraintPointsAccess,
-    testLegacyIsPreferedDuringSerializationWithoutLegacyElementStorage
-)  // NOLINT
-{
-    // Arrange
-
-    // Manually craft a serialized version, only parts in "{}" are important.
-    // Only new way of storing elements is present.
-    std::string serializedConstraint = fmt::format(
-        "<Constrain "
-        R"(Name="" )"
-        R"(Type="0" )"
-        R"(Value="0" )"
-        R"(LabelDistance="10" )"
-        R"(LabelPosition="0" )"
-        R"(IsDriving="1" )"
-        R"(IsInVirtualSpace="0" )"
-        R"(IsActive="1" )"
-
-        // New way
-        R"(ElementIds="{} {} {}" )"
-        R"(ElementPositions="{} {} {}" )"
-
-        "/>",
-        // New way data
-        23,
-        34,
-        45,
-        static_cast<int>(Sketcher::PointPos::start),
-        static_cast<int>(Sketcher::PointPos::end),
-        static_cast<int>(Sketcher::PointPos::mid)
-    );
-
-    Base::StringWriter writer;
-    auto& stream {writer.Stream()};
-    stream << "<root>\n";  // Wrap in a root element to make constraint.
-    stream << serializedConstraint;
-    stream << "</root>";
-
-    // Write to temporary file
-    QTemporaryFile tempFile;
-    tempFile.setAutoRemove(true);
-    ASSERT_TRUE(tempFile.open());
-    tempFile.write(writer.getString().c_str(), writer.getString().size());
-    tempFile.flush();
-
-    // Open with std::ifstream and parse
-    std::string filename = tempFile.fileName().toStdString();
-    std::ifstream inputFile(filename);
-    ASSERT_TRUE(inputFile.is_open());
-
-    Base::XMLReader reader(tempFile.fileName().toStdString().c_str(), inputFile);
-    Sketcher::Constraint restoredConstraint;
-    restoredConstraint.Restore(reader);
-
-    // Assert
-    EXPECT_EQ(restoredConstraint.getElement(0), Sketcher::GeoElementId(23, Sketcher::PointPos::start));
-    EXPECT_EQ(restoredConstraint.getElement(1), Sketcher::GeoElementId(34, Sketcher::PointPos::end));
-    EXPECT_EQ(restoredConstraint.getElement(2), Sketcher::GeoElementId(45, Sketcher::PointPos::mid));
-
-    inputFile.close();
-}
-
-TEST_F(ConstraintPointsAccess, testLegacyIsPreferedDuringSerializationIfContradicting)  // NOLINT
-{
-    // Arrange
-
-    // Manually craft a serialized version, only parts in "{}" are important.
-    // It is not important if legacy is included before or after, legacy should always be preferred.
-    std::string serializedConstraint = fmt::format(
-        "<Constrain "
-        R"(Name="" )"
-        R"(Type="0" )"
-        R"(Value="0" )"
-        R"(LabelDistance="10" )"
-        R"(LabelPosition="0" )"
-        R"(IsDriving="1" )"
-        R"(IsInVirtualSpace="0" )"
-        R"(IsActive="1" )"
-
-        // New way
-        R"(ElementIds="{} {} {}" )"
-        R"(ElementPositions="{} {} {}" )"
-
-        // Legacy
-        R"(First="{}" )"
-        R"(Second="{}" )"
-        R"(Third="{}" )"
-        R"(FirstPos="{}" )"
-        R"(SecondPos="{}" )"
-        R"(ThirdPos="{}" )"
-
-        "/>",
-        // New way data
-        23,
-        34,
-        45,
-        static_cast<int>(Sketcher::PointPos::start),
-        static_cast<int>(Sketcher::PointPos::end),
-        static_cast<int>(Sketcher::PointPos::mid),
-
-        // Contradicting legacy data, this should be preferred if available
-        67,
-        78,
-        89,
-        static_cast<int>(Sketcher::PointPos::mid),
-        static_cast<int>(Sketcher::PointPos::start),
-        static_cast<int>(Sketcher::PointPos::end)
-    );
-
-    Base::StringWriter writer;
-    auto& stream {writer.Stream()};
-    stream << "<root>\n";  // Wrap in a root element to make constraint.
-    stream << serializedConstraint;
-    stream << "</root>";
-
-    // Write to temporary file
-    QTemporaryFile tempFile;
-    tempFile.setAutoRemove(true);
-    ASSERT_TRUE(tempFile.open());
-    tempFile.write(writer.getString().c_str(), writer.getString().size());
-    tempFile.flush();
-
-    // Open with std::ifstream and parse
-    std::string filename = tempFile.fileName().toStdString();
-    std::ifstream inputFile(filename);
-    ASSERT_TRUE(inputFile.is_open());
-
-    Base::XMLReader reader(tempFile.fileName().toStdString().c_str(), inputFile);
-    Sketcher::Constraint restoredConstraint;
-    restoredConstraint.Restore(reader);
-
-    // Assert
     EXPECT_EQ(restoredConstraint.getElement(0), Sketcher::GeoElementId(67, Sketcher::PointPos::mid));
     EXPECT_EQ(restoredConstraint.getElement(1), Sketcher::GeoElementId(78, Sketcher::PointPos::start));
     EXPECT_EQ(restoredConstraint.getElement(2), Sketcher::GeoElementId(89, Sketcher::PointPos::end));
@@ -705,9 +561,11 @@ TEST_F(ConstraintPointsAccess, testConstraintReferenceFollowsDurableGeometryTag)
     Sketcher::Constraint restored;
     saveRestoreWithTags(constraint, geoIdToTag, restored);
 
-    // Stage 2: before rebinding, the element still holds the saved (soon-stale) GeoId.
-    EXPECT_EQ(restored.getElement(0).GeoId, 1)
-        << "restore should keep the positional GeoId until the tag rebinds it";
+    // Stage 2: the file states the durable identity and no index at all, so until the rebind
+    // there is no GeoId to hold. That is the point of the form -- there is no stale index left
+    // lying around for anything to read by mistake.
+    EXPECT_EQ(restored.getElement(0).GeoId, Sketcher::GeoEnum::GeoUndef)
+        << "the file stated an index the reference was supposed to resolve without";
 
     // Stage 3: the geometry carrying tagAtGeo1 now lives at GeoId 5 (list reordered).
     const Sketcher::Constraint::TagToGeoIdFn tagToGeoId =
@@ -783,7 +641,8 @@ TEST_F(ConstraintPointsAccess, testLostReferenceDoesNotAliasSurvivingElement)  /
 
     Sketcher::Constraint restored;
     saveRestoreWithTags(constraint, geoIdToTag, restored);
-    ASSERT_EQ(restored.getElement(0).GeoId, 2) << "restore keeps the stale index until rebind";
+    ASSERT_EQ(restored.getElement(0).GeoId, Sketcher::GeoEnum::GeoUndef)
+        << "the file stated an index the reference was supposed to resolve without";
 
     // tagGone is absent; a different, surviving element now occupies GeoId 2 under tagAlive.
     const Sketcher::Constraint::TagToGeoIdFn tagToGeoId =
