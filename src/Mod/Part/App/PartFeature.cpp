@@ -2014,19 +2014,17 @@ void ShapeFeature::guessNewLink(std::string& replacementName, DocumentObject* ba
 
 // ---------------------------------------------------------
 
-PROPERTY_SOURCE(Part::FilletBase, Part::ShapeFeature)
+PROPERTY_SOURCE_ABSTRACT(Part::FilletBase, Part::ShapeFeature)
 
 FilletBase::FilletBase()
 {
     ADD_PROPERTY(Base, (nullptr));
-    ADD_PROPERTY(Edges, (0, 0, 0));
     ADD_PROPERTY_TYPE(EdgeLinks, (0), 0, (App::PropertyType)(App::Prop_ReadOnly | App::Prop_Hidden), 0);
-    Edges.setSize(0);
 }
 
 short FilletBase::mustExecute() const
 {
-    if (Base.isTouched() || Edges.isTouched() || EdgeLinks.isTouched()) {
+    if (Base.isTouched() || edgeMeasurements().isTouched() || EdgeLinks.isTouched()) {
         return 1;
     }
     return 0;
@@ -2045,7 +2043,7 @@ App::DocumentObjectExecReturn* FilletBase::execute()
 void FilletBase::onChanged(const App::Property* prop)
 {
     if (getDocument() && !getDocument()->testStatus(App::Document::Restoring)) {
-        if (prop == &Edges || prop == &Base) {
+        if (prop == &edgeMeasurements() || prop == &Base) {
             if (!prop->testStatus(App::Property::User3)) {
                 syncEdgeLink();
             }
@@ -2064,13 +2062,13 @@ void FilletBase::onDocumentRestored()
 
 void FilletBase::syncEdgeLink()
 {
-    if (!Base.getValue() || !Edges.getSize()) {
+    if (!Base.getValue() || !edgeMeasurements().getSize()) {
         EdgeLinks.setValue(0);
         return;
     }
     std::vector<std::string> subs;
     std::string sub("Edge");
-    for (auto& info : Edges.getValues()) {
+    for (auto& info : edgeMeasurements().getValues()) {
         subs.emplace_back(sub + std::to_string(info.edgeid));
     }
     EdgeLinks.setValue(Base.getValue(), subs);
@@ -2081,7 +2079,7 @@ void FilletBase::onUpdateElementReference(const App::Property* prop)
     if (prop != &EdgeLinks || !getNameInDocument()) {
         return;
     }
-    auto values = Edges.getValues();
+    auto values = edgeMeasurements().getValues();
     const auto& subs = EdgeLinks.getSubValues();
     for (size_t i = 0; i < values.size(); ++i) {
         if (i >= subs.size()) {
@@ -2096,9 +2094,9 @@ void FilletBase::onUpdateElementReference(const App::Property* prop)
             FC_WARN("invalid fillet edge link '" << subs[i] << "' in object " << getFullName());
         }
     }
-    Edges.setStatus(App::Property::User3, true);
-    Edges.setValues(values);
-    Edges.setStatus(App::Property::User3, false);
+    edgeMeasurements().setStatus(App::Property::User3, true);
+    edgeMeasurements().setValues(values);
+    edgeMeasurements().setStatus(App::Property::User3, false);
 }
 
 // ---------------------------------------------------------

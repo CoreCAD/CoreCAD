@@ -43,7 +43,13 @@ using namespace Part;
 
 PROPERTY_SOURCE(Part::Fillet, Part::FilletBase)
 
-Fillet::Fillet() = default;
+Fillet::Fillet()
+{
+    // Declared here rather than on the shared base: the two numbers per edge are
+    // radii, and the file says so in this operation's own words.
+    ADD_PROPERTY(Edges, (0, 0, 0));
+    Edges.setSize(0);
+}
 
 App::DocumentObjectExecReturn* Fillet::execute()
 {
