@@ -53,6 +53,80 @@
 using namespace Sketcher;
 using namespace Base;
 
+namespace
+{
+/// Which point on a geometry a constraint holds, said the way the enumeration names it.
+constexpr std::array<const char*, 4> pointPos2str {{"none", "start", "end", "mid"}};
+
+std::string posToString(PointPos pos)
+{
+    const auto index = static_cast<size_t>(pos);
+    return index < pointPos2str.size() ? pointPos2str.at(index) : std::string {"none"};
+}
+
+/// The point a file names, or nothing when it names none of them.
+std::optional<PointPos> posFromString(const std::string& name)
+{
+    const auto found = std::ranges::find(pointPos2str, name);
+    if (found == pointPos2str.end()) {
+        return std::nullopt;
+    }
+    return static_cast<PointPos>(std::distance(pointPos2str.begin(), found));
+}
+
+/// True where a file states a value the way an older, upstream document states it: as a number.
+bool statedAsANumber(const std::string& value)
+{
+    if (value.empty()) {
+        return false;
+    }
+    const size_t first = (value.front() == '-') ? 1 : 0;
+    return value.size() > first
+        && std::all_of(value.begin() + static_cast<long>(first), value.end(), [](unsigned char c) {
+               return std::isdigit(c) != 0;
+           });
+}
+
+/// The orientations a constraint carries. A set rather than one value, so the file states a set.
+const std::array<std::pair<ConstraintOrientations, const char*>, 4> orientation2str {
+    {{ConstraintOrientations::CounterClockwise, "CounterClockwise"},
+     {ConstraintOrientations::Clockwise, "Clockwise"},
+     {ConstraintOrientations::Internal, "Internal"},
+     {ConstraintOrientations::External, "External"}}
+};
+
+std::string orientationToString(const ConstraintOrientation& orientation)
+{
+    std::string said;
+    for (const auto& [value, name] : orientation2str) {
+        if (orientation.testFlag(value)) {
+            said.append(said.empty() ? "" : "|").append(name);
+        }
+    }
+    return said.empty() ? std::string {"None"} : said;
+}
+
+/// The orientations a file names, or nothing where it names one this build does not have.
+std::optional<ConstraintOrientation> orientationFromString(const std::string& stated)
+{
+    ConstraintOrientation orientation = ConstraintOrientations::None;
+    if (stated == "None") {
+        return orientation;
+    }
+    for (const auto& part : std::views::split(stated, '|')) {
+        const std::string name(part.begin(), part.end());
+        const auto found = std::ranges::find_if(orientation2str, [&name](const auto& known) {
+            return name == known.second;
+        });
+        if (found == orientation2str.end()) {
+            return std::nullopt;
+        }
+        orientation.setFlag(found->first);
+    }
+    return orientation;
+}
+}  // namespace
+
 
 TYPESYSTEM_SOURCE(Sketcher::Constraint, Base::Persistence)
 
@@ -182,12 +256,13 @@ void Constraint::Save(Writer& writer, const GeoIdToTagFn& geoIdToTag) const
     writer.Stream() << writer.ind() << "<Constrain "
                     << "Name=\"" << encodeName << "\" "
                     << "MetaData=\"" << encodeMetaData << "\" "
-                    << "Type=\"" << (int)Type << "\" ";
+                    << "Type=\"" << typeToString(Type) << "\" ";
     if (this->Type == InternalAlignment) {
-        writer.Stream() << "InternalAlignmentType=\"" << (int)AlignmentType << "\" "
+        writer.Stream() << "InternalAlignmentType=\""
+                        << internalAlignmentTypeToString(AlignmentType) << "\" "
                         << "InternalAlignmentIndex=\"" << InternalAlignmentIndex << "\" ";
     }
-    writer.Stream() << "Orientation=\"" << Orientation.toUnderlyingType() << "\" ";
+    writer.Stream() << "Orientation=\"" << orientationToString(Orientation) << "\" ";
     writer.Stream() << "Value=\"" << Value << "\" "
                     << "LabelDistance=\"" << LabelDistance << "\" "
                     << "LabelPosition=\"" << LabelPosition << "\" "
@@ -205,18 +280,18 @@ void Constraint::Save(Writer& writer, const GeoIdToTagFn& geoIdToTag) const
     {
         // Ensure backwards compatibility with old versions
         writer.Stream() << "First=\"" << getElement(0).GeoId << "\" "
-                        << "FirstPos=\"" << getElement(0).posIdAsInt() << "\" "
+                        << "FirstPos=\"" << posToString(getElement(0).Pos) << "\" "
                         << "Second=\"" << getElement(1).GeoId << "\" "
-                        << "SecondPos=\"" << getElement(1).posIdAsInt() << "\" "
+                        << "SecondPos=\"" << posToString(getElement(1).Pos) << "\" "
                         << "Third=\"" << getElement(2).GeoId << "\" "
-                        << "ThirdPos=\"" << getElement(2).posIdAsInt() << "\" ";
+                        << "ThirdPos=\"" << posToString(getElement(2).Pos) << "\" ";
 #if SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
         auto elements = std::views::iota(size_t {0}, this->elements.size())
             | std::views::transform([&](size_t i) { return getElement(i); });
 #endif
         auto geoIds = elements | std::views::transform([](const GeoElementId& e) { return e.GeoId; });
         auto posIds = elements
-            | std::views::transform([](const GeoElementId& e) { return e.posIdAsInt(); });
+            | std::views::transform([](const GeoElementId& e) { return posToString(e.Pos); });
 
         const std::string ids = fmt::format("{}", fmt::join(geoIds, " "));
         const std::string positions = fmt::format("{}", fmt::join(posIds, " "));
@@ -243,11 +318,50 @@ void Constraint::Restore(XMLReader& reader)
     reader.readElement("Constrain");
     Name = reader.getAttribute<const char*>("Name");
     MetaData = reader.hasAttribute("MetaData") ? reader.getAttribute<const char*>("MetaData") : "";
-    Type = reader.getAttribute<ConstraintType>("Type");
+    // A constraint says what it is by name. A document written before the form changed -- one
+    // imported from upstream -- states a position in the enumeration instead; that is read
+    // positionally, the only way a position can be read, and named on the next save.
+    const std::string statedType = reader.getAttribute<const char*>("Type");
+    if (const std::optional<ConstraintType> named = Constraint::typeFromString(statedType)) {
+        Type = *named;
+    }
+    else if (statedAsANumber(statedType)) {
+        const long position = std::stol(statedType);
+        if (position < 0 || position >= NumConstraintTypes) {
+            FC_THROWM(Base::ValueError, "constraint type " << position << " is not one this build has");
+        }
+        Type = static_cast<ConstraintType>(position);
+    }
+    else {
+        // Refused rather than dropped. A constraint this build cannot place is a statement the
+        // file makes, and dropping it lets the next save write its absence over the record --
+        // the author's constraint gone from their own file with nothing said (Amendment 19).
+        FC_THROWM(Base::ValueError, "'" << statedType << "' is not a constraint type this build has");
+    }
     Value = reader.getAttribute<double>("Value");
 
     if (this->Type == InternalAlignment) {
-        AlignmentType = reader.getAttribute<InternalAlignmentType>("InternalAlignmentType");
+        const std::string statedAlignment = reader.getAttribute<const char*>("InternalAlignmentType");
+        if (const std::optional<InternalAlignmentType> named
+            = Constraint::internalAlignmentTypeFromString(statedAlignment)) {
+            AlignmentType = *named;
+        }
+        else if (statedAsANumber(statedAlignment)) {
+            const long position = std::stol(statedAlignment);
+            if (position < 0 || position >= NumInternalAlignmentType) {
+                FC_THROWM(
+                    Base::ValueError,
+                    "internal alignment type " << position << " is not one this build has"
+                );
+            }
+            AlignmentType = static_cast<InternalAlignmentType>(position);
+        }
+        else {
+            FC_THROWM(
+                Base::ValueError,
+                "'" << statedAlignment << "' is not an internal alignment this build has"
+            );
+        }
 
         if (reader.hasAttribute("InternalAlignmentIndex")) {
             InternalAlignmentIndex = reader.getAttribute<long>("InternalAlignmentIndex");
@@ -257,7 +371,20 @@ void Constraint::Restore(XMLReader& reader)
         AlignmentType = Undef;
     }
     if (reader.hasAttribute("Orientation")) {
-        Orientation = reader.getAttribute<ConstraintOrientations>("Orientation");
+        const std::string statedOrientation = reader.getAttribute<const char*>("Orientation");
+        if (const std::optional<ConstraintOrientation> named
+            = orientationFromString(statedOrientation)) {
+            Orientation = *named;
+        }
+        else if (statedAsANumber(statedOrientation)) {
+            Orientation = static_cast<ConstraintOrientations>(std::stol(statedOrientation));
+        }
+        else {
+            FC_THROWM(
+                Base::ValueError,
+                "'" << statedOrientation << "' is not an orientation this build has"
+            );
+        }
     }
     else {
         Orientation = ConstraintOrientations::None;
@@ -340,7 +467,11 @@ void Constraint::Restore(XMLReader& reader)
         elements.clear();
         for (size_t i = 0; i < std::min(ids.size(), positions.size()); ++i) {
             const int geoId {std::stoi(ids[i])};
-            const PointPos pos {static_cast<PointPos>(std::stoi(positions[i]))};
+            const std::optional<PointPos> named = posFromString(positions[i]);
+            if (!named && !statedAsANumber(positions[i])) {
+                FC_THROWM(Base::ValueError, "'" << positions[i] << "' is not a point on a geometry");
+            }
+            const PointPos pos = named ? *named : static_cast<PointPos>(std::stoi(positions[i]));
             addElement(GeoElementId(geoId, pos));
         }
 
@@ -375,7 +506,12 @@ void Constraint::Restore(XMLReader& reader)
         for (size_t i = 0; i < names.size(); ++i) {
             if (reader.hasAttribute(names[i])) {
                 const int geoId {reader.getAttribute<int>(names[i])};
-                const PointPos pos {reader.getAttribute<PointPos>(posNames[i])};
+                const std::string statedPos = reader.getAttribute<const char*>(posNames[i]);
+                const std::optional<PointPos> named = posFromString(statedPos);
+                if (!named && !statedAsANumber(statedPos)) {
+                    FC_THROWM(Base::ValueError, "'" << statedPos << "' is not a point on a geometry");
+                }
+                const PointPos pos = named ? *named : static_cast<PointPos>(std::stoi(statedPos));
                 setElement(i, GeoElementId(geoId, pos));
             }
         }
@@ -455,6 +591,24 @@ std::string Constraint::typeToString(ConstraintType type)
 std::string Constraint::internalAlignmentTypeToString(InternalAlignmentType alignment)
 {
     return internalAlignmentType2str[alignment];
+}
+
+std::optional<ConstraintType> Constraint::typeFromString(const std::string& name)
+{
+    const auto found = std::ranges::find(type2str, name);
+    if (found == type2str.end()) {
+        return std::nullopt;
+    }
+    return static_cast<ConstraintType>(std::distance(type2str.begin(), found));
+}
+
+std::optional<InternalAlignmentType> Constraint::internalAlignmentTypeFromString(const std::string& name)
+{
+    const auto found = std::ranges::find(internalAlignmentType2str, name);
+    if (found == internalAlignmentType2str.end()) {
+        return std::nullopt;
+    }
+    return static_cast<InternalAlignmentType>(std::distance(internalAlignmentType2str.begin(), found));
 }
 
 bool Constraint::involvesGeoId(int geoId) const

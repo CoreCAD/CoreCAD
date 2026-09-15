@@ -24,6 +24,7 @@
 
 #include <cassert>
 #include <limits>
+#include <memory>
 
 #include <boost/uuid/nil_generator.hpp>
 
@@ -379,19 +380,26 @@ void PropertyConstraintList::Restore(Base::XMLReader& reader)
     // get the value of my attribute
     int count = reader.getAttribute<long>("count");
 
-    std::vector<Constraint*> values;
-    values.reserve(count);
+    // A constraint stating something this build cannot place used to be deleted here, under
+    // "upward compatibility". Measured: a four-constraint sketch whose Perpendicular named a type
+    // this build has no place for opened with three, reported itself whole, and the next save
+    // wrote the file without it -- the author's constraint gone from their own document, with
+    // nothing said. A constraint that cannot be read now refuses, and the reader keeps the list
+    // exactly as the file worded it (Amendment 19). Whole rather than in part, deliberately: a
+    // constraint set assembled from the constraints that happened to be legible is one nobody
+    // authored, and a sketch solved against it would be a different sketch.
+    std::vector<std::unique_ptr<Constraint>> read;
+    read.reserve(count);
     for (int i = 0; i < count; i++) {
-        Constraint* newC = new Constraint();
+        auto newC = std::make_unique<Constraint>();
         newC->Restore(reader);
-        // To keep upward compatibility ignore unknown constraint types
-        if (newC->Type < Sketcher::NumConstraintTypes) {
-            values.push_back(newC);
-        }
-        else {
-            // reading a new constraint type which this version cannot handle
-            delete newC;
-        }
+        read.push_back(std::move(newC));
+    }
+
+    std::vector<Constraint*> values;
+    values.reserve(read.size());
+    for (std::unique_ptr<Constraint>& constraint : read) {
+        values.push_back(constraint.release());
     }
 
     reader.readEndElement("ConstraintList");

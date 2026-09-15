@@ -40,6 +40,7 @@
 #include <Base/Writer.h>
 
 #include "Property.h"
+#include "Document.h"
 #include "PropertyContainer.h"
 
 
@@ -370,6 +371,18 @@ void PropertyContainer::restoreKeptStatement(const Property* prop, const KeptSta
     if (!kept.statedWords.empty()) {
         _statedProperties[name] = kept.statedWords;
     }
+}
+
+void PropertyContainer::forgetUnhonouredStatement(const Property* prop)
+{
+    if (_missingSources.empty() && _unresolvedReferences.empty() && _statedProperties.empty()) {
+        return;
+    }
+    if (Document::isAnyRestoring()) {
+        // The read is still finishing itself, and what a read does is not what a person does.
+        return;
+    }
+    eraseUnhonouredStatement(prop);
 }
 
 void PropertyContainer::eraseUnhonouredStatement(const Property* prop)

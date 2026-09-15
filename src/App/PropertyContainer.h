@@ -798,14 +798,15 @@ public:
    * Called wherever a value is set, so a note can only ever outlive a load that nothing has
    * superseded -- which is what lets the writer treat a remembered statement as certain rather
    * than as a guess about an empty property.
+   *
+   * A document still being read is not something that supersedes. A load finishes itself: it
+   * binds references, migrates older forms, rebuilds what a version changed -- and those passes
+   * set values. Measured before this was guarded: a sketch keeping a constraint list it could not
+   * read had the note discharged by the migration pass that runs on every open, and the next save
+   * wrote the absence over the file's own words. Amendment 19 Clause 19.4 puts that act in one
+   * pair of hands, and a read is not a person.
    */
-  void forgetUnhonouredStatement(const Property* prop)
-  {
-      if (!_missingSources.empty() || !_unresolvedReferences.empty()
-          || !_statedProperties.empty()) {
-          eraseUnhonouredStatement(prop);
-      }
-  }
+  void forgetUnhonouredStatement(const Property* prop);
 
   /**
    * @brief Get the prefix for property names.

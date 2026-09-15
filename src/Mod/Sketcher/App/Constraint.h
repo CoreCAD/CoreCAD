@@ -206,6 +206,20 @@ public:
     }
     static std::string internalAlignmentTypeToString(InternalAlignmentType alignment);
 
+    /** The constraint type a file names, or nothing when this build has no type of that name.
+     *
+     * Cruth: a constraint states what it is by name, so a file can be read by a person and lined
+     * up on a merge, and so that adding a type cannot change what an existing file means. A name
+     * this build does not have is a statement it cannot honour, and the reader keeps it rather
+     * than dropping the constraint (Amendment 19).
+     */
+    static std::optional<ConstraintType> typeFromString(const std::string& name);
+
+    /// The internal-alignment type a file names, or nothing when this build has no such type.
+    static std::optional<InternalAlignmentType> internalAlignmentTypeFromString(
+        const std::string& name
+    );
+
     friend class PropertyConstraintList;
 
 private:
