@@ -285,8 +285,52 @@ public:
         return _lValueList.size() * sizeof(FilletElement);
     }
 
-private:
+protected:
+    /** What one measured edge is called in the file, and what its two numbers are called.
+     *
+     * Cruth: the same two numbers mean different things to different operations, and a file that
+     * calls them by the wrong name says something untrue about a design. A fillet holds radii. A
+     * chamfer holds distances and is not a fillet at all, so it states its own words -- see
+     * PropertyChamferEdges. Sharing the storage is fine; sharing the vocabulary is not.
+     */
+    struct Words
+    {
+        const char* list;     ///< the element the measurements are listed inside
+        const char* element;  ///< one measured edge
+        const char* first;    ///< its first number
+        const char* second;   ///< its second
+    };
+
+    virtual Words fileWords() const
+    {
+        return {"FilletEdges", "Fillet", "radius1", "radius2"};
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
     std::vector<FilletElement> _lValueList;
+};
+
+/** The edges a chamfer measures, in a chamfer's own words.
+ *
+ * A chamfer takes a distance along each of the two faces an edge joins -- not a radius, and not a
+ * fillet. Measured before this existed: a chamfer's document stated
+ * `<Fillet edge="1" radius1="2" radius2="3"/>`, under a property typed `Part::PropertyFilletEdges`.
+ * Every word of that is wrong about the operation a person performed, and it is the file a merge
+ * reads and a person opens.
+ */
+class PartExport PropertyChamferEdges: public PropertyFilletEdges
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    App::Property* Copy() const override;
+    void Paste(const App::Property& from) override;
+
+protected:
+    Words fileWords() const override
+    {
+        return {"ChamferEdges", "Chamfer", "size", "size2"};
+    }
 };
 
 

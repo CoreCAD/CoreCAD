@@ -628,7 +628,7 @@ void DlgFilletEdges::findShapes()
 void DlgFilletEdges::setupFillet(const std::vector<App::DocumentObject*>& objs)
 {
     App::DocumentObject* base = d->fillet->Base.getValue();
-    const std::vector<Part::FilletElement>& e = d->fillet->Edges.getValues();
+    const std::vector<Part::FilletElement>& e = d->fillet->edgeMeasurements().getValues();
     const auto& subs = d->fillet->EdgeLinks.getShadowSubs();
     if (subs.size() != e.size()) {
         FC_ERR("edge link size mismatch");

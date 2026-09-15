@@ -992,44 +992,46 @@ void PropertyFilletEdges::setPyObject(PyObject* value)
 
 void PropertyFilletEdges::Save(Base::Writer& writer) const
 {
+    const Words words = fileWords();
     if (writer.isForceXML()) {
-        // Cruth: which edges were rounded, and how far, is a design decision. It is stated here
-        // rather than named as a file beside the record, because a record that points elsewhere
-        // for something a person chose can lose it while still reading as complete. The two radii
-        // are not one value said twice -- a fillet may open out along the edge -- so both are said.
-        writer.Stream() << writer.ind() << "<FilletEdges>" << std::endl;
+        // Cruth: which edges were measured, and by how much, is a design decision. It is stated
+        // here rather than named as a file beside the record, because a record that points
+        // elsewhere for something a person chose can lose it while still reading as complete. The
+        // two numbers are not one value said twice -- a fillet may open out along the edge, and a
+        // chamfer may take a different distance on each face -- so both are said.
+        writer.Stream() << writer.ind() << '<' << words.list << '>' << std::endl;
         writer.incInd();
-        for (const auto& fillet : _lValueList) {
-            writer.Stream() << writer.ind() << "<Fillet"
-                            << " edge=\"" << fillet.edgeid << "\""
-                            << " radius1=\"" << fillet.radius1 << "\""
-                            << " radius2=\"" << fillet.radius2 << "\""
+        for (const auto& measured : _lValueList) {
+            writer.Stream() << writer.ind() << '<' << words.element << " edge=\"" << measured.edgeid
+                            << "\"" << ' ' << words.first << "=\"" << measured.radius1 << "\""
+                            << ' ' << words.second << "=\"" << measured.radius2 << "\""
                             << "/>" << std::endl;
         }
         writer.decInd();
-        writer.Stream() << writer.ind() << "</FilletEdges>" << std::endl;
+        writer.Stream() << writer.ind() << "</" << words.list << '>' << std::endl;
         return;
     }
 
-    writer.Stream() << writer.ind() << "<FilletEdges file=\"" << writer.addFile(getName(), this)
-                    << "\"/>" << std::endl;
+    writer.Stream() << writer.ind() << '<' << words.list << " file=\""
+                    << writer.addFile(getName(), this) << "\"/>" << std::endl;
 }
 
 void PropertyFilletEdges::Restore(Base::XMLReader& reader)
 {
-    reader.readElement("FilletEdges");
+    const Words words = fileWords();
+    reader.readElement(words.list);
     if (!reader.hasAttribute("file")) {
-        // Cruth: the fillets stated in the element itself. No count is declared and nothing
+        // Cruth: the measurements stated in the element itself. No count is declared and nothing
         // unexpected is passed over -- an element this reader does not know is refused, so a
         // document cannot come back quietly smaller than it was written.
         std::vector<FilletElement> values;
         const int list = reader.level();
         while (App::nextChildElement(reader, list)) {
-            App::expectElement(reader, "Fillet");
+            App::expectElement(reader, words.element);
             values.emplace_back(
                 reader.getAttribute<int>("edge"),
-                reader.getAttribute<double>("radius1"),
-                reader.getAttribute<double>("radius2")
+                reader.getAttribute<double>(words.first),
+                reader.getAttribute<double>(words.second)
             );
         }
         setValues(values);
@@ -1078,6 +1080,22 @@ void PropertyFilletEdges::Paste(const Property& from)
     aboutToSetValue();
     _lValueList = dynamic_cast<const PropertyFilletEdges&>(from)._lValueList;
     hasSetValue();
+}
+
+TYPESYSTEM_SOURCE(Part::PropertyChamferEdges, Part::PropertyFilletEdges)
+
+App::Property* PropertyChamferEdges::Copy() const
+{
+    // Its own type, not its parent's: a copy that came back as a fillet's measurements would
+    // state itself in a fillet's words the next time it was written.
+    auto* copied = new PropertyChamferEdges();
+    copied->_lValueList = _lValueList;
+    return copied;
+}
+
+void PropertyChamferEdges::Paste(const Property& from)
+{
+    PropertyFilletEdges::Paste(from);
 }
 
 // -------------------------------------------------------------------------

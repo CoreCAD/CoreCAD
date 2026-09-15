@@ -339,8 +339,20 @@ public:
     FilletBase();
 
     App::PropertyLink Base;
-    PropertyFilletEdges Edges;
     App::PropertyLinkSub EdgeLinks;
+
+    /** The per-edge measurements this operation holds.
+     *
+     * Declared by the operation rather than here, because the two numbers are not the same thing
+     * to both: a fillet holds radii and a chamfer holds distances along the two faces an edge
+     * joins. They share this class's work -- syncing the edge links, re-binding a reference --
+     * and not its vocabulary.
+     */
+    virtual PropertyFilletEdges& edgeMeasurements() = 0;
+    const PropertyFilletEdges& edgeMeasurements() const
+    {
+        return const_cast<FilletBase*>(this)->edgeMeasurements();
+    }
 
     short mustExecute() const override;
     App::DocumentObjectExecReturn* execute() override;

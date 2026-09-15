@@ -40,7 +40,13 @@ using namespace Part;
 
 PROPERTY_SOURCE(Part::Chamfer, Part::FilletBase)
 
-Chamfer::Chamfer() = default;
+Chamfer::Chamfer()
+{
+    // Declared here rather than on the shared base: the two numbers per edge are
+    // distances, and the file says so in this operation's own words.
+    ADD_PROPERTY(Edges, (0, 0, 0));
+    Edges.setSize(0);
+}
 
 App::DocumentObjectExecReturn* Chamfer::execute()
 {
@@ -93,10 +99,13 @@ App::DocumentObjectExecReturn* Chamfer::execute()
             if (edge.IsNull()) {
                 return new App::DocumentObjectExecReturn("Invalid edge link");
             }
-            double radius1 = info.radius1;
-            double radius2 = info.radius2;
+            // A chamfer takes a distance along each of the two faces the edge joins. The two
+            // numbers are stored in the same pair of fields a fillet's radii use; they are not
+            // radii, and nothing here should call them that.
+            const double size = info.radius1;
+            const double size2 = info.radius2;
             const TopoDS_Face& face = TopoDS::Face(mapEdgeFace.FindFromKey(edge).First());
-            mkChamfer.Add(radius1, radius2, TopoDS::Edge(edge), face);
+            mkChamfer.Add(size, size2, TopoDS::Edge(edge), face);
         }
 
         if (!fullErrMsg.empty()) {
