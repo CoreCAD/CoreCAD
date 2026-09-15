@@ -51,34 +51,78 @@ const char* Configuration::getViewProviderName() const
 
 void Configuration::onChanged(const App::Property* prop)
 {
-    // Switching the active option re-applies that option's overrides. Guard
-    // against restore (the values are already in the file) and against the
-    // pre-attachment construction phase (no document yet).
-    if (prop == &ActiveOption && !isRestoring() && getDocument()) {
+    // Switching the active option re-applies that option's overrides, and so does correcting the
+    // table under it -- which is the way back out of an override this build could not honour.
+    // Guard against restore (the values are already in the file) and against the pre-attachment
+    // construction phase (no document yet).
+    if ((prop == &ActiveOption || prop == &Overrides) && !isRestoring() && getDocument()) {
         applyActiveOption();
     }
     App::DocumentObject::onChanged(prop);
 }
 
+void Configuration::unsetupObject()
+{
+    // What is no longer stated no longer blocks. A configuration leaving the document takes its
+    // refusals with it, or a part would go on reporting itself blocked by an option that is gone.
+    App::Document* doc = getDocument();
+    const char* name = getNameInDocument();
+    if (doc != nullptr && name != nullptr) {
+        for (App::DocumentObject* obj : doc->getObjects()) {
+            if (obj != nullptr) {
+                obj->forgetStatementsSetFrom(name);
+            }
+        }
+        doc->recordWhatIsBlocked();
+    }
+    App::DocumentObject::unsetupObject();
+}
+
+void Configuration::blockWhatItSetsElsewhere()
+{
+    stateActiveOption(false);
+}
+
 void Configuration::applyActiveOption()
 {
+    stateActiveOption(true);
+    if (App::Document* doc = getDocument()) {
+        // Said the moment it is known. An option applied in a running session is the same failure
+        // as one found on reading the file, and waiting for a rebuild to disclose it would wait
+        // for a rebuild that a part whose geometry is already in hand is never asked for.
+        doc->recordWhatIsBlocked();
+    }
+}
+
+void Configuration::stateActiveOption(bool apply)
+{
     App::Document* doc = getDocument();
-    if (!doc) {
+    const char* holderName = getNameInDocument();
+    if (!doc || holderName == nullptr) {
         return;
+    }
+    const std::string holder = holderName;
+
+    // This pass states what cannot be honoured NOW, so what was stated before goes first --
+    // including on objects this option no longer names at all.
+    for (App::DocumentObject* obj : doc->getObjects()) {
+        if (obj != nullptr) {
+            obj->forgetStatementsSetFrom(holder);
+        }
     }
 
-    std::string prefix = ActiveOption.getValue();
-    if (prefix.empty()) {
+    const std::string option = ActiveOption.getValue();
+    if (option.empty()) {
         return;
     }
-    prefix += keySep;
+    const std::string prefix = option + keySep;
 
     for (const auto& entry : Overrides.getValues()) {
         const std::string& key = entry.first;
         if (key.compare(0, prefix.size(), prefix) != 0) {
             continue;
         }
-        // key tail is "<objectName>\x1f<propertyName>"
+        // key tail is "<objectName>|<propertyName>"
         std::string rest = key.substr(prefix.size());
         std::string::size_type sep = rest.find(keySep);
         if (sep == std::string::npos) {
@@ -89,23 +133,58 @@ void Configuration::applyActiveOption()
 
         App::DocumentObject* target = doc->getObject(objName.c_str());
         if (!target) {
+            // The object whose value it would have set is not here, so there is nothing else to
+            // block and the holder is all that is left. Named with the object it was looking for:
+            // a report that will not say what is missing cannot be acted on (§3.6).
+            rememberStatementSetFromElsewhere(
+                {holder,
+                 objName + "." + propName,
+                 "option '" + option + "' sets it and this document holds no object '" + objName
+                     + "'"});
             continue;
         }
         App::Property* targetProp = target->getPropertyByName(propName.c_str());
         if (!targetProp) {
+            target->rememberStatementSetFromElsewhere(
+                {holder,
+                 propName,
+                 "option '" + option + "' sets it and this build has no property of that name"});
+            continue;
+        }
+
+        // Evaluated whether or not it is applied. A stored value that cannot be read is a value
+        // the option never set, and a session that only read the file would otherwise report the
+        // part finished at a value nobody chose until somebody happened to switch the option.
+        //
+        // The lock is held across the value's whole life, its release included: a document may be
+        // read on any thread, and a held Python object let go of without it takes the process down.
+        Base::PyGILStateLocker lock;
+        Py::Object value;
+        try {
+            value = Base::Interpreter().runStringObject(entry.second.c_str());
+        }
+        catch (Base::Exception& e) {
+            target->rememberStatementSetFromElsewhere(
+                {holder,
+                 propName,
+                 "option '" + option + "' sets it to " + entry.second
+                     + ", which could not be read: " + e.what()});
+            continue;
+        }
+        if (!apply) {
             continue;
         }
 
         try {
-            // Evaluate the stored value literal to a typed Python object, then
-            // let the property apply it (units/type handled by setPyObject).
-            Py::Object value = Base::Interpreter().runStringObject(entry.second.c_str());
+            // Let the property apply it (units/type handled by setPyObject).
             targetProp->setPyObject(value.ptr());
         }
         catch (Base::Exception& e) {
-            Base::Console().warning("Configuration '%s': failed to apply override %s = %s: %s\n",
-                                    getNameInDocument(), key.c_str(), entry.second.c_str(),
-                                    e.what());
+            target->rememberStatementSetFromElsewhere(
+                {holder,
+                 propName,
+                 "option '" + option + "' sets it to " + entry.second
+                     + ", which it would not take: " + e.what()});
         }
     }
 }

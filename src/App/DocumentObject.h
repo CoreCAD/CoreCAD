@@ -796,6 +796,27 @@ public:
      */
     virtual short mustExecute() const;
 
+    /** Block the objects whose values this one states and this session could not honour.
+     *
+     * Cruth (Amendment 19 Clause 19.6): blocking follows the value, not the file. An object that
+     * sets a value on ANOTHER object from outside the dependency graph -- a configuration option,
+     * a spreadsheet driver (§3.4, §7.7) -- is the only thing that knows its statement could not be
+     * honoured, and the object that must be blocked is the one whose value it would have set, not
+     * this holder. So the holder is asked, and records what it could not honour on each of them
+     * with rememberStatementSetFromElsewhere().
+     *
+     * Asked again whenever what it states may have changed, and its answer REPLACES the last one:
+     * an implementation states only what it cannot honour now, and must first drop what it said
+     * before with forgetStatementsSetFrom(). Nothing here applies a value -- the document is read
+     * with its values already in it, and a read that recomputed from a configuration would be
+     * rebuilding a file that was already whole.
+     *
+     * The default says nothing, which is the right answer for every object that states values
+     * only about itself.
+     */
+    virtual void blockWhatItSetsElsewhere()
+    {}
+
     /**
      * @brief Whether this object's geometry is authored input rather than something it builds.
      *

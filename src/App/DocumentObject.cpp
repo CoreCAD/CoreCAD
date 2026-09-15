@@ -160,6 +160,18 @@ void DocumentObject::printInvalidLinks() const
 
 App::DocumentObjectExecReturn* DocumentObject::recompute()
 {
+    // Cruth (Amendment 19 Clause 19.6): a blocked node is not executed, and it is blocked by what
+    // it HOLDS rather than by who asked. The document's own rebuild refuses first and says why,
+    // but not every rebuild goes through the document -- a primitive rebuilds itself the moment a
+    // size changes -- and a refusal only the document enforced would be walked straight past by an
+    // ordinary edit. Executing the step from the part of the input that happened to be legible
+    // produces a shape nobody designed.
+    if (isBlockedByAStatement()) {
+        return new DocumentObjectExecReturn(
+            "Blocked: this build could not honour what the file states here.",
+            this);
+    }
+
     // check if the links are valid before making the recompute
     if (!GeoFeatureGroupExtension::areLinksValid(this)) {
         printInvalidLinks();

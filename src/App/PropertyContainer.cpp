@@ -248,6 +248,47 @@ std::vector<std::pair<std::string, std::string>> PropertyContainer::unhonouredSt
     return said;
 }
 
+void PropertyContainer::rememberStatementSetFromElsewhere(StatedElsewhere stated)
+{
+    if (stated.holder.empty() || stated.property.empty()) {
+        return;
+    }
+    // One holder says one thing about one property. Saying it again replaces what it said before,
+    // so a holder that is re-read never accumulates the failures it has since stopped having.
+    const auto same = [&stated](const StatedElsewhere& held) {
+        return held.holder == stated.holder && held.property == stated.property;
+    };
+    const auto found = std::find_if(_statedElsewhere.begin(), _statedElsewhere.end(), same);
+    if (found != _statedElsewhere.end()) {
+        *found = std::move(stated);
+        return;
+    }
+    _statedElsewhere.push_back(std::move(stated));
+}
+
+void PropertyContainer::forgetStatementsSetFrom(const std::string& holder)
+{
+    _statedElsewhere.erase(std::remove_if(_statedElsewhere.begin(),
+                                          _statedElsewhere.end(),
+                                          [&holder](const StatedElsewhere& held) {
+                                              return held.holder == holder;
+                                          }),
+                           _statedElsewhere.end());
+}
+
+std::vector<std::pair<std::string, std::string>> PropertyContainer::whatCouldNotBeHonoured() const
+{
+    std::vector<std::pair<std::string, std::string>> said = unhonouredStatements();
+    for (const StatedElsewhere& held : _statedElsewhere) {
+        // Named, and the holder named with it: the value is changed where it is stated, which is
+        // not here, and a report that did not say where would send a person looking in the wrong
+        // place (§3.6).
+        said.emplace_back(held.property, held.why + " ('" + held.holder + "' states it)");
+    }
+    std::sort(said.begin(), said.end());
+    return said;
+}
+
 PropertyContainer::KeptStatement
 PropertyContainer::keptStatementFor(const Property* prop) const
 {

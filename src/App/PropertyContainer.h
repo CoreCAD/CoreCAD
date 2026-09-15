@@ -728,8 +728,63 @@ public:
    *
    * Named rather than counted, because a report that says a document is incomplete without saying
    * what is missing cannot be acted on -- by a person or by a script reading it (P8, §3.6).
+   *
+   * This is what the container kept from its OWN block of the file, and so it is what the writer
+   * has to state again and what a person may discard. A value another object would have set here
+   * is not in it -- see statementsSetFromElsewhere().
    */
   std::vector<std::pair<std::string, std::string>> unhonouredStatements() const;
+
+  /** A value some OTHER object states for this one, which this session could not honour.
+   *
+   * Cruth (Amendment 19 Clause 19.6): blocking follows the value, not the file. Usually a
+   * statement sits on the object it blocks, and the three notes above carry it. Where it does not
+   * -- a configuration option or a spreadsheet driver setting a value on another object from
+   * outside the dependency graph (§3.4, §7.7) -- the object whose value it would have set is the
+   * one that must be blocked, never merely the holder. Otherwise the part rebuilds at its base
+   * value and reports success under the name of the option that failed to apply: a shape nobody
+   * designed, presented as finished.
+   *
+   * Kept apart from the three notes above on purpose. Those are this container's own words, owed
+   * back to the file and discardable by a person (Clause 19.4); this one is the holder's words,
+   * written back by the holder, and released by re-reading the holder rather than by a discard
+   * here.
+   */
+  struct StatedElsewhere
+  {
+      std::string holder;    ///< the object that states the value -- who to go to to change it
+      std::string property;  ///< the property here it would have set
+      std::string why;       ///< the kind of failure, in concrete terms (§3.6)
+  };
+
+  /** Remember that another object states a value here that this session could not honour.
+   *
+   * Replaces whatever that holder said about this property before, so re-reading a holder is the
+   * whole of the release path: what it can now honour stops blocking by simply not being stated
+   * again.
+   */
+  void rememberStatementSetFromElsewhere(StatedElsewhere stated);
+
+  /// Drop everything one holder states about this container -- it has been re-read, or is gone.
+  void forgetStatementsSetFrom(const std::string& holder);
+
+  /// What other objects state for this one and this session could not honour.
+  const std::vector<StatedElsewhere>& statementsSetFromElsewhere() const
+  {
+      return _statedElsewhere;
+  }
+
+  /** Everything that stops this object being built, from its own file and from elsewhere.
+   *
+   * The one question a blocked node answers, and the one a script asks (P8).
+   */
+  std::vector<std::pair<std::string, std::string>> whatCouldNotBeHonoured() const;
+
+  /// True while anything -- its own file or another object's statement -- blocks this one.
+  bool isBlockedByAStatement() const
+  {
+      return holdsUnhonouredStatement() || !_statedElsewhere.empty();
+  }
 
   /// True while this container holds any statement its file made and this session could not honour.
   bool holdsUnhonouredStatement() const
@@ -890,6 +945,7 @@ private:
   std::map<std::string, std::string> _missingSources;
   std::map<std::string, std::vector<StatedTarget>> _unresolvedReferences;
   std::map<std::string, std::string> _statedProperties;
+  std::vector<StatedElsewhere> _statedElsewhere;
   static PropertyData propertyData;
 };
 
