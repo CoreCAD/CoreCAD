@@ -23,6 +23,7 @@ add_executable(App_tests_run
         HeldStatements.cpp
         ElementNamingUtils.cpp
         IndexedName.cpp
+        KeptStatementReason.cpp
         License.cpp
         MappedElement.cpp
         MappedName.cpp

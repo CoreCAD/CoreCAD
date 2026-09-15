@@ -626,10 +626,10 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
 
     // Given back in their own place among the properties this build does understand, so a save
     // that changed nothing changes nothing (Amendment 18 Clause 18.1).
-    for (const auto& [name, words] : owner.statedProperties()) {
+    for (const auto& [name, stated] : owner.statedProperties()) {
         StoredProperty kept;
         kept.name = name;
-        kept.verbatim = words;
+        kept.verbatim = stated.words;
         stored.push_back(kept);
     }
     std::stable_sort(stored.begin(),
@@ -955,7 +955,13 @@ void keepUnreadValue(Document& doc,
         return;
     }
 
-    owner.rememberStatedProperty(name.c_str(), std::move(words));
+    // The reason travels with the words: the console message is gone by the time a person opens
+    // the list of what the document holds, and "no property of that name" -- the other reason a
+    // block is kept -- would send them looking for a missing add-on instead of a value they can
+    // retype (Amendment 19 Clause 19.4).
+    owner.rememberStatedProperty(name.c_str(),
+                                 std::move(words),
+                                 "this build could not read the value it states (" + why + ")");
     Base::Console().warning(
         "Stored recipe: '%s' (%s) states a value this build could not read (%s). It is kept as "
         "written and the document is not whole.\n",
@@ -1090,7 +1096,9 @@ void readProperties(Base::XMLReader& reader,
                                             "words could not be kept");
             }
             else {
-                owner.rememberStatedProperty(name.c_str(), std::move(words));
+                owner.rememberStatedProperty(name.c_str(),
+                                             std::move(words),
+                                             "this build has no property of that name and type");
                 Base::Console().warning(
                     "Stored recipe: '%s' (%s) is not a property this build has. It is kept as "
                     "written and the document is not whole.\n",
