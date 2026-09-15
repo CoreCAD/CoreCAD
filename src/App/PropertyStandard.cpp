@@ -304,6 +304,7 @@ void PropertyEnumeration::setEnums(const char** plEnums)
         aboutToSetValue();
     }
     _enum.setEnums(plEnums);
+    applyNameAwaitingItsList();
     if (notify) {
         hasSetValue();
     }
@@ -318,6 +319,7 @@ void PropertyEnumeration::setValue(const char* value)
 {
     aboutToSetValue();
     _enum.setValue(value);
+    _statedName.clear();
     hasSetValue();
 }
 
@@ -325,6 +327,7 @@ void PropertyEnumeration::setValue(long value)
 {
     aboutToSetValue();
     _enum.setValue(value);
+    _statedName.clear();
     hasSetValue();
 }
 
@@ -378,8 +381,23 @@ void PropertyEnumeration::setEnumVector(const std::vector<std::string>& values)
         aboutToSetValue();
     }
     _enum.setEnums(values);
+    applyNameAwaitingItsList();
     if (notify) {
         hasSetValue();
+    }
+}
+
+void PropertyEnumeration::applyNameAwaitingItsList()
+{
+    // The list a file's name is measured against is the one this property ends up offering, so
+    // every arriving list is an opportunity to honour a name that could not be looked up when it
+    // was read. Nothing is touched while no name is waiting, which is every case but a restore.
+    if (_statedName.empty()) {
+        return;
+    }
+    if (_enum.contains(_statedName.c_str())) {
+        _enum.setValue(_statedName);
+        _statedName.clear();
     }
 }
 
@@ -395,7 +413,14 @@ bool PropertyEnumeration::isValid() const
 
 void PropertyEnumeration::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<Integer value=\"" << _enum.getInt() << "\"";
+    // Cruth: the name that was chosen, never its position in this build's list. An enumeration's
+    // values live in C++ source, so inserting one moves every index after it, and a file written
+    // before that insertion goes on stating the same number while meaning a different value --
+    // in every document ever saved, with nothing to notice it by. A name cannot drift that way,
+    // and a person reading the file sees the choice instead of a number to look up elsewhere.
+    const char* chosen = _enum.getCStr();
+    writer.Stream() << writer.ind() << "<Enum value=\""
+                    << (chosen != nullptr ? encodeAttribute(chosen) : std::string {}) << "\"";
     if (_enum.isCustom()) {
         writer.Stream() << " CustomEnum=\"true\"";
     }
@@ -416,39 +441,74 @@ void PropertyEnumeration::Save(Base::Writer& writer) const
 
 void PropertyEnumeration::Restore(Base::XMLReader& reader)
 {
-    // read my Element
-    reader.readElement("Integer");
-    // get the value of my Attribute
-    long val = reader.getAttribute<long>("value");
+    reader.readElement();
+    const std::string element = reader.localName();
 
-    aboutToSetValue();
+    // A document this build wrote states the name that was chosen. A file written before the form
+    // changed -- an upstream document being imported -- states a position in the list instead.
+    // That one is read the only way an index can be read, positionally, and the next save states
+    // it by name.
+    const bool byName = (element == "Enum");
+    if (!byName && element != "Integer") {
+        throw Base::XMLParseException("Expected either an 'Enum' or an 'Integer' element");
+    }
 
-    if (reader.hasAttribute("CustomEnum")) {
+    const std::string stated =
+        byName ? reader.getAttribute<const char*>("value", "") : std::string {};
+    const bool custom = reader.hasAttribute("CustomEnum");
+
+    // A custom enumeration carries its own list, so the name is looked up in what the file
+    // states; a compiled one is looked up in what this build offers.
+    std::vector<std::string> values;
+    if (custom) {
         reader.readElement("CustomEnumList");
-        int count = reader.getAttribute<long>("count");
-        std::vector<std::string> values(count);
-
+        const int count = reader.getAttribute<long>("count");
+        values.resize(count);
         for (int i = 0; i < count; i++) {
             reader.readElement("Enum");
             values[i] = reader.getAttribute<const char*>("value");
         }
-
         reader.readEndElement("CustomEnumList");
+    }
+    const std::vector<std::string> list = custom ? values : _enum.getEnumVector();
 
+    const bool offered = std::find(list.begin(), list.end(), stated) != list.end();
+
+    aboutToSetValue();
+    if (custom) {
         _enum.setEnums(values);
     }
-
-    if (val < 0) {
-        // If the enum is empty at this stage do not print a warning
-        if (_enum.hasEnums()) {
-            Base::Console().developerWarning(std::string("PropertyEnumeration"),
-                                             "Enumeration index %d is out of range, ignore it\n",
-                                             val);
+    if (byName) {
+        if (stated.empty()) {
+            // Nothing was chosen, which is what a property with no list of its own states. Not a
+            // failure, and not something to hold: it restores to nothing chosen.
         }
-        val = getValue();
+        else if (offered) {
+            _enum.setValue(stated);
+            _statedName.clear();
+        }
+        else {
+            // Held rather than refused here. The list this property offers may still be built --
+            // it can be assembled from another property of the same object, which the file may
+            // state further down. The name is applied the moment a list arrives that has it, and
+            // the reader asks what is still waiting once the object has been read in full.
+            _statedName = stated;
+        }
     }
-
-    _enum.setValue(val);
+    else {
+        long index = reader.getAttribute<long>("value");
+        if (index < 0) {
+            // If the enum is empty at this stage do not print a warning
+            if (_enum.hasEnums()) {
+                Base::Console().developerWarning(std::string("PropertyEnumeration"),
+                                                 "Enumeration index %ld is out of range, ignore "
+                                                 "it\n",
+                                                 index);
+            }
+            index = getValue();
+        }
+        _enum.setValue(index);
+    }
     hasSetValue();
 }
 

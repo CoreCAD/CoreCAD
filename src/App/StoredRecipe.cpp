@@ -67,6 +67,7 @@
 #include "PropertyExpressionEngine.h"
 #include "PropertyGeo.h"
 #include "PropertyLinks.h"
+#include "PropertyStandard.h"
 #include "Services.h"
 
 #include <Base/ServiceProvider.h>
@@ -1100,6 +1101,28 @@ void readProperties(Base::XMLReader& reader,
         reader.readEndElement("Property");
     }
     reader.readEndElement("Properties");
+
+    // An enumeration states the value that was chosen by name, and some lists are not fixed: a
+    // hole's thread class is built from its thread type, so a name may not be lookupable at the
+    // moment it is read. Such a name waits for a list that offers it, and every property read
+    // after it is a chance for one to arrive. Here the container has been read in full, so a name
+    // still waiting is one nothing here offers -- a value this build cannot honour, kept as the
+    // file worded it rather than quietly replaced by the default (Amendment 19).
+    std::vector<Property*> declared;
+    owner.getPropertyList(declared);
+    for (Property* prop : declared) {
+        auto* choice = freecad_cast<PropertyEnumeration*>(prop);
+        if (choice == nullptr || choice->nameAwaitingItsList().empty()) {
+            continue;
+        }
+        const std::string why =
+            "'" + choice->nameAwaitingItsList() + "' is not a value this build offers for it";
+        const char* named = choice->getName();
+        const std::string name = named != nullptr ? named : std::string {};
+        choice->stopAwaitingItsList();
+        keepUnreadValue(doc, owner, *choice, name, choice->getTypeId().getName(), why,
+                        wordsFor(name));
+    }
 
     reader.readElement("Unrecorded");
     const int unrecorded = reader.level();
