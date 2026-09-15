@@ -28,6 +28,7 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <boost/regex.hpp>
 
@@ -197,6 +198,36 @@
 FC_LOG_LEVEL_INIT("TopoShape", true, true)
 
 using namespace Part;
+
+namespace
+{
+// The order is the enumeration's order, and the words are the ones a person sees when choosing.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+const char* chamferKindNames[] = {"Equal distance", "Two distances", "Distance and Angle", nullptr};
+}  // namespace
+
+const char** Part::chamferTypeNames()
+{
+    return chamferKindNames;
+}
+
+const char* Part::chamferTypeName(ChamferType kind)
+{
+    return chamferKindNames[static_cast<int>(kind)];
+}
+
+std::optional<ChamferType> Part::chamferTypeFromName(const char* name)
+{
+    if (name == nullptr) {
+        return {};
+    }
+    for (int i = 0; chamferKindNames[i] != nullptr; ++i) {
+        if (std::strcmp(chamferKindNames[i], name) == 0) {
+            return static_cast<ChamferType>(i);
+        }
+    }
+    return {};
+}
 
 const char* BRepBuilderAPI_FaceErrorText(BRepBuilderAPI_FaceError et)
 {

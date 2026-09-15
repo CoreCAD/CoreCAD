@@ -52,7 +52,6 @@ using namespace PartDesign;
 
 PROPERTY_SOURCE(PartDesign::Chamfer, PartDesign::DressUp)
 
-const char* ChamferTypeEnums[] = {"Equal distance", "Two distances", "Distance and Angle", nullptr};
 const App::PropertyQuantityConstraint::Constraints Chamfer::floatSize
     = {0.0, std::numeric_limits<float>::max(), 0.1};
 const App::PropertyAngle::Constraints Chamfer::floatAngle = {0.0, 180.0, 1.0};
@@ -67,7 +66,8 @@ static App::DocumentObjectExecReturn* validateParameters(
 Chamfer::Chamfer()
 {
     ADD_PROPERTY_TYPE(ChamferType, (0L), "Chamfer", App::Prop_None, "Type of chamfer");
-    ChamferType.setEnums(ChamferTypeEnums);
+    // The one list of kinds, named where the kinds themselves are declared.
+    ChamferType.setEnums(Part::chamferTypeNames());
 
     ADD_PROPERTY_TYPE(Size, (1.0), "Chamfer", App::Prop_None, "Size of chamfer");
     Size.setUnit(Base::Unit::Length);

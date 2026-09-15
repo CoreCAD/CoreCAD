@@ -990,22 +990,35 @@ void PropertyFilletEdges::setPyObject(PyObject* value)
     setValues(values);
 }
 
+void PropertyFilletEdges::saveMeasurements(Base::Writer& writer, const FilletElement& measured) const
+{
+    // The two numbers are not one value said twice -- a fillet may open out along the edge -- so
+    // both are said, and they are radii because that is what a fillet takes.
+    writer.Stream() << " radius1=\"" << measured.radius1 << "\" radius2=\"" << measured.radius2
+                    << "\"";
+}
+
+FilletElement PropertyFilletEdges::restoreMeasurements(Base::XMLReader& reader, int edgeid) const
+{
+    return {edgeid, reader.getAttribute<double>("radius1"), reader.getAttribute<double>("radius2")};
+}
+
 void PropertyFilletEdges::Save(Base::Writer& writer) const
 {
     const Words words = fileWords();
     if (writer.isForceXML()) {
         // Cruth: which edges were measured, and by how much, is a design decision. It is stated
         // here rather than named as a file beside the record, because a record that points
-        // elsewhere for something a person chose can lose it while still reading as complete. The
-        // two numbers are not one value said twice -- a fillet may open out along the edge, and a
-        // chamfer may take a different distance on each face -- so both are said.
+        // elsewhere for something a person chose can lose it while still reading as complete.
+        // What each operation calls its measurements is that operation's own business, so the
+        // numbers are written by saveMeasurements and only the edge is named here.
         writer.Stream() << writer.ind() << '<' << words.list << '>' << std::endl;
         writer.incInd();
         for (const auto& measured : _lValueList) {
             writer.Stream() << writer.ind() << '<' << words.element << " edge=\"" << measured.edgeid
-                            << "\"" << ' ' << words.first << "=\"" << measured.radius1 << "\""
-                            << ' ' << words.second << "=\"" << measured.radius2 << "\""
-                            << "/>" << std::endl;
+                            << "\"";
+            saveMeasurements(writer, measured);
+            writer.Stream() << "/>" << std::endl;
         }
         writer.decInd();
         writer.Stream() << writer.ind() << "</" << words.list << '>' << std::endl;
@@ -1028,11 +1041,7 @@ void PropertyFilletEdges::Restore(Base::XMLReader& reader)
         const int list = reader.level();
         while (App::nextChildElement(reader, list)) {
             App::expectElement(reader, words.element);
-            values.emplace_back(
-                reader.getAttribute<int>("edge"),
-                reader.getAttribute<double>(words.first),
-                reader.getAttribute<double>(words.second)
-            );
+            values.push_back(restoreMeasurements(reader, reader.getAttribute<int>("edge")));
         }
         setValues(values);
         return;
@@ -1052,7 +1061,9 @@ void PropertyFilletEdges::SaveDocFile(Base::Writer& writer) const
     uint32_t uCt = (uint32_t)getSize();
     str << uCt;
     for (const auto& it : _lValueList) {
-        str << it.edgeid << it.radius1 << it.radius2;
+        // The kind and the angle travel with the two numbers here as well -- a form that carried
+        // only part of what an edge holds would lose the rest wherever it were reached.
+        str << it.edgeid << it.radius1 << it.radius2 << static_cast<uint32_t>(it.kind) << it.angle;
     }
 }
 
@@ -1063,7 +1074,9 @@ void PropertyFilletEdges::RestoreDocFile(Base::Reader& reader)
     str >> uCt;
     std::vector<FilletElement> values(uCt);
     for (auto& it : values) {
-        str >> it.edgeid >> it.radius1 >> it.radius2;
+        uint32_t kind = 0;
+        str >> it.edgeid >> it.radius1 >> it.radius2 >> kind >> it.angle;
+        it.kind = static_cast<ChamferType>(kind);
     }
     setValues(values);
 }
@@ -1096,6 +1109,146 @@ App::Property* PropertyChamferEdges::Copy() const
 void PropertyChamferEdges::Paste(const Property& from)
 {
     PropertyFilletEdges::Paste(from);
+}
+
+PyObject* PropertyChamferEdges::getPyObject()
+{
+    Py::List list(getSize());
+    int index = 0;
+    for (const auto& measured : _lValueList) {
+        const bool oneNumber = measured.kind == ChamferType::equalDistance;
+        Py::Tuple entry(oneNumber ? 3 : 4);
+        entry.setItem(0, Py::Long(measured.edgeid));
+        entry.setItem(1, Py::String(chamferTypeName(measured.kind)));
+        entry.setItem(2, Py::Float(measured.radius1));
+        if (!oneNumber) {
+            const bool byAngle = measured.kind == ChamferType::distanceAngle;
+            entry.setItem(3, Py::Float(byAngle ? measured.angle : measured.radius2));
+        }
+        list[index++] = entry;
+    }
+
+    return Py::new_reference_to(list);
+}
+
+void PropertyChamferEdges::setPyObject(PyObject* value)
+{
+    Py::Sequence list(value);
+    std::vector<FilletElement> values;
+    values.reserve(list.size());
+    for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
+        Py::Tuple entry(*it);
+        FilletElement measured;
+        measured.edgeid = (int)Py::Long(entry.getItem(0));
+
+        if (!entry.getItem(1).isString()) {
+            // Three plain numbers: the form from before a chamfer stated its kind, and every
+            // chamfer set that way was built as two distances.
+            if (entry.size() != 3) {
+                throw Py::ValueError(
+                    "A chamfered edge is (edge, size, size2), or (edge, kind, ...) naming the kind"
+                );
+            }
+            measured.kind = ChamferType::twoDistances;
+            measured.radius1 = (double)Py::Float(entry.getItem(1));
+            measured.radius2 = (double)Py::Float(entry.getItem(2));
+            values.push_back(measured);
+            continue;
+        }
+
+        const std::string named = (std::string)Py::String(entry.getItem(1));
+        const std::optional<ChamferType> kind = chamferTypeFromName(named.c_str());
+        if (!kind.has_value()) {
+            throw Py::ValueError("'" + named + "' is not a kind of chamfer");
+        }
+        measured.kind = kind.value();
+
+        // Exactly what the kind measures, and nothing beside it: a number this kind has no use
+        // for would be taken in and then never used for anything.
+        const char* form = "(edge, kind, size, angle)";
+        if (measured.kind == ChamferType::equalDistance) {
+            form = "(edge, kind, size)";
+        }
+        else if (measured.kind == ChamferType::twoDistances) {
+            form = "(edge, kind, size, size2)";
+        }
+        const size_t wanted = measured.kind == ChamferType::equalDistance ? 3 : 4;
+        if (entry.size() != wanted) {
+            throw Py::ValueError("A '" + named + "' chamfer takes " + form);
+        }
+
+        measured.radius1 = (double)Py::Float(entry.getItem(2));
+        switch (measured.kind) {
+            case ChamferType::equalDistance:
+                // Taken along both faces, and the kernel is given the one distance twice.
+                measured.radius2 = measured.radius1;
+                break;
+            case ChamferType::twoDistances:
+                measured.radius2 = (double)Py::Float(entry.getItem(3));
+                break;
+            case ChamferType::distanceAngle:
+                measured.angle = (double)Py::Float(entry.getItem(3));
+                break;
+        }
+        values.push_back(measured);
+    }
+
+    setValues(values);
+}
+
+void PropertyChamferEdges::saveMeasurements(Base::Writer& writer, const FilletElement& measured) const
+{
+    writer.Stream() << " kind=\"" << chamferTypeName(measured.kind) << "\" size=\""
+                    << measured.radius1 << "\"";
+    switch (measured.kind) {
+        case ChamferType::equalDistance:
+            // One distance, taken along both faces. There is no second number to state.
+            break;
+        case ChamferType::twoDistances:
+            writer.Stream() << " size2=\"" << measured.radius2 << "\"";
+            break;
+        case ChamferType::distanceAngle:
+            // Degrees, the unit of record for an angle.
+            writer.Stream() << " angle=\"" << measured.angle << "\"";
+            break;
+    }
+}
+
+FilletElement PropertyChamferEdges::restoreMeasurements(Base::XMLReader& reader, int edgeid) const
+{
+    // A file written before a chamfer stated its kind gave two distances and nothing else, which
+    // is what every such chamfer was built as. That is what its silence means, so that is the
+    // kind it reads back as.
+    ChamferType kind = ChamferType::twoDistances;
+    if (reader.hasAttribute("kind")) {
+        const char* named = reader.getAttribute<const char*>("kind");
+        const std::optional<ChamferType> stated = chamferTypeFromName(named);
+        if (!stated.has_value()) {
+            // A kind this build does not offer is unfamiliar, not malformed: the reader keeps the
+            // whole block as the file worded it and says why (Amendment 19 Clauses 19.1, 19.2),
+            // which a refusal here would defeat by replacing the kind with a guess.
+            throw Base::ValueError(
+                std::string("'") + (named != nullptr ? named : "")
+                + "' is not a kind of chamfer this build takes"
+            );
+        }
+        kind = stated.value();
+    }
+
+    FilletElement measured(edgeid, reader.getAttribute<double>("size"), 0.0, kind);
+    switch (kind) {
+        case ChamferType::equalDistance:
+            // The one distance is taken along both faces, and the kernel is given it twice.
+            measured.radius2 = measured.radius1;
+            break;
+        case ChamferType::twoDistances:
+            measured.radius2 = reader.getAttribute<double>("size2");
+            break;
+        case ChamferType::distanceAngle:
+            measured.angle = reader.getAttribute<double>("angle");
+            break;
+    }
+    return measured;
 }
 
 // -------------------------------------------------------------------------

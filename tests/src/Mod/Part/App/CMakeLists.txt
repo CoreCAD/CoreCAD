@@ -27,6 +27,7 @@ add_executable(Part_tests_run
         PartTestHelpers.cpp
         PrimitiveFaceRole.cpp
         PrimitiveFaceRoleRef.cpp
+        ChamferByDistanceAndAngle.cpp
         ChamferStatesItsOwnWords.cpp
         PropertyTopoShape.cpp
         GeometryCache.cpp

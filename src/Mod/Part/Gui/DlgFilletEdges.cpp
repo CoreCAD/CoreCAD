@@ -90,11 +90,20 @@ QWidget* FilletRadiusDelegate::createEditor(
         return nullptr;
     }
 
+    Base::Unit unit = Base::Unit::Length;
+    if (index.column() == 2) {
+        const auto* rows = qobject_cast<const FilletRadiusModel*>(index.model());
+        if (rows != nullptr) {
+            unit = rows->secondColumnUnit();
+        }
+    }
+    const bool angle = unit == Base::Unit::Angle;
+
     Gui::QuantitySpinBox* editor = new Gui::QuantitySpinBox(parent);
-    editor->setUnit(Base::Unit::Length);
+    editor->setUnit(unit);
     editor->setMinimum(0.0);
-    editor->setMaximum(std::numeric_limits<int>::max());
-    editor->setSingleStep(0.1);
+    editor->setMaximum(angle ? 180.0 : std::numeric_limits<int>::max());
+    editor->setSingleStep(angle ? 1.0 : 0.1);
 
     return editor;
 }
@@ -292,6 +301,9 @@ DlgFilletEdges::DlgFilletEdges(
         ui->labelRadius->setText(tr("Length"));
         ui->filletType->setItemText(0, tr("Equal distance"));
         ui->filletType->setItemText(1, tr("Two distances"));
+        // The third kind the operation takes. A fillet has no equivalent, so the item is added
+        // here rather than offered by the shared form.
+        ui->filletType->addItem(tr("Distance and Angle"));
 
         model->setHeaderData(0, Qt::Horizontal, tr("Edges to chamfer"), Qt::DisplayRole);
         model->setHeaderData(1, Qt::Horizontal, tr("Size"), Qt::DisplayRole);
@@ -660,6 +672,15 @@ void DlgFilletEdges::setupFillet(const std::vector<App::DocumentObject*>& objs)
         double startRadius = 1;
         double endRadius = 1;
         bool twoRadii = false;
+        // Which kind this chamfer was authored as. The form is put into that kind below, so what
+        // it shows is what the document states rather than a guess from the numbers.
+        const bool chamfer = d->filletType == DlgFilletEdges::CHAMFER;
+        const Part::ChamferType kind = e.empty() ? Part::ChamferType::twoDistances : e.front().kind;
+        if (chamfer) {
+            setSecondColumnUnit(
+                kind == Part::ChamferType::distanceAngle ? Base::Unit::Angle : Base::Unit::Length
+            );
+        }
 
         std::vector<std::string> subElements;
         QStandardItemModel* model = qobject_cast<QStandardItemModel*>(ui->treeView->model());
@@ -701,7 +722,7 @@ void DlgFilletEdges::setupFillet(const std::vector<App::DocumentObject*>& objs)
                     continue;
                 }
                 FC_WARN("guess element reference: " << ref << " -> " << mapped.index);
-                elements.emplace(mapped.index.getIndex(), e[i].radius1, e[i].radius2);
+                elements.emplace(mapped.index.getIndex(), e[i].radius1, e[i].radius2, e[i].kind, e[i].angle);
             }
         }
 
@@ -718,13 +739,17 @@ void DlgFilletEdges::setupFillet(const std::vector<App::DocumentObject*>& objs)
                     model->index(index, 1),
                     QVariant::fromValue<Base::Quantity>(Base::Quantity(et.radius1, Base::Unit::Length))
                 );
+                const bool byAngle = chamfer && et.kind == Part::ChamferType::distanceAngle;
                 model->setData(
                     model->index(index, 2),
-                    QVariant::fromValue<Base::Quantity>(Base::Quantity(et.radius2, Base::Unit::Length))
+                    QVariant::fromValue<Base::Quantity>(
+                        byAngle ? Base::Quantity(et.angle, Base::Unit::Angle)
+                                : Base::Quantity(et.radius2, Base::Unit::Length)
+                    )
                 );
 
                 startRadius = et.radius1;
-                endRadius = et.radius2;
+                endRadius = byAngle ? et.angle : et.radius2;
                 if (startRadius != endRadius) {
                     twoRadii = true;
                 }
@@ -738,7 +763,14 @@ void DlgFilletEdges::setupFillet(const std::vector<App::DocumentObject*>& objs)
         model->blockSignals(block);
 
         // #0002273
-        if (twoRadii) {
+        // A chamfer states its kind, so it is set from that and never inferred. A fillet has only
+        // the numbers to go on, and two different radii mean it was authored as a variable one.
+        if (chamfer) {
+            const int index = static_cast<int>(kind);
+            ui->filletType->setCurrentIndex(index);
+            onFilletTypeActivated(index);
+        }
+        else if (twoRadii) {
             ui->filletType->setCurrentIndex(1);
             onFilletTypeActivated(1);
         }
@@ -969,24 +1001,26 @@ void DlgFilletEdges::onSelectNoneButtonClicked()
 
 void DlgFilletEdges::onFilletTypeActivated(int index)
 {
-    QStandardItemModel* model = qobject_cast<QStandardItemModel*>(ui->treeView->model());
+    FilletRadiusModel* model = qobject_cast<FilletRadiusModel*>(ui->treeView->model());
+    const bool chamfer = d->filletType == DlgFilletEdges::CHAMFER;
+    // A chamfer's third kind takes a distance and an angle, and the second column is then an
+    // angle: a different quantity, in the column and in the box that fills the column in.
+    const bool byAngle = chamfer && index == distanceAndAngle;
+    setSecondColumnUnit(byAngle ? Base::Unit::Angle : Base::Unit::Length);
+
     if (index == 0) {
-        if (d->filletType == DlgFilletEdges::CHAMFER) {
-            model->setHeaderData(1, Qt::Horizontal, tr("Length"), Qt::DisplayRole);
-        }
-        else {
-            model->setHeaderData(1, Qt::Horizontal, tr("Radius"), Qt::DisplayRole);
-        }
+        model->setHeaderData(1, Qt::Horizontal, chamfer ? tr("Size") : tr("Radius"), Qt::DisplayRole);
         ui->treeView->hideColumn(2);
         ui->filletEndRadius->hide();
     }
     else {
-        if (d->filletType == DlgFilletEdges::CHAMFER) {
-            model->setHeaderData(1, Qt::Horizontal, tr("Start length"), Qt::DisplayRole);
-        }
-        else {
-            model->setHeaderData(1, Qt::Horizontal, tr("Start radius"), Qt::DisplayRole);
-        }
+        model->setHeaderData(1, Qt::Horizontal, chamfer ? tr("Size") : tr("Start radius"), Qt::DisplayRole);
+        model->setHeaderData(
+            2,
+            Qt::Horizontal,
+            byAngle ? tr("Angle") : (chamfer ? tr("Size2") : tr("End radius")),
+            Qt::DisplayRole
+        );
         ui->treeView->showColumn(2);
         ui->filletEndRadius->show();
     }
@@ -994,6 +1028,42 @@ void DlgFilletEdges::onFilletTypeActivated(int index)
     ui->treeView->resizeColumnToContents(0);
     ui->treeView->resizeColumnToContents(1);
     ui->treeView->resizeColumnToContents(2);
+}
+
+/** Put the second column into the unit it now measures in.
+ *
+ * Cruth: the numbers already in the column were typed against the kind that was chosen then. A
+ * distance left in place and read back as degrees is a number the person never gave, so the
+ * column is refilled with the new kind's default and they type what they mean. Nothing happens
+ * where the unit has not changed, so moving between the two distance kinds keeps what was typed.
+ */
+void DlgFilletEdges::setSecondColumnUnit(const Base::Unit& unit)
+{
+    FilletRadiusModel* model = qobject_cast<FilletRadiusModel*>(ui->treeView->model());
+    if (model == nullptr || model->secondColumnUnit() == unit) {
+        return;
+    }
+    model->setSecondColumnUnit(unit);
+
+    const bool angle = unit == Base::Unit::Angle;
+    ui->filletEndRadius->setUnit(unit);
+    ui->filletEndRadius->setMaximum(angle ? 180.0 : std::numeric_limits<int>::max());
+    ui->filletEndRadius->setSingleStep(angle ? 1.0 : 0.1);
+    ui->filletEndRadius->blockSignals(true);
+    ui->filletEndRadius->setValue(Base::Quantity(angle ? defaultAngle : 1.0, unit));
+    ui->filletEndRadius->blockSignals(false);
+
+    const bool block = model->blockSignals(true);
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const double value = angle
+            ? defaultAngle
+            : model->index(row, 1).data(Qt::EditRole).value<Base::Quantity>().getValue();
+        model->setData(
+            model->index(row, 2),
+            QVariant::fromValue<Base::Quantity>(Base::Quantity(value, unit))
+        );
+    }
+    model->blockSignals(block);
 }
 
 void DlgFilletEdges::onFilletStartRadiusValueChanged(const Base::Quantity& radius)
@@ -1047,6 +1117,12 @@ bool DlgFilletEdges::accept()
 
     QString shape, type, name;
     std::string fillet = getFilletType();
+    // A chamfer says which of its three kinds each edge takes, because the numbers beside it
+    // cannot: the second one is a distance under one kind and an angle under another.
+    const bool chamfer = d->filletType == DlgFilletEdges::CHAMFER;
+    const Part::ChamferType kind = chamfer
+        ? static_cast<Part::ChamferType>(ui->filletType->currentIndex())
+        : Part::ChamferType::twoDistances;
     int index = ui->shapeObject->currentIndex();
     shape = ui->shapeObject->itemData(index).toString();
     type = QStringLiteral("Part::%1").arg(QString::fromLatin1(fillet.c_str()));
@@ -1081,10 +1157,21 @@ bool DlgFilletEdges::accept()
             if (end_radius) {
                 r2 = model->index(i, 2).data(Qt::EditRole).value<Base::Quantity>();
             }
-            code += QStringLiteral("__fillets__.append((%1,%2,%3))\n")
-                        .arg(id)
-                        .arg(r1.getValue(), 0, 'f', Base::UnitsApi::getDecimals())
-                        .arg(r2.getValue(), 0, 'f', Base::UnitsApi::getDecimals());
+            const QString first = QString::number(r1.getValue(), 'f', Base::UnitsApi::getDecimals());
+            const QString second = QString::number(r2.getValue(), 'f', Base::UnitsApi::getDecimals());
+            if (!chamfer) {
+                code += QStringLiteral("__fillets__.append((%1,%2,%3))\n").arg(id).arg(first, second);
+            }
+            else if (kind == Part::ChamferType::equalDistance) {
+                code += QStringLiteral("__fillets__.append((%1,\"%2\",%3))\n")
+                            .arg(id)
+                            .arg(QString::fromLatin1(Part::chamferTypeName(kind)), first);
+            }
+            else {
+                code += QStringLiteral("__fillets__.append((%1,\"%2\",%3,%4))\n")
+                            .arg(id)
+                            .arg(QString::fromLatin1(Part::chamferTypeName(kind)), first, second);
+            }
             todo = true;
         }
     }

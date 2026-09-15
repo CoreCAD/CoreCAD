@@ -31,6 +31,8 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 
 
+#include <Base/Tools.h>
+
 #include <SignalException.h>
 #include "FeatureChamfer.h"
 #include "TopoShapeOpCode.h"
@@ -99,13 +101,29 @@ App::DocumentObjectExecReturn* Chamfer::execute()
             if (edge.IsNull()) {
                 return new App::DocumentObjectExecReturn("Invalid edge link");
             }
-            // A chamfer takes a distance along each of the two faces the edge joins. The two
-            // numbers are stored in the same pair of fields a fillet's radii use; they are not
-            // radii, and nothing here should call them that.
+            // A chamfer takes a distance along each of the two faces the edge joins, or a
+            // distance and an angle. Which of the three kinds this edge takes travels with its
+            // measurements, so the numbers below are read the way the person who set them meant.
             const double size = info.radius1;
-            const double size2 = info.radius2;
             const TopoDS_Face& face = TopoDS::Face(mapEdgeFace.FindFromKey(edge).First());
-            mkChamfer.Add(size, size2, TopoDS::Edge(edge), face);
+            switch (info.kind) {
+                case ChamferType::equalDistance:
+                    mkChamfer.Add(size, size, TopoDS::Edge(edge), face);
+                    break;
+                case ChamferType::twoDistances:
+                    mkChamfer.Add(size, info.radius2, TopoDS::Edge(edge), face);
+                    break;
+                case ChamferType::distanceAngle:
+                    if (info.angle <= 0.0 || info.angle >= 180.0) {
+                        // Said here rather than left to the kernel, which answers a nonsensical
+                        // angle with a failure that names neither the edge nor the number.
+                        return new App::DocumentObjectExecReturn(
+                            "Chamfer angle must be greater than 0 and less than 180 degrees"
+                        );
+                    }
+                    mkChamfer.AddDA(size, Base::toRadians(info.angle), TopoDS::Edge(edge), face);
+                    break;
+            }
         }
 
         if (!fullErrMsg.empty()) {
