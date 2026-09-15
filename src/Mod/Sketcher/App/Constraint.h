@@ -34,6 +34,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 
 #include <functional>
+#include <map>
 #include <optional>
 
 #include "GeoEnum.h"
@@ -162,6 +163,14 @@ public:
     /// silently aliasing whatever element now occupies that slot. Returns true if any
     /// element went dangling this way, so the caller can disclose it.
     bool bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId);
+
+    /** Follow the geometry this constraint names to the identities it has just been given.
+     *
+     * A duplicate re-mints the identity of everything it authors. Between the read and the bind a
+     * constraint holds the identities the file stated, so a re-mint that does not carry them
+     * leaves the constraint naming geometry that no longer exists anywhere.
+     */
+    void carryElementReferencesTo(const std::map<boost::uuids::uuid, boost::uuids::uuid>& renamed);
 
 private:
     /// Read the references a document written to this form states, one element each.

@@ -4,6 +4,7 @@ add_executable(Sketcher_tests_run
         Constraint.cpp
     ConstraintReferenceStatedOnce.cpp
     ConstraintTypesByName.cpp
+    DuplicateKeepsReferences.cpp
         EntityIdentity.cpp
         SketcherTestHelpers.cpp
         SketchObject.cpp

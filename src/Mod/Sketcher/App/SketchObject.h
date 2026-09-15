@@ -1039,6 +1039,16 @@ protected:
     void restoreFinished() override;
     void onSketchRestore();
 
+    /** Give the duplicate an identity of its own, carrying the references that resolve through it.
+     *
+     * Cruth: a re-mint has to carry the references that resolve through what it re-mints. A
+     * duplicated sketch's geometry is reborn with fresh durable identities, and its constraints
+     * name that geometry by the identity it had a moment ago -- they have not been bound to it
+     * yet, because that happens once the whole document has been read. Re-minting underneath them
+     * leaves every constraint naming something that no longer exists.
+     */
+    void mintDurableIdentity() override;
+
     std::string validateExpression(
         const App::ObjectIdentifier& path,
         std::shared_ptr<const App::Expression> expr

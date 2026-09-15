@@ -1344,6 +1344,39 @@ void SketchObject::restoreFinished()
     onSketchRestore();
 }
 
+void SketchObject::mintDurableIdentity()
+{
+    // What the geometry is called before it is reborn. Read in list order, which is the only
+    // thing the two sides have in common: the re-mint replaces each tag in place.
+    std::vector<boost::uuids::uuid> before;
+    const std::vector<Part::Geometry*>& geometry = getInternalGeometry();
+    before.reserve(geometry.size());
+    for (const Part::Geometry* geo : geometry) {
+        before.push_back(geo->getTag());
+    }
+
+    Part::Part2DObject::mintDurableIdentity();
+
+    std::map<boost::uuids::uuid, boost::uuids::uuid> renamed;
+    const std::vector<Part::Geometry*>& reborn = getInternalGeometry();
+    for (std::size_t i = 0; i < before.size() && i < reborn.size(); ++i) {
+        if (before[i] != reborn[i]->getTag()) {
+            renamed[before[i]] = reborn[i]->getTag();
+        }
+    }
+    if (renamed.empty()) {
+        return;
+    }
+
+    // No signal, for the same reason the property's own re-mint sends none: this runs mid-import
+    // on constraints nothing can see yet, and what changes is identity rather than the constraint.
+    for (Constraint* constraint : Constraints.getValues()) {
+        if (constraint != nullptr) {
+            constraint->carryElementReferencesTo(renamed);
+        }
+    }
+}
+
 void SketchObject::rebindConstraintsToDurableGeometry()
 {
     // Geometry carries the durable identity a constraint reference resolves through. Build a

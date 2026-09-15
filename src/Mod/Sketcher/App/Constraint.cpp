@@ -560,6 +560,18 @@ bool Constraint::bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId)
     return wentDangling;
 }
 
+void Constraint::carryElementReferencesTo(
+    const std::map<boost::uuids::uuid, boost::uuids::uuid>& renamed
+)
+{
+    for (boost::uuids::uuid& geoTag : restoredElementGeoTags) {
+        const auto found = renamed.find(geoTag);
+        if (found != renamed.end()) {
+            geoTag = found->second;
+        }
+    }
+}
+
 void Constraint::substituteIndex(int fromGeoId, int toGeoId)
 {
 #if SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
