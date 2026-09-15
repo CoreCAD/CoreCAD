@@ -225,13 +225,13 @@ TEST_F(ConstraintPointsAccess, testElementSerializationWhenAccessingOldWay)  // 
     // Assert
     std::string serialized = writer.getString();
     EXPECT_TRUE(serialized.find("First=\"23\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("FirstPos=\"1\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("FirstPos=\"start\"") != std::string::npos);
     EXPECT_TRUE(serialized.find("Second=\"34\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("SecondPos=\"2\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("SecondPos=\"end\"") != std::string::npos);
     EXPECT_TRUE(serialized.find("Third=\"45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ThirdPos=\"3\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("ThirdPos=\"mid\"") != std::string::npos);
     EXPECT_TRUE(serialized.find("ElementIds=\"23 34 45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementPositions=\"1 2 3\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("ElementPositions=\"start end mid\"") != std::string::npos);
 }
 #endif
 
@@ -251,13 +251,13 @@ TEST_F(ConstraintPointsAccess, testElementSerializationWhenAccessingNewWay)  // 
     // Assert
     std::string serialized = writer.getString();
     EXPECT_TRUE(serialized.find("First=\"23\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("FirstPos=\"1\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("FirstPos=\"start\"") != std::string::npos);
     EXPECT_TRUE(serialized.find("Second=\"34\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("SecondPos=\"2\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("SecondPos=\"end\"") != std::string::npos);
     EXPECT_TRUE(serialized.find("Third=\"45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ThirdPos=\"3\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("ThirdPos=\"mid\"") != std::string::npos);
     EXPECT_TRUE(serialized.find("ElementIds=\"23 34 45\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementPositions=\"1 2 3\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("ElementPositions=\"start end mid\"") != std::string::npos);
 }
 
 #if SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
@@ -278,20 +278,18 @@ TEST_F(ConstraintPointsAccess, testElementSerializationWhenMixingOldAndNew)  // 
     // Assert
     std::string serialized = writer.getString();
     EXPECT_TRUE(serialized.find("First=\"23\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("FirstPos=\"1\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("FirstPos=\"start\"") != std::string::npos);
 
-    // Old way wrote this data
-    // ensure mid is 3 for next test
-    EXPECT_EQ(Sketcher::PointPos::mid, static_cast<Sketcher::PointPos>(3));
-    EXPECT_TRUE(serialized.find("SecondPos=\"3\"") != std::string::npos);
+    // Old way wrote this data, and a position is named rather than numbered.
+    EXPECT_TRUE(serialized.find("SecondPos=\"mid\"") != std::string::npos);
     EXPECT_TRUE(serialized.find("Second=\"45\"") != std::string::npos);
 
     EXPECT_TRUE(serialized.find("Third=\"-2000\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ThirdPos=\"0\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("ThirdPos=\"none\"") != std::string::npos);
 
     // Second and SecondPos is reflected in the elements data too
     EXPECT_TRUE(serialized.find("ElementIds=\"23 45 -2000\"") != std::string::npos);
-    EXPECT_TRUE(serialized.find("ElementPositions=\"1 3 0\"") != std::string::npos);
+    EXPECT_TRUE(serialized.find("ElementPositions=\"start mid none\"") != std::string::npos);
 }
 #endif
 
