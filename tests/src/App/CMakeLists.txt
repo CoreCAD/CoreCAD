@@ -9,6 +9,7 @@ add_executable(App_tests_run
         BrokenFileRefusal.cpp
         ComplexGeoData.cpp
         ConfigurationBlocking.cpp
+        ConfigurationValuesAreNotPrograms.cpp
         CopyObject.cpp
         Document.cpp
         DocumentByteStability.cpp
