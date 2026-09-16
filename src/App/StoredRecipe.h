@@ -195,6 +195,14 @@ AppExport std::string formatStoredRecipeObject(const DocumentObject& obj,
  *  That is a gap in the record, not a rebuildable result, and putting authored content anywhere
  *  disposable would make a design deletable.
  */
+/** Whether the recipe carries this value, or a rebuild would produce it again.
+ *
+ *  The one test for "does this appear in the file", used by the writer that puts it there and by
+ *  anything that has to reason about what the file says. Two tests would drift, and the drift
+ *  would be a document that disagreed with itself about what it stated.
+ */
+AppExport bool theRecipeCarries(const Property& prop, const PropertyContainer& owner);
+
 AppExport std::vector<Property*> rebuiltProperties(const PropertyContainer& owner);
 
 }  // namespace App

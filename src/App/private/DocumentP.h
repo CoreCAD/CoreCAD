@@ -85,6 +85,10 @@ struct DocumentP
     // the next lookup rather than tracked incrementally.
     mutable std::unordered_map<std::string, DocumentObject*> objectUuidMap;
     mutable bool objectUuidMapDirty {true};
+    // Whether what the document holds is still what its file states. Set the moment something
+    // the recipe carries changes; cleared by a save that wrote it out and by a read that
+    // replaced it. A value a rebuild produces is not carried and so does not set it.
+    bool movedOnFromItsFile {false};
     std::unordered_map<std::string, bool> partialLoadObjects;
     std::vector<DocumentObjectT> pendingRemove;
     long lastObjectId {};

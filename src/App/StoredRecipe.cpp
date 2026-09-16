@@ -453,17 +453,7 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
 
     std::vector<StoredProperty> stored;
     for (const auto& [name, prop] : properties) {
-        if (prop == nullptr) {
-            continue;
-        }
-        if ((owner.getPropertyType(prop) & excludedPropertyFlags) != 0
-            && !isAuthoredDespiteItsFlags(name)) {
-            continue;
-        }
-        if (prop->testStatus(Property::PropNoPersist)) {
-            continue;
-        }
-        if (isBuiltGeometry(*prop, owner)) {
+        if (prop == nullptr || !App::theRecipeCarries(*prop, owner)) {
             continue;
         }
 
@@ -1622,6 +1612,21 @@ std::string App::formatStoredRecipeObject(const DocumentObject& obj,
     writer.Stream().precision(std::numeric_limits<double>::max_digits10);
     writeObject(writer, obj, assetDirectory, /*withAppearance=*/false);
     return writer.getString();
+}
+
+bool App::theRecipeCarries(const Property& prop, const PropertyContainer& owner)
+{
+    const std::string name = owner.getPropertyName(&prop) != nullptr
+        ? std::string(owner.getPropertyName(&prop))
+        : std::string();
+    if ((owner.getPropertyType(&prop) & excludedPropertyFlags) != 0
+        && !isAuthoredDespiteItsFlags(name)) {
+        return false;
+    }
+    if (prop.testStatus(Property::PropNoPersist)) {
+        return false;
+    }
+    return !isBuiltGeometry(prop, owner);
 }
 
 std::vector<Property*> App::rebuiltProperties(const PropertyContainer& owner)

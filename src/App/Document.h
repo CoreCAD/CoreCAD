@@ -626,6 +626,22 @@ public:
     /// True while this document holds a statement its file made and this session could not honour.
     bool holdsUnreadContent() const;
 
+    /** Whether what this document holds is still what its file states.
+     *
+     * False from the moment something the recipe carries changes -- a value a person set, an
+     * object added or removed -- and true again once a save has written that out, or once a
+     * fresh read has replaced it. Values a rebuild produces do not count: a recompute makes a
+     * solid the file never held in the first place, so producing one does not make the document
+     * disagree with its file.
+     *
+     * The interface has always tracked this for itself, to know whether to offer to save. It
+     * belongs here because it is a fact about the document rather than about the window showing
+     * it, and because a question asked of what is on disk -- which files does this project still
+     * name? -- cannot be answered from a document that has moved on from its file without saying
+     * so.
+     */
+    bool statesWhatItsFileStates() const;
+
     /** Whether this document can present what it holds as the whole of what its file states.
      *
      * False while anything it read could not be honoured -- content it had to keep rather than

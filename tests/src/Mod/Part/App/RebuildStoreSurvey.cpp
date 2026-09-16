@@ -218,25 +218,89 @@ TEST_F(RebuildStoreSurveyTest, theDisplayStateBesideTheResultsIsLeftAlone)
     }
 }
 
-// What is kept was named when the part was last saved. What is open may be neither saved nor the
-// same, so the survey refuses rather than answering a question nobody asked.
-TEST_F(RebuildStoreSurveyTest, anOpenPartStopsTheSurvey)
+// What is kept was named when the part was last saved. A part that has moved on from its file
+// names what no save has written yet, so the survey refuses rather than answering about that.
+TEST_F(RebuildStoreSurveyTest, aPartWithUnsavedChangesStopsTheSurvey)
 {
     const std::string recipe = aSavedPart("one");
     App::Document* doc = App::GetApplication().openDocument(recipe.c_str());
     _open.push_back(doc->getName());
 
+    auto* box = dynamic_cast<Part::Box*>(doc->getObject("Block"));
+    ASSERT_NE(box, nullptr);
+    box->Length.setValue(11.0);
+    doc->recompute();
+    ASSERT_FALSE(doc->statesWhatItsFileStates()) << "an edited part called itself unchanged";
+
     try {
         App::surveyProjectRebuildStore(_folder.string());
-        FAIL() << "the survey answered about a part that was open";
+        FAIL() << "the survey answered about a part that had moved on from its file";
     }
     catch (const Base::Exception& refused) {
         const std::string said = refused.what();
         EXPECT_NE(said.find("one.cpart"), std::string::npos) << said;
+        EXPECT_NE(said.find("unsaved changes"), std::string::npos) << said;
     }
 
     EXPECT_NE(App::GetApplication().getDocument(_open.front().c_str()), nullptr)
         << "the survey closed a part the person had open";
+}
+
+// And a part simply being open is not a reason to refuse. What it holds is what its file states,
+// so the names it gives are the file's own names -- which is how a person gets an answer without
+// first closing the thing they are working on.
+TEST_F(RebuildStoreSurveyTest, aPartOpenAndUnchangedIsAnsweredAbout)
+{
+    const std::string recipe = aSavedPart("one");
+    App::Document* doc = App::GetApplication().openDocument(recipe.c_str());
+    _open.push_back(doc->getName());
+    ASSERT_TRUE(doc->statesWhatItsFileStates())
+        << "a part that was only read called itself changed";
+
+    const App::ProjectSurvey found = App::surveyProjectRebuildStore(_folder.string());
+    EXPECT_EQ(found.recipesRead.size(), 1U);
+    EXPECT_TRUE(found.unreferenced.empty())
+        << "a result the open part still names was reported as collectable";
+    EXPECT_NE(App::GetApplication().getDocument(_open.front().c_str()), nullptr)
+        << "the survey closed a part the person had open";
+}
+
+// Saving is what makes the two agree again, and the survey follows that rather than holding a
+// grudge about an edit that has since been written out.
+TEST_F(RebuildStoreSurveyTest, savingWhatWasChangedLetsTheSurveyAnswerAgain)
+{
+    const std::string recipe = aSavedPart("one");
+    App::Document* doc = App::GetApplication().openDocument(recipe.c_str());
+    _open.push_back(doc->getName());
+
+    auto* box = dynamic_cast<Part::Box*>(doc->getObject("Block"));
+    ASSERT_NE(box, nullptr);
+    box->Length.setValue(11.0);
+    doc->recompute();
+    EXPECT_THROW(App::surveyProjectRebuildStore(_folder.string()), Base::Exception);
+
+    ASSERT_TRUE(doc->save());
+    ASSERT_TRUE(doc->statesWhatItsFileStates()) << "a saved part still called itself changed";
+
+    const App::ProjectSurvey found = App::surveyProjectRebuildStore(_folder.string());
+    ASSERT_EQ(found.unreferenced.size(), 1U)
+        << "the result the edit left behind was not found once the edit was saved";
+}
+
+// A rebuild produces solids the file never held, so producing one is not a disagreement with it.
+// A part that called itself changed every time it recomputed could never say when it had changed.
+TEST_F(RebuildStoreSurveyTest, rebuildingDoesNotMakeAPartDisagreeWithItsFile)
+{
+    const std::string recipe = aSavedPart("one");
+    App::Document* doc = App::GetApplication().openDocument(recipe.c_str());
+    _open.push_back(doc->getName());
+
+    for (App::DocumentObject* obj : doc->getObjects()) {
+        obj->enforceRecompute();
+    }
+    doc->recompute();
+    EXPECT_TRUE(doc->statesWhatItsFileStates())
+        << "rebuilding a part made it call itself changed, which nothing could then distinguish";
 }
 
 // A statement this build could not honour may name anything, so an absence of references is no
@@ -343,9 +407,9 @@ TEST_F(DiscardRebuildResultsTest, whatNothingNamesGoesAndWhatThePartNamesStays)
     app.closeDocument(reopened->getName());
 }
 
-// It refuses wherever the survey refuses, and an open part is the one that matters: nobody should
-// be able to empty the store of a part they are editing.
-TEST_F(DiscardRebuildResultsTest, anOpenPartStopsTheDiscardAndNothingIsRemoved)
+// It refuses wherever the survey refuses, and a part being edited is the one that matters: nobody
+// should be able to empty the store of a part with changes not yet written.
+TEST_F(DiscardRebuildResultsTest, aPartWithUnsavedChangesStopsTheDiscardAndNothingIsRemoved)
 {
     const std::string recipe = aSavedPart("one");
     const fs::path kept = resultsKeptFor(recipe);
@@ -354,6 +418,10 @@ TEST_F(DiscardRebuildResultsTest, anOpenPartStopsTheDiscardAndNothingIsRemoved)
 
     App::Document* doc = App::GetApplication().openDocument(recipe.c_str());
     _open.push_back(doc->getName());
+    auto* box = dynamic_cast<Part::Box*>(doc->getObject("Block"));
+    ASSERT_NE(box, nullptr);
+    box->Length.setValue(11.0);
+    doc->recompute();
 
     EXPECT_THROW(App::discardUnreferencedRebuildResults(_folder.string()), Base::Exception);
     EXPECT_EQ(entriesIn(kept), before) << "a result was removed on the way out of a refusal";

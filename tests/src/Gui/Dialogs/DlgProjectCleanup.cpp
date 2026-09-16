@@ -191,10 +191,13 @@ private Q_SLOTS:
     }
 
     // The halves ask different things of a person, and the one that cannot answer says why it
-    // cannot rather than showing nothing. A part left open is the case a person will hit daily.
+    // cannot rather than showing nothing. Unsaved changes are the case a person will hit.
     void test_theKeptResultsHalfSaysWhyItCannotAnswerYet()  // NOLINT
     {
-        aPartIncluding("one", "a handed-in body");  // left open on purpose
+        App::Document* doc = aPartIncluding("one", "a handed-in body");
+        // Changed and not saved, so what it holds is no longer what its file states.
+        doc->Comment.setValue("edited and not written out");
+        QVERIFY(!doc->statesWhatItsFileStates());
 
         Gui::Dialog::DlgProjectCleanup dlg(QString::fromStdString(folder.string()));
         const QString said = rebuildSummary(dlg);
@@ -230,6 +233,20 @@ private Q_SLOTS:
         QVERIFY2(
             !removeMaterial(dlg)->isEnabled(),
             "a tick made against the old answer still stood against the new one"
+        );
+    }
+
+    // And a part simply being open is not in the way. A person cleaning up a project should not
+    // have to close what they are working on to be given an answer about it.
+    void test_aPartOpenAndUnchangedIsNotInTheWay()  // NOLINT
+    {
+        App::Document* doc = aPartIncluding("one", "a handed-in body");  // left open, unchanged
+        QVERIFY(doc->statesWhatItsFileStates());
+
+        Gui::Dialog::DlgProjectCleanup dlg(QString::fromStdString(folder.string()));
+        QVERIFY2(
+            !rebuildSummary(dlg).contains(QStringLiteral("cannot be answered")),
+            qPrintable(rebuildSummary(dlg))
         );
     }
 
