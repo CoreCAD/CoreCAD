@@ -31,6 +31,7 @@ add_executable(Part_tests_run
         ChamferStatesItsOwnWords.cpp
         PropertyTopoShape.cpp
         GeometryCache.cpp
+        RebuildStoreSurvey.cpp
         StoredRecipeGeometry.cpp
         SubShapeSignature.cpp
         TopoDS_Shape.cpp

@@ -127,7 +127,7 @@ TEST_F(UnreferencedFilesTest, nothingIsUnreferencedWhileEveryFileIsNamed)
     // survey was.
     ASSERT_EQ(whatIsStored().size(), 1U) << "nothing was stored, so nothing could be collected";
 
-    const App::SourceMaterialSurvey found = App::surveyProjectSourceMaterial(_folder.string());
+    const App::ProjectSurvey found = App::surveyProjectSourceMaterial(_folder.string());
     EXPECT_EQ(found.recipesRead.size(), 1U);
     EXPECT_TRUE(found.unreferenced.empty())
         << "material a recipe still names was reported as collectable: "
@@ -155,7 +155,7 @@ TEST_F(UnreferencedFilesTest, replacingAnImportLeavesTheOldBodyNamedByNothing)
 
     ASSERT_EQ(whatIsStored().size(), 2U) << "the store did not keep the old body beside the new";
 
-    const App::SourceMaterialSurvey found = App::surveyProjectSourceMaterial(_folder.string());
+    const App::ProjectSurvey found = App::surveyProjectSourceMaterial(_folder.string());
     ASSERT_EQ(found.unreferenced.size(), 1U) << "the body nothing names was not found";
     EXPECT_EQ(fs::path(found.unreferenced.front().path).filename().string(), *first.begin());
     EXPECT_GT(found.unreferenced.front().bytes, 0U) << "what it holds was reported as nothing";
@@ -181,7 +181,7 @@ TEST_F(UnreferencedFilesTest, aFileNamedByASiblingRecipeIsNotUnreferenced)
 
     ASSERT_EQ(whatIsStored().size(), 1U) << "the shared body is no longer stored to be found";
 
-    const App::SourceMaterialSurvey found = App::surveyProjectSourceMaterial(_folder.string());
+    const App::ProjectSurvey found = App::surveyProjectSourceMaterial(_folder.string());
     EXPECT_EQ(found.recipesRead.size(), 2U) << "the survey did not read both recipes";
     EXPECT_TRUE(found.unreferenced.empty())
         << "a body another part still names was reported as collectable";
@@ -245,7 +245,7 @@ TEST_F(UnreferencedFilesTest, aStatementKeptVerbatimStillNamesItsSourceMaterial)
     const std::set<std::string> named = App::sourceMaterialNamedBy((_folder / "held.cpart").string());
     EXPECT_EQ(named.count(kept), 1U) << "a kept statement's source material was not counted";
 
-    const App::SourceMaterialSurvey found = App::surveyProjectSourceMaterial(_folder.string());
+    const App::ProjectSurvey found = App::surveyProjectSourceMaterial(_folder.string());
     EXPECT_TRUE(found.unreferenced.empty())
         << "material named only by a statement this build cannot honour was reported collectable";
 }
@@ -253,7 +253,7 @@ TEST_F(UnreferencedFilesTest, aStatementKeptVerbatimStillNamesItsSourceMaterial)
 // A folder with no source material at all is not an error: a project need not have any.
 TEST_F(UnreferencedFilesTest, aProjectWithNoSourceMaterialIsNotAnError)
 {
-    const App::SourceMaterialSurvey found = App::surveyProjectSourceMaterial(_folder.string());
+    const App::ProjectSurvey found = App::surveyProjectSourceMaterial(_folder.string());
     EXPECT_TRUE(found.recipesRead.empty());
     EXPECT_TRUE(found.unreferenced.empty());
 }

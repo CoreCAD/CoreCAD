@@ -62,6 +62,7 @@ public:
 
     static PyObject* sLoadFile               (PyObject *self,PyObject *args);
     static PyObject* sSurveyProjectSourceMaterial(PyObject *self,PyObject *args);
+    static PyObject* sSurveyProjectRebuildStore(PyObject *self,PyObject *args);
     static PyObject* sOpenDocument           (PyObject *self,PyObject *args, PyObject *kwd);
     static PyObject* sSaveDocument           (PyObject *self,PyObject *args);
     static PyObject* sWriteRecoverySnapshotToTransientDir
