@@ -239,14 +239,16 @@ ProjectSurvey App::surveyProjectRebuildStore(const std::string& projectFolder)
         for (const fs::path& recipe : recipes) {
             const std::string path = Base::FileInfo(recipe.string()).filePath();
             Document* doc = GetApplication().getDocumentByPath(path.c_str());
-            if (doc != nullptr && wasOpen.count(doc->getName()) != 0) {
-                // What is kept on disk was named by the last save. What is open may be neither
-                // saved nor the same, and an answer about it would be an answer to another
-                // question.
+            if (doc != nullptr && wasOpen.count(doc->getName()) != 0
+                && !doc->statesWhatItsFileStates()) {
+                // A document open in front of somebody is fine, as long as it still states what
+                // its file states -- then the names it gives are the file's own names. One that
+                // has moved on names what a save has not written yet, and an answer about that
+                // is an answer to another question.
                 throw Base::RuntimeError(
                     recipe.string()
-                    + " is open. What is kept here was named when it was last saved, so close it "
-                      "before asking what still names it."
+                    + " has unsaved changes. What is kept here was named when it was last saved, "
+                      "so save or close it before asking what still names it."
                 );
             }
             if (doc == nullptr) {

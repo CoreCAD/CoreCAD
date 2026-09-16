@@ -105,8 +105,9 @@ AppExport ProjectSurvey surveyProjectSourceMaterial(const std::string& projectFo
  *
  *  That is why this refuses more than the other half does:
  *
- *  - A document already open is refused, naming it. What is on disk was named by the last save;
- *    what is in memory may be neither saved nor the same, and the answer would be about neither.
+ *  - A document open with unsaved changes is refused, naming it. What is on disk was named by
+ *    the last save, and a document that has moved on from its file names what no save has
+ *    written yet. One still stating what its file states is fine: its names are the file's.
  *  - A document holding a statement it could not honour is refused, naming it and the reason.
  *    What could not be read may name anything, so nothing here may conclude from an absence of
  *    references (Amendment 19 Clause 19.3).

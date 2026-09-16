@@ -66,6 +66,17 @@ class Document(PropertyContainer):
     Restoring: Final[bool] = False
     """Indicate if the document is restoring"""
 
+    StatesWhatItsFileStates: Final[bool] = True
+    """False from the moment something the recipe carries changes -- a value a person set, an
+    object added or removed -- and true again once a save has written that out, or once a fresh
+    read has replaced it.
+
+    Values a rebuild produces do not count: a recompute makes a solid the file never held in the
+    first place, so producing one does not make the document disagree with its file.
+
+    Anything asking a question about what is on disk should consult this first. A document that
+    has moved on from its file answers about a version no save has written yet."""
+
     IsWhole: Final[bool] = True
     """False while this document holds something its file states that this session could not
     honour -- an object of a type this build cannot construct, a reference to an object that is

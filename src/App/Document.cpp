@@ -910,6 +910,9 @@ void Document::onBeforeChange(const Property* prop)
 
 void Document::onChanged(const Property* prop)
 {
+    if (prop != nullptr && !testStatus(Restoring) && theRecipeCarries(*prop, *this)) {
+        d->movedOnFromItsFile = true;
+    }
     signalChanged(*this, *prop);
 
     // the Name property is a label for display purposes
@@ -989,6 +992,16 @@ void Document::onChangedProperty(const DocumentObject* Who, const Property* What
     // it is restored from file; mark the index stale so the next lookup rebuilds.
     if (What == &Who->Uid) {
         d->objectUuidMapDirty = true;
+    }
+    // Only a value the recipe carries makes the document differ from its file. A rebuild
+    // produces solids the file never held, so producing one is not a disagreement with it --
+    // and a document that called itself changed every time it recomputed could never say when
+    // it had actually changed.
+    // Reading from the file is the one thing that cannot be a disagreement with it. Everything
+    // else counts, undo and import included: both move the document away from what was written.
+    if (What != nullptr && Who != nullptr && !testStatus(Restoring)
+        && theRecipeCarries(*What, *Who)) {
+        d->movedOnFromItsFile = true;
     }
     signalChangedObject(*Who, *What);
 }
@@ -2783,6 +2796,8 @@ bool Document::saveToFile(const char* filename) const
         }
         file.close();
 
+        // The two agree again: what was just written is what is held.
+        d->movedOnFromItsFile = false;
         GetApplication().signalSaveDocument(*this);
     }
 
@@ -3162,6 +3177,8 @@ bool Document::afterRestore(const bool checkPartial)
     }
     GetApplication().signalFinishRestoreDocument(*this);
     setStatus(Document::Restoring, false);
+    // Just read: what is held IS what the file states, whatever was set along the way.
+    d->movedOnFromItsFile = false;
 
     // A document read from a recipe carries the steps and not the solid they make, so opening
     // it includes building it. Reading and rebuilding stay separate acts -- that is what lets a
@@ -3310,6 +3327,11 @@ bool Document::afterRestore(const std::vector<DocumentObject*>& objArray, bool c
 
     d->touchedObjs.clear();
     return true;
+}
+
+bool Document::statesWhatItsFileStates() const
+{
+    return !d->movedOnFromItsFile;
 }
 
 bool Document::isSaved() const
@@ -4499,6 +4521,9 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, Add
     }
     pcObject->_pcViewProviderName = viewType ? viewType : "";
 
+    if (!testStatus(Restoring)) {
+        d->movedOnFromItsFile = true;
+    }
     signalNewObject(*pcObject);
 
     // do no transactions if we do a rollback!
@@ -4604,6 +4629,9 @@ void Document::_removeObject(DocumentObject* pcObject, RemoveObjectOptions optio
     pcObject->setStatus(ObjectStatus::Remove, true);
     if (!d->undoing && !d->rollback) {
         pcObject->unsetupObject();
+    }
+    if (!testStatus(Restoring)) {
+        d->movedOnFromItsFile = true;
     }
     signalDeletedObject(*pcObject);
     signalTransactionRemove(*pcObject, d->rollback ? nullptr : d->activeUndoTransaction);

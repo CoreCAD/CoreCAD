@@ -1343,6 +1343,11 @@ PyObject* DocumentPy::getBookedTransactionID(PyObject* args)
 }
 
 
+Py::Boolean DocumentPy::getStatesWhatItsFileStates() const
+{
+    return {getDocumentPtr()->statesWhatItsFileStates()};
+}
+
 Py::Boolean DocumentPy::getIsWhole() const
 {
     return {getDocumentPtr()->isWhole()};
