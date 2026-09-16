@@ -335,6 +335,96 @@ void Base::XMLReader::readEndElement(const char* ElementName, int level)
              || (ElementName && (LocalName != ElementName || (level >= 0 && level != Level))));
 }
 
+namespace
+{
+/// Text with the characters XML reserves written as entities, so what comes back parses to what
+/// went in. Attribute values go through Persistence::encodeAttribute; this is the other half,
+/// for the text BETWEEN tags, which that one does not cover.
+std::string asElementText(const std::string& raw)
+{
+    std::string out;
+    out.reserve(raw.size());
+    for (const char character : raw) {
+        switch (character) {
+            case '&':
+                out += "&amp;";
+                break;
+            case '<':
+                out += "&lt;";
+                break;
+            case '>':
+                out += "&gt;";
+                break;
+            default:
+                out += character;
+        }
+    }
+    return out;
+}
+}  // namespace
+
+void Base::XMLReader::captureInto(std::ostream& out, int indent)
+{
+    // Both are overwritten by the very next read, and the next read is the first thing the body
+    // of this element does. Taken now or not at all.
+    const std::string name = LocalName;
+    const AttrMapType attributes = AttrMap;
+    const bool selfClosing = (ReadType == StartEndElement);
+
+    const std::string pad(static_cast<std::size_t>(indent) * 4, ' ');
+    std::ostringstream opening;
+    opening << pad << '<' << name;
+    for (const auto& [key, value] : attributes) {
+        opening << ' ' << key << "=\"" << Persistence::encodeAttribute(value) << '"';
+    }
+    if (selfClosing) {
+        out << opening.str() << "/>\n";
+        return;
+    }
+
+    std::ostringstream children;
+    std::string text;
+    bool nested = false;
+    while (true) {
+        read();
+        if (ReadType == EndDocument) {
+            throw Base::XMLParseException("End of document reached inside <" + name + ">");
+        }
+        if (ReadType == EndElement) {
+            break;
+        }
+        if (ReadType == StartElement || ReadType == StartEndElement) {
+            nested = true;
+            captureInto(children, indent + 1);
+        }
+        else if (ReadType == Chars) {
+            text += Characters;
+        }
+    }
+
+    out << opening.str() << '>';
+    if (nested) {
+        out << '\n' << children.str() << pad;
+    }
+    else {
+        out << asElementText(text);
+    }
+    out << "</" << name << ">\n";
+}
+
+std::string Base::XMLReader::readElementAsText()
+{
+    if (ReadType != StartElement && ReadType != StartEndElement) {
+        throw Base::XMLParseException(
+            "Nothing to take back as text: the reader is not on the start of an element"
+        );
+    }
+    endCharStream();
+    std::ostringstream out;
+    captureInto(out, 0);
+    return out.str();
+}
+
 void Base::XMLReader::readCharacters(const char* filename, CharStreamFormat format)
 {
     Base::FileInfo fi(filename);

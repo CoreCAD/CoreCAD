@@ -8,6 +8,7 @@
 #include <App/Configuration.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/PropertyOverrideTable.h>
 #include <App/PropertyStandard.h>
 #include <Base/FileInfo.h>
 
@@ -57,17 +58,30 @@ protected:
         }
     }
 
-    /// One configuration input of two options, the second of which carries the given overrides.
-    void withLargeStating(const std::map<std::string, std::string>& overrides)
+    /// One configuration input of two options, the second of which states the given override.
+    void withLargeStating(const App::PropertyOverrideTable::Address& address, const App::Property& value)
     {
         _conf->InputName.setValue("Size");
         _conf->Options.setValues(std::vector<std::string> {"Small", "Large"});
-        std::map<std::string, std::string> table = {{"Small|Part|Length", "10.0"}};
-        for (const auto& [key, value] : overrides) {
-            table[key] = value;
-        }
-        _conf->Overrides.setValues(table);
+        _conf->Overrides.clear();
+        state({"Small", "Part", "Length"}, 10.0);
+        _conf->Overrides.stateValue(address, value);
         _conf->ActiveOption.setValue("Small");
+    }
+
+    /// The ordinary case: an option states a number for the part's Length.
+    void state(const App::PropertyOverrideTable::Address& address, double value)
+    {
+        App::PropertyFloat stating;
+        stating.setValue(value);
+        _conf->Overrides.stateValue(address, stating);
+    }
+
+    /// A value of a kind the property it is for is not: authorable, and not applicable.
+    App::PropertyString& wordsWhereANumberBelongs()
+    {
+        _wrongKind.setValue("wrecked");
+        return _wrongKind;
     }
 
     double lengthOfThePart() const
@@ -82,13 +96,14 @@ protected:
     App::Document* _doc {};
     App::DocumentObject* _part {};
     App::Configuration* _conf {};
+    App::PropertyString _wrongKind;
     // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
 };
 
 // The whole clause in one case: the part is blocked, and the holder is not what was blocked.
 TEST_F(ConfigurationBlockingTest, anOptionThatCannotBeAppliedBlocksThePartAndNotItsHolder)
 {
-    withLargeStating({{"Large|Part|Length", "wrecked"}});
+    withLargeStating({"Large", "Part", "Length"}, wordsWhereANumberBelongs());
     ASSERT_FALSE(_part->isBlockedByAStatement()) << "blocked before anything was asked of it";
 
     _conf->ActiveOption.setValue("Large");
@@ -104,7 +119,7 @@ TEST_F(ConfigurationBlockingTest, anOptionThatCannotBeAppliedBlocksThePartAndNot
 // recomputes, and an object whose geometry comes back from the rebuild store never would.
 TEST_F(ConfigurationBlockingTest, theBlockIsReportedWithoutAnybodyAskingForARebuild)
 {
-    withLargeStating({{"Large|Part|Length", "wrecked"}});
+    withLargeStating({"Large", "Part", "Length"}, wordsWhereANumberBelongs());
     _conf->ActiveOption.setValue("Large");
 
     ASSERT_TRUE(_part->isError()) << "the part did not report itself blocked";
@@ -121,7 +136,7 @@ TEST_F(ConfigurationBlockingTest, theBlockIsReportedWithoutAnybodyAskingForARebu
 // of documents and saves them has to be able to ask.
 TEST_F(ConfigurationBlockingTest, theDocumentIsNotWholeWhileAnOptionCannotBeHonoured)
 {
-    withLargeStating({{"Large|Part|Length", "wrecked"}});
+    withLargeStating({"Large", "Part", "Length"}, wordsWhereANumberBelongs());
     ASSERT_TRUE(
         _doc->isWhole()
     ) << "not whole before the option that cannot be honoured was picked";
@@ -130,7 +145,7 @@ TEST_F(ConfigurationBlockingTest, theDocumentIsNotWholeWhileAnOptionCannotBeHono
     EXPECT_FALSE(_doc->isWhole());
 
     // The control: the same switch with an option this build can honour leaves it whole.
-    _conf->Overrides.setValues({{"Small|Part|Length", "10.0"}, {"Large|Part|Length", "100.0"}});
+    state({"Large", "Part", "Length"}, 100.0);
     EXPECT_TRUE(_doc->isWhole()) << "an option that applied cleanly still counted against it";
     EXPECT_EQ(lengthOfThePart(), 100.0) << "the option that could be honoured was not applied";
 }
@@ -139,11 +154,11 @@ TEST_F(ConfigurationBlockingTest, theDocumentIsNotWholeWhileAnOptionCannotBeHono
 // way out of a mistyped value would be to abandon the document.
 TEST_F(ConfigurationBlockingTest, whatTheHolderNoLongerStatesNoLongerBlocks)
 {
-    withLargeStating({{"Large|Part|Length", "wrecked"}});
+    withLargeStating({"Large", "Part", "Length"}, wordsWhereANumberBelongs());
     _conf->ActiveOption.setValue("Large");
     ASSERT_TRUE(_part->isBlockedByAStatement());
 
-    _conf->Overrides.setValues({{"Small|Part|Length", "10.0"}, {"Large|Part|Length", "100.0"}});
+    state({"Large", "Part", "Length"}, 100.0);
 
     EXPECT_FALSE(_part->isBlockedByAStatement()) << "the corrected option still blocked the part";
     EXPECT_FALSE(_part->isError()) << "the part still reports a failure that has been dealt with";
@@ -153,7 +168,7 @@ TEST_F(ConfigurationBlockingTest, whatTheHolderNoLongerStatesNoLongerBlocks)
 // A configuration that leaves the document takes its refusals with it.
 TEST_F(ConfigurationBlockingTest, aHolderThatIsRemovedStopsBlocking)
 {
-    withLargeStating({{"Large|Part|Length", "wrecked"}});
+    withLargeStating({"Large", "Part", "Length"}, wordsWhereANumberBelongs());
     _conf->ActiveOption.setValue("Large");
     ASSERT_TRUE(_part->isBlockedByAStatement());
 
@@ -168,7 +183,9 @@ TEST_F(ConfigurationBlockingTest, aHolderThatIsRemovedStopsBlocking)
 // block -- and the report says which object it was looking for (§3.6).
 TEST_F(ConfigurationBlockingTest, anOptionNamingNoObjectBlocksTheHolderItself)
 {
-    withLargeStating({{"Large|Absent|Length", "100.0"}});
+    App::PropertyFloat hundred;
+    hundred.setValue(100.0);
+    withLargeStating({"Large", "Absent", "Length"}, hundred);
     _conf->ActiveOption.setValue("Large");
 
     ASSERT_FALSE(_conf->statementsSetFromElsewhere().empty());
@@ -181,7 +198,9 @@ TEST_F(ConfigurationBlockingTest, anOptionNamingNoObjectBlocksTheHolderItself)
 // from a build that had one -- and it is silent today: the entry is stepped over.
 TEST_F(ConfigurationBlockingTest, anOptionNamingNoPropertyBlocksThePart)
 {
-    withLargeStating({{"Large|Part|Clearance", "2.0"}});
+    App::PropertyFloat two;
+    two.setValue(2.0);
+    withLargeStating({"Large", "Part", "Clearance"}, two);
     _conf->ActiveOption.setValue("Large");
 
     ASSERT_FALSE(_part->statementsSetFromElsewhere().empty());
@@ -196,7 +215,9 @@ TEST_F(ConfigurationBlockingTest, anOptionNamingNoPropertyBlocksThePart)
 // the option and discover it.
 TEST_F(ConfigurationBlockingTest, theBlockComesBackWhenTheDocumentIsReadAgain)
 {
-    withLargeStating({{"Large|Part|Clearance", "2.0"}});
+    App::PropertyFloat two;
+    two.setValue(2.0);
+    withLargeStating({"Large", "Part", "Clearance"}, two);
     _conf->ActiveOption.setValue("Large");
 
     const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
@@ -218,7 +239,9 @@ TEST_F(ConfigurationBlockingTest, theBlockComesBackWhenTheDocumentIsReadAgain)
 // carrying one reads back whole. A refusal that crept outward would make configurations unusable.
 TEST_F(ConfigurationBlockingTest, aConfigurationThatIsHonouredBlocksNothing)
 {
-    withLargeStating({{"Large|Part|Length", "100.0"}});
+    App::PropertyFloat hundred;
+    hundred.setValue(100.0);
+    withLargeStating({"Large", "Part", "Length"}, hundred);
     _conf->ActiveOption.setValue("Large");
     ASSERT_EQ(lengthOfThePart(), 100.0);
     ASSERT_TRUE(_doc->isWhole());

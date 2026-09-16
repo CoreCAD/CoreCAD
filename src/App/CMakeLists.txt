@@ -268,6 +268,7 @@ SET(Properties_CPP_SRCS
     PropertyFile.cpp
     PropertyGeo.cpp
     PropertyLinks.cpp
+    PropertyOverrideTable.cpp
     PropertyPythonObject.cpp
     PropertyStandard.cpp
     PropertyUnits.cpp
@@ -281,6 +282,7 @@ SET(Properties_HPP_SRCS
     PropertyFile.h
     PropertyGeo.h
     PropertyLinks.h
+    PropertyOverrideTable.h
     PropertyPythonObject.h
     PropertyStandard.h
     PropertyUnits.h
