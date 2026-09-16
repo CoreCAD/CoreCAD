@@ -33,6 +33,39 @@
 
 using namespace App;
 
+namespace
+{
+/** Read one stored override as a value, never as a program.
+ *
+ * Cruth: a document is a text a person reads before deciding whether to trust it, and that is
+ * worth nothing if reading it is what runs it. Measured before this: a document whose stored
+ * override was `__import__('pathlib').Path(...).write_text(...)` wrote that file the moment it was
+ * opened -- in a fresh session, with no prompt and nothing for the person to decline -- because
+ * the stored text was handed to the interpreter as source.
+ *
+ * So it is read as a literal: a number, a string, a boolean, or a container of those, which is
+ * every shape a property's own reader is given. `literal_eval` is asked, with the stored text as
+ * an ARGUMENT rather than as source, so nothing in a document is compiled or called. Anything
+ * that is not a literal is not a value this build can read, and is treated as exactly that.
+ *
+ * Whether an override may be a COMPUTED value at all is a question for the architecture owner. If
+ * it may, it belongs in the program's own expression grammar -- which already exists and already
+ * binds its references by durable identity -- and not in a general-purpose language.
+ */
+Py::Object valueStatedBy(const std::string& text)
+{
+    Py::Module literals(PyImport_ImportModule("ast"), true);
+    if (literals.isNull()) {
+        throw Py::Exception();
+    }
+    Py::Callable literalOnly(literals.getAttr(std::string("literal_eval")));
+    Py::Tuple args(1);
+    args.setItem(0, Py::String(text));
+    return literalOnly.apply(args);
+}
+}  // namespace
+
+
 PROPERTY_SOURCE(App::Configuration, App::DocumentObject)
 
 Configuration::Configuration()
@@ -152,16 +185,28 @@ void Configuration::stateActiveOption(bool apply)
             continue;
         }
 
-        // Evaluated whether or not it is applied. A stored value that cannot be read is a value
-        // the option never set, and a session that only read the file would otherwise report the
-        // part finished at a value nobody chose until somebody happened to switch the option.
+        // Read whether or not it is applied. A stored value that cannot be read is a value the
+        // option never set, and a session that only read the file would otherwise report the part
+        // finished at a value nobody chose until somebody happened to switch the option.
         //
         // The lock is held across the value's whole life, its release included: a document may be
         // read on any thread, and a held Python object let go of without it takes the process down.
         Base::PyGILStateLocker lock;
         Py::Object value;
         try {
-            value = Base::Interpreter().runStringObject(entry.second.c_str());
+            value = valueStatedBy(entry.second);
+        }
+        catch (Py::Exception&) {
+            // The message is the interpreter's own account of what is wrong with the text, which
+            // is more use to whoever has to retype it than anything this could compose.
+            const Base::PyException why;
+            PyErr_Clear();
+            target->rememberStatementSetFromElsewhere(
+                {holder,
+                 propName,
+                 "option '" + option + "' sets it to " + entry.second
+                     + ", which is not a value this build can read: " + why.what()});
+            continue;
         }
         catch (Base::Exception& e) {
             target->rememberStatementSetFromElsewhere(
