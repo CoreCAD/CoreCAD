@@ -489,6 +489,7 @@ SET(Gui_UIC_SRCS
     DownloadItem.ui
     Dialogs/DlgExpressionInput.ui
     Dialogs/DlgHeldStatements.ui
+    Dialogs/DlgProjectCleanup.ui
     MouseButtons.ui
     SceneInspector.ui
     InputVector.ui
@@ -600,6 +601,7 @@ SET(Dialog_CPP_SRCS
     Dialogs/DlgRevertToBackupConfigImp.cpp
     Dialogs/DlgExpressionInput.cpp
     Dialogs/DlgHeldStatements.cpp
+    Dialogs/DlgProjectCleanup.cpp
     Dialogs/DlgThemeEditor.cpp
     Dialogs/DlgVersionMigrator.cpp
     TaskDlgRelocation.cpp
@@ -645,6 +647,7 @@ SET(Dialog_HPP_SRCS
     Dialogs/DlgCheckableMessageBox.h
     Dialogs/DlgExpressionInput.h
     Dialogs/DlgHeldStatements.h
+    Dialogs/DlgProjectCleanup.h
     Dialogs/DlgThemeEditor.h
     Dialogs/DlgVersionMigrator.h
     TaskDlgRelocation.h
@@ -694,6 +697,7 @@ SET(Dialog_SRCS
     Dialogs/DlgTreeWidget.ui
     Dialogs/DlgExpressionInput.ui
     Dialogs/DlgHeldStatements.ui
+    Dialogs/DlgProjectCleanup.ui
     Dialogs/DlgCreateNewPreferencePack.ui
     Dialogs/DlgVersionMigrator.ui
     DownloadManager.ui

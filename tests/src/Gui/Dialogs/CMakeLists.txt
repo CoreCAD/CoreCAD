@@ -1,2 +1,3 @@
 setup_qt_test(DlgVersionMigrator)
 setup_qt_test(DlgHeldStatements)
+setup_qt_test(DlgProjectCleanup)

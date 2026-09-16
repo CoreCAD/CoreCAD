@@ -63,6 +63,7 @@
 #include "Selection.h"
 #include "Dialogs/DlgObjectSelection.h"
 #include "Dialogs/DlgHeldStatements.h"
+#include "Dialogs/DlgProjectCleanup.h"
 #include "Dialogs/DlgProjectInformationImp.h"
 #include "Dialogs/DlgProjectUtility.h"
 #include "GraphvizView.h"
@@ -1077,6 +1078,68 @@ void StdCmdProjectInfo::activated(int iMsg)
 bool StdCmdProjectInfo::isActive()
 {
     return (getActiveGuiDocument() ? true : false);
+}
+
+//===========================================================================
+// Std_ProjectCleanup
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdProjectCleanup)
+
+StdCmdProjectCleanup::StdCmdProjectCleanup()
+    : Command("Std_ProjectCleanup")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Clean Up &Project...");
+    sToolTipText = QT_TR_NOOP(
+        "Shows what a project folder holds that nothing in it names any more -- kept "
+        "rebuild results, and source material the project was handed -- and lets you "
+        "remove them. Removes nothing until you say so"
+    );
+    sWhatsThis = "Std_ProjectCleanup";
+    sStatusTip = sToolTipText;
+    sPixmap = "document-properties";
+}
+
+void StdCmdProjectCleanup::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    // The folder of whatever is in front of the person, where there is one. A project is a
+    // folder of parts, so the part they are looking at says which project they mean.
+    QString folder;
+    if (Gui::Document* active = getActiveGuiDocument()) {
+        const QString file = QString::fromUtf8(active->getDocument()->FileName.getValue());
+        if (!file.isEmpty()) {
+            folder = QFileInfo(file).absolutePath();
+        }
+    }
+
+    // And where there is none, the last folder asked about. This is not a convenience: the
+    // kept-results half cannot answer while a part in the folder is open, so the very thing it
+    // asks a person to do -- close the part -- is what takes the answer to "which project?"
+    // away. Measured in the window before it was fixed: close the part, ask again, and the
+    // dialog came up with no folder at all.
+    ParameterGrp::handle group = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/General"
+    );
+    if (folder.isEmpty()) {
+        folder = QString::fromUtf8(group->GetASCII("LastProjectCleanupFolder", "").c_str());
+    }
+
+    Gui::Dialog::DlgProjectCleanup dlg(folder, getMainWindow());
+    dlg.exec();
+    if (!dlg.projectFolder().isEmpty()) {
+        group->SetASCII("LastProjectCleanupFolder", dlg.projectFolder().toUtf8().constData());
+    }
+}
+
+bool StdCmdProjectCleanup::isActive()
+{
+    // Always. A project is a folder, not a document, and a person must be able to ask about one
+    // with nothing open -- which is also the state the kept-results half needs to be able to
+    // answer at all.
+    return true;
 }
 
 //===========================================================================
@@ -2587,6 +2650,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdRevert());
     rcCmdMgr.addCommand(new StdCmdProjectInfo());
     rcCmdMgr.addCommand(new StdCmdHeldStatements());
+    rcCmdMgr.addCommand(new StdCmdProjectCleanup());
     rcCmdMgr.addCommand(new StdCmdProjectUtil());
     rcCmdMgr.addCommand(new StdCmdUndo());
     rcCmdMgr.addCommand(new StdCmdRedo());
