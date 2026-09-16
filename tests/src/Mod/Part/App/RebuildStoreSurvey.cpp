@@ -299,4 +299,77 @@ TEST_F(RebuildStoreSurveyTest, aProjectThatHasKeptNothingIsNotAnError)
     EXPECT_EQ(found.bytes, 0U);
 }
 
+/** Discarding kept rebuild results: the safe half, and safe for one reason.
+ *
+ *  An entry here costs a rebuild and nothing in it was designed, so this one takes no list --
+ *  there is nothing to choose between when every answer costs the same. What it does inherit is
+ *  every refusal the survey makes, which is what stops it emptying the store of a part somebody
+ *  is in the middle of editing.
+ */
+class DiscardRebuildResultsTest: public RebuildStoreSurveyTest
+{
+};
+
+// What nothing names goes; what the part still names stays; and the part still opens.
+TEST_F(DiscardRebuildResultsTest, whatNothingNamesGoesAndWhatThePartNamesStays)
+{
+    const std::string recipe = aSavedPart("one");
+    const fs::path kept = resultsKeptFor(recipe);
+
+    auto& app = App::GetApplication();
+    App::Document* doc = app.openDocument(recipe.c_str());
+    auto* box = dynamic_cast<Part::Box*>(doc->getObject("Block"));
+    ASSERT_NE(box, nullptr);
+    box->Length.setValue(11.0);
+    doc->recompute();
+    ASSERT_TRUE(doc->save());
+    app.closeDocument(doc->getName());
+    ASSERT_EQ(entriesIn(kept).size(), 2U);
+
+    const App::Discarded done = App::discardUnreferencedRebuildResults(_folder.string());
+    ASSERT_EQ(done.removed.size(), 1U) << "the result nothing names was not removed";
+    EXPECT_GT(done.bytes, 0U);
+    EXPECT_TRUE(done.kept.empty());
+
+    const std::set<std::string> left = entriesIn(kept);
+    ASSERT_EQ(left.size(), 1U) << "the result the part still names went too";
+
+    // And the part is still a part: it opens, and what is left is what it names.
+    const App::ProjectSurvey after = App::surveyProjectRebuildStore(_folder.string());
+    EXPECT_TRUE(after.unreferenced.empty());
+    App::Document* reopened = app.openDocument(recipe.c_str());
+    ASSERT_NE(reopened, nullptr);
+    EXPECT_NE(reopened->getObject("Block"), nullptr) << "the part lost what it was made of";
+    app.closeDocument(reopened->getName());
+}
+
+// It refuses wherever the survey refuses, and an open part is the one that matters: nobody should
+// be able to empty the store of a part they are editing.
+TEST_F(DiscardRebuildResultsTest, anOpenPartStopsTheDiscardAndNothingIsRemoved)
+{
+    const std::string recipe = aSavedPart("one");
+    const fs::path kept = resultsKeptFor(recipe);
+    const std::set<std::string> before = entriesIn(kept);
+    ASSERT_FALSE(before.empty());
+
+    App::Document* doc = App::GetApplication().openDocument(recipe.c_str());
+    _open.push_back(doc->getName());
+
+    EXPECT_THROW(App::discardUnreferencedRebuildResults(_folder.string()), Base::Exception);
+    EXPECT_EQ(entriesIn(kept), before) << "a result was removed on the way out of a refusal";
+}
+
+// Nothing to do is not an error, and it is not reported as work either.
+TEST_F(DiscardRebuildResultsTest, aStoreWhereEverythingIsNamedIsLeftUntouched)
+{
+    const std::string recipe = aSavedPart("one");
+    const std::set<std::string> before = entriesIn(resultsKeptFor(recipe));
+    ASSERT_FALSE(before.empty());
+
+    const App::Discarded done = App::discardUnreferencedRebuildResults(_folder.string());
+    EXPECT_TRUE(done.removed.empty());
+    EXPECT_EQ(done.bytes, 0U);
+    EXPECT_EQ(entriesIn(resultsKeptFor(recipe)), before);
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

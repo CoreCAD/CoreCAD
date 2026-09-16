@@ -257,3 +257,129 @@ TEST_F(UnreferencedFilesTest, aProjectWithNoSourceMaterialIsNotAnError)
     EXPECT_TRUE(found.recipesRead.empty());
     EXPECT_TRUE(found.unreferenced.empty());
 }
+
+/** Discarding source material: a person's act, and only the named files.
+ *
+ *  What is in `assets/` is authored content -- an imported body, a scanned mesh, something a
+ *  person was handed and cannot produce again. A part that quietly loses the body it was built
+ *  from looks exactly like a part that never had one, so there is no sweep here: each file is
+ *  named, and each is removed only if the survey run inside the call still says nothing names it.
+ */
+class DiscardSourceMaterialTest: public UnreferencedFilesTest
+{
+protected:
+    /// The part saved over a different handed-in file, which is what leaves the old body behind.
+    std::string theOldBody()
+    {
+        aPartIncluding("one", "the first body");
+        const std::set<std::string> first = whatIsStored();
+        EXPECT_EQ(first.size(), 1U);
+
+        App::Document* doc = App::GetApplication().getDocument(_open.front().c_str());
+        auto* holder = dynamic_cast<App::DocumentObjectFileIncluded*>(doc->getObject("Included"));
+        EXPECT_NE(holder, nullptr);
+        const fs::path second = _folder.parent_path() / "second-source.txt";
+        writeFile(second, "the second body, which is a different length");
+        holder->File.setValue(second.string().c_str());
+        doc->recompute();
+        EXPECT_TRUE(doc->save());
+
+        return (sourceFolder() / *first.begin()).string();
+    }
+};
+
+// The plain case: a body nothing names any more is named by a person and goes.
+TEST_F(DiscardSourceMaterialTest, aBodyNothingNamesIsRemovedWhenAPersonNamesIt)
+{
+    const std::string old = theOldBody();
+    ASSERT_EQ(whatIsStored().size(), 2U);
+
+    const App::Discarded done = App::discardSourceMaterial(_folder.string(), {old});
+    ASSERT_EQ(done.removed.size(), 1U) << "the body a person named was not removed";
+    EXPECT_EQ(done.removed.front().path, old);
+    EXPECT_GT(done.bytes, 0U) << "what it held was reported as nothing";
+    EXPECT_TRUE(done.kept.empty());
+
+    EXPECT_FALSE(fs::exists(old)) << "it was reported removed and is still there";
+    EXPECT_EQ(whatIsStored().size(), 1U) << "the body the part still names went too";
+}
+
+// The one that matters: asked for a body the project still names, it refuses and says why.
+// Authored content is not deleted on the strength of having been asked for.
+TEST_F(DiscardSourceMaterialTest, aBodyTheProjectStillNamesIsLeftAloneWithItsReason)
+{
+    theOldBody();
+    std::set<std::string> stored = whatIsStored();
+    ASSERT_EQ(stored.size(), 2U);
+
+    const App::ProjectSurvey found = App::surveyProjectSourceMaterial(_folder.string());
+    ASSERT_EQ(found.unreferenced.size(), 1U);
+    const std::string unreferenced = found.unreferenced.front().path;
+
+    // Whichever of the two the survey did NOT name is the one the part is built from.
+    std::string named;
+    for (const std::string& id : stored) {
+        if ((sourceFolder() / id).string() != unreferenced) {
+            named = (sourceFolder() / id).string();
+        }
+    }
+    ASSERT_FALSE(named.empty());
+
+    const App::Discarded done = App::discardSourceMaterial(_folder.string(), {named});
+    EXPECT_TRUE(done.removed.empty()) << "the body the part is built from was removed";
+    ASSERT_EQ(done.kept.size(), 1U) << "it was neither removed nor explained";
+    EXPECT_EQ(done.kept.front().first, named);
+    EXPECT_NE(done.kept.front().second.find("names it"), std::string::npos)
+        << done.kept.front().second;
+    EXPECT_TRUE(fs::exists(named)) << "the body the part is built from is gone";
+}
+
+// A path naming something elsewhere on the machine is answered, not obeyed.
+TEST_F(DiscardSourceMaterialTest, aPathOutsideTheProjectIsAnsweredNotObeyed)
+{
+    theOldBody();
+    const fs::path elsewhere = _folder.parent_path() / "not-ours.txt";
+    writeFile(elsewhere, "something that has nothing to do with this project");
+
+    const App::Discarded done = App::discardSourceMaterial(_folder.string(), {elsewhere.string()});
+    EXPECT_TRUE(done.removed.empty());
+    ASSERT_EQ(done.kept.size(), 1U);
+    EXPECT_NE(done.kept.front().second.find("not source material"), std::string::npos)
+        << done.kept.front().second;
+    EXPECT_TRUE(fs::exists(elsewhere)) << "a file outside the project was removed";
+}
+
+// Only what was named. A second file nothing names is left where it is.
+TEST_F(DiscardSourceMaterialTest, onlyWhatWasNamedIsRemoved)
+{
+    const std::string old = theOldBody();
+
+    // A second body nothing names: stored the same way, by a part that then stops naming it.
+    App::Document* doc = App::GetApplication().getDocument(_open.front().c_str());
+    auto* holder = dynamic_cast<App::DocumentObjectFileIncluded*>(doc->getObject("Included"));
+    ASSERT_NE(holder, nullptr);
+    const fs::path third = _folder.parent_path() / "third-source.txt";
+    writeFile(third, "a third body, longer than either of the other two bodies");
+    holder->File.setValue(third.string().c_str());
+    doc->recompute();
+    ASSERT_TRUE(doc->save());
+    ASSERT_EQ(whatIsStored().size(), 3U);
+
+    const App::Discarded done = App::discardSourceMaterial(_folder.string(), {old});
+    EXPECT_EQ(done.removed.size(), 1U);
+    EXPECT_EQ(whatIsStored().size(), 2U)
+        << "a body that was not named was removed along with the one that was";
+}
+
+// Asked for something that is not there, it says so rather than reporting work it did not do.
+TEST_F(DiscardSourceMaterialTest, somethingThatIsNotThereIsSaidSoRatherThanCounted)
+{
+    theOldBody();
+    const App::Discarded done
+        = App::discardSourceMaterial(_folder.string(), {(sourceFolder() / "nosuchid").string()});
+    EXPECT_TRUE(done.removed.empty());
+    EXPECT_EQ(done.bytes, 0U);
+    ASSERT_EQ(done.kept.size(), 1U);
+    EXPECT_NE(done.kept.front().second.find("nothing there"), std::string::npos)
+        << done.kept.front().second;
+}

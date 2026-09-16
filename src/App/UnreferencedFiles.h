@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace App
@@ -114,5 +115,47 @@ AppExport ProjectSurvey surveyProjectSourceMaterial(const std::string& projectFo
  *  Removes nothing, for the same reason: what to do about what this finds is a person's call.
  */
 AppExport ProjectSurvey surveyProjectRebuildStore(const std::string& projectFolder);
+
+/// What a discard did, and what it declined to do.
+struct Discarded
+{
+    /// What was removed, and what it held.
+    std::vector<UnreferencedFile> removed;
+    /// What those held together.
+    std::uintmax_t bytes {};
+    /// What was asked for and left alone, each with the reason, because a person who asked for
+    /// something and did not get it is owed the reason rather than a smaller number.
+    std::vector<std::pair<std::string, std::string>> kept;
+};
+
+/** Remove the kept rebuild results nothing in this project names any more.
+ *
+ *  **This is the safe half, and it is safe for one reason: an entry here costs a rebuild.**
+ *  Nothing in it was designed. The survey is run again from scratch inside this call and only
+ *  what it names now is removed, so a list a person was looking at while something else changed
+ *  cannot be acted on. It inherits every refusal the survey makes -- an open document, a document
+ *  holding a statement it could not honour, a document that will not open -- which is what stops
+ *  this from emptying the store of a part somebody is editing.
+ *
+ *  Takes no list. That is the difference from the other half rather than an omission: there is
+ *  nothing here to choose between, because every answer costs the same and the cost is a rebuild.
+ */
+AppExport Discarded discardUnreferencedRebuildResults(const std::string& projectFolder);
+
+/** Remove named source material this project holds and nothing in it names any more.
+ *
+ *  **This is the other half, and it is deliberately not the same act.** What is in `assets/` is
+ *  authored content -- an imported body, a scanned mesh, something a person was handed and cannot
+ *  produce again -- and a part that quietly loses the body it was built from looks exactly like a
+ *  part that never had one. So there is no sweep here and no "remove what you found": a person
+ *  names each file, and nothing else is touched.
+ *
+ *  Each named file is removed only if the survey, run again inside this call, still says nothing
+ *  names it. Anything else is left alone and reported with its reason -- named again since, not
+ *  there, or never part of this project. A path this cannot confirm for itself is not removed on
+ *  the strength of having been asked.
+ */
+AppExport Discarded discardSourceMaterial(const std::string& projectFolder,
+                                          const std::vector<std::string>& named);
 
 }  // namespace App

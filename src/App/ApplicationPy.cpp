@@ -177,6 +177,25 @@ PyMethodDef ApplicationPy::Methods[] = {
      "Raises where a document in the folder is open, where one holds a statement it\n"
      "could not honour, or where one cannot be opened at all -- in each case the\n"
      "entries it names would otherwise be reported as named by nothing."},
+    {"discardUnreferencedRebuildResults",
+     (PyCFunction)ApplicationPy::sDiscardUnreferencedRebuildResults,
+     METH_VARARGS,
+     "discardUnreferencedRebuildResults(folder) -> dict\n\n"
+     "Remove the kept rebuild results nothing in this project names any more.\n\n"
+     "The safe half: what is removed costs a rebuild, and nothing in it was designed.\n"
+     "The survey is run again inside the call and only what it names now is removed,\n"
+     "so it raises where the survey would -- an open document above all.\n\n"
+     "Answers with 'removed' (a list of (path, bytes)), 'bytes', and 'kept'\n"
+     "(a list of (path, reason) for anything it would not remove)."},
+    {"discardSourceMaterial",
+     (PyCFunction)ApplicationPy::sDiscardSourceMaterial,
+     METH_VARARGS,
+     "discardSourceMaterial(folder, paths) -> dict\n\n"
+     "Remove named source material this project holds and nothing in it names.\n\n"
+     "Deliberately not the same act as the one above: this is authored content, so\n"
+     "there is no sweep and no 'remove what you found'. A person names each file, and\n"
+     "each is removed only if the survey, run again here, still says nothing names it.\n"
+     "Anything else is reported in 'kept' with its reason and left alone."},
     {"open",
      reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(ApplicationPy::sOpenDocument)),
      METH_VARARGS | METH_KEYWORDS,
@@ -442,6 +461,70 @@ PyObject* ApplicationPy::sSurveyProjectRebuildStore(PyObject* /*self*/, PyObject
     PY_TRY
     {
         return Py::new_reference_to(asSaid(surveyProjectRebuildStore(asked)));
+    }
+    PY_CATCH
+}
+
+namespace
+{
+/// What a discard did, said the way a script reads it.
+Py::Dict asSaid(const Discarded& done)
+{
+    Py::List removed;
+    for (const UnreferencedFile& file : done.removed) {
+        Py::Tuple entry(2);
+        entry.setItem(0, Py::String(file.path));
+        entry.setItem(1, Py::Long(static_cast<unsigned long>(file.bytes)));
+        removed.append(entry);
+    }
+    Py::List kept;
+    for (const auto& [path, why] : done.kept) {
+        Py::Tuple entry(2);
+        entry.setItem(0, Py::String(path));
+        entry.setItem(1, Py::String(why));
+        kept.append(entry);
+    }
+
+    Py::Dict answer;
+    answer.setItem("removed", removed);
+    answer.setItem("bytes", Py::Long(static_cast<unsigned long>(done.bytes)));
+    answer.setItem("kept", kept);
+    return answer;
+}
+}  // namespace
+
+PyObject* ApplicationPy::sDiscardUnreferencedRebuildResults(PyObject* /*self*/, PyObject* args)
+{
+    std::string asked;
+    if (!folderAsked(args, asked)) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        return Py::new_reference_to(asSaid(discardUnreferencedRebuildResults(asked)));
+    }
+    PY_CATCH
+}
+
+PyObject* ApplicationPy::sDiscardSourceMaterial(PyObject* /*self*/, PyObject* args)
+{
+    char* folder {};
+    PyObject* paths {};
+    if (!PyArg_ParseTuple(args, "etO", "utf-8", &folder, &paths)) {
+        return nullptr;
+    }
+    const std::string asked(folder);
+    PyMem_Free(folder);
+
+    PY_TRY
+    {
+        std::vector<std::string> named;
+        Py::Sequence asking(paths);
+        named.reserve(asking.size());
+        for (const auto& path : asking) {
+            named.push_back(Py::String(path).as_std_string("utf-8"));
+        }
+        return Py::new_reference_to(asSaid(discardSourceMaterial(asked, named)));
     }
     PY_CATCH
 }

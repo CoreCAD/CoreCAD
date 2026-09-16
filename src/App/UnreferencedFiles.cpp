@@ -311,3 +311,94 @@ ProjectSurvey App::surveyProjectRebuildStore(const std::string& projectFolder)
     orderByWhatTheyHold(found.unreferenced);
     return found;
 }
+
+namespace
+{
+/// Where a path points once the spelling stops mattering, so that a file named one way and found
+/// another is still the same file.
+fs::path whereItPoints(const fs::path& path)
+{
+    std::error_code failed;
+    const fs::path settled = fs::weakly_canonical(path, failed);
+    return failed ? path.lexically_normal() : settled;
+}
+
+/// Remove one entry, itself or everything beneath it, and say why if it would not go.
+bool letGoOf(const fs::path& entry, std::string& why)
+{
+    std::error_code failed;
+    fs::remove_all(entry, failed);
+    if (failed) {
+        why = failed.message();
+        return false;
+    }
+    return true;
+}
+}  // namespace
+
+Discarded App::discardUnreferencedRebuildResults(const std::string& projectFolder)
+{
+    // Asked again here rather than taken from the caller: a list a person was reading while
+    // something else saved is a list about a project that has moved on.
+    const ProjectSurvey found = surveyProjectRebuildStore(projectFolder);
+
+    Discarded done;
+    for (const UnreferencedFile& entry : found.unreferenced) {
+        std::string why;
+        if (letGoOf(fs::path(entry.path), why)) {
+            done.removed.push_back(entry);
+            done.bytes += entry.bytes;
+        }
+        else {
+            done.kept.emplace_back(entry.path, why);
+        }
+    }
+    return done;
+}
+
+Discarded App::discardSourceMaterial(const std::string& projectFolder,
+                                     const std::vector<std::string>& named)
+{
+    const ProjectSurvey found = surveyProjectSourceMaterial(projectFolder);
+
+    // What the survey itself says is unreferenced, and nothing else. A path is removed because
+    // this call could confirm it, never because it was asked for: authored content is not
+    // deleted on the strength of an argument.
+    std::map<fs::path, const UnreferencedFile*> confirmed;
+    for (const UnreferencedFile& entry : found.unreferenced) {
+        confirmed[whereItPoints(fs::path(entry.path))] = &entry;
+    }
+
+    // The one place anything here is allowed to remove from.
+    const fs::path source = whereItPoints(fs::path(projectFolder) / sourceFolderName);
+
+    Discarded done;
+    for (const std::string& asked : named) {
+        const fs::path where = whereItPoints(fs::path(asked));
+        const auto entry = confirmed.find(where);
+        if (entry == confirmed.end()) {
+            std::error_code failed;
+            // Three situations, and a person acts differently on each: the file is not in this
+            // project at all, it is not there to remove, or the project still names it. The
+            // first is the one that matters most -- an argument naming a file elsewhere on the
+            // machine is answered rather than obeyed.
+            const std::string why =
+                where.parent_path() != source
+                ? "it is not source material of this project"
+                : (!fs::exists(where, failed) ? "there is nothing there"
+                                              : "something in this project names it");
+            done.kept.emplace_back(asked, why);
+            continue;
+        }
+
+        std::string why;
+        if (letGoOf(entry->first, why)) {
+            done.removed.push_back(*entry->second);
+            done.bytes += entry->second->bytes;
+        }
+        else {
+            done.kept.emplace_back(asked, why);
+        }
+    }
+    return done;
+}
