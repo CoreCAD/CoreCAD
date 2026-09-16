@@ -73,6 +73,22 @@ class DocumentObject;
 AppExport std::string builtGeometryKey(const DocumentObject& obj,
                                        const std::string& assetDirectory = {});
 
+/// Where one document's entries are kept, inside the folder it keeps its rebuildable files in.
+/// Named here so that a survey of the store looks where the store writes.
+AppExport std::string builtGeometryFolder(const std::string& cacheDirectory);
+
+/** Every entry name this document's objects would be kept under.
+ *
+ *  Asked of every object, not only of the ones a save keeps a result for: this is what a survey
+ *  of the store compares against, and an entry whose name is missing from here is an entry
+ *  reported as named by nothing. The error that can only leave a file behind is the one to make.
+ *
+ *  Objects that cannot be identified -- the ones `builtGeometryKey` answers about with nothing --
+ *  contribute nothing, because they have no entry to name.
+ */
+AppExport std::set<std::string> builtGeometryKeys(const Document& doc,
+                                                  const std::string& assetDirectory = {});
+
 /** Keep every object's built state in `cacheDirectory`, each under its own key.
  *
  *  Writing is content-addressed: an entry that is already there is already right, so a save that

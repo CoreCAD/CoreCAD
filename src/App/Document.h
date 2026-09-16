@@ -585,6 +585,11 @@ public:
      */
     std::string cacheDirectory() const;
 
+    /// The one folder a project keeps rebuildable files under, beside the documents themselves.
+    /// Named here so that a survey of the folder and the documents in it agree about where to
+    /// look.
+    static constexpr const char* cacheFolderName = ".cruth";
+
     /**
      * @brief Where the project keeps the geometry it was handed.
      *

@@ -72,11 +72,11 @@ struct UnreferencedFile
 };
 
 /// What a survey of one project folder found.
-struct SourceMaterialSurvey
+struct ProjectSurvey
 {
     /// The recipes that were read, so a person can see what the answer is based on.
     std::vector<std::string> recipesRead;
-    /// The entries in `assets/` that no recipe in the folder names, largest first.
+    /// The entries no recipe in the folder names, largest first.
     std::vector<UnreferencedFile> unreferenced;
     /// What those entries hold together.
     std::uintmax_t bytes {};
@@ -87,6 +87,32 @@ struct SourceMaterialSurvey
  *  Reads every native document in the folder. Throws where any one of them cannot be read,
  *  rather than reporting its source material as unreferenced.
  */
-AppExport SourceMaterialSurvey surveyProjectSourceMaterial(const std::string& projectFolder);
+AppExport ProjectSurvey surveyProjectSourceMaterial(const std::string& projectFolder);
+
+/** Survey one project folder: which kept rebuild results nothing in it names any more.
+ *
+ *  The other half of the same question, and deliberately not the same answer. What is kept under
+ *  `.cruth/` is what a rebuild would have produced, named by a digest of the recipe text that
+ *  produced it -- so editing one dimension does not overwrite the old entry, it writes a new one
+ *  beside it, and the old one is dead weight from that moment on. Removing one costs a rebuild;
+ *  removing source material can cost a design. They are two operations, not one.
+ *
+ *  **These names are derived, so they cannot be read off the file.** Slice one could read a
+ *  recipe as the text it is, because an asset id is stated there in full. A rebuild entry's name
+ *  is computed from the recipe and from every recipe it stands on, by the same code that wrote
+ *  it, so the only honest way to ask what names an entry is to open the document and compute it.
+ *
+ *  That is why this refuses more than the other half does:
+ *
+ *  - A document already open is refused, naming it. What is on disk was named by the last save;
+ *    what is in memory may be neither saved nor the same, and the answer would be about neither.
+ *  - A document holding a statement it could not honour is refused, naming it and the reason.
+ *    What could not be read may name anything, so nothing here may conclude from an absence of
+ *    references (Amendment 19 Clause 19.3).
+ *  - A document that cannot be opened at all stops the survey, as in the other half.
+ *
+ *  Removes nothing, for the same reason: what to do about what this finds is a person's call.
+ */
+AppExport ProjectSurvey surveyProjectRebuildStore(const std::string& projectFolder);
 
 }  // namespace App

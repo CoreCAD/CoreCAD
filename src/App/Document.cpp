@@ -2790,7 +2790,7 @@ bool Document::saveToFile(const char* filename) const
     // but rebuilding a hundred features to look at a part that has not changed is a cost with
     // nothing bought by it, so what a rebuild would produce is kept where a rebuild can find it.
     try {
-        const fs::path cache = fs::path(nativePath).parent_path() / ".cruth" / Uid.getValueStr();
+        const fs::path cache = fs::path(nativePath).parent_path() / cacheFolderName / Uid.getValueStr();
         storeBuiltGeometry(*this, cache.string(), assetsFor(nativePath));
     }
     catch (const std::exception& e) {
@@ -2804,7 +2804,7 @@ bool Document::saveToFile(const char* filename) const
     // cache, beside the geometry, where it can be deleted without losing anything designed.
     if (signalSaveDocument.num_slots() > 0) {
         try {
-            const fs::path cache = fs::path(nativePath).parent_path() / ".cruth"
+            const fs::path cache = fs::path(nativePath).parent_path() / cacheFolderName
                 / Uid.getValueStr();
             fs::create_directories(cache);
             Base::FileWriter writer(cache.string().c_str());
@@ -3369,7 +3369,7 @@ std::string Document::cacheDirectory() const
     // Hidden and named once for the whole project, so a folder of parts stays a list of parts
     // and one line in a version-control ignore file covers everything that is rebuildable.
     const fs::path directory = fs::path(Base::FileInfo(file).filePath()).parent_path();
-    return (directory / ".cruth" / Uid.getValueStr()).string();
+    return (directory / cacheFolderName / Uid.getValueStr()).string();
 }
 
 std::string Document::assetDirectory() const

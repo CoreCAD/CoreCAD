@@ -167,6 +167,16 @@ PyMethodDef ApplicationPy::Methods[] = {
      "* 'bytes': what those entries hold together.\n\n"
      "Removes nothing. Raises where any recipe in the folder cannot be read, rather\n"
      "than reporting the material that recipe names as unreferenced."},
+    {"surveyProjectRebuildStore",
+     (PyCFunction)ApplicationPy::sSurveyProjectRebuildStore,
+     METH_VARARGS,
+     "surveyProjectRebuildStore(folder) -> dict\n\n"
+     "Ask a project folder which kept rebuild results nothing in it names any more.\n\n"
+     "An entry's name is derived, so this opens every document in the folder and\n"
+     "computes it. Answers as surveyProjectSourceMaterial does, and removes nothing.\n\n"
+     "Raises where a document in the folder is open, where one holds a statement it\n"
+     "could not honour, or where one cannot be opened at all -- in each case the\n"
+     "entries it names would otherwise be reported as named by nothing."},
     {"open",
      reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(ApplicationPy::sOpenDocument)),
      METH_VARARGS | METH_KEYWORDS,
@@ -372,36 +382,66 @@ PyObject* ApplicationPy::sIsRestoring(PyObject* /*self*/, PyObject* args)
     return Py::new_reference_to(Py::Boolean(GetApplication().isRestoring()));
 }
 
-PyObject* ApplicationPy::sSurveyProjectSourceMaterial(PyObject* /*self*/, PyObject* args)
+namespace
+{
+/// One survey, said the way a script reads it. Both halves answer the same shape of question, so
+/// they answer in the same shape.
+Py::Dict asSaid(const ProjectSurvey& found)
+{
+    Py::List read;
+    for (const std::string& recipe : found.recipesRead) {
+        read.append(Py::String(recipe));
+    }
+    Py::List unreferenced;
+    for (const UnreferencedFile& file : found.unreferenced) {
+        Py::Tuple entry(2);
+        entry.setItem(0, Py::String(file.path));
+        entry.setItem(1, Py::Long(static_cast<unsigned long>(file.bytes)));
+        unreferenced.append(entry);
+    }
+
+    Py::Dict answer;
+    answer.setItem("recipesRead", read);
+    answer.setItem("unreferenced", unreferenced);
+    answer.setItem("bytes", Py::Long(static_cast<unsigned long>(found.bytes)));
+    return answer;
+}
+
+/// The folder a survey was asked about, or nothing where the argument was not one.
+bool folderAsked(PyObject* args, std::string& asked)
 {
     char* folder {};
     if (!PyArg_ParseTuple(args, "et", "utf-8", &folder)) {
+        return false;
+    }
+    asked = folder;
+    PyMem_Free(folder);
+    return true;
+}
+}  // namespace
+
+PyObject* ApplicationPy::sSurveyProjectSourceMaterial(PyObject* /*self*/, PyObject* args)
+{
+    std::string asked;
+    if (!folderAsked(args, asked)) {
         return nullptr;
     }
-    const std::string asked(folder);
-    PyMem_Free(folder);
-
     PY_TRY
     {
-        const SourceMaterialSurvey found = surveyProjectSourceMaterial(asked);
+        return Py::new_reference_to(asSaid(surveyProjectSourceMaterial(asked)));
+    }
+    PY_CATCH
+}
 
-        Py::List read;
-        for (const std::string& recipe : found.recipesRead) {
-            read.append(Py::String(recipe));
-        }
-        Py::List unreferenced;
-        for (const UnreferencedFile& file : found.unreferenced) {
-            Py::Tuple entry(2);
-            entry.setItem(0, Py::String(file.path));
-            entry.setItem(1, Py::Long(static_cast<unsigned long>(file.bytes)));
-            unreferenced.append(entry);
-        }
-
-        Py::Dict answer;
-        answer.setItem("recipesRead", read);
-        answer.setItem("unreferenced", unreferenced);
-        answer.setItem("bytes", Py::Long(static_cast<unsigned long>(found.bytes)));
-        return Py::new_reference_to(answer);
+PyObject* ApplicationPy::sSurveyProjectRebuildStore(PyObject* /*self*/, PyObject* args)
+{
+    std::string asked;
+    if (!folderAsked(args, asked)) {
+        return nullptr;
+    }
+    PY_TRY
+    {
+        return Py::new_reference_to(asSaid(surveyProjectRebuildStore(asked)));
     }
     PY_CATCH
 }

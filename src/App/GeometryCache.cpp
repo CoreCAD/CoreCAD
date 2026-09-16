@@ -159,18 +159,44 @@ std::string keyFor(const DocumentObject& obj,
 
 fs::path entryPath(const std::string& cacheDirectory, const std::string& key)
 {
-    return fs::path(cacheDirectory) / "geometry" / key;
+    return fs::path(App::builtGeometryFolder(cacheDirectory)) / key;
 }
 
 const char* contentFile = "content.xml";
 
 }  // namespace
 
+std::string App::builtGeometryFolder(const std::string& cacheDirectory)
+{
+    return (fs::path(cacheDirectory) / "geometry").string();
+}
+
 std::string App::builtGeometryKey(const DocumentObject& obj, const std::string& assetDirectory)
 {
     std::map<const DocumentObject*, std::string> known;
     std::vector<const DocumentObject*> onPath;
     return keyFor(obj, assetDirectory, known, onPath);
+}
+
+std::set<std::string> App::builtGeometryKeys(const Document& doc,
+                                             const std::string& assetDirectory)
+{
+    // One memo for the whole document: every feature stands on the ones below it, so asking each
+    // object on its own would walk the same chain again for every step of it.
+    std::map<const DocumentObject*, std::string> known;
+    std::vector<const DocumentObject*> onPath;
+
+    std::set<std::string> named;
+    for (const DocumentObject* obj : doc.getObjects()) {
+        if (obj == nullptr) {
+            continue;
+        }
+        const std::string key = keyFor(*obj, assetDirectory, known, onPath);
+        if (!key.empty()) {
+            named.insert(key);
+        }
+    }
+    return named;
 }
 
 void App::storeBuiltGeometry(const Document& doc,
