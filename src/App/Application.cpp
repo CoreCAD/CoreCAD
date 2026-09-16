@@ -2229,6 +2229,7 @@ void Application::initTypes()
     App::PropertyIntegerList        ::init();
     App::PropertyIntegerSet         ::init();
     App::PropertyMap                ::init();
+    App::PropertyOverrideTable      ::init();
     App::PropertyString             ::init();
     App::PropertyPersistentObject   ::init();
     App::PropertyUUID               ::init();

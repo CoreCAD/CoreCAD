@@ -25,6 +25,7 @@
 #pragma once
 
 #include <bitset>
+#include <iosfwd>
 #include <map>
 #include <memory>
 #include <string>
@@ -207,6 +208,24 @@ public:
     /// read until characters are found
     void readCharacters(const char* filename, CharStreamFormat format = CharStreamFormat::Raw);
 
+    /** Take the element the reader is on, and everything inside it, back as text.
+     *
+     * Cruth (Amendment 19 Clause 19.1): a reader that cannot interpret what a file states must
+     * still be able to KEEP it, or the next save publishes the loss over the file. The property
+     * machinery can keep a whole property's words because the recipe reader holds the source text
+     * and lifts them out of it by name; nothing inside a property's own `Restore` can, and a value
+     * nested one level further down was therefore kept or lost depending on how deep it sat.
+     *
+     * The text returned is EQUIVALENT rather than identical: attributes come back in name order
+     * and indentation is this writer's own. It is the same content, written the one way, which is
+     * what a file that people diff needs -- two readings of the same element cannot come back
+     * differing in whitespace.
+     *
+     * The reader is left on the element's end, exactly as `readEndElement` would leave it, so a
+     * caller that captures a child is in the same place as one that read it.
+     */
+    std::string readElementAsText();
+
     /** Obtain an input stream for reading characters
      *
      *  @return Return a input stream for reading characters. The stream will be
@@ -336,6 +355,11 @@ public:
 protected:
     /// read the next element
     bool read();
+
+    /// Write the element the reader is on, and everything inside it, into `out` -- see
+    /// readElementAsText(). Recurses on children; mixed content (text beside child elements)
+    /// keeps the children and drops the text, which no value this program writes produces.
+    void captureInto(std::ostream& out, int indent);
 
     // -----------------------------------------------------------------------
     //  Handlers for the SAX ContentHandler interface

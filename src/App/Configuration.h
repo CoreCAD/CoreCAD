@@ -27,6 +27,7 @@
 #pragma once
 
 #include "DocumentObject.h"
+#include "PropertyOverrideTable.h"
 #include "PropertyStandard.h"
 
 namespace App
@@ -59,18 +60,16 @@ public:
     App::PropertyString ActiveOption;
     /** The per-option Variant override table.
      *
-     * Each key is an option/target/property triple joined by the pipe
-     * separator: "<option>|<objectName>|<propertyName>"; each value is the
-     * serialized override value for that property under that option. Stored as
-     * a flat PropertyMap so it round-trips natively. The separator must be an
-     * XML-legal character: a control char such as 0x1f is silently stripped
-     * when the PropertyMap serialises to the document XML, which corrupts the
-     * keys and loses the table on reopen. '|' is safe because object and
-     * property names are always identifiers (never contain '|'), and the
-     * option is matched as a full prefix, so parsing stays unambiguous even if
-     * an option name itself contains '|'.
+     * Each entry names the option that states it, the object whose value it is and which of that
+     * object's properties, and holds the value itself as a property of the kind it is for -- so a
+     * length is stored as a length and read back by the reader that wrote it (§7.7, Amendment 18
+     * Clause 18.5).
+     *
+     * It was a flat map of TEXT, with the three fields joined by a separator and the value stored
+     * as source for the Python interpreter to turn back into a value. Both halves of that are
+     * gone: the fields are their own fields, and a value never passes through a language.
      */
-    App::PropertyMap Overrides;
+    App::PropertyOverrideTable Overrides;
 
     const char* getViewProviderName() const override;
 
@@ -111,10 +110,6 @@ protected:
      * this document holds no such object, on itself: nothing else is left to block.
      */
     void stateActiveOption(bool apply);
-
-    /// Separator used to join the Overrides map key fields. Must be XML-legal
-    /// (a control char like 0x1f is stripped on serialise and corrupts the keys).
-    static const char keySep = '|';
 };
 
 }  // namespace App

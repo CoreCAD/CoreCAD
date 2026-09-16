@@ -26,7 +26,7 @@
 
 #include "PreCompiled.h"
 
-#include <Base/Interpreter.h>
+#include <cctype>
 
 #include "Configuration.h"
 #include "Document.h"
@@ -35,33 +35,26 @@ using namespace App;
 
 namespace
 {
-/** Read one stored override as a value, never as a program.
- *
- * Cruth: a document is a text a person reads before deciding whether to trust it, and that is
- * worth nothing if reading it is what runs it. Measured before this: a document whose stored
- * override was `__import__('pathlib').Path(...).write_text(...)` wrote that file the moment it was
- * opened -- in a fresh session, with no prompt and nothing for the person to decline -- because
- * the stored text was handed to the interpreter as source.
- *
- * So it is read as a literal: a number, a string, a boolean, or a container of those, which is
- * every shape a property's own reader is given. `literal_eval` is asked, with the stored text as
- * an ARGUMENT rather than as source, so nothing in a document is compiled or called. Anything
- * that is not a literal is not a value this build can read, and is treated as exactly that.
- *
- * Whether an override may be a COMPUTED value at all is a question for the architecture owner. If
- * it may, it belongs in the program's own expression grammar -- which already exists and already
- * binds its references by durable identity -- and not in a general-purpose language.
- */
-Py::Object valueStatedBy(const std::string& text)
+/// The file's own words for a value, folded onto one line so a report can carry them.
+///
+/// A person who has to correct an override needs to be told WHAT was stated, not only that it
+/// would not read; the words are how they find it in the file.
+std::string inOneLine(const std::string& words)
 {
-    Py::Module literals(PyImport_ImportModule("ast"), true);
-    if (literals.isNull()) {
-        throw Py::Exception();
+    std::string folded;
+    bool space = false;
+    for (const char character : words) {
+        if (std::isspace(static_cast<unsigned char>(character)) != 0) {
+            space = !folded.empty();
+            continue;
+        }
+        if (space) {
+            folded += ' ';
+            space = false;
+        }
+        folded += character;
     }
-    Py::Callable literalOnly(literals.getAttr(std::string("literal_eval")));
-    Py::Tuple args(1);
-    args.setItem(0, Py::String(text));
-    return literalOnly.apply(args);
+    return folded;
 }
 }  // namespace
 
@@ -148,72 +141,55 @@ void Configuration::stateActiveOption(bool apply)
     if (option.empty()) {
         return;
     }
-    const std::string prefix = option + keySep;
 
-    for (const auto& entry : Overrides.getValues()) {
-        const std::string& key = entry.first;
-        if (key.compare(0, prefix.size(), prefix) != 0) {
+    for (const auto& [address, stated] : Overrides.getValues()) {
+        if (address.option != option) {
             continue;
         }
-        // key tail is "<objectName>|<propertyName>"
-        std::string rest = key.substr(prefix.size());
-        std::string::size_type sep = rest.find(keySep);
-        if (sep == std::string::npos) {
-            continue;
-        }
-        std::string objName = rest.substr(0, sep);
-        std::string propName = rest.substr(sep + 1);
 
-        App::DocumentObject* target = doc->getObject(objName.c_str());
+        App::DocumentObject* target = doc->getObject(address.object.c_str());
         if (!target) {
             // The object whose value it would have set is not here, so there is nothing else to
             // block and the holder is all that is left. Named with the object it was looking for:
             // a report that will not say what is missing cannot be acted on (§3.6).
             rememberStatementSetFromElsewhere(
                 {holder,
-                 objName + "." + propName,
-                 "option '" + option + "' sets it and this document holds no object '" + objName
-                     + "'"});
+                 address.object + "." + address.property,
+                 "option '" + option + "' sets it and this document holds no object '"
+                     + address.object + "'"});
             continue;
         }
-        App::Property* targetProp = target->getPropertyByName(propName.c_str());
+        App::Property* targetProp = target->getPropertyByName(address.property.c_str());
         if (!targetProp) {
             target->rememberStatementSetFromElsewhere(
                 {holder,
-                 propName,
+                 address.property,
                  "option '" + option + "' sets it and this build has no property of that name"});
             continue;
         }
 
-        // Read whether or not it is applied. A stored value that cannot be read is a value the
+        // Said whether or not it is applied. A stored value that cannot be read is a value the
         // option never set, and a session that only read the file would otherwise report the part
         // finished at a value nobody chose until somebody happened to switch the option.
-        //
-        // The lock is held across the value's whole life, its release included: a document may be
-        // read on any thread, and a held Python object let go of without it takes the process down.
-        Base::PyGILStateLocker lock;
-        Py::Object value;
-        try {
-            value = valueStatedBy(entry.second);
-        }
-        catch (Py::Exception&) {
-            // The message is the interpreter's own account of what is wrong with the text, which
-            // is more use to whoever has to retype it than anything this could compose.
-            const Base::PyException why;
-            PyErr_Clear();
+        if (!stated.value) {
+            const std::string words = inOneLine(stated.words);
             target->rememberStatementSetFromElsewhere(
                 {holder,
-                 propName,
-                 "option '" + option + "' sets it to " + entry.second
-                     + ", which is not a value this build can read: " + why.what()});
+                 address.property,
+                 "option '" + option + "' sets it to " + (words.empty() ? "a value" : words)
+                     + ", which is not a value this build can read: " + stated.reason});
             continue;
         }
-        catch (Base::Exception& e) {
+
+        // The kinds must be the same kind. A value authored for one kind of property and pasted
+        // into another is not a conversion, it is a guess -- and the whole point of storing the
+        // value as the property it is for is that nothing has to guess what it meant.
+        if (stated.value->getTypeId() != targetProp->getTypeId()) {
             target->rememberStatementSetFromElsewhere(
                 {holder,
-                 propName,
-                 "option '" + option + "' sets it to " + entry.second
-                     + ", which could not be read: " + e.what()});
+                 address.property,
+                 "option '" + option + "' states it as a '" + stated.type
+                     + "' and it is a '" + targetProp->getTypeId().getName() + "'"});
             continue;
         }
         if (!apply) {
@@ -221,15 +197,14 @@ void Configuration::stateActiveOption(bool apply)
         }
 
         try {
-            // Let the property apply it (units/type handled by setPyObject).
-            targetProp->setPyObject(value.ptr());
+            // The property takes its own value back, by the same route undo and redo use.
+            targetProp->Paste(*stated.value);
         }
         catch (Base::Exception& e) {
             target->rememberStatementSetFromElsewhere(
                 {holder,
-                 propName,
-                 "option '" + option + "' sets it to " + entry.second
-                     + ", which it would not take: " + e.what()});
+                 address.property,
+                 "option '" + option + "' sets it to a value it would not take: " + e.what()});
         }
     }
 }
