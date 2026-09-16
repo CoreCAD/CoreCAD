@@ -323,6 +323,7 @@ SET(FreeCADApp_CPP_SRCS
     ObjectRecipe.cpp
     RecipeText.cpp
     GeometryCache.cpp
+    UnreferencedFiles.cpp
     StoredRecipe.cpp
     RecipeDetail.cpp
     ElementNamingUtils.cpp
@@ -356,6 +357,7 @@ SET(FreeCADApp_HPP_SRCS
     ObjectRecipe.h
     RecipeText.h
     GeometryCache.h
+    UnreferencedFiles.h
     StoredRecipe.h
     RecipeDetail.h
     ElementNamingUtils.h

@@ -10,6 +10,7 @@ add_executable(App_tests_run
         ComplexGeoData.cpp
         ConfigurationBlocking.cpp
         ConfigurationValuesAreNotPrograms.cpp
+        UnreferencedFiles.cpp
         CopyObject.cpp
         Document.cpp
         DocumentByteStability.cpp

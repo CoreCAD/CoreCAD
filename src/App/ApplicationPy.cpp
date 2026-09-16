@@ -42,6 +42,7 @@
 #include "DocumentObjectPy.h"
 #include "ObjectRecipe.h"
 #include "RecoverySnapshot.h"
+#include "UnreferencedFiles.h"
 
 
 // using Base::GetConsole;
@@ -155,6 +156,17 @@ PyMethodDef ApplicationPy::Methods[] = {
      "* If no module is given it will be determined by the file extension.\n"
      "* If more than one module can load a file the first one will be taken.\n"
      "* If no module exists to load the file an exception will be raised."},
+    {"surveyProjectSourceMaterial",
+     (PyCFunction)ApplicationPy::sSurveyProjectSourceMaterial,
+     METH_VARARGS,
+     "surveyProjectSourceMaterial(folder) -> dict\n\n"
+     "Ask a project folder what source material nothing in it names any more.\n\n"
+     "Reads every native document in the folder and answers with:\n"
+     "* 'recipesRead': the recipes the answer is based on.\n"
+     "* 'unreferenced': a list of (path, bytes), largest first.\n"
+     "* 'bytes': what those entries hold together.\n\n"
+     "Removes nothing. Raises where any recipe in the folder cannot be read, rather\n"
+     "than reporting the material that recipe names as unreferenced."},
     {"open",
      reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(ApplicationPy::sOpenDocument)),
      METH_VARARGS | METH_KEYWORDS,
@@ -358,6 +370,40 @@ PyObject* ApplicationPy::sIsRestoring(PyObject* /*self*/, PyObject* args)
         return nullptr;
     }
     return Py::new_reference_to(Py::Boolean(GetApplication().isRestoring()));
+}
+
+PyObject* ApplicationPy::sSurveyProjectSourceMaterial(PyObject* /*self*/, PyObject* args)
+{
+    char* folder {};
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &folder)) {
+        return nullptr;
+    }
+    const std::string asked(folder);
+    PyMem_Free(folder);
+
+    PY_TRY
+    {
+        const SourceMaterialSurvey found = surveyProjectSourceMaterial(asked);
+
+        Py::List read;
+        for (const std::string& recipe : found.recipesRead) {
+            read.append(Py::String(recipe));
+        }
+        Py::List unreferenced;
+        for (const UnreferencedFile& file : found.unreferenced) {
+            Py::Tuple entry(2);
+            entry.setItem(0, Py::String(file.path));
+            entry.setItem(1, Py::Long(static_cast<unsigned long>(file.bytes)));
+            unreferenced.append(entry);
+        }
+
+        Py::Dict answer;
+        answer.setItem("recipesRead", read);
+        answer.setItem("unreferenced", unreferenced);
+        answer.setItem("bytes", Py::Long(static_cast<unsigned long>(found.bytes)));
+        return Py::new_reference_to(answer);
+    }
+    PY_CATCH
 }
 
 PyObject* ApplicationPy::sOpenDocument(PyObject* /*self*/, PyObject* args, PyObject* kwd)
