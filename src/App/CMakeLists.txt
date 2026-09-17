@@ -325,6 +325,7 @@ SET(FreeCADApp_CPP_SRCS
     ObjectRecipe.cpp
     RecipeText.cpp
     GeometryCache.cpp
+    SealedArchive.cpp
     UnreferencedFiles.cpp
     StoredRecipe.cpp
     RecipeDetail.cpp
@@ -359,6 +360,7 @@ SET(FreeCADApp_HPP_SRCS
     ObjectRecipe.h
     RecipeText.h
     GeometryCache.h
+    SealedArchive.h
     UnreferencedFiles.h
     StoredRecipe.h
     RecipeDetail.h

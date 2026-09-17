@@ -83,6 +83,7 @@
 #include "MergeDocuments.h"
 #include "StringHasher.h"
 #include "GeometryCache.h"
+#include "SealedArchive.h"
 #include "StoredRecipe.h"
 #include "Transactions.h"
 
@@ -2968,11 +2969,47 @@ void Document::restore(const char* filename,
         throw Base::FileException("Invalid project file", filename);
     }
 
-    // Which of the two shapes a document file can have: the recipe this program writes, or a
-    // sealed archive -- what a release, a records system, or an older version hands over. The
-    // file says which itself; nothing has to be configured or remembered.
-    const bool sealedArchive = buf->sgetc() == 'P';
+    // Which shape this document file has: the recipe this program writes, a sealed archive
+    // holding one -- what an export of this build hands over -- or a legacy container, from an
+    // older version. The file says which itself; nothing has to be configured or remembered.
+    const bool container = buf->sgetc() == 'P';
     buf->pubseekoff(0, std::ios::beg, std::ios::in);
+
+    /// What an unpacked archive is read out of, removed however this read ends.
+    struct Unpacked
+    {
+        ~Unpacked()
+        {
+            if (!where.empty()) {
+                std::error_code ignored;
+                fs::remove_all(where, ignored);
+            }
+        }
+        fs::path where;
+        Base::ifstream recipe;
+    } unpacked;
+
+    // A sealed archive of this build's own making is read as the recipe it holds: unpacked beside
+    // its source material, laid out as a project folder, and handed to the one reader that reads a
+    // document. An export is a rendering of a document (Amendment 18 Clause 18.1) -- reading one
+    // back is reading a document, and it is not owed a second reader of its own.
+    std::istream* source = &file;
+    std::string sourceAssets = (fs::path(filename).parent_path() / "assets").string();
+    if (container && holdsSealedRecipe(filename)) {
+        file.close();
+        unpacked.where = fs::temp_directory_path() / ("cruth-archive-" + Base::Uuid::createUuid());
+        std::error_code failed;
+        fs::create_directories(unpacked.where, failed);
+        const std::string held = unpackSealedArchive(filename, unpacked.where.string());
+        unpacked.recipe.open(Base::FileInfo(held), std::ios::in | std::ios::binary);
+        if (!unpacked.recipe) {
+            throw Base::FileException("Could not read the recipe the archive holds", filename);
+        }
+        source = &unpacked.recipe;
+        sourceAssets = (unpacked.where / "assets").string();
+    }
+
+    const bool sealedArchive = container && source == &file;
     if (!sealedArchive) {
         GetApplication().signalStartRestoreDocument(*this);
         setStatus(Document::Restoring, true);
@@ -3025,10 +3062,7 @@ void Document::restore(const char* filename,
         };
 
         try {
-            restoreStoredRecipe(*this,
-                                file,
-                                /*finish=*/false,
-                                (fs::path(filename).parent_path() / "assets").string());
+            restoreStoredRecipe(*this, *source, /*finish=*/false, sourceAssets);
         }
         catch (const DocumentContentScopeError&) {
             throw;

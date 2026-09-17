@@ -27,6 +27,7 @@
 #include <Base/Stream.h>
 
 #include "Document.h"
+#include "SealedArchive.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
 #include "MergeDocuments.h"
@@ -312,6 +313,25 @@ PyObject* DocumentPy::saveCopy(PyObject* args)
             return nullptr;
         }
         Py_Return;
+    }
+    PY_CATCH
+}
+
+PyObject* DocumentPy::exportSealedArchive(PyObject* args)
+{
+    char* fn;
+    if (!PyArg_ParseTuple(args, "s", &fn)) {
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        const std::set<std::string> unhonoured = App::writeSealedArchive(*getDocumentPtr(), fn);
+        Py::List carried;
+        for (const std::string& name : unhonoured) {
+            carried.append(Py::String(name));
+        }
+        return Py::new_reference_to(carried);
     }
     PY_CATCH
 }

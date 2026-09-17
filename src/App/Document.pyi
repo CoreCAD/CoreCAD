@@ -175,6 +175,21 @@ class Document(PropertyContainer):
         """
         ...
 
+    def exportSealedArchive(self, path: str, /) -> list[str]:
+        """
+        Write the document and every piece of source material its recipe names into one
+        sealed archive, for a release, a transfer, or a records system.
+
+        An export is a rendering of the document and never its record: it carries no
+        rebuilt content, and reading it back does not produce a byte-identical file.
+        It is refused as a whole -- leaving no file -- where the recipe names source
+        material this project does not hold.
+
+        Returns the names of the objects whose file statements this build could not
+        honour, which the archive carries through exactly as worded.
+        """
+        ...
+
     def canWriteRecoverySnapshot(self) -> bool:
         """
         Return whether the document is in an App-side state that allows writing
