@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <App/Property.h>
 #include <Base/Reader.h>
 
@@ -81,7 +83,7 @@ public:
 
     unsigned int getMemSize() const override
     {
-        return sizeof(_material);
+        return sizeof(_material) + (_carried ? sizeof(*_carried) : 0);
     }
 
     bool isSame(const Property& other) const override
@@ -95,6 +97,16 @@ public:
 
 private:
     Material _material;
+    /** The copy of the library value the document carries, as the file stated it.
+     *
+     * Kept rather than re-derived (Amendment 18 Clause 18.3). Where this machine has the library,
+     * the material in memory is the LIBRARY's, and a save that wrote that back would replace the
+     * copy the author saved with whatever the library holds today -- deciding, silently and in
+     * the file, which of the two governs when they differ. That is the one question the clause
+     * reserves. So the words the document came with stand until a person chooses a material,
+     * which is the only moment what this object is made of actually changed.
+     */
+    std::optional<Material> _carried;
 };
 
 }  // namespace Materials
