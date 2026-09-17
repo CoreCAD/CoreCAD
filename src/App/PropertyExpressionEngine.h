@@ -357,8 +357,8 @@ private:
 
     struct RestoredObjectRef
     {
-        int index;
-        std::string uuid;
+        std::string path;  ///< the part of the formula this reference was written from
+        std::string uuid;  ///< the durable identity of the object it binds
     };
     struct RestoredExpression
     {
