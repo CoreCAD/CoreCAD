@@ -479,9 +479,10 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
         if (isReference(*prop)) {
             // An expression engine is a reference property by inheritance -- it holds the
             // formulas an object was given -- but what it points at lives inside the text of
-            // each formula, which still speaks object names. It is written by its own
-            // serializer here, and the names inside a formula remain the one binding in this
-            // file that is not durable.
+            // each formula, which speaks object names. It is written by its own serializer
+            // here, which states the durable identity of each intra-document reference beside
+            // the formula, keyed by the part of the text it was written from. References that
+            // leave the document remain name-based, reserved for the PropertyXLink step.
             if (prop->isDerivedFrom(PropertyExpressionContainer::getClassTypeId())) {
                 entry.body = writtenByItsOwnSerializer(*prop);
                 stored.push_back(entry);

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include "Base/Console.h"
 #include "Base/Quantity.h"
 #include "Base/Reader.h"
 #include "Base/Writer.h"
@@ -15,6 +16,7 @@
 #include "App/ObjectIdentifier.h"
 #include "App/PropertyStandard.h"
 
+#include <set>
 #include <sstream>
 
 #include "src/App/InitApplication.h"
@@ -63,6 +65,49 @@ void PrintTo(const boost::any& e, std::ostream* os)
 
 namespace App::ExpressionParser::Test
 {
+
+/// Collects what the console was told while it is in scope, so a test can assert that a
+/// load reported what it could not do rather than only that it carried on.
+class CapturedWarnings: public Base::ILogger
+{
+public:
+    CapturedWarnings()
+    {
+        Base::Console().attachObserver(this);
+    }
+    ~CapturedWarnings() override
+    {
+        Base::Console().detachObserver(this);
+    }
+    CapturedWarnings(const CapturedWarnings&) = delete;
+    CapturedWarnings& operator=(const CapturedWarnings&) = delete;
+
+    void sendLog(
+        const std::string&,
+        const std::string& msg,
+        Base::LogStyle level,
+        Base::IntendedRecipient,
+        Base::ContentType
+    ) override
+    {
+        if (level == Base::LogStyle::Warning || level == Base::LogStyle::Error) {
+            said += msg;
+        }
+    }
+
+    const char* name() override
+    {
+        return "CapturedWarnings";
+    }
+
+    const std::string& text() const
+    {
+        return said;
+    }
+
+private:
+    std::string said;
+};
 
 class ExpressionParserTest: public ::testing::Test
 {
@@ -409,19 +454,22 @@ TEST_F(ExpressionParserTest, objectIdentifierRendersNameFromUuid)
 
 // Amendment 3, Clause 3.8, Step G: an expression persists its object references as
 // durable UUIDs beside the human formula text, and rebinds by UUID on reload -- so a
-// formula survives even when the on-disk name is made to point at the wrong object.
+// formula keeps pointing at the object it was authored against even when the NAME it was
+// authored under has since moved to a different object.
 TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
 {
-    // Src is the real target; Dcy is a decoy carrying the same property.
+    // Src is the real target, addressed by the label it carries today.
     auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    src->Label.setValue("Alfa");
     freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
-    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
-    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
 
     this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
     ObjectIdentifier resultPath(this_obj());
     resultPath << ObjectIdentifier::SimpleComponent("Result");
-    this_obj()->setExpression(resultPath, std::shared_ptr<Expression>(parse(this_obj(), "Src.Bar * 2")));
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alfa>>.Bar * 2"))
+    );
 
     // Save the engine and confirm the durable UUID rode along on disk.
     Base::StringWriter writer;
@@ -433,11 +481,13 @@ TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
     EXPECT_NE(xml.find(src->Uid.getValueStr()), std::string::npos)
         << "the durable Src UUID was not written to disk";
 
-    // Tamper: swap the on-disk formula NAME to the decoy. The UUID still names Src,
-    // so name-binding would resolve Dcy (wrong) and UUID-binding resolves Src (right).
-    auto pos = xml.find("Src.Bar");
-    ASSERT_NE(pos, std::string::npos);
-    xml.replace(pos, std::string("Src.Bar").size(), "Dcy.Bar");
+    // While that file sat on disk the label moved: Src is renamed, and a decoy takes the
+    // name the formula was written under. Nothing in the file changed -- only the document
+    // it is read back into, which is the ordinary way a stored name goes stale.
+    src->Label.setValue("Gamma");
+    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
+    dcy->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
 
     // Restore into the same-container engine and finish the load.
     std::stringstream data(xml);
@@ -446,14 +496,166 @@ TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
     this_obj()->ExpressionEngine.Restore(reader);
     this_obj()->ExpressionEngine.afterRestore();
 
-    // The reference must resolve to Src by UUID, never to the decoy by name.
+    // The reference must resolve to Src by UUID, never to the decoy that now holds the name.
     auto info = this_obj()->getExpression(resultPath);
-    ASSERT_TRUE(info.expression) << "the tampered expression failed to restore";
+    ASSERT_TRUE(info.expression) << "the stored expression failed to restore";
     auto ids = info.expression->getIdentifiers();
     ASSERT_EQ(ids.size(), 1U);
     EXPECT_EQ(ids.begin()->first.getDocumentObject(), src)
-        << "reference bound by the on-disk name (decoy) instead of the durable UUID";
+        << "reference bound by the stored name (decoy) instead of the durable UUID";
     EXPECT_NE(ids.begin()->first.getDocumentObject(), dcy);
+}
+
+// A stored reference is matched back to the part of the formula it was written from, never
+// to the position it sat in. The document is a plain-text recipe a person is invited to read
+// and edit (Amendment 18), so a formula gains a term at the front -- by hand, or by a textual
+// merge landing one there -- and every later part shifts along. Bound by position, each stored
+// UUID lands on its neighbour: references NOBODY TOUCHED come back pointing at something
+// nobody chose, while the formula still reads plausibly and the document says nothing.
+TEST_F(ExpressionParserTest, objectRefSurvivesATermAddedAheadOfIt)
+{
+    auto valued = [&](const char* name, double value) {
+        auto* obj = this_doc()->addObject("App::DocumentObjectGroup", name);
+        freecad_cast<PropertyFloat*>(obj->addDynamicProperty("App::PropertyFloat", "Bar"))
+            ->setValue(value);
+        return obj;
+    };
+    auto* alfa = valued("Alfa", 10.0);
+    auto* bravo = valued("Bravo", 1.0);
+    auto* extra = valued("Extra", 100.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "Alfa.Bar + Bravo.Bar"))
+    );
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    // The edit: a term added at the FRONT of the formula, the way anyone would edit a text
+    // file. No bookkeeping is written by hand, so the stored references stand as they were.
+    auto pos = xml.find("Alfa.Bar");
+    ASSERT_NE(pos, std::string::npos);
+    xml.insert(pos, "Extra.Bar + ");
+
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the edited expression failed to restore";
+
+    // The formula names three objects; those three are what it must be bound to.
+    std::set<const DocumentObject*> bound;
+    for (const auto& id : info.expression->getIdentifiers()) {
+        bound.insert(id.first.getDocumentObject());
+    }
+    EXPECT_THAT(bound, UnorderedElementsAre(extra, alfa, bravo))
+        << "the added term shifted the stored bindings onto their neighbours";
+
+    // 100 + 10 + 1. Shifted by one, the same formula quietly computes 10 + 1 + 1.
+    EXPECT_EQ(info.expression->eval()->toString(), "111")
+        << "the formula computed from objects nobody chose";
+}
+
+// A formula may name the same thing twice, and then the stored references and the parts of
+// the formula stop being interchangeable: each stored reference claims one part, so the
+// second naming is superseded too. Left unclaimed it keeps whatever the stale name happens
+// to resolve to in this document -- the wrong object, in the same formula as the right one.
+TEST_F(ExpressionParserTest, aPathNamedTwiceIsBoundTwice)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    src->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alfa>>.Bar + <<Alfa>>.Bar"))
+    );
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    // The label moves to another object while the file sits on disk.
+    src->Label.setValue("Gamma");
+    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
+    dcy->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
+
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the stored expression failed to restore";
+
+    // 10 + 10. One naming left behind picks up the decoy and computes 109.
+    EXPECT_EQ(info.expression->eval()->toString(), "20")
+        << "a repeated naming was left bound to whatever the stale label now resolves to";
+}
+
+// The other side of the same rule. Where the FILE's own two statements about a reference
+// disagree -- the formula text says one object, the stored reference was written from
+// another -- the text is the one a person reads and edits (Amendment 18), so their edit
+// stands rather than being reverted to the stored binding without a word. What this
+// session could not place is said, not dropped (Amendment 19, Clause 19.1).
+TEST_F(ExpressionParserTest, handRetargetedFormulaKeepsThePersonsEdit)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
+    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(resultPath, std::shared_ptr<Expression>(parse(this_obj(), "Src.Bar * 2")));
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    // A person opens the file and retargets the formula, editing only the text they can read.
+    auto pos = xml.find("Src.Bar");
+    ASSERT_NE(pos, std::string::npos);
+    xml.replace(pos, std::string("Src.Bar").size(), "Dcy.Bar");
+
+    CapturedWarnings warnings;
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the edited expression failed to restore";
+    auto ids = info.expression->getIdentifiers();
+    ASSERT_EQ(ids.size(), 1U);
+    EXPECT_EQ(ids.begin()->first.getDocumentObject(), dcy)
+        << "the edit a person made in the file was reverted to the stored binding";
+    EXPECT_NE(ids.begin()->first.getDocumentObject(), src);
+
+    // And it is reported, naming the binding that could not be placed.
+    EXPECT_THAT(warnings.text(), HasSubstr(src->Uid.getValueStr()))
+        << "a stored binding this session could not place went unreported";
 }
 
 // Amendment 3, Clause 3.8, Step H: object references no longer depend on the
