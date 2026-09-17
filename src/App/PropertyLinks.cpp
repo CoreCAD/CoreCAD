@@ -4583,7 +4583,10 @@ void PropertyXLink::Save(Base::Writer& writer) const
         writer.Stream() << "\"/>" << std::endl;
     }
     else {
-        writer.Stream() << "\" count=\"" << _SubList.size() << "\">" << std::endl;
+        // Cruth: the subs are stated, never counted. A declared length is a second statement of
+        // what the same element holds, and a textual merge takes the same raised number from both
+        // sides without a conflict, after which a reader that loops it drops one side's addition.
+        writer.Stream() << "\">" << std::endl;
         writer.incInd();
         for (unsigned int i = 0; i < _SubList.size(); i++) {
             const auto& shadow = _ShadowSubList[i];
@@ -4621,8 +4624,13 @@ void PropertyXLink::Save(Base::Writer& writer) const
 
 void PropertyXLink::Restore(Base::XMLReader& reader)
 {
-    // read my element
     reader.readElement("XLink");
+    restoreFromCurrentElement(reader);
+}
+
+void PropertyXLink::restoreFromCurrentElement(Base::XMLReader& reader)
+{
+    const int link = reader.level();
     std::string stampAttr, file;
     if (reader.hasAttribute("stamp")) {
         stampAttr = reader.getAttribute<const char*>("stamp");
@@ -4683,12 +4691,12 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
             }
         }
     }
-    else if (reader.hasAttribute("count")) {
-        int count = reader.getAttribute<long>("count");
-        subs.resize(count);
-        shadows.resize(count);
-        for (int i = 0; i < count; i++) {
-            reader.readElement("Sub");
+    else {
+        while (nextChildElement(reader, link)) {
+            expectElement(reader, "Sub");
+            const int i = static_cast<int>(subs.size());
+            subs.emplace_back();
+            shadows.emplace_back();
             shadows[i].oldName = importSubName(reader, reader.getAttribute<const char*>("value"), restoreLabel);
             if (reader.hasAttribute(ATTR_SHADOWED) && !IGNORE_SHADOW) {
                 subs[i] = shadows[i].newName =
@@ -4705,7 +4713,6 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
                 mapped.push_back(i);
             }
         }
-        reader.readEndElement("XLink");
     }
     setFlag(LinkRestoreLabel, restoreLabel);
 
@@ -5560,11 +5567,12 @@ bool PropertyXLinkSubList::referenceChanged() const
 
 void PropertyXLinkSubList::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<XLinkSubList count=\"" << _Links.size();
+    // Cruth: the links are stated, never counted -- see the note in PropertyXLink::Save.
+    writer.Stream() << writer.ind() << "<XLinkSubList";
     if (testFlag(LinkAllowPartial)) {
-        writer.Stream() << "\" partial=\"1";
+        writer.Stream() << " partial=\"1\"";
     }
-    writer.Stream() << "\">" << endl;
+    writer.Stream() << ">" << endl;
     writer.incInd();
     for (auto& l : _Links) {
         l.Save(writer);
@@ -5578,14 +5586,14 @@ void PropertyXLinkSubList::Restore(Base::XMLReader& reader)
     reader.readElement("XLinkSubList");
     setFlag(LinkAllowPartial,
             reader.hasAttribute("partial") && reader.getAttribute<bool>("partial"));
-    int count = reader.getAttribute<long>("count");
+    const int list = reader.level();
     atomic_change guard(*this, false);
     _Links.clear();
-    for (int i = 0; i < count; ++i) {
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "XLink");
         _Links.emplace_back(false, this);
-        _Links.back().Restore(reader);
+        _Links.back().restoreFromCurrentElement(reader);
     }
-    reader.readEndElement("XLinkSubList");
     guard.tryInvoke();
 }
 
