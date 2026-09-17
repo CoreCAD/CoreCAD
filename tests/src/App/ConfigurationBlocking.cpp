@@ -257,3 +257,60 @@ TEST_F(ConfigurationBlockingTest, aConfigurationThatIsHonouredBlocksNothing)
     EXPECT_FALSE(_doc->getObject("Part")->isBlockedByAStatement());
     Base::FileInfo(path).deleteFile();
 }
+
+// The reason outlives the rebuild that did not produce it. A person opening somebody else's
+// document met a part marked bad and a document with nothing to say about why: the reason is
+// written while the file is being read, and the first recompute after it emptied the log that
+// held it. A report that will not say what is missing cannot be acted on (§3.6).
+TEST_F(ConfigurationBlockingTest, theReasonSurvivesTheFirstRecomputeAfterTheFileIsRead)
+{
+    App::PropertyFloat two;
+    two.setValue(2.0);
+    withLargeStating({"Large", "Part", "Clearance"}, two);
+    _conf->ActiveOption.setValue("Large");
+
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));
+    auto& app = App::GetApplication();
+    app.closeDocument(_doc->getName());
+    _doc = app.openDocument(path.c_str());
+    ASSERT_NE(_doc, nullptr);
+    App::DocumentObject* part = _doc->getObject("Part");
+    ASSERT_NE(part, nullptr);
+    ASSERT_TRUE(part->isBlockedByAStatement());
+
+    // Whatever an open did or did not do, a rebuild is the ordinary next thing to happen to a
+    // document, and asking for one explicitly is how a script would meet this.
+    _doc->recompute();
+
+    ASSERT_TRUE(part->isBlockedByAStatement()) << "the rebuild released a block nobody corrected";
+    const char* why = _doc->getErrorDescription(part);
+    ASSERT_NE(why, nullptr) << "the part is marked bad and the document will not say why";
+    const std::string said = why;
+    EXPECT_NE(said.find("Clearance"), std::string::npos) << said;
+    EXPECT_NE(said.find("Conf"), std::string::npos) << said;
+    EXPECT_NE(said.find("Large"), std::string::npos) << said;
+    Base::FileInfo(path).deleteFile();
+}
+
+// The other half of the same rule, held open: a block that HAS been dealt with stops being
+// reported by the next rebuild. Restating what is blocked must not resurrect what is not.
+//
+// No control breaks this one -- every wrong restate this change could plausibly have made leaves
+// it passing, and the release direction is already covered without a recompute. It is here for the
+// path nothing else walks, not as evidence.
+TEST_F(ConfigurationBlockingTest, aCorrectedBlockIsNotRestatedByTheNextRecompute)
+{
+    withLargeStating({"Large", "Part", "Length"}, wordsWhereANumberBelongs());
+    _conf->ActiveOption.setValue("Large");
+    ASSERT_TRUE(_part->isBlockedByAStatement());
+
+    state({"Large", "Part", "Length"}, 100.0);
+    ASSERT_FALSE(_part->isBlockedByAStatement());
+
+    _doc->recompute();
+
+    EXPECT_FALSE(_part->isBlockedByAStatement()) << "a corrected block came back with the rebuild";
+    EXPECT_EQ(_doc->getErrorDescription(_part), nullptr);
+    EXPECT_TRUE(_doc->isWhole());
+}

@@ -3976,6 +3976,20 @@ int Document::recompute(const std::vector<DocumentObject*>& objs,
         obj->setStatus(ObjectStatus::Recompute2, false);
     }
 
+    // What this document could not honour is said again, because the log this pass emptied held
+    // two kinds of entry with different lifetimes. An account of a rebuild belongs to the rebuild
+    // that produced it and is rightly gone. What the FILE states and this build could not honour
+    // belongs to the file, outlives every rebuild, and was being thrown away by the first one --
+    // so a person opening somebody else's document met a part marked bad and a document with
+    // nothing to say about why (§3.6, Amendment 19 Clause 19.6).
+    //
+    // Said again rather than kept across the clear. Both hold: the fact lives on the object and
+    // every path that changes it already restates the entry, so keeping the entry would land in
+    // the same place -- no test told the two apart, and that is worth saying rather than dressing
+    // the choice up as a measurement. It is said again because then the log has ONE source and
+    // cannot be left holding a sentence about a state nothing still reports.
+    recordWhatIsBlocked();
+
     // Keep the document marked as Recomputing while signalRecomputed() runs.
     // Those observers may execute Python or GUI code; clearing the status
     // first would let re-entrant code see the document as stable before
@@ -4293,6 +4307,9 @@ bool Document::recomputeFeature(DocumentObject* feature, bool recursive)
         return !hasError;
     }
     _recomputeFeature(feature);
+    // The same debt as the whole-document pass, on the one object: rebuilding it emptied its half
+    // of the log, and what the file states about it does not belong to that rebuild.
+    recordWhatIsBlocked();
     signalRecomputedObject(*feature);
     return feature->isValid();
 }
