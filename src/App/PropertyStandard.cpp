@@ -427,8 +427,8 @@ void PropertyEnumeration::Save(Base::Writer& writer) const
     writer.Stream() << "/>" << std::endl;
     if (_enum.isCustom()) {
         std::vector<std::string> items = getEnumVector();
-        writer.Stream() << writer.ind() << "<CustomEnumList count=\"" << items.size() << "\">"
-                        << endl;
+        // Cruth: stated without a declared length -- see the note on the list properties below.
+        writer.Stream() << writer.ind() << "<CustomEnumList>" << endl;
         writer.incInd();
         for (auto& item : items) {
             std::string val = encodeAttribute(item);
@@ -462,13 +462,11 @@ void PropertyEnumeration::Restore(Base::XMLReader& reader)
     std::vector<std::string> values;
     if (custom) {
         reader.readElement("CustomEnumList");
-        const int count = reader.getAttribute<long>("count");
-        values.resize(count);
-        for (int i = 0; i < count; i++) {
-            reader.readElement("Enum");
-            values[i] = reader.getAttribute<const char*>("value");
+        const int list = reader.level();
+        while (nextChildElement(reader, list)) {
+            expectElement(reader, "Enum");
+            values.emplace_back(reader.getAttribute<const char*>("value"));
         }
-        reader.readEndElement("CustomEnumList");
     }
     const std::vector<std::string> list = custom ? values : _enum.getEnumVector();
 
@@ -937,7 +935,11 @@ long PropertyIntegerList::getPyValue(PyObject* item) const
 
 void PropertyIntegerList::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<IntegerList count=\"" << getSize() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<IntegerList>" << endl;
     writer.incInd();
     for (int i = 0; i < getSize(); i++) {
         writer.Stream() << writer.ind() << "<I v=\"" << _lValueList[i] << "\"/>" << endl;
@@ -948,18 +950,14 @@ void PropertyIntegerList::Save(Base::Writer& writer) const
 
 void PropertyIntegerList::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("IntegerList");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
-    std::vector<long> values(count);
-    for (int i = 0; i < count; i++) {
-        reader.readElement("I");
-        values[i] = reader.getAttribute<long>("v");
+    std::vector<long> values;
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "I");
+        values.push_back(reader.getAttribute<long>("v"));
     }
-
-    reader.readEndElement("IntegerList");
 
     // assignment
     setValues(values);
@@ -1058,7 +1056,11 @@ void PropertyIntegerSet::setPyObject(PyObject* value)
 
 void PropertyIntegerSet::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<IntegerSet count=\"" << _lValueSet.size() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<IntegerSet>" << endl;
     writer.incInd();
     for (long it : _lValueSet) {
         writer.Stream() << writer.ind() << "<I v=\"" << it << "\"/>" << endl;
@@ -1069,18 +1071,14 @@ void PropertyIntegerSet::Save(Base::Writer& writer) const
 
 void PropertyIntegerSet::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("IntegerSet");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
     std::set<long> values;
-    for (int i = 0; i < count; i++) {
-        reader.readElement("I");
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "I");
         values.insert(reader.getAttribute<long>("v"));
     }
-
-    reader.readEndElement("IntegerSet");
 
     // assignment
     setValues(values);
@@ -1976,7 +1974,11 @@ unsigned int PropertyStringList::getMemSize() const
 
 void PropertyStringList::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<StringList count=\"" << getSize() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<StringList>" << endl;
     writer.incInd();
     for (int i = 0; i < getSize(); i++) {
         std::string val = encodeAttribute(_lValueList[i]);
@@ -1988,18 +1990,14 @@ void PropertyStringList::Save(Base::Writer& writer) const
 
 void PropertyStringList::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("StringList");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
-    std::vector<std::string> values(count);
-    for (int i = 0; i < count; i++) {
-        reader.readElement("String");
-        values[i] = reader.getAttribute<const char*>("value");
+    std::vector<std::string> values;
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "String");
+        values.emplace_back(reader.getAttribute<const char*>("value"));
     }
-
-    reader.readEndElement("StringList");
 
     // assignment
     setValues(values);
@@ -2176,7 +2174,11 @@ unsigned int PropertyMap::getMemSize() const
 
 void PropertyMap::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<Map count=\"" << getSize() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<Map>" << endl;
     writer.incInd();
     for (const auto& it : _lValueList) {
         writer.Stream() << writer.ind() << "<Item key=\"" << encodeAttribute(it.first)
@@ -2189,18 +2191,14 @@ void PropertyMap::Save(Base::Writer& writer) const
 
 void PropertyMap::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("Map");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
     std::map<std::string, std::string> values;
-    for (int i = 0; i < count; i++) {
-        reader.readElement("Item");
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "Item");
         values[reader.getAttribute<const char*>("key")] = reader.getAttribute<const char*>("value");
     }
-
-    reader.readEndElement("Map");
 
     // assignment
     setValues(values);

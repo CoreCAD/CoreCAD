@@ -507,13 +507,17 @@ void PropertyExpressionEngine::Paste(const Property& from)
 
 void PropertyExpressionEngine::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<ExpressionEngine count=\"" << expressions.size();
+    // Stated without a declared length: a count is a second statement of what the same element
+    // already holds, and in a file people merge, two people each adding a formula both raise it
+    // to the same number -- a textual merge takes that without a conflict and a reader that loops
+    // the stated number of times drops one of the two formulas without a word.
+    writer.Stream() << writer.ind() << "<ExpressionEngine";
     if (PropertyExpressionContainer::_XLinks.empty()) {
-        writer.Stream() << "\">" << std::endl;
+        writer.Stream() << ">" << std::endl;
         writer.incInd();
     }
     else {
-        writer.Stream() << R"(" xlink="1">)" << std::endl;
+        writer.Stream() << R"( xlink="1">)" << std::endl;
         writer.incInd();
         PropertyExpressionContainer::Save(writer);
     }
@@ -572,7 +576,7 @@ void PropertyExpressionEngine::Save(Base::Writer& writer) const
             writer.Stream() << "/>" << std::endl;
         }
         else {
-            writer.Stream() << " refcount=\"" << refs.size() << "\">" << std::endl;
+            writer.Stream() << ">" << std::endl;
             writer.incInd();
             for (const auto& ref : refs) {
                 writer.Stream() << writer.ind() << "<ObjectRef path=\""
@@ -590,17 +594,16 @@ void PropertyExpressionEngine::Save(Base::Writer& writer) const
 void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
 {
     reader.readElement("ExpressionEngine");
-    int count = reader.getAttribute<double>("count");
+    const int engine = reader.level();
 
     if (reader.hasAttribute("xlink") && reader.getAttribute<bool>("xlink")) {
         PropertyExpressionContainer::Restore(reader);
     }
 
     restoredExpressions = std::make_unique<std::vector<RestoredExpression>>();
-    restoredExpressions->reserve(count);
-    for (int i = 0; i < count; ++i) {
-
-        reader.readElement("Expression");
+    while (nextChildElement(reader, engine)) {
+        expectElement(reader, "Expression");
+        const int expression = reader.level();
         restoredExpressions->emplace_back();
         auto& info = restoredExpressions->back();
         info.path = reader.getAttribute<const char*>("path");
@@ -608,19 +611,12 @@ void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
         if (reader.hasAttribute("comment")) {
             info.comment = reader.getAttribute<const char*>("comment");
         }
-        if (reader.hasAttribute("refcount")) {
-            long refcount = reader.getAttribute<long>("refcount");
-            info.refs.reserve(refcount);
-            for (long r = 0; r < refcount; ++r) {
-                reader.readElement("ObjectRef");
-                info.refs.push_back({reader.getAttribute<const char*>("path"),
-                                     reader.getAttribute<const char*>("uuid")});
-            }
-            reader.readEndElement("Expression");
+        while (nextChildElement(reader, expression)) {
+            expectElement(reader, "ObjectRef");
+            info.refs.push_back({reader.getAttribute<const char*>("path"),
+                                 reader.getAttribute<const char*>("uuid")});
         }
     }
-
-    reader.readEndElement("ExpressionEngine");
 }
 
 ObjectIdentifier PropertyExpressionEngine::canonicalPath(const ObjectIdentifier& oid) const
