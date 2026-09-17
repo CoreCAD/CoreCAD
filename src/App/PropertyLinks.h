@@ -1371,6 +1371,14 @@ public:
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
 
+    /** Read this link from the element the reader is already on.
+     *
+     * A list of links steps its children by level rather than by a declared length, which
+     * leaves the reader standing on each child; Restore() above is the same read for a caller
+     * that has not moved yet.
+     */
+    void restoreFromCurrentElement(Base::XMLReader& reader);
+
     Property* Copy() const override;
     void Paste(const Property& from) override;
 

@@ -20,6 +20,8 @@
 #include <App/Services.h>
 #include <Base/ServiceProvider.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <map>
 #include <sstream>
@@ -419,6 +421,12 @@ TEST_F(StoredRecipeTest, aTextualMergeThatKeepsBothSidesLosesNothing)
 
 // A file that restated its own content could disagree with itself. Nothing in the recipe declares
 // how many of anything follows, so there is no second answer to keep in step.
+//
+// The document holds one of each kind of list a property can write, because the question is not
+// whether the recipe's own framing declares a length -- it never did -- but whether anything
+// written INTO it does. Measured when this was widened: a document of ordinary content carried
+// eighteen declared lengths, every one of them spelled with a small c, which the assertion of the
+// day did not look for.
 TEST_F(StoredRecipeTest, theFileDeclaresNoLengths)
 {
     // Arrange
@@ -426,11 +434,81 @@ TEST_F(StoredRecipeTest, theFileDeclaresNoLengths)
     ASSERT_NE(box, nullptr);
     box->Label.setValue("Bearing block");
 
+    auto* strings = freecad_cast<PropertyStringList*>(
+        box->addDynamicProperty("App::PropertyStringList", "Words")
+    );
+    ASSERT_NE(strings, nullptr);
+    strings->setValues(std::vector<std::string> {"one", "two", "three"});
+
+    auto* numbers = freecad_cast<PropertyIntegerList*>(
+        box->addDynamicProperty("App::PropertyIntegerList", "Counts")
+    );
+    ASSERT_NE(numbers, nullptr);
+    numbers->setValues({1, 2, 3});
+
+    auto* pairs = freecad_cast<PropertyMap*>(box->addDynamicProperty("App::PropertyMap", "Pairs"));
+    ASSERT_NE(pairs, nullptr);
+    pairs->setValues({{"a", "1"}, {"b", "2"}});
+
+    auto* choice = freecad_cast<PropertyEnumeration*>(
+        box->addDynamicProperty("App::PropertyEnumeration", "Choice")
+    );
+    ASSERT_NE(choice, nullptr);
+    choice->setEnums({"first", "second", "third"});
+    choice->setValue("second");
+
+    box->setExpression(
+        App::ObjectIdentifier::parse(box, "Width"),
+        std::shared_ptr<App::Expression>(App::Expression::parse(box, "Block.Length / 2"))
+    );
+
     // Act
     const std::string written = formatStoredRecipe(*_source);
 
-    // Assert
-    EXPECT_EQ(written.find("Count=\""), std::string::npos);
+    // Assert -- in either spelling, anywhere in the file.
+    std::string lowered = written;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    const std::string::size_type declared = lowered.find("count=\"");
+    EXPECT_EQ(declared, std::string::npos)
+        << "the file declares a length: "
+        << written.substr(declared == std::string::npos ? 0 : declared, 60);
+}
+
+// The same merge, one level down. Two people each add an entry to a list a part already had, so
+// both sides write the same larger length and a textual merge takes it without a conflict. Kept
+// both ways -- which is what the merge produces -- a reader that believed a declared length read
+// the first few and stopped, and one person's entry was gone with nothing said.
+TEST_F(StoredRecipeTest, aListThatBothSidesAddedToKeepsBothAdditions)
+{
+    // Arrange -- the ancestor list, as it stood before either person touched it.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* strings = freecad_cast<PropertyStringList*>(
+        box->addDynamicProperty("App::PropertyStringList", "Words")
+    );
+    ASSERT_NE(strings, nullptr);
+    strings->setValues(std::vector<std::string> {"ancestor"});
+
+    std::string merged = formatStoredRecipe(*_source);
+
+    // What keeping both sides produces: the ancestor entry, and one entry from each person.
+    const std::string::size_type close = merged.find("</StringList>");
+    ASSERT_NE(close, std::string::npos) << "the list was not written as stated entries";
+    merged.insert(close, "<String value=\"mine\"/>\n<String value=\"yours\"/>\n");
+
+    // Act
+    std::istringstream text(merged);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- both people's entries are there, and so is what they started from.
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* read = freecad_cast<PropertyStringList*>(rebuilt->getPropertyByName("Words"));
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->getValues(), std::vector<std::string>({"ancestor", "mine", "yours"}))
+        << "an addition was dropped without a word";
 }
 
 /// A stand-in for the view layer, so that the App half of the appearance question can be tested
