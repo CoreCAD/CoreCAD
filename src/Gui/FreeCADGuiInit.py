@@ -421,6 +421,47 @@ def InitApplications():
     Log(output[0])
 
 
+def ImportModGuis() -> None:
+    """
+    Import the compiled Gui module of every Mod the program installed.
+
+    A document states the name of the view provider each of its objects had, and that name
+    was imported the first time it was met -- so opening a file decided what code this
+    session ran. The program decides that, and it decides it here. This is the same hole the
+    App side closes for object types (see FreeCADInit.py), one layer up: view provider types
+    live in a separate compiled module that a workbench used to pull in only once someone
+    activated it, so a document could be read whole or not depending on where the person had
+    been first.
+
+    Each module is imported on its own. One that cannot load says so and is skipped, rather
+    than standing in the way of starting the program at all.
+    """
+    # Bound here, not read from the module namespace: every Init.py and InitGui.py is
+    # executed against these globals, so a Mod that imports a name at its top level rebinds
+    # it for everyone (CAM's "Path" over pathlib's, for one).
+    import importlib as _importlib
+    import importlib.machinery as _machinery
+
+    suffixes = tuple(_machinery.EXTENSION_SUFFIXES)
+    for mod in App.__ModCache__:
+        if mod.kind != "Dir" or mod.state != ModState.Loaded:
+            continue
+        for entry in sorted(mod.path.iterdir()):
+            suffix = next((s for s in suffixes if entry.name.endswith(s)), None)
+            if suffix is None:
+                continue
+            name = entry.name[: -len(suffix)]
+            if not name.endswith("Gui"):
+                continue
+            try:
+                _importlib.import_module(name)
+            except Exception as ex:
+                Err(
+                    f"Init: Gui module {name} could not be loaded, so documents that hold "
+                    f"its content will not be drawn whole: {ex!s}\n"
+                )
+
+
 def GeneratePackageIcon(
     subdirectory: str, workbench_metadata: FreeCAD.Metadata, wb_handle: Workbench
 ) -> None:
@@ -445,6 +486,7 @@ Gui.addWorkbench(NoneWorkbench())
 
 # init modules
 InitApplications()
+ImportModGuis()
 
 # set standard workbench (needed as fallback)
 Gui.activateWorkbench("NoneWorkbench")
@@ -473,6 +515,7 @@ Log("Init: Running FreeCADGuiInit.py start script... done\n")
 
 if not typing.TYPE_CHECKING:
     del InitApplications
+    del ImportModGuis
     del NoneWorkbench
     del StandardWorkbench
     del App.__ModCache__, ModGui, DirModGui, ExtModGui

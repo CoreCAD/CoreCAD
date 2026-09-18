@@ -976,10 +976,14 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
                 FC_LOG(Obj.getFullName() << " has no view provider specified");
                 return;
             }
+            // The file states which view provider each object had, and importing from that
+            // name made a document decide what code this session ran -- the same hole as the
+            // object's own type, one layer up. Every installed module is loaded at startup, so
+            // the name is looked up and never fetched.
             Base::Type type = Base::Type::getTypeIfDerivedFrom(
                 cName.c_str(),
                 ViewProviderDocumentObject::getClassTypeId(),
-                true
+                false
             );
             pcProvider = static_cast<ViewProviderDocumentObject*>(type.createInstance());
             // createInstance could return a null pointer

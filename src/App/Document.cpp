@@ -4354,8 +4354,12 @@ DocumentObject* Document::addObject(const char* sType,
                                     const char* viewType,
                                     const bool isPartial)
 {
+    // Looked up among what is registered, never imported on the strength of the name. A
+    // document states the type of each object it holds, so importing from that name made a
+    // file decide what code this session ran. Every module the program installed is loaded at
+    // startup (FreeCADInit.py), so there is nothing left for a name to have to fetch.
     const Base::Type type =
-        Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), true);
+        Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), false);
     if (type.isBad()) {
         std::stringstream str;
         str << "Document::addObject: '" << sType << "' is not a document object type";
@@ -4386,7 +4390,7 @@ std::vector<DocumentObject*>
 Document::addObjects(const char* sType, const std::vector<std::string>& objectNames, bool isNew)
 {
     Base::Type type =
-        Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), true);
+        Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), false);
     if (type.isBad()) {
         std::stringstream str;
         str << "'" << sType << "' is not a document object type";
