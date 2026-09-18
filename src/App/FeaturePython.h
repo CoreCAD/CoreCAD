@@ -224,7 +224,7 @@ public:
         }
         return DocumentObject::StdReturn;
     }
-    /// Whether the geometry parked on this object is authored input or something it rebuilds.
+    /// Whether the content parked on this object is something it produces or was handed.
     ///
     /// A scripted object has to answer for itself, because its class cannot: what rebuilds its
     /// geometry is the script, and the same class covers both cases. A proxy that supplies an
@@ -235,9 +235,9 @@ public:
     ///
     /// Where the script does rebuild, the answer is left to the type underneath, which is the
     /// conservative direction: over-carrying costs file size and under-carrying costs the design.
-    bool holdsAuthoredGeometry() const override
+    bool producesContentOf(const Property& prop) const override
     {
-        return imp->rebuildsItself() ? FeatureT::holdsAuthoredGeometry() : true;
+        return imp->rebuildsItself() ? FeatureT::producesContentOf(prop) : false;
     }
     const char* getViewProviderNameOverride() const override
     {

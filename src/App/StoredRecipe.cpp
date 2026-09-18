@@ -65,7 +65,6 @@
 #include "Property.h"
 #include "PropertyContainer.h"
 #include "PropertyExpressionEngine.h"
-#include "PropertyGeo.h"
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
 #include "Services.h"
@@ -101,7 +100,7 @@ bool isAuthoredDespiteItsFlags(const std::string& name)
 /// what sits beside it.
 constexpr const char* assetContentFile = "value.xml";
 
-/// Geometry the recipe BUILDS, as opposed to geometry it was handed.
+/// Content the recipe PRODUCES, as opposed to content the document was handed.
 ///
 /// A part's shape is declared `Prop_None` -- it claims to be neither output nor transient -- so
 /// the flags do not keep it out, and asking the writer to inline bulky values put the whole solid
@@ -111,18 +110,27 @@ constexpr const char* assetContentFile = "value.xml";
 /// none of its references restored still produced the right solid -- the file was answering with
 /// the old geometry instead of rebuilding.
 ///
-/// An imported solid, a scanned mesh, a measured point cloud are the opposite case: no property
-/// of the document produces them, so the geometry IS the authored content. Excluding those by
-/// kind dropped them without a word -- an imported part came back empty. The object answers for
-/// itself (`holdsAuthoredGeometry`), because whether geometry is source or output is a fact
-/// about the type that holds it and not about the property's class.
-bool isBuiltGeometry(const Property& prop, const PropertyContainer& owner)
+/// An imported solid, a scanned mesh, a measured point cloud, the bytes of a file a person handed
+/// over are the opposite case: no step of the document produces them, so that content IS the
+/// authored content. Excluding those by kind dropped them without a word -- an imported part came
+/// back empty.
+///
+/// **The object answers, and the property's class is never tested** (Amendment 18 Clause 18.2).
+/// It used to be tested: only a `PropertyGeometry` could be output, so every other kind of bulk
+/// was authored content whatever produced it. Measured: a machine toolpath -- produced by the job
+/// above it, and reproducible from it -- was written into the source store, visible and versioned
+/// and kept for ever, beside the imported bodies a person chose.
+///
+/// Which leaves one question for the property, and it is a different question: whether the value
+/// can be stated in a file meant to be read at all (`holdsOpaqueBulk`). A colour is not placed
+/// anywhere; it is simply written down.
+bool theObjectProducedIt(const Property& prop, const PropertyContainer& owner)
 {
-    if (!prop.isDerivedFrom(PropertyGeometry::getClassTypeId())) {
+    if (!prop.holdsOpaqueBulk()) {
         return false;
     }
     const auto* object = dynamic_cast<const DocumentObject*>(&owner);
-    return object == nullptr || !object->holdsAuthoredGeometry();
+    return object != nullptr && object->producesContentOf(prop);
 }
 
 /// A writer that can be asked whether the property just written wanted a file of its own.
@@ -1627,7 +1635,7 @@ bool App::theRecipeCarries(const Property& prop, const PropertyContainer& owner)
     if (prop.testStatus(Property::PropNoPersist)) {
         return false;
     }
-    return !isBuiltGeometry(prop, owner);
+    return !theObjectProducedIt(prop, owner);
 }
 
 std::vector<Property*> App::rebuiltProperties(const PropertyContainer& owner)
@@ -1647,10 +1655,11 @@ std::vector<Property*> App::rebuiltProperties(const PropertyContainer& owner)
             || (owner.getPropertyType(prop) & Prop_Transient) != 0) {
             continue;
         }
-        // Output, in the two ways an object says it: geometry it builds, and a value it declares
-        // is a result rather than a setting. `Label` says the second and means neither -- it is
-        // the one authored value wearing the output flag, and the recipe keeps it.
-        if (isBuiltGeometry(*prop, owner)
+        // Output, in the two ways an object says it: content it says it produced, and a value
+        // it declares is a result rather than a setting. `Label` says the second and means
+        // neither -- it is the one authored value wearing the output flag, and the recipe keeps
+        // it.
+        if (theObjectProducedIt(*prop, owner)
             || ((owner.getPropertyType(prop) & Prop_Output) != 0
                 && !isAuthoredDespiteItsFlags(name))) {
             rebuilt.push_back(prop);

@@ -1770,12 +1770,16 @@ const App::PropertyComplexGeoData* ShapeFeature::getPropertyOfGeometry() const
     return &Shape;
 }
 
-bool ShapeFeature::holdsAuthoredGeometry() const
+bool ShapeFeature::producesContentOf(const App::Property& prop) const
 {
+    if (&prop != &Shape) {
+        // Whatever else this object carries, the shape-source capability does not speak for it.
+        return false;
+    }
     // Part::Feature is the plain shape holder -- what an import, a copy or a script leaves
-    // behind. Every other type in this family computes its shape from what it was given, so the
-    // answer is the exact type rather than the family.
-    return getTypeId() == Feature::getClassTypeId();
+    // behind, and the one type in this family that produces nothing. Every other type computes
+    // its shape from what it was given, so the answer is the exact type rather than the family.
+    return getTypeId() != Feature::getClassTypeId();
 }
 
 bool ShapeFeature::isElementMappingDisabled(App::PropertyContainer* container)

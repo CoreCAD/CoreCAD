@@ -78,11 +78,8 @@ public:
         return &Points;
     }
     /// A point cloud is measured, never derived from other content in the document, so the
-    /// points themselves are the authored input.
-    bool holdsAuthoredGeometry() const override
-    {
-        return true;
-    }
+    /// points themselves are the authored input -- which is what saying nothing says
+    /// (App::DocumentObject::producesContentOf).
 
 protected:
     void onChanged(const App::Property* prop) override;

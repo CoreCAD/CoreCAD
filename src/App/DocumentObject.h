@@ -818,23 +818,29 @@ public:
     {}
 
     /**
-     * @brief Whether this object's geometry is authored input rather than something it builds.
+     * @brief Whether the content this property carries is content this object PRODUCES.
      *
      * A feature's shape is the OUTPUT of its recipe: the sizes, profiles and references it was
-     * given are the source, and the solid is what they produce. An imported solid is the
-     * opposite -- nothing in the document can produce it, so the geometry IS the authored
-     * content and a file of record that dropped it would describe a part nobody can rebuild.
+     * given are the source, and the solid is what they produce, so it is kept where anything
+     * produced is kept -- hidden, and thrown away without loss. An imported solid, a scanned
+     * mesh, the bytes of a file a person handed over are the opposite: nothing in the document
+     * produces them, so that content IS the authored content, and a record that treated it as
+     * disposable would describe a part nobody can rebuild.
      *
-     * Asked of the OBJECT and never of its class, because for a scripted object the honest
-     * answer is not fixed by its type: the same class parks a handed-in shape when its script
-     * has no execute and computes one when it has. That is also why the question lives here
-     * rather than on the geometric base -- a scripted object is generic over what it derives
-     * from, and half of those types are not geometric at all.
+     * Asked of the OBJECT and never of the property's class (Amendment 18 Clause 18.2), because
+     * two objects carry the same kind of property and mean different things by it -- and for a
+     * scripted object the honest answer is not fixed by its type either: the same class parks a
+     * handed-in shape when its script has no execute and computes one when it has.
      *
-     * The default is false, because the common case is a feature that computes its own geometry.
-     * An object that merely holds geometry it was handed says so by overriding this.
+     * The property is named rather than assumed, because one object holds both kinds at once:
+     * a drawing view carries the image it was given and the rendering it produced from it.
+     *
+     * The default is **false** -- the object did not produce this, so it is authored. That is
+     * the direction that cannot lose a design: an object wrongly said to have produced content
+     * has that content put somewhere disposable, while one wrongly said to hold authored content
+     * only makes the project larger, which is visible and repairable.
      */
-    virtual bool holdsAuthoredGeometry() const;
+    virtual bool producesContentOf(const Property& prop) const;
 
     /**
      * @brief Recompute only this feature.

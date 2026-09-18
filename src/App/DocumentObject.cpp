@@ -297,10 +297,12 @@ bool DocumentObject::mustRecompute() const
     return mustExecute() > 0;
 }
 
-bool DocumentObject::holdsAuthoredGeometry() const
+bool DocumentObject::producesContentOf(const Property& prop) const
 {
-    // An object computes its geometry from its recipe, or holds none at all; only one that was
-    // handed geometry nothing can produce again overrides this.
+    // Nothing, unless the object says so. An object that holds content is far more often handed
+    // it than producing it -- and the one kind that is produced in bulk, a feature's shape, is
+    // declared by the capability that carries it.
+    (void)prop;
     return false;
 }
 

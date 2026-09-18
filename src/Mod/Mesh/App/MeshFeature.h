@@ -86,11 +86,8 @@ public:
         return &Mesh;
     }
     /// A mesh is scanned or imported, never derived from other content in the document, so the
-    /// mesh itself is the authored input. A subclass that COMPUTES a mesh overrides this back.
-    bool holdsAuthoredGeometry() const override
-    {
-        return true;
-    }
+    /// mesh itself is the authored input -- which is what saying nothing says
+    /// (App::DocumentObject::producesContentOf). A subclass that COMPUTES a mesh says so.
 
     /// handles the MeshPy object
     PyObject* getPyObject() override;
