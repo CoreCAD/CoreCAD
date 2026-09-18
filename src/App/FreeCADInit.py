@@ -61,6 +61,7 @@ try:
     import types
     import importlib.resources as resources
     import importlib
+    import importlib.util
     import functools
     import re
     import pkgutil
@@ -1464,6 +1465,38 @@ class InitPipeline:
         # Save to use in FreeCADGuiInit.py
         App.__ModCache__ = module_cache
 
+    def import_mods(self) -> None:
+        """
+        Import every Mod the program installed.
+
+        The program decides what code it runs, and it decides it here. Nothing a document holds
+        may cause a module to load: a file states data, and the type names in it are looked up
+        among what is already registered. That could not be true while a module was loaded on
+        first use, because the only thing that knew a module was wanted was the file that named
+        it -- so opening a document imported whatever module name it stated, and a document
+        decided what ran.
+
+        Each Mod is imported on its own. Loading everything up front puts a module that cannot
+        load in the way of starting the program at all, so one that fails says so and is skipped
+        rather than taking the session with it.
+        """
+        for mod in App.__ModCache__:
+            if mod.state != ModState.Loaded:
+                continue
+            name = mod.name
+            try:
+                if importlib.util.find_spec(name) is None:
+                    # A Mod that is a directory of scripts and resources with no module of its
+                    # own. There is nothing to register and nothing to report.
+                    continue
+            except Exception:
+                continue
+            try:
+                importlib.import_module(name)
+            except Exception as ex:
+                Err(f"Init: Mod {name} could not be loaded, so documents that hold its content "
+                    f"will not be read whole: {ex!s}")
+
     def register_macro_sources(self) -> None:
         """
         Add Macro sources to search paths.
@@ -1535,6 +1568,7 @@ class InitPipeline:
         """
         self.scan()
         self.load_mods()
+        self.import_mods()
         self.register_macro_sources()
         self.post()
         self.report()

@@ -520,7 +520,7 @@ PyObject* DocumentPy::addObject(PyObject* args, PyObject* kwd)
     }
     else {
         Base::Type type =
-            Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), true);
+            Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), false);
         if (type.isBad()) {
             std::stringstream str;
             str << "'" << sType << "' is not a document object type";
@@ -1015,7 +1015,7 @@ PyObject* DocumentPy::findObjects(PyObject* args, PyObject* kwds)
     }
 
     Base::Type type =
-        Base::Type::getTypeIfDerivedFrom(sType, App::DocumentObject::getClassTypeId(), true);
+        Base::Type::getTypeIfDerivedFrom(sType, App::DocumentObject::getClassTypeId(), false);
     if (type.isBad()) {
         std::stringstream str;
         str << "'" << sType << "' is not a document object type";

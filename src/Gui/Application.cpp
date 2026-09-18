@@ -277,7 +277,7 @@ static PyObject* FreeCADGui_subgraphFromObject(PyObject* /*self*/, PyObject* arg
     std::string vp = obj->getViewProviderName();
     SoNode* node = nullptr;
     try {
-        auto base = static_cast<Base::BaseClass*>(Base::Type::createInstanceByName(vp.c_str(), true));
+        auto base = static_cast<Base::BaseClass*>(Base::Type::createInstanceByName(vp.c_str()));
         if (base && base->isDerivedFrom<Gui::ViewProviderDocumentObject>()) {
             std::unique_ptr<Gui::ViewProviderDocumentObject> vp(
                 static_cast<Gui::ViewProviderDocumentObject*>(base)
