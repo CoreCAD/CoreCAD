@@ -135,9 +135,6 @@ void ViewProviderShapeBinder::unsetEdit(int ModNum)
 
 void ViewProviderShapeBinder::attach(App::DocumentObject* obj)
 {
-    if (auto geo = dynamic_cast<App::GeoFeature*>(obj)) {
-        geo->setMaterialAppearance(ShapeAppearance[0]);
-    }
     ViewProviderPart::attach(obj);
 }
 
@@ -251,9 +248,6 @@ void ViewProviderSubShapeBinder::attach(App::DocumentObject* obj)
 {
 
     UseBinderStyle.setValue(boost::istarts_with(obj->getNameInDocument(), "binder"));
-    if (auto geo = dynamic_cast<App::GeoFeature*>(obj)) {
-        geo->setMaterialAppearance(ShapeAppearance[0]);
-    }
     ViewProviderPart::attach(obj);
 }
 

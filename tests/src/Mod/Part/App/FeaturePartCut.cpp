@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include "Mod/Part/App/FeaturePartCut.h"
+#include <Mod/Material/App/ModelUuids.h>
+#include <Mod/Part/App/MaterialExtension.h>
 #include <src/App/InitApplication.h>
 
 #include "PartTestHelpers.h"
@@ -187,3 +189,33 @@ TEST_F(FeaturePartCutTest, testMapping)
 }
 
 // See FeaturePartCommon.cpp for a history test.  It would be exactly the same and redundant here.
+
+// #121: a standalone Part feature stands as a part, so it is made of something, and what it is cut
+// from is what it is made of. The material is the part's own -- it is not read off the shape, and
+// nothing keeps a second copy of it on the objects the cut consumed.
+TEST_F(FeaturePartCutTest, whatItIsCutFromIsWhatItIsMadeOf)
+{
+    Materials::Material steel;
+    steel.setUUID(QStringLiteral("deadbeef-0000-0000-0000-000000000000"));
+    steel.setName(QStringLiteral("Shop Steel"));
+    steel.addPhysical(Materials::ModelUUIDs::ModelUUID_Mechanical_Density);
+    steel.setPhysicalValue(QStringLiteral("Density"), QStringLiteral("7900 kg/m^3"));
+
+    Materials::PropertyMaterial* blockIsMadeOf = Part::materialPropertyOf(_boxes[0]);
+    ASSERT_NE(blockIsMadeOf, nullptr) << "a standalone Part solid cannot say what it is made of";
+    blockIsMadeOf->setValue(steel);
+
+    _cut->Base.setValue(_boxes[0]);
+    _cut->Tool.setValue(_boxes[1]);
+    _cut->execute();
+
+    const Materials::Material* cutIsMadeOf = Part::materialOfPart(_cut);
+    ASSERT_NE(cutIsMadeOf, nullptr) << "the cut result says it is made of nothing";
+    EXPECT_EQ(cutIsMadeOf->getUUID().toStdString(), "deadbeef-0000-0000-0000-000000000000")
+        << "the result of cutting a steel block is not steel";
+
+    // The tool was never made of anything, and the cut does not make it so.
+    const Materials::Material* toolIsMadeOf = Part::materialOfPart(_boxes[1]);
+    ASSERT_NE(toolIsMadeOf, nullptr);
+    EXPECT_NE(toolIsMadeOf->getUUID().toStdString(), "deadbeef-0000-0000-0000-000000000000");
+}

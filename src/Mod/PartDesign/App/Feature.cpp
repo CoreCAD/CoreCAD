@@ -99,8 +99,6 @@ Feature::Feature()
 
 App::DocumentObjectExecReturn* Feature::recompute()
 {
-    setMaterialToBodyMaterial();
-
     if (Suppressed.getValue()) {
         Shape.setValue(getBaseTopoShape(true));
         updateSuppressedShape();
@@ -116,18 +114,6 @@ App::DocumentObjectExecReturn* Feature::recomputePreview()
     updatePreviewShape();
 
     return StdReturn;
-}
-
-void Feature::setMaterialToBodyMaterial()
-{
-    auto body = getFeatureBody();
-    if (body) {
-        // Ensure the part has the same material as the body
-        auto feature = dynamic_cast<Part::ShapeFeature*>(body);
-        if (feature) {
-            copyMaterial(feature);
-        }
-    }
 }
 
 void Feature::updateSuppressedShape()
@@ -223,15 +209,7 @@ void Feature::onChanged(const App::Property* prop)
         // Cruth de-ownership: feature order follows the BaseFeature chain itself, so a
         // BaseFeature change needs no Group reindexing (Group is empty). The former
         // Visibility/BaseFeature reorder branch is retired here.
-        if (prop == &ShapeMaterial) {
-            auto body = Body::findBodyOf(this);
-            if (body) {
-                if (body->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID()) {
-                    body->ShapeMaterial.setValue(ShapeMaterial.getValue());
-                }
-            }
-        }
-        else if (prop == &Suppressed) {
+        if (prop == &Suppressed) {
             // Amendment 4: a derived feature holds no authored placement, so the
             // suppress path no longer saves/restores one — its geometry already
             // lives in the world frame.

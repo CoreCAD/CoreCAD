@@ -40,7 +40,7 @@ namespace Part
  * puts it, so it holds no authored placement and derives from the unplaced
  * ShapeFeature.
  */
-class PartExport Mirroring: public Part::ShapeFeature
+class PartExport Mirroring: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Mirroring);
 

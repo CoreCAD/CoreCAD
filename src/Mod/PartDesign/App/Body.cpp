@@ -1097,7 +1097,7 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
                 const std::set<std::string> prov = parseProvenance(
                     bodies[b]->TipComponentId.getStrValue()
                 );
-                donors.push_back({bodies[b]->ShapeMaterial.getValue(), prov, prov.empty()});
+                donors.push_back({bodies[b]->Material.getValue(), prov, prov.empty()});
             }
         }
 
@@ -1162,7 +1162,7 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
                 }
             }
             if (haveMat && consistent) {
-                body->ShapeMaterial.setValue(mat);
+                body->Material.setValue(mat);
             }
         }
 
@@ -2260,22 +2260,6 @@ void Body::onChanged(const App::Property* prop)
         }
         // (issue #12) The identity-pinning Placement guard is gone: BodyBase now derives from
         // the unplaced Part::ShapeFeature, so a Body has no Placement property to drift or pin.
-        else if (prop == &ShapeMaterial) {
-            // Derived membership (§9.1-inverse): a de-owned Body has no Group container, so
-            // push the Body material onto its features via the derived list.
-            std::vector<App::DocumentObject*> features = getFullModel();
-            if (!features.empty()) {
-                for (auto it : features) {
-                    auto feature = dynamic_cast<Part::ShapeFeature*>(it);
-                    if (feature) {
-                        if (feature->ShapeMaterial.getValue().getUUID()
-                            != ShapeMaterial.getValue().getUUID()) {
-                            feature->ShapeMaterial.setValue(ShapeMaterial.getValue());
-                        }
-                    }
-                }
-            }
-        }
     }
 
     Part::BodyBase::onChanged(prop);

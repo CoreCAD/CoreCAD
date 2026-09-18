@@ -8,6 +8,7 @@ add_executable(PartDesign_tests_run
         Pad.cpp
         PadRecipe.cpp
     StoredRecipeRoundTrip.cpp
+        MaterialBelongsToThePart.cpp
         MoveFeatureToBody.cpp
         AddFeature.cpp
         FindInterferingPairs.cpp

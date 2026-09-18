@@ -68,6 +68,7 @@ const char* MultiCommon::BehaviorEnums[] = {"CommonOfAllShapes", "CommonOfFirstA
 
 MultiCommon::MultiCommon()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Shapes, (nullptr));
     Shapes.setSize(0);
     ADD_PROPERTY_TYPE(
@@ -173,7 +174,7 @@ App::DocumentObjectExecReturn* MultiCommon::execute()
     this->Shape.setValue(res);
     if (Shapes.getSize() > 0) {
         App::DocumentObject* link = Shapes.getValues()[0];
-        copyMaterial(link);
+        Part::inheritMaterial(this, link);
     }
 
     return Part::ShapeFeature::execute();

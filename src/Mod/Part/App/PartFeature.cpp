@@ -96,8 +96,6 @@ PROPERTY_SOURCE(Part::ShapeFeature, App::GeoFeature)
 ShapeFeature::ShapeFeature()
 {
     ADD_PROPERTY(Shape, (TopoDS_Shape()));
-    auto mat = Materials::MaterialManager::defaultMaterial();
-    ADD_PROPERTY(ShapeMaterial, (*mat));
     // Amendment 17 (#79): the whole shape lineage carries the shape-source
     // capability, so Part::hasShape is true for every shape feature. Stateless
     // extension; the getSubObject routing stays dormant unless a subclass opts in
@@ -112,6 +110,9 @@ PROPERTY_SOURCE_WITH_EXTENSIONS(Part::Feature, Part::ShapeFeature)
 Feature::Feature()
 {
     App::PlacementExtension::initExtension(this);
+    // #121: a standalone shape feature stands as a part, so it is the thing that can be
+    // made of something. The features inside a Body compose no material of their own.
+    Part::MaterialExtension::initExtension(this);
 }
 
 Feature::~Feature() = default;
@@ -149,26 +150,6 @@ PyObject* ShapeFeature::getPyObject()
         PythonObject = Py::Object(new PartFeaturePy(this), true);
     }
     return Py::new_reference_to(PythonObject);
-}
-
-void ShapeFeature::copyMaterial(ShapeFeature* feature)
-{
-    auto mat = Materials::MaterialManager::defaultMaterial();
-    if (feature) {
-        if (ShapeMaterial.getValue().getUUID() != feature->ShapeMaterial.getValue().getUUID()) {
-            if (ShapeMaterial.getValue().getUUID() == mat->getUUID()) {
-                ShapeMaterial.setValue(feature->ShapeMaterial.getValue());
-            }
-        }
-    }
-}
-
-void ShapeFeature::copyMaterial(App::DocumentObject* link)
-{
-    auto feature = dynamic_cast<Part::ShapeFeature*>(link);
-    if (feature) {
-        copyMaterial(feature);
-    }
 }
 
 /**
@@ -918,21 +899,6 @@ TopoDS_Shape ShapeFeature::getShape(
 )
 {
     return getTopoShape(obj, options | ShapeOption::NoElementMap, subname, pmat, powner).getShape();
-}
-
-App::Material ShapeFeature::getMaterialAppearance() const
-{
-    return ShapeMaterial.getValue().getMaterialAppearance();
-}
-
-void ShapeFeature::setMaterialAppearance(const App::Material& material)
-{
-    try {
-        ShapeMaterial.setValue(material);
-    }
-    catch (const Base::Exception& e) {
-        e.reportException();
-    }
 }
 
 // Toponaming project March 2024:  This method should be going away when we get to the python layer.
@@ -2022,6 +1988,7 @@ PROPERTY_SOURCE_ABSTRACT(Part::FilletBase, Part::ShapeFeature)
 
 FilletBase::FilletBase()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Base, (nullptr));
     ADD_PROPERTY_TYPE(EdgeLinks, (0), 0, (App::PropertyType)(App::Prop_ReadOnly | App::Prop_Hidden), 0);
 }
@@ -2040,7 +2007,7 @@ App::DocumentObjectExecReturn* FilletBase::execute()
     if (!link) {
         return new App::DocumentObjectExecReturn("No object linked");
     }
-    copyMaterial(link);
+    Part::inheritMaterial(this, link);
     return Part::ShapeFeature::execute();
 }
 

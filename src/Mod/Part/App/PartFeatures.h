@@ -41,7 +41,7 @@ namespace Part
  * it consumes, so it holds no authored placement and derives from the unplaced
  * ShapeFeature.
  */
-class PartExport RuledSurface: public Part::ShapeFeature
+class PartExport RuledSurface: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::RuledSurface);
 
@@ -79,7 +79,7 @@ private:
  * consumes and sits where they sit, so it holds no authored placement and
  * derives from the unplaced ShapeFeature.
  */
-class PartExport Loft: public Part::ShapeFeature
+class PartExport Loft: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Loft);
 
@@ -116,7 +116,7 @@ private:
  * Derived, not an anchor (Amendment 4): it follows the spine it consumes, so it
  * holds no authored placement and derives from the unplaced ShapeFeature.
  */
-class PartExport Sweep: public Part::ShapeFeature
+class PartExport Sweep: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Sweep);
 
@@ -154,7 +154,7 @@ private:
  * sits, so it holds no authored placement and derives from the unplaced
  * ShapeFeature.
  */
-class PartExport Thickness: public Part::ShapeFeature
+class PartExport Thickness: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Thickness);
 
@@ -212,7 +212,7 @@ private:
  * Derived, not an anchor (Amendment 4): refining changes no position, so it
  * holds no authored placement and derives from the unplaced ShapeFeature.
  */
-class Refine: public Part::ShapeFeature
+class Refine: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Refine);
 
@@ -237,7 +237,7 @@ public:
  * Derived, not an anchor (Amendment 4): reversing changes no position, so it
  * holds no authored placement and derives from the unplaced ShapeFeature.
  */
-class Reverse: public Part::ShapeFeature
+class Reverse: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Reverse);
 

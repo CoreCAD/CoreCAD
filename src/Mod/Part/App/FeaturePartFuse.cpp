@@ -71,6 +71,7 @@ PROPERTY_SOURCE(Part::MultiFuse, Part::ShapeFeature)
 
 MultiFuse::MultiFuse()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Shapes, (nullptr));
     Shapes.setSize(0);
     ADD_PROPERTY_TYPE(
@@ -219,7 +220,7 @@ App::DocumentObjectExecReturn* MultiFuse::execute()
             this->History.setValues(history);
 
             App::DocumentObject* link = Shapes.getValues()[0];
-            copyMaterial(link);
+            Part::inheritMaterial(this, link);
             return Part::ShapeFeature::execute();
         }
         catch (Standard_Failure& e) {

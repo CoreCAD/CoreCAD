@@ -27,7 +27,7 @@
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
 #include <App/PlacementExtension.h>
-#include <Mod/Material/App/PropertyMaterial.h>
+#include <Mod/Part/App/MaterialExtension.h>
 #include <Mod/Part/PartGlobal.h>
 #include <Base/Bitmask.h>
 
@@ -93,7 +93,6 @@ public:
     ~ShapeFeature() override;
 
     PropertyPartShape Shape;
-    Materials::PropertyMaterial ShapeMaterial;
 
     /** @name methods override feature */
     //@{
@@ -185,9 +184,6 @@ public:
         int depth
     ) const override;
 
-    App::Material getMaterialAppearance() const override;
-    void setMaterialAppearance(const App::Material& material) override;
-
     /** Convenience function to extract shape from fully qualified subname
      *
      * @param obj: the parent object
@@ -274,9 +270,6 @@ protected:
     void onChanged(const App::Property* prop) override;
     void onDocumentRestored() override;
 
-    void copyMaterial(ShapeFeature* feature);
-    void copyMaterial(App::DocumentObject* link);
-
     void registerElementCache(const std::string& prefix, PropertyPartShape* prop);
 
     /** Helper function to obtain mapped and indexed element name from a shape
@@ -319,7 +312,18 @@ private:
  * member access resolves to the extension's property. This is the placed
  * concrete class used for primitives, imports and generic shape holders.
  */
-class PartExport Feature: public ShapeFeature, public App::PlacementExtension
+/** A shape feature that stands as a part of its own.
+ *
+ * Part::Feature is the placed, standalone member of the shape lineage: a primitive,
+ * a boolean result, an imported solid. It authors a placement (Amendment 4) and it
+ * composes the "is made of something" capability (#121), because what it produces is
+ * a part in its own right until a Body accounts for it (ARCHITECTURE Section 4.6).
+ * A feature inside a Body composes neither: it sits where its base sits, and what it
+ * is made of is what the Body is made of.
+ */
+class PartExport Feature: public ShapeFeature,
+                          public App::PlacementExtension,
+                          public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Feature);
 
@@ -333,7 +337,7 @@ public:
  * Derived, not an anchor (Amendment 4): a fillet sits where its base sits, so
  * it holds no authored placement and derives from the unplaced ShapeFeature.
  */
-class PartExport FilletBase: public Part::ShapeFeature
+class PartExport FilletBase: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::FilletBase);
 

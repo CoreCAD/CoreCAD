@@ -37,6 +37,10 @@
 #include <Gui/ViewProvider.h>
 #include <Gui/WaitCursor.h>
 
+#include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
+
 #include <Mod/Material/App/Exceptions.h>
 #include <Mod/Material/App/MaterialManager.h>
 #include <Mod/Material/App/ModelUuids.h>
@@ -50,6 +54,39 @@ using namespace MatGui;
 using namespace std;
 namespace sp = std::placeholders;
 
+
+namespace
+{
+
+/// The material property of the part a selected object belongs to (#121): its own when the
+/// object stands as a part, otherwise the one on the part built from it -- so choosing a
+/// material with a feature selected reaches the Body that feature builds. The walk is over
+/// dependants because membership is derived, never stored.
+Materials::PropertyMaterial* materialPropertyOfPart(App::DocumentObject* obj)
+{
+    std::set<App::DocumentObject*> seen;
+    std::deque<App::DocumentObject*> queue;
+    if (obj) {
+        seen.insert(obj);
+        queue.push_back(obj);
+    }
+    while (!queue.empty()) {
+        App::DocumentObject* current = queue.front();
+        queue.pop_front();
+        if (auto* prop =
+                dynamic_cast<Materials::PropertyMaterial*>(current->getPropertyByName("Material"))) {
+            return prop;
+        }
+        for (App::DocumentObject* dependant : current->getInList()) {
+            if (dependant && seen.insert(dependant).second) {
+                queue.push_back(dependant);
+            }
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
 
 /* TRANSLATOR Gui::Dialog::DlgMaterialImp */
 
@@ -169,7 +206,7 @@ void DlgMaterialImp::slotChangedObject(const Gui::ViewProvider& obj, const App::
         std::string prop_name = name;
         if (prop.isDerivedFrom<App::PropertyMaterial>()) {
             //auto& value = static_cast<const App::PropertyMaterial&>(prop).getValue();
-            if (prop_name == "ShapeMaterial") {
+            if (prop_name == "Material") {
                 // bool blocked = d->ui.buttonColor->blockSignals(true);
                 // auto color = value.diffuseColor;
                 // d->ui.buttonColor->setColor(QColor((int)(255.0f * color.r),
@@ -197,7 +234,7 @@ void DlgMaterialImp::reject()
 void DlgMaterialImp::setMaterial(const std::vector<App::DocumentObject*>& objects)
 {
     for (auto it : objects) {
-        if (auto prop = dynamic_cast<Materials::PropertyMaterial*>(it->getPropertyByName("ShapeMaterial"))) {
+        if (auto prop = materialPropertyOfPart(it)) {
             try {
                 const auto& material = prop->getValue();
                 d->ui.widgetMaterial->setMaterial(material.getUUID());
@@ -242,8 +279,19 @@ void DlgMaterialImp::onMaterialSelected(const std::shared_ptr<Materials::Materia
 {
     std::vector<App::DocumentObject*> objects = getSelectionObjects();
     for (auto it : objects) {
-        if (auto prop = dynamic_cast<Materials::PropertyMaterial*>(it->getPropertyByName("ShapeMaterial"))) {
+        if (auto prop = materialPropertyOfPart(it)) {
             prop->setValue(*material);
+        }
+
+        // Choosing what a part is made of also says something about how it should look, so the
+        // material's appearance is pushed into the view once, here. It is authored view state
+        // from that moment on -- the person can repaint it, and nothing reads it back out of
+        // the material again (#121).
+        if (auto* view = Gui::Application::Instance->getViewProvider(it)) {
+            if (auto* appearance = dynamic_cast<App::PropertyMaterialList*>(
+                    view->getPropertyByName("ShapeAppearance"))) {
+                appearance->setValue(material->getMaterialAppearance());
+            }
         }
     }
 }

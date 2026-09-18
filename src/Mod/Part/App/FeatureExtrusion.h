@@ -43,7 +43,7 @@ namespace Part
  * and grows from where that profile is, so it holds no authored placement and
  * derives from the unplaced ShapeFeature.
  */
-class PartExport Extrusion: public Part::ShapeFeature
+class PartExport Extrusion: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Extrusion);
 

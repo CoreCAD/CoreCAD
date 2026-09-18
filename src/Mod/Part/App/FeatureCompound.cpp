@@ -38,6 +38,7 @@ PROPERTY_SOURCE(Part::Compound, Part::ShapeFeature)
 
 Compound::Compound()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Links, (nullptr));
     Links.setSize(0);
 }
@@ -72,7 +73,7 @@ App::DocumentObjectExecReturn* Compound::execute()
         this->Shape.setValue(TopoShape().makeElementCompound(shapes));
         if (Links.getSize() > 0) {
             App::DocumentObject* link = Links.getValues()[0];
-            copyMaterial(link);
+            Part::inheritMaterial(this, link);
         }
         return Part::ShapeFeature::execute();
     }

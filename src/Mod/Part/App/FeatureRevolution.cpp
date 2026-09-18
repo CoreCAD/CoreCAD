@@ -44,6 +44,7 @@ PROPERTY_SOURCE(Part::Revolution, Part::ShapeFeature)
 
 Revolution::Revolution()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Source, (nullptr), "Revolve", App::Prop_None, "Shape to revolve");
     ADD_PROPERTY_TYPE(
         Base,

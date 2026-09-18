@@ -217,16 +217,6 @@ DocumentObject* GeoFeature::resolveElement(const DocumentObject* obj,
     return sobj;
 }
 
-App::Material GeoFeature::getMaterialAppearance() const
-{
-    return App::Material(App::Material::DEFAULT);
-}
-
-void GeoFeature::setMaterialAppearance(const App::Material& material)
-{
-    Q_UNUSED(material)
-}
-
 bool GeoFeature::getCameraAlignmentDirection(Base::Vector3d& directionZ, Base::Vector3d& directionX, const char* subname) const
 {
     Q_UNUSED(subname)

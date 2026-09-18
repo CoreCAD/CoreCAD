@@ -3369,10 +3369,7 @@ void ViewProviderSketch::drawEditMarkers(const std::vector<Base::Vector2d>& Edit
 }
 
 void ViewProviderSketch::updateData(const App::Property* prop) {
-    if (std::string(prop->getName()) != "ShapeMaterial") {
-        // We don't want material to override the colors of sketches.
-        ViewProvider2DObject::updateData(prop);
-    }
+    ViewProvider2DObject::updateData(prop);
 
     if (prop == &getSketchObject()->InternalShape) {
         const auto& shape = getSketchObject()->InternalShape.getValue();

@@ -49,7 +49,7 @@ protected:
 };
 
 /// Derived, not an anchor (Amendment 4): unplaced, like Part::Boolean.
-class PartExport MultiFuse: public Part::ShapeFeature
+class PartExport MultiFuse: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::MultiFuse);
 

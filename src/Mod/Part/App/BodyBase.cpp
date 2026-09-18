@@ -37,6 +37,10 @@ PROPERTY_SOURCE(Part::BodyBase, Part::ShapeFeature)
 
 BodyBase::BodyBase()
 {
+    // #121: a Body is what stands as a part, so a Body is what is made of something.
+    // Its features are not: they build the part, they are not parts themselves.
+    Part::MaterialExtension::initExtension(this);
+
     ADD_PROPERTY(Tip, (nullptr));
     Tip.setScope(App::LinkScope::Child);
 

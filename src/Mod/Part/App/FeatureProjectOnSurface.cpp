@@ -54,6 +54,7 @@ static std::array<const char*, 4> modes = {"All", "Faces", "Edges", nullptr};  /
 
 ProjectOnSurface::ProjectOnSurface()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Mode, (0L), "Projection", App::Prop_None, "Projection mode");
     Mode.setEnums(modes.data());
     ADD_PROPERTY_TYPE(Height, (0.0), "Projection", App::Prop_None, "Extrusion height");

@@ -41,6 +41,7 @@ PROPERTY_SOURCE(Part::Scale, Part::ShapeFeature)
 
 Scale::Scale()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Base, (nullptr), "Scale", App::Prop_None, "Shape to scale");
     ADD_PROPERTY_TYPE(Uniform, (true), "Scale", App::Prop_None, "If true, scale equally in all directions");
     ADD_PROPERTY_TYPE(

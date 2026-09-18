@@ -38,7 +38,7 @@ namespace Part
  * world coordinates from the source it consumes, so the face lands wherever
  * those sources are and authors no position of its own.
  */
-class PartExport Face: public Part::ShapeFeature
+class PartExport Face: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Face);
 

@@ -39,7 +39,7 @@ namespace Part
  * face and the projection direction put it, so it holds no authored placement
  * and derives from the unplaced ShapeFeature.
  */
-class PartExport ProjectOnSurface: public Part::ShapeFeature
+class PartExport ProjectOnSurface: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::ProjectOnSurface);
 

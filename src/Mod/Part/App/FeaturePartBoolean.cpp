@@ -77,6 +77,7 @@ PROPERTY_SOURCE_ABSTRACT(Part::Boolean, Part::ShapeFeature)
 
 Boolean::Boolean()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Base, (nullptr));
     ADD_PROPERTY(Tool, (nullptr));
     ADD_PROPERTY_TYPE(
@@ -172,7 +173,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
             res = res.makeElementRefine();
         }
         this->Shape.setValue(res);
-        copyMaterial(base);
+        Part::inheritMaterial(this, base);
         return Part::ShapeFeature::execute();
     }
     catch (const Base::Exception& e) {
