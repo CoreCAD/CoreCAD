@@ -611,10 +611,17 @@ void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
         if (reader.hasAttribute("comment")) {
             info.comment = reader.getAttribute<const char*>("comment");
         }
-        while (nextChildElement(reader, expression)) {
-            expectElement(reader, "ObjectRef");
-            info.refs.push_back({reader.getAttribute<const char*>("path"),
-                                 reader.getAttribute<const char*>("uuid")});
+        // A formula that binds nothing is written self-closing, and a self-closing element
+        // has already ended by the time it is read: its level is the level of the list, not a
+        // level inside it. Asking for children without that test hands back the NEXT formula
+        // as if it were a reference belonging to this one, and the file is refused for stating
+        // something it does not state. The level says whether this formula was opened at all.
+        if (expression > engine) {
+            while (nextChildElement(reader, expression)) {
+                expectElement(reader, "ObjectRef");
+                info.refs.push_back({reader.getAttribute<const char*>("path"),
+                                     reader.getAttribute<const char*>("uuid")});
+            }
         }
     }
 }
