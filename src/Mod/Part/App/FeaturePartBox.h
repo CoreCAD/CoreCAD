@@ -47,7 +47,7 @@ namespace Part
  * of Amendment 17: a stored-backed feature can source its element-mapped shape from
  * the capability with byte-identical results, transform path included.
  */
-class PartExport Box: public Part::Primitive
+class PartExport Box: public Part::Primitive, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Box);
 

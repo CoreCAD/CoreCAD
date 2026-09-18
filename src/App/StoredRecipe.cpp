@@ -59,6 +59,7 @@
 
 #include "Document.h"
 #include "DynamicProperty.h"
+#include "Extension.h"
 #include "ExpressionParser.h"
 #include "DocumentObject.h"
 #include "GeoFeature.h"
@@ -1154,6 +1155,47 @@ PropertyContainer* appearanceOf(const DocumentObject& obj)
 }
 
 /// One object's block: what it is, and what it was authored to be.
+/// Put back a capability the file says the object asked for, and say so when this build cannot.
+///
+/// A capability that cannot be granted is not fatal: the properties it carried are read by the
+/// ordinary path, which keeps a statement it has nowhere to put and refuses the save that would
+/// write less than the file states (Amendment 19). What must not happen is silence.
+void grantCapability(Document& doc,
+                     DocumentObject& obj,
+                     const std::string& asks,
+                     const std::string& name)
+{
+    const Base::Type capability = Base::Type::fromName(asks.c_str());
+    const bool known = !capability.isBad()
+        && capability.isDerivedFrom(App::Extension::getExtensionClassTypeId());
+    if (known && obj.hasExtension(capability, false)) {
+        return;  // the object's own class already composes it
+    }
+
+    App::Extension* granted = nullptr;
+    if (known) {
+        granted = static_cast<App::Extension*>(capability.createInstance());
+        if (granted != nullptr && !granted->isPythonExtension()) {
+            // Only a capability a script can be granted can be granted back to it. Composing a
+            // C++ one here would give the object a capability its class never took.
+            delete granted;
+            granted = nullptr;
+        }
+    }
+    if (granted != nullptr) {
+        granted->initExtension(&obj);
+        return;
+    }
+
+    Base::Console().warning(
+        "Stored recipe: '%s' asks for '%s', which this build cannot grant. What that capability "
+        "carried is kept as written and the document is not whole.\n",
+        name.c_str(),
+        asks.c_str());
+    doc.recordUnkeptStatement("the capability '" + asks + "' that '" + name
+                              + "' asks for, which this build cannot grant");
+}
+
 void writeObject(Base::Writer& writer,
                  const DocumentObject& obj,
                  const std::string& assetDirectory,
@@ -1167,9 +1209,27 @@ void writeObject(Base::Writer& writer,
     const bool keepsAppearance = withAppearance && !kept.empty();
     const bool statesAppearance = appearance != nullptr || keepsAppearance;
 
+    // A capability a script asked for by name: the object's class does not compose it, so nothing
+    // would put it back on the way in, and the properties it carries would arrive with nowhere to
+    // go. Stated the way a type is stated -- the file names what the object holds; it does not
+    // decide what code runs, and a name here is looked up in what this build already has.
+    std::vector<std::string> asked;
+    for (auto it = const_cast<DocumentObject&>(obj).extensionBegin();
+         it != const_cast<DocumentObject&>(obj).extensionEnd();
+         ++it) {
+        if (it->second != nullptr && it->second->isPythonExtension()) {
+            asked.emplace_back(it->second->getExtensionTypeId().getName());
+        }
+    }
+
     writer.Stream() << writer.ind() << "<Object uuid=\"" << obj.Uid.getValueStr() << "\" type=\""
                     << obj.getTypeId().getName() << "\" name=\"" << obj.getNameInDocument()
                     << "\"";
+    if (!asked.empty()) {
+        // Marked on the object for the same reason the appearance is: so a reader knows whether
+        // to expect the block without having to look ahead for it.
+        writer.Stream() << " extensions=\"1\"";
+    }
     if (statesAppearance) {
         // Marked on the object, so a reader knows whether to expect the block without having to
         // look ahead for it.
@@ -1177,6 +1237,15 @@ void writeObject(Base::Writer& writer,
     }
     writer.Stream() << ">\n";
     writer.incInd();
+    if (!asked.empty()) {
+        writer.Stream() << writer.ind() << "<Extensions>\n";
+        writer.incInd();
+        for (const std::string& type : asked) {
+            writer.Stream() << writer.ind() << "<Extension type=\"" << type << "\"/>\n";
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</Extensions>\n";
+    }
     writeProperties(writer, obj, assetDirectory);
     if (appearance != nullptr) {
         writer.Stream() << writer.ind() << "<Display>\n";
@@ -1483,6 +1552,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
         const std::string type = reader.getAttribute<const char*>("type");
         const std::string name = reader.getAttribute<const char*>("name");
         const bool display = reader.getAttribute<long>("display", 0) == 1;
+        const bool asked = reader.getAttribute<long>("extensions", 0) == 1;
 
         // The in-document name is restored, not regenerated: expressions and the document's own
         // reporting speak it, so a rebuilt document that renamed everything would be a different
@@ -1525,6 +1595,20 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
             // the part three times over on the way in, and it builds it before the references it
             // is built on have been bound.
             obj->setStatus(ObjectStatus::Restore, true);
+            if (asked) {
+                // Read before the properties, because a capability the object asked for is what
+                // gives the properties that follow it somewhere to live.
+                reader.readElement("Extensions");
+                const int extensions = reader.level();
+                while (nextChildOf(reader, extensions)) {
+                    if (std::strcmp(reader.localName(), "Extension") != 0) {
+                        refuse("Extension", reader);
+                    }
+                    const std::string asks = reader.getAttribute<const char*>("type");
+                    grantCapability(doc, *obj, asks, name);
+                }
+                reader.readEndElement("Extensions");
+            }
             readProperties(reader, doc, *obj, pending, assetDirectory, [&] {
                 return liftObjectWords(sourceText, uuid);
             });

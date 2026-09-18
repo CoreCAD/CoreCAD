@@ -21,6 +21,7 @@ add_executable(Part_tests_run
         FuzzyBoolean.cpp
         Geometry.cpp
         LegacyBoxWords.cpp
+        MadeOfSomethingIsForSolids.cpp
         NeutralRef.cpp
         PartFeature.cpp
         PartFeatures.cpp

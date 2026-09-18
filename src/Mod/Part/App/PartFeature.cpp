@@ -110,9 +110,6 @@ PROPERTY_SOURCE_WITH_EXTENSIONS(Part::Feature, Part::ShapeFeature)
 Feature::Feature()
 {
     App::PlacementExtension::initExtension(this);
-    // #121: a standalone shape feature stands as a part, so it is the thing that can be
-    // made of something. The features inside a Body compose no material of their own.
-    Part::MaterialExtension::initExtension(this);
 }
 
 Feature::~Feature() = default;

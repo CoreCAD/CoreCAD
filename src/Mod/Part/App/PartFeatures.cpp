@@ -59,7 +59,6 @@ const char* RuledSurface::OrientationEnums[] = {"Automatic", "Forward", "Reverse
 
 RuledSurface::RuledSurface()
 {
-    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Curve1, (nullptr), "Ruled Surface", App::Prop_None, "Curve of ruled surface");
     ADD_PROPERTY_TYPE(Curve2, (nullptr), "Ruled Surface", App::Prop_None, "Curve of ruled surface");
     ADD_PROPERTY_TYPE(

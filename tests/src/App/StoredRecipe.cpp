@@ -11,6 +11,8 @@
 #include <Base/FileInfo.h>
 
 #include <App/Expression.h>
+#include <App/Extension.h>
+#include <App/GroupExtension.h>
 #include <App/ObjectIdentifier.h>
 #include <App/PropertyExpressionEngine.h>
 #include <App/PropertyLinks.h>
@@ -1273,4 +1275,50 @@ TEST_F(StoredRecipeTest, listShapedReferencesComeBackPointingWhereTheyPointed)
     ASSERT_NE(returnedEdges, nullptr);
     EXPECT_EQ(returnedEdges->getValues(), (std::vector<DocumentObject*> {rebuiltFirst}));
     EXPECT_EQ(returnedEdges->getSubValues(rebuiltFirst), (std::vector<std::string> {"Edge3"}));
+}
+
+// A capability a script asked for is part of what the object holds, and the file has to say so.
+//
+// #121: the recipe stated an object's type and its properties and nothing about the capabilities
+// it had been granted at runtime, so an object that asked for one came back without it -- and the
+// properties that capability carried arrived with nowhere to go. Measured on CAM's stock, which
+// asks for the capability that says what it is made of: the stock reopened made of nothing, and
+// the reader said saving the document would lose what the file stated.
+TEST_F(StoredRecipeTest, aCapabilityAnObjectAskedForComesBackWithIt)
+{
+    // Arrange: an object whose class composes no grouping capability, granted one the way a
+    // script grants it.
+    auto* holder = _source->addObject("App::FeaturePython", "Holder");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_FALSE(holder->hasExtension(App::GroupExtension::getExtensionClassTypeId()))
+        << "the test object already had the capability, so it proves nothing";
+
+    auto* asked = static_cast<App::Extension*>(
+        App::GroupExtensionPython::getExtensionClassTypeId().createInstance()
+    );
+    ASSERT_NE(asked, nullptr);
+    asked->initExtension(holder);
+    ASSERT_TRUE(holder->hasExtension(App::GroupExtension::getExtensionClassTypeId()));
+
+    auto* member = _source->addObject("App::FeaturePython", "Member");
+    ASSERT_NE(member, nullptr);
+    static_cast<PropertyLinkList*>(holder->getPropertyByName("Group"))->setValue(member);
+
+    // Act
+    roundTrip();
+
+    // Assert: the capability is back, and so is what it carried.
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    EXPECT_TRUE(rebuilt->hasExtension(App::GroupExtension::getExtensionClassTypeId()))
+        << "the object came back without the capability it asked for";
+    auto* group = dynamic_cast<PropertyLinkList*>(rebuilt->getPropertyByName("Group"));
+    ASSERT_NE(group, nullptr) << "the capability came back without the property it carries";
+    ASSERT_EQ(group->getValues().size(), 1U) << "what the capability carried did not come back";
+    EXPECT_EQ(std::string(group->getValues().front()->getNameInDocument()), std::string("Member"));
+
+    // And the file says it in words a person can read, without a count to go stale (Clause 18.4a).
+    const std::string written = formatStoredRecipe(*_source);
+    EXPECT_NE(written.find("<Extension type=\"App::GroupExtensionPython\"/>"), std::string::npos)
+        << written;
 }

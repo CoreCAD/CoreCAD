@@ -41,7 +41,7 @@ namespace Part
  * it consumes, so it holds no authored placement and derives from the unplaced
  * ShapeFeature.
  */
-class PartExport RuledSurface: public Part::ShapeFeature, public Part::MaterialExtension
+class PartExport RuledSurface: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::RuledSurface);
 

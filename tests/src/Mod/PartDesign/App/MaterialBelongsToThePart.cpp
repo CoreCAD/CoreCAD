@@ -14,7 +14,6 @@
 #include <Mod/Material/App/ModelUuids.h>
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/Part/App/MaterialExtension.h>
-#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 #include <Mod/Sketcher/App/SketchObject.h>
@@ -141,9 +140,12 @@ TEST_F(MaterialBelongsToThePartTest, onlyWhatStandsAsAPartIsMadeOfSomething)
 {
     EXPECT_TRUE(Part::hasMaterial(_body)) << "a Body is what stands as a part, and carries none";
     EXPECT_FALSE(Part::hasMaterial(_pad)) << "a feature inside a Body is still made of something";
+    EXPECT_FALSE(Part::hasMaterial(_sketch)) << "a sketch is still made of something";
 
     EXPECT_EQ(_pad->getPropertyByName("Material"), nullptr)
         << "the feature still holds a material property of its own";
+    EXPECT_EQ(_sketch->getPropertyByName("Material"), nullptr)
+        << "the sketch still holds a material property of its own";
     EXPECT_NE(_body->getPropertyByName("Material"), nullptr)
         << "the Body holds no material property";
 }
@@ -187,17 +189,10 @@ TEST_F(MaterialBelongsToThePartTest, aPartStatesWhatItIsMadeOfOnce)
     EXPECT_NE(words.find("7900 kg/m^3"), std::string::npos)
         << "the part does not carry what it is made of, only a reference to it";
 
-    // The shape of the defect, independent of which material was chosen: a material block per
-    // object that carries a shape. Fewer blocks than shape-carrying objects is what says the
-    // material stopped riding along with the geometry.
-    std::size_t carryingShape = 0;
-    for (App::DocumentObject* obj : _doc->getObjects()) {
-        if (Part::hasShape(obj)) {
-            ++carryingShape;
-        }
-    }
-    EXPECT_LT(countOf(words, "<PropertyMaterial "), carryingShape)
-        << "the document still states one material per object that carries a shape";
+    // One part, one material -- not one per object that happens to carry a shape. Three
+    // objects here carry a shape: the sketch, the Body and the Pad.
+    EXPECT_EQ(countOf(words, "<PropertyMaterial "), 1U)
+        << "the document states a material for something that is not a part";
 }
 
 // The two blocks that kept the copies agreeing are gone, and nothing takes their place: choosing
@@ -213,14 +208,8 @@ TEST_F(MaterialBelongsToThePartTest, choosingAMaterialTouchesNothingElse)
         if (obj == _body) {
             continue;
         }
-        auto* elsewhere = dynamic_cast<Materials::PropertyMaterial*>(
-            obj->getPropertyByName("Material")
-        );
-        if (elsewhere == nullptr) {
-            continue;
-        }
-        EXPECT_NE(elsewhere->getValue().getUUID().toStdString(), steelUUID)
-            << obj->getNameInDocument() << " was handed the part's material as a copy of its own";
+        EXPECT_EQ(obj->getPropertyByName("Material"), nullptr)
+            << obj->getNameInDocument() << " holds a material, and it is not what stands as a part";
     }
 }
 

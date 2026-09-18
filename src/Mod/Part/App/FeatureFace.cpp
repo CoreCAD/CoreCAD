@@ -37,7 +37,6 @@ PROPERTY_SOURCE(Part::Face, Part::ShapeFeature)
 
 Face::Face()
 {
-    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Sources, (nullptr));
     ADD_PROPERTY(FaceMakerClass, ("Part::FaceMakerCheese"));  // default value here is for legacy
                                                               // documents. Default for new objects

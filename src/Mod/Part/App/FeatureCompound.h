@@ -40,7 +40,7 @@ namespace Part
  * coordinates and keeps its own position inside the bundle, so the bundle
  * itself authors no position.
  */
-class PartExport Compound: public Part::ShapeFeature, public Part::MaterialExtension
+class PartExport Compound: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Compound);
 

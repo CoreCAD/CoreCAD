@@ -312,18 +312,16 @@ private:
  * member access resolves to the extension's property. This is the placed
  * concrete class used for primitives, imports and generic shape holders.
  */
-/** A shape feature that stands as a part of its own.
+/** A placed shape feature: geometry that authors a coordinate frame of its own.
  *
- * Part::Feature is the placed, standalone member of the shape lineage: a primitive,
- * a boolean result, an imported solid. It authors a placement (Amendment 4) and it
- * composes the "is made of something" capability (#121), because what it produces is
- * a part in its own right until a Body accounts for it (ARCHITECTURE Section 4.6).
- * A feature inside a Body composes neither: it sits where its base sits, and what it
- * is made of is what the Body is made of.
+ * Part::Feature adds an authored placement (Amendment 4) to the shape lineage and
+ * says nothing else. In particular it does NOT carry the "is made of something"
+ * capability: a sketch is a Part::Feature too, and a sketch is made of nothing. Only
+ * the classes that can produce a solid compose Part::MaterialExtension, one by one,
+ * and a shape that is not one of them answers with the material of the part it
+ * belongs to (#121).
  */
-class PartExport Feature: public ShapeFeature,
-                          public App::PlacementExtension,
-                          public Part::MaterialExtension
+class PartExport Feature: public ShapeFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Feature);
 
