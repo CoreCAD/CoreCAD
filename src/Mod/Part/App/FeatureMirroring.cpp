@@ -51,6 +51,7 @@ PROPERTY_SOURCE(Part::Mirroring, Part::ShapeFeature)
 
 Mirroring::Mirroring()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Source, (nullptr));
     ADD_PROPERTY_TYPE(Base, (Base::Vector3d()), "Plane", App::Prop_None, "The base point of the plane");
     ADD_PROPERTY_TYPE(Normal, (Base::Vector3d(0, 0, 1)), "Plane", App::Prop_None, "The normal of the plane");
@@ -332,7 +333,7 @@ App::DocumentObjectExecReturn* Mirroring::execute()
         auto mirrored = TopoShape(0).makeElementMirror(shape, ax2);
 
         this->Shape.setValue(mirrored);
-        copyMaterial(link);
+        Part::inheritMaterial(this, link);
 
         return Part::ShapeFeature::execute();
     }

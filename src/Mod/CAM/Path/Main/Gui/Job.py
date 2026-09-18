@@ -834,7 +834,7 @@ class TaskPanel:
             if dialog.uuid is not None:
                 material_manager = Materials.MaterialManager()
                 material = material_manager.getMaterial(dialog.uuid)
-                self.obj.Stock.ShapeMaterial = material
+                self.obj.Stock.Material = material
 
     def preCleanup(self):
         Path.Log.track()

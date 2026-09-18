@@ -124,8 +124,6 @@ protected:
     SoSwitch* pcBoundSwitch {nullptr};
     SoBaseColor* pcBoundColor {nullptr};
     SoPickStyle* pickStyle {nullptr};
-
-    App::Material materialAppearance;
 };
 
 }  // namespace Gui

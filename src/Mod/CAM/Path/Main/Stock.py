@@ -96,15 +96,6 @@ class Stock(object):
         if hasattr(obj, "StockType"):
             obj.setEditorMode("StockType", 2)  # hide
 
-        if hasattr(obj, "Material"):
-            obj.removeProperty("Material")
-            FreeCAD.Console.PrintWarning(
-                translate(
-                    "PathStock",
-                    "Stock Material property is deprecated. Removing the Material property. Please use native material system to assign a ShapeMaterial",
-                )
-            )
-
 
 class StockFromBase(Stock):
     MinExtent = 1

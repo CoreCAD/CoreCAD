@@ -108,6 +108,7 @@ void restoreFaceMakerMode(Extrusion* self)
 
 Extrusion::Extrusion()
 {
+    Part::MaterialExtension::initExtension(this);
     // clang-format off
     ADD_PROPERTY_TYPE(Base, (nullptr), "Extrude", App::Prop_None,
                       "Shape to extrude");

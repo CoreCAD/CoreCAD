@@ -59,6 +59,7 @@ const char* RuledSurface::OrientationEnums[] = {"Automatic", "Forward", "Reverse
 
 RuledSurface::RuledSurface()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Curve1, (nullptr), "Ruled Surface", App::Prop_None, "Curve of ruled surface");
     ADD_PROPERTY_TYPE(Curve2, (nullptr), "Ruled Surface", App::Prop_None, "Curve of ruled surface");
     ADD_PROPERTY_TYPE(
@@ -180,6 +181,7 @@ PROPERTY_SOURCE(Part::Loft, Part::ShapeFeature)
 
 Loft::Loft()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Sections, (nullptr), "Loft", App::Prop_None, "List of sections");
     Sections.setSize(0);
     ADD_PROPERTY_TYPE(Solid, (true), "Loft", App::Prop_None, "Create solid");
@@ -261,6 +263,7 @@ PROPERTY_SOURCE(Part::Sweep, Part::ShapeFeature)
 
 Sweep::Sweep()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Sections, (nullptr), "Sweep", App::Prop_None, "List of sections");
     Sections.setSize(0);
     ADD_PROPERTY_TYPE(Spine, (nullptr), "Sweep", App::Prop_None, "Path to sweep along");
@@ -368,6 +371,7 @@ PROPERTY_SOURCE(Part::Thickness, Part::ShapeFeature)
 
 Thickness::Thickness()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Faces, (nullptr), "Thickness", App::Prop_None, "Faces to be removed");
     ADD_PROPERTY_TYPE(Value, (1.0), "Thickness", App::Prop_None, "Thickness value");
     ADD_PROPERTY_TYPE(Mode, (long(0)), "Thickness", App::Prop_None, "Mode");
@@ -544,6 +548,7 @@ PROPERTY_SOURCE(Part::Refine, Part::ShapeFeature)
 
 Refine::Refine()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Source, (nullptr), "Refine", App::Prop_None, "Source shape");
 }
 
@@ -570,6 +575,7 @@ PROPERTY_SOURCE(Part::Reverse, Part::ShapeFeature)
 
 Reverse::Reverse()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Source, (nullptr), "Reverse", App::Prop_None, "Source shape");
 }
 

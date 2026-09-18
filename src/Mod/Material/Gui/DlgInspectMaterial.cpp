@@ -194,7 +194,7 @@ void DlgInspectMaterial::update(std::vector<Gui::ViewProvider*>& views)
 
             if (labelProp && QString::fromUtf8(labelProp->getValue()).size() > 0) {
                 auto* prop = dynamic_cast<Materials::PropertyMaterial*>(
-                    obj->getPropertyByName("ShapeMaterial"));
+                    obj->getPropertyByName("Material"));
                 if (prop) {
                     updateMaterialTree(prop->getValue());
                 }

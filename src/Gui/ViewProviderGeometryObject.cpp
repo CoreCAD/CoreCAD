@@ -188,25 +188,6 @@ void ViewProviderGeometryObject::updateData(const App::Property* prop)
             }
         }
     }
-    else if (std::string(prop->getName()) == "ShapeMaterial") {
-        // Set the appearance from the material
-        if (auto geometry = getObject<App::GeoFeature>()) {
-            /*
-             * Change the appearance only if the appearance hasn't been set explicitly. A cached
-             * material appearance is used to see if the current appearance matches the last
-             * material. It is also compared against an empty material to see if the saved
-             * material value has been initialized.
-             */
-            App::Material defaultMaterial;
-            auto material = geometry->getMaterialAppearance();
-            if ((ShapeAppearance.getSize() == 1)
-                && (ShapeAppearance[0] == defaultMaterial || ShapeAppearance[0] == materialAppearance)
-                && (material != defaultMaterial)) {
-                ShapeAppearance.setValue(material);
-            }
-            materialAppearance = material;
-        }
-    }
 
     ViewProviderDragger::updateData(prop);
 }

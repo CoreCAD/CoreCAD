@@ -41,7 +41,7 @@ namespace Part
  * and turns about an axis it is given, so it holds no authored placement and
  * derives from the unplaced ShapeFeature.
  */
-class PartExport Revolution: public Part::ShapeFeature
+class PartExport Revolution: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Revolution);
 

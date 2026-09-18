@@ -246,6 +246,8 @@ SET(Features_SRCS
     AttachExtension.cpp
     PreviewExtension.cpp
     PreviewExtension.h
+    MaterialExtension.cpp
+    MaterialExtension.h
     PrismExtension.cpp
     PrismExtension.h
     ShapeExtension.cpp

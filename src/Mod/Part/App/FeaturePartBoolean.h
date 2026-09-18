@@ -42,7 +42,7 @@ namespace Part
  * consequence of the operands it consumes, so it holds no authored placement of
  * its own — hence the unplaced Part::ShapeFeature base rather than Part::Feature.
  */
-class PartExport Boolean: public Part::ShapeFeature
+class PartExport Boolean: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Boolean);
 

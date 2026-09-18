@@ -39,7 +39,7 @@ namespace Part
  * Derived, not an anchor (Amendment 4): an offset sits where its source sits,
  * so it holds no authored placement and derives from the unplaced ShapeFeature.
  */
-class PartExport Offset: public Part::ShapeFeature
+class PartExport Offset: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Offset);
 

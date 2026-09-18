@@ -40,6 +40,7 @@ PROPERTY_SOURCE(Part::Offset, Part::ShapeFeature)
 
 Offset::Offset()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Source, (nullptr), "Offset", App::Prop_None, "Source shape");
     ADD_PROPERTY_TYPE(Value, (1.0), "Offset", App::Prop_None, "Offset value");
     ADD_PROPERTY_TYPE(Mode, (long(0)), "Offset", App::Prop_None, "Mode");

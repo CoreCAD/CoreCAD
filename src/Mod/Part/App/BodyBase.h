@@ -50,7 +50,7 @@ namespace Part
 // Part::Feature, which would mix in App::PlacementExtension (Amendment 4). A Body therefore
 // carries no Placement slot of its own: its features derive their frame from their own
 // attachments, never from Body containment, so there is nothing to pin to identity.
-class PartExport BodyBase: public Part::ShapeFeature
+class PartExport BodyBase: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER(Part::BodyBase);
 

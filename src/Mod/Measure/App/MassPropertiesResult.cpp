@@ -25,6 +25,7 @@
 #include <App/DocumentObject.h>
 #include <App/Datums.h>
 
+#include <Mod/Part/App/MaterialExtension.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/Tools.h>
 #include <Base/BaseClass.h>
@@ -97,12 +98,15 @@ MassPropertiesData CalculateMassProperties(
         }
 
 
-        auto materialFeature = [](App::DocumentObject* candidate) -> Part::ShapeFeature* {
+        // What the thing weighs is a question about the part, so it is asked of whatever
+        // stands as one (#121): the object itself when it does, otherwise the Body built
+        // from it. A link is followed to what it points at first.
+        auto materialSource = [](App::DocumentObject* candidate) -> const Materials::Material* {
             std::unordered_set<App::DocumentObject*> visited;
 
             while (candidate && visited.insert(candidate).second) {
-                if (auto* feature = freecad_cast<Part::ShapeFeature*>(candidate)) {
-                    return feature;
+                if (const Materials::Material* found = Part::materialOfPart(candidate)) {
+                    return found;
                 }
 
                 App::DocumentObject* linked = candidate->getLinkedObject(true);
@@ -115,16 +119,14 @@ MassPropertiesData CalculateMassProperties(
             return nullptr;
         };
 
-        Part::ShapeFeature* part = materialFeature(obj);
-
         Materials::Material mat;
         // Fallback density the units 1e-6 kg/mm^3 (1000 kg/m^3)
         double density = 1.0e-6;
 
         const QString densityMaterialProperty = QStringLiteral("Density");
 
-        if (part) {
-            mat = part->ShapeMaterial.getValue();
+        if (const Materials::Material* found = materialSource(obj)) {
+            mat = *found;
         }
         if (mat.hasPhysicalProperty(densityMaterialProperty)) {
             try {

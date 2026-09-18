@@ -42,7 +42,7 @@ namespace Part
  * scales, so it holds no authored placement and derives from the unplaced
  * ShapeFeature.
  */
-class PartExport Scale: public Part::ShapeFeature
+class PartExport Scale: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Scale);
 

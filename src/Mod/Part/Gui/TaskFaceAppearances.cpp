@@ -460,7 +460,7 @@ int FaceAppearances::getFirstIndex() const
 }
 
 /**
- * Opens a dialog that allows one to modify the 'ShapeMaterial' property of all selected view
+ * Opens a dialog that allows one to modify the 'ShapeAppearance' property of all selected view
  * providers.
  */
 void FaceAppearances::onButtonCustomAppearanceClicked()
