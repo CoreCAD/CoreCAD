@@ -14,6 +14,7 @@ add_executable(App_tests_run
         CopyObject.cpp
         Document.cpp
         DocumentByteStability.cpp
+        ContentPlacedByWhatProducedIt.cpp
         DocumentsDoNotNameCode.cpp
         DocumentObject.cpp
         DocumentObserver.cpp

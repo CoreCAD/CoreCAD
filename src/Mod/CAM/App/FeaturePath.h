@@ -57,6 +57,19 @@ public:
 
     PropertyPath Path;
 
+    /// The toolpath is the OUTPUT of the operation that generated it: the stock, the tool and
+    /// the parameters are the source, and the cutting moves are what they produce. It used to be
+    /// kept as though a person had authored it, because the rule looked at the property's class
+    /// and only a geometric one could be output (Amendment 18 Clause 18.2).
+    ///
+    /// Path::Feature itself is the plain holder -- its execute does nothing, so a toolpath parked
+    /// on one is a toolpath nothing will produce again, exactly as Part::Feature is for shapes.
+    /// The operations CAM really builds are scripted subclasses, and a script that rebuilds says
+    /// so through FeaturePythonT.
+    bool producesContentOf(const App::Property& prop) const override
+    {
+        return &prop == &Path && getTypeId() != Feature::getClassTypeId();
+    }
 
 protected:
     /// get called by the container when a property has changed

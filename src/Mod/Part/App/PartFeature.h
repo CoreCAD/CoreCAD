@@ -104,11 +104,13 @@ public:
     const char* getViewProviderName() const override;
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
 
-    /// A plain feature is the shape it was handed -- an import, a copy, a shape built in a
-    /// script -- and nothing in the document can produce it again, so the shape is authored
-    /// content and not output. Every subclass here BUILDS its shape from the values and
-    /// references it was given, which is why the answer is the exact type and not the family.
-    bool holdsAuthoredGeometry() const override;
+    /// The shape-source capability answering for the shape it carries: every subclass here
+    /// BUILDS its shape from the values and references it was given, while a plain feature is
+    /// the shape it was handed -- an import, a copy, a shape built in a script -- which nothing
+    /// in the document can produce again. That is why the answer is the exact type and not the
+    /// family, and why it is asked of the object rather than of the property (Amendment 18
+    /// Clause 18.2).
+    bool producesContentOf(const App::Property& prop) const override;
 
     /// Cruth §4.6: does this feature's output stand as a part of its own -- a Body?
     ///
