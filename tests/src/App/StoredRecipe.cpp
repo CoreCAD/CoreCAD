@@ -15,6 +15,7 @@
 #include <App/GroupExtension.h>
 #include <App/ObjectIdentifier.h>
 #include <App/PropertyExpressionEngine.h>
+#include <App/PropertyFile.h>
 #include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
@@ -25,6 +26,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <sstream>
 #include <string>
@@ -240,6 +243,51 @@ TEST_F(StoredRecipeTest, aValueTheObjectDoesNotKeepIsStillNotKept)
     ASSERT_NE(returned, nullptr);
     EXPECT_EQ(std::string(static_cast<PropertyString*>(returned)->getValue()), std::string())
         << "a value that is not carried came back anyway";
+}
+
+// A file a person handed in is called something, and what it is called is part of what they
+// handed in. The store names its entries by what they hold, so it renames the files inside them --
+// right for a shape, whose side file is named after the object that computed it, and wrong for a
+// file a person chose and named. Measured before this: a part given "Test.txt" came back holding
+// "1.txt", with the right bytes under the wrong name.
+TEST_F(StoredRecipeTest, aFileAPersonHandedInComesBackUnderItsOwnName)
+{
+    // Arrange
+    namespace fs = std::filesystem;
+    const fs::path folder = fs::path(Base::FileInfo::getTempFileName()) / "handed";
+    fs::create_directories(folder);
+    const fs::path handedIn = folder / "whatever-it-was-called-on-disk.txt";
+    std::ofstream(handedIn) << "the bytes a person handed in";
+
+    auto* obj = _source->addObject("App::DocumentObjectFileIncluded", "Handed");
+    ASSERT_NE(obj, nullptr);
+    auto* held = static_cast<PropertyFileIncluded*>(obj->getPropertyByName("File"));
+    ASSERT_NE(held, nullptr);
+    held->setValue(handedIn.string().c_str(), "Test.txt");
+    ASSERT_EQ(fs::path(held->getValue()).filename().string(), std::string("Test.txt"));
+
+    // Act
+    const fs::path assets = folder / "assets";
+    fs::create_directories(assets);
+    std::istringstream text(formatStoredRecipe(*_source, assets.string()));
+    restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets.string());
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Handed");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* returned = static_cast<PropertyFileIncluded*>(rebuilt->getPropertyByName("File"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_NE(std::string(returned->getValue()), std::string()) << "the file did not come back";
+    EXPECT_EQ(fs::path(returned->getValue()).filename().string(), std::string("Test.txt"))
+        << "the file came back under a name nobody chose";
+
+    std::ifstream back(returned->getValue());
+    const std::string bytes {std::istreambuf_iterator<char>(back), std::istreambuf_iterator<char>()};
+    EXPECT_EQ(bytes, std::string("the bytes a person handed in"))
+        << "the name came back and the bytes did not";
+
+    std::error_code ignored;
+    fs::remove_all(folder.parent_path(), ignored);
 }
 
 // The document's own authored facts are part of the recipe. The readable view walks objects only,

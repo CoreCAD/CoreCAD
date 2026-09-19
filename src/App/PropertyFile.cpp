@@ -385,8 +385,14 @@ void PropertyFileIncluded::Save(Base::Writer& writer) const
             Base::FileInfo file(_cValue.c_str());
             std::string filename = writer.addFile(file.fileName().c_str(), this);
             filename = encodeAttribute(filename);
-            writer.Stream() << writer.ind() << "<FileIncluded file=\"" << filename << "\"/>"
-                            << std::endl;
+            // Two names, because they answer two questions. `file` is where the bytes sit in
+            // whatever this writer is filling, which that writer names as it likes -- a store
+            // that names its entries by what they hold gives the same bytes the same name
+            // whoever handed them in. `name` is what the file is CALLED, which a person chose
+            // and no one else may rename: a part that came back holding "1.txt" where a person
+            // put "Test.txt" has lost something they authored.
+            writer.Stream() << writer.ind() << "<FileIncluded file=\"" << filename << "\" name=\""
+                            << encodeAttribute(file.fileName()) << "\"/>" << std::endl;
         }
         else {
             writer.Stream() << writer.ind() << "<FileIncluded file=\"\"/>" << std::endl;
@@ -399,13 +405,16 @@ void PropertyFileIncluded::Restore(Base::XMLReader& reader)
     reader.readElement("FileIncluded");
     if (reader.hasAttribute("file")) {
         string file(reader.getAttribute<const char*>("file"));
+        // What the file is called, which is the name it comes back under. Where the bytes are
+        // asked for and what they are called are separate, and only the second was authored.
+        string chosen(reader.getAttribute<const char*>("name", file.c_str()));
         if (!file.empty()) {
             // initiate a file read
             reader.addFile(file.c_str(), this);
             // is in the document transient path
             aboutToSetValue();
-            _cValue = getDocTransientPath() + "/" + file;
-            _BaseFileName = file;
+            _cValue = getDocTransientPath() + "/" + chosen;
+            _BaseFileName = chosen;
             hasSetValue();
         }
     }
