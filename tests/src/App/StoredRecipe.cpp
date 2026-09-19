@@ -160,6 +160,88 @@ TEST_F(StoredRecipeTest, aPropertyAddedAtRuntimeIsDeclaredAndReturns)
     EXPECT_EQ(std::string(rebuilt->getPropertyGroup("Supplier")), std::string("Sourcing"));
 }
 
+// Declaring a property and giving it a value are two acts, and a property's flags answer only the
+// second. A property built into a class is declared by the class, so leaving its value out of the
+// file loses a value; a property a person added exists only because the file says so, and leaving
+// it out loses the property. Measured before this: the two whose values are not authored source --
+// the one that is not saved, and the one the object computes -- came back missing entirely, with
+// nothing said.
+//
+// Prop_NoPersist is the one that means what it says: not in the file at all, declaration included.
+TEST_F(StoredRecipeTest, aPropertyAddedAtRuntimeIsDeclaredEvenWhereItsValueIsNot)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+
+    struct Declared
+    {
+        const char* name;
+        short flags;
+        bool expected;  ///< whether the file is meant to bring the property back
+    };
+    const std::vector<Declared> declared {
+        {"Plain", App::Prop_None, true},
+        {"NotSaved", App::Prop_Transient, true},
+        {"Computed", App::Prop_Output, true},
+        {"Hidden", App::Prop_Hidden, true},
+        {"NotInTheFile", App::Prop_NoPersist, false},
+    };
+    for (const Declared& one : declared) {
+        ASSERT_NE(
+            box->addDynamicProperty("App::PropertyString", one.name, "Sourcing", "", one.flags),
+            nullptr
+        ) << one.name
+          << " was not declared on the source object";
+    }
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    for (const Declared& one : declared) {
+        auto* returned = rebuilt->getPropertyByName(one.name);
+        if (!one.expected) {
+            EXPECT_EQ(returned, nullptr)
+                << one.name << " says it is not to be in the file, and it came back";
+            continue;
+        }
+        ASSERT_NE(returned, nullptr) << one.name << " did not come back at all";
+        EXPECT_EQ(rebuilt->getPropertyType(returned), one.flags)
+            << one.name << " came back declared differently from how it was written";
+    }
+}
+
+// The other direction: the declaration coming back must not drag the value with it. A value the
+// object says is not saved is not saved, and the property comes back as the object makes it.
+TEST_F(StoredRecipeTest, aValueTheObjectDoesNotKeepIsStillNotKept)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* passing = static_cast<PropertyString*>(
+        box->addDynamicProperty("App::PropertyString", "NotSaved", "Sourcing", "", App::Prop_Transient)
+    );
+    ASSERT_NE(passing, nullptr);
+    passing->setValue("this session only");
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+    roundTrip();
+
+    // Assert
+    EXPECT_EQ(written.find("this session only"), std::string::npos)
+        << "the file carries a value the object says it does not keep";
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* returned = rebuilt->getPropertyByName("NotSaved");
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(std::string(static_cast<PropertyString*>(returned)->getValue()), std::string())
+        << "a value that is not carried came back anyway";
+}
+
 // The document's own authored facts are part of the recipe. The readable view walks objects only,
 // so a document's comment, its author and its identity had nowhere to go at all.
 //
