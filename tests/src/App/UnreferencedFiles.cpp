@@ -69,13 +69,22 @@ protected:
     }
 
     /// A document in the project folder holding one handed-in file, saved.
-    std::string aPartIncluding(const std::string& name, const std::string& contents)
+    ///
+    /// `sourceName` is the file itself -- what it is called, which is part of what was handed in.
+    /// Two parts including the SAME file name the same material; two parts including two files
+    /// that happen to hold the same bytes do not, and the store keeps both.
+    std::string aPartIncluding(
+        const std::string& name,
+        const std::string& contents,
+        const std::string& sourceName = {}
+    )
     {
         auto& app = App::GetApplication();
         App::Document* doc = app.newDocument(app.getUniqueDocumentName(name.c_str()).c_str());
         _open.push_back(doc->getName());
 
-        const fs::path handedIn = _folder.parent_path() / (name + "-source.txt");
+        const fs::path handedIn = _folder.parent_path()
+            / (sourceName.empty() ? name + "-source.txt" : sourceName);
         writeFile(handedIn, contents);
 
         auto* holder = doc->addObject<App::DocumentObjectFileIncluded>("Included");
@@ -169,8 +178,11 @@ TEST_F(UnreferencedFilesTest, replacingAnImportLeavesTheOldBodyNamedByNothing)
 // never opened. One imported body shared by two parts is stored once, on purpose.
 TEST_F(UnreferencedFilesTest, aFileNamedByASiblingRecipeIsNotUnreferenced)
 {
-    aPartIncluding("one", "a body two parts share");
-    aPartIncluding("two", "a body two parts share");
+    // The same file, included by both -- which is what sharing a body IS. Two separate files
+    // holding equal bytes are two pieces of material, because what a file is called travels with
+    // it, and the store keeps each.
+    aPartIncluding("one", "a body two parts share", "shared-body.txt");
+    aPartIncluding("two", "a body two parts share", "shared-body.txt");
     ASSERT_EQ(whatIsStored().size(), 1U) << "the same body was stored twice";
 
     // One of the two stops naming it. The other still does.
@@ -185,6 +197,33 @@ TEST_F(UnreferencedFilesTest, aFileNamedByASiblingRecipeIsNotUnreferenced)
     EXPECT_EQ(found.recipesRead.size(), 2U) << "the survey did not read both recipes";
     EXPECT_TRUE(found.unreferenced.empty())
         << "a body another part still names was reported as collectable";
+}
+
+// The other side of the same rule: equal bytes under two names are two pieces of material.
+//
+// The store names an entry by what it holds, and what a file is CALLED is part of what was handed
+// in -- so it is held too. Before this, the name was dropped on the way in and both parts came
+// back pointing at a file named after nothing, which read as one shared body and was two files
+// with one name lost.
+TEST_F(UnreferencedFilesTest, twoFilesWithEqualBytesAndDifferentNamesAreBothKept)
+{
+    aPartIncluding("one", "the very same bytes", "bracket.txt");
+    aPartIncluding("two", "the very same bytes", "plate.txt");
+
+    EXPECT_EQ(whatIsStored().size(), 2U) << "one of the two files was dropped for the other";
+
+    const std::set<std::string> byTheFirst = App::sourceMaterialNamedBy(
+        (_folder / "one.cpart").string()
+    );
+    const std::set<std::string> bySecond = App::sourceMaterialNamedBy((_folder / "two.cpart").string());
+    ASSERT_EQ(byTheFirst.size(), 1U) << "the first part does not name what it was saved with";
+    ASSERT_EQ(bySecond.size(), 1U) << "the second part does not name what it was saved with";
+    EXPECT_NE(*byTheFirst.begin(), *bySecond.begin())
+        << "both parts were pointed at one entry, so one of the two names is gone";
+
+    // And neither is collectable: each is named by the part it belongs to.
+    const App::ProjectSurvey found = App::surveyProjectSourceMaterial(_folder.string());
+    EXPECT_TRUE(found.unreferenced.empty()) << "material a part still names was reported as spare";
 }
 
 // A recipe that cannot be read stops the survey, rather than having its references counted as

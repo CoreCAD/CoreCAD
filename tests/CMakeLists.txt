@@ -203,3 +203,76 @@ foreach (exe ${TestExecutables})
         gtest_discover_tests(${exe})
     endif()
 endforeach()
+
+# -------------------------------------------------------------------------------------------
+# The Python test suites
+# -------------------------------------------------------------------------------------------
+#
+# These are the modules under src/Mod that register themselves in FreeCAD.__unit_test__ and run
+# through `FreeCADCmd -t <name>`. Until now nothing here ran them: ctest knew only about the C++
+# tests, so a Python suite could fail for weeks without anything saying so -- which is how a
+# document that saved and would not reopen sat unnoticed.
+#
+# One ctest entry per suite, never one for all of them, because `-t 0` stops at the first suite
+# that aborts and takes the rest of the run with it: a single entry would report one failure and
+# hide however many suites came after it.
+#
+# PYTHON_TEST_SUITES is the list ctest runs. It is written by hand and compared with the list the
+# program actually registers by the PythonSuites entry below, so the two cannot drift apart
+# quietly.
+set(PYTHON_TEST_SUITES
+    BaseTests
+    Document
+    Metadata
+    MeshTestsApp
+    StringHasher
+    TestAssemblyWorkbench
+    TestCAMApp
+    TestCoinNodeSnapshots
+    TestDraft
+    TestImport
+    TestMaterialsApp
+    TestPartApp
+    TestPartDesignApp
+    TestPythonSyntax
+    TestSketcherApp
+    TestSpreadsheet
+    TestSurfaceApp
+    TestTechDrawApp
+    UnicodeTests
+    UnitTests
+)
+
+# Suites that do not pass today. They are registered here rather than left out, so that every run
+# of ctest lists them as not run instead of saying nothing at all, and so the day one of them is
+# fixed it is one line that leaves this list. Every failure is written down in issue #122, test by
+# test; none of them is a gap in the stored form.
+set(PYTHON_TEST_SUITES_FAILING
+    TestCAMApp
+    TestDraft
+    TestPartApp
+    TestPythonSyntax
+    TestSpreadsheet
+    TestTechDrawApp
+)
+
+foreach(_suite ${PYTHON_TEST_SUITES})
+    add_test(NAME Python_${_suite} COMMAND $<TARGET_FILE:FreeCADMainCmd> -t ${_suite})
+    if(WIN32)
+        set_tests_properties(Python_${_suite} PROPERTIES
+            ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+    endif()
+    if(${_suite} IN_LIST PYTHON_TEST_SUITES_FAILING)
+        set_tests_properties(Python_${_suite} PROPERTIES DISABLED TRUE)
+    endif()
+endforeach()
+
+string(REPLACE ";" "\;" _python_suites_for_env "${PYTHON_TEST_SUITES}")
+add_test(NAME Python_SuiteRegistry
+         COMMAND $<TARGET_FILE:FreeCADMainCmd> ${CMAKE_CURRENT_SOURCE_DIR}/PythonSuites.py)
+set_tests_properties(Python_SuiteRegistry PROPERTIES
+    ENVIRONMENT "CRUTH_PYTHON_TEST_SUITES=${_python_suites_for_env}")
+if(WIN32)
+    set_tests_properties(Python_SuiteRegistry PROPERTIES
+        ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+endif()

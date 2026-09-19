@@ -97,6 +97,25 @@ bool isAuthoredDespiteItsFlags(const std::string& name)
     return name == "Label";
 }
 
+/// A property a person added at runtime, whose VALUE this form does not carry.
+///
+/// Declaring a property and giving it a value are two acts, and the flags answer only the second.
+/// A property built into a class is declared by the class, so dropping it from the file loses a
+/// value and nothing else; a property a person added exists only because the file says it does,
+/// and dropping it loses the property itself -- it does not come back at all, and neither does
+/// anything that named it. Measured before this: a part declaring one property per flag came
+/// back missing the two whose values are not authored source, with no complaint.
+///
+/// `Prop_NoPersist` is not among them, and means what it says: that property is not to be in the
+/// file at all, declaration included.
+bool onlyItsDeclarationIsCarried(const Property& prop, const PropertyContainer& owner)
+{
+    if (!prop.testStatus(Property::PropDynamic) || prop.testStatus(Property::PropNoPersist)) {
+        return false;
+    }
+    return (owner.getPropertyType(&prop) & Prop_NoPersist) == 0;
+}
+
 /// The one file inside a source-store entry that is not bulk: the property's own element, naming
 /// what sits beside it.
 constexpr const char* assetContentFile = "value.xml";
@@ -198,6 +217,7 @@ struct StoredProperty
     bool readOnly {false};
     bool hidden {false};
     bool isReference {false};
+    bool valueStated {true};  ///< false when the file carries the declaration and no value
     std::string verbatim;  ///< the file's own words for a property this build has no place for
     std::vector<Binding> bindings;
     std::string asset;  ///< the id of the file holding this value, empty when written inline
@@ -462,7 +482,10 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
 
     std::vector<StoredProperty> stored;
     for (const auto& [name, prop] : properties) {
-        if (prop == nullptr || !App::theRecipeCarries(*prop, owner)) {
+        const bool carried = prop != nullptr && App::theRecipeCarries(*prop, owner);
+        const bool declaredOnly =
+            prop != nullptr && !carried && onlyItsDeclarationIsCarried(*prop, owner);
+        if (prop == nullptr || (!carried && !declaredOnly)) {
             continue;
         }
 
@@ -483,6 +506,14 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
             entry.attributes = data.attr;
             entry.readOnly = data.readonly;
             entry.hidden = data.hidden;
+        }
+
+        if (declaredOnly) {
+            // Stated as a property that exists and no more. The value is whatever the object
+            // makes of it on the next recompute, which is exactly what its flags say.
+            entry.valueStated = false;
+            stored.push_back(entry);
+            continue;
         }
 
         if (isReference(*prop)) {
@@ -686,6 +717,12 @@ void writeProperties(Base::Writer& writer,
                             << entry->documentation << "\" attributes=\"" << entry->attributes
                             << "\" readonly=\"" << (entry->readOnly ? 1 : 0) << "\" hidden=\""
                             << (entry->hidden ? 1 : 0) << "\"";
+        }
+        if (!entry->valueStated) {
+            // Closed where it stands: the file states that the property exists and states no
+            // value for it, which is a different thing from stating an empty one.
+            writer.Stream() << "/>\n";
+            continue;
         }
         writer.Stream() << ">\n";
         if (entry->isReference) {
@@ -1003,6 +1040,10 @@ void readProperties(Base::XMLReader& reader,
         }
         const std::string name = reader.getAttribute<const char*>("name");
         const std::string type = reader.getAttribute<const char*>("type");
+        // A property closed where it stands states that it exists and states no value for it.
+        // A self-closing element has already ended by the time it is read, so its level is the
+        // level of the list around it -- that, and not a flag, is what says a value is there.
+        const bool valueStated = reader.level() > properties;
 
         Property* prop = owner.getPropertyByName(name.c_str());
         if (prop == nullptr && reader.getAttribute<long>("dynamic", 0) == 1) {
@@ -1055,6 +1096,10 @@ void readProperties(Base::XMLReader& reader,
                 // and a file whose meaning depended on the order it was read would have brought
                 // back the ordering problem this form was written to remove.
                 pending.emplace_back(prop, std::move(bindings));
+            }
+            else if (!valueStated) {
+                // Declared and left as the object makes it. Asking the property to read a value
+                // the file does not state is how a reader invents one.
             }
             else {
                 try {

@@ -9,12 +9,16 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/FileInfo.h>
+#include <Base/Placement.h>
+#include <Base/Rotation.h>
 
 #include <App/Expression.h>
 #include <App/Extension.h>
 #include <App/GroupExtension.h>
 #include <App/ObjectIdentifier.h>
 #include <App/PropertyExpressionEngine.h>
+#include <App/PropertyFile.h>
+#include <App/PropertyGeo.h>
 #include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
@@ -25,7 +29,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <map>
+#include <numbers>
 #include <sstream>
 #include <string>
 
@@ -158,6 +165,214 @@ TEST_F(StoredRecipeTest, aPropertyAddedAtRuntimeIsDeclaredAndReturns)
         std::string("Cruth Engineering")
     );
     EXPECT_EQ(std::string(rebuilt->getPropertyGroup("Supplier")), std::string("Sourcing"));
+}
+
+// Declaring a property and giving it a value are two acts, and a property's flags answer only the
+// second. A property built into a class is declared by the class, so leaving its value out of the
+// file loses a value; a property a person added exists only because the file says so, and leaving
+// it out loses the property. Measured before this: the two whose values are not authored source --
+// the one that is not saved, and the one the object computes -- came back missing entirely, with
+// nothing said.
+//
+// Prop_NoPersist is the one that means what it says: not in the file at all, declaration included.
+TEST_F(StoredRecipeTest, aPropertyAddedAtRuntimeIsDeclaredEvenWhereItsValueIsNot)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+
+    struct Declared
+    {
+        const char* name;
+        short flags;
+        bool expected;  ///< whether the file is meant to bring the property back
+    };
+    const std::vector<Declared> declared {
+        {"Plain", App::Prop_None, true},
+        {"NotSaved", App::Prop_Transient, true},
+        {"Computed", App::Prop_Output, true},
+        {"Hidden", App::Prop_Hidden, true},
+        {"NotInTheFile", App::Prop_NoPersist, false},
+    };
+    for (const Declared& one : declared) {
+        ASSERT_NE(
+            box->addDynamicProperty("App::PropertyString", one.name, "Sourcing", "", one.flags),
+            nullptr
+        ) << one.name
+          << " was not declared on the source object";
+    }
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    for (const Declared& one : declared) {
+        auto* returned = rebuilt->getPropertyByName(one.name);
+        if (!one.expected) {
+            EXPECT_EQ(returned, nullptr)
+                << one.name << " says it is not to be in the file, and it came back";
+            continue;
+        }
+        ASSERT_NE(returned, nullptr) << one.name << " did not come back at all";
+        EXPECT_EQ(rebuilt->getPropertyType(returned), one.flags)
+            << one.name << " came back declared differently from how it was written";
+    }
+}
+
+// The other direction: the declaration coming back must not drag the value with it. A value the
+// object says is not saved is not saved, and the property comes back as the object makes it.
+TEST_F(StoredRecipeTest, aValueTheObjectDoesNotKeepIsStillNotKept)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* passing = static_cast<PropertyString*>(
+        box->addDynamicProperty("App::PropertyString", "NotSaved", "Sourcing", "", App::Prop_Transient)
+    );
+    ASSERT_NE(passing, nullptr);
+    passing->setValue("this session only");
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+    roundTrip();
+
+    // Assert
+    EXPECT_EQ(written.find("this session only"), std::string::npos)
+        << "the file carries a value the object says it does not keep";
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* returned = rebuilt->getPropertyByName("NotSaved");
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(std::string(static_cast<PropertyString*>(returned)->getValue()), std::string())
+        << "a value that is not carried came back anyway";
+}
+
+// A file a person handed in is called something, and what it is called is part of what they
+// handed in. The store names its entries by what they hold, so it renames the files inside them --
+// right for a shape, whose side file is named after the object that computed it, and wrong for a
+// file a person chose and named. Measured before this: a part given "Test.txt" came back holding
+// "1.txt", with the right bytes under the wrong name.
+TEST_F(StoredRecipeTest, aFileAPersonHandedInComesBackUnderItsOwnName)
+{
+    // Arrange
+    namespace fs = std::filesystem;
+    const fs::path folder = fs::path(Base::FileInfo::getTempFileName()) / "handed";
+    fs::create_directories(folder);
+    const fs::path handedIn = folder / "whatever-it-was-called-on-disk.txt";
+    std::ofstream(handedIn) << "the bytes a person handed in";
+
+    auto* obj = _source->addObject("App::DocumentObjectFileIncluded", "Handed");
+    ASSERT_NE(obj, nullptr);
+    auto* held = static_cast<PropertyFileIncluded*>(obj->getPropertyByName("File"));
+    ASSERT_NE(held, nullptr);
+    held->setValue(handedIn.string().c_str(), "Test.txt");
+    ASSERT_EQ(fs::path(held->getValue()).filename().string(), std::string("Test.txt"));
+
+    // Act
+    const fs::path assets = folder / "assets";
+    fs::create_directories(assets);
+    std::istringstream text(formatStoredRecipe(*_source, assets.string()));
+    restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets.string());
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Handed");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* returned = static_cast<PropertyFileIncluded*>(rebuilt->getPropertyByName("File"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_NE(std::string(returned->getValue()), std::string()) << "the file did not come back";
+    EXPECT_EQ(fs::path(returned->getValue()).filename().string(), std::string("Test.txt"))
+        << "the file came back under a name nobody chose";
+
+    std::ifstream back(returned->getValue());
+    const std::string bytes {std::istreambuf_iterator<char>(back), std::istreambuf_iterator<char>()};
+    EXPECT_EQ(bytes, std::string("the bytes a person handed in"))
+        << "the name came back and the bytes did not";
+
+    std::error_code ignored;
+    fs::remove_all(folder.parent_path(), ignored);
+}
+
+// A rotation of no angle still has an axis a person picked, and the quaternion cannot hold it:
+// every axis gives the same quaternion when nothing turns. Measured before this: pick an axis,
+// save, reopen, and the part is set to turn about the default one -- so typing an angle afterwards
+// turns it about something nobody chose.
+TEST_F(StoredRecipeTest, anAxisChosenBeforeAnyAngleComesBack)
+{
+    // Arrange
+    auto* obj = _source->addObject("App::VarSet", "Turned");
+    ASSERT_NE(obj, nullptr);
+    auto* placed = static_cast<PropertyPlacement*>(
+        obj->addDynamicProperty("App::PropertyPlacement", "Plm")
+    );
+    auto* turned = static_cast<PropertyRotation*>(
+        obj->addDynamicProperty("App::PropertyRotation", "Rot")
+    );
+    ASSERT_NE(placed, nullptr);
+    ASSERT_NE(turned, nullptr);
+    placed->setValue(
+        Base::Placement(Base::Vector3d(), Base::Rotation(Base::Vector3d(1.0, 2.0, 3.0), 0.0))
+    );
+    turned->setValue(Base::Rotation(Base::Vector3d(3.0, 2.0, 1.0), 0.0));
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Turned");
+    ASSERT_NE(rebuilt, nullptr);
+
+    const auto axisOf = [](const Base::Rotation& rotation) {
+        Base::Vector3d axis;
+        double angle {};
+        rotation.getRawValue(axis, angle);
+        EXPECT_DOUBLE_EQ(angle, 0.0) << "a rotation of no angle came back turning";
+        return axis;
+    };
+
+    const Base::Vector3d fromPlacement = axisOf(
+        static_cast<PropertyPlacement*>(rebuilt->getPropertyByName("Plm"))->getValue().getRotation()
+    );
+    EXPECT_DOUBLE_EQ(fromPlacement.x, 1.0);
+    EXPECT_DOUBLE_EQ(fromPlacement.y, 2.0);
+    EXPECT_DOUBLE_EQ(fromPlacement.z, 3.0);
+
+    const Base::Vector3d fromRotation = axisOf(
+        static_cast<PropertyRotation*>(rebuilt->getPropertyByName("Rot"))->getValue()
+    );
+    EXPECT_DOUBLE_EQ(fromRotation.x, 3.0);
+    EXPECT_DOUBLE_EQ(fromRotation.y, 2.0);
+    EXPECT_DOUBLE_EQ(fromRotation.z, 1.0);
+}
+
+// The other direction, and the reason the axis is not simply written beside every rotation: a
+// rotation that DOES turn is stated by its quaternion alone and comes back bit for bit. Rebuilding
+// one from an angle goes through sine and cosine, which drifted a saved placement a step on every
+// reopen and did not even drift the same way on every platform.
+TEST_F(StoredRecipeTest, aRotationThatTurnsComesBackExactly)
+{
+    // Arrange
+    auto* obj = _source->addObject("App::VarSet", "Turned");
+    ASSERT_NE(obj, nullptr);
+    auto* placed = static_cast<PropertyPlacement*>(
+        obj->addDynamicProperty("App::PropertyPlacement", "Plm")
+    );
+    ASSERT_NE(placed, nullptr);
+    const Base::Rotation quarterTurn(Base::Vector3d(1.0, 2.0, 3.0), std::numbers::pi / 2.0);
+    placed->setValue(Base::Placement(Base::Vector3d(), quarterTurn));
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Turned");
+    ASSERT_NE(rebuilt, nullptr);
+    const Base::Rotation back
+        = static_cast<PropertyPlacement*>(rebuilt->getPropertyByName("Plm"))->getValue().getRotation();
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_DOUBLE_EQ(back[i], quarterTurn[i]) << "the rotation came back a step off at " << i;
+    }
 }
 
 // The document's own authored facts are part of the recipe. The readable view walks objects only,
