@@ -865,6 +865,57 @@ void PropertyPlacement::setPyObject(PyObject* value)
     }
 }
 
+namespace
+{
+/// Cruth: the axis of a rotation that does not turn.
+///
+/// A quaternion IS the rotation, and it is the only form stored -- rebuilding one from an angle
+/// goes through sine and cosine, which drifted a saved placement a step on every reopen. But a
+/// rotation of no angle has no axis inside it: every axis produces the same quaternion. A person
+/// who picks an axis and has not yet chosen an angle has authored that axis, and it is the one
+/// they will turn about the moment they type one. Measured before this: pick an axis, save,
+/// reopen, and the dialog offers the default axis instead -- type an angle and the part turns
+/// about something nobody chose.
+///
+/// So it is written in the ONE case where the quaternion cannot hold it, which is why it is not a
+/// second statement of the same fact and has nothing to drift: it is read back into the
+/// rotation's remembered axis, and the rotation itself is never touched by it. The default axis
+/// is not written, because a file that states nothing here already means that one.
+void writeChosenAxis(Base::Writer& writer, const Base::Rotation& rotation)
+{
+    Base::Vector3d axis;
+    double angle {};
+    rotation.getRawValue(axis, angle);
+    if (angle != 0.0 || (axis.x == 0.0 && axis.y == 0.0 && axis.z == 1.0)) {
+        return;
+    }
+    writer.Stream() << " Ax=\"" << axis.x << "\""
+                    << " Ay=\"" << axis.y << "\""
+                    << " Az=\"" << axis.z << "\"";
+}
+
+/// Give a restored rotation back the axis the file states for it, where it states one.
+void readChosenAxis(Base::XMLReader& reader, Base::Rotation& rotation)
+{
+    if (!reader.hasAttribute("Ax")) {
+        return;
+    }
+    Base::Vector3d axis;
+    double angle {};
+    rotation.getRawValue(axis, angle);
+    if (angle != 0.0) {
+        // A file stating an axis beside a rotation that DOES turn -- a hand edit, or a merge that
+        // took one side's quaternion and the other's axis. The quaternion is the rotation and it
+        // stands; choosing between the two here would be this reader deciding what was authored.
+        return;
+    }
+    rotation.setValue(Base::Vector3d(reader.getAttribute<double>("Ax"),
+                                     reader.getAttribute<double>("Ay"),
+                                     reader.getAttribute<double>("Az")),
+                      0.0);
+}
+}  // namespace
+
 void PropertyPlacement::Save(Base::Writer& writer) const
 {
     // clang-format off
@@ -877,6 +928,7 @@ void PropertyPlacement::Save(Base::Writer& writer) const
                     << " Q1=\"" << _cPos.getRotation()[1] << "\""
                     << " Q2=\"" << _cPos.getRotation()[2] << "\""
                     << " Q3=\"" << _cPos.getRotation()[3] << "\"";
+    writeChosenAxis(writer, _cPos.getRotation());
     // Cruth: the quaternion, and nothing beside it. The axis and angle used to be written here
     // too, as a readable presentation of the same rotation -- a second statement of one fact,
     // which can only ever agree or be wrong. Nothing reads them: the loader has preferred the
@@ -903,11 +955,12 @@ void PropertyPlacement::Restore(Base::XMLReader& reader)
     const Vector3d position(reader.getAttribute<double>("Px"),
                             reader.getAttribute<double>("Py"),
                             reader.getAttribute<double>("Pz"));
-    _cPos = Base::Placement(position,
-                            Rotation(reader.getAttribute<double>("Q0"),
-                                     reader.getAttribute<double>("Q1"),
-                                     reader.getAttribute<double>("Q2"),
-                                     reader.getAttribute<double>("Q3")));
+    Rotation rotation(reader.getAttribute<double>("Q0"),
+                      reader.getAttribute<double>("Q1"),
+                      reader.getAttribute<double>("Q2"),
+                      reader.getAttribute<double>("Q3"));
+    readChosenAxis(reader, rotation);
+    _cPos = Base::Placement(position, rotation);
 
     hasSetValue();
 }
@@ -1318,8 +1371,9 @@ void PropertyRotation::Save(Base::Writer& writer) const
     writer.Stream() << " Q0=\"" << _rot[0] << "\""
                     << " Q1=\"" << _rot[1] << "\""
                     << " Q2=\"" << _rot[2] << "\""
-                    << " Q3=\"" << _rot[3] << "\""
-                    << "/>\n";
+                    << " Q3=\"" << _rot[3] << "\"";
+    writeChosenAxis(writer, _rot);
+    writer.Stream() << "/>\n";
 }
 
 void PropertyRotation::Restore(Base::XMLReader& reader)
@@ -1331,6 +1385,7 @@ void PropertyRotation::Restore(Base::XMLReader& reader)
                     reader.getAttribute<double>("Q1"),
                     reader.getAttribute<double>("Q2"),
                     reader.getAttribute<double>("Q3"));
+    readChosenAxis(reader, _rot);
     hasSetValue();
 }
 

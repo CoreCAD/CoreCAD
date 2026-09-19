@@ -9,6 +9,8 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/FileInfo.h>
+#include <Base/Placement.h>
+#include <Base/Rotation.h>
 
 #include <App/Expression.h>
 #include <App/Extension.h>
@@ -16,6 +18,7 @@
 #include <App/ObjectIdentifier.h>
 #include <App/PropertyExpressionEngine.h>
 #include <App/PropertyFile.h>
+#include <App/PropertyGeo.h>
 #include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
@@ -29,6 +32,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <numbers>
 #include <sstream>
 #include <string>
 
@@ -288,6 +292,87 @@ TEST_F(StoredRecipeTest, aFileAPersonHandedInComesBackUnderItsOwnName)
 
     std::error_code ignored;
     fs::remove_all(folder.parent_path(), ignored);
+}
+
+// A rotation of no angle still has an axis a person picked, and the quaternion cannot hold it:
+// every axis gives the same quaternion when nothing turns. Measured before this: pick an axis,
+// save, reopen, and the part is set to turn about the default one -- so typing an angle afterwards
+// turns it about something nobody chose.
+TEST_F(StoredRecipeTest, anAxisChosenBeforeAnyAngleComesBack)
+{
+    // Arrange
+    auto* obj = _source->addObject("App::VarSet", "Turned");
+    ASSERT_NE(obj, nullptr);
+    auto* placed = static_cast<PropertyPlacement*>(
+        obj->addDynamicProperty("App::PropertyPlacement", "Plm")
+    );
+    auto* turned = static_cast<PropertyRotation*>(
+        obj->addDynamicProperty("App::PropertyRotation", "Rot")
+    );
+    ASSERT_NE(placed, nullptr);
+    ASSERT_NE(turned, nullptr);
+    placed->setValue(
+        Base::Placement(Base::Vector3d(), Base::Rotation(Base::Vector3d(1.0, 2.0, 3.0), 0.0))
+    );
+    turned->setValue(Base::Rotation(Base::Vector3d(3.0, 2.0, 1.0), 0.0));
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Turned");
+    ASSERT_NE(rebuilt, nullptr);
+
+    const auto axisOf = [](const Base::Rotation& rotation) {
+        Base::Vector3d axis;
+        double angle {};
+        rotation.getRawValue(axis, angle);
+        EXPECT_DOUBLE_EQ(angle, 0.0) << "a rotation of no angle came back turning";
+        return axis;
+    };
+
+    const Base::Vector3d fromPlacement = axisOf(
+        static_cast<PropertyPlacement*>(rebuilt->getPropertyByName("Plm"))->getValue().getRotation()
+    );
+    EXPECT_DOUBLE_EQ(fromPlacement.x, 1.0);
+    EXPECT_DOUBLE_EQ(fromPlacement.y, 2.0);
+    EXPECT_DOUBLE_EQ(fromPlacement.z, 3.0);
+
+    const Base::Vector3d fromRotation = axisOf(
+        static_cast<PropertyRotation*>(rebuilt->getPropertyByName("Rot"))->getValue()
+    );
+    EXPECT_DOUBLE_EQ(fromRotation.x, 3.0);
+    EXPECT_DOUBLE_EQ(fromRotation.y, 2.0);
+    EXPECT_DOUBLE_EQ(fromRotation.z, 1.0);
+}
+
+// The other direction, and the reason the axis is not simply written beside every rotation: a
+// rotation that DOES turn is stated by its quaternion alone and comes back bit for bit. Rebuilding
+// one from an angle goes through sine and cosine, which drifted a saved placement a step on every
+// reopen and did not even drift the same way on every platform.
+TEST_F(StoredRecipeTest, aRotationThatTurnsComesBackExactly)
+{
+    // Arrange
+    auto* obj = _source->addObject("App::VarSet", "Turned");
+    ASSERT_NE(obj, nullptr);
+    auto* placed = static_cast<PropertyPlacement*>(
+        obj->addDynamicProperty("App::PropertyPlacement", "Plm")
+    );
+    ASSERT_NE(placed, nullptr);
+    const Base::Rotation quarterTurn(Base::Vector3d(1.0, 2.0, 3.0), std::numbers::pi / 2.0);
+    placed->setValue(Base::Placement(Base::Vector3d(), quarterTurn));
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Turned");
+    ASSERT_NE(rebuilt, nullptr);
+    const Base::Rotation back
+        = static_cast<PropertyPlacement*>(rebuilt->getPropertyByName("Plm"))->getValue().getRotation();
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_DOUBLE_EQ(back[i], quarterTurn[i]) << "the rotation came back a step off at " << i;
+    }
 }
 
 // The document's own authored facts are part of the recipe. The readable view walks objects only,
