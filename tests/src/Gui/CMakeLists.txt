@@ -18,6 +18,7 @@ add_executable(Gui_tests_run
 # Qt tests
 setup_qt_test(QuantitySpinBox)
 setup_qt_test(Selection)
+setup_qt_test(Document)
 
 target_link_libraries(Gui_tests_run PRIVATE
     GTest::gtest_main

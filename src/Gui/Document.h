@@ -92,6 +92,7 @@ protected:
     void slotTransactionAppend(const App::DocumentObject&, App::Transaction*);
     void slotTransactionRemove(const App::DocumentObject&, App::Transaction*);
     void slotActivatedObject(const App::DocumentObject&);
+    void slotFinishSaveDocument(const App::Document&, const std::string&);
     void slotStartRestoreDocument(const App::Document&);
     void slotFinishRestoreDocument(const App::Document&);
     void slotUndoDocument(const App::Document&);
