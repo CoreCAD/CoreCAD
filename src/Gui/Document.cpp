@@ -132,6 +132,7 @@ struct DocumentP
     Connection connectRenObject;
     AdvancedConnection connectActObject;
     Connection connectSaveDocument;
+    Connection connectFinishSaveDocument;
     Connection connectRestDocument;
     Connection connectStartLoadDocument;
     Connection connectFinishLoadDocument;
@@ -476,6 +477,9 @@ Document::Document(App::Document* pcDocument, Application* app)
     d->connectSaveDocument = pcDocument->signalSaveDocument.connect(
         std::bind(&Gui::Document::Save, this, sp::_1)
     );
+    d->connectFinishSaveDocument = pcDocument->signalFinishSave.connect(
+        std::bind(&Gui::Document::slotFinishSaveDocument, this, sp::_1, sp::_2)
+    );
     d->connectRestDocument = pcDocument->signalRestoreDocument.connect(
         std::bind(&Gui::Document::Restore, this, sp::_1)
     );
@@ -563,6 +567,7 @@ Document::~Document()
     d->connectRenObject.disconnect();
     d->connectActObject.disconnect();
     d->connectSaveDocument.disconnect();
+    d->connectFinishSaveDocument.disconnect();
     d->connectRestDocument.disconnect();
     d->connectStartLoadDocument.disconnect();
     d->connectFinishLoadDocument.disconnect();
@@ -2083,6 +2088,27 @@ void Document::RestoreDocFile(Base::Reader& reader)
 
     // reset modified flag
     setModified(false);
+}
+
+/** The document on screen agrees with the document on disk.
+ *
+ * Each of the GUI's own save commands cleared this flag for itself, so a save a person started
+ * from a menu was accounted for and a save a script started was not: the file was written, and
+ * the window went on saying the document had unsaved changes until closing it asked whether to
+ * save work that was already saved.
+ *
+ * Only a save to the document's own file counts. Saving a copy writes the same content to a
+ * different path and deliberately leaves the document where it was, so the name written is
+ * compared with the name the document answers to rather than assumed.
+ */
+void Document::slotFinishSaveDocument(const App::Document& doc, const std::string& fileName)
+{
+    if (d->_pcDocument != &doc) {
+        return;
+    }
+    if (fileName == doc.FileName.getStrValue()) {
+        setModified(false);
+    }
 }
 
 void Document::slotStartRestoreDocument(const App::Document& doc)
