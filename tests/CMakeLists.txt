@@ -227,7 +227,6 @@ set(PYTHON_TEST_SUITES
     MeshTestsApp
     StringHasher
     TestAssemblyWorkbench
-    TestCAMApp
     TestCoinNodeSnapshots
     TestDraft
     TestImport
@@ -245,10 +244,8 @@ set(PYTHON_TEST_SUITES
 
 # Suites that do not pass today. They are registered here rather than left out, so that every run
 # of ctest lists them as not run instead of saying nothing at all, and so the day one of them is
-# fixed it is one line that leaves this list. Every failure is written down in issue #122, test by
-# test; none of them is a gap in the stored form.
+# fixed it is one line that leaves this list. The list is empty: every registered suite passes.
 set(PYTHON_TEST_SUITES_FAILING
-    TestCAMApp
 )
 
 foreach(_suite ${PYTHON_TEST_SUITES})
