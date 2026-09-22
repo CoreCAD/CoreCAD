@@ -26,6 +26,8 @@
 
 #include <Mod/Part/PartGlobal.h>
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include <App/Property.h>
@@ -105,6 +107,23 @@ public:
     void afterRestore() override;
 
 private:
+    /// Which shape of the list a side file holds, and in which form.
+    ///
+    /// A list keeps each of its shapes in a file of its own, so every one of those files has to
+    /// say which shape it is. The name cannot say it: the name a property asks for is a request,
+    /// not a promise -- the project's source store renames what it is given, deliberately, so
+    /// that an entry is named by the content it holds and never by the object that wrote it.
+    /// Reading the position back out of the name therefore read the same position for every file
+    /// in the list, and a list of three shapes came back holding one.
+    ///
+    /// So the position is remembered here, against the name the writer actually assigned, and
+    /// neither side ever parses a file name again.
+    struct SideFile
+    {
+        int index {0};
+        bool binary {false};
+    };
+
     std::vector<TopoShape> _lValueList;
 
     // holds the new TopoShapes between their creation in Restore, and the completion of all
@@ -112,6 +131,11 @@ private:
     // inserted into _lValueList;
     using TopoShapePtr = std::shared_ptr<TopoShape>;
     std::vector<TopoShapePtr> m_restorePointers;
+
+    // Written in Save and read in SaveDocFile; written in Restore and read in RestoreDocFile.
+    // Mutable because Save states the file it is about to write, and Save is const.
+    mutable std::map<std::string, SideFile> m_savedFiles;
+    std::map<std::string, SideFile> m_restoredFiles;
 };
 
 }  // namespace Part
