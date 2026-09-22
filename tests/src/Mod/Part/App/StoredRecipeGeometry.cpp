@@ -20,6 +20,7 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/FeatureFillet.h>
 #include <Mod/Part/App/FeaturePartBox.h>
+#include <Mod/Part/App/PropertyTopoShapeList.h>
 #include <src/App/InitApplication.h>
 
 // NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
@@ -429,6 +430,53 @@ TEST_F(StoredRecipeGeometryTest, theEdgesAPersonRoundedAreStatedInTheRecipe)
     EXPECT_EQ(back[1].edgeid, 3);
     EXPECT_DOUBLE_EQ(back[1].radius1, 0.5);
     EXPECT_DOUBLE_EQ(back[1].radius2, 0.5);
+
+    std::filesystem::remove_all(assets);
+}
+
+// A property that keeps SEVERAL shapes keeps each of them in a file of its own, and every one of
+// those files has to say which shape of the list it holds. It used to say so by its name -- shape
+// 2 went to a file called ".2.brp" -- and the name is the one thing that does not survive the
+// trip: the project's source store renames what it is handed, on purpose, so that an entry is
+// named by the content it holds and not by the object that wrote it. Every file in the list then
+// read back as shape 0. Measured before the fix: three shapes in, one shape and two empties back.
+TEST_F(StoredRecipeGeometryTest, everyShapeOfAStoredListComesBack)
+{
+    // Arrange -- three handed-in solids of different heights, so a shape that lands in the wrong
+    // place cannot pass for the right one.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* holder = _doc->addObject<Part::Feature>("Holder");
+    auto* shapes = dynamic_cast<Part::PropertyTopoShapeList*>(
+        holder->addDynamicProperty("Part::PropertyTopoShapeList", "Shapes")
+    );
+    ASSERT_NE(shapes, nullptr);
+    shapes->setValues(
+        {Part::TopoShape(BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape()),
+         Part::TopoShape(BRepPrimAPI_MakeBox(10.0, 10.0, 20.0).Shape()),
+         Part::TopoShape(BRepPrimAPI_MakeBox(10.0, 10.0, 30.0).Shape())}
+    );
+    _doc->recompute();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+
+    // Assert -- all three, each the one it was, in the order they were given.
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("Holder"));
+    ASSERT_NE(returned, nullptr);
+    auto* back = dynamic_cast<Part::PropertyTopoShapeList*>(returned->getPropertyByName("Shapes"));
+    ASSERT_NE(back, nullptr);
+    ASSERT_EQ(back->getSize(), 3);
+    const std::vector<double> expected {10.0, 20.0, 30.0};
+    for (int i = 0; i < back->getSize(); ++i) {
+        const Part::TopoShape& shape = (*back)[i];
+        ASSERT_FALSE(shape.isNull()) << "shape " << i << " of the list came back empty";
+        EXPECT_NEAR(shape.getBoundBox().MaxZ, expected[i], 1e-7)
+            << "shape " << i << " of the list came back as a different shape";
+    }
 
     std::filesystem::remove_all(assets);
 }
