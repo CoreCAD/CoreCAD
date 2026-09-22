@@ -42,7 +42,9 @@ class TestPartMirroringRegression(unittest.TestCase):
     """
 
     def setUp(self):
-        self.doc = App.newDocument("TestMirrorRegression")
+        # A Body needs the document-level world frame, which a Part document has and a
+        # plain one does not: a Body must not create the coordinate frame it sits in.
+        self.doc = App.newDocument("TestMirrorRegression", type="Part")
 
     def tearDown(self):
         App.closeDocument(self.doc.Name)

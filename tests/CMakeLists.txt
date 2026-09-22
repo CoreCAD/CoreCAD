@@ -249,11 +249,6 @@ set(PYTHON_TEST_SUITES
 # test; none of them is a gap in the stored form.
 set(PYTHON_TEST_SUITES_FAILING
     TestCAMApp
-    TestDraft
-    TestPartApp
-    TestPythonSyntax
-    TestSpreadsheet
-    TestTechDrawApp
 )
 
 foreach(_suite ${PYTHON_TEST_SUITES})
