@@ -1188,7 +1188,9 @@ class SpreadsheetCases(unittest.TestCase):
         sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
         sketch.addGeometry(Part.LineSegment(v(0, 0, 0), v(10, 10, 0)), False)
         sketch.addConstraint(Sketcher.Constraint("Distance", 0, 65.285388))
-        sketch.setExpression("Constraints[0]", "InvoluteGear.NumberOfTeeth")
+        # A count is a number, and a distance is a length: the expression says which
+        # length a tooth count stands for, because nothing else can say it for it.
+        sketch.setExpression("Constraints[0]", "InvoluteGear.NumberOfTeeth * 1mm")
         self.doc.recompute()
         self.assertIn("Up-to-date", sketch.State)
 
@@ -1198,7 +1200,9 @@ class SpreadsheetCases(unittest.TestCase):
         sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
         sheet.setAlias("A1", "Length")
         self.doc.recompute()
-        sheet.set("A1", "47,11")
+        # The cell holds a length, stated as one: a bare number does not become a
+        # dimension on its way into a constraint.
+        sheet.set("A1", "47,11 mm")
         self.doc.recompute()
 
         index = sketch.addGeometry(Part.LineSegment(v(0, 0, 0), v(10, 10, 0)), False)
@@ -1576,7 +1580,8 @@ class SpreadsheetCases(unittest.TestCase):
         sheet.set("x", "42mm")
         base.recompute()
 
-        square = FreeCAD.newDocument("square")
+        # A Part document, because a Body sits in a world frame the document owns.
+        square = FreeCAD.newDocument("square", type="Part")
         body = square.addObject("PartDesign::Body", "Body")
         box = square.addObject("PartDesign::AdditiveBox", "Box")
         body.addFeature(box)
