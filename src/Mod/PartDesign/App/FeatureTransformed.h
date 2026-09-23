@@ -84,6 +84,21 @@ public:
      */
     App::DocumentObject* getBaseObject(bool silent = false) const override;
 
+    /**
+     * Cruth P7 (#34): say so when the requested instances collapse into fewer pieces.
+     *
+     * A pattern whose copies overlap fuses them into fewer connected pieces than were asked
+     * for, reports Up-to-date, and says nothing — the user asked for N and silently received
+     * fewer. This compares the instances against EACH OTHER (never against the finished
+     * result, which is legitimately one solid whenever a pattern is meant to join its base)
+     * and reports the shortfall.
+     *
+     * A notice, not a failure: overlap is valid geometry and can be deliberate, so the
+     * feature stays valid and the recompute is untouched. Deciding what to DO about it —
+     * merge or keep distinct — is the §8.5 gesture and is not asked here.
+     */
+    void reportCollapsedInstances(const std::vector<Part::TopoShape>& instances) const;
+
     virtual std::vector<App::DocumentObject*> getOriginals() const;
 
     /// Return the sketch of the first original
