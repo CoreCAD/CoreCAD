@@ -56,7 +56,9 @@
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 
+#include <Mod/Material/App/Materials.h>
 #include <Mod/Material/Gui/MaterialTreeWidget.h>
+#include <Mod/Part/App/MaterialExtension.h>
 
 #include "TaskFaceAppearances.h"
 #include "ui_TaskFaceAppearances.h"
@@ -368,8 +370,24 @@ void FaceAppearances::onBoxSelectionToggled(bool checked)
 
 void FaceAppearances::onDefaultButtonClicked()
 {
-    std::fill(d->perface.begin(), d->perface.end(), d->vp->ShapeAppearance[0]);
+    // The default is the look the part has when no one has chosen one: its material's, or the
+    // standard look when it is made of nothing (#121). Selected faces go back to it; with none
+    // selected, every face does.
+    App::Material standard = App::Material::getDefaultAppearance();
+    if (const Materials::Material* material = Part::materialOfPart(d->obj)) {
+        standard = material->getMaterialAppearance();
+    }
+    if (d->index.isEmpty()) {
+        std::fill(d->perface.begin(), d->perface.end(), standard);
+    }
+    else {
+        for (int it : d->index) {
+            d->perface[it] = standard;
+        }
+    }
     d->vp->ShapeAppearance.setValues(d->perface);
+    onSelectionChanged(Gui::SelectionChanges::ClrSelection);
+    Gui::Selection().clearSelection();
 }
 
 void FaceAppearances::onMaterialSelected(const std::shared_ptr<Materials::Material>& material)
