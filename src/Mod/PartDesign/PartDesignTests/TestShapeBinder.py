@@ -88,15 +88,6 @@ class TestSubShapeBinder(unittest.TestCase):
 
         self.assertAlmostEqual(binder.Shape.Length, 80)
 
-    @unittest.skip(
-        "Legacy sub-shape-binder workaround (PR #8763): asserts binder-before-pad == "
-        "binder-after-pad. Under de-ownership the two diverge — resolving a Pad's "
-        "'Sketch.' sub-shape now returns the profile without its attachment placement "
-        "(the direct-sketch binder is correctly placed, the through-Pad one is not). "
-        "Sub-shape binders are a workaround for the old paradigm and are slated for "
-        "removal, so this is parked rather than fixed. Sub-shape-placement finding: "
-        "CoreCAD/CoreCAD#15."
-    )
     def testBinderBeforeOrAfterPad(self):
         """Test case for PR #8763"""
         body = self.Doc.addObject("PartDesign::Body", "Body")
