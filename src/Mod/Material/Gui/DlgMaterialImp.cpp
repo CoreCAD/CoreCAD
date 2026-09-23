@@ -26,6 +26,10 @@
 #include <QSignalBlocker>
 #include <QString>
 #include <algorithm>
+#include <deque>
+#include <set>
+#include <utility>
+#include <vector>
 #include <fastsignals/signal.h>
 
 #include <Base/Console.h>
@@ -39,6 +43,7 @@
 
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/Material.h>
 #include <App/PropertyStandard.h>
 
 #include <Mod/Material/App/Exceptions.h>
@@ -58,11 +63,11 @@ namespace sp = std::placeholders;
 namespace
 {
 
-/// The material property of the part a selected object belongs to (#121): its own when the
-/// object stands as a part, otherwise the one on the part built from it -- so choosing a
-/// material with a feature selected reaches the Body that feature builds. The walk is over
-/// dependants because membership is derived, never stored.
-Materials::PropertyMaterial* materialPropertyOfPart(App::DocumentObject* obj)
+/// The part a selected object belongs to (#121): the object itself when it stands as a part,
+/// otherwise the part built from it -- so choosing a material with a feature selected reaches the
+/// Body that feature builds. The walk is over dependants because membership is derived, never
+/// stored.
+App::DocumentObject* partOf(App::DocumentObject* obj)
 {
     std::set<App::DocumentObject*> seen;
     std::deque<App::DocumentObject*> queue;
@@ -73,9 +78,8 @@ Materials::PropertyMaterial* materialPropertyOfPart(App::DocumentObject* obj)
     while (!queue.empty()) {
         App::DocumentObject* current = queue.front();
         queue.pop_front();
-        if (auto* prop =
-                dynamic_cast<Materials::PropertyMaterial*>(current->getPropertyByName("Material"))) {
-            return prop;
+        if (dynamic_cast<Materials::PropertyMaterial*>(current->getPropertyByName("Material"))) {
+            return current;
         }
         for (App::DocumentObject* dependant : current->getInList()) {
             if (dependant && seen.insert(dependant).second) {
@@ -84,6 +88,52 @@ Materials::PropertyMaterial* materialPropertyOfPart(App::DocumentObject* obj)
         }
     }
     return nullptr;
+}
+
+Materials::PropertyMaterial* materialPropertyOfPart(App::DocumentObject* obj)
+{
+    App::DocumentObject* part = partOf(obj);
+    return part ? dynamic_cast<Materials::PropertyMaterial*>(part->getPropertyByName("Material"))
+                : nullptr;
+}
+
+/// Two appearances look the same. Compared by value only: an appearance keeps the id of the
+/// material it came from even after a person recolours it, so the id says nothing about whether
+/// it was chosen.
+bool sameLook(const App::Material& a, const App::Material& b)
+{
+    return a.diffuseColor == b.diffuseColor && a.ambientColor == b.ambientColor
+        && a.specularColor == b.specularColor && a.emissiveColor == b.emissiveColor
+        && a.shininess == b.shininess && a.transparency == b.transparency && a.image == b.image
+        && a.imagePath == b.imagePath;
+}
+
+bool sameLooks(const std::vector<App::Material>& a, const std::vector<App::Material>& b)
+{
+    return std::ranges::equal(a, b, sameLook);
+}
+
+App::PropertyMaterialList* appearanceOf(App::DocumentObject* obj)
+{
+    auto* view = Gui::Application::Instance->getViewProvider(obj);
+    return view ? dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))
+                : nullptr;
+}
+
+/// A face whose look is still the one the part's previous material gave it, or the standard look,
+/// was never chosen by a person and follows the new material. Any other face was chosen and keeps
+/// its colour.
+std::vector<App::Material> followMaterial(std::vector<App::Material> faces,
+                                          const App::Material& oldLook,
+                                          const App::Material& newLook)
+{
+    const App::Material standard = App::Material::getDefaultAppearance();
+    for (auto& face : faces) {
+        if (sameLook(face, oldLook) || sameLook(face, standard)) {
+            face = newLook;
+        }
+    }
+    return faces;
 }
 
 }  // namespace
@@ -277,20 +327,40 @@ std::vector<App::DocumentObject*> DlgMaterialImp::getSelectionObjects() const
 
 void DlgMaterialImp::onMaterialSelected(const std::shared_ptr<Materials::Material>& material)
 {
-    std::vector<App::DocumentObject*> objects = getSelectionObjects();
-    for (auto it : objects) {
-        if (auto prop = materialPropertyOfPart(it)) {
-            prop->setValue(*material);
+    std::set<App::DocumentObject*> done;
+    for (auto* selected : getSelectionObjects()) {
+        App::DocumentObject* part = partOf(selected);
+        if (!part || !done.insert(part).second) {
+            continue;
         }
+        auto* prop = dynamic_cast<Materials::PropertyMaterial*>(part->getPropertyByName("Material"));
+        const App::Material oldLook = prop->getValue().getMaterialAppearance();
+        const App::Material newLook = material->getMaterialAppearance();
+        prop->setValue(*material);
 
-        // Choosing what a part is made of also says something about how it should look, so the
-        // material's appearance is pushed into the view once, here. It is authored view state
-        // from that moment on -- the person can repaint it, and nothing reads it back out of
-        // the material again (#121).
-        if (auto* view = Gui::Application::Instance->getViewProvider(it)) {
-            if (auto* appearance = dynamic_cast<App::PropertyMaterialList*>(
-                    view->getPropertyByName("ShapeAppearance"))) {
-                appearance->setValue(material->getMaterialAppearance());
+        // Choosing what a part is made of also says how it looks -- but only where no one has
+        // chosen a colour (#121). The part is painted, not whatever was selected. A Body copies its
+        // appearance onto its features wholesale, so any shape the part is built from that the
+        // paint reached is settled again from its own faces as they were before.
+        std::vector<std::pair<App::PropertyMaterialList*, std::vector<App::Material>>> builtFrom;
+        for (auto* source : part->getOutListRecursive()) {
+            if (auto* appearance = appearanceOf(source)) {
+                builtFrom.emplace_back(appearance, appearance->getValues());
+            }
+        }
+        if (auto* appearance = appearanceOf(part)) {
+            auto faces = followMaterial(appearance->getValues(), oldLook, newLook);
+            if (!sameLooks(faces, appearance->getValues())) {
+                appearance->setValues(faces);
+            }
+        }
+        for (auto& [appearance, before] : builtFrom) {
+            if (sameLooks(appearance->getValues(), before)) {
+                continue;
+            }
+            auto faces = followMaterial(before, oldLook, newLook);
+            if (!sameLooks(faces, appearance->getValues())) {
+                appearance->setValues(faces);
             }
         }
     }

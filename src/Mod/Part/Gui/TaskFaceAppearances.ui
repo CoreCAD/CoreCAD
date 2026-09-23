@@ -85,7 +85,7 @@
      <item row="0" column="0">
       <widget class="QPushButton" name="defaultButton">
        <property name="toolTip">
-        <string>Resets color for all faces of the part</string>
+        <string>Resets the selected faces, or every face when none is selected, to the color of the part's material</string>
        </property>
        <property name="text">
         <string>Set to Default</string>
