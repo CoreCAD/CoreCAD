@@ -506,6 +506,25 @@ public:
     static Body* resolveBaseBody(Part::Part2DObject* sketch, bool& ambiguous);
 
     /**
+     * Cruth §8.5 (Merge Result, #32): which Body could @p feature merge into, asked as an
+     * INDEPENDENT question. The answer must never be read off the arrangement the user is
+     * trying to toggle out of — deriving "the body I could merge into" from "the body I
+     * currently extend" makes the control one-way, which is the defect this exists to close.
+     *
+     *  - @p feature extends a chain → the Body it extends (the target to return to);
+     *  - otherwise → resolveBaseBody's anchor walk over its profile;
+     *  - chain reaches nothing → nullptr (§8.5 leaves the default unset: a new Body);
+     *  - chain reaches several → nullptr (§8.3 ambiguity belongs to the picker, and is
+     *    never resolved silently here);
+     *  - a candidate the feature already lives in → nullptr (nothing to merge into).
+     *
+     * A pure, non-throwing query: it runs inside a dialog constructor and must degrade
+     * rather than throw. Lives here so the GUI control and the Python API share one code
+     * path (P8 Programmatic Equivalence).
+     */
+    static Body* resolveMergeCandidate(App::DocumentObject* feature);
+
+    /**
      * Cruth §4.6: auto-spawn a new Body at document level (no active-Part
      * containment). Color is assigned in setupObject() from the per-document
      * palette index. Returns nullptr if @p doc is null.

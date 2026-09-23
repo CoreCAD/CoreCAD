@@ -111,6 +111,7 @@ void TaskPreviewParameters::onShowPreviewChanged(bool show)
  *                   Task Merge Result Parameters                    *
  *********************************************************************/
 
+
 TaskMergeResultParameters::TaskMergeResultParameters(ViewProvider* vp, QWidget* parent)
     : TaskBox(tr("Merge result"), true, parent)
     , vp(vp)
@@ -124,14 +125,11 @@ TaskMergeResultParameters::TaskMergeResultParameters(ViewProvider* vp, QWidget* 
     // creating command — reflect it. BaseFeature set ⇒ extending a Body; null ⇒ own body.
     bool additive = feature && feature->getAddSubType() == PartDesign::FeatureAddSub::Additive;
     bool extending = feature && feature->BaseFeature.getValue() != nullptr;
-    if (extending) {
-        // A feature being edited in its own creation dialog is a single in-chain feature,
-        // so the derived reverse query answers unambiguously and first-match is the right
-        // body, not a lucky one. We keep the non-throwing findBodyOf (not the fail-loud
-        // bodyOf) on purpose: this is a GUI splice-target capture that must degrade
-        // gracefully, never throw inside the dialog constructor.
-        mergeTargetBody = PartDesign::Body::findBodyOf(feature);
-    }
+
+    // Asked independently of `extending`, so the answer does not disappear the moment the
+    // user unticks the box (#32). resolveMergeCandidate keeps to the non-throwing queries
+    // on purpose: this runs in a dialog constructor and must degrade, never throw.
+    mergeTargetBody = PartDesign::Body::resolveMergeCandidate(feature);
 
     mergeCheckBox->setChecked(extending);
     // The choice is only offered when the feature could go either way: additive (a cut
@@ -160,6 +158,14 @@ void TaskMergeResultParameters::onMergeToggled(bool merge)
     auto* feature = vp->getObject<PartDesign::Feature>();
     if (!feature) {
         return;
+    }
+
+    // Moving the last feature out of a Body retires it (§4.7), so the target captured when
+    // the dialog opened can be gone by the time the box is ticked again. Confirm it is still
+    // live rather than splicing onto a dangling pointer.
+    if (mergeTargetBody && !mergeTargetBody->isAttachedToDocument()) {
+        mergeTargetBody = nullptr;
+        mergeCheckBox->setEnabled(false);
     }
 
     // Merge on ⇒ splice back onto the remembered target Body; off ⇒ spawn a fresh Body.
