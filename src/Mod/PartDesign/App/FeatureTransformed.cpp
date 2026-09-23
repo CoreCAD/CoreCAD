@@ -88,6 +88,27 @@ Transformed::Transformed()
         App::Prop_None,
         "Cruth §5.6 skip-list: original ordinals of instances broken out of the MultiBody output"
     );
+
+    // Derived facts, not settings: read-only so nobody edits an answer, Output so recording
+    // one does not re-touch the feature that just computed it, Transient because a recompute
+    // is the only thing entitled to say what they are.
+    constexpr auto derivedCount = static_cast<App::PropertyType>(
+        App::Prop_ReadOnly | App::Prop_Output | App::Prop_Transient
+    );
+    ADD_PROPERTY_TYPE(
+        InstancesRequested,
+        (0),
+        "Base",
+        derivedCount,
+        "Cruth P7 (#34): how many copies the pattern was asked for, last recompute"
+    );
+    ADD_PROPERTY_TYPE(
+        InstancePieces,
+        (0),
+        "Base",
+        derivedCount,
+        "Cruth P7 (#34): how many connected pieces those copies formed among themselves"
+    );
 }
 
 void Transformed::purgeTouchedTransformations()
@@ -338,6 +359,11 @@ App::DocumentObjectExecReturn* Transformed::execute()
 
     this->purgeTouchedTransformations();
 
+    // The counts answer for THIS recompute only; a stale pair would have the dialog offering
+    // a choice about an overlap that is no longer there.
+    InstancesRequested.setValue(0);
+    InstancePieces.setValue(0);
+
     // get transformations from subclass by calling virtual method
     std::vector<gp_Trsf> transformations;
     try {
@@ -395,6 +421,13 @@ App::DocumentObjectExecReturn* Transformed::execute()
         return shapes;
     };
 
+    // Cruth §5.5, the second merge decision: when the copies are to stay apart, the
+    // transformed ones are held back from the fuse and emitted beside the support instead of
+    // welded into it. Collected across every original, because instance k of the pattern is
+    // copy k of each of them.
+    const bool keepCopiesApart = MultiBody.getValue();
+    std::vector<Part::TopoShape> looseCopies;
+
     switch (mode) {
         case Mode::Features:
             // NOTE: It would be possible to build a compound from all original addShapes/subShapes
@@ -434,14 +467,33 @@ App::DocumentObjectExecReturn* Transformed::execute()
                     if (Base::Sequencer().wasCanceled()) {
                         return new App::DocumentObjectExecReturn("User aborted");
                     }
-                    // Cruth §8.6/P7 (#34): ask, before the fuse hides the answer, whether the
-                    // copies ran into each other. shapes[0] is the support; the instances are
-                    // the untransformed original plus every transformed copy after it.
-                    std::vector<Part::TopoShape> instances {fuseShape};
-                    instances.insert(instances.end(), shapes.begin() + 1, shapes.end());
-                    reportCollapsedInstances(instances);
+                    if (keepCopiesApart) {
+                        // Hold the transformed copies back. shapes[0] is the support and is
+                        // not a copy: the untransformed original was spliced into the chain
+                        // before the pattern existed and cannot be peeled back out, so it
+                        // stays where it is and the rest come out beside it.
+                        //
+                        // §5.6: an instance broken out of the pattern is dropped by its
+                        // ordinal in the transform sequence. The ordinal spans originals --
+                        // instance k of the pattern is copy k of every original -- so the
+                        // skip applies inside this loop and drops the whole instance.
+                        const std::vector<long>& skip = SkipInstances.getValues();
+                        for (std::size_t i = 1; i < shapes.size(); ++i) {
+                            if (std::ranges::find(skip, static_cast<long>(i)) == skip.end()) {
+                                looseCopies.push_back(shapes[i]);
+                            }
+                        }
+                    }
+                    else {
+                        // Cruth §8.6/P7 (#34): ask, before the fuse hides the answer, whether
+                        // the copies ran into each other. shapes[0] is the support; the
+                        // instances are the untransformed original plus every copy after it.
+                        std::vector<Part::TopoShape> instances {fuseShape};
+                        instances.insert(instances.end(), shapes.begin() + 1, shapes.end());
+                        reportCollapsedInstances(instances);
 
-                    supportShape.makeElementFuse(shapes);
+                        supportShape.makeElementFuse(shapes);
+                    }
                 }
                 if (!cutShape.isNull()) {
                     auto shapes = getTransformedCompShape(supportShape, cutShape);
@@ -491,6 +543,20 @@ App::DocumentObjectExecReturn* Transformed::execute()
         }
     }
 
+    if (!looseCopies.empty()) {
+        // The copies were kept apart, so the result is several solids: the support, and one
+        // per surviving copy. The multi-output reconciler turns that into one Body each
+        // (§4.6/§5.5). No refine pass -- refining fuses coplanar faces across the compound
+        // and would undo the separation just asked for, which is why the Whole shape path
+        // returns early for the same reason.
+        std::vector<Part::TopoShape> pieces {supportShape};
+        pieces.insert(pieces.end(), looseCopies.begin(), looseCopies.end());
+        Part::TopoShape compound;
+        compound.makeElementCompound(pieces);
+        this->Shape.setValue(compound);
+        return App::DocumentObject::StdReturn;
+    }
+
     supportShape = refineShapeIfActive((supportShape));
 
     this->Shape.setValue(supportShape);
@@ -498,7 +564,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
     return App::DocumentObject::StdReturn;
 }
 
-void Transformed::reportCollapsedInstances(const std::vector<Part::TopoShape>& instances) const
+void Transformed::reportCollapsedInstances(const std::vector<Part::TopoShape>& instances)
 {
     const std::size_t requested = instances.size();
     if (requested < 2) {
@@ -506,6 +572,17 @@ void Transformed::reportCollapsedInstances(const std::vector<Part::TopoShape>& i
     }
 
     const std::size_t produced = Part::connectedComponentCount(instances);
+
+    // Record before deciding whether to warn: "they all stayed apart" is an answer the dialog
+    // needs as much as "they collapsed", and a pair left at zero reads as "never asked". With
+    // several originals the worst run wins -- that is the one the user has to hear about.
+    const long shortfall = static_cast<long>(requested) - static_cast<long>(produced);
+    const long recorded = InstancesRequested.getValue() - InstancePieces.getValue();
+    if (InstancesRequested.getValue() == 0 || shortfall > recorded) {
+        InstancesRequested.setValue(static_cast<long>(requested));
+        InstancePieces.setValue(static_cast<long>(produced));
+    }
+
     if (produced >= requested) {
         return;
     }

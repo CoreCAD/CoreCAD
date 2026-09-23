@@ -61,7 +61,32 @@ public:
     /// (a compound) instead of fusing them into one. The multi-output reconciler then
     /// spawns one Body per copy — "each copy is its own Body". Default false keeps the
     /// classic instance-fusing behaviour.
+    ///
+    /// This is the second of the two merge decisions a pattern makes, and the only one it
+    /// owns. The first — whether the pattern's result joins the Body it was added to — is
+    /// the ordinary §8.5 Merge Result gesture, asked of every solid feature alike and
+    /// answered by the BaseFeature chain. This one asks whether the COPIES join EACH OTHER.
+    /// They are independent: a pattern can extend its Body while keeping its copies apart.
+    ///
+    /// Honoured in both transform modes. In Whole shape the copies are the whole output. In
+    /// Features mode the support keeps the untransformed original (it was already in the
+    /// chain before the pattern existed) and every transformed copy is emitted beside it
+    /// rather than welded on, so N copies still yield N pieces.
     App::PropertyBool MultiBody;
+
+    /// Cruth P7 (#34): how many copies the pattern was asked for, and how many connected
+    /// pieces they actually formed among themselves, as of the last recompute. Equal when
+    /// nothing overlapped; the second is smaller when copies ran into each other and were
+    /// fused. Both zero when the question does not arise (fewer than two copies, or the
+    /// copies were kept apart and never fused).
+    ///
+    /// Derived, never authored: read-only, output (recording them does not re-touch the
+    /// feature) and transient (recomputed, never stored). They exist so the answer is
+    /// readable — by the dialog that offers the merge choice, and by a script — instead of
+    /// living only in a console line nobody is obliged to read. With several originals the
+    /// pair records the worst run, which is the one the user needs to hear about.
+    App::PropertyInteger InstancesRequested;
+    App::PropertyInteger InstancePieces;
 
     /// Cruth §5.6 skip-list: original ordinals of the instances broken out of the MultiBody
     /// output. An instance's ordinal is its position in the transform sequence
@@ -94,10 +119,15 @@ public:
      * and reports the shortfall.
      *
      * A notice, not a failure: overlap is valid geometry and can be deliberate, so the
-     * feature stays valid and the recompute is untouched. Deciding what to DO about it —
-     * merge or keep distinct — is the §8.5 gesture and is not asked here.
+     * feature stays valid and the recompute is untouched. Deciding what to DO about it is
+     * the MultiBody choice above, offered by the dialog and not decided here.
+     *
+     * Records the counts in InstancesRequested/InstancePieces as well as writing the
+     * console line, so the answer can be read rather than only watched for. Called only on
+     * the fusing path: copies that were deliberately kept apart did not collapse, so there
+     * is nothing to report about them.
      */
-    void reportCollapsedInstances(const std::vector<Part::TopoShape>& instances) const;
+    void reportCollapsedInstances(const std::vector<Part::TopoShape>& instances);
 
     virtual std::vector<App::DocumentObject*> getOriginals() const;
 

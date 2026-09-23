@@ -9,6 +9,7 @@ from . import TestFillet
 from . import TestHelix
 from . import TestHole
 from . import TestInvoluteGear
+from . import TestKeepCopiesApart
 from . import TestLinearPattern
 from . import TestLoft
 from . import TestMirrored
