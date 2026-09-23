@@ -26,6 +26,8 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 
@@ -36,10 +38,12 @@
 #include <Gui/BitmapFactory.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Mod/PartDesign/App/FeatureAddSub.h>
+#include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/PartDesign/App/Body.h>
 
 #include "ui_TaskPreviewParameters.h"
 
+#include "SketchPickDialog.h"
 #include "TaskFeatureParameters.h"
 #include "TaskSketchBasedParameters.h"
 
@@ -117,13 +121,21 @@ TaskMergeResultParameters::TaskMergeResultParameters(ViewProvider* vp, QWidget* 
     , vp(vp)
     , mergeCheckBox(new QCheckBox(tr("Merge with existing body"), this))
     , bodyLabel(new QLabel(this))
+    , pickBodyButton(new QPushButton(tr("Extend a different body..."), this))
     , mergeTargetBody(nullptr)
 {
-    auto* feature = vp->getObject<PartDesign::FeatureAddSub>();
+    auto* feature = vp->getObject<PartDesign::Feature>();
+
+    // Add-or-subtract is asked of the feature where the feature can answer, and assumed to be
+    // "subtract" where it cannot. A pattern is the case that forces this: it produces a solid
+    // and extends a Body like any other feature, but it is not a FeatureAddSub and has no
+    // add/subtract nature of its own. Reading the pair off FeatureAddSub alone would leave a
+    // pattern's box blank and unticked -- saying the pattern stands alone, when it does not.
+    auto* addSub = freecad_cast<PartDesign::FeatureAddSub*>(feature);
 
     // Cruth §8.5: the feature already has its spawn-vs-extend choice baked in by the
     // creating command — reflect it. BaseFeature set ⇒ extending a Body; null ⇒ own body.
-    bool additive = feature && feature->getAddSubType() == PartDesign::FeatureAddSub::Additive;
+    bool additive = addSub && addSub->getAddSubType() == PartDesign::FeatureAddSub::Additive;
     bool extending = feature && feature->BaseFeature.getValue() != nullptr;
 
     // Asked independently of `extending`, so the answer does not disappear the moment the
@@ -139,16 +151,48 @@ TaskMergeResultParameters::TaskMergeResultParameters(ViewProvider* vp, QWidget* 
 
     bodyLabel->setWordWrap(true);
 
+    // §8.5's third gesture: the inferred target is a default, not a verdict. The picker
+    // offers every other Body the feature could legally join, so an anchor chain that
+    // inferred nothing — or inferred the wrong Body — is still one gesture from the right
+    // answer. Additive only, for the same reason the checkbox is: a cut must extend the
+    // thing it cuts, and re-aiming a cut is a Scope edit (§8.3), not a merge choice.
+    pickBodyButton->setEnabled(additive && !candidateBodies().empty());
+
     connect(mergeCheckBox, &QCheckBox::toggled, this, &TaskMergeResultParameters::onMergeToggled);
+    connect(pickBodyButton, &QPushButton::clicked, this, &TaskMergeResultParameters::onPickBody);
 
     auto* proxy = new QWidget(this);
     auto* layout = new QVBoxLayout(proxy);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(mergeCheckBox);
     layout->addWidget(bodyLabel);
+    layout->addWidget(pickBodyButton);
+
+    // §5.5/#34, the pattern's own merge question. Only a pattern has copies, so only a
+    // pattern is asked. It sits in this box rather than a box of its own because to the
+    // person answering, "what merges with what" is one subject.
+    if (auto* pattern = vp->getObject<PartDesign::Transformed>()) {
+        mergeCopiesCheckBox = new QCheckBox(tr("Merge copies that overlap"), this);
+        // MultiBody says "keep the copies apart", so the box the user reads is its inverse.
+        mergeCopiesCheckBox->setChecked(!pattern->MultiBody.getValue());
+        overlapLabel = new QLabel(this);
+        overlapLabel->setWordWrap(true);
+
+        connect(
+            mergeCopiesCheckBox,
+            &QCheckBox::toggled,
+            this,
+            &TaskMergeResultParameters::onMergeCopiesToggled
+        );
+
+        layout->addWidget(mergeCopiesCheckBox);
+        layout->addWidget(overlapLabel);
+    }
+
     groupLayout()->addWidget(proxy);
 
     refreshBodyLabel();
+    refreshOverlapNotice();
 }
 
 TaskMergeResultParameters::~TaskMergeResultParameters() = default;
@@ -175,7 +219,97 @@ void TaskMergeResultParameters::onMergeToggled(bool merge)
     PartDesign::Body::moveFeatureToBody(feature, merge ? mergeTargetBody : nullptr);
     feature->getDocument()->recompute();
 
+    // The move can retire the Body it left (§4.7), so what is still pickable has changed.
+    pickBodyButton->setEnabled(mergeCheckBox->isEnabled() && !candidateBodies().empty());
     refreshBodyLabel();
+}
+
+std::vector<PartDesign::Body*> TaskMergeResultParameters::candidateBodies() const
+{
+    // The list itself is an App-layer question (§8.5, P8): the picker and the Python API
+    // must offer the same set, and the cycle rule belongs beside the pipeline it protects.
+    return PartDesign::Body::mergeCandidates(vp ? vp->getObject<PartDesign::Feature>() : nullptr);
+}
+
+void TaskMergeResultParameters::onPickBody()
+{
+    auto* feature = vp ? vp->getObject<PartDesign::Feature>() : nullptr;
+    if (!feature) {
+        return;
+    }
+
+    std::vector<PartDesign::Body*> candidates = candidateBodies();
+    if (candidates.empty()) {
+        pickBodyButton->setEnabled(false);
+        return;
+    }
+
+    PartDesign::Body* chosen = PartDesignGui::pickBody(candidates);
+    if (!chosen) {
+        return;  // cancelled — the feature stays where it is
+    }
+
+    // An explicit pick overrides the inferred candidate and becomes the target the checkbox
+    // returns to, so unticking and re-ticking after a pick comes back to the Body the user
+    // chose, not the one the anchor chain guessed.
+    PartDesign::Body::moveFeatureToBody(feature, chosen);
+    mergeTargetBody = chosen;
+
+    QSignalBlocker block(mergeCheckBox);  // the move is already done; do not re-run it
+    mergeCheckBox->setChecked(true);
+    mergeCheckBox->setEnabled(true);
+
+    feature->getDocument()->recompute();
+
+    pickBodyButton->setEnabled(!candidateBodies().empty());
+    refreshBodyLabel();
+}
+
+void TaskMergeResultParameters::onMergeCopiesToggled(bool merge)
+{
+    auto* pattern = vp ? vp->getObject<PartDesign::Transformed>() : nullptr;
+    if (!pattern) {
+        return;
+    }
+
+    // Inverse of the checkbox: ticked means "fuse them", which is MultiBody off. We are
+    // inside the dialog's edit transaction, so Cancel puts the property back.
+    pattern->MultiBody.setValue(!merge);
+    pattern->getDocument()->recompute();
+
+    // Keeping the copies apart fuses nothing, so the recompute has no shortfall to report
+    // and the notice clears itself. That is correct: the overlap is no longer a problem
+    // being reported, it is a decision that has been taken.
+    refreshBodyLabel();
+    refreshOverlapNotice();
+}
+
+void TaskMergeResultParameters::refreshOverlapNotice()
+{
+    if (!overlapLabel) {
+        return;
+    }
+
+    auto* pattern = vp ? vp->getObject<PartDesign::Transformed>() : nullptr;
+    const long requested = pattern ? pattern->InstancesRequested.getValue() : 0;
+    const long pieces = pattern ? pattern->InstancePieces.getValue() : 0;
+
+    // Zero means the question never arose (fewer than two copies, or they were kept apart);
+    // equal means it arose and they all stayed clear of each other. Neither is news.
+    if (requested < 2 || pieces >= requested) {
+        overlapLabel->clear();
+        return;
+    }
+
+    // State both numbers and what became of the difference, and leave the decision alone —
+    // the checkbox above is the decision, and it is already in reach.
+    overlapLabel->setText(
+        pieces == 1
+            ? tr("%1 copies were asked for; they overlap and came back as one piece.").arg(requested)
+            : tr("%1 copies were asked for; they overlap and came back as %2 pieces.")
+                  .arg(requested)
+                  .arg(pieces)
+    );
 }
 
 void TaskMergeResultParameters::refreshBodyLabel()

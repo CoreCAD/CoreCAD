@@ -1352,6 +1352,33 @@ Body* Body::resolveMergeCandidate(App::DocumentObject* feature)
     return candidate == home ? nullptr : candidate;
 }
 
+std::vector<Body*> Body::mergeCandidates(App::DocumentObject* feature)
+{
+    auto* pdFeature = freecad_cast<PartDesign::Feature*>(feature);
+    if (!pdFeature || !pdFeature->getDocument()) {
+        return {};
+    }
+
+    // Everything that reaches this feature, by any route. A Body in here cannot receive the
+    // feature: the splice would close a cycle (the feature would end up its own ancestor).
+    //
+    // This one rule also excludes the Body the feature already lives in, which is why there
+    // is no second test for it: a Body's Tip chain runs through its own features, so the
+    // home Body always reaches the feature. An explicit `body == home` check beside this
+    // looks like a second rule but can never fire on its own -- proven by breaking each in
+    // turn and watching the tests stay green.
+    const std::vector<App::DocumentObject*> dependents = pdFeature->getInListRecursive();
+
+    std::vector<Body*> candidates;
+    for (auto* obj : pdFeature->getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
+        if (std::ranges::find(dependents, obj) != dependents.end()) {
+            continue;
+        }
+        candidates.push_back(static_cast<Body*>(obj));
+    }
+    return candidates;
+}
+
 short Body::mustExecute() const
 {
     if (Tip.isTouched()) {

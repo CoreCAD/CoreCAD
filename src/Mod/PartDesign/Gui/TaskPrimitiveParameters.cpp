@@ -1081,6 +1081,7 @@ TaskDlgPrimitiveParameters::TaskDlgPrimitiveParameters(ViewProviderPrimitive* Pr
     Content.push_back(primitive);
     parameter = new PartGui::TaskAttacher(PrimitiveView, nullptr, QString(), tr("Attachment"));
     Content.push_back(parameter);
+    Content.push_back(new TaskMergeResultParameters(PrimitiveView));
     Content.push_back(preview);
 
     connect(

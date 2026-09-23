@@ -812,6 +812,7 @@ TaskDlgGrooveParameters::TaskDlgGrooveParameters(ViewProviderGroove* GrooveView)
     Content.push_back(
         new TaskRevolutionParameters(GrooveView, "PartDesign_Groove", tr("Groove Parameters"))
     );
+    Content.push_back(new TaskMergeResultParameters(GrooveView));
     Content.push_back(preview);
 }
 
