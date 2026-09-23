@@ -251,6 +251,7 @@ TaskDlgMirroredParameters::TaskDlgMirroredParameters(ViewProviderMirrored* Mirro
     parameter = new TaskMirroredParameters(MirroredView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskMergeResultParameters(MirroredView));
     Content.push_back(preview);
 }
 

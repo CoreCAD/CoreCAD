@@ -172,6 +172,7 @@ TaskDlgScaledParameters::TaskDlgScaledParameters(ViewProviderScaled* ScaledView)
     parameter = new TaskScaledParameters(ScaledView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskMergeResultParameters(ScaledView));
 }
 
 #include "moc_TaskScaledParameters.cpp"

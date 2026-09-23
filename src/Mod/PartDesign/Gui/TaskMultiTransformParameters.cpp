@@ -565,6 +565,7 @@ TaskDlgMultiTransformParameters::TaskDlgMultiTransformParameters(
     parameter->setEnabledTransaction(false);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskMergeResultParameters(MultiTransformView));
     Content.push_back(preview);
 }
 

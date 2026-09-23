@@ -422,6 +422,7 @@ TaskDlgLinearPatternParameters::TaskDlgLinearPatternParameters(
     parameter = new TaskPatternParameters(LinearPatternView);
     // Add it to the dialog's content list
     Content.push_back(parameter);
+    Content.push_back(new TaskMergeResultParameters(LinearPatternView));
     Content.push_back(preview);
 }
 
