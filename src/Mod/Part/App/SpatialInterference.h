@@ -4,6 +4,7 @@
 #ifndef PART_SPATIALINTERFERENCE_H
 #define PART_SPATIALINTERFERENCE_H
 
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -67,6 +68,25 @@ PartExport std::vector<App::DocumentObject*> independentSolids(App::Document* do
 PartExport std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> overlappingPairs(
     App::Document* doc
 );
+
+/**
+ * How many connected pieces @p shapes form, counting two shapes as one piece when they
+ * share volume.
+ *
+ * Answers "I made N of these -- how many separate things did I actually get?" for a set of
+ * solids that are meant to stand apart. Overlapping members collapse into one piece, so a
+ * count below @p shapes.size() means some of them ran into each other.
+ *
+ * Deliberately counts the members against EACH OTHER and nothing else. Counting solids in a
+ * finished result instead would answer a different and misleading question: four bosses
+ * patterned across a plate are one solid by design, and the plate is not evidence that the
+ * bosses collided.
+ *
+ * Bounding boxes pre-reject far-apart candidates, so a set that genuinely stands apart costs
+ * no boolean at all; only touching candidates are confirmed with sharesVolume. Pure geometry
+ * -- nothing is recomputed and no state is read.
+ */
+PartExport std::size_t connectedComponentCount(const std::vector<TopoShape>& shapes);
 
 }  // namespace Part
 

@@ -13,6 +13,8 @@
 # include <TopoDS_Shape.hxx>
 #endif
 
+#include <numeric>
+
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 
@@ -120,6 +122,62 @@ std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> overlappingPa
         }
     }
     return pairs;
+}
+
+std::size_t connectedComponentCount(const std::vector<TopoShape>& shapes)
+{
+    if (shapes.empty()) {
+        return 0;
+    }
+
+    // Union-find over the overlap graph. Cheaper and more honest than fusing everything and
+    // counting the solids that come back: the fuse would have to succeed, and a boolean
+    // failure would silently read as "they merged".
+    std::vector<std::size_t> parent(shapes.size());
+    std::iota(parent.begin(), parent.end(), 0);
+
+    auto find = [&parent](std::size_t x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]];  // path halving
+            x = parent[x];
+        }
+        return x;
+    };
+
+    std::vector<Bnd_Box> boxes(shapes.size());
+    for (std::size_t i = 0; i < shapes.size(); ++i) {
+        if (shapes[i].isNull()) {
+            continue;
+        }
+        try {
+            BRepBndLib::Add(shapes[i].getShape(), boxes[i]);
+        }
+        catch (const Standard_Failure&) {
+            boxes[i].SetVoid();
+        }
+    }
+
+    for (std::size_t i = 0; i < shapes.size(); ++i) {
+        for (std::size_t j = i + 1; j < shapes.size(); ++j) {
+            if (boxes[i].IsVoid() || boxes[j].IsVoid() || boxes[i].IsOut(boxes[j])) {
+                continue;
+            }
+            if (find(i) == find(j)) {
+                continue;  // already known to be the same piece
+            }
+            if (sharesVolume(shapes[i], shapes[j])) {
+                parent[find(i)] = find(j);
+            }
+        }
+    }
+
+    std::size_t components = 0;
+    for (std::size_t i = 0; i < shapes.size(); ++i) {
+        if (find(i) == i) {
+            ++components;
+        }
+    }
+    return components;
 }
 
 }  // namespace Part

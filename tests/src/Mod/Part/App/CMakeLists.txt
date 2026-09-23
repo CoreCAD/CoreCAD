@@ -7,6 +7,7 @@ add_executable(Part_tests_run
         BRepMesh.cpp
         FaceMakerBullseye.cpp
         FeatureChamfer.cpp
+        ConnectedComponentCount.cpp
         FeatureCompound.cpp
         FeatureExtrusion.cpp
         FeatureFace.cpp

@@ -42,6 +42,8 @@
 #include <Base/Sequencer.h>
 #include <Mod/Part/App/modelRefine.h>
 
+#include <Mod/Part/App/SpatialInterference.h>
+
 #include "FeatureTransformed.h"
 #include "Body.h"
 #include "FeatureAddSub.h"
@@ -432,6 +434,13 @@ App::DocumentObjectExecReturn* Transformed::execute()
                     if (Base::Sequencer().wasCanceled()) {
                         return new App::DocumentObjectExecReturn("User aborted");
                     }
+                    // Cruth §8.6/P7 (#34): ask, before the fuse hides the answer, whether the
+                    // copies ran into each other. shapes[0] is the support; the instances are
+                    // the untransformed original plus every transformed copy after it.
+                    std::vector<Part::TopoShape> instances {fuseShape};
+                    instances.insert(instances.end(), shapes.begin() + 1, shapes.end());
+                    reportCollapsedInstances(instances);
+
                     supportShape.makeElementFuse(shapes);
                 }
                 if (!cutShape.isNull()) {
@@ -476,6 +485,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
                 this->Shape.setValue(compound);
                 return App::DocumentObject::StdReturn;
             }
+            reportCollapsedInstances(shapes);
             supportShape.makeElementFuse(shapes);
             break;
         }
@@ -486,6 +496,30 @@ App::DocumentObjectExecReturn* Transformed::execute()
     this->Shape.setValue(supportShape);
 
     return App::DocumentObject::StdReturn;
+}
+
+void Transformed::reportCollapsedInstances(const std::vector<Part::TopoShape>& instances) const
+{
+    const std::size_t requested = instances.size();
+    if (requested < 2) {
+        return;
+    }
+
+    const std::size_t produced = Part::connectedComponentCount(instances);
+    if (produced >= requested) {
+        return;
+    }
+
+    // Local-first and concrete per §3.6: name this feature, state both numbers, and say what
+    // happened to the difference. No advice — what to do about it is the user's call.
+    Base::Console().warning(
+        "%s: %zu instances were requested but they form %zu connected %s. The copies overlap "
+        "and were fused.\n",
+        Label.getValue(),
+        requested,
+        produced,
+        produced == 1 ? "piece" : "pieces"
+    );
 }
 
 }  // namespace PartDesign
