@@ -1321,6 +1321,37 @@ Body* Body::resolveBaseBody(Part::Part2DObject* sketch, bool& ambiguous)
     return nullptr;
 }
 
+Body* Body::resolveMergeCandidate(App::DocumentObject* feature)
+{
+    auto* pdFeature = freecad_cast<PartDesign::Feature*>(feature);
+    if (!pdFeature) {
+        return nullptr;
+    }
+
+    Body* home = findBodyOf(pdFeature);
+
+    // While the feature extends a chain, the Body it extends IS the target to come back to.
+    if (pdFeature->BaseFeature.getValue()) {
+        return home;
+    }
+
+    // Standing alone: infer from the profile's anchor chain, exactly as feature creation
+    // does. Anything that is not profile-based has no chain to walk.
+    auto* profileBased = freecad_cast<PartDesign::ProfileBased*>(pdFeature);
+    if (!profileBased) {
+        return nullptr;
+    }
+
+    bool ambiguous = false;
+    Body* candidate = resolveBaseBody(profileBased->getVerifiedSketch(true), ambiguous);
+    if (ambiguous) {
+        return nullptr;  // §8.3 belongs to the picker, never resolved silently
+    }
+
+    // A candidate the feature already lives in is not something to merge into.
+    return candidate == home ? nullptr : candidate;
+}
+
 short Body::mustExecute() const
 {
     if (Tip.isTouched()) {
