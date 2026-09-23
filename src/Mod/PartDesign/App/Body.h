@@ -525,6 +525,25 @@ public:
     static Body* resolveMergeCandidate(App::DocumentObject* feature);
 
     /**
+     * Cruth §8.5 (Merge Result, #26): every Body @p feature could legally be merged into —
+     * the candidate list behind the "Extend a different body..." picker, for the case where
+     * the anchor chain inferred nothing (a sketch on a global plane) or inferred the wrong
+     * Body. The inferred default of resolveMergeCandidate is a default, not a verdict.
+     *
+     * Excluded, and only these:
+     *  - the Body @p feature already lives in (merging into it would do nothing);
+     *  - any Body that depends on @p feature, directly or through any chain — splicing
+     *    the feature onto such a Body's Tip would make the feature its own ancestor. The
+     *    dependency graph answers this; the Tip chain alone would not, because a Body can
+     *    reach the feature through a datum or a sub-shape reference as well as through its
+     *    own pipeline.
+     *
+     * A pure, non-throwing query, in the App layer so the picker and the Python API share
+     * one code path (P8 Programmatic Equivalence). Order follows the document's.
+     */
+    static std::vector<Body*> mergeCandidates(App::DocumentObject* feature);
+
+    /**
      * Cruth §4.6: auto-spawn a new Body at document level (no active-Part
      * containment). Color is assigned in setupObject() from the per-document
      * palette index. Returns nullptr if @p doc is null.

@@ -26,6 +26,7 @@
 
 
 #include <type_traits>
+#include <vector>
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Gui/DocumentObserver.h>
@@ -34,6 +35,7 @@
 
 class QCheckBox;
 class QLabel;
+class QPushButton;
 
 namespace PartDesign
 {
@@ -82,13 +84,19 @@ public:
 
 private Q_SLOTS:
     void onMergeToggled(bool merge);
+    void onPickBody();
 
 private:
     void refreshBodyLabel();
+    /// Bodies this feature could legally be moved into: every Body in the document except
+    /// the one it already sits in, and except any that depends on it (which would close a
+    /// cycle). Recomputed on demand — a move can retire the Body it left (§4.7).
+    std::vector<PartDesign::Body*> candidateBodies() const;
 
     PartDesignGui::ViewProvider* vp;
     QCheckBox* mergeCheckBox;
     QLabel* bodyLabel;
+    QPushButton* pickBodyButton;
     /// The pre-existing Body the feature was anchored to when the dialog opened — the
     /// target we splice back onto when the user re-enables merge after toggling off.
     /// Null when the feature opened as its own new Body (nothing to merge into).
