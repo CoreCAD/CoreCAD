@@ -1265,25 +1265,30 @@ def addVertexToReference(ref, vertex_name):
     return ref
 
 
-def createPart(partName, doc):
-    if not doc:
-        raise ValueError("No active document to add a part to.")
+def createPart(doc):
+    """Seed a new Part document with a starting solid and return its Body.
 
-    part = doc.addObject("App::Part", partName)
-    body = part.newObject("PartDesign::Body", "Body")
-    # Gui.ActiveDocument.ActiveView.setActiveObject('pdbody', body)
-    # De-ownership (marker model): the Document creates the object and the Body splices it
-    # into its own pipeline via addFeature; features anchor to the single shared document
-    # origin, so the base plane comes from doc, not a per-body Origin.
-    sketch = body.addFeature(doc.addObject("Sketcher::SketchObject", "Sketch"))
+    The document is the container, so the part is the document itself: no container object
+    is made. A Body is never created empty -- it emerges from its first feature -- so the
+    seed is a small cylinder padded from a circle on the XY plane, which the user edits or
+    replaces. @p doc must be a Part-type document (it carries the world frame the sketch
+    attaches to).
+    """
+    if not doc:
+        raise ValueError("No document to seed the new part in.")
+
+    import PartDesign
+
+    sketch = doc.addObject("Sketcher::SketchObject", "Sketch")
     sketch.MapMode = "FlatFace"
     sketch.AttachmentSupport = [(doc.XY_Plane, "")]
-
-    # add a circle as a base shape for visualisation
     sketch.addGeometry(Part.Circle(App.Vector(0, 0), App.Vector(0, 0, 1), 5), False)
+
+    pad = PartDesign.makeFeature(sketch, "Pad")
+    pad.Length = 5
     doc.recompute()
 
-    return part, body
+    return PartDesign.findBodyOf(pad)
 
 
 def getLinkGroup(linkElement):
