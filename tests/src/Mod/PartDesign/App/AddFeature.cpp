@@ -7,6 +7,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureLinearPattern.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 
 // Cruth #18: Body::addFeature owns the pipeline wiring (BaseFeature chain + Tip). A caller
@@ -82,4 +83,82 @@ TEST_F(AddFeatureTest, NormalAppendWiresChain)
     EXPECT_EQ(pad2->BaseFeature.getValue(), _pad1);
     EXPECT_EQ(_pad1->BaseFeature.getValue(), nullptr);
     EXPECT_EQ(_body->Tip.getValue(), pad2);
+}
+
+// Cruth #125: a pattern added before it is configured must become the Tip once it is, the
+// same Body the GUI builds. addFeature holds the Tip back (an unconfigured pattern as Tip
+// would recompute an empty Body); the pattern takes it when its Originals are set.
+TEST_F(AddFeatureTest, PatternAddedBeforeConfiguringBecomesTipOnceConfigured)
+{
+    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
+    _body->addFeature(lp);
+
+    // Not yet configured: the Tip waits.
+    EXPECT_EQ(lp->BaseFeature.getValue(), _pad1);
+    EXPECT_EQ(_body->Tip.getValue(), _pad1);
+
+    lp->Originals.setValues({_pad1});
+
+    EXPECT_EQ(_body->Tip.getValue(), lp);
+    EXPECT_EQ(lp->BaseFeature.getValue(), _pad1);
+}
+
+// Whole-shape mode needs no Originals; switching to it is what makes the pattern computable.
+TEST_F(AddFeatureTest, PatternSwitchedToWholeShapeBecomesTip)
+{
+    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
+    _body->addFeature(lp);
+
+    lp->TransformMode.setValue(static_cast<long>(PartDesign::Transformed::Mode::WholeShape));
+
+    EXPECT_EQ(_body->Tip.getValue(), lp);
+}
+
+// A solid added while the pattern waits is spliced in ahead of it; configuring the pattern
+// then makes it the Tip at the end of a still-linear chain (pad1 -> pad2 -> LP).
+TEST_F(AddFeatureTest, SolidAddedWhilePatternWaitsKeepsChainLinear)
+{
+    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
+    _body->addFeature(lp);
+    auto* pad2 = _doc->addObject<PartDesign::Pad>("Pad2");
+    _body->addFeature(pad2);
+
+    lp->Originals.setValues({_pad1});
+
+    EXPECT_EQ(pad2->BaseFeature.getValue(), _pad1);
+    EXPECT_EQ(lp->BaseFeature.getValue(), pad2);
+    EXPECT_EQ(_body->Tip.getValue(), lp);
+}
+
+// A pattern inserted mid-chain (the Tip rolled back to an earlier feature) must splice, not
+// fork: the feature that came after the insert point is rerouted onto the pattern.
+TEST_F(AddFeatureTest, PatternInsertedMidChainKeepsTheTail)
+{
+    auto* pad2 = _doc->addObject<PartDesign::Pad>("Pad2");
+    _body->addFeature(pad2);
+    _body->Tip.setValue(_pad1);
+
+    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
+    _body->addFeature(lp);
+    lp->Originals.setValues({_pad1});
+
+    EXPECT_EQ(lp->BaseFeature.getValue(), _pad1);
+    EXPECT_EQ(pad2->BaseFeature.getValue(), lp);
+    EXPECT_EQ(_body->Tip.getValue(), lp);
+}
+
+// The hand-over happens once. A user who later moves the Tip back to the pattern's base and
+// edits the pattern keeps the Tip where they put it.
+TEST_F(AddFeatureTest, PatternTakesTipOnlyOnFirstConfiguration)
+{
+    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
+    _body->addFeature(lp);
+    lp->Originals.setValues({_pad1});
+    ASSERT_EQ(_body->Tip.getValue(), lp);
+
+    _body->Tip.setValue(_pad1);
+    lp->Originals.setValues({});
+    lp->Originals.setValues({_pad1});
+
+    EXPECT_EQ(_body->Tip.getValue(), _pad1);
 }

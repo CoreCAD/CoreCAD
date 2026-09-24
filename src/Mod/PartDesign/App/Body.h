@@ -143,6 +143,15 @@ public:
     void setBaseProperty(App::DocumentObject* feature);
 
     /**
+     * A pattern added before it was configured becomes the Tip once it is (#125). addFeature
+     * wires such a pattern's base but holds the Tip back, so no recompute runs with an empty
+     * pattern as Tip. The pattern calls this when its Originals or mode first make it
+     * computable; it is a no-op unless the Tip is still the pattern's base, so a Tip the user
+     * has since moved is left where they put it.
+     */
+    void adoptConfiguredPattern(App::DocumentObject* pattern);
+
+    /**
      * Remove a feature from this Body's pipeline (Cruth intra-body de-ownership): rewire the
      * BaseFeature chain and retreat the Tip; retire the Body if its chain empties. A pipeline
      * edit, not a container remove — the feature is not destroyed. Must be called BEFORE the

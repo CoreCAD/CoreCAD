@@ -1960,12 +1960,48 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         // the caller has set Tip to the pattern, so getPrevSolidFeature() (which walks
         // the BaseFeature chain) finds nothing. Wire BaseFeature now, while the previous
         // Tip is still known. Tip is intentionally NOT advanced: the caller advances it
-        // once Originals are set (prepareTransformed), avoiding a transient recompute
-        // with an unconfigured pattern as Tip.
-        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(Tip.getValue());
+        // once Originals are set, avoiding a transient recompute with an unconfigured
+        // pattern as Tip. The pattern itself asks for the Tip when that happens
+        // (adoptConfiguredPattern), so a script that adds before configuring ends up with
+        // the same Body as the GUI (#125, P8).
+        auto* pattern = static_cast<PartDesign::Transformed*>(feature);
+        pattern->BaseFeature.setValue(Tip.getValue());
+        pattern->markAwaitingTip();
     }
 
     return {feature};
+}
+
+void Body::adoptConfiguredPattern(App::DocumentObject* pattern)
+{
+    auto* feature = freecad_cast<PartDesign::Feature*>(pattern);
+    if (!feature || feature->_Body.getValue() != this) {
+        return;
+    }
+    App::DocumentObject* prevTip = Tip.getValue();
+    if (prevTip == pattern || prevTip != feature->BaseFeature.getValue()) {
+        return;
+    }
+
+    // Mid-chain insert: the solid splice in addObject reroutes the displaced successor, but a
+    // pattern skipped that branch, so its base still has a second child. Reroute it now, or
+    // the tail after the pattern silently drops out of the Body.
+    if (prevTip) {
+        for (auto* obj : getDocument()->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
+            auto* next = static_cast<PartDesign::Feature*>(obj);
+            if (next != pattern && next->BaseFeature.getValue() == prevTip) {
+                next->BaseFeature.setValue(pattern);
+                break;
+            }
+        }
+    }
+
+    Tip.setValue(pattern);
+
+    // Same Tip visibility bookkeeping as the solid splice in addObject.
+    if (prevTip && prevTip->isDerivedFrom<PartDesign::Feature>() && prevTip->Visibility.getValue()) {
+        prevTip->Visibility.setValue(false);
+    }
 }
 
 std::vector<App::DocumentObject*> Body::addFeatures(std::vector<App::DocumentObject*> features)
