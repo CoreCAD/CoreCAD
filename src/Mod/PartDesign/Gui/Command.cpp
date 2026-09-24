@@ -2316,10 +2316,11 @@ bool CmdPartDesignMultiTransform::isActive()
 /* Boolean commands =======================================================*/
 
 // Cruth Amendment 5 §8.3 / Clause 5.3 — the "Apply to: A / B / Both" prompt. Given the bodies a
-// single tool reaches (always including the active body, the user's explicit target), let the user
-// choose which to cut. One checkbox per body, all checked by default; returns the chosen bodies in
-// the same order, or an empty vector if the user cancels. The reach set is computed once, at
-// creation time — the choice is then resolved to sibling features and never re-queried (Clause 5.3).
+// single tool reaches (always including the resolved target, the user's explicit choice), let the
+// user choose which to cut. One checkbox per body, all checked by default; returns the chosen
+// bodies in the same order, or an empty vector if the user cancels. The reach set is computed once,
+// at creation time — the choice is then resolved to sibling features and never re-queried
+// (Clause 5.3).
 static std::vector<PartDesign::Body*> chooseBodiesToAffect(const std::vector<PartDesign::Body*>& reached)
 {
     QDialog dlg(Gui::getMainWindow());
@@ -2364,7 +2365,7 @@ CmdPartDesignBoolean::CmdPartDesignBoolean()
     sGroup = QT_TR_NOOP("PartDesign");
     sMenuText = QT_TR_NOOP("Boolean Operation");
     sToolTipText = QT_TR_NOOP(
-        "Applies boolean operations with the selected objects and the active body"
+        "Applies boolean operations with the selected objects as tools on the remaining body"
     );
     sWhatsThis = "PartDesign_Boolean";
     sStatusTip = sToolTipText;
@@ -2375,45 +2376,52 @@ CmdPartDesignBoolean::CmdPartDesignBoolean()
 void CmdPartDesignBoolean::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/*messageIfNot = */ true);
-    if (!pcActiveBody) {
+    // Cruth §8.5/§4.6: a Boolean is told its target — the selection names the tools, and the
+    // target is the body they leave over (asked for when that is ambiguous), never whichever
+    // body happens to be active.
+    PartDesign::Body* pcTargetBody = PartDesignGui::resolveBooleanTarget(this);
+    if (!pcTargetBody) {
         return;
     }
 
-    Gui::SelectionFilter BodyFilter("SELECT Part::Feature COUNT 1..");
+    // The selection names the tools. Read it directly: a Body is no longer a Part::Feature, so a
+    // "SELECT Part::Feature" filter silently dropped every tree-picked body.
+    std::vector<App::DocumentObject*> selected;
+    for (auto* obj : getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId())) {
+        if (obj->isDerivedFrom<PartDesign::Body>() || obj->isDerivedFrom<Part::Feature>()) {
+            selected.push_back(obj);
+        }
+    }
 
     // Cruth Amendment 5 §8.3 — multi-body scope. If the selection resolves to exactly one tool
     // body, ask which bodies its cut reaches (tool ∩ Body ≠ ∅); when it reaches more than just the
-    // active one, prompt "Apply to: A / B / Both" and fan the cut out to one sibling per chosen
+    // target, prompt "Apply to: A / B / Both" and fan the cut out to one sibling per chosen
     // body (each advancing its own chain, sharing the one tool). Anything else falls through to the
-    // classic single-Boolean-on-active path below.
-    if (BodyFilter.match() && !BodyFilter.Result.empty()) {
+    // classic single-Boolean-on-target path below.
+    if (!selected.empty()) {
         std::vector<PartDesign::Body*> toolBodies;
-        for (auto& results : BodyFilter.Result) {
-            for (auto& result : results) {
-                App::DocumentObject* obj = result.getObject();
-                // The selection may be a Body itself (tree pick), or a feature whose Body is
-                // *derived* by walking its BaseShape chain (findBodyOf) — never a stored edge.
-                auto* b = freecad_cast<PartDesign::Body*>(obj);
-                if (!b) {
-                    b = PartDesignGui::getBodyFor(obj, /*messageIfNot=*/false);
-                }
-                if (b && b != pcActiveBody
-                    && std::find(toolBodies.begin(), toolBodies.end(), b) == toolBodies.end()) {
-                    toolBodies.push_back(b);
-                }
+        for (App::DocumentObject* obj : selected) {
+            // The selection may be a Body itself (tree pick), or a feature whose Body is
+            // *derived* by walking its BaseShape chain (findBodyOf) — never a stored edge.
+            auto* b = freecad_cast<PartDesign::Body*>(obj);
+            if (!b) {
+                b = PartDesignGui::getBodyFor(obj, /*messageIfNot=*/false);
+            }
+            if (b && b != pcTargetBody
+                && std::find(toolBodies.begin(), toolBodies.end(), b) == toolBodies.end()) {
+                toolBodies.push_back(b);
             }
         }
         if (toolBodies.size() == 1) {
             PartDesign::Body* tool = toolBodies.front();
             // Cruth §3.3: a Body holds no stored geometry; derive it from the Tip.
             const Part::TopoShape toolShape = tool->derivedTipShape();
-            // Candidate targets: the active body (explicit intent) plus every other body the tool
-            // reaches. Order: active first, then document order.
-            std::vector<PartDesign::Body*> reached {pcActiveBody};
+            // Candidate targets: the resolved target (explicit intent) plus every other body the
+            // tool reaches. Order: target first, then document order.
+            std::vector<PartDesign::Body*> reached {pcTargetBody};
             for (auto* obj : getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
                 auto* cand = static_cast<PartDesign::Body*>(obj);
-                if (cand != pcActiveBody && cand != tool
+                if (cand != pcTargetBody && cand != tool
                     && PartDesign::Body::toolReaches(toolShape, cand->derivedTipShape())) {
                     reached.push_back(cand);
                 }
@@ -2434,19 +2442,20 @@ void CmdPartDesignBoolean::activated(int iMsg)
     }
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Boolean"));
-    std::string FeatName = getUniqueObjectName("Boolean", pcActiveBody);
-    auto Feat = PartDesignGui::createFeature(pcActiveBody, "PartDesign::Boolean", FeatName);
+    std::string FeatName = getUniqueObjectName("Boolean", pcTargetBody);
+    auto Feat = PartDesignGui::createFeature(pcTargetBody, "PartDesign::Boolean", FeatName);
 
     // If we don't add an object to the boolean group then don't update the body
     // as otherwise this will fail and it will be marked as invalid
     bool updateDocument = false;
-    if (BodyFilter.match() && !BodyFilter.Result.empty()) {
+    if (!selected.empty()) {
         std::vector<App::DocumentObject*> bodies;
-        for (auto& results : BodyFilter.Result) {
-            for (auto& result : results) {
-                if (result.getObject() != pcActiveBody) {
-                    bodies.push_back(result.getObject());
-                }
+        for (App::DocumentObject* obj : selected) {
+            // Anything in the target itself (the Body, or one of its features) is not a tool.
+            if (obj != pcTargetBody
+                && PartDesignGui::getBodyFor(obj, /*messageIfNot=*/false) != pcTargetBody
+                && std::find(bodies.begin(), bodies.end(), obj) == bodies.end()) {
+                bodies.push_back(obj);
             }
         }
         if (!bodies.empty()) {
@@ -2461,7 +2470,7 @@ void CmdPartDesignBoolean::activated(int iMsg)
 
 bool CmdPartDesignBoolean::isActive()
 {
-    return hasActiveBody();
+    return hasActiveDocument() && !Gui::Control().activeDialog();
 }
 
 // Command group for datums =============================================

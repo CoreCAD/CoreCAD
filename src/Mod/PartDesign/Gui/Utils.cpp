@@ -305,6 +305,53 @@ PartDesign::Body* resolveTargetBody(Gui::Command* cmd)
     return pickBody(candidates);
 }
 
+PartDesign::Body* resolveBooleanTarget(Gui::Command* cmd)
+{
+    if (!cmd || !cmd->getDocument()) {
+        return nullptr;
+    }
+
+    // The selection names the tools; collect the distinct Bodies it points at (a Body picked
+    // directly, or a feature resolved to its Body by walking the BaseFeature chain).
+    std::vector<PartDesign::Body*> selectedBodies;
+    for (auto* obj : cmd->getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId())) {
+        auto* body = freecad_cast<PartDesign::Body*>(obj);
+        if (!body) {
+            body = getBodyFor(obj, /*messageIfNot=*/false);
+        }
+        if (body
+            && std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
+            selectedBodies.push_back(body);
+        }
+    }
+
+    // The target is chosen from the bodies the selection leaves over.
+    std::vector<PartDesign::Body*> candidates;
+    for (auto* obj : cmd->getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
+        auto* body = static_cast<PartDesign::Body*>(obj);
+        if (std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
+            candidates.push_back(body);
+        }
+    }
+    // Every body is selected: one of them must be the target — ask which, never guess.
+    if (candidates.empty()) {
+        candidates = selectedBodies;
+    }
+
+    if (candidates.empty()) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No body to work on"),
+            QObject::tr("No solid body is available in the document to operate on.")
+        );
+        return nullptr;
+    }
+    if (candidates.size() == 1) {
+        return candidates.front();  // one body left over — unambiguous
+    }
+    return pickBody(candidates);  // Cancel aborts silently
+}
+
 App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, const std::string& name)
 {
     if (!body) {

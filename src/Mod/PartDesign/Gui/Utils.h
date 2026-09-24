@@ -108,6 +108,14 @@ PartDesign::Body* getBodyFor(
  */
 PartDesign::Body* resolveTargetBody(Gui::Command* cmd);
 
+/**
+ * Cruth §8.5/§4.6: resolve the target Body of a Boolean, whose selection names its TOOLS.
+ * The target is the one body the selection leaves over: one unselected body → that body;
+ * several → the pickBody chooser; every body selected → the chooser over the selected ones
+ * (the rest stay tools). Never read from an active body. Returns nullptr on no-body/cancel.
+ */
+PartDesign::Body* resolveBooleanTarget(Gui::Command* cmd);
+
 /// Fix sketch support after moving a free sketch into a body
 void fixSketchSupport(Sketcher::SketchObject* sketch);
 
