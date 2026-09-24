@@ -337,6 +337,57 @@ class CreateSketch(unittest.TestCase):
         param.SetBool("NewSketchUseAttachmentDialog", useAttachmentSaved)
 
 
+class TestClosingAFeatureDialog(unittest.TestCase):
+    """Cruth #20: a feature dialog removed with a bare closeDialog() -- neither OK nor
+    Cancel -- used to leave its "Make ..." step open, stranding the half-made feature and
+    the Body spawned for it. Closing without OK now means Cancel."""
+
+    def setUp(self):
+        self.Doc = App.newDocument("ClosingAFeatureDialog", type="Part")
+        self.Doc.UndoMode = 1
+        self.Doc.openTransaction("sketch")
+        self.Sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
+        pts = [
+            App.Vector(0, 0, 0),
+            App.Vector(10, 0, 0),
+            App.Vector(10, 10, 0),
+            App.Vector(0, 10, 0),
+        ]
+        for i in range(4):
+            self.Sketch.addGeometry(Part.LineSegment(pts[i], pts[(i + 1) % 4]))
+        self.Doc.commitTransaction()
+        self.Doc.recompute()
+        Gui.activateWorkbench("PartDesignWorkbench")
+        self.Before = {o.Name for o in self.Doc.Objects}
+
+    def tearDown(self):
+        if Gui.Control.activeDialog():
+            Gui.Control.closeDialog()
+        App.closeDocument(self.Doc.Name)
+
+    def startPad(self):
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Sketch)
+        Gui.runCommand("PartDesign_Pad")
+        self.assertTrue(Gui.Control.activeDialog())
+        self.assertIn("Pad", {o.Name for o in self.Doc.Objects})
+
+    def testCloseDialogRollsBackANewFeature(self):
+        self.startPad()
+        Gui.Control.closeDialog()
+        self.assertEqual({o.Name for o in self.Doc.Objects} - self.Before, set())
+        self.assertFalse(self.Doc.HasPendingTransaction)
+        self.assertEqual(self.Doc.UndoNames, ["sketch"])
+
+    def testResetEditKeepsANewFeature(self):
+        # Finishing the edit is a different gesture: the feature stays, as its own undo step.
+        self.startPad()
+        Gui.ActiveDocument.resetEdit()
+        self.assertEqual({o.Name for o in self.Doc.Objects} - self.Before, {"Body", "Pad"})
+        self.assertFalse(self.Doc.HasPendingTransaction)
+        self.assertEqual(self.Doc.UndoNames, ["Make Pad", "sketch"])
+
+
 # class PartDesignGuiTestCases(unittest.TestCase):
 #   def setUp(self):
 #       self.Doc = FreeCAD.newDocument("SketchGuiTest")

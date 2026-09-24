@@ -97,6 +97,13 @@ public:
     /// (e.g. textures, highlights, thread visualization).
     virtual void updateOverlay() {};
 
+    /// True while unsetEdit is closing the task dialog. The edit is being finished, so the
+    /// dialog must not roll its feature back from under this view provider (#20).
+    bool isFinishingEdit() const
+    {
+        return finishingEdit;
+    }
+
 protected:
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
     bool setEdit(int ModNum) override;
@@ -122,6 +129,7 @@ protected:
 
 private:
     Gui::CoinPtr<PartGui::SoPreviewShape> pcToolPreview;
+    bool finishingEdit {false};
 };
 
 using ViewProviderPython = Gui::ViewProviderFeaturePythonT<ViewProvider>;

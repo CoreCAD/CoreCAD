@@ -217,6 +217,8 @@ public:
     bool accept() override;
     /// is called by the framework if the dialog is rejected (Cancel)
     bool reject() override;
+    /// is called by the framework when the dialog is removed, however that happened
+    void closed() override;
 
     template<typename T = PartDesignGui::ViewProvider>
     T* getViewObject() const
@@ -241,6 +243,9 @@ protected:
 
 private:
     PartDesignGui::ViewProvider* vp;
+    /// The undo step that was open when the dialog was made: the feature's "Make ..." step
+    /// for a new feature, 0 when editing one that already exists.
+    int creationTransaction {0};
 };
 
 }  // namespace PartDesignGui
