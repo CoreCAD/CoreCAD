@@ -10,7 +10,11 @@
 # include <GProp_GProps.hxx>
 # include <Precision.hxx>
 # include <Standard_Failure.hxx>
+# include <TopExp_Explorer.hxx>
+# include <TopoDS.hxx>
+# include <TopoDS_Compound.hxx>
 # include <TopoDS_Shape.hxx>
+# include <BRep_Builder.hxx>
 #endif
 
 #include <numeric>
@@ -43,6 +47,42 @@ bool sharesVolume(const TopoShape& first, const TopoShape& second)
 
     GProp_GProps props;
     BRepGProp::VolumeProperties(inter, props);
+    return props.Mass() > Precision::Confusion();
+}
+
+bool sharesFaceArea(const TopoShape& first, const TopoShape& second)
+{
+    if (first.isNull() || second.isNull()) {
+        return false;
+    }
+
+    // Common the two boundaries rather than the two solids: solids that only touch share no
+    // volume, but their boundaries share the patch where they meet, and that patch has area.
+    // Contact along an edge or at a point has none, which is right -- a fuse does not make
+    // one piece out of those either.
+    auto boundary = [](const TopoShape& shape) {
+        TopoDS_Compound faces;
+        BRep_Builder builder;
+        builder.MakeCompound(faces);
+        for (TopExp_Explorer it(shape.getShape(), TopAbs_FACE); it.More(); it.Next()) {
+            builder.Add(faces, it.Current());
+        }
+        return TopoShape(faces);
+    };
+
+    TopoDS_Shape inter;
+    try {
+        inter = boundary(first).common(boundary(second).getShape());
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+    if (inter.IsNull()) {
+        return false;
+    }
+
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(inter, props);
     return props.Mass() > Precision::Confusion();
 }
 
@@ -165,7 +205,7 @@ std::size_t connectedComponentCount(const std::vector<TopoShape>& shapes)
             if (find(i) == find(j)) {
                 continue;  // already known to be the same piece
             }
-            if (sharesVolume(shapes[i], shapes[j])) {
+            if (sharesVolume(shapes[i], shapes[j]) || sharesFaceArea(shapes[i], shapes[j])) {
                 parent[find(i)] = find(j);
             }
         }

@@ -24,9 +24,13 @@ import unittest
 import FreeCAD
 
 
-def _x_axis(doc):
+def _origin_feature(doc, role):
     origin = next(o for o in doc.Objects if o.isDerivedFrom("App::Origin"))
-    return next(f for f in origin.OriginFeatures if getattr(f, "Role", "") == "X_Axis")
+    return next(f for f in origin.OriginFeatures if getattr(f, "Role", "") == role)
+
+
+def _x_axis(doc):
+    return _origin_feature(doc, "X_Axis")
 
 
 class TestKeepCopiesApart(unittest.TestCase):
@@ -112,6 +116,40 @@ class TestKeepCopiesApart(unittest.TestCase):
         lp.Length = 90.0
         self.Doc.recompute()
         self.assertEqual(lp.InstancePieces, 4)
+
+    # --- copies that touch rather than overlap (#126) --------------------------------
+
+    def testCopiesTouchingFaceToFaceAreRecordedAsJoined(self):
+        # Pitch equal to the part's own width: the copies share no volume, but the fuse welds
+        # them at the shared faces all the same. Four asked for, one came back.
+        lp = self._pattern(keep_apart=False, length=30.0)
+        self.assertEqual(len(lp.Shape.Solids), 1)
+        self.assertEqual(lp.InstancesRequested, 4)
+        self.assertEqual(lp.InstancePieces, 1)
+
+    def testTouchingCopiesStayApartWhenAsked(self):
+        # The choice the notice points at has to work for this case too.
+        lp = self._pattern(keep_apart=True, length=30.0)
+        self.assertEqual(len(lp.Shape.Solids), 4)
+
+    def testMirrorAcrossTheFaceItSitsOnIsRecordedAsJoined(self):
+        # The case #126 was found with. A mirror is one more pattern and gets the same rule.
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
+        body.addFeature(box)
+        box.Length = box.Width = box.Height = 10.0
+        self.Doc.recompute()
+
+        mirrored = self.Doc.addObject("PartDesign::Mirrored", "Mirrored")
+        mirrored.Originals = [box]
+        mirrored.MirrorPlane = (_origin_feature(self.Doc, "XY_Plane"), [""])
+        mirrored.Refine = False
+        body.addFeature(mirrored)
+        self.Doc.recompute()
+
+        self.assertEqual(len(mirrored.Shape.Solids), 1)
+        self.assertEqual(mirrored.InstancesRequested, 2)
+        self.assertEqual(mirrored.InstancePieces, 1)
 
     # --- §5.6 break-out reaches this path too ---------------------------------------
 
