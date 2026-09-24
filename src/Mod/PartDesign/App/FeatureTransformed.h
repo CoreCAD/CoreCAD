@@ -161,6 +161,13 @@ public:
 
     void onChanged(const App::Property* prop) override;
 
+    /// Set by Body::addFeature on a pattern added before it was configured: the Body holds
+    /// its Tip back until the pattern's settings make it computable (#125).
+    void markAwaitingTip()
+    {
+        awaitingTip = true;
+    }
+
 protected:
     void Restore(Base::XMLReader& reader) override;
     void handleChangedPropertyType(
@@ -175,6 +182,8 @@ protected:
     virtual void purgeTouchedTransformations();
 
 private:
+    /// Not saved: it only bridges the gap between creation and first configuration.
+    bool awaitingTip = false;
 };
 
 }  // namespace PartDesign
