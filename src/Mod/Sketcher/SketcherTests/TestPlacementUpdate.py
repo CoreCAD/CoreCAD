@@ -39,7 +39,7 @@ class TestSketchPlacementUpdate(unittest.TestCase):
         if not GUI_AVAILABLE:
             self.skipTest("GUI not available")
 
-        self.doc = FreeCAD.newDocument("TestPlacementUpdate")
+        self.doc = FreeCAD.newDocument("TestPlacementUpdate", type="Part")
 
         # create a body (typical partdesign workflow)
         self.body = self.doc.addObject("PartDesign::Body", "Body")

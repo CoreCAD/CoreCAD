@@ -268,3 +268,65 @@ if(WIN32)
     set_tests_properties(Python_SuiteRegistry PROPERTIES
         ENVIRONMENT_MODIFICATION "${_test_env_mod}")
 endif()
+
+# -------------------------------------------------------------------------------------------
+# The Python GUI test suites
+# -------------------------------------------------------------------------------------------
+#
+# The same idea for the suites a module registers from its InitGui.py. They run in the GUI
+# program on Qt's offscreen platform, so no display is needed, and each reads a user.cfg of its
+# own that is deleted before the run: a preference persisted by an earlier session would
+# otherwise decide what the test sees.
+#
+# PYTHON_GUI_TEST_SUITES holds only what the GUI adds. Python_GuiSuiteRegistry compares both
+# lists together with what a GUI session registers.
+if(BUILD_GUI)
+    set(PYTHON_GUI_TEST_SUITES
+        GuiDocument
+        Menu
+        Menu.MenuCreateCases
+        Menu.MenuDeleteCases
+        MeshTestsGui
+        TestAssemblyWorkbenchGui
+        TestDraftGui
+        TestImportGui
+        TestMaterialsGui
+        TestPartDesignGui
+        TestPartGui
+        TestSketcherGui
+        TestTechDrawGui
+        Workbench
+    )
+
+    set(_gui_cfg_dir ${CMAKE_BINARY_DIR}/tests/gui-user-cfg)
+    add_test(NAME Python_GuiCleanConfig COMMAND ${CMAKE_COMMAND} -E rm -rf ${_gui_cfg_dir})
+    set_tests_properties(Python_GuiCleanConfig PROPERTIES FIXTURES_SETUP PythonGuiConfig)
+
+    foreach(_suite ${PYTHON_GUI_TEST_SUITES})
+        add_test(NAME Python_${_suite}
+                 COMMAND $<TARGET_FILE:FreeCADMain>
+                         --user-cfg ${_gui_cfg_dir}/${_suite}.cfg -t ${_suite})
+        set_tests_properties(Python_${_suite} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+            FIXTURES_REQUIRED PythonGuiConfig
+            TIMEOUT 300)
+        if(WIN32)
+            set_tests_properties(Python_${_suite} PROPERTIES
+                ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+        endif()
+    endforeach()
+
+    set(_all_python_suites ${PYTHON_TEST_SUITES} ${PYTHON_GUI_TEST_SUITES})
+    string(REPLACE ";" "\;" _all_python_suites_for_env "${_all_python_suites}")
+    add_test(NAME Python_GuiSuiteRegistry
+             COMMAND $<TARGET_FILE:FreeCADMain> --user-cfg ${_gui_cfg_dir}/SuiteRegistry.cfg
+                     ${CMAKE_CURRENT_SOURCE_DIR}/PythonSuites.py)
+    set_tests_properties(Python_GuiSuiteRegistry PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;CRUTH_PYTHON_TEST_SUITES=${_all_python_suites_for_env}"
+        FIXTURES_REQUIRED PythonGuiConfig
+        TIMEOUT 300)
+    if(WIN32)
+        set_tests_properties(Python_GuiSuiteRegistry PROPERTIES
+            ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+    endif()
+endif()
