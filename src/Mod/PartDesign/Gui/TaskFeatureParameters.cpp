@@ -305,8 +305,8 @@ void TaskMergeResultParameters::refreshOverlapNotice()
     // the checkbox above is the decision, and it is already in reach.
     overlapLabel->setText(
         pieces == 1
-            ? tr("%1 copies were asked for; they overlap and came back as one piece.").arg(requested)
-            : tr("%1 copies were asked for; they overlap and came back as %2 pieces.")
+            ? tr("%1 copies were asked for; they overlap or touch and came back as one piece.").arg(requested)
+            : tr("%1 copies were asked for; they overlap or touch and came back as %2 pieces.")
                   .arg(requested)
                   .arg(pieces)
     );

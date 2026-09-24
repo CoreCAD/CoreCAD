@@ -45,11 +45,24 @@ TEST(ConnectedComponentCountTest, DisjointShapesEachCountSeparately)
     EXPECT_EQ(Part::connectedComponentCount({boxAt(0), boxAt(20), boxAt(40), boxAt(60)}), 4u);
 }
 
-// Parts are expected to touch: meeting along a face shares no volume, so face-to-face
-// neighbours are still separate pieces and raise no notice.
-TEST(ConnectedComponentCountTest, ShapesMeetingAlongAFaceAreStillSeparate)
+// Copies that meet along a face are one piece (#126): a fuse welds them exactly as it welds
+// overlapping ones, so a pattern spaced exactly one part-width apart has collapsed too.
+TEST(ConnectedComponentCountTest, ShapesMeetingAlongAFaceAreOnePiece)
 {
-    EXPECT_EQ(Part::connectedComponentCount({boxAt(0), boxAt(10)}), 2u);
+    EXPECT_EQ(Part::connectedComponentCount({boxAt(0), boxAt(10)}), 1u);
+}
+
+// Contact along an edge only has no area, and a fuse does not make one piece of it.
+TEST(ConnectedComponentCountTest, ShapesMeetingAlongAnEdgeAreStillSeparate)
+{
+    const Part::TopoShape diagonal(BRepPrimAPI_MakeBox(gp_Pnt(10, 10, 0), 10.0, 10.0, 10.0).Shape());
+    EXPECT_EQ(Part::connectedComponentCount({boxAt(0), diagonal}), 2u);
+}
+
+// A small gap is still a gap.
+TEST(ConnectedComponentCountTest, ShapesWithAGapAreSeparate)
+{
+    EXPECT_EQ(Part::connectedComponentCount({boxAt(0), boxAt(10.01)}), 2u);
 }
 
 // The defect: overlapping copies collapse into one piece.

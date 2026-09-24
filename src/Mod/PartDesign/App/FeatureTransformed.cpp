@@ -599,7 +599,7 @@ void Transformed::reportCollapsedInstances(const std::vector<Part::TopoShape>& i
     // happened to the difference. No advice — what to do about it is the user's call.
     Base::Console().warning(
         "%s: %zu instances were requested but they form %zu connected %s. The copies overlap "
-        "and were fused.\n",
+        "or touch and were fused.\n",
         Label.getValue(),
         requested,
         produced,
