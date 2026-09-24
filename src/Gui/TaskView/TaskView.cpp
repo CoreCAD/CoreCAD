@@ -960,6 +960,8 @@ void TaskView::accept(App::Document* doc)
     bool success = foundTaskInfo->ActiveDialog->accept();
     foundTaskInfo->ActiveDialog->setProperty("taskview_accept_or_reject", QVariant());
     if (success || foundTaskInfo->ActiveDialog->property("taskview_remove_dialog").isValid()) {
+        // Tells the dialog's closed() it went through OK/Cancel, not a bare closeDialog().
+        foundTaskInfo->ActiveDialog->setProperty("taskview_resolved", true);
         removeDialog(doc);
     }
 }
@@ -978,6 +980,8 @@ void TaskView::reject(App::Document* doc)
     bool success = foundTaskInfo->ActiveDialog->reject();
     foundTaskInfo->ActiveDialog->setProperty("taskview_accept_or_reject", QVariant());
     if (success || foundTaskInfo->ActiveDialog->property("taskview_remove_dialog").isValid()) {
+        // Tells the dialog's closed() it went through OK/Cancel, not a bare closeDialog().
+        foundTaskInfo->ActiveDialog->setProperty("taskview_resolved", true);
         removeDialog(doc);
     }
 }

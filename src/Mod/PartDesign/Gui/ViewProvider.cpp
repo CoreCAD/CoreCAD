@@ -204,7 +204,9 @@ void ViewProvider::unsetEdit(int ModNum)
 
     if (ModNum == ViewProvider::Default) {
         // when pressing ESC make sure to close the dialog
+        finishingEdit = true;
         Gui::Control().closeDialog();
+        finishingEdit = false;
     }
     else {
         PartGui::ViewProviderPart::unsetEdit(ModNum);

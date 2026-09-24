@@ -370,6 +370,10 @@ TaskDlgFeatureParameters::TaskDlgFeatureParameters(PartDesignGui::ViewProvider* 
     , vp(vp)
 {
     assert(vp);
+    App::Document* doc = vp->getObject()->getDocument();
+    if (doc->hasPendingTransaction()) {
+        creationTransaction = doc->getTransactionID(/* undo = */ true);
+    }
 }
 
 TaskDlgFeatureParameters::~TaskDlgFeatureParameters() = default;
@@ -504,6 +508,25 @@ bool TaskDlgFeatureParameters::reject()
     Gui::cmdGuiDocument(document, "resetEdit()");
 
     return true;
+}
+
+void TaskDlgFeatureParameters::closed()
+{
+    // Cruth #20: a dialog removed with a bare closeDialog() -- neither OK nor Cancel -- used to
+    // leave its "Make ..." step open, so the half-made feature (and a Body spawned for it) sat
+    // in the document and folded into whatever the user did next. Closing without OK means
+    // Cancel, as Esc already does, so roll back the same way. Only while the dialog's own
+    // creation step is still the open one: never on an edit of an existing feature, and never
+    // from inside unsetEdit, where the edit is being finished and resetEdit commits the step.
+    if (!property("taskview_resolved").toBool() && creationTransaction != 0 && vp
+        && !vp->isFinishingEdit()) {
+        App::Document* doc = vp->getObject()->getDocument();
+        if (doc->hasPendingTransaction()
+            && doc->getTransactionID(/* undo = */ true) == creationTransaction) {
+            reject();
+        }
+    }
+    TaskDialog::closed();
 }
 
 #include "moc_TaskFeatureParameters.cpp"
