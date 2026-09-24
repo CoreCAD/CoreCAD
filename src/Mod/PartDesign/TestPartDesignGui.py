@@ -24,14 +24,12 @@
 
 import FreeCAD
 import FreeCADGui
-import os
 import sys
 import unittest
 import Sketcher
 import Part
 import PartDesign
 import PartDesignGui
-import tempfile
 
 from PySide import QtGui, QtCore
 from PySide.QtGui import QApplication
@@ -39,29 +37,6 @@ from PySide.QtGui import QApplication
 from PartDesignTests.TestMaterial import TestMaterial
 from PartDesignTests.TestActiveObject import TestActiveObject
 from PartDesignTests.TestSuppressed import TestSuppressedStrikethrough
-
-
-# timer runs this class in order to access modal dialog
-class CallableCheckWorkflow:
-    def __init__(self, test):
-        self.test = test
-
-    def __call__(self):
-        dialog = QApplication.activeModalWidget()
-        self.test.assertIsNotNone(dialog, "Dialog box could not be found")
-        if dialog is not None:
-            dialogcheck = CallableCheckDialogWasClosed(self.test)
-            QtCore.QTimer.singleShot(500, dialogcheck)
-            QtCore.QTimer.singleShot(0, dialog, QtCore.SLOT("accept()"))
-
-
-class CallableCheckDialogWasClosed:
-    def __init__(self, test):
-        self.test = test
-
-    def __call__(self):
-        dialog = QApplication.activeModalWidget()
-        self.test.assertIsNone(dialog, "Dialog box was not closed by accept()")
 
 
 class CallableCheckWarning:
@@ -278,38 +253,40 @@ class PartDesignGuiTestCases(unittest.TestCase):
 
 class PartDesignTransformed(unittest.TestCase):
     def setUp(self):
-        self.Doc = App.newDocument("PartDesignTransformed")
+        self.Doc = App.newDocument("PartDesignTransformed", type="Part")
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Body.addFeature(self.Doc.addObject("PartDesign::AdditiveBox", "BodyBox"))
+        # A second box left outside every body.
         self.BoxObj = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.BoxObj.Length = 10.0
-        self.BoxObj.Width = 10.0
-        self.BoxObj.Height = 10.0
-        App.ActiveDocument.recompute()
-        # not adding box to the body to imitate undertermined workflow
-        tempDir = tempfile.gettempdir()
-        self.TempDoc = os.path.join(tempDir, "PartDesignTransformed.FCStd")
-        if os.path.exists(self.TempDoc):
-            os.remove(self.TempDoc)
-        App.ActiveDocument.saveAs(self.TempDoc)
-        App.closeDocument("PartDesignTransformed")
+        self.Doc.recompute()
 
     def tearDown(self):
-        # closing doc
-        if App.ActiveDocument is not None and App.ActiveDocument.Name == PartDesignTransformed:
-            App.closeDocument("PartDesignTransformed")
-        # print ("omit closing document for debugging")
+        App.closeDocument(self.Doc.Name)
 
     def testMultiTransformCase(self):
         App.Console.PrintMessage("Testing applying MultiTransform to the Box outside the body\n")
-        App.open(self.TempDoc)
-        App.setActiveDocument("PartDesignTransformed")
-        Gui.Selection.addSelection(App.ActiveDocument.Box)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.BoxObj)
+        seen = []
 
-        workflowcheck = CallableCheckWorkflow(self)
-        QtCore.QTimer.singleShot(500, workflowcheck)
+        def dismiss():
+            dialog = QApplication.activeModalWidget()
+            if dialog is not None:
+                seen.append(dialog.windowTitle())
+                dialog.reject()
+
+        # A timer the test owns and stops, so a missed dialog cannot fire into a later test.
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(dismiss)
+        timer.start(500)
         Gui.runCommand("PartDesign_MultiTransform")
+        timer.stop()
 
-        App.closeDocument("PartDesignTransformed")
+        self.assertEqual(seen, ["Selection is not in the active body"])
+        self.assertFalse(
+            [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::MultiTransform")]
+        )
 
 
 class CreateSketch(unittest.TestCase):
@@ -319,16 +296,21 @@ class CreateSketch(unittest.TestCase):
         param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/PartDesign")
         useAttachmentSaved = param.GetBool("NewSketchUseAttachmentDialog", False)
         param.SetBool("NewSketchUseAttachmentDialog", False)
-        App.newDocument()
+        App.newDocument(type="Part")
         App.activeDocument().addObject("PartDesign::Body", "Body")
         App.ActiveDocument.getObject("Body").Label = "Body"
         FreeCADGui.activateView("Gui::View3DInventor", True)
         FreeCADGui.activeView().setActiveObject("pdbody", App.activeDocument().Body)
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.runCommand("Std_OrthographicCamera", 1)
-        workflowcheck = CallableCheckExemptionDialog(self)
-        QtCore.QTimer.singleShot(100, workflowcheck)
+        # Owned and stopped: a leaked single-shot used to fire into the next test and accept
+        # whatever dialog it had open.
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(CallableCheckExemptionDialog(self))
+        timer.start(100)
         FreeCADGui.runCommand("PartDesign_CompSketches", 0)
+        timer.stop()
         activeDialog = FreeCADGui.Control.activeDialog()
         self.assertIsNotNone(activeDialog)
         if activeDialog is not None:
@@ -406,7 +388,7 @@ class TestClosingAFeatureDialog(unittest.TestCase):
 
 class TestShapeBinder(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestShapeBinder")
+        self.Doc = FreeCAD.newDocument("PartDesignTestShapeBinder", type="Part")
 
     def testDefaultColor(self):
         """
@@ -438,7 +420,7 @@ class TestShapeBinder(unittest.TestCase):
 
 class TestSubShapeBinder(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestSubShapeBinder")
+        self.Doc = FreeCAD.newDocument("PartDesignTestSubShapeBinder", type="Part")
 
     def tearDown(self):
         FreeCAD.closeDocument(self.Doc.Name)
@@ -471,7 +453,7 @@ class TestSubShapeBinder(unittest.TestCase):
 
 class TestDatumPlane(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane", type="Part")
 
     def tearDown(self):
         FreeCAD.closeDocument(self.Doc.Name)
@@ -491,8 +473,9 @@ class TestDatumPlane(unittest.TestCase):
         datum.MapMode = "FlatFace"
         self.Doc.recompute()
 
-        grp = App.ParamGet("User parameter:BaseApp/Preferences/Mod/PartDesign")
-        packed_color = grp.GetUnsigned("DefaultDatumColor", 0xFFD70099)
+        # Datums share the coordinate-system light blue (ViewProviderCoordinateSystem), not
+        # PartDesign's old yellow: the PartDesign datum types were retired (#45).
+        packed_color = 0x3296FAFF
         r, g, b, a = datum.ViewObject.ShapeColor
         color = (
             int(r * 255.0 + 0.5) << 24
