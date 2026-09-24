@@ -187,15 +187,16 @@ class ColorPerFaceTest(unittest.TestCase):
         self.doc.recompute()
 
         fuse.ViewObject.DiffuseColor = [(1.0, 0.0, 0.0, 1.0)] * 11
-        fuseName = fuse.Name
+        fuseUid = fuse.Uid
 
         self.doc.saveAs(self.fileName)
         App.closeDocument(self.doc.Name)
 
         self.doc = App.openDocument(self.fileName)
 
-        # By name: which object is active after a load depends on the order objects were read.
-        fuse = self.doc.getObject(fuseName)
+        # By its identity: which object is active after a load depends on the order objects
+        # were read.
+        (fuse,) = [o for o in self.doc.Objects if o.Uid == fuseUid]
         self.assertEqual(len(fuse.Shape.Faces), 11)
         self.assertEqual(len(fuse.ViewObject.DiffuseColor), 11)
         self.assertEqual(fuse.ViewObject.DiffuseColor[0], (1.0, 0.0, 0.0, 1.0))
