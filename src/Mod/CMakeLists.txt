@@ -152,3 +152,28 @@ endif(BUILD_TUX)
 if(BUILD_WEB)
     add_subdirectory(Web)
 endif(BUILD_WEB)
+
+# ── Prune the build tree of what this configuration no longer produces ───────
+# Switching a module off stops it compiling, but its earlier output in
+# build/<cfg>/Mod stays live: Init.py still loads, the workbench still shows,
+# its test suite still registers. Likewise a deleted script leaves a dangling
+# symlink behind (INSTALL_PREFER_SYMLINKS). Remove both on every configure.
+get_directory_property(_corecad_added_mods SUBDIRECTORIES)
+file(GLOB _corecad_src_mods LIST_DIRECTORIES true "${CMAKE_CURRENT_SOURCE_DIR}/*")
+foreach(_mod_src ${_corecad_src_mods})
+    if(IS_DIRECTORY "${_mod_src}" AND NOT _mod_src IN_LIST _corecad_added_mods)
+        get_filename_component(_mod_name "${_mod_src}" NAME)
+        set(_mod_out "${CMAKE_BINARY_DIR}/Mod/${_mod_name}")
+        if(EXISTS "${_mod_out}")
+            message(STATUS "Removing build output of excluded module: ${_mod_out}")
+            file(REMOVE_RECURSE "${_mod_out}")
+        endif()
+    endif()
+endforeach()
+file(GLOB_RECURSE _corecad_mod_links LIST_DIRECTORIES false "${CMAKE_BINARY_DIR}/Mod/*")
+foreach(_link ${_corecad_mod_links})
+    if(IS_SYMLINK "${_link}" AND NOT EXISTS "${_link}")
+        message(STATUS "Removing dangling symlink: ${_link}")
+        file(REMOVE "${_link}")
+    endif()
+endforeach()
