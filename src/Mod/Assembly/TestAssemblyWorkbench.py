@@ -29,6 +29,7 @@ from AssemblyTests.TestSubAssembly import TestSubAssembly
 from AssemblyTests.TestAssemblyBuilder import TestAssemblyBuilder
 from AssemblyTests.TestStepAssemblyImport import TestStepAssemblyImport
 from AssemblyTests.TestSceneGraphHelpers import TestSceneGraphHelpers
+from AssemblyTests.TestCreatePart import TestCreatePart
 
 # The draw-layer test (TestStepAssemblyImportDraw) needs a running GUI, so it is
 # registered separately as TestAssemblyWorkbenchGui from InitGui.py rather than
@@ -41,3 +42,4 @@ True if TestSubAssembly else False
 True if TestAssemblyBuilder else False
 True if TestStepAssemblyImport else False
 True if TestSceneGraphHelpers else False
+True if TestCreatePart else False

@@ -131,9 +131,9 @@ class TaskAssemblyNewPart(JointObject.TaskAssemblyCreateJoint):
         # A component is always a reference to a part living in its own document, never
         # geometry inside the assembly file. The new part therefore always gets a fresh
         # document (ASSEMBLY_AUDIT §9, gap G1 — components cross-doc only).
-        doc = App.newDocument(partName)
+        doc = App.newDocument(partName, type="Part")
 
-        part, body = UtilsAssembly.createPart(partName, doc)
+        body = UtilsAssembly.createPart(doc)
 
         App.setActiveDocument(self.assembly.Document.Name)
 
@@ -160,10 +160,10 @@ class TaskAssemblyNewPart(JointObject.TaskAssemblyCreateJoint):
             if not (msgBox.clickedButton() == saveButton and Gui.getDocument(doc).saveAs()):
                 return
 
-        self.link.LinkedObject = part
+        self.link.LinkedObject = body
         self.link.touch()
 
-        self.link.Label = part.Label
+        self.link.Label = partName
 
         # Set the body as active in the assembly doc
         self.expandLinkManually(self.link)
