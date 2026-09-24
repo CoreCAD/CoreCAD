@@ -27,8 +27,8 @@ def say(words):
     and a buffer that has not been flushed by then is a message nobody ever sees -- which is the
     exact failure this check exists to prevent.
     """
-    print(words, flush=True)
-    sys.stdout.flush()
+    # sys.__stdout__: the GUI program redirects sys.stdout into its Report view.
+    print(words, file=sys.__stdout__, flush=True)
 
 
 def main():
@@ -45,12 +45,12 @@ def main():
     for name in unrun:
         say(
             "PythonSuites: '%s' is registered as a test suite and nothing runs it. "
-            "Add it to PYTHON_TEST_SUITES in tests/CMakeLists.txt." % name
+            "Add it to PYTHON_TEST_SUITES (or PYTHON_GUI_TEST_SUITES) in tests/CMakeLists.txt." % name
         )
     for name in gone:
         say(
             "PythonSuites: ctest runs '%s' and this build registers no such suite. "
-            "Remove it from PYTHON_TEST_SUITES in tests/CMakeLists.txt." % name
+            "Remove it from PYTHON_TEST_SUITES (or PYTHON_GUI_TEST_SUITES) in tests/CMakeLists.txt." % name
         )
 
     if unrun or gone:
@@ -60,4 +60,8 @@ def main():
     return 0
 
 
+if FreeCAD.GuiUp:
+    # A script handed to the GUI program runs inside the event loop, and sys.exit() there
+    # leaves the window open; leave with the answer directly.
+    os._exit(main())
 sys.exit(main())

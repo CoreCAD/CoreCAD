@@ -1465,6 +1465,16 @@ class InitPipeline:
         # Save to use in FreeCADGuiInit.py
         App.__ModCache__ = module_cache
 
+    @staticmethod
+    def gui_follows() -> bool:
+        """
+        Whether FreeCADGuiInit.py runs after this script. Mirrors inGuiMode() in MainGui.cpp:
+        only the GUI program sets Console to "0" (and -c turns it to "1"); FreeCADCmd and an
+        interpreter importing FreeCAD leave it unset. RunMode alone cannot tell, because -t sets
+        it to "Internal" in both programs.
+        """
+        return App.ConfigGet("Console") == "0" and Config.RunMode in ("Gui", "Internal")
+
     def import_mods(self) -> None:
         """
         Import every Mod the program installed.
@@ -1568,7 +1578,13 @@ class InitPipeline:
         """
         self.scan()
         self.load_mods()
-        self.import_mods()
+        if self.gui_follows():
+            # Too early: App.GuiUp is still 0, and a module that asks "is the GUI up?" as it
+            # is imported (Draft asks in some thirty places) would take its no-GUI branch for
+            # the whole session. FreeCADGuiInit.py imports the Mods once it has set GuiUp.
+            App.__ImportMods__ = self.import_mods
+        else:
+            self.import_mods()
         self.register_macro_sources()
         self.post()
         self.report()

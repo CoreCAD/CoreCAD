@@ -6,6 +6,7 @@
 import FreeCAD as App
 import Part
 import os
+import shutil
 import tempfile
 import unittest
 from BOPTools import BOPFeatures
@@ -14,12 +15,14 @@ from pivy import coin
 
 class ColorPerFaceTest(unittest.TestCase):
     def setUp(self):
-        TempPath = tempfile.gettempdir()
-        self.fileName = TempPath + os.sep + "ColorPerFaceTest.FCStd"
+        # A folder of its own: TestImportGui runs these same tests, possibly at the same time.
+        self.TempDir = tempfile.mkdtemp()
+        self.fileName = os.path.join(self.TempDir, "ColorPerFaceTest.FCStd")
         self.doc = App.newDocument()
 
     def tearDown(self):
         App.closeDocument(self.doc.Name)
+        shutil.rmtree(self.TempDir, ignore_errors=True)
 
     def testBox(self):
         box = self.doc.addObject("Part::Box", "Box")
@@ -184,13 +187,15 @@ class ColorPerFaceTest(unittest.TestCase):
         self.doc.recompute()
 
         fuse.ViewObject.DiffuseColor = [(1.0, 0.0, 0.0, 1.0)] * 11
+        fuseName = fuse.Name
 
         self.doc.saveAs(self.fileName)
         App.closeDocument(self.doc.Name)
 
         self.doc = App.openDocument(self.fileName)
 
-        fuse = self.doc.ActiveObject
+        # By name: which object is active after a load depends on the order objects were read.
+        fuse = self.doc.getObject(fuseName)
         self.assertEqual(len(fuse.Shape.Faces), 11)
         self.assertEqual(len(fuse.ViewObject.DiffuseColor), 11)
         self.assertEqual(fuse.ViewObject.DiffuseColor[0], (1.0, 0.0, 0.0, 1.0))

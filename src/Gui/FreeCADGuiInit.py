@@ -485,6 +485,11 @@ FreeCADGui.Workbench = Workbench
 Gui.addWorkbench(NoneWorkbench())
 
 # init modules
+# FreeCADInit.py holds the Mod imports back until GuiUp is set, when it knew the GUI would follow.
+# When it did not (the GUI started later from a console session), they are already imported.
+if hasattr(App, "__ImportMods__"):
+    App.__ImportMods__()
+    del App.__ImportMods__
 InitApplications()
 ImportModGuis()
 
