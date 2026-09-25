@@ -43,6 +43,12 @@ public:
 
     PyObject* getPyObject() override;
 
+    /// Records membership, not filing: a member may also sit in a folder.
+    bool isFolder() const override
+    {
+        return false;
+    }
+
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override
     {
