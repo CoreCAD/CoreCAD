@@ -133,19 +133,13 @@ class TaskAssemblyCreateBom(QtCore.QObject):
                 self.addColItem(name)
 
             self.createBomObject()
-            self.bomObj.onlyParts = pref.GetBool("BOMOnlyParts", False)
-            self.bomObj.detailParts = pref.GetBool("BOMDetailParts", True)
             self.bomObj.detailSubAssemblies = pref.GetBool("BOMDetailSubAssemblies", True)
 
-        self.form.CheckBox_onlyParts.setChecked(self.bomObj.onlyParts)
-        self.form.CheckBox_detailParts.setChecked(self.bomObj.detailParts)
         self.form.CheckBox_detailSubAssemblies.setChecked(self.bomObj.detailSubAssemblies)
 
         self.form.columnList.model().rowsMoved.connect(self.onItemsReordered)
         self.form.columnList.itemChanged.connect(self.itemUpdated)
 
-        self.form.CheckBox_onlyParts.stateChanged.connect(self.onIncludeSolids)
-        self.form.CheckBox_detailParts.stateChanged.connect(self.onDetailParts)
         self.form.CheckBox_detailSubAssemblies.stateChanged.connect(self.onDetailSubAssemblies)
 
         self.updateColumnList()
@@ -167,18 +161,10 @@ class TaskAssemblyCreateBom(QtCore.QObject):
 
     def deactivate(self):
         pref = Preferences.preferences()
-        pref.SetBool("BOMOnlyParts", self.form.CheckBox_onlyParts.isChecked())
-        pref.SetBool("BOMDetailParts", self.form.CheckBox_detailParts.isChecked())
         pref.SetBool("BOMDetailSubAssemblies", self.form.CheckBox_detailSubAssemblies.isChecked())
 
         if Gui.Control.activeDialog():
             Gui.Control.closeDialog()
-
-    def onIncludeSolids(self, val):
-        self.bomObj.onlyParts = val
-
-    def onDetailParts(self, val):
-        self.bomObj.detailParts = val
 
     def onDetailSubAssemblies(self, val):
         self.bomObj.detailSubAssemblies = val

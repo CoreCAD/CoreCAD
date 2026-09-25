@@ -334,22 +334,19 @@ private:
         PyObject* object = nullptr;
         char* Name = nullptr;
         PyObject* pyexportHidden = Py_None;
-        PyObject* pylegacy = Py_None;
         PyObject* pykeepPlacement = Py_None;
-        static const std::array<const char*, 6>
-            kwd_list {"obj", "name", "exportHidden", "legacy", "keepPlacement", nullptr};
+        static const std::array<const char*, 5>
+            kwd_list {"obj", "name", "exportHidden", "keepPlacement", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "Oet|O!O!O!",
+                "Oet|O!O!",
                 kwd_list,
                 &object,
                 "utf-8",
                 &Name,
                 &PyBool_Type,
                 &pyexportHidden,
-                &PyBool_Type,
-                &pylegacy,
                 &PyBool_Type,
                 &pykeepPlacement
             )) {
@@ -363,8 +360,6 @@ private:
         // determine export options
         Part::OCAF::ImportExportSettings settings;
 
-        bool legacyExport = (pylegacy         == Py_None ? settings.getExportLegacy()
-                                                         : Base::asBoolean(pylegacy));
         bool exportHidden = (pyexportHidden   == Py_None ? settings.getExportHiddenObject()
                                                          : Base::asBoolean(pyexportHidden));
         bool keepPlacement = (pykeepPlacement == Py_None ? settings.getExportKeepPlacement()
@@ -416,19 +411,10 @@ private:
             };
 
             Import::ExportOCAF2 ocaf(hDoc, getShapeColors);
-            if (!legacyExport || !ocaf.canFallback(objs)) {
-                ocaf.setExportOptions(ExportOCAF2::customExportOptions());
-                ocaf.setExportHiddenObject(exportHidden);
-                ocaf.setKeepPlacement(keepPlacement);
-
-                ocaf.exportObjects(objs);
-            }
-            else {
-                bool keepExplicitPlacement = true;
-                ExportOCAFCmd ocaf(hDoc, keepExplicitPlacement);
-                ocaf.setPartColorsMap(partColor);
-                ocaf.exportObjects(objs);
-            }
+            ocaf.setExportOptions(ExportOCAF2::customExportOptions());
+            ocaf.setExportHiddenObject(exportHidden);
+            ocaf.setKeepPlacement(keepPlacement);
+            ocaf.exportObjects(objs);
 
             Base::FileInfo file(Utf8Name.c_str());
             if (file.hasExtension({"stp", "step"})) {

@@ -48,7 +48,6 @@
 #endif
 
 #include <chrono>
-#include "ExportOCAFGui.h"
 #include "ImportOCAFGui.h"
 #include "OCAFBrowser.h"
 
@@ -472,7 +471,6 @@ private:
                 auto stepSettings = dlg.getSettings();
                 options.setItem("exportHidden", Py::Boolean(stepSettings.exportHidden));
                 options.setItem("keepPlacement", Py::Boolean(stepSettings.keepPlacement));
-                options.setItem("legacy", Py::Boolean(stepSettings.exportLegacy));
             }
         }
 
@@ -485,14 +483,13 @@ private:
         char* Name;
         PyObject* pyoptions = nullptr;
         PyObject* pyexportHidden = Py_None;
-        PyObject* pylegacy = Py_None;
         PyObject* pykeepPlacement = Py_None;
-        static const std::array<const char*, 7>
-            kwd_list {"obj", "name", "options", "exportHidden", "legacy", "keepPlacement", nullptr};
+        static const std::array<const char*, 6>
+            kwd_list {"obj", "name", "options", "exportHidden", "keepPlacement", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "Oet|O!O!O!O!",
+                "Oet|O!O!O!",
                 kwd_list,
                 &object,
                 "utf-8",
@@ -501,8 +498,6 @@ private:
                 &pyoptions,
                 &PyBool_Type,
                 &pyexportHidden,
-                &PyBool_Type,
-                &pylegacy,
                 &PyBool_Type,
                 &pykeepPlacement
             )) {
@@ -516,9 +511,6 @@ private:
         // determine export options
         Part::OCAF::ImportExportSettings settings;
 
-        // still support old way
-        bool legacyExport = (pylegacy         == Py_None ? settings.getExportLegacy()
-                                                         : Base::asBoolean(pylegacy));
         bool exportHidden = (pyexportHidden   == Py_None ? settings.getExportHiddenObject()
                                                          : Base::asBoolean(pyexportHidden));
         bool keepPlacement = (pykeepPlacement == Py_None ? settings.getExportKeepPlacement()
@@ -528,9 +520,6 @@ private:
         // new way
         if (pyoptions) {
             Py::Dict options(pyoptions);
-            if (options.hasKey("legacy")) {
-                legacyExport = static_cast<bool>(Py::Boolean(options.getItem("legacy")));
-            }
             if (options.hasKey("exportHidden")) {
                 exportHidden = static_cast<bool>(Py::Boolean(options.getItem("exportHidden")));
             }
@@ -555,18 +544,10 @@ private:
             hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
 
             Import::ExportOCAF2 ocaf(hDoc, &getShapeColors);
-            if (!legacyExport || !ocaf.canFallback(objs)) {
-                ocaf.setExportOptions(Import::ExportOCAF2::customExportOptions());
-                ocaf.setExportHiddenObject(exportHidden);
-                ocaf.setKeepPlacement(keepPlacement);
-
-                ocaf.exportObjects(objs);
-            }
-            else {
-                bool keepExplicitPlacement = true;
-                ExportOCAFGui ocaf(hDoc, keepExplicitPlacement);
-                ocaf.exportObjects(objs);
-            }
+            ocaf.setExportOptions(Import::ExportOCAF2::customExportOptions());
+            ocaf.setExportHiddenObject(exportHidden);
+            ocaf.setKeepPlacement(keepPlacement);
+            ocaf.exportObjects(objs);
 
             Base::FileInfo file(Utf8Name.c_str());
             if (file.hasExtension({"stp", "step"})) {

@@ -82,8 +82,6 @@ public:
     void setImportHiddenObject(bool);
     bool getImportHiddenObject() const;
 
-    void setExportLegacy(bool);
-    bool getExportLegacy() const;
 
     void setExportKeepPlacement(bool);
     bool getExportKeepPlacement() const;

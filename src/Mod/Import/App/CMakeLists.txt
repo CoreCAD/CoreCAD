@@ -9,8 +9,6 @@ set(Import_LIBS
 SET(Import_SRCS
     AppImport.cpp
     AppImportPy.cpp
-    ExportOCAF.cpp
-    ExportOCAF.h
     Feature.cpp
     Feature.h
     ExportOCAF2.cpp
