@@ -77,24 +77,12 @@
 #include "TaskSweep.h"
 #include "ViewProvider.h"
 
-// Returns true when the active App::Part contains at least one object other
-// than its coordinate origin — i.e. there is real geometry to operate on.
-static bool activePartHasShapes()
+// True when the active document holds at least one shape -- there is real geometry to
+// operate on. The document is the container (ARCHITECTURE §7.1); nothing needs to be active.
+static bool documentHasShapes()
 {
-    Gui::MDIView* view = Gui::Application::Instance->activeView();
-    if (!view) {
-        return false;
-    }
-    App::Part* part = view->getActiveObject<App::Part*>("part");
-    if (!part) {
-        return false;
-    }
-    for (auto* obj : part->Group.getValues()) {
-        if (strcmp(obj->getTypeId().getName(), "App::Origin") != 0) {
-            return true;
-        }
-    }
-    return false;
+    auto* doc = App::GetApplication().getActiveDocument();
+    return doc && !Part::getShapeObjects(doc).empty();
 }
 
 static bool documentHasVisibleShapes()
@@ -304,7 +292,7 @@ bool checkForSolids(const TopoDS_Shape& shape)
 }
 /*
  * returns vector of Part::TopoShapes from selected Part::Feature derived objects,
- * App::Links linked to Part::Features, or App::Part containers with visible Part::Features
+ * or App::Links linked to Part::Features
  */
 std::vector<Part::TopoShape> getShapesFromSelection()
 {
@@ -325,7 +313,7 @@ std::vector<Part::TopoShape> getShapesFromSelection()
 }
 /*
  * returns true if selected objects contain valid Part::TopoShapes.
- * Objects can be Part::Features, App::Links, or App::Parts
+ * Objects can be Part::Features or App::Links
  */
 bool hasShapesInSelection()
 {
@@ -1134,18 +1122,15 @@ void CmdPartImport::activated(int iMsg)
         Gui::WaitCursor wc;
         fn = QString::fromStdString(Base::Tools::escapeEncodeFilename(fn.toStdString()));
 
-        Gui::MDIView* view = Gui::Application::Instance->activeView();
-        App::Part* activePart = view ? view->getActiveObject<App::Part*>("part") : nullptr;
         App::Document* pDoc = getDocument();
 
         // Ensure we have a document to import into.
         if (!pDoc) {
-            doCommand(Doc, "App.newDocument('Part')");
+            doCommand(Doc, "App.newDocument(type=App.DocTypePart)");
             pDoc = getDocument();
             if (!pDoc) {
                 return;
             }
-            activePart = nullptr;
         }
 
         // Run the format-appropriate import command into pDoc.
@@ -1165,78 +1150,10 @@ void CmdPartImport::activated(int iMsg)
             }
         };
 
-        // Collect new root-level objects relative to a pre-import snapshot.
-        auto collectNew =
-            [&](const std::set<std::string>& before) -> std::vector<App::DocumentObject*> {
-            std::vector<App::DocumentObject*> result;
-            for (auto* obj : pDoc->getObjects()) {
-                if (!before.count(obj->getNameInDocument())
-                    && !App::GeoFeatureGroupExtension::getGroupOfObject(obj)) {
-                    result.push_back(obj);
-                }
-            }
-            return result;
-        };
-
+        // The document is the container (ARCHITECTURE §7.1): imported geometry lands at its
+        // root and needs no wrapper to hold it.
         openCommand(QT_TRANSLATE_NOOP("Command", "Import Part"));
-
-        std::set<std::string> before;
-        for (auto* obj : pDoc->getObjects()) {
-            before.insert(obj->getNameInDocument());
-        }
         runImport();
-        auto newObjs = collectNew(before);
-
-        // Check whether the import produced an App::Part.
-        bool importedPart = false;
-        for (auto* obj : newObjs) {
-            if (obj->isDerivedFrom<App::Part>()) {
-                importedPart = true;
-                break;
-            }
-        }
-
-        // Case: existing Part + import also created an App::Part → Part-in-Part conflict.
-        // Abort and re-import into a fresh document.
-        if (activePart && importedPart) {
-            abortCommand();
-            doCommand(Doc, "App.newDocument('Part')");
-            pDoc = getDocument();
-            if (!pDoc) {
-                return;
-            }
-            activePart = nullptr;
-
-            openCommand(QT_TRANSLATE_NOOP("Command", "Import Part"));
-            before.clear();
-            for (auto* obj : pDoc->getObjects()) {
-                before.insert(obj->getNameInDocument());
-            }
-            runImport();
-            newObjs = collectNew(before);
-        }
-
-        if (activePart) {
-            // Existing Part — add loose imported objects into it.
-            for (auto* obj : newObjs) {
-                if (!obj->isDerivedFrom<App::Part>()) {
-                    activePart->addObject(obj);
-                }
-            }
-        }
-        else if (newObjs.size() == 1 && newObjs[0]->isDerivedFrom<App::Part>()) {
-            // Import created its own Part structure — activate it directly.
-            doCommand(
-                Gui,
-                "Gui.ActiveDocument.ActiveView.setActiveObject('part', "
-                "App.ActiveDocument.getObject('%s'))",
-                newObjs[0]->getNameInDocument()
-            );
-        }
-        // Loose objects with no existing Part are left in the document as-is: the
-        // document is the container (ARCHITECTURE §7.1, P3 no-ownership), so imported
-        // geometry needs no App::Part wrapper to hold it.
-
         commitCommand();
 
         std::list<Gui::MDIView*> views = getActiveGuiDocument()->getMDIViewsOfType(
@@ -1548,7 +1465,7 @@ void CmdPartBoolean::activated(int iMsg)
 
 bool CmdPartBoolean::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1576,7 +1493,7 @@ void CmdPartExtrude::activated(int iMsg)
 
 bool CmdPartExtrude::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1605,7 +1522,7 @@ void CmdPartScale::activated(int iMsg)
 
 bool CmdPartScale::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1692,7 +1609,7 @@ void CmdPartRevolve::activated(int iMsg)
 
 bool CmdPartRevolve::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1720,7 +1637,7 @@ void CmdPartFillet::activated(int iMsg)
 
 bool CmdPartFillet::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1748,7 +1665,7 @@ void CmdPartChamfer::activated(int iMsg)
 
 bool CmdPartChamfer::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1776,7 +1693,7 @@ void CmdPartMirror::activated(int iMsg)
 
 bool CmdPartMirror::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1847,8 +1764,7 @@ bool CmdPartBuilder::isActive()
     if (Gui::Control().activeDialog()) {
         return false;
     }
-    Gui::MDIView* view = Gui::Application::Instance->activeView();
-    return view && view->getActiveObject<App::Part*>("part") != nullptr;
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -1877,7 +1793,7 @@ void CmdPartLoft::activated(int iMsg)
 
 bool CmdPartLoft::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -1906,7 +1822,7 @@ void CmdPartSweep::activated(int iMsg)
 
 bool CmdPartSweep::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -2434,7 +2350,7 @@ void CmdPartRuledSurface::activated(int iMsg)
 
 bool CmdPartRuledSurface::isActive()
 {
-    return activePartHasShapes();
+    return documentHasShapes();
 }
 
 //===========================================================================
@@ -2578,7 +2494,7 @@ void CmdPartProjectionOnSurface::activated(int iMsg)
 
 bool CmdPartProjectionOnSurface::isActive()
 {
-    return (activePartHasShapes() && !Gui::Control().activeDialog());
+    return (documentHasShapes() && !Gui::Control().activeDialog());
 }
 
 //===========================================================================
@@ -2630,24 +2546,6 @@ bool CmdPartSectionCut::isActive()
 
 namespace
 {
-QString getAutoGroupCommandStr()
-// Helper function to get the python code to add the newly created object to the active App::Part
-// container if present. A Body is a marker, not a container (Cruth de-ownership): a datum's body
-// membership is derived from its attachment, never stored, so we never file into an active Body —
-// those objects are created at the document root. Filing into a Body here also crashed, since a
-// de-owned Body no longer exposes addObject.
-{
-    App::GeoFeature* activeObj
-        = Gui::Application::Instance->activeView()->getActiveObject<App::GeoFeature*>(PARTKEY);
-
-    if (activeObj) {
-        QString activeName = QString::fromLatin1(activeObj->getNameInDocument());
-        return QStringLiteral("App.ActiveDocument.getObject('%1\').addObject(obj)\n").arg(activeName);
-    }
-
-    return QStringLiteral("# Object created at document root.");
-}
-
 // Give a freshly created datum the best-fit attachment for the current selection, so
 // "select a face -> create datum" yields an already-attached datum in one step. Ported from
 // the retired PartDesign UnifiedDatumCommand (Cruth datum consolidation, issue #45): the
@@ -2710,7 +2608,6 @@ void CmdPartCoordinateSystem::activated(int iMsg)
         "obj = App.activeDocument().addObject('Part::LocalCoordinateSystem','%s')",
         name.c_str()
     );
-    doCommand(Doc, getAutoGroupCommandStr().toUtf8());
     applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.Visibility = True");
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
@@ -2745,7 +2642,6 @@ void CmdPartDatumPlane::activated(int iMsg)
 
     std::string name = getUniqueObjectName("DatumPlane");
     doCommand(Doc, "obj = App.activeDocument().addObject('Part::DatumPlane','%s')", name.c_str());
-    doCommand(Doc, getAutoGroupCommandStr().toUtf8());
     applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
 }
@@ -2779,7 +2675,6 @@ void CmdPartDatumLine::activated(int iMsg)
 
     std::string name = getUniqueObjectName("DatumLine");
     doCommand(Doc, "obj = App.activeDocument().addObject('Part::DatumLine','%s')", name.c_str());
-    doCommand(Doc, getAutoGroupCommandStr().toUtf8());
     applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
 }
@@ -2813,7 +2708,6 @@ void CmdPartDatumPoint::activated(int iMsg)
 
     std::string name = getUniqueObjectName("DatumPoint");
     doCommand(Doc, "obj = App.activeDocument().addObject('Part::DatumPoint','%s')", name.c_str());
-    doCommand(Doc, getAutoGroupCommandStr().toUtf8());
     applyAttachmentFromSelection(getDocument()->getObject(name.c_str()));
     doCommand(Doc, "obj.ViewObject.doubleClicked()");
 }

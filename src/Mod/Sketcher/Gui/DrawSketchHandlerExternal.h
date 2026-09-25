@@ -73,11 +73,6 @@ public:
                 case Sketcher::SketchObject::rlOtherDoc:
                     this->notAllowedReason = QT_TR_NOOP("This object is in another document.");
                     break;
-                case Sketcher::SketchObject::rlOtherPart:
-                    this->notAllowedReason = QT_TR_NOOP(
-                        "This object belongs to another part, can't link."
-                    );
-                    break;
                 default:
                     break;
             }

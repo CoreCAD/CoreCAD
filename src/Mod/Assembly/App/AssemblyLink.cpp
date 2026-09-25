@@ -338,8 +338,8 @@ void AssemblyLink::synchronizeComponents()
         // we build no local proxies, and tear down any that a prior flexible state left behind.
         // Flexible sub-assemblies still materialise an owned proxy graph (#63).
         for (auto* obj : Group.getValues()) {
-            if (obj->isDerivedFrom<App::Part>() || obj->isDerivedFrom<PartApp::Feature>()
-                || obj->isDerivedFrom<App::Link>() || obj->isDerivedFrom<AssemblyLink>()) {
+            if (obj->isDerivedFrom<PartApp::Feature>() || obj->isDerivedFrom<App::Link>()
+                || obj->isDerivedFrom<AssemblyLink>()) {
                 doc->removeObject(obj->getNameInDocument());
             }
         }
@@ -384,8 +384,8 @@ void AssemblyLink::synchronizeComponents()
 
     // We check if a component needs to be added to the AssemblyLink
     for (auto* obj : topLevelComponents) {
-        if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-            && !obj->isDerivedFrom<App::Link>() && !obj->isDerivedFrom<AssemblyLink>()) {
+        if (!obj->isDerivedFrom<PartApp::Feature>() && !obj->isDerivedFrom<App::Link>()
+            && !obj->isDerivedFrom<AssemblyLink>()) {
             continue;
         }
 
@@ -516,8 +516,8 @@ void AssemblyLink::synchronizeComponents()
     for (auto* obj : assemblyLinkGroup) {
         // We don't need to update assemblyLinkGroup after the addition since we're not removing
         // something we just added.
-        if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-            && !obj->isDerivedFrom<App::Link>() && !obj->isDerivedFrom<AssemblyLink>()) {
+        if (!obj->isDerivedFrom<PartApp::Feature>() && !obj->isDerivedFrom<App::Link>()
+            && !obj->isDerivedFrom<AssemblyLink>()) {
             continue;
         }
         if (validLinks.find(obj) == validLinks.end()) {

@@ -837,7 +837,7 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::getGroundedParts()
 
     // Unattached root-level datums / coordinate systems are implicitly grounded (fixed
     // reference geometry). One assembly per document, no owned geometry: query the document
-    // by type instead of walking the retiring App::Part Group. Exclude the Origin's own
+    // by type instead of walking a container Group. Exclude the Origin's own
     // X/Y/Z datum features -- they live in the document (in OriginFeatures, never in the
     // Group the old scan read), are positioned by the Origin, and the Origin is added
     // separately below; grounding them individually would double-anchor the frame.
@@ -2046,7 +2046,7 @@ void AssemblyObject::ensureIdentityPlacements()
 {
     // One assembly per document, and the assembly document holds no geometry of its own, so
     // every link group in the document is a component of this assembly. Query the document by
-    // type instead of walking the (retiring) App::Part Group.
+    // type instead of walking a container Group.
     App::Document* doc = getDocument();
     if (doc == nullptr) {
         return;

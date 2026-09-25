@@ -34,22 +34,16 @@ class TestActiveObject(unittest.TestCase):
         self.doc = FreeCAD.newDocument("PartDesignTestSketch", type="Part")
         self.doc.UndoMode = True
 
-    def testPartBody(self):
-        self.doc.openTransaction("Create part")
-        part = self.doc.addObject("App::Part", "Part")
-        FreeCADGui.activateView("Gui::View3DInventor", True)
-        FreeCADGui.activeView().setActiveObject("part", part)
-        self.doc.commitTransaction()
-
+    def testActiveBodySurvivesUndo(self):
+        # Undoing the creation of the active body must leave the view's active-object list
+        # usable: a body can be made and activated again afterwards.
         self.doc.openTransaction("Create body")
         body = self.doc.addObject("PartDesign::Body", "Body")
-        part.addObject(body)
         FreeCADGui.activateView("Gui::View3DInventor", True)
         FreeCADGui.activeView().setActiveObject("pdbody", body)
         self.doc.commitTransaction()
 
         self.doc.undo()  # undo body creation
-        self.doc.undo()  # undo part creation
 
         FreeCADGui.updateGui()
 

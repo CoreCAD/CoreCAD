@@ -11,11 +11,10 @@ Implementation: uses Part::Cut/Fuse/Common (plain shape references, no
 GeoFeatureGroup ownership constraints) wrapped in a new PartDesign::Body via
 Body.BaseFeature. This avoids the GeoFeatureGroup exclusive-membership conflict
 that prevents PartDesign::Boolean.Group from being set programmatically from
-Python when the tool body is already inside an App::Part.
+Python.
 
 The result is a new Body whose shape is the boolean result. Both input bodies
-are hidden. The new Body is placed in the same App::Part as the base body if
-one exists.
+are hidden.
 """
 
 import FreeCAD as App
@@ -62,12 +61,6 @@ class _BodyBooleanBase:
             new_body = doc.addObject("PartDesign::Body", body_name)
             new_body.BaseFeature = part_bool
 
-            # Place both new objects in the same App::Part as the base body.
-            container = self._find_part_container(base_body)
-            if container:
-                container.addObject(part_bool)
-                container.addObject(new_body)
-
             # Hide the consumed input bodies.
             base_body.Visibility = False
             tool_body.Visibility = False
@@ -92,19 +85,6 @@ class _BodyBooleanBase:
         ]
         if len(bodies) == 2:
             return bodies[0], bodies[1]
-        return None
-
-    def _find_part_container(self, obj):
-        """Return the App::Part that directly contains obj, or None."""
-        doc = obj.Document
-        for candidate in doc.Objects:
-            if not candidate.isDerivedFrom("App::Part"):
-                continue
-            try:
-                if obj in candidate.Group:
-                    return candidate
-            except Exception:
-                pass
         return None
 
 

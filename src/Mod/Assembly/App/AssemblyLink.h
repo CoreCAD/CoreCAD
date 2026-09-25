@@ -73,7 +73,7 @@ public:
      * A rigid sub-assembly owns nothing: it resolves child geometry across the document
      * boundary into the linked assembly at query time, composing this instance's Placement,
      * instead of materialising owned proxies. Flexible sub-assemblies still carry an owned
-     * proxy graph (#63) and defer to the base App::Part resolution.
+     * proxy graph (#63) and defer to the base group resolution.
      */
     App::DocumentObject* getSubObject(
         const char* subname,

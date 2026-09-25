@@ -76,7 +76,6 @@
 #include <App/MappedName.h>
 #include <App/ObjectIdentifier.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Base/Vector3D.h>
@@ -211,19 +210,11 @@ bool SketchObject::isExternalAllowed(App::Document* pDoc, App::DocumentObject* p
     // Cruth de-ownership: a sketch belongs to the document, not to a Body — the sketch is the
     // authored primary; a Body is only a downstream marker on a solid step and need not exist at
     // all. So "same Body?" is no longer a meaningful question here and the old rlOtherBody gate is
-    // gone: within one Part a sketch may reference any geometry it can see (another Body, a stray
-    // sketch, a datum), matching the fork's existing direct cross-body references. The only hard
-    // boundary left is the Part/document: referencing across Parts still goes through a binder.
-    App::Part* part_this = App::Part::getPartOfObject(this);
-    App::Part* part_obj = App::Part::getPartOfObject(pObj);
-    if (part_this != part_obj) {
-        // cross-part link. Disallow, should be done via shapebinders only
-        if (rsn)
-            *rsn = rlOtherPart;
-        return false;
-    }
-
-    return true;// same Part, or both in the document root
+    // gone: within one document a sketch may reference any geometry it can see (another Body, a
+    // stray sketch, a datum), matching the fork's existing direct cross-body references. The only
+    // hard boundary is the document, checked above: referencing across documents goes through a
+    // binder.
+    return true;
 }
 
 bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject* pObj, bool& xinv,
@@ -272,14 +263,7 @@ bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject*
     // in the document, and copying another sketch's geometry across Bodies is as legitimate as any
     // in-Part reference (see isExternalAllowed above). The old rlOtherBody / rlOtherBodyWithLinks
     // gates (and the allowOtherBody flag they consulted) protected a Body boundary that no longer
-    // exists. Only the Part/document boundary remains.
-    App::Part* part_this = App::Part::getPartOfObject(this);
-    App::Part* part_obj = App::Part::getPartOfObject(pObj);
-    if (part_this != part_obj) {
-        // cross-part relation. Disallow, should be done via shapebinders only
-        setReason(rlOtherPart);
-        return false;
-    }
+    // exists. Only the document boundary remains, checked above.
 
     const Rotation& srot = psObj->Placement.getValue().getRotation();
     const Rotation& lrot = this->Placement.getValue().getRotation();
