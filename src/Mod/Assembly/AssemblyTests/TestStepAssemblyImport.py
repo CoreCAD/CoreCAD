@@ -44,6 +44,15 @@ import Import
 import AssemblyStepImport
 
 
+def _placedGroup(doc, name):
+    """A placed container that owns what it holds -- exported, it becomes an assembly level
+    in the STEP file. Used only to author test input."""
+    grp = doc.addObject("App::GeometryPython", name)
+    grp.addExtension("App::GeoFeatureGroupExtensionPython")
+    grp.addExtension("App::PlacementExtensionPython")
+    return grp
+
+
 def _enclosing_asm_link(obj):
     """The AssemblyLink whose group owns ``obj``, or None."""
     for p in obj.InList:
@@ -99,13 +108,13 @@ class TestStepAssemblyImport(unittest.TestCase):
 
     def _nested_step(self):
         """A two-level STEP: Outer holds a Base box and a placed Inner sub-assembly
-        (which holds a single placed Pin cylinder). Built by exporting nested App::Parts
+        (which holds a single placed Pin cylinder). Built by exporting nested placed groups
         purely to author the STEP hierarchy; the import under test creates no App::Part."""
         doc = App.newDocument("nestedsrc")
-        outer = doc.addObject("App::Part", "Outer")
+        outer = _placedGroup(doc, "Outer")
         box = doc.addObject("Part::Box", "Base")
         box.Length = box.Width = box.Height = 10
-        inner = doc.addObject("App::Part", "Inner")
+        inner = _placedGroup(doc, "Inner")
         inner.Placement = App.Placement(App.Vector(100, 0, 0), App.Rotation())
         pin = doc.addObject("Part::Cylinder", "Pin")
         pin.Radius = 3
@@ -126,7 +135,7 @@ class TestStepAssemblyImport(unittest.TestCase):
         Built from two App::Links to a single box so the exported STEP expresses one
         shared prototype with two instances -- the case #76 must not duplicate."""
         doc = App.newDocument("sharedsrc")
-        outer = doc.addObject("App::Part", "Outer")
+        outer = _placedGroup(doc, "Outer")
         box = doc.addObject("Part::Box", "Widget")
         box.Length = box.Width = box.Height = 10
         inst1 = doc.addObject("App::Link", "Inst1")
@@ -309,8 +318,8 @@ class TestStepAssemblyImport(unittest.TestCase):
         exported STEP expresses one shared sub-assembly prototype instanced twice -- the
         nested analogue of the #76 duplication case."""
         doc = App.newDocument("sharedsubsrc")
-        outer = doc.addObject("App::Part", "Outer")
-        inner = doc.addObject("App::Part", "Gadget")
+        outer = _placedGroup(doc, "Outer")
+        inner = _placedGroup(doc, "Gadget")
         pin = doc.addObject("Part::Cylinder", "Pin")
         pin.Radius = 3
         pin.Height = 15

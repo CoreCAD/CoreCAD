@@ -47,7 +47,6 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Link.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
@@ -215,7 +214,6 @@ Mirroring::Mirroring(QWidget* parent)
     std::erase_if(shapeObjs, [](App::DocumentObject* o) { return !Part::hasShape(o); });
     sel.applyFrom(shapeObjs);
     sel.applyFrom(Gui::Selection().getObjectsOfType(App::Link::getClassTypeId()));
-    sel.applyFrom(Gui::Selection().getObjectsOfType(App::Part::getClassTypeId()));
 
     connect(ui->selectButton, &QPushButton::clicked, this, &Mirroring::onSelectButtonClicked);
 

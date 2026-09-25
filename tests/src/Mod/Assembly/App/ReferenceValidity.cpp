@@ -28,7 +28,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
-#include <App/Part.h>
+#include <App/DocumentObjectGroup.h>
 
 #include <src/App/InitApplication.h>
 
@@ -56,7 +56,7 @@ protected:
     {
         doc = App::GetApplication().newDocument("refValidity");
         assembly = doc->addObject<Assembly::AssemblyObject>();
-        component = doc->addObject<App::Part>("component");
+        component = doc->addObject<App::DocumentObjectGroup>("component");
         jointGroup = assembly->addObject<Assembly::JointGroup>("joints");
         joint = jointGroup->addObject<Assembly::Joint>("joint");
     }
@@ -68,7 +68,7 @@ protected:
 
     App::Document* doc {};
     Assembly::AssemblyObject* assembly {};
-    App::Part* component {};
+    App::DocumentObject* component {};
     Assembly::JointGroup* jointGroup {};
     Assembly::Joint* joint {};
 };

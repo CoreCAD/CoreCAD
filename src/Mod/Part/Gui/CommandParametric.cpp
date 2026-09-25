@@ -26,7 +26,6 @@
 #include <QApplication>
 
 
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>

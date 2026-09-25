@@ -41,7 +41,6 @@
 #include <App/ElementNamingUtils.h>
 #include <App/ObjectIdentifier.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/CommandT.h>

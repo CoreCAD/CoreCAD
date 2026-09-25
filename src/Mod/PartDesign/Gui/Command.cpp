@@ -43,7 +43,6 @@
 
 #include <App/Datums.h>
 #include <App/Origin.h>
-#include <App/Part.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>

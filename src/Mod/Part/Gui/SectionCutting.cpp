@@ -37,7 +37,6 @@
 #include <App/Datums.h>
 #include <App/Document.h>
 #include <App/Link.h>
-#include <App/Part.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/UnitsApi.h>

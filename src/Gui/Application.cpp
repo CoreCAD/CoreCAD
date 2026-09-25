@@ -132,7 +132,6 @@
 #include "ViewProviderPlacement.h"
 #include "ViewProviderPlane.h"
 #include "ViewProviderPoint.h"
-#include "ViewProviderPart.h"
 #include "ViewProviderFeaturePython.h"
 #include "ViewProviderTextDocument.h"
 #include "ViewProviderTextureExtension.h"
@@ -2475,7 +2474,6 @@ void Application::initTypes()
     Gui::ViewProviderGeoFeatureGroup            ::init();
     Gui::ViewProviderGeoFeatureGroupPython      ::init();
     Gui::ViewProviderOriginGroup                ::init();
-    Gui::ViewProviderPart                       ::init();
     Gui::ViewProviderCoordinateSystem           ::init();
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();

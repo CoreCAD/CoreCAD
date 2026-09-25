@@ -31,7 +31,6 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Link.h>
-#include <App/Part.h>
 #include <Base/UnitsApi.h>
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>

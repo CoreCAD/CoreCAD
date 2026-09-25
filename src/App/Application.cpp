@@ -141,7 +141,6 @@
 #include "PlacementExtension.h"
 #include "ProgramInformation.h"
 #include "SuppressibleExtension.h"
-#include "Part.h"
 #include "GeoFeaturePy.h"
 #include "Placement.h"
 #include "ProgramOptionsUtilities.h"
@@ -2398,7 +2397,6 @@ void Application::initTypes()
     App::Line                      ::init();
     App::Point                     ::init();
     App::LocalCoordinateSystem     ::init();
-    App::Part                      ::init();
     App::Origin                    ::init();
     App::Link                      ::init();
     App::LinkPython                ::init();
