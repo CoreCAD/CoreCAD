@@ -49,7 +49,6 @@
 #include <App/Link.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
-#include <App/Part.h>
 
 #include <Base/Tools.h>
 
@@ -756,7 +755,7 @@ App::DocumentObject* ViewProviderAssembly::getSelectedJoint()
 bool ViewProviderAssembly::getSelectedObjectsWithinAssembly(bool addPreselection, bool onlySolids)
 {
     // check the current selection, and check if any of the selected objects are within this
-    // App::Part
+    // assembly.
     //  If any, put them into the vector docsToMove and return true.
     //  Get the document
     docsToMove.clear();
@@ -867,9 +866,8 @@ void ViewProviderAssembly::collectMovableObjects(
     // Base case: This is not a flexible link, process it as a potential movable part.
     if (onlySolids
         && !(
-            currentObject->isDerivedFrom<App::Part>()
-            || currentObject->isDerivedFrom<Assembly::AssemblyLink>()
-            || Part::hasShape(currentObject) || currentObject->isDerivedFrom<App::Link>()
+            currentObject->isDerivedFrom<Assembly::AssemblyLink>() || Part::hasShape(currentObject)
+            || currentObject->isDerivedFrom<App::Link>()
             || currentObject->isDerivedFrom<App::LinkElement>()
         )) {
         return;
@@ -1444,25 +1442,9 @@ void ViewProviderAssembly::applyIsolationRecursively(
         }
         return;
     }
-    else if (auto* part = dynamic_cast<App::Part*>(current)) {
-        // As App::Part currently don't have material override
-        // (there is in LinkStage and RealThunder said he'll try to PR later)
-        // we have to recursively apply to children of App::Parts.
-
-        // If Part is in isolateSet, then all its children should be added to isolateSet
-        if (isolate) {
-            for (auto* child : part->Group.getValues()) {
-                isolateSet.insert(child);
-            }
-        }
-        for (auto* child : part->Group.getValues()) {
-            applyIsolationRecursively(child, isolateSet, mode, visited);
-        }
-        return;
-    }
     else if (auto* asmLink = dynamic_cast<Assembly::AssemblyLink*>(current)) {
         // A sub-assembly carries no material override either; recurse into its components
-        // the same way as an App::Part container.
+        // the same way as a plain group.
         if (isolate) {
             for (auto* child : asmLink->Group.getValues()) {
                 isolateSet.insert(child);

@@ -30,7 +30,6 @@
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <App/FeaturePython.h>
-#include <App/Part.h>
 
 #include <Base/Vector3D.h>
 

@@ -45,10 +45,7 @@ def activePartOrAssembly():
         return None
     activeAssembly = doc.ActiveView.getActiveObject("assembly")
 
-    if activeAssembly:
-        return activeAssembly
-
-    return doc.ActiveView.getActiveObject("part")
+    return activeAssembly
 
 
 def activeAssembly():
@@ -162,7 +159,7 @@ def getObject(ref):
         if i == len(names) - 2:
             return obj
 
-        if obj.TypeId in {"App::Part", "Assembly::AssemblyObject"} or isLinkGroup(obj):
+        if obj.TypeId == "Assembly::AssemblyObject" or isLinkGroup(obj):
             continue
 
         elif obj.isDerivedFrom("App::LocalCoordinateSystem"):
@@ -318,7 +315,6 @@ def getObjectInPart(objName, part):
         part = part.getLinkedObject()
 
     if part.TypeId in {
-        "App::Part",
         "Assembly::AssemblyObject",
         "App::DocumentObjectGroup",
         "PartDesign::Body",
@@ -814,7 +810,7 @@ def getSubMovingParts(obj, partsAsSolid):
     if obj.isDerivedFrom("Part::Feature"):
         return [obj]
 
-    elif obj.isDerivedFrom("App::Part") or obj.isDerivedFrom("Assembly::AssemblyLink"):
+    elif obj.isDerivedFrom("Assembly::AssemblyLink"):
         objs = []
         if not partsAsSolid:
             objs = getMovablePartsWithin(obj)
@@ -826,7 +822,7 @@ def getSubMovingParts(obj, partsAsSolid):
 
     if isLink(obj):
         linked_obj = obj.getLinkedObject()
-        if linked_obj.isDerivedFrom("App::Part") or linked_obj.isDerivedFrom("Part::Feature"):
+        if linked_obj.isDerivedFrom("Part::Feature"):
             return [obj]
 
     return []
@@ -884,13 +880,10 @@ def getObjMassAndCom(obj, containingPart=None):
 
     elif (
         isLinkGroup(obj)
-        or obj.isDerivedFrom("App::Part")
         or obj.isDerivedFrom("Assembly::AssemblyLink")
         or obj.isDerivedFrom("App::DocumentObjectGroup")
     ):
-        if containingPart is None and (
-            obj.isDerivedFrom("App::Part") or obj.isDerivedFrom("Assembly::AssemblyLink")
-        ):
+        if containingPart is None and obj.isDerivedFrom("Assembly::AssemblyLink"):
             containingPart = obj
 
         total_mass = 0

@@ -231,10 +231,7 @@ class TaskAssemblyInsertLink(QtCore.QObject):
             docItem.setIcon(0, icon)
             self.doc_item_map[docItem] = doc
 
-            if not any(
-                (child.isDerivedFrom("Part::Feature") or child.isDerivedFrom("App::Part"))
-                for child in doc.Objects
-            ):
+            if not any(child.isDerivedFrom("Part::Feature") for child in doc.Objects):
                 continue  # Skip this doc if no relevant objects
 
             self.form.partList.addTopLevelItem(docItem)
@@ -252,10 +249,8 @@ class TaskAssemblyInsertLink(QtCore.QObject):
                     if not obj.ViewObject.ShowInTree and not self.showHidden:
                         continue
 
-                    if (
-                        obj.isDerivedFrom("Part::Feature")
-                        or obj.isDerivedFrom("App::Part")
-                        or obj.isDerivedFrom("App::DocumentObjectGroup")
+                    if obj.isDerivedFrom("Part::Feature") or obj.isDerivedFrom(
+                        "App::DocumentObjectGroup"
                     ):
                         # Special handling for DocumentObjectGroup: only add if it contains relevant child objects
                         if obj.isDerivedFrom("App::DocumentObjectGroup"):
@@ -282,9 +277,7 @@ class TaskAssemblyInsertLink(QtCore.QObject):
                         if not obj.isDerivedFrom("App::DocumentObjectGroup"):
                             objItem.setData(0, QtCore.Qt.UserRole, obj)
 
-                        if obj.isDerivedFrom("App::Part") or obj.isDerivedFrom(
-                            "App::DocumentObjectGroup"
-                        ):
+                        if obj.isDerivedFrom("App::DocumentObjectGroup"):
                             process_objects(obj.ViewObject.claimChildren(), objItem)
 
             guiDoc = Gui.getDocument(doc.Name)

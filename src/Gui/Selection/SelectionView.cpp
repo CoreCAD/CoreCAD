@@ -1027,7 +1027,7 @@ void SelectionMenu::addWholeObjectSelection(
         if (sobj != sel.obj) {
             // sub-objects
             std::string typeName = sobj->getTypeId().getName();
-            if (typeName == "App::Part" || typeName == "PartDesign::Body") {
+            if (typeName == "PartDesign::Body") {
                 shouldAdd = true;
             }
             else {

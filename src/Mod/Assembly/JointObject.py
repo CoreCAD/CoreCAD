@@ -453,10 +453,8 @@ class MakeJointSelGate:
                 return True  # We accept empty links
             sel_obj = linked
 
-        if (
-            sel_obj.isDerivedFrom("Part::Feature")
-            or sel_obj.isDerivedFrom("App::Part")
-            or sel_obj.isDerivedFrom("Assembly::AssemblyLink")
+        if sel_obj.isDerivedFrom("Part::Feature") or sel_obj.isDerivedFrom(
+            "Assembly::AssemblyLink"
         ):
             return True
 

@@ -36,26 +36,6 @@
 //===========================================================================
 // Utils
 //===========================================================================
-namespace
-{
-App::Part* getActivePart()
-{
-    Gui::MDIView* view = Gui::Application::Instance->activeView();
-    return view ? view->getActiveObject<App::Part*>("part") : nullptr;
-}
-
-QString getAutoGroupCommandStr()
-// Helper function to get the python code to add the newly created object to the active Part object
-// if present.  Uses Gui.ActiveDocument.ActiveView (document-based, not MDI-focus-based) so that
-// this works reliably even when a ribbon or toolbar click momentarily shifts MDI focus away from
-// the 3D view.
-{
-    return QStringLiteral(
-        "_part = Gui.ActiveDocument and Gui.ActiveDocument.ActiveView.getActiveObject('part')\n"
-        "if _part: _part.addObject(App.ActiveDocument.ActiveObject)"
-    );
-}
-}  // namespace
 
 //===========================================================================
 // Part_Cylinder
@@ -88,7 +68,6 @@ void CmdPartCylinder::activated(int iMsg)
     cmd = QStringLiteral("App.ActiveDocument.ActiveObject.Label = \"%1\"")
               .arg(qApp->translate("CmdPartCylinder", "Cylinder"));
     runCommand(Doc, cmd.toUtf8());
-    runCommand(Doc, getAutoGroupCommandStr().toUtf8());
     commitCommand();
     updateActive();
     runCommand(Gui, "Gui.SendMsgToActiveView(\"ViewFit\")");
@@ -96,7 +75,7 @@ void CmdPartCylinder::activated(int iMsg)
 
 bool CmdPartCylinder::isActive()
 {
-    return getActivePart() != nullptr;
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -130,7 +109,6 @@ void CmdPartBox::activated(int iMsg)
     cmd = QStringLiteral("App.ActiveDocument.ActiveObject.Label = \"%1\"")
               .arg(qApp->translate("CmdPartBox", "Cube"));
     runCommand(Doc, cmd.toUtf8());
-    runCommand(Doc, getAutoGroupCommandStr().toUtf8());
     commitCommand();
     updateActive();
     runCommand(Gui, "Gui.SendMsgToActiveView(\"ViewFit\")");
@@ -138,7 +116,7 @@ void CmdPartBox::activated(int iMsg)
 
 bool CmdPartBox::isActive()
 {
-    return getActivePart() != nullptr;
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -172,7 +150,6 @@ void CmdPartSphere::activated(int iMsg)
     cmd = QStringLiteral("App.ActiveDocument.ActiveObject.Label = \"%1\"")
               .arg(qApp->translate("CmdPartSphere", "Sphere"));
     runCommand(Doc, cmd.toUtf8());
-    runCommand(Doc, getAutoGroupCommandStr().toUtf8());
     commitCommand();
     updateActive();
     runCommand(Gui, "Gui.SendMsgToActiveView(\"ViewFit\")");
@@ -180,7 +157,7 @@ void CmdPartSphere::activated(int iMsg)
 
 bool CmdPartSphere::isActive()
 {
-    return getActivePart() != nullptr;
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -214,7 +191,6 @@ void CmdPartCone::activated(int iMsg)
     cmd = QStringLiteral("App.ActiveDocument.ActiveObject.Label = \"%1\"")
               .arg(qApp->translate("CmdPartCone", "Cone"));
     runCommand(Doc, cmd.toUtf8());
-    runCommand(Doc, getAutoGroupCommandStr().toUtf8());
     commitCommand();
     updateActive();
     runCommand(Gui, "Gui.SendMsgToActiveView(\"ViewFit\")");
@@ -222,7 +198,7 @@ void CmdPartCone::activated(int iMsg)
 
 bool CmdPartCone::isActive()
 {
-    return getActivePart() != nullptr;
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -256,7 +232,6 @@ void CmdPartTorus::activated(int iMsg)
     cmd = QStringLiteral("App.ActiveDocument.ActiveObject.Label = \"%1\"")
               .arg(qApp->translate("CmdPartTorus", "Torus"));
     runCommand(Doc, cmd.toUtf8());
-    runCommand(Doc, getAutoGroupCommandStr().toUtf8());
     commitCommand();
     updateActive();
     runCommand(Gui, "Gui.SendMsgToActiveView(\"ViewFit\")");
@@ -264,7 +239,7 @@ void CmdPartTorus::activated(int iMsg)
 
 bool CmdPartTorus::isActive()
 {
-    return getActivePart() != nullptr;
+    return hasActiveDocument();
 }
 
 

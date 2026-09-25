@@ -33,7 +33,6 @@
 
 #include <App/Document.h>
 #include <App/Origin.h>
-#include <App/Part.h>
 #include <App/VarSet.h>
 #include <Base/Console.h>
 #include <Gui/ActionFunction.h>
@@ -292,17 +291,6 @@ void ViewProviderBody::toggleActiveBody()
                 ->GetGroup("Mod/PartDesign")
                 ->GetBool("SwitchToWB", true)) {
             Gui::Command::assureWorkbench("PartDesignWorkbench");
-        }
-
-        // and set correct active objects
-        auto* part = App::Part::getPartOfObject(getObject());
-        if (part && !isActiveBody()) {
-            Gui::Command::doCommand(
-                Gui::Command::Gui,
-                "Gui.ActiveDocument.ActiveView.setActiveObject('%s',%s)",
-                PARTKEY,
-                Gui::Command::getObjectCmd(part).c_str()
-            );
         }
 
         Gui::Command::doCommand(

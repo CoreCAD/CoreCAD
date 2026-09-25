@@ -628,8 +628,7 @@ App::DocumentObject* getObjFromRef(App::DocumentObject* comp, const std::string&
             return obj;
         }
 
-        if (obj->isDerivedFrom<App::Part>() || obj->isDerivedFrom<Assembly::AssemblyLink>()
-            || obj->isLinkGroup()) {
+        if (obj->isDerivedFrom<Assembly::AssemblyLink>() || obj->isLinkGroup()) {
             continue;
         }
         else if (obj->isDerivedFrom<PartDesign::Body>()) {
@@ -809,7 +808,7 @@ std::vector<App::DocumentObject*> getAssemblyComponents(const AssemblyObject* as
 
     // One assembly per document, and an assembly document holds no geometry of its own:
     // every component arrives as a cross-document reference. So enumerate the document's
-    // reference objects directly instead of walking the (retiring) App::Part Group. No
+    // reference objects directly instead of walking a container Group. No
     // feature-input filtering is needed -- intermediate feature inputs (boolean Base/Tool,
     // compound Shapes) live in each part's own document now, never here.
     std::vector<App::DocumentObject*> components;

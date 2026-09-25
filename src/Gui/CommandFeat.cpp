@@ -25,7 +25,6 @@
 
 #include <App/DocumentObjectGroup.h>
 #include <App/GroupExtension.h>
-#include <App/Part.h>
 #include "Application.h"
 #include "Action.h"
 #include "cet_lut.hpp"
@@ -147,7 +146,7 @@ void StdCmdRandomColor::activated(int iMsg)
     };
 
     auto allowToChangeColor = [](const App::DocumentObject* obj) {
-        return (obj->isDerivedFrom<App::Part>() || obj->isDerivedFrom<App::DocumentObjectGroup>());
+        return obj->isDerivedFrom<App::DocumentObjectGroup>();
     };
 
     // get the complete selection

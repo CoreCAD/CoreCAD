@@ -46,11 +46,8 @@ def makeSprocket(name):
     # FreeCAD.ActiveDocument.recompute()
     if FreeCAD.GuiUp:
         body = FreeCADGui.ActiveDocument.ActiveView.getActiveObject("pdbody")
-        part = FreeCADGui.ActiveDocument.ActiveView.getActiveObject("part")
         if body:
             body.addFeature(obj)
-        elif part:
-            part.Group = part.Group + [obj]
     return obj
 
 

@@ -854,7 +854,6 @@ public:
         rlAllowed,
         rlOtherDoc,
         rlCircularReference,
-        rlOtherPart,
         rlNotASketch,        // for carbon copy
         rlNonParallel,       // for carbon copy
         rlAxesMisaligned,    // for carbon copy
