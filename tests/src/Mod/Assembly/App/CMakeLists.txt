@@ -2,6 +2,7 @@
 
 add_executable(Assembly_tests_run
         AssemblyObject.cpp
+        FolderFiling.cpp
         ExplodedView.cpp
         ReferenceValidity.cpp
         Simulation.cpp

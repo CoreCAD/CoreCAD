@@ -120,6 +120,12 @@ public:
 
     PyObject* getPyObject() override;
 
+    /// Records membership, not filing: a member may also sit in a folder.
+    bool isFolder() const override
+    {
+        return false;
+    }
+
     const char* getViewProviderName() const override
     {
         return "AssemblyGui::ViewProviderExplodedView";
