@@ -1871,17 +1871,9 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     // the latter case the displaced successor is rerouted onto the new feature so the
     // chain stays linear instead of forking.
 
-    // Detach from any prior owning group. This is NOT the body-to-body move path
-    // (that heals the source chain via Body::removeFeatures); the live case here is a
-    // feature the user parked in a plain tree folder (App::DocumentObjectGroup) and
-    // then homed into this body — without this it would stay double-filed (in the
-    // folder AND referenced by the body). Whether that single-home rule is still right
-    // under de-ownership (folder = organization vs body = derived reference, arguably
-    // orthogonal) is an open design question tracked in #37 — keep as-is until settled.
-    auto* group = App::GroupExtension::getGroupOfObject(feature);
-    if (group) {
-        group->getExtensionByType<App::GroupExtension>()->removeObject(feature);
-    }
+    // A tree folder the feature is filed in is left alone. Folder membership is the user's
+    // filing and the body's is a reference (P3); neither owns the feature, so joining a
+    // body does not pull it out of a folder.
 
     // Cruth substrate flip (Stage 3a): resolve origin/datum links against the single
     // document-level Origin, not this Body's own (now-dormant) per-body Origin. In the
