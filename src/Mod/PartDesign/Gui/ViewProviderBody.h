@@ -28,7 +28,6 @@
 #include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
 #include <Mod/PartDesign/App/Feature.h>
-#include <Gui/ViewProviderPart.h>
 #include <QCoreApplication>
 #include <fastsignals/signal.h>
 

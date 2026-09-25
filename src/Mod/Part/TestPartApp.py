@@ -28,6 +28,18 @@ import math
 from FreeCAD import Units
 from FreeCAD import Base
 
+
+def _placedGroup(doc, name="Group"):
+    """A container with its own placement that owns what it holds (a geo-feature group).
+
+    App::Part used to be the stock example; the type is retired, so the tests that exercise
+    geo-feature-group behaviour build the same thing from the generic extensions."""
+    grp = doc.addObject("App::GeometryPython", name)
+    grp.addExtension("App::GeoFeatureGroupExtensionPython")
+    grp.addExtension("App::PlacementExtensionPython")
+    return grp
+
+
 App = FreeCAD
 
 from parttests.BRep_tests import BRepTests
@@ -934,7 +946,7 @@ class PartBOPTestContainer(unittest.TestCase):
     def testMakeFuse(self):
         box = self.Doc.addObject("Part::Box", "Box")
         cyl = self.Doc.addObject("Part::Cylinder", "Cylinder")
-        part = self.Doc.addObject("App::Part", "Part")
+        part = _placedGroup(self.Doc, "Part")
         part.addObject(box)
         part.addObject(cyl)
         from BOPTools import BOPFeatures
@@ -946,7 +958,7 @@ class PartBOPTestContainer(unittest.TestCase):
     def testMakeCut(self):
         box = self.Doc.addObject("Part::Box", "Box")
         cyl = self.Doc.addObject("Part::Cylinder", "Cylinder")
-        part = self.Doc.addObject("App::Part", "Part")
+        part = _placedGroup(self.Doc, "Part")
         part.addObject(box)
         part.addObject(cyl)
         from BOPTools import BOPFeatures
@@ -958,7 +970,7 @@ class PartBOPTestContainer(unittest.TestCase):
     def testMakeCommon(self):
         box = self.Doc.addObject("Part::Box", "Box")
         cyl = self.Doc.addObject("Part::Cylinder", "Cylinder")
-        part = self.Doc.addObject("App::Part", "Part")
+        part = _placedGroup(self.Doc, "Part")
         part.addObject(box)
         part.addObject(cyl)
         from BOPTools import BOPFeatures

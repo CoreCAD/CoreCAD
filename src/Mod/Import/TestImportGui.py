@@ -224,8 +224,7 @@ class ExportImportTest(unittest.TestCase):
         """
         Create a STEP file with color per face
         """
-        part = self.doc.addObject("App::Part", "Part")
-        box = part.newObject("Part::Box", "Box")
+        box = self.doc.addObject("Part::Box", "Box")
         self.doc.recompute()
 
         box.ViewObject.DiffuseColor = [
@@ -237,7 +236,7 @@ class ExportImportTest(unittest.TestCase):
             (1.0, 1.0, 0.0, 1.0),
         ]
 
-        ImportGui.export([part], self.fileName)
+        ImportGui.export([box], self.fileName)
 
         self.doc.clearDocument()
         ImportGui.insert(name=self.fileName, docName=self.doc.Name, merge=False)

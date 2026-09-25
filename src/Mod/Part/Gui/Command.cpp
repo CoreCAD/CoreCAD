@@ -34,7 +34,6 @@
 #include <App/Document.h>
 #include <App/GeoFeature.h>
 #include <Mod/Part/App/PartFeature.h>
-#include <App/Part.h>
 #include <Gui/MDIView.h>
 #include <App/DocumentObjectGroup.h>
 #include <Base/Console.h>

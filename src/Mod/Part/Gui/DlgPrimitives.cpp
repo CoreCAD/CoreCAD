@@ -37,7 +37,6 @@
 
 
 #include <App/Application.h>
-#include <App/Part.h>
 #include <App/Document.h>
 #include <Base/Rotation.h>
 #include <Base/Tools.h>

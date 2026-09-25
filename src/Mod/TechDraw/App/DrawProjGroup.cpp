@@ -34,7 +34,6 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
-#include <App/Part.h>
 #include <Base/BoundBox.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>

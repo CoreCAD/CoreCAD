@@ -107,7 +107,6 @@ generate_from_py(PlacementExtension)
 generate_from_py(SuppressibleExtension)
 generate_from_py(Metadata)
 generate_from_py(OriginGroupExtension)
-generate_from_py(Part)
 generate_from_py(StringHasher)
 generate_from_py(StringID)
 
@@ -134,7 +133,6 @@ SET(FreeCADApp_Pyi_SRCS
     OriginGroupExtension.pyi
     PlacementExtension.pyi
     SuppressibleExtension.pyi
-    Part.pyi
     Document.pyi
     PropertyContainer.pyi
     ComplexGeoData.pyi
@@ -184,8 +182,6 @@ SET(Document_CPP_SRCS
     PlacementExtension.cpp
     SuppressibleExtensionPyImp.cpp
     SuppressibleExtension.cpp
-    PartPyImp.cpp
-    Part.cpp
     Origin.cpp
     Path.cpp
     InventorObject.cpp
@@ -235,7 +231,6 @@ SET(Document_HPP_SRCS
     OriginGroupExtension.h
     PlacementExtension.h
     SuppressibleExtension.h
-    Part.h
     Origin.h
     Path.h
     InventorObject.h

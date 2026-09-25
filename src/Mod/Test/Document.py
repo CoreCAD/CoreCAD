@@ -26,6 +26,18 @@ from FreeCAD import Base
 import math
 import xml.etree.ElementTree as ET
 
+
+def _placedGroup(doc, name="Group"):
+    """A container with its own placement that owns what it holds (a geo-feature group).
+
+    App::Part used to be the stock example; the type is retired, so the tests that exercise
+    geo-feature-group behaviour build the same thing from the generic extensions."""
+    grp = doc.addObject("App::GeometryPython", name)
+    grp.addExtension("App::GeoFeatureGroupExtensionPython")
+    grp.addExtension("App::PlacementExtensionPython")
+    return grp
+
+
 # ---------------------------------------------------------------------------
 # define the functions to test the FreeCAD Document code
 # ---------------------------------------------------------------------------
@@ -1300,7 +1312,7 @@ class UndoRedoCases(unittest.TestCase):
         self.Doc.recompute()
 
         self.Doc.openTransaction("Part")
-        self.Part = self.Doc.addObject("App::Part")
+        self.Part = _placedGroup(self.Doc, "Part")
         self.Doc.commitTransaction()
 
         self.Doc.openTransaction("Drag")
@@ -1413,8 +1425,8 @@ class DocumentGroupCases(unittest.TestCase):
         self.assertTrue(grp2.hasObject(obj1))
 
         # an object is allowed to be in a group and a geofeaturegroup
-        prt1 = self.Doc.addObject("App::Part", "Part1")
-        prt2 = self.Doc.addObject("App::Part", "Part2")
+        prt1 = _placedGroup(self.Doc, "Part1")
+        prt2 = _placedGroup(self.Doc, "Part2")
 
         prt1.addObject(grp2)
         self.assertTrue(grp2.getParentGeoFeatureGroup() == prt1)
@@ -1500,7 +1512,7 @@ class DocumentGroupCases(unittest.TestCase):
         # ContainerChain must not raise when a plain group is nested inside a GeoFeatureGroup
         from Show.Containers import ContainerChain
 
-        part = self.Doc.addObject("App::Part", "Part")
+        part = _placedGroup(self.Doc, "Part")
         group = self.Doc.addObject("App::DocumentObjectGroup", "Group")
         obj = self.Doc.addObject("App::FeatureTest", "Obj")
         part.addObject(group)
@@ -1523,7 +1535,7 @@ class DocumentGroupCases(unittest.TestCase):
         self.fus1.LinkList = [self.box, self.cyl]
         self.fus2.LinkList = [self.sph, self.cyl]
 
-        self.prt = self.Doc.addObject("App::Part")
+        self.prt = _placedGroup(self.Doc, "Part")
         self.prt.addObject(self.fus1)
         self.assertTrue(len(self.prt.Group) == 5)
         self.assertTrue(self.fus2.getParentGeoFeatureGroup() == self.prt)

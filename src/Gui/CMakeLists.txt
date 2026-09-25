@@ -1113,7 +1113,6 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderLine.cpp
     ViewProviderGeoFeatureGroup.cpp
     ViewProviderOriginGroup.cpp
-    ViewProviderPart.cpp
     ViewProviderCoordinateSystem.cpp
     ViewProviderMaterialObject.cpp
     ViewProviderTextDocument.cpp
@@ -1151,7 +1150,6 @@ SET(Viewprovider_SRCS
     ViewProviderLine.h
     ViewProviderGeoFeatureGroup.h
     ViewProviderOriginGroup.h
-    ViewProviderPart.h
     ViewProviderCoordinateSystem.h
     ViewProviderMaterialObject.h
     ViewProviderTextDocument.h

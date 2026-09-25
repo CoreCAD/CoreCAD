@@ -103,10 +103,8 @@ class TestGuiDocument(unittest.TestCase):
         group1 = self.doc.addObject("App::DocumentObjectGroup", "Group1")
         group2 = self.doc.addObject("App::DocumentObjectGroup", "Group2")
         obj1 = self.doc.addObject("App::FeaturePython", "RootObject1")
-        part1 = self.doc.addObject("App::Part", "Part1")
 
-        # Create App::Parts and groups with objects in them
-        part1_obj = part1.newObject("App::FeaturePython", "Part1_Object")
+        # Create groups with objects in them
         group3 = group2.newObject("App::DocumentObjectGroup", "Group1")
         group1_obj = group3.newObject("App::FeaturePython", "Group1_Object")
 
@@ -114,7 +112,7 @@ class TestGuiDocument(unittest.TestCase):
         root_objects = FreeCADGui.getDocument("TestDoc").TreeRootObjects
 
         # Check if the new function returns the correct root objects
-        expected_root_objects = [group1, group2, obj1, part1]
+        expected_root_objects = [group1, group2, obj1]
         self.assertEqual(set(root_objects), set(expected_root_objects))
 
     def testViewObjectRequiresMainThread(self):

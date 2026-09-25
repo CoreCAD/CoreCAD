@@ -50,6 +50,15 @@ import AssemblyStepImport
 from AssemblyTests.scene_graph import SceneGraphAssertions
 
 
+def _placedGroup(doc, name):
+    """A placed container that owns what it holds -- exported, it becomes an assembly level
+    in the STEP file. Used only to author test input."""
+    grp = doc.addObject("App::GeometryPython", name)
+    grp.addExtension("App::GeoFeatureGroupExtensionPython")
+    grp.addExtension("App::PlacementExtensionPython")
+    return grp
+
+
 @unittest.skipIf(not App.GuiUp, "draw-layer regression needs a running GUI")
 class TestStepAssemblyImportDraw(SceneGraphAssertions, unittest.TestCase):
     def setUp(self):
@@ -68,10 +77,10 @@ class TestStepAssemblyImportDraw(SceneGraphAssertions, unittest.TestCase):
         (holding one placed Pin). The import turns Inner into a flexible
         Assembly::AssemblyLink -- the case #77 double-drew."""
         doc = App.newDocument("drawsrc")
-        outer = doc.addObject("App::Part", "Outer")
+        outer = _placedGroup(doc, "Outer")
         box = doc.addObject("Part::Box", "Base")
         box.Length = box.Width = box.Height = 10
-        inner = doc.addObject("App::Part", "Inner")
+        inner = _placedGroup(doc, "Inner")
         inner.Placement = App.Placement(App.Vector(100, 0, 0), App.Rotation())
         pin = doc.addObject("Part::Cylinder", "Pin")
         pin.Radius = 3

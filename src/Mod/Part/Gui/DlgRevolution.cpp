@@ -38,7 +38,6 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Link.h>
-#include <App/Part.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
@@ -137,7 +136,6 @@ DlgRevolution::DlgRevolution(QWidget* parent, Qt::WindowFlags fl)
     std::erase_if(shapeObjs, [](App::DocumentObject* o) { return !Part::hasShape(o); });
     sel.applyFrom(shapeObjs);
     sel.applyFrom(Gui::Selection().getObjectsOfType(App::Link::getClassTypeId()));
-    sel.applyFrom(Gui::Selection().getObjectsOfType(App::Part::getClassTypeId()));
 
     connect(ui->txtAxisLink, &QLineEdit::textChanged, this, &DlgRevolution::onAxisLinkTextChanged);
 

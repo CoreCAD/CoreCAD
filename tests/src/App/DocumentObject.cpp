@@ -4,6 +4,7 @@
 #include <gmock/gmock.h>
 
 #include <src/App/InitApplication.h>
+#include <src/App/PlacedGroup.h>
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -49,9 +50,9 @@ TEST_F(DocumentObjectTest, getSubObjectList)
     auto boxName {_doc->addObject("Part::Box")->getNameInDocument()};
     // The name of a Part::Cylinder added to the document
     auto cylName {_doc->addObject("Part::Cylinder")->getNameInDocument()};
-    // An App::Part object added to the document
-    auto part {_doc->addObject("App::Part")};
-    // The name of the App::Part added to the document
+    // An placed group added to the document
+    auto part {tests::addPlacedGroup(_doc)};
+    // The name of the placed group added to the document
     auto partName {part->getNameInDocument()};
     // The name of the object used as argument for the calls of DocumentObject::getSubObjectList()
     auto subName {std::string()};
@@ -87,7 +88,7 @@ TEST_F(DocumentObjectTest, getSubObjectList)
     subName += boxName;
     subName += ".Edge1";
 
-    // Adding the fusion to the App::Part object to test the differences between calling
+    // Adding the fusion to the placed group to test the differences between calling
     // DocumentObject::getSubObjectList() with the flatten argument set to false or set to true
     cmd = "App.ActiveDocument.getObject(\"";
     cmd += partName;
