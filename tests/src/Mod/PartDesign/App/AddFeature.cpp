@@ -6,6 +6,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentObjectGroup.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
@@ -161,4 +162,19 @@ TEST_F(AddFeatureTest, PatternTakesTipOnlyOnFirstConfiguration)
     lp->Originals.setValues({_pad1});
 
     EXPECT_EQ(_body->Tip.getValue(), _pad1);
+}
+
+// Cruth #37: a folder is the user's filing and a body's membership is a reference, so
+// joining a body leaves the feature in its folder. Both still hold it afterwards.
+TEST_F(AddFeatureTest, JoiningABodyKeepsTheFeatureInItsFolder)
+{
+    auto* folder = _doc->addObject<App::DocumentObjectGroup>("Folder");
+    auto* pad2 = _doc->addObject<PartDesign::Pad>("Pad2");
+    folder->addObject(pad2);
+
+    _body->addFeature(pad2);
+
+    EXPECT_TRUE(folder->hasObject(pad2));
+    EXPECT_EQ(pad2->BaseFeature.getValue(), _pad1);
+    EXPECT_EQ(_body->Tip.getValue(), pad2);
 }
