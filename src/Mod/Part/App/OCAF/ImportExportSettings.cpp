@@ -212,16 +212,6 @@ bool ImportExportSettings::getImportHiddenObject() const
     return pGroup->GetBool("ImportHiddenObject", true);
 }
 
-void ImportExportSettings::setExportLegacy(bool on)
-{
-    pGroup->SetBool("ExportLegacy", on);
-}
-
-bool ImportExportSettings::getExportLegacy() const
-{
-    return pGroup->GetBool("ExportLegacy", false);
-}
-
 void ImportExportSettings::setExportKeepPlacement(bool on)
 {
     pGroup->SetBool("ExportKeepPlacement", on);

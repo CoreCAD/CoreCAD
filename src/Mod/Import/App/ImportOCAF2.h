@@ -41,7 +41,17 @@
 #include <Base/Sequencer.h>
 #include <Mod/Part/App/TopoShape.h>
 
-#include "ExportOCAF.h"
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+#include <TDocStd_Document.hxx>
+#include <XCAFDoc_ColorTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
+
+#include <App/Material.h>
+#include <Mod/Import/ImportGlobal.h>
 #include "Tools.h"
 
 

@@ -27,7 +27,6 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObjectGroup.h>
-#include <App/Part.h>
 #include <App/FeaturePythonPyImp.h>
 #include <App/Link.h>
 #include <App/PropertyPythonObject.h>
@@ -74,22 +73,6 @@ BomObject::BomObject()
         "Bom",
         (App::PropertyType)(App::Prop_None),
         "Detail sub-assemblies components."
-    );
-
-    ADD_PROPERTY_TYPE(
-        detailParts,
-        (true),
-        "Bom",
-        (App::PropertyType)(App::Prop_None),
-        "Detail Parts sub-components."
-    );
-
-    ADD_PROPERTY_TYPE(
-        onlyParts,
-        (false),
-        "Bom",
-        (App::PropertyType)(App::Prop_None),
-        "Only Part containers will be added. Solids like PartDesign Bodies will be ignored."
     );
 }
 BomObject::~BomObject() = default;
@@ -209,8 +192,7 @@ void BomObject::addObjectChildrenToBom(
             }
         }
 
-        if (!child->isDerivedFrom<AssemblyObject>() && !child->isDerivedFrom<App::Part>()
-            && !(Part::hasShape(child) && !onlyParts.getValue())) {
+        if (!child->isDerivedFrom<AssemblyObject>() && !Part::hasShape(child)) {
             continue;
         }
 
@@ -244,9 +226,7 @@ void BomObject::addObjectChildrenToBom(
         addObjectToBom(child, row, sub_index, isMirrored);
         ++row;
 
-        if ((child->isDerivedFrom<AssemblyObject>() && detailSubAssemblies.getValue())
-            || (!child->isDerivedFrom<AssemblyObject>() && child->isDerivedFrom<App::Part>()
-                && detailParts.getValue())) {
+        if (child->isDerivedFrom<AssemblyObject>() && detailSubAssemblies.getValue()) {
             addObjectChildrenToBom(child->getOutList(), row, sub_index);
         }
     }

@@ -637,20 +637,3 @@ TDF_Label ExportOCAF2::exportObject(
     }
     return label;
 }
-
-bool ExportOCAF2::canFallback(std::vector<App::DocumentObject*> objs)
-{
-    for (size_t i = 0; i < objs.size(); ++i) {
-        auto obj = objs[i];
-        if (!obj || !obj->isAttachedToDocument()) {
-            continue;
-        }
-        if (obj->getExtensionByType<App::LinkBaseExtension>(true)) {
-            return false;
-        }
-        for (auto& sub : obj->getSubObjects()) {
-            objs.push_back(obj->getSubObject(sub.c_str()));
-        }
-    }
-    return true;
-}

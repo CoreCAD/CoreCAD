@@ -88,8 +88,6 @@ public:
 
     App::PropertyStringList columnsNames;
     App::PropertyBool detailSubAssemblies;
-    App::PropertyBool detailParts;
-    App::PropertyBool onlyParts;
 
     std::vector<BomDataElement> dataElements;
     std::vector<App::DocumentObject*> obj_list;
