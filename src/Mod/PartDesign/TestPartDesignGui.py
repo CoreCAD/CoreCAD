@@ -504,7 +504,6 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(texts["Pad"], ("Housing", True))
         self.assertEqual(texts["S1"], ("", False))
         self.assertEqual(texts["S2"], ("(Housing)", False))
-        self.assertEqual(texts["Housing"], ("", True))
 
     def tree(self):
         loop = QtCore.QEventLoop()
@@ -515,7 +514,7 @@ class TestBodyColumn(unittest.TestCase):
         ][0]
 
     def rootRows(self):
-        """(label, child count) of every row directly under this document, read in one pass."""
+        """(label, child count) of every visible row directly under this document, in one pass."""
         root = self.tree().invisibleRootItem()
         for i in range(root.childCount()):
             doc = root.child(i)
@@ -523,11 +522,13 @@ class TestBodyColumn(unittest.TestCase):
                 return [
                     (doc.child(j).text(0), doc.child(j).childCount())
                     for j in range(doc.childCount())
+                    if not doc.child(j).isHidden()
                 ]
         self.fail("document not in the tree")
 
     def testTreeIsTheTimeline(self):
-        # §8.1: every step at the document level, in the order it was made; a body holds none.
+        # §8.1: every step at the document level, in the order it was made. A body is not a step:
+        # it has no row, and the Body column names it beside each step that builds it.
         pad1 = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         pad2 = PartDesign.makeFeature(self.square("S2", 50), "Pad")
         self.Doc.recompute()
@@ -536,7 +537,7 @@ class TestBodyColumn(unittest.TestCase):
         bodies = [o.Label for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]
         self.assertEqual(len(bodies), 2)
         for body in bodies:
-            self.assertIn((body, 0), rows)
+            self.assertNotIn(body, labels)
         self.assertIn(pad1.Label, labels)
         self.assertIn(pad2.Label, labels)
         made = [o.Label for o in self.Doc.Objects if o.Label in labels]
