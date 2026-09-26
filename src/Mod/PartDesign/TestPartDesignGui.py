@@ -544,8 +544,8 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(len(bodies), occurrences)
         return pad, pattern, bodies
 
-    def testPatternBodiesStackWithACount(self):
-        # §5.5 / §8.7: past three, a pattern's bodies are a stack of three cards and a count, and
+    def testPatternBodiesShowThreeAndACount(self):
+        # §5.5 / §8.7: past three, a pattern's bodies are three swatches, an ellipsis and a count, and
         # the tooltip lists every body in its own colour.
         pad, pattern, bodies = self.pattern(4)
         texts = self.columnTexts()
@@ -556,8 +556,8 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(len(set(swatchColours(tip))), 4)
         # The pad feeds every copy, so its row is the same aggregate.
         self.assertEqual(texts[pad.Label][1], tip)
-        # Three fanned cards and a count are narrower than three side-by-side swatches.
-        self.assertLess(self.columnIconWidth(pattern.Label), 34)
+        # Three swatches, then the ellipsis and count after them.
+        self.assertGreater(self.columnIconWidth(pattern.Label), 3 * 10 + 2 * 2)
 
     def testThreePatternBodiesSitSideBySide(self):
         _, pattern, _ = self.pattern(3)

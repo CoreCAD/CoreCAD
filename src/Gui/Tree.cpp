@@ -143,8 +143,8 @@ constexpr int BodyColumn = 3;
 
 /// The Bodies column (Cruth ARCHITECTURE §8.7): a swatch per body the object builds, then the
 /// bodies it only references, in brackets. The bodies one pattern emits sit side by side when
-/// there are three or fewer; past that, the first three are drawn fanned like cards and followed
-/// by the count, so "12" reads as twelve different bodies (§5.5). At most three groups of each
+/// there are three or fewer; past that, the first three are followed by an ellipsis and the
+/// count, so "12" reads as twelve different bodies (§5.5). At most three groups of each
 /// are drawn, with an ellipsis when there are more; the tooltip names them all.
 QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
 {
@@ -153,25 +153,25 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
     }
     constexpr int side = 10;
     constexpr int gap = 2;
-    constexpr int fan = 3;
     constexpr int bracket = 3;
     constexpr int ellipsis = 8;
     constexpr int maxShown = 3;
     QFont font;
     font.setPixelSize(side + 1);
     const QFontMetrics metrics(font);
-    auto stacked = [](const Gui::ViewProvider::BodySwatch& swatch) {
+    auto truncated = [](const Gui::ViewProvider::BodySwatch& swatch) {
         return swatch.colors.size() > static_cast<std::size_t>(maxShown);
     };
     auto countText = [](const Gui::ViewProvider::BodySwatch& swatch) {
         return QString::number(swatch.colors.size());
     };
     auto swatchWidth = [&](const Gui::ViewProvider::BodySwatch& swatch) {
-        if (stacked(swatch)) {
-            return side + (maxShown - 1) * fan + gap + metrics.horizontalAdvance(countText(swatch));
+        const int count = std::min<int>(static_cast<int>(swatch.colors.size()), maxShown);
+        int width = count * side + std::max(count - 1, 0) * gap;
+        if (truncated(swatch)) {
+            width += 2 * gap + ellipsis + metrics.horizontalAdvance(countText(swatch));
         }
-        const int count = static_cast<int>(swatch.colors.size());
-        return count * side + std::max(count - 1, 0) * gap;
+        return width;
     };
     auto groupWidth = [&](const std::vector<Gui::ViewProvider::BodySwatch>& swatches) {
         const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
@@ -201,19 +201,24 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         painter.setPen(color.darker(150));
         painter.drawRect(left, 0, side - 1, side - 1);
     };
+    auto drawEllipsis = [&]() {
+        for (int dot = 0; dot < 3; ++dot) {
+            painter.fillRect(x + dot * 3, side - 2, 2, 2, ink);
+        }
+        x += ellipsis;
+    };
     auto drawSwatch = [&](const Gui::ViewProvider::BodySwatch& swatch) {
-        if (!stacked(swatch)) {
-            for (std::size_t i = 0; i < swatch.colors.size(); ++i) {
-                drawSquare(x, swatch.colors[i]);
-                x += side + (i + 1 < swatch.colors.size() ? gap : 0);
-            }
+        const std::size_t count = std::min<std::size_t>(swatch.colors.size(), maxShown);
+        for (std::size_t i = 0; i < count; ++i) {
+            drawSquare(x, swatch.colors[i]);
+            x += side + (i + 1 < count ? gap : 0);
+        }
+        if (!truncated(swatch)) {
             return;
         }
-        // Back to front, so the first body's card lies on top at the left.
-        for (int i = maxShown - 1; i >= 0; --i) {
-            drawSquare(x + i * fan, swatch.colors[i]);
-        }
-        x += side + (maxShown - 1) * fan + gap;
+        x += gap;
+        drawEllipsis();
+        x += gap;
         const QString text = countText(swatch);
         const int textWidth = metrics.horizontalAdvance(text);
         painter.setPen(ink);
@@ -228,10 +233,7 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         }
         if (static_cast<int>(swatches.size()) > maxShown) {
             x += gap;
-            for (int dot = 0; dot < 3; ++dot) {
-                painter.fillRect(x + dot * 3, side - 2, 2, 2, ink);
-            }
-            x += ellipsis;
+            drawEllipsis();
         }
     };
     drawGroup(column.builds);
