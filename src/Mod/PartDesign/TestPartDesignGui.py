@@ -24,6 +24,7 @@
 
 import FreeCAD
 import FreeCADGui
+import re
 import sys
 import unittest
 import Sketcher
@@ -446,6 +447,20 @@ class TestClosingAFeatureDialog(unittest.TestCase):
 #       FreeCAD.closeDocument("SketchGuiTest")
 
 
+def plain(tooltip):
+    """The Bodies column tooltip as text: a line per <br>, tags dropped, the square as ■."""
+    text = tooltip.replace("<br>", "\n").replace("&#9632;", "■")
+    return re.sub(r"<[^>]+>", "", text)
+
+
+def swatchColours(tooltip):
+    return re.findall(r"color:(#[0-9a-f]{6})", tooltip)
+
+
+def colourName(body):
+    return QtGui.QColor.fromRgbF(*body.Color[:3]).name()
+
+
 class TestBodyColumn(unittest.TestCase):
     """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch, and in
     brackets the bodies a step only references. A profile sketch builds nothing and shows
@@ -505,14 +520,14 @@ class TestBodyColumn(unittest.TestCase):
         self.Doc.recompute()
         texts = self.columnTexts()
         self.assertIn("Pad", texts, sorted(texts))
-        # Swatches only; the names are in the tooltip.
-        self.assertEqual(texts["Pad"], ("", "Builds: Housing", True))
+        # Swatches only; the names are in the tooltip, each after a square of its colour.
+        self.assertEqual(texts["Pad"][0::2], ("", True))
+        self.assertEqual(plain(texts["Pad"][1]), "Builds:\n■ Housing")
         self.assertEqual(texts["S1"], ("", "", False))
-        self.assertEqual(texts["S2"], ("", "Uses: Housing", True))
+        self.assertEqual(plain(texts["S2"][1]), "Uses:\n■ Housing")
+        self.assertEqual(swatchColours(texts["Pad"][1]), [colourName(body)])
 
-    def testPatternBodiesAreOneSwatchWithACount(self):
-        # §5.5 / §8.7: the bodies a pattern emits are one swatch and "× N", not a swatch each, and
-        # the tooltip cuts a long family short.
+    def pattern(self, occurrences):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
         origin = next(o for o in self.Doc.Objects if o.isDerivedFrom("App::Origin"))
@@ -522,18 +537,31 @@ class TestBodyColumn(unittest.TestCase):
         pattern.MultiBody = True
         pattern.Direction = (y_axis, [""])
         pattern.Length = 60.0
-        pattern.Occurrences = 4
+        pattern.Occurrences = occurrences
         body.addFeature(pattern)
         self.Doc.recompute()
-        self.assertEqual(
-            len([o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]), 4
-        )
+        bodies = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]
+        self.assertEqual(len(bodies), occurrences)
+        return pad, pattern, bodies
+
+    def testPatternBodiesStackWithACount(self):
+        # §5.5 / §8.7: past three, a pattern's bodies are a stack of three cards and a count, and
+        # the tooltip lists every body in its own colour.
+        pad, pattern, bodies = self.pattern(4)
         texts = self.columnTexts()
-        self.assertRegex(texts[pattern.Label][1], r"^Builds: [^,]+, [^,]+ \+ 2 more$")
+        tip = texts[pattern.Label][1]
+        self.assertEqual(plain(tip).splitlines()[0], "Builds:")
+        self.assertEqual(len(plain(tip).splitlines()), 5)
+        self.assertEqual(sorted(swatchColours(tip)), sorted(colourName(b) for b in bodies))
+        self.assertEqual(len(set(swatchColours(tip))), 4)
         # The pad feeds every copy, so its row is the same aggregate.
-        self.assertRegex(texts[pad.Label][1], r"^Builds: [^,]+, [^,]+ \+ 2 more$")
-        # One swatch and a count is narrower than the three swatches and ellipsis of four bodies.
+        self.assertEqual(texts[pad.Label][1], tip)
+        # Three fanned cards and a count are narrower than three side-by-side swatches.
         self.assertLess(self.columnIconWidth(pattern.Label), 34)
+
+    def testThreePatternBodiesSitSideBySide(self):
+        _, pattern, _ = self.pattern(3)
+        self.assertEqual(self.columnIconWidth(pattern.Label), 3 * 10 + 2 * 2)
 
     def columnIconWidth(self, label):
         """The Bodies column icon's width at its drawn height, read while the row is live."""
