@@ -294,7 +294,7 @@ bool getReferencedSelection(
 
     std::string subname = msg.pSubName;
 
-    // CoreCAD Phase 2: cross-Body references are valid. No ShapeBinder copy needed.
+    // CoreCAD Phase 2: cross-Body references are valid. No copy needed.
 
     // Remove subname for planes and datum features
     if (PartDesign::Feature::isDatum(selObj)) {

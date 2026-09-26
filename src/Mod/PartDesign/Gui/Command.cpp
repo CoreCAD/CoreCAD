@@ -62,7 +62,6 @@
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
-#include <Mod/PartDesign/App/ShapeBinder.h>
 
 #include "ReferenceSelection.h"
 #include "SketchPickDialog.h"
@@ -220,151 +219,6 @@ static bool resolveBaseBodyForNewFeature(Gui::Command* cmd, PartDesign::Body*& b
     bool abort = false;
     body = decideBaseBody(sketch, abort);
     return !abort;
-}
-
-//===========================================================================
-// PartDesign_ShapeBinder
-//===========================================================================
-
-DEF_STD_CMD_A(CmdPartDesignShapeBinder)
-
-CmdPartDesignShapeBinder::CmdPartDesignShapeBinder()
-    : Command("PartDesign_ShapeBinder")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Shape Binder");
-    sToolTipText = QT_TR_NOOP("Creates a new shape binder");
-    sWhatsThis = "PartDesign_ShapeBinder";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_ShapeBinder";
-}
-
-void CmdPartDesignShapeBinder::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    App::PropertyLinkSubList support;
-    getSelection().getAsPropertyLinkSubList(support);
-    // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the Tip
-    // feature so the binder references the feature, not the tip-tracking Body (§8).
-    Part::BodyBase::rebaseBodySubReferencesToTip(support);
-
-    bool bEditSelected = false;
-    if (support.getSize() == 1 && support.getValue()) {
-        if (support.getValue()->isDerivedFrom<PartDesign::ShapeBinder>()) {
-            bEditSelected = true;
-        }
-    }
-
-    if (bEditSelected) {
-        openCommand(QT_TRANSLATE_NOOP("Command", "Edit Shape Binder"));
-        PartDesignGui::setEdit(support.getValue());
-    }
-    else {
-        // Cruth #132: a binder carries geometry to wherever it is used; no body owns it, so it
-        // is born at document level. The selection names its source, not a target body.
-        std::string FeatName = getUniqueObjectName("ShapeBinder");
-
-        openCommand(QT_TRANSLATE_NOOP("Command", "Create Shape Binder"));
-        doCommand(
-            Command::Doc,
-            "App.ActiveDocument.addObject('PartDesign::ShapeBinder','%s')",
-            FeatName.c_str()
-        );
-        auto Feat = getDocument()->getObject(FeatName.c_str());
-        if (!Feat) {
-            return;
-        }
-
-        // test if current selection fits a mode.
-        if (support.getSize() > 0) {
-            FCMD_OBJ_CMD(Feat, "Support = " << support.getPyReprString());
-        }
-        updateActive();
-        PartDesignGui::setEdit(Feat);
-    }
-    // TODO do a proper error processing (2015-09-11, Fat-Zer)
-}
-
-bool CmdPartDesignShapeBinder::isActive()
-{
-    return hasActiveDocument();
-}
-
-//===========================================================================
-// PartDesign_SubShapeBinder
-//===========================================================================
-
-DEF_STD_CMD_A(CmdPartDesignSubShapeBinder)
-
-CmdPartDesignSubShapeBinder::CmdPartDesignSubShapeBinder()
-    : Command("PartDesign_SubShapeBinder")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Sub-Shape Binder");
-    sToolTipText = QT_TR_NOOP(
-        "Creates a reference to geometry from one or more objects, allowing it to be used inside "
-        "or outside a body. It tracks relative placements, supports multiple geometry types "
-        "(solids, faces, edges, vertices), and can work with objects in the same or external "
-        "documents."
-    );
-    sWhatsThis = "PartDesign_SubShapeBinder";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_SubShapeBinder";
-}
-
-void CmdPartDesignSubShapeBinder::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-
-    std::map<App::DocumentObject*, std::vector<std::string>> values;
-    for (auto& sel : Gui::Selection().getCompleteSelection(Gui::ResolveMode::NoResolve)) {
-        if (!sel.pObject) {
-            continue;
-        }
-        auto& subs = values[sel.pObject];
-        if (sel.SubName && sel.SubName[0]) {
-            subs.emplace_back(sel.SubName);
-        }
-    }
-
-    // Cruth #132: like the shape binder, a sub-shape binder is born at document level; the
-    // selection names its sources, not a body to put it in.
-    std::string FeatName = getUniqueObjectName("Binder");
-
-    PartDesign::SubShapeBinder* binder = nullptr;
-    try {
-        openCommand(QT_TRANSLATE_NOOP("Command", "Create Sub-Shape Binder"));
-        doCommand(
-            Command::Doc,
-            "App.ActiveDocument.addObject('PartDesign::SubShapeBinder','%s')",
-            FeatName.c_str()
-        );
-        binder = dynamic_cast<PartDesign::SubShapeBinder*>(
-            App::GetApplication().getActiveDocument()->getObject(FeatName.c_str())
-        );
-        if (!binder) {
-            return;
-        }
-        binder->setLinks(std::move(values));
-        updateActive();
-        commitCommand();
-    }
-    catch (Base::Exception& e) {
-        e.reportException();
-        QMessageBox::critical(
-            Gui::getMainWindow(),
-            QObject::tr("Sub-shape binder"),
-            QApplication::translate("Exception", e.what())
-        );
-        abortCommand();
-    }
-}
-
-bool CmdPartDesignSubShapeBinder::isActive()
-{
-    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -2493,8 +2347,6 @@ void CreatePartDesignCommands()
 {
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
-    rcCmdMgr.addCommand(new CmdPartDesignShapeBinder());
-    rcCmdMgr.addCommand(new CmdPartDesignSubShapeBinder());
     rcCmdMgr.addCommand(new CmdPartDesignClone());
 
     rcCmdMgr.addCommand(new CmdPartDesignNewSketch());

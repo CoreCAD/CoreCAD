@@ -37,7 +37,6 @@
 #include "Utils.h"
 #include "ViewProviderBody.h"
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/ShapeBinder.h>
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/Attacher.h>
@@ -244,7 +243,7 @@ public:
             Gui::SelectionObject sketchSelObject = sketchFilter.Result[0][0];
             supportString = sketchSelObject.getAsPropertyLinkSubString();
         }
-        // CoreCAD Phase 2: cross-Body face references are valid. No ShapeBinder copy needed.
+        // CoreCAD Phase 2: cross-Body face references are valid. No copy needed.
     }
 
     void createSketchOnSupport(const std::string& supportString)

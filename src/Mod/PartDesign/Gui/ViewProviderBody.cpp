@@ -45,7 +45,6 @@
 #include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 #include <Mod/PartDesign/App/FeatureBase.h>
-#include <Mod/PartDesign/App/ShapeBinder.h>
 
 #include "ViewProviderBody.h"
 #include "Utils.h"
@@ -688,9 +687,6 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
     }
     else if (obj->isDerivedFrom<App::LocalCoordinateSystem>()) {
         return !obj->isDerivedFrom<App::Origin>();
-    }
-    else if (obj->isDerivedFrom<PartDesign::SubShapeBinder>()) {
-        return true;
     }
     else if (obj->isDerivedFrom<Part::Part2DObject>()) {
         return true;

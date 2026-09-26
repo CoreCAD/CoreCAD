@@ -30,12 +30,6 @@ SET(Features_SRCS
 )
 SOURCE_GROUP("Features" FILES ${Features_SRCS})
 
-SET(ShapeBinder_SRCS
-    ShapeBinder.h
-    ShapeBinder.cpp
-)
-SOURCE_GROUP("ShapeBinder" FILES ${ShapeBinder_SRCS})
-
 SET(FeaturesTransformed_SRCS
     FeatureTransformed.h
     FeatureTransformed.cpp
@@ -121,7 +115,6 @@ SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
 SET(PartDesign_SRCS
     ${Features_SRCS}
-    ${ShapeBinder_SRCS}
     ${FeaturesTransformed_SRCS}
     ${FeaturesSketchBased_SRCS}
     ${FeaturesDressUp_SRCS}

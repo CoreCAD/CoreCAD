@@ -48,7 +48,6 @@ set(PartDesignGui_UIC_SRCS
     TaskPatternParameters.ui
     TaskScaledParameters.ui
     TaskMultiTransformParameters.ui
-    TaskShapeBinder.ui
     TaskPreviewParameters.ui
     TaskPrimitiveParameters.ui
     TaskPipeParameters.ui
@@ -100,8 +99,6 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderScaled.h
     ViewProviderMultiTransform.cpp
     ViewProviderMultiTransform.h
-    ViewProviderShapeBinder.h
-    ViewProviderShapeBinder.cpp
     ViewProviderBoolean.cpp
     ViewProviderBoolean.h
     ViewProviderPrimitive.h
@@ -168,9 +165,6 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskHoleParameters.ui
     TaskHoleParameters.cpp
     TaskHoleParameters.h
-    TaskShapeBinder.ui
-    TaskShapeBinder.cpp
-    TaskShapeBinder.h
     TaskBooleanParameters.ui
     TaskBooleanParameters.cpp
     TaskBooleanParameters.h
