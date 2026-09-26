@@ -622,6 +622,12 @@ void TreeWidgetItemDelegate::initStyleOption(QStyleOptionViewItem* option, const
         option->state &= ~QStyle::State_Selected;
     }
 
+    // The Bodies column has no text, so Qt would centre its swatches; rows of different widths
+    // then fail to line up. Start them all at the left edge.
+    if (index.column() == BodyColumn) {
+        option->decorationAlignment = Qt::AlignLeft | Qt::AlignVCenter;
+    }
+
     option->textElideMode = Qt::ElideMiddle;
     auto mousePos = option->widget->mapFromGlobal(QCursor::pos());
     auto isHovered = option->rect.contains(mousePos);
