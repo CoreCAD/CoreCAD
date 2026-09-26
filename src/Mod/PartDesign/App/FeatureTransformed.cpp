@@ -388,12 +388,6 @@ App::DocumentObjectExecReturn* Transformed::execute()
         return App::DocumentObject::StdReturn;
     }
 
-    if (!this->BaseFeature.getValue()) {
-        if (auto body = getFeatureBody()) {
-            body->setBaseProperty(this);
-        }
-    }
-
     this->purgeTouchedTransformations();
 
     // The counts answer for THIS recompute only; a stale pair would have the dialog offering
