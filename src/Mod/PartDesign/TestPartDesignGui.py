@@ -558,6 +558,48 @@ class TestBodyColumn(unittest.TestCase):
         self.assertLess(labels.index(sketch.Label), labels.index(pad1.Label))
         self.assertLess(labels.index(sketch.Label), labels.index(pad2.Label))
 
+    def tintedRows(self):
+        """Labels of the rows painted with the lineage tint, read from the pixels at the far
+        right of each row, where only the row tint paints."""
+        tree = self.tree()
+        tree.viewport().repaint()
+        image = tree.viewport().grab().toImage()
+        x = image.width() - 3
+        plain = tree.palette().color(QtGui.QPalette.Base).rgb()
+        rows = []
+        root = tree.invisibleRootItem()
+        stack = [root.child(i) for i in range(root.childCount())]
+        while stack:
+            item = stack.pop()
+            rect = tree.visualItemRect(item)
+            if rect.isValid() and not item.isHidden() and not item.isSelected():
+                if image.pixel(x, rect.center().y()) != plain:
+                    rows.append(item.text(0))
+            stack.extend(item.child(i) for i in range(item.childCount()))
+        return sorted(rows)
+
+    def testSelectingAStepTintsWhatItCameFrom(self):
+        # §8.2: selecting a step tints the steps it came from, and nothing that merely shares
+        # an input with it.
+        sketch = self.square("S1", 0)
+        pad1 = PartDesign.makeFeature(sketch, "Pad")
+        pad2 = PartDesign.makeFeature(sketch, "Pad")
+        other = self.square("S2", 50)
+        PartDesign.makeFeature(other, "Pad")
+        self.Doc.recompute()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, pad2.Name)
+        self.assertEqual(self.tintedRows(), [sketch.Label])
+        # A face picked in 3D arrives through the body; the lineage is the same.
+        body = [
+            o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body") and o.Tip == pad1
+        ]
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body[0].Name, pad1.Name + ".Face6")
+        self.assertEqual(self.tintedRows(), [sketch.Label])
+        Gui.Selection.clearSelection()
+        self.assertEqual(self.tintedRows(), [])
+
     def testFacePickedThroughABodyHighlightsTheStep(self):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         self.Doc.recompute()

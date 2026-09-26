@@ -198,6 +198,9 @@ protected:
 
 private:
     void _updateStatus(bool delay = true);
+    /// Tint the row of every step the selected steps came from (ARCHITECTURE §8.2).
+    void updateLineage();
+    std::set<App::DocumentObject*> lineageObjects;
 
     // Helpers for the two-stage "Select All" feature
     void selectGroupItems(const QTreeWidgetItem* group, bool recursive);

@@ -3297,6 +3297,16 @@ void TreeWidget::drawRow(
     const QModelIndex& index
 ) const
 {
+    // The lineage tint (updateLineage) spans the whole row, under the item's own painting.
+    if (!lineageObjects.empty()) {
+        auto item = itemFromIndex(index);
+        if (item && item->type() == ObjectType
+            && lineageObjects.count(static_cast<DocumentObjectItem*>(item)->object()->getObject())) {
+            QColor tint = palette().color(QPalette::Highlight);
+            tint.setAlpha(60);
+            painter->fillRect(options.rect, tint);
+        }
+    }
     QTreeWidget::drawRow(painter, options, index);
 }
 
@@ -4167,7 +4177,44 @@ void TreeWidget::onSelectTimer()
     }
     this->blockSelection(locked);
     selectTimer->stop();
+    updateLineage();
     return;
+}
+
+void TreeWidget::updateLineage()
+{
+    // Cruth #3 (ARCHITECTURE §8.2): selecting a step tints the rows of every step it came from:
+    // its sketch, the steps it builds on, their sketches, and so on back to the start. The tree
+    // no longer nests a sketch under its feature, so this is how the link shows. A step records
+    // only its inputs, so following them never reaches a later step.
+    std::set<App::DocumentObject*> selected;
+    for (const auto& sel : Selection().getCompleteSelection()) {
+        // A face picked in 3D arrives through its body ("Body.Pad.Face6"); the step is the object
+        // that owns the element.
+        App::DocumentObject* step = sel.pObject;
+        if (step && sel.SubName && *sel.SubName) {
+            if (auto sub = step->getSubObject(sel.SubName)) {
+                step = sub;
+            }
+        }
+        if (step) {
+            selected.insert(step);
+        }
+    }
+
+    std::set<App::DocumentObject*> lineage;
+    for (auto* step : selected) {
+        for (auto* input : step->getOutListRecursive()) {
+            if (!selected.count(input)) {
+                lineage.insert(input);
+            }
+        }
+    }
+
+    if (lineage != lineageObjects) {
+        lineageObjects = std::move(lineage);
+        viewport()->update();
+    }
 }
 
 void TreeWidget::onSelectionChanged(const SelectionChanges& msg)
