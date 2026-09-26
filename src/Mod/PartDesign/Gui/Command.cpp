@@ -87,6 +87,26 @@ static bool hasActiveBody()
     return PartDesignGui::getBody(/*messageIfNot=*/false) != nullptr;
 }
 
+// Gate for commands whose body comes from the selection (selectedBody): available whenever
+// the document has a Body to work on, active or not.
+static bool hasAnyBody()
+{
+    App::Document* doc = App::GetApplication().getActiveDocument();
+    return doc && !doc->getObjectsOfType(PartDesign::Body::getClassTypeId()).empty();
+}
+
+// Cruth #130: the selection decides the body a dress-up or pattern extends: the body of the
+// selected geometry, else the sole body, else the chooser. That body becomes the active one,
+// so the rest of the interface agrees with where the feature went.
+static PartDesign::Body* selectedBody(Gui::Command* cmd)
+{
+    PartDesign::Body* body = PartDesignGui::resolveTargetBody(cmd);
+    if (body) {
+        PartDesignGui::makeBodyActive(body, body->getDocument());
+    }
+    return body;
+}
+
 // Cruth §8.5/§4.6 spawn-vs-extend decision (GUI entry point).
 //
 // PURE query wrapper over PartDesign::Body::resolveBaseBody — the shared App-layer
@@ -1536,22 +1556,13 @@ bool dressupGetSelected(
     const std::string& which,
     Gui::SelectionObject& selected,
     bool& useAllEdges,
-    bool& noSelection
+    bool& noSelection,
+    PartDesign::Body*& body
 )
 {
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
-
-    if (!pcActiveBody) {
-        return false;
-    }
-
     std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
 
-    if (selection.empty()) {
-        noSelection = true;
-        return true;
-    }
-    else if (selection.size() != 1) {
+    if (selection.size() > 1) {
         QMessageBox::warning(
             Gui::getMainWindow(),
             QObject::tr("Wrong selection"),
@@ -1559,11 +1570,21 @@ bool dressupGetSelected(
         );
         return false;
     }
-    else if (pcActiveBody != PartDesignGui::getBodyFor(selection[0].getObject(), false)) {
+
+    body = selectedBody(cmd);
+    if (!body) {
+        return false;
+    }
+
+    if (selection.empty()) {
+        noSelection = true;
+        return true;
+    }
+    if (PartDesignGui::getBodyFor(selection[0].getObject(), false) != body) {
         QMessageBox::warning(
             Gui::getMainWindow(),
-            QObject::tr("Selection is not in the active body"),
-            QObject::tr("Select an edge, face, or body from an active body.")
+            QObject::tr("Wrong selection"),
+            QObject::tr("Select an edge, face, or body from a body.")
         );
         return false;
     }
@@ -1681,14 +1702,15 @@ void makeChamferOrFillet(Gui::Command* cmd, const std::string& which)
     bool useAllEdges = false;
     bool noSelection = false;
     Gui::SelectionObject selected;
-    if (!dressupGetSelected(cmd, which, selected, useAllEdges, noSelection)) {
+    PartDesign::Body* body = nullptr;
+    if (!dressupGetSelected(cmd, which, selected, useAllEdges, noSelection, body)) {
         return;
     }
 
     Part::ShapeFeature* base;
     std::vector<std::string> SubNames;
     if (noSelection) {
-        base = static_cast<Part::ShapeFeature*>(PartDesignGui::getBody(true)->Tip.getValue());
+        base = static_cast<Part::ShapeFeature*>(body->Tip.getValue());
     }
     else {
         base = static_cast<Part::ShapeFeature*>(selected.getObject());
@@ -1723,7 +1745,7 @@ void CmdPartDesignFillet::activated(int iMsg)
 
 bool CmdPartDesignFillet::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================
@@ -1752,7 +1774,7 @@ void CmdPartDesignChamfer::activated(int iMsg)
 
 bool CmdPartDesignChamfer::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================
@@ -1778,14 +1800,15 @@ void CmdPartDesignDraft::activated(int iMsg)
     Gui::SelectionObject selected;
     bool useAllEdges = false;
     bool noSelection = false;
-    if (!dressupGetSelected(this, "Draft", selected, useAllEdges, noSelection)) {
+    PartDesign::Body* body = nullptr;
+    if (!dressupGetSelected(this, "Draft", selected, useAllEdges, noSelection, body)) {
         return;
     }
 
     Part::ShapeFeature* base;
     std::vector<std::string> SubNames;
     if (noSelection) {
-        base = static_cast<Part::ShapeFeature*>(PartDesignGui::getBody(true)->Tip.getValue());
+        base = static_cast<Part::ShapeFeature*>(body->Tip.getValue());
     }
     else {
         base = static_cast<Part::ShapeFeature*>(selected.getObject());
@@ -1821,7 +1844,7 @@ void CmdPartDesignDraft::activated(int iMsg)
 
 bool CmdPartDesignDraft::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 
@@ -1848,7 +1871,8 @@ void CmdPartDesignThickness::activated(int iMsg)
     Gui::SelectionObject selected;
     bool useAllEdges = false;
     bool noSelection = false;
-    if (!dressupGetSelected(this, "Thickness", selected, useAllEdges, noSelection)) {
+    PartDesign::Body* body = nullptr;
+    if (!dressupGetSelected(this, "Thickness", selected, useAllEdges, noSelection, body)) {
         return;
     }
 
@@ -1856,7 +1880,7 @@ void CmdPartDesignThickness::activated(int iMsg)
     Part::ShapeFeature* base;
     std::vector<std::string> SubNames;
     if (noSelection) {
-        base = static_cast<Part::ShapeFeature*>(PartDesignGui::getBody(true)->Tip.getValue());
+        base = static_cast<Part::ShapeFeature*>(body->Tip.getValue());
     }
     else {
         base = static_cast<Part::ShapeFeature*>(selected.getObject());
@@ -1880,7 +1904,7 @@ void CmdPartDesignThickness::activated(int iMsg)
 
 bool CmdPartDesignThickness::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================
@@ -1930,13 +1954,12 @@ void prepareTransformed(
         PartDesign::Feature::getClassTypeId()
     );
 
-    PartDesign::Body* activeBody = PartDesignGui::getBody(true);
     for (auto feature : features) {
-        if (activeBody != PartDesignGui::getBodyFor(feature, false)) {
+        if (pcActiveBody != PartDesignGui::getBodyFor(feature, false)) {
             QMessageBox::warning(
                 Gui::getMainWindow(),
-                QObject::tr("Selection is not in the active body"),
-                QObject::tr("Please select only one feature in an active body.")
+                QObject::tr("Wrong selection"),
+                QObject::tr("Select features from a single body.")
             );
             return;
         }
@@ -1970,7 +1993,7 @@ void CmdPartDesignMirrored::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    PartDesign::Body* pcActiveBody = selectedBody(this);
 
     if (!pcActiveBody) {
         return;
@@ -2003,7 +2026,7 @@ void CmdPartDesignMirrored::activated(int iMsg)
 
 bool CmdPartDesignMirrored::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================
@@ -2029,7 +2052,7 @@ void CmdPartDesignLinearPattern::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    PartDesign::Body* pcActiveBody = selectedBody(this);
 
     if (!pcActiveBody) {
         return;
@@ -2072,7 +2095,7 @@ void CmdPartDesignLinearPattern::activated(int iMsg)
 
 bool CmdPartDesignLinearPattern::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================
@@ -2098,7 +2121,7 @@ void CmdPartDesignPolarPattern::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    PartDesign::Body* pcActiveBody = selectedBody(this);
 
     if (!pcActiveBody) {
         return;
@@ -2134,7 +2157,7 @@ void CmdPartDesignPolarPattern::activated(int iMsg)
 
 bool CmdPartDesignPolarPattern::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================
@@ -2158,7 +2181,7 @@ void CmdPartDesignScaled::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    PartDesign::Body* pcActiveBody = selectedBody(this);
 
     if (!pcActiveBody) {
         return;
@@ -2177,7 +2200,7 @@ void CmdPartDesignScaled::activated(int iMsg)
 
 bool CmdPartDesignScaled::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================
@@ -2202,7 +2225,7 @@ CmdPartDesignMultiTransform::CmdPartDesignMultiTransform()
 void CmdPartDesignMultiTransform::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    PartDesign::Body* pcActiveBody = selectedBody(this);
 
     if (!pcActiveBody) {
         return;
@@ -2305,7 +2328,7 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
 
 bool CmdPartDesignMultiTransform::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================

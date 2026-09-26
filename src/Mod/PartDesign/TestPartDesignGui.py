@@ -283,10 +283,53 @@ class PartDesignTransformed(unittest.TestCase):
         Gui.runCommand("PartDesign_MultiTransform")
         timer.stop()
 
-        self.assertEqual(seen, ["Selection is not in the active body"])
+        self.assertEqual(seen, ["Wrong selection"])
         self.assertFalse(
             [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::MultiTransform")]
         )
+
+    def testPatternGoesToTheSelectedBody(self):
+        """Cruth #130: the selection decides the body, not whichever body was active."""
+        sketch = self.Doc.addObject("Sketcher::SketchObject", "OtherProfile")
+        corners = [(50, 0), (60, 0), (60, 10), (50, 10)]
+        for start, end in zip(corners, corners[1:] + corners[:1]):
+            sketch.addGeometry(Part.LineSegment(App.Vector(*start, 0), App.Vector(*end, 0)))
+        self.Doc.recompute()
+        pad = PartDesign.makeFeature(sketch, "Pad")
+        self.Doc.recompute()
+        other = [
+            b for b in self.Doc.Objects if b.isDerivedFrom("PartDesign::Body") and b.Tip == pad
+        ][0]
+        Gui.activateView("Gui::View3DInventor", True)
+        Gui.activeView().setActiveObject("pdbody", self.Body)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(other.Tip)
+        seen = []
+
+        def dismiss():
+            dialog = QApplication.activeModalWidget()
+            if dialog is not None:
+                seen.append(dialog.windowTitle())
+                dialog.reject()
+
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(dismiss)
+        timer.start(500)
+        Gui.runCommand("PartDesign_LinearPattern")
+        timer.stop()
+        if Gui.Control.activeDialog():
+            Gui.Control.activeTaskDialog().accept()
+
+        # The pattern extends the selected body's chain; the body that was active is untouched.
+        # (A pattern whose copies do not touch splits into one body per solid, so the selected
+        # body object itself may be replaced; its chain is what carries on.)
+        self.assertEqual(seen, [])
+        patterns = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::LinearPattern")]
+        self.assertEqual(len(patterns), 1)
+        self.assertEqual(patterns[0].BaseFeature, pad)
+        self.assertEqual(self.Body.Tip.Name, "BodyBox")
+        self.assertNotEqual(Gui.activeView().getActiveObject("pdbody"), self.Body)
 
 
 class CreateSketch(unittest.TestCase):
