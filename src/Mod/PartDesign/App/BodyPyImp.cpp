@@ -220,6 +220,15 @@ PyObject* BodyPy::breakOutInstance(PyObject* args)
     return newBody->getPyObject();
 }
 
+PyObject* BodyPy::tipSubElement(PyObject* args)
+{
+    const char* sub = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &sub)) {
+        return nullptr;
+    }
+    return Py::new_reference_to(Py::String(getBodyPtr()->tipSubElement(sub)));
+}
+
 Py::Object BodyPy::getVisibleFeature() const
 {
     // Derived membership (§9.1-inverse): the Group is empty under de-ownership, so read the

@@ -1389,7 +1389,45 @@ bool dressupGetSelected(
         noSelection = true;
         return true;
     }
-    if (PartDesignGui::getBodyFor(selection[0].getObject(), false) != body) {
+    if (selection[0].getObject() == body && body->Tip.getValue()) {
+        // #136: a pattern copy is drawn through its Body, so the pick names the Body's own
+        // elements. A step names what it builds on against the Tip; translate each pick there.
+        std::vector<std::string> subs = selection[0].getSubNames();
+        if (subs.empty() && (which == "Fillet" || which == "Chamfer")) {
+            const int count = body->Shape.getShape().countSubElements("Edge");
+            for (int i = 1; i <= count; ++i) {
+                subs.push_back("Edge" + std::to_string(i));
+            }
+        }
+        App::DocumentObject* tip = body->Tip.getValue();
+        Gui::Selection().clearSelection();
+        for (const auto& sub : subs) {
+            const std::string tipSub = body->tipSubElement(sub.c_str());
+            if (tipSub.empty()) {
+                QMessageBox::warning(
+                    Gui::getMainWindow(),
+                    QObject::tr("Wrong selection"),
+                    QObject::tr("%1 is not part of this body's last feature.")
+                        .arg(QString::fromStdString(sub))
+                );
+                return false;
+            }
+            Gui::Selection().addSelection(
+                tip->getDocument()->getName(),
+                tip->getNameInDocument(),
+                tipSub.c_str()
+            );
+        }
+        if (subs.empty()) {
+            Gui::Selection().addSelection(tip->getDocument()->getName(), tip->getNameInDocument());
+        }
+        selection = cmd->getSelection().getSelectionEx();
+        if (selection.size() != 1) {
+            return false;
+        }
+    }
+    if (PartDesignGui::getBodyFor(selection[0].getObject(), false) != body
+        && !PartDesign::Body::backsBody(selection[0].getObject(), body)) {
         QMessageBox::warning(
             Gui::getMainWindow(),
             QObject::tr("Wrong selection"),
