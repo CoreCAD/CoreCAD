@@ -625,6 +625,12 @@ public:
     /// shape means there is no valid Tip/component yet; callers decide what a miss means.
     Part::TopoShape derivedTipShape() const;
 
+    /// The name, on the Tip's own shape, of the face, edge or vertex @p bodySub names on this
+    /// Body's shape; empty when it names none. A pick in the 3D view lands on the Body, but a
+    /// step names what it builds on against the Tip. For one copy of a pattern the two number
+    /// their elements differently, so the element is matched by itself, never by its number.
+    std::string tipSubElement(const char* bodySub) const;
+
     void setShowTip(bool enable)
     {
         showTip = enable;

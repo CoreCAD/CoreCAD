@@ -199,3 +199,54 @@ class TestStepOnOneCopy(unittest.TestCase):
         self.Doc.recompute()
         self.assertFalse(fillet.isValid())
         self.assertIn("no longer exists", fillet.getStatusString())
+
+    def testPickOnCopyBodyNamesThatCopysEdgeOnThePattern(self):
+        """#136: a pick in the 3D view lands on the copy's Body, numbered against that one
+        solid; the step names its edge against the whole pattern. The translation matches the
+        edge itself, so the fillet rounds the edge that was clicked."""
+        third = sorted(
+            [b for b in self._bodies() if b.Tip is self.lp],
+            key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
+        )[2]
+        bodyIndex, bodyEdge = next(
+            (i, e)
+            for i, e in enumerate(third.Shape.Edges, 1)
+            if e.BoundBox.ZLength > 9 and e.BoundBox.XMin > 69
+        )
+        tipSub = third.tipSubElement("Edge%d" % bodyIndex)
+        self.assertTrue(tipSub.startswith("Edge"), tipSub)
+        tipEdge = self.lp.Shape.getElement(tipSub)
+        self.assertAlmostEqual(tipEdge.CenterOfMass.distanceToPoint(bodyEdge.CenterOfMass), 0, 6)
+        # The raw number means another edge on the pattern (a different copy).
+        rawEdge = self.lp.Shape.getElement("Edge%d" % bodyIndex)
+        self.assertGreater(rawEdge.CenterOfMass.distanceToPoint(bodyEdge.CenterOfMass), 1.0)
+        self.assertEqual(third.tipSubElement("Edge999"), "")
+
+        fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
+        fillet.Base = (self.lp, [tipSub])
+        fillet.Radius = 2.0
+        third.addFeature(fillet)
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid(), fillet.getStatusString())
+        self.assertEqual(fillet.BaseInstance, 2)
+        self.assertLess(fillet.Shape.Volume, 1000.0)
+
+    def testStepsOnTwoCopiesStayApart(self):
+        """#136: a step on a second copy must not be spliced in front of the step already on
+        the first; each builds on the pattern, on its own copy."""
+        third, fillet = self._filletThirdCopy()
+        first = sorted(
+            [b for b in self._bodies() if b.Tip is self.lp],
+            key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
+        )[0]
+        chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
+        chamfer.Base = (self.lp, [first.tipSubElement("Edge1")])
+        chamfer.Size = 1.0
+        first.addFeature(chamfer)
+        self.Doc.recompute()
+        self.assertIs(fillet.BaseFeature, self.lp)
+        self.assertIs(chamfer.BaseFeature, self.lp)
+        self.assertEqual((fillet.BaseInstance, chamfer.BaseInstance), (2, 0))
+        self.assertTrue(chamfer.isValid(), chamfer.getStatusString())
+        self.assertEqual(len(self._bodies()), 4)
+        self.assertEqual(sorted(b.Tip.Name for b in self._bodies()).count("LinearPattern"), 2)

@@ -1953,8 +1953,11 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         }
 
         // Mid-chain insert: reroute the displaced successor onto the new feature so
-        // the chain stays linear (prevTip -> feature -> successor -> ...).
-        if (successor && successor->isDerivedFrom<PartDesign::Feature>()) {
+        // the chain stays linear (prevTip -> feature -> successor -> ...). A step that
+        // builds on another copy of a pattern is not a successor here: it is the next step
+        // of that copy's body, and rerouting it would put this step under it (#136).
+        if (successor && successor->isDerivedFrom<PartDesign::Feature>()
+            && static_cast<PartDesign::Feature*>(successor)->BaseInstance.getValue() == baseInstance) {
             static_cast<PartDesign::Feature*>(successor)->BaseFeature.setValue(feature);
         }
 
@@ -2011,7 +2014,9 @@ void Body::adoptConfiguredPattern(App::DocumentObject* pattern)
     if (prevTip) {
         for (auto* obj : getDocument()->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
             auto* next = static_cast<PartDesign::Feature*>(obj);
-            if (next != pattern && next->BaseFeature.getValue() == prevTip) {
+            // A step on another copy of prevTip belongs to that copy's body (#136).
+            if (next != pattern && next->BaseFeature.getValue() == prevTip
+                && next->BaseInstance.getValue() == feature->BaseInstance.getValue()) {
                 next->BaseFeature.setValue(pattern);
                 break;
             }
@@ -2513,6 +2518,39 @@ Part::TopoShape Body::derivedTipShape() const
     // Bake in the tip feature's own transform (matches Body::execute()).
     tipShape.transformShape(tipShape.getTransform(), true);
     return tipShape;
+}
+
+std::string Body::tipSubElement(const char* bodySub) const
+{
+    App::DocumentObject* tip = Tip.getValue();
+    if (!tip || !isSolidFeature(tip) || !bodySub || !*bodySub) {
+        return {};
+    }
+    const Part::TopoShape tipShape = static_cast<Part::ShapeFeature*>(tip)->Shape.getShape();
+    if (tipShape.isNull()) {
+        return {};
+    }
+    const std::string cid = TipComponentId.getStrValue();
+    if (cid.empty()) {
+        // The Body shows the Tip's whole shape, numbered as the Tip numbers it.
+        return tipShape.findShape(bodySub).IsNull() ? std::string() : std::string(bodySub);
+    }
+    // One copy: the Body shows that solid alone, placed but not renumbered, so the element
+    // the pick names is the same one on the solid inside the Tip's shape. Find that element
+    // in the whole shape by what it is, and read back its number there.
+    const Part::TopoShape solid = extractSolidById(tip, tipShape, cid);
+    if (solid.isNull()) {
+        return {};
+    }
+    const TopoDS_Shape element = solid.findShape(bodySub);
+    if (element.IsNull()) {
+        return {};
+    }
+    const int index = tipShape.findShape(element);
+    if (index <= 0) {
+        return {};
+    }
+    return Part::TopoShape::shapeName(element.ShapeType()) + std::to_string(index);
 }
 
 App::DocumentObject* Body::getSubObject(
