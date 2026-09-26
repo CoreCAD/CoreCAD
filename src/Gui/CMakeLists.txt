@@ -1089,7 +1089,6 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderExtensionPyImp.cpp
     ViewProviderGroupExtension.cpp
     ViewProviderGeoFeatureGroupExtension.cpp
-    ViewProviderOriginGroupExtension.cpp
     ViewProviderSuppressibleExtension.cpp
     ViewProviderAnnotation.cpp
     ViewProviderDocumentObject.cpp
@@ -1112,7 +1111,6 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderPoint.cpp
     ViewProviderLine.cpp
     ViewProviderGeoFeatureGroup.cpp
-    ViewProviderOriginGroup.cpp
     ViewProviderCoordinateSystem.cpp
     ViewProviderMaterialObject.cpp
     ViewProviderTextDocument.cpp
@@ -1130,7 +1128,6 @@ SET(Viewprovider_SRCS
     ViewProviderExtension.h
     ViewProviderGroupExtension.h
     ViewProviderGeoFeatureGroupExtension.h
-    ViewProviderOriginGroupExtension.h
     ViewProviderAnnotation.h
     ViewProviderDocumentObject.h
     ViewProviderDocumentObjectGroup.h
@@ -1149,7 +1146,6 @@ SET(Viewprovider_SRCS
     ViewProviderPoint.h
     ViewProviderLine.h
     ViewProviderGeoFeatureGroup.h
-    ViewProviderOriginGroup.h
     ViewProviderCoordinateSystem.h
     ViewProviderMaterialObject.h
     ViewProviderTextDocument.h
