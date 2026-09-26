@@ -520,13 +520,20 @@ public:
 
     /** What the tree's Bodies column shows for this object (Cruth ARCHITECTURE §8.7): a colour
      *  swatch for each body it builds and, in brackets, one for each body it only references.
-     *  The names are in the tooltip. The core knows nothing of bodies; a module that has them
-     *  answers. Empty shows nothing.
+     *  The bodies one pattern emits are a single swatch with their count (§5.5). The names are
+     *  in the tooltip. The core knows nothing of bodies; a module that has them answers. Empty
+     *  shows nothing.
      */
+    struct BodySwatch
+    {
+        QColor color;
+        int count = 1;
+        bool operator==(const BodySwatch&) const = default;
+    };
     struct TreeBodyColumn
     {
-        std::vector<QColor> builds;
-        std::vector<QColor> references;
+        std::vector<BodySwatch> builds;
+        std::vector<BodySwatch> references;
         QString tooltip;
         bool operator==(const TreeBodyColumn&) const = default;
     };
