@@ -23,7 +23,10 @@
 
 #pragma once
 
+#include <map>
+#include <set>
 #include <unordered_map>
+#include <QColor>
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QStyledItemDelegate>
@@ -200,7 +203,8 @@ private:
     void _updateStatus(bool delay = true);
     /// Tint the row of every step the selected steps came from (ARCHITECTURE §8.2).
     void updateLineage();
-    std::set<App::DocumentObject*> lineageObjects;
+    std::map<App::DocumentObject*, QColor> lineageTints;
+    std::set<App::DocumentObject*> lineageSelected;
 
     // Helpers for the two-stage "Select All" feature
     void selectGroupItems(const QTreeWidgetItem* group, bool recursive);
