@@ -134,7 +134,7 @@ void TaskPatternParameters::setupParameterUI(QWidget* widget)
     bindProperties();
 
     // --- Task Specific Setup ---
-    showOriginAxes(true);  // Show origin helper axes
+    showOriginElements(Gui::DatumElement::Axes);  // origin helper axes
 
     updateViewTimer = new QTimer(this);
     updateViewTimer->setSingleShot(true);
@@ -208,28 +208,6 @@ void TaskPatternParameters::updateUI()
 }
 
 // --- Task-Specific Logic ---
-
-void TaskPatternParameters::showOriginAxes(bool show)
-{
-    // The frame is the shared document Origin (Cruth §11 step 5e) — reach it directly.
-    App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
-    if (origin) {
-        try {
-            auto vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            if (show) {
-                vpOrigin->setTemporaryVisibility(Gui::DatumElement::Axes);
-            }
-            else {
-                vpOrigin->resetTemporaryVisibility();
-            }
-        }
-        catch (const Base::Exception& ex) {
-            Base::Console().error("TaskPatternParameters: Error accessing origin axes: %s\n", ex.what());
-        }
-    }
-}
 
 void TaskPatternParameters::enterReferenceSelectionMode()
 {
@@ -359,7 +337,7 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 
 TaskPatternParameters::~TaskPatternParameters()
 {
-    showOriginAxes(false);         // Clean up temporary visibility
+    resetOriginElements();         // Clean up temporary visibility
     exitReferenceSelectionMode();  // Ensure gates are removed etc.
     // ui unique_ptr handles deletion
     // parametersWidget is deleted by Qt parent mechanism if added to layout correctly
