@@ -9,6 +9,7 @@ add_executable(PartDesign_tests_run
     StoredRecipeRoundTrip.cpp
         MaterialBelongsToThePart.cpp
         MergeCandidates.cpp
+        BodiesOf.cpp
         MoveFeatureToBody.cpp
         ResolveMergeCandidate.cpp
         AddFeature.cpp
