@@ -2299,6 +2299,19 @@ QColumnView::item:selected {
   background-color: @AccentBackgroundColor;
 }
 
+/* The model tree paints its own selection, one colour across the whole row, in the family of the
+   lineage tint (Gui::TreeWidget::drawRow); the style's selection would add a second colour in the
+   cells and in the margin beside them. It must follow the QTreeView::item:selected rule above, which
+   has the same weight and would otherwise win. */
+Gui--TreeWidget {
+  show-decoration-selected: 0;
+}
+
+Gui--TreeWidget::item:selected,
+Gui--TreeWidget::branch:selected {
+  background-color: transparent;
+}
+
 QTableView::item:hover,
 QColumnView::item:hover,
 QListView::item:hover {

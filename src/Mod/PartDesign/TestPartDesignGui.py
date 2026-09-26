@@ -482,7 +482,11 @@ class TestBodyColumn(unittest.TestCase):
         def walk(item):
             for i in range(item.childCount()):
                 child = item.child(i)
-                texts[child.text(0)] = (child.text(3), not child.icon(3).isNull())
+                texts[child.text(0)] = (
+                    child.text(3),
+                    child.toolTip(3),
+                    not child.icon(3).isNull(),
+                )
                 walk(child)
 
         walk(trees[0].invisibleRootItem())
@@ -501,9 +505,10 @@ class TestBodyColumn(unittest.TestCase):
         self.Doc.recompute()
         texts = self.columnTexts()
         self.assertIn("Pad", texts, sorted(texts))
-        self.assertEqual(texts["Pad"], ("Housing", True))
-        self.assertEqual(texts["S1"], ("", False))
-        self.assertEqual(texts["S2"], ("(Housing)", False))
+        # Swatches only; the names are in the tooltip.
+        self.assertEqual(texts["Pad"], ("", "Builds: Housing", True))
+        self.assertEqual(texts["S1"], ("", "", False))
+        self.assertEqual(texts["S2"], ("", "Uses: Housing", True))
 
     def tree(self):
         loop = QtCore.QEventLoop()
@@ -599,6 +604,22 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(self.tintedRows(), [sketch.Label])
         Gui.Selection.clearSelection()
         self.assertEqual(self.tintedRows(), [])
+
+    def testTheOriginIsNotTinted(self):
+        # Every step comes from the origin, so tinting it says nothing.
+        sketch = self.square("S1", 0)
+        origin = [o for o in self.Doc.Objects if o.isDerivedFrom("App::Origin")][0]
+        xy = [f for f in origin.OriginFeatures if f.Role == "XY_Plane"][0]
+        sketch.AttachmentSupport = (xy, [""])
+        sketch.MapMode = "FlatFace"
+        pad = PartDesign.makeFeature(sketch, "Pad")
+        self.Doc.recompute()
+        tree = self.tree()
+        tree.expandAll()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, pad.Name)
+        self.assertEqual(self.tintedRows(), [sketch.Label])
+        Gui.Selection.clearSelection()
 
     def testFacePickedThroughABodyHighlightsTheStep(self):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")

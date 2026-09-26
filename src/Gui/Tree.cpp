@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 
+#include <optional>
+
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
@@ -47,12 +49,15 @@
 #include <Base/Writer.h>
 
 #include <Base/Color.h>
+
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/Datums.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/AutoTransaction.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Link.h>
+#include <App/Origin.h>
 #include <App/SuppressibleExtension.h>
 
 #include "Tree.h"
@@ -136,24 +141,73 @@ namespace
 {
 constexpr int BodyColumn = 3;
 
-/// Swatches side by side, one per body an object builds (Cruth ARCHITECTURE §8.7).
-QIcon bodySwatchIcon(const std::vector<QColor>& swatches)
+/// The Bodies column (Cruth ARCHITECTURE §8.7): a swatch per body the object builds, then the
+/// bodies it only references, in brackets. At most three of each are drawn, with an ellipsis
+/// when there are more; the tooltip names them all.
+QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
 {
-    if (swatches.empty()) {
+    if (column.builds.empty() && column.references.empty()) {
         return {};
     }
     constexpr int side = 10;
     constexpr int gap = 2;
+    constexpr int bracket = 3;
+    constexpr int ellipsis = 8;
     constexpr int maxShown = 3;
-    const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
-    QPixmap pixmap(count * side + (count - 1) * gap, side);
+    auto groupWidth = [&](const std::vector<QColor>& swatches) {
+        const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
+        int width = count * side + std::max(count - 1, 0) * gap;
+        if (static_cast<int>(swatches.size()) > maxShown) {
+            width += gap + ellipsis;
+        }
+        return width;
+    };
+    int width = groupWidth(column.builds);
+    if (!column.references.empty()) {
+        width += (column.builds.empty() ? 0 : 2 * gap) + 2 * (bracket + gap)
+            + groupWidth(column.references);
+    }
+
+    QPixmap pixmap(width, side);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
-    for (int i = 0; i < count; ++i) {
-        painter.fillRect(i * (side + gap), 0, side, side, swatches[i]);
-        painter.setPen(swatches[i].darker(150));
-        painter.drawRect(i * (side + gap), 0, side - 1, side - 1);
+    const QColor ink(128, 128, 128);  // readable on light and dark backgrounds
+    int x = 0;
+    auto drawGroup = [&](const std::vector<QColor>& swatches) {
+        const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
+        for (int i = 0; i < count; ++i) {
+            painter.fillRect(x, 0, side, side, swatches[i]);
+            painter.setPen(swatches[i].darker(150));
+            painter.drawRect(x, 0, side - 1, side - 1);
+            x += side + (i + 1 < count ? gap : 0);
+        }
+        if (static_cast<int>(swatches.size()) > maxShown) {
+            x += gap;
+            for (int dot = 0; dot < 3; ++dot) {
+                painter.fillRect(x + dot * 3, side - 2, 2, 2, ink);
+            }
+            x += ellipsis;
+        }
+    };
+    drawGroup(column.builds);
+    if (!column.references.empty()) {
+        if (!column.builds.empty()) {
+            x += 2 * gap;
+        }
+        painter.setPen(ink);
+        painter.drawLine(x, 0, x, side - 1);
+        painter.drawLine(x, 0, x + bracket - 1, 0);
+        painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
+        x += bracket + gap;
+        drawGroup(column.references);
+        x += gap;
+        painter.setPen(ink);
+        painter.drawLine(x + bracket - 1, 0, x + bracket - 1, side - 1);
+        painter.drawLine(x, 0, x + bracket - 1, 0);
+        painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
     }
+    painter.end();
+
     // A hidden object's row is drawn greyed out; its swatch must keep its colour, or the column
     // stops matching the body it names.
     QIcon icon;
@@ -166,10 +220,10 @@ QIcon bodySwatchIcon(const std::vector<QColor>& swatches)
 void applyBodyColumn(QTreeWidgetItem* item, const Gui::ViewProviderDocumentObject& vp)
 {
     auto column = vp.getTreeBodyColumn();
-    if (item->text(BodyColumn) != column.text) {
-        item->setText(BodyColumn, column.text);
+    if (item->toolTip(BodyColumn) != column.tooltip) {
+        item->setToolTip(BodyColumn, column.tooltip);
     }
-    item->setIcon(BodyColumn, bodySwatchIcon(column.swatches));
+    item->setIcon(BodyColumn, bodySwatchIcon(column));
 }
 }  // namespace
 
@@ -516,6 +570,9 @@ void TreeWidgetItemDelegate::initStyleOption(QStyleOptionViewItem* option, const
             docItem->object() && !docItem->object()->isShow()) {
             option->state &= ~QStyle::State_Enabled;
         }
+        // Cruth #3: a selected step is shown by the tree's row wash (TreeWidget::drawRow), in
+        // the same family as the rows it came from, not by the style's selection highlight.
+        option->state &= ~QStyle::State_Selected;
     }
 
     option->textElideMode = Qt::ElideMiddle;
@@ -3297,17 +3354,37 @@ void TreeWidget::drawRow(
     const QModelIndex& index
 ) const
 {
-    // The lineage tint (updateLineage) spans the whole row, under the item's own painting.
-    if (!lineageObjects.empty()) {
-        auto item = itemFromIndex(index);
-        if (item && item->type() == ObjectType
-            && lineageObjects.count(static_cast<DocumentObjectItem*>(item)->object()->getObject())) {
-            QColor tint = palette().color(QPalette::Highlight);
-            tint.setAlpha(60);
-            painter->fillRect(options.rect, tint);
-        }
+    // Cruth #3 (ARCHITECTURE §8.2): the rows a selected step came from are tinted with their
+    // body's colour across the whole row, and the selected row gets the same tint a step stronger,
+    // in place of the default selection highlight, so the two read as one family.
+    auto item = itemFromIndex(index);
+    if (!item) {
+        QTreeWidget::drawRow(painter, options, index);
+        return;
     }
-    QTreeWidget::drawRow(painter, options, index);
+    const bool selected = item->isSelected();
+    auto found = lineageTints.end();
+    if (item->type() == ObjectType) {
+        found = lineageTints.find(static_cast<DocumentObjectItem*>(item)->object()->getObject());
+    }
+    if (found == lineageTints.end() && !selected) {
+        QTreeWidget::drawRow(painter, options, index);
+        return;
+    }
+
+    // The body colour is laid over the row as a see-through wash, so it reads on any theme; the
+    // palette cannot be trusted for the background, which the stylesheet paints. The selected
+    // row's wash is stronger, which for a mid-tone swatch is darker on a light background and
+    // lighter on a dark one.
+    QColor tint = found != lineageTints.end() ? found->second : palette().color(QPalette::Highlight);
+    tint.setAlpha(selected ? 110 : 60);
+    // The whole width, margin included: the row rectangle starts after the indentation.
+    painter->fillRect(QRect(0, options.rect.top(), viewport()->width(), options.rect.height()), tint);
+
+    // The style would paint its own selection colour in the indentation beside a selected row.
+    QStyleOptionViewItem opt = options;
+    opt.palette.setColor(QPalette::Highlight, Qt::transparent);
+    QTreeWidget::drawRow(painter, opt, index);
 }
 
 void TreeWidget::slotNewDocument(const Gui::Document& Doc, bool isMainDoc)
@@ -3882,7 +3959,7 @@ void TreeWidget::setupText()
     this->headerItem()->setText(0, tr("Labels & Attributes"));
     this->headerItem()->setText(1, tr("Description"));
     this->headerItem()->setText(2, tr("Internal name"));
-    this->headerItem()->setText(3, tr("Body"));
+    this->headerItem()->setText(3, tr("Bodies"));
 
     this->showHiddenAction->setText(tr("Show Items Hidden in Tree View"));
     this->showHiddenAction->setStatusTip(
@@ -3998,6 +4075,7 @@ void TreeWidget::changeEvent(QEvent* e)
 
     QTreeWidget::changeEvent(e);
 }
+
 
 void TreeWidget::onItemSelectionChanged()
 {
@@ -4202,17 +4280,65 @@ void TreeWidget::updateLineage()
         }
     }
 
+    // The document's origin is left out: every step comes from it, so tinting it says nothing.
+    // A datum the user made is a real input and stays.
+    auto isOrigin = [](App::DocumentObject* obj) {
+        if (obj->isDerivedFrom<App::Origin>()) {
+            return true;
+        }
+        auto datum = freecad_cast<App::DatumElement*>(obj);
+        return datum && datum->isOriginFeature();
+    };
     std::set<App::DocumentObject*> lineage;
     for (auto* step : selected) {
         for (auto* input : step->getOutListRecursive()) {
-            if (!selected.count(input)) {
+            if (!selected.count(input) && !isOrigin(input)) {
                 lineage.insert(input);
             }
         }
     }
 
-    if (lineage != lineageObjects) {
-        lineageObjects = std::move(lineage);
+    // The tint is the colour of the body a row builds; a row that builds none (a sketch) takes
+    // the colour of the selected step's body.
+    auto bodyColor = [](App::DocumentObject* obj) -> std::optional<QColor> {
+        auto vp = Application::Instance->getViewProvider(obj);
+        if (!vp) {
+            return std::nullopt;
+        }
+        auto column = vp->getTreeBodyColumn();
+        if (column.builds.empty()) {
+            return std::nullopt;
+        }
+        return column.builds.front();
+    };
+    std::optional<QColor> selectedColor;
+    for (auto* step : selected) {
+        if ((selectedColor = bodyColor(step))) {
+            break;
+        }
+    }
+    std::map<App::DocumentObject*, QColor> tints;
+    for (auto* obj : lineage) {
+        if (auto color = bodyColor(obj)) {
+            tints[obj] = *color;
+        }
+        else if (selectedColor) {
+            tints[obj] = *selectedColor;
+        }
+        else {
+            tints[obj] = palette().color(QPalette::Highlight);
+        }
+    }
+    for (auto* obj : selected) {
+        tints[obj] = bodyColor(obj).value_or(
+            selectedColor.value_or(palette().color(QPalette::Highlight))
+        );
+    }
+    std::set<App::DocumentObject*> selectedSet(selected.begin(), selected.end());
+
+    if (tints != lineageTints || selectedSet != lineageSelected) {
+        lineageTints = std::move(tints);
+        lineageSelected = std::move(selectedSet);
         viewport()->update();
     }
 }

@@ -518,14 +518,16 @@ public:
     virtual int replaceObject(App::DocumentObject* oldObj, App::DocumentObject* newObj);
     //@}
 
-    /** What the tree's Body column shows for this object (Cruth ARCHITECTURE §8.7): the bodies
-     *  it builds, as colour swatches and names, and in brackets the bodies it only references.
-     *  The core knows nothing of bodies; a module that has them answers. Empty shows nothing.
+    /** What the tree's Bodies column shows for this object (Cruth ARCHITECTURE §8.7): a colour
+     *  swatch for each body it builds and, in brackets, one for each body it only references.
+     *  The names are in the tooltip. The core knows nothing of bodies; a module that has them
+     *  answers. Empty shows nothing.
      */
     struct TreeBodyColumn
     {
-        QString text;
-        std::vector<QColor> swatches;
+        std::vector<QColor> builds;
+        std::vector<QColor> references;
+        QString tooltip;
         bool operator==(const TreeBodyColumn&) const = default;
     };
     virtual TreeBodyColumn getTreeBodyColumn() const

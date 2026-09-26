@@ -545,19 +545,13 @@ QColor toQColor(const Base::Color& color)
     return QColor::fromRgbF(color.r, color.g, color.b);
 }
 
-/// "A, B + 3 more": at most two names, then a count.
 QString joinBodyNames(const std::vector<Part::BodyBase*>& bodies)
 {
-    constexpr std::size_t shown = 2;
     QStringList names;
-    for (std::size_t i = 0; i < bodies.size() && i < shown; ++i) {
-        names << QString::fromUtf8(bodies[i]->Label.getValue());
+    for (auto* body : bodies) {
+        names << QString::fromUtf8(body->Label.getValue());
     }
-    QString text = names.join(QStringLiteral(", "));
-    if (bodies.size() > shown) {
-        text += QObject::tr(" + %1 more").arg(bodies.size() - shown);
-    }
-    return text;
+    return names.join(QStringLiteral(", "));
 }
 }  // namespace
 
@@ -569,9 +563,10 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
         return column;
     }
 
-    // A body's own row carries its swatch, so its colour can be matched against the rows below.
+    // A body's own row (shown only with hidden rows revealed) carries its swatch.
     if (auto* body = freecad_cast<Part::BodyBase*>(obj)) {
-        column.swatches.push_back(toQColor(body->getIdentityColor()));
+        column.builds.push_back(toQColor(body->getIdentityColor()));
+        column.tooltip = QString::fromUtf8(body->Label.getValue());
         return column;
     }
 
@@ -612,15 +607,20 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
         }
     }
 
+    QStringList tooltip;
     for (auto* body : built) {
-        column.swatches.push_back(toQColor(body->getIdentityColor()));
+        column.builds.push_back(toQColor(body->getIdentityColor()));
     }
-    column.text = joinBodyNames(built);
+    if (!built.empty()) {
+        tooltip << QObject::tr("Builds: %1").arg(joinBodyNames(built));
+    }
+    for (auto* body : referenced) {
+        column.references.push_back(toQColor(body->getIdentityColor()));
+    }
     if (!referenced.empty()) {
-        QString refs = joinBodyNames(referenced);
-        column.text = built.empty() ? QStringLiteral("(%1)").arg(refs)
-                                    : QObject::tr("%1 (uses %2)").arg(column.text, refs);
+        tooltip << QObject::tr("Uses: %1").arg(joinBodyNames(referenced));
     }
+    column.tooltip = tooltip.join(QLatin1Char('\n'));
     return column;
 }
 
