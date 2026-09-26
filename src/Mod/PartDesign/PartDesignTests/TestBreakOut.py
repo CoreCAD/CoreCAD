@@ -109,3 +109,22 @@ class TestBreakOut(unittest.TestCase):
         self.assertIn(xaxis, self.Doc.Objects)  # world frame intact
         self.assertIsNotNone(lp.Direction)  # Direction not silently nulled
         self.assertEqual(self._solid_x(lp), [65.0, 125.0])  # survivors NOT collapsed to ~0
+
+    def testLiveBodiesNeverShareAColour(self):
+        # §4.6: pattern copies retire and respawn as the count changes, and break-out mints one
+        # more. A colour picked from a count of bodies repeats once bodies are gone; each new
+        # body must take a colour no live body wears while the palette lasts.
+        lp = self._pattern(occurrences=4, length=90.0)
+        lp.Occurrences = 2
+        self.Doc.recompute()
+        lp.Occurrences = 6
+        self.Doc.recompute()
+        bodies = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]
+        bodies[2].breakOutInstance()
+        self.Doc.recompute()
+
+        colours = [
+            tuple(b.Color[:3]) for b in self.Doc.Objects if b.isDerivedFrom("PartDesign::Body")
+        ]
+        self.assertEqual(len(colours), 6)
+        self.assertEqual(len(set(colours)), len(colours))
