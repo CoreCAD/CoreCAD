@@ -16,6 +16,8 @@
 #     world frame: the document-level Origin is owned by no Body, so the pattern's Direction
 #     (a link to that Origin's X_Axis) survives and the survivors never collapse to zero. (#4)
 
+import os
+import tempfile
 import unittest
 
 import FreeCAD
@@ -250,3 +252,38 @@ class TestStepOnOneCopy(unittest.TestCase):
         self.assertTrue(chamfer.isValid(), chamfer.getStatusString())
         self.assertEqual(len(self._bodies()), 4)
         self.assertEqual(sorted(b.Tip.Name for b in self._bodies()).count("LinearPattern"), 2)
+
+
+class TestPatternDirectionSurvivesReopen(unittest.TestCase):
+    """#137: a direction naming the X axis with one empty part came back with no part after
+    save and reopen, and the pattern built nothing."""
+
+    def testDirectionToTheXAxisSurvivesReopen(self):
+        doc = FreeCAD.newDocument("PartDesignTestDirectionReopen", type="Part")
+        body = doc.addObject("PartDesign::Body", "Body")
+        box = doc.addObject("PartDesign::AdditiveBox", "Box")
+        body.addFeature(box)
+        doc.recompute()
+        lp = doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+        lp.TransformMode = "Whole shape"
+        lp.MultiBody = True
+        lp.Direction = (_x_axis(doc), [""])
+        lp.Length = 90.0
+        lp.Occurrences = 4
+        body.addFeature(lp)
+        doc.recompute()
+        uid = lp.Uid
+        path = os.path.join(tempfile.mkdtemp(), "direction.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+
+        doc = FreeCAD.openDocument(path)
+        try:
+            lp = next(o for o in doc.Objects if o.Uid == uid)
+            self.assertEqual(lp.Direction[1], [""])
+            lp.touch()
+            doc.recompute()
+            self.assertTrue(lp.isValid(), lp.getStatusString())
+            self.assertEqual(len(lp.Shape.Solids), 4)
+        finally:
+            FreeCAD.closeDocument(doc.Name)

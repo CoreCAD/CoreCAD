@@ -463,6 +463,45 @@ TEST_F(StoredRecipeTest, aReferenceThatLeavesTheDocumentIsCarriedByDurableIds)
     Base::FileInfo(there + ".recipe").deleteFile();
 }
 
+// A link naming one empty part and a link naming no part are different values, and both come back
+// as written. Written alike, the empty part was dropped on reading, and a pattern whose direction
+// named an axis that way lost its direction on reopening (#137).
+TEST_F(StoredRecipeTest, anEmptyPartIsNotTheSameAsNoPart)
+{
+    // Arrange
+    auto* target = _source->addObject("Part::Box", "Axis");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* emptyPart = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "EmptyPart", "Base", "")
+    );
+    auto* noPart = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "NoPart", "Base", "")
+    );
+    ASSERT_NE(emptyPart, nullptr);
+    ASSERT_NE(noPart, nullptr);
+    emptyPart->setValue(target, std::vector<std::string> {""});
+    noPart->setValue(target, std::vector<std::string> {});
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    auto* returnedEmpty = static_cast<PropertyLinkSub*>(rebuiltHolder->getPropertyByName("EmptyPart"));
+    auto* returnedNone = static_cast<PropertyLinkSub*>(rebuiltHolder->getPropertyByName("NoPart"));
+    ASSERT_NE(returnedEmpty, nullptr);
+    ASSERT_NE(returnedNone, nullptr);
+    EXPECT_EQ(returnedEmpty->getSubValues(), std::vector<std::string> {""});
+    EXPECT_TRUE(returnedNone->getSubValues().empty());
+    EXPECT_EQ(returnedEmpty->getValue(), _rebuilt->getObject("Axis"));
+    EXPECT_EQ(returnedNone->getValue(), _rebuilt->getObject("Axis"));
+}
+
 // A reference comes back pointing at the same object, and the file says so by durable id rather
 // than by the target's name.
 TEST_F(StoredRecipeTest, aReferenceReturnsAndIsWrittenByDurableId)
@@ -484,10 +523,7 @@ TEST_F(StoredRecipeTest, aReferenceReturnsAndIsWrittenByDurableId)
     restoreStoredRecipe(*_rebuilt, text);
 
     // Assert: the file binds by identity, not by the name "Block"...
-    EXPECT_NE(
-        written.find("<Target uuid=\"" + target->Uid.getValueStr() + "\" sub=\"\"/>"),
-        std::string::npos
-    );
+    EXPECT_NE(written.find("<Target uuid=\"" + target->Uid.getValueStr() + "\"/>"), std::string::npos);
 
     // ...and the rebuilt reference points at the rebuilt object.
     auto* rebuiltHolder = _rebuilt->getObject("Holder");
