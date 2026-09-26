@@ -27,6 +27,7 @@
 
 #include <gp_Trsf.hxx>
 
+#include <App/DocumentObserver.h>
 #include <App/PropertyStandard.h>
 #include "FeatureRefine.h"
 
@@ -169,11 +170,11 @@ public:
 
     void onChanged(const App::Property* prop) override;
 
-    /// Set by Body::addFeature on a pattern added before it was configured: the Body holds
+    /// Set by Body::addFeature on a pattern added before it was configured: @p body holds
     /// its Tip back until the pattern's settings make it computable (#125).
-    void markAwaitingTip()
+    void markAwaitingTip(App::DocumentObject* body)
     {
-        awaitingTip = true;
+        awaitingBody = body;
     }
 
 protected:
@@ -190,8 +191,9 @@ protected:
     virtual void purgeTouchedTransformations();
 
 private:
-    /// Not saved: it only bridges the gap between creation and first configuration.
-    bool awaitingTip = false;
+    /// Not saved: it only bridges the gap between creation and first configuration. The
+    /// pattern is on no Body's chain yet, so its Body cannot be derived.
+    App::DocumentObjectWeakPtrT awaitingBody {nullptr};
 };
 
 }  // namespace PartDesign

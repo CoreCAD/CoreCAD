@@ -119,10 +119,10 @@ public:
      *
      * Cruth §11 step 5e: this is a pipeline edit, NOT a container add. The Body does not
      * create or own the feature — the Document creates it (see PartDesignGui::createFeature);
-     * this method only rewires the BaseFeature chain + Tip that the Body marks and stamps the
-     * derived _Body back-pointer. It replaced the retired GroupExtension addObject(); the
-     * feature-flavoured name makes the pipeline (not container) semantics explicit. Handles
-     * both the tip-append gesture and mid-chain insert. See ARCHITECTURE §3.2/§3.3.
+     * this method only rewires the BaseFeature chain + Tip that the Body marks. It replaced the
+     * retired GroupExtension addObject(); the feature-flavoured name makes the pipeline (not
+     * container) semantics explicit. Handles both the tip-append gesture and mid-chain insert. See
+     * ARCHITECTURE §3.2/§3.3.
      */
     std::vector<App::DocumentObject*> addFeature(App::DocumentObject* feature);
     std::vector<DocumentObject*> addFeatures(std::vector<DocumentObject*> features);
@@ -496,10 +496,8 @@ public:
         return Color.getValue();
     }
 
-    /// Cruth de-ownership (§3.3): find a pipeline feature that resolves to this Body (via
-    /// the derived Feature::_Body marker) whose name (or $-prefixed label) matches, for
-    /// sub-object path resolution. Features are no longer Group members, so the Group-based
-    /// resolver cannot see them. Returns nullptr if no matching feature resolves to us.
+    /// The feature of this Body named @p name (or $-prefixed label), for sub-object paths;
+    /// nullptr if none. Membership is derived (backsBody).
     PartDesign::Feature* findOwnedFeature(const std::string& name) const;
 
     /**
@@ -690,14 +688,6 @@ protected:
     void onDocumentRestored() override;
 
 private:
-    /// Cruth de-ownership (§9 / §8.3): repopulate the transient Feature::_Body cache from
-    /// the BaseFeature chain after a document restore. The feature->marker relationship is
-    /// not serialised, so it is re-derived by walking back from the Tip and memoising this
-    /// marker on each feature that resolves to us, up to the seam (where the chain bases on
-    /// another Body's Tip via a FeatureBase). Group is empty under de-ownership and is no
-    /// longer consulted.
-    void rebuildBodyCacheFromChain();
-
     fastsignals::scoped_connection connection;
     bool showTip = false;
 };
