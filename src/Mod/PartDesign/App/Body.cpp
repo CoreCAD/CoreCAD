@@ -287,8 +287,10 @@ Part::TopoShape extractSolidById(
 
 // The chain edits (#139). A feature can have several next steps, one per pattern copy, so every
 // edit goes through these instead of taking the first step found.
-// The steps built on copy `copy` of `base` (-1: its whole output).
-std::vector<PartDesign::Feature*> nextSteps(const App::DocumentObject* base, long copy)
+constexpr long AnyCopy = -2;
+
+// The steps built on copy `copy` of `base` (-1: its whole output; AnyCopy: all of them).
+std::vector<PartDesign::Feature*> nextSteps(const App::DocumentObject* base, long copy = AnyCopy)
 {
     std::vector<PartDesign::Feature*> steps;
     if (!base || !base->getDocument()) {
@@ -296,7 +298,8 @@ std::vector<PartDesign::Feature*> nextSteps(const App::DocumentObject* base, lon
     }
     for (auto* obj : base->getDocument()->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
         auto* step = static_cast<PartDesign::Feature*>(obj);
-        if (step->BaseFeature.getValue() == base && step->BaseInstance.getValue() == copy) {
+        if (step->BaseFeature.getValue() == base
+            && (copy == AnyCopy || step->BaseInstance.getValue() == copy)) {
             steps.push_back(step);
         }
     }
@@ -777,26 +780,26 @@ std::vector<Body*> Body::bodiesOf(const App::DocumentObject* feature)
     if (!doc) {
         return result;
     }
-    const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
-    // Walk forward, collecting every Body whose Tip is the current feature — the nearest
-    // downstream marker — before advancing. The seen-set guards against a malformed cyclic
-    // chain.
-    App::DocumentObject* cursor = const_cast<App::DocumentObject*>(feature);
+    // Walk every branch forward to its nearest Tip. Past a Tip only the steps on single copies
+    // continue: each carries a copy that no Body at that Tip stands for.
+    std::set<Body*> found;
     std::set<const App::DocumentObject*> seen;
-    while (cursor && seen.insert(cursor).second) {
-        result = bodiesTippedAt(cursor);
-        if (!result.empty()) {
-            return result;  // nearest downstream Tip reached — do not walk past it
+    std::vector<const App::DocumentObject*> frontier {feature};
+    while (!frontier.empty()) {
+        const App::DocumentObject* cursor = frontier.back();
+        frontier.pop_back();
+        if (!seen.insert(cursor).second) {
+            continue;
         }
-        App::DocumentObject* next = nullptr;
-        for (auto* obj : pdFeats) {
-            if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == cursor) {
-                next = obj;
-                break;
+        const auto tipped = bodiesTippedAt(cursor);
+        found.insert(tipped.begin(), tipped.end());
+        for (auto* step : nextSteps(cursor)) {
+            if (tipped.empty() || step->BaseInstance.getValue() >= 0) {
+                frontier.push_back(step);
             }
         }
-        cursor = next;
     }
+    result.assign(found.begin(), found.end());
     return result;
 }
 
