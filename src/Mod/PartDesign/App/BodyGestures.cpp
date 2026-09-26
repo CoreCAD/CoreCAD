@@ -52,8 +52,7 @@ using namespace PartDesign;
 
 namespace
 {
-// One sibling per target Body, all sharing the gesture's tag. addFeature owns the chain wiring
-// (BaseFeature + Tip advance); membership stays derived from the chain.
+// One sibling per target Body, each on that Body's Tip, all carrying the gesture's tag.
 template<typename MakeSibling>
 std::vector<App::DocumentObject*> spawnSiblings(
     App::DocumentObject* shared,
@@ -83,10 +82,6 @@ std::vector<App::DocumentObject*> spawnSiblings(
 
 bool Body::toolReaches(const Part::TopoShape& tool, const Part::TopoShape& bodyShape)
 {
-    // The reach test is set intersection of the two solids: they are "reached" only if they share
-    // positive volume, so cutting the tool would actually change the Body. Mere surface contact
-    // reads as not reached. A boolean failure is treated as "not reached" rather than propagated:
-    // the reach test is a pre-flight for the gesture, not the cut itself.
     return Part::sharesVolume(tool, bodyShape);
 }
 
@@ -94,43 +89,24 @@ std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> Body::findInt
     App::Document* doc
 )
 {
-    // Cruth §8.6: solids overlapping in space without a topological merge. A pure geometry sweep --
-    // no state read, no recompute touched (§8.6: detection is a UI concern, not a model one). The
-    // sweep asks every independent solid in the document, not only the Bodies: an imported part
-    // occupies space the same way a Body does, and nothing else was looking for it.
     return Part::overlappingPairs(doc);
 }
 
 bool Body::isInterferenceDismissable(const App::DocumentObject* a, const App::DocumentObject* b)
 {
-    // The acknowledgement is recorded on the two Bodies themselves, so a pair with anything else in
-    // it has nowhere to be recorded. Saying so plainly is what keeps the UI from offering the user
-    // a button that would do nothing.
     return freecad_cast<const Body*>(a) != nullptr && freecad_cast<const Body*>(b) != nullptr;
 }
 
 bool Body::isInterferenceDismissed(const App::DocumentObject* first, const App::DocumentObject* second)
 {
-    // §8.6: the dismissal is symmetric and stored on both sides, but honour either — a one-sided
-    // record (e.g. after the other side was edited) still counts. Match on the durable §8.2 Uid.
     const auto* a = freecad_cast<const Body*>(first);
     const auto* b = freecad_cast<const Body*>(second);
-    if (!a || !b) {
-        return false;
-    }
-    const std::string aid = a->Uid.getValueStr();
-    const std::string bid = b->Uid.getValueStr();
-    for (const std::string& other : a->AcknowledgedOverlaps.getValues()) {
-        if (other == bid) {
-            return true;
-        }
-    }
-    for (const std::string& other : b->AcknowledgedOverlaps.getValues()) {
-        if (other == aid) {
-            return true;
-        }
-    }
-    return false;
+    const auto lists = [](const Body* body, const Body* partner) {
+        const auto& acks = body->AcknowledgedOverlaps.getValues();
+        return std::ranges::find(acks, partner->Uid.getValueStr()) != acks.end();
+    };
+    // Either side's record counts, in case only one was kept.
+    return a && b && (lists(a, b) || lists(b, a));
 }
 
 void Body::dismissInterference(Body* a, Body* b)
@@ -143,8 +119,6 @@ void Body::dismissInterference(Body* a, Body* b)
     if (aid.empty() || bid.empty()) {
         return;
     }
-    // Record each on the other, de-duplicated, so the notice stays silent regardless of which side
-    // a later query starts from.
     const auto add = [](Body* body, const std::string& partnerId) {
         std::vector<std::string> acks = body->AcknowledgedOverlaps.getValues();
         if (std::ranges::find(acks, partnerId) == acks.end()) {
@@ -175,8 +149,6 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
     const char* booleanType
 )
 {
-    // One gesture, one freshly minted shared inert tag (Clause 5.3). The tagged overload does the
-    // work; a Scope edit calls it directly to extend an existing gesture.
     return spawnScopeSiblings(tool, targets, booleanType, Base::Uuid::createUuid());
 }
 
@@ -187,8 +159,6 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblings(
     const std::string& gestureId
 )
 {
-    // Each sibling is an ordinary single-BaseShape Boolean of the gesture's kind (Clause 5.1),
-    // referencing the one shared tool.
     return spawnSiblings(tool, targets, gestureId, [&](App::Document* doc) {
         auto* cut = static_cast<PartDesign::Boolean*>(doc->addObject("PartDesign::Boolean"));
         cut->Type.setValue(booleanType);
@@ -202,7 +172,6 @@ bool Body::profileReaches(App::DocumentObject* profile, const Part::TopoShape& b
     if (!profile || bodyShape.isNull()) {
         return false;
     }
-    // Build the profile face (in world coords) and its plane normal.
     Part::TopoShape face;
     Base::Vector3d normal(0, 0, 1);
     try {
@@ -217,7 +186,6 @@ bool Body::profileReaches(App::DocumentObject* profile, const Part::TopoShape& b
         if (face.isNull()) {
             return false;
         }
-        // Normal = the sketch plane's Z axis, taken to world coords like the face above.
         auto* geo = freecad_cast<App::GeoFeature*>(profile);
         if (geo) {
             geo->getPlacement().getRotation().multVec(Base::Vector3d(0, 0, 1), normal);
@@ -226,7 +194,7 @@ bool Body::profileReaches(App::DocumentObject* profile, const Part::TopoShape& b
     catch (const Standard_Failure&) {
         return false;
     }
-    // Size the swept column to the body so it spans it either way along the normal.
+    // Long enough to cross the whole body.
     Bnd_Box box;
     BRepBndLib::Add(bodyShape.getShape(), box);
     if (box.IsVoid()) {
@@ -238,8 +206,6 @@ bool Body::profileReaches(App::DocumentObject* profile, const Part::TopoShape& b
     }
     const gp_Vec dir(normal.x, normal.y, normal.z);
     try {
-        // Direction-agnostic: the profile reaches the body if its column hits it either way. The
-        // cut depth (Length vs ThroughAll) is a property of the spawned Pocket, not of reaching.
         if (toolReaches(face.makeElementPrism(span * dir), bodyShape)) {
             return true;
         }
@@ -257,7 +223,6 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblingsFromProfile(
     double length
 )
 {
-    // One gesture, one freshly minted shared inert tag (Clause 5.3); tagged overload does the work.
     return spawnScopeSiblingsFromProfile(profile, targets, pocketType, length, Base::Uuid::createUuid());
 }
 
@@ -269,8 +234,6 @@ std::vector<App::DocumentObject*> Body::spawnScopeSiblingsFromProfile(
     const std::string& gestureId
 )
 {
-    // Each sibling is an ordinary Pocket subtracting the one shared profile, which is referenced,
-    // never owned.
     return spawnSiblings(profile, targets, gestureId, [&](App::Document* doc) {
         auto* pocket = static_cast<PartDesign::Pocket*>(doc->addObject("PartDesign::Pocket"));
         pocket->Profile.setValue(profile, std::vector<std::string> {""});
@@ -286,9 +249,6 @@ std::vector<App::DocumentObject*> Body::gestureSiblings(App::Document* doc, cons
     if (!doc || gestureId.empty()) {
         return out;
     }
-    // The shared inert tag is the only link between a gesture's siblings — there is no membership
-    // list to consult. Rediscover them by scanning for the tag; each sibling's ownership still
-    // derives from its own Body chain, untouched here.
     for (auto* obj : doc->getObjects()) {
         auto* feat = freecad_cast<PartDesign::Feature*>(obj);
         if (feat && gestureId == feat->GestureId.getValue()) {
