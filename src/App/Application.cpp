@@ -126,6 +126,8 @@
 #include "FeaturePython.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
+#include "GeoFeatureGroupExtensionPy.h"
+#include "GroupExtensionPy.h"
 #include "ImagePlane.h"
 #include "InventorObject.h"
 #include "Link.h"
@@ -136,8 +138,6 @@
 #include "MeasureManagerPy.h"
 #include "Origin.h"
 #include "Datums.h"
-#include "OriginGroupExtension.h"
-#include "OriginGroupExtensionPy.h"
 #include "PlacementExtension.h"
 #include "ProgramInformation.h"
 #include "SuppressibleExtension.h"
@@ -520,7 +520,6 @@ void Application::setupPythonTypes()
     Base::InterpreterSingleton::addType(&DocumentObjectExtensionPy::Type, pAppModule, "DocumentObjectExtension");
     Base::InterpreterSingleton::addType(&GroupExtensionPy::Type, pAppModule, "GroupExtension");
     Base::InterpreterSingleton::addType(&GeoFeatureGroupExtensionPy::Type, pAppModule, "GeoFeatureGroupExtension");
-    Base::InterpreterSingleton::addType(&OriginGroupExtensionPy::Type, pAppModule, "OriginGroupExtension");
     Base::InterpreterSingleton::addType(&LinkBaseExtensionPy::Type, pAppModule, "LinkBaseExtension");
 
     //insert Base and Console
@@ -2349,8 +2348,6 @@ void Application::initTypes()
     App::GroupExtensionPython          ::init();
     App::GeoFeatureGroupExtension      ::init();
     App::GeoFeatureGroupExtensionPython::init();
-    App::OriginGroupExtension          ::init();
-    App::OriginGroupExtensionPython    ::init();
     App::LinkBaseExtension             ::init();
     App::LinkBaseExtensionPython       ::init();
     App::LinkExtension                 ::init();

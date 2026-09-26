@@ -50,7 +50,6 @@
 #include <App/MappedName.h>
 #include <App/VarSet.h>
 #include <App/Origin.h>
-#include <App/OriginGroupExtension.h>
 #include <App/PropertyLinks.h>
 #include <Base/Color.h>
 #include <Base/Parameter.h>
@@ -2358,26 +2357,11 @@ App::Origin* Body::findDocumentOrigin(App::Document* doc)
     }
 
     // The single document-level Origin is shared by every PartDesign Body via the
-    // shared-Origin contract (setupObject). It is identified as a free-standing App::Origin
-    // that no OriginGroup owns (the older per-body Origin link is gone — Cruth §11 step 5e).
-    // A per-body/per-part private Origin (e.g. an App::Part's own ruler) is owned by exactly
-    // that group, so it is correctly skipped. The legacy "already linked by a Body" match is
-    // kept as a belt-and-braces fallback for any Origin a Body still references.
-    for (auto* obj : doc->getObjectsOfType<App::Origin>()) {
-        bool usedByBody = false;
-        bool ownedByGroup = false;
-        for (auto* in : obj->getInList()) {
-            if (in->isDerivedFrom<PartDesign::Body>()) {
-                usedByBody = true;
-                break;
-            }
-            if (in->hasExtension(App::OriginGroupExtension::getExtensionClassTypeId())) {
-                ownedByGroup = true;
-            }
-        }
-        if (usedByBody || !ownedByGroup) {
-            return obj;
-        }
+    // shared-Origin contract (setupObject). No object owns a private Origin any more, so the
+    // document's Origin is the only one.
+    const auto origins = doc->getObjectsOfType<App::Origin>();
+    if (!origins.empty()) {
+        return origins.front();
     }
 
     return nullptr;

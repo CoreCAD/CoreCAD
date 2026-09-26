@@ -128,7 +128,6 @@
 #include "ViewProviderMaterialObject.h"
 #include "ViewProviderCoordinateSystem.h"
 #include "ViewProviderDatum.h"
-#include "ViewProviderOriginGroup.h"
 #include "ViewProviderPlacement.h"
 #include "ViewProviderPlane.h"
 #include "ViewProviderPoint.h"
@@ -2447,8 +2446,6 @@ void Application::initTypes()
     Gui::ViewProviderGroupExtensionPython       ::init();
     Gui::ViewProviderGeoFeatureGroupExtension   ::init();
     Gui::ViewProviderGeoFeatureGroupExtensionPython::init();
-    Gui::ViewProviderOriginGroupExtension       ::init();
-    Gui::ViewProviderOriginGroupExtensionPython ::init();
     Gui::ViewProviderSuppressibleExtension      ::init();
     Gui::ViewProviderSuppressibleExtensionPython::init();
     Gui::ViewProviderExtern                     ::init();
@@ -2473,7 +2470,6 @@ void Application::initTypes()
     Gui::ViewProviderLine                       ::init();
     Gui::ViewProviderGeoFeatureGroup            ::init();
     Gui::ViewProviderGeoFeatureGroupPython      ::init();
-    Gui::ViewProviderOriginGroup                ::init();
     Gui::ViewProviderCoordinateSystem           ::init();
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();

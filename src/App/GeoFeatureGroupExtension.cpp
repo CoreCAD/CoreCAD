@@ -30,7 +30,6 @@
 #include "Link.h"
 #include "Origin.h"
 #include "Datums.h"
-#include "OriginGroupExtension.h"
 
 
 using namespace App;
@@ -94,13 +93,13 @@ DocumentObject* GeoFeatureGroupExtension::getGroupOfObject(const DocumentObject*
         return nullptr;
     }
 
-    // we will find origins, but not origin features
+    // An origin's axes and planes belong to their origin, not to a placed group.
     if (obj->isDerivedFrom<App::DatumElement>()) {
-        return OriginGroupExtension::getGroupOfObject(obj);
+        return nullptr;
     }
 
     // compared to GroupExtension we do return here all GeoFeatureGroups including all extensions
-    // derived from it like OriginGroup. That is needed as we use this function to get all local
+    // derived from it. That is needed as we use this function to get all local
     // coordinate systems. Also there is no reason to distinguish between GeoFeatuerGroups, there is
     // only between group/geofeaturegroup
     auto list = obj->getInList();

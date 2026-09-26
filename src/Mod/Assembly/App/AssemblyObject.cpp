@@ -865,8 +865,7 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::getGroundedParts()
 
     // Ground the document-owned world frame (Amendment 9). The assembly no longer owns an
     // Origin of its own -- it is a plain group, not an OriginGroup, and looks the document's
-    // frame up. No object in an assembly document owns an Origin (the assembly is not an
-    // OriginGroup; an assembly link opts out via hasOwnOrigin), so the sole App::Origin
+    // frame up. No object in an assembly document owns an Origin, so the sole App::Origin
     // present is the document-minted world frame. An untyped document owns none; there is
     // then simply nothing to ground.
     for (auto* origin : getDocument()->getObjectsOfType<App::Origin>()) {

@@ -106,7 +106,6 @@ generate_from_py(GeoFeatureGroupExtension)
 generate_from_py(PlacementExtension)
 generate_from_py(SuppressibleExtension)
 generate_from_py(Metadata)
-generate_from_py(OriginGroupExtension)
 generate_from_py(StringHasher)
 generate_from_py(StringID)
 
@@ -130,7 +129,6 @@ SET(FreeCADApp_Pyi_SRCS
     DocumentObject.pyi
     GeoFeature.pyi
     GeoFeatureGroupExtension.pyi
-    OriginGroupExtension.pyi
     PlacementExtension.pyi
     SuppressibleExtension.pyi
     Document.pyi
@@ -176,8 +174,6 @@ SET(Document_CPP_SRCS
     GeoFeatureGroupExtensionPyImp.cpp
     GeoFeatureGroupExtension.cpp
     ImagePlane.cpp
-    OriginGroupExtensionPyImp.cpp
-    OriginGroupExtension.cpp
     PlacementExtensionPyImp.cpp
     PlacementExtension.cpp
     SuppressibleExtensionPyImp.cpp
@@ -228,7 +224,6 @@ SET(Document_HPP_SRCS
     GeoFeature.h
     GeoFeatureGroupExtension.h
     ImagePlane.h
-    OriginGroupExtension.h
     PlacementExtension.h
     SuppressibleExtension.h
     Origin.h
