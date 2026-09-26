@@ -438,48 +438,13 @@ public:
     /// Every Body @p feature could merge into: all that do not already depend on it.
     static std::vector<Body*> mergeCandidates(App::DocumentObject* feature);
 
-    /**
-     * Cruth §4.6: auto-spawn a new Body at document level (no active-Part
-     * containment). Color is assigned in setupObject() from the per-document
-     * palette index. Returns nullptr if @p doc is null.
-     */
+    /// A new, empty Body; it must receive a feature before the next recompute.
     static Body* spawnAutoBody(App::Document* doc);
-
-    /**
-     * Cruth §8.5 (Merge Result, #27): re-home @p feature onto @p target's pipeline —
-     * the model half of the feature-creation "Merge result" control. Composes the
-     * existing pipeline primitives so the spawn-vs-extend choice is reversible:
-     *   - detach @p feature from its current Body (removeFeature: heals the
-     *     BaseFeature chain, retreats that Body's Tip, and auto-retires the Body if
-     *     its chain empties, §4.7);
-     *   - if @p target is null, spawn a fresh Body (§4.6) to receive @p feature;
-     *   - splice @p feature onto @p target's Tip (addFeature).
-     *
-     * A no-op returning @p target when @p feature already resolves to it. Returns
-     * the Body the feature now belongs to (the freshly spawned one when @p target was
-     * null), or nullptr on failure. Does not recompute — the caller does, inside its
-     * undo transaction. Shared by the GUI control and the Python API (P8 equivalence).
-     */
+    /// Moves @p feature onto @p target's Tip, or into a new Body when @p target is null.
+    /// Returns the Body it ends up in. Does not recompute.
     static Body* moveFeatureToBody(App::DocumentObject* feature, Body* target);
-
-    /**
-     * Cruth §5.6: break a single pattern instance out into its own independent,
-     * frozen Body. Captures the instance's solid (element map preserved, §7.8)
-     * from the pattern's current output, re-homes it into a fresh Body whose
-     * chain begins with a BakedShape feature, then records a skip on the pattern
-     * so it emits one fewer instance and recomputes. The new Body is fully
-     * severed — no link back to the pattern or its base — so subsequent pattern
-     * edits never re-merge it.
-     *
-     * Order matters: the capture happens before the skip recompute, while the
-     * instance solid still exists; the now-orphaned originating Body is retired
-     * by the reconciler (§4.7).
-     *
-     * @param instanceBody a Body whose Tip is a multi-output pattern feature and
-     *                     whose TipComponentId names one emitted instance.
-     * @return the new frozen Body, or nullptr on failure (Tip is not a pattern,
-     *         component not found, etc.).
-     */
+    /// Freezes the pattern copy @p instanceBody stands for into a new Body of its own and
+    /// drops that copy from the pattern.
     static Body* breakOutInstance(Body* instanceBody);
 
     PyObject* getPyObject() override;
