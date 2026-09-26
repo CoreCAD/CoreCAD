@@ -77,7 +77,7 @@ short DressUp::mustExecute() const
 App::DocumentObject* DressUp::getBaseObject(bool silent) const
 {
     App::DocumentObject* rv = Feature::getBaseObject(/* silent = */ true);
-    if (rv) {
+    if (rv || patternDeleted(silent)) {
         return rv;
     }
 

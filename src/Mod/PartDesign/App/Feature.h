@@ -109,6 +109,10 @@ public:
     virtual TopoDS_Shape getBaseShape() const;
     /// Returns the BaseFeature property's TopoShape (if any)
     Part::TopoShape getBaseTopoShape(bool silent = false) const;
+    /// True when this step was built on one copy of a pattern that has since been deleted
+    /// (#139). It has nothing to build on; unless @p silent, throw saying so.
+    bool patternDeleted(bool silent) const;
+
     /// Narrow @p shape, the output of @p base, to the copy BaseInstance names (#3). The whole
     /// shape when BaseInstance is -1 or @p base is not the BaseFeature. A missing copy throws,
     /// or returns a null shape when @p silent.
