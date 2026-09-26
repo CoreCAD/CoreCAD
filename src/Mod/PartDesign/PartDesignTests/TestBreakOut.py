@@ -297,6 +297,23 @@ class TestStepOnOneCopy(unittest.TestCase):
         self.assertEqual((fillet.BaseFeature, fillet.BaseInstance), (step, -1))
         self.assertEqual((chamfer.BaseFeature, chamfer.BaseInstance), (self.lp, 0))
 
+    def testInsertAtTheEndOfACopyBuildsOnThatCopy(self):
+        """Inserting at the end of a copy's body is the same as adding a step to it."""
+        third = sorted(
+            [b for b in self._bodies() if b.Tip is self.lp],
+            key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
+        )[2]
+        chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
+        chamfer.Base = (self.lp, [third.tipSubElement("Edge1")])
+        chamfer.Size = 1.0
+        third.insertObject(chamfer, None)
+        self.Doc.recompute()
+        self.assertEqual((chamfer.BaseFeature, chamfer.BaseInstance), (self.lp, 2))
+        self.assertIs(third.Tip, chamfer)
+        self.assertEqual(third.TipComponentId, "")
+        self.assertTrue(chamfer.isValid(), chamfer.getStatusString())
+        self.assertAlmostEqual(third.Shape.Solids[0].CenterOfMass.x, 65.0, delta=0.5)
+
 
 class TestPatternDirectionSurvivesReopen(unittest.TestCase):
     """#137: a direction naming the X axis with one empty part came back with no part after
