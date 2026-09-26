@@ -37,6 +37,7 @@ add_executable(App_tests_run
         ProjectFile.cpp
         Property.h
         Property.cpp
+        PropertyRegistration.cpp
         PropertyExpressionEngine.cpp
         ObjectRecipe.cpp
         Recipe.cpp
