@@ -759,7 +759,7 @@ void PropertyLink::resetLink()
 bool PropertyLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
 {
     if (_pcLink != nullptr) {
-        pointing.push_back({_pcLink, {}});
+        pointing.push_back({_pcLink, {}, /*noPart=*/true});
     }
     return true;
 }
@@ -1058,7 +1058,7 @@ bool PropertyLinkList::statesWhereItPoints(std::vector<Pointing>& pointing) cons
 {
     for (DocumentObject* target : getValues()) {
         if (target != nullptr) {
-            pointing.push_back({target, {}});
+            pointing.push_back({target, {}, /*noPart=*/true});
         }
     }
     return true;
@@ -1424,7 +1424,7 @@ bool PropertyLinkSub::statesWhereItPoints(std::vector<Pointing>& pointing) const
         return true;
     }
     if (_cSubList.empty()) {
-        pointing.push_back({_pcLinkSub, {}});
+        pointing.push_back({_pcLinkSub, {}, /*noPart=*/true});
         return true;
     }
     for (const std::string& sub : _cSubList) {
@@ -1437,7 +1437,7 @@ bool PropertyLinkSub::pointAt(const std::vector<Pointing>& pointing)
 {
     std::vector<std::string> subs;
     for (const Pointing& one : pointing) {
-        if (!one.sub.empty()) {
+        if (!one.noPart) {
             subs.push_back(one.sub);
         }
     }
@@ -4005,7 +4005,7 @@ bool PropertyXLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
         return true;
     }
     if (_SubList.empty()) {
-        pointing.push_back({_pcLink, {}});
+        pointing.push_back({_pcLink, {}, /*noPart=*/true});
         return true;
     }
     for (const std::string& sub : _SubList) {
@@ -4018,7 +4018,7 @@ bool PropertyXLink::pointAt(const std::vector<Pointing>& pointing)
 {
     std::vector<std::string> subs;
     for (const Pointing& one : pointing) {
-        if (!one.sub.empty()) {
+        if (!one.noPart) {
             subs.push_back(one.sub);
         }
     }
@@ -5230,7 +5230,7 @@ bool PropertyXLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) 
         }
         const std::vector<std::string> subs = getSubValues(target);
         if (subs.empty()) {
-            pointing.push_back({target, {}});
+            pointing.push_back({target, {}, /*noPart=*/true});
             continue;
         }
         for (const std::string& sub : subs) {
@@ -5246,7 +5246,7 @@ bool PropertyXLinkSubList::pointAt(const std::vector<Pointing>& pointing)
     // than as a flat list of pairs.
     std::map<DocumentObject*, std::vector<std::string>> picked;
     for (const Pointing& one : pointing) {
-        if (one.sub.empty()) {
+        if (one.noPart) {
             picked.emplace(one.target, std::vector<std::string> {});
         }
         else {

@@ -196,6 +196,7 @@ struct Binding
     std::string uuid;
     std::string sub;
     bool external {false};  ///< the target lives in another document
+    bool noPart {false};    ///< named with no part at all; written with no `sub`, not `sub=""`
 };
 
 /// What the stored form says about one property: its value, or the reason there is none.
@@ -255,6 +256,7 @@ std::optional<std::vector<Binding>> referenceBindings(const Property& prop, cons
             continue;
         }
         Binding binding {one.target->Uid.getValueStr(), one.sub};
+        binding.noPart = one.noPart;
         // A target in another document is a second question -- which document -- and the link
         // property answers it in its own writing. Marked here so the caller can hand the whole
         // property over rather than saying half of it in this file's words.
@@ -300,7 +302,7 @@ bool restoreReference(Property& prop,
             // binding exists to prevent.
             return false;
         }
-        pointing.push_back({target, binding.sub});
+        pointing.push_back({target, binding.sub, binding.noPart});
     }
 
     return link->pointAt(pointing);
@@ -535,7 +537,8 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
             // published as a fact about the design (Amendment 19).
             if (const auto* kept = owner.unresolvedReference(name.c_str())) {
                 for (const PropertyContainer::StatedTarget& target : *kept) {
-                    entry.bindings.push_back({target.uuid, target.sub, /*external=*/false});
+                    entry.bindings.push_back(
+                        {target.uuid, target.sub, /*external=*/false, target.noPart});
                 }
                 entry.isReference = true;
                 stored.push_back(entry);
@@ -733,8 +736,13 @@ void writeProperties(Base::Writer& writer,
             writer.Stream() << writer.ind() << "<Reference>\n";
             writer.incInd();
             for (const Binding& binding : entry->bindings) {
-                writer.Stream() << writer.ind() << "<Target uuid=\"" << binding.uuid
-                                << "\" sub=\"" << binding.sub << "\"/>\n";
+                // A target named with no part says nothing about a part. `sub=""` is a part too
+                // -- an empty one -- and writing the two alike made the reader drop it (#137).
+                writer.Stream() << writer.ind() << "<Target uuid=\"" << binding.uuid << "\"";
+                if (!binding.noPart) {
+                    writer.Stream() << " sub=\"" << binding.sub << "\"";
+                }
+                writer.Stream() << "/>\n";
             }
             writer.decInd();
             writer.Stream() << writer.ind() << "</Reference>\n";
@@ -1088,8 +1096,11 @@ void readProperties(Base::XMLReader& reader,
                     if (std::strcmp(reader.localName(), "Target") != 0) {
                         refuse("Target", reader);
                     }
+                    const bool noPart = !reader.hasAttribute("sub");
                     bindings.push_back({reader.getAttribute<const char*>("uuid"),
-                                        reader.getAttribute<const char*>("sub")});
+                                        noPart ? "" : reader.getAttribute<const char*>("sub"),
+                                        /*external=*/false,
+                                        noPart});
                 }
                 reader.readEndElement("Reference");
                 // Held until every object in the file exists: a reference may point forwards,
@@ -1709,7 +1720,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
                 std::vector<PropertyContainer::StatedTarget> stated;
                 stated.reserve(bindings.size());
                 for (const Binding& binding : bindings) {
-                    stated.push_back({binding.uuid, binding.sub});
+                    stated.push_back({binding.uuid, binding.sub, binding.noPart});
                 }
                 owner->rememberUnresolvedReference(name, std::move(stated));
             }

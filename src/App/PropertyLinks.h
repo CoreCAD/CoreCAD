@@ -174,6 +174,9 @@ public:
     {
         App::DocumentObject* target {nullptr};
         std::string sub;
+        /// The target is named with no part at all, which is not the same as naming one empty
+        /// part: a link's list of parts can be empty or hold "" and the two mean different things.
+        bool noPart {false};
     };
 
     /** Everything this reference points at, target by target.
