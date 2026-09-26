@@ -103,25 +103,17 @@ public:
     /// Override to return the color of the tip instead of the body, which doesn't really have color
     std::map<std::string, Base::Color> getElementColors(const char* element) const override;
 
-    /**
-     * Derive the body's tree children from the BaseFeature chain (walked backward
-     * from the Tip) rather than from exclusive Group membership. This makes the
-     * pipeline the source of truth for the tree (ARCHITECTURE.md §3.2/§3.3): a
-     * feature that is on the chain still appears even if it is no longer a Group
-     * member, while non-pipeline objects (Origin, datums, unconsumed sketches)
-     * are still surfaced so nothing disappears during the ownership migration.
-     */
+    /// A body lists no children in the tree: the tree is the flat timeline and the Body
+    /// column names the body each step builds (ARCHITECTURE §8.1, §8.7).
     std::vector<App::DocumentObject*> claimChildren() const override;
 
     /**
-     * Derive the body's 3D scene-graph children from the BaseFeature chain too,
-     * mirroring claimChildren(). The base OriginGroup extension parents only
-     * Group members under the body's coordinate node, so a de-owned feature (on
-     * the chain but not in Group) would never inherit the body frame. This flat
-     * variant returns Origin + every chain feature + their claimed sub-objects
-     * (sketches/datums) so all pipeline objects are parented. For a normal body
-     * (every feature both on the chain and in Group) the set is identical to the
-     * old Group-based one, so non-de-owned bodies are unaffected.
+     * Derive the body's 3D scene-graph children from the BaseFeature chain. The base OriginGroup
+     * extension parents only Group members under the body's coordinate node, so a de-owned feature
+     * (on the chain but not in Group) would never inherit the body frame. This flat variant returns
+     * Origin + every chain feature + their claimed sub-objects (sketches/datums) so all pipeline
+     * objects are parented. For a normal body (every feature both on the chain and in Group) the
+     * set is identical to the old Group-based one, so non-de-owned bodies are unaffected.
      */
     std::vector<App::DocumentObject*> claimChildren3D() const override;
 
@@ -156,8 +148,7 @@ private:
     SoSeparator* pcBodyBack;
 
     /// Ordered pipeline (base -> tip) derived by walking BaseFeature back from
-    /// the Tip, with a cycle guard. Shared by claimChildren() and
-    /// claimChildren3D() so the chain walk has a single source of truth.
+    /// the Tip, with a cycle guard. The single source of truth for the chain walk.
     std::vector<App::DocumentObject*> pipelineChain() const;
 
     /**

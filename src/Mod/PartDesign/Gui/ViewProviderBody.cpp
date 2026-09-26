@@ -498,69 +498,11 @@ std::vector<App::DocumentObject*> ViewProviderBody::pipelineChain() const
 
 std::vector<App::DocumentObject*> ViewProviderBody::claimChildren() const
 {
-    auto* body = getObject<PartDesign::Body>();
-    if (!body) {
-        // Degenerate case (no Body object): nothing to claim.
-        return {};
-    }
-
-    // 1. Derive the ordered solid pipeline from the BaseFeature chain.
-    std::vector<App::DocumentObject*> chain = pipelineChain();  // base -> tip
-    std::set<App::DocumentObject*> onChain(chain.begin(), chain.end());
-
-    // 2. Collect objects claimed by features (so profiles/sketches nest under
-    //    their feature instead of appearing at body level). Both the chain
-    //    features and any remaining Group members are potential claimers.
-    const std::vector<App::DocumentObject*> groupMembers = body->getFullModel();
-    std::set<App::DocumentObject*> claimed;
-    auto collectClaimed = [&](App::DocumentObject* obj) {
-        if (!obj) {
-            return;
-        }
-        Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj);
-        if (!vp || vp == this) {
-            return;
-        }
-        for (auto* child : vp->claimChildren()) {
-            if (child) {
-                claimed.insert(child);
-            }
-        }
-    };
-    for (auto* obj : chain) {
-        collectClaimed(obj);
-    }
-    for (auto* obj : groupMembers) {
-        collectClaimed(obj);
-    }
-
-    // 3. Assemble the result: pipeline first in chain order, then auxiliary
-    //    Group members that are not on the chain (Origin is handled separately,
-    //    below; datums and unconsumed sketches land here). Skip anything nested
-    //    under a feature.
-    std::vector<App::DocumentObject*> result;
-    std::set<App::DocumentObject*> emitted;
-    auto emit = [&](App::DocumentObject* obj) {
-        if (!obj || !obj->isAttachedToDocument() || claimed.contains(obj)) {
-            return;
-        }
-        if (emitted.insert(obj).second) {
-            result.push_back(obj);
-        }
-    };
-    for (auto* obj : chain) {
-        emit(obj);
-    }
-    for (auto* obj : groupMembers) {
-        if (!onChain.contains(obj)) {
-            emit(obj);
-        }
-    }
-
-    // 4. The world frame is NOT claimed here. It is owned by the document, shared by
-    //    every body, so claiming it would both hide it from the document root and make
-    //    it a child of every body at once. It belongs at root, listed once.
-    return result;
+    // Cruth #3 stage 2 (ARCHITECTURE §8.1, §8.7): the tree is the timeline — every step in the
+    // order it was made, at the document level. A body is a marker, not a container (§4.6), so
+    // it lists no children; the Body column names the body each step builds. The scene keeps
+    // its own grouping (claimChildren3D).
+    return {};
 }
 
 
@@ -589,8 +531,7 @@ std::vector<App::DocumentObject*> ViewProviderBody::claimChildren3D() const
     // This is the single-consumer half of the rule Gui::Document already enforces centrally
     // for shared inputs (contestedChildren3D): an input claimed by two consumers sits at the
     // scene root. One rule instead of two — an input is never parented by a consumer, whether
-    // it has one or several. Note this is the SCENE half only: the tree (claimChildren) still
-    // lists loose members under the Body, which is a display default, not a model fact.
+    // it has one or several. This is the SCENE half only: the tree lists nothing under a Body.
     std::vector<App::DocumentObject*> result;
     std::set<App::DocumentObject*> seen;
     for (auto* feat : pipelineChain()) {
