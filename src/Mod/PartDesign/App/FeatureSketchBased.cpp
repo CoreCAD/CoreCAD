@@ -653,7 +653,7 @@ App::DocumentObject* ProfileBased::getBaseObject(bool silent) const
 {
     // Test the base's class feature.
     App::DocumentObject* rv = Feature::getBaseObject(/* silent = */ true);
-    if (rv) {
+    if (rv || patternDeleted(silent)) {
         return rv;
     }
 

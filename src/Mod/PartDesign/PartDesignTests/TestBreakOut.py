@@ -266,20 +266,20 @@ class TestStepOnOneCopy(unittest.TestCase):
         self.Doc.recompute()
         return chamfer
 
-    def testDeletingThePatternMovesTheStepOnEveryCopy(self):
-        """#139: every step on the deleted pattern moves to its base, not only the first found."""
+    def testDeletingThePatternBreaksTheStepOnEveryCopy(self):
+        """#139: a step on one copy exists only because the pattern made that copy. Deleting the
+        pattern leaves every such step in place, failing with the cause, rather than moving it
+        onto the pattern's base."""
         _, fillet = self._filletThirdCopy()
         chamfer = self._chamferFirstCopy()
         body = next(b for b in self._bodies() if b.Tip is self.lp)
         body.removeFeature(self.lp)
-        self.assertEqual((fillet.BaseFeature, chamfer.BaseFeature), (self.box, self.box))
-        self.assertEqual((fillet.BaseInstance, chamfer.BaseInstance), (-1, -1))
+        self.assertEqual((fillet.BaseFeature, chamfer.BaseFeature), (self.lp, self.lp))
         self.Doc.removeObject(self.lp.Name)
         self.Doc.recompute()
-        # The first copy sits where the box is, so its edge is still there; the third's is not,
-        # and that step fails rather than round some other edge (#146).
-        self.assertTrue(chamfer.isValid(), chamfer.getStatusString())
-        self.assertFalse(fillet.isValid())
+        for step in (fillet, chamfer):
+            self.assertFalse(step.isValid())
+            self.assertIn("pattern this step was built on was deleted", step.getStatusString())
 
     def testStepOnACopyGoesUnderThatCopysNextStep(self):
         """#139: a step added mid-chain on one copy goes in front of that copy's next step, even

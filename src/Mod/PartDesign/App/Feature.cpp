@@ -310,6 +310,9 @@ App::DocumentObject* Feature::getBaseObject(bool silent) const
             err = "No base feature linked";
         }
     }
+    else if (patternDeleted(silent)) {
+        return nullptr;
+    }
     else {
         err = "Base property not set";
     }
@@ -375,6 +378,19 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
         result.setShape(TopoDS_Shape());
     }
     return result;
+}
+
+bool Feature::patternDeleted(bool silent) const
+{
+    if (BaseFeature.getValue() || BaseInstance.getValue() < 0) {
+        return false;
+    }
+    if (!silent) {
+        throw Base::RuntimeError(
+            "The pattern this step was built on was deleted, so there is nothing for it to build on"
+        );
+    }
+    return true;
 }
 
 Part::TopoShape Feature::narrowToBaseInstance(

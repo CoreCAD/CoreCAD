@@ -368,9 +368,7 @@ bool g_reconciling = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-
 
 // The chain edits (#139). A feature can have several next steps, one per pattern copy, so every
 // edit goes through these instead of taking the first step found.
-constexpr long anyCopy = -2;
-
-// The steps built on copy `copy` of `base` (-1: its whole output; anyCopy: every copy).
+// The steps built on copy `copy` of `base` (-1: its whole output).
 std::vector<PartDesign::Feature*> nextSteps(const App::DocumentObject* base, long copy)
 {
     std::vector<PartDesign::Feature*> steps;
@@ -379,8 +377,7 @@ std::vector<PartDesign::Feature*> nextSteps(const App::DocumentObject* base, lon
     }
     for (auto* obj : base->getDocument()->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
         auto* step = static_cast<PartDesign::Feature*>(obj);
-        if (step->BaseFeature.getValue() == base
-            && (copy == anyCopy || step->BaseInstance.getValue() == copy)) {
+        if (step->BaseFeature.getValue() == base && step->BaseInstance.getValue() == copy) {
             steps.push_back(step);
         }
     }
@@ -402,13 +399,14 @@ std::size_t spliceAfter(PartDesign::Feature* feature, App::DocumentObject* base,
     return steps.size();
 }
 
-// Take `feature` out of the chain: every step on it, whichever copy, moves to its base.
+// Take `feature` out of the chain: the steps on its whole output move to its base. A step on
+// one copy stays; the copy goes with the feature, so the step fails and says so.
 void unsplice(App::DocumentObject* feature)
 {
     auto* pd = freecad_cast<PartDesign::Feature*>(feature);
     App::DocumentObject* base = pd ? pd->BaseFeature.getValue() : nullptr;
     const long copy = pd ? pd->BaseInstance.getValue() : -1;
-    for (auto* step : nextSteps(feature, anyCopy)) {
+    for (auto* step : nextSteps(feature, -1)) {
         step->BaseInstance.setValue(copy);
         step->BaseFeature.setValue(base);
         step->onBaseFeatureRerouted(feature, base);  // re-find its edges on the new base
@@ -2096,7 +2094,8 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
     }
 }
 
-// Every step on the feature moves to its base, the Tip retreats, and an emptied Body retires.
+// Steps on the feature move to its base (not steps on one copy), the Tip retreats, and an
+// emptied Body retires.
 std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* feature)
 {
     // Call BEFORE the feature is removed from the Document.
@@ -2104,7 +2103,7 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         prevSolidFeature = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
     }
-    const auto steps = nextSteps(feature, anyCopy);
+    const auto steps = nextSteps(feature, -1);
     App::DocumentObject* nextSolidFeature = steps.empty() ? nullptr : steps.front();
     unsplice(feature);
 
