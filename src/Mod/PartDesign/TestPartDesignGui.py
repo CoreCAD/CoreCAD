@@ -108,7 +108,6 @@ class PartDesignGuiTestCases(unittest.TestCase):
         )
         self.BodySource = self.Doc.addObject("PartDesign::Body", "Body")
         Gui.activateView("Gui::View3DInventor", True)
-        Gui.activeView().setActiveObject("pdbody", self.BodySource)
 
         self.BoxObj = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
         self.BoxObj.Length = 10.0
@@ -175,7 +174,6 @@ class PartDesignGuiTestCases(unittest.TestCase):
         FreeCAD.Console.PrintMessage("Testing moving one feature from one body to another\n")
         self.BodySource = self.Doc.addObject("PartDesign::Body", "Body")
         Gui.activateView("Gui::View3DInventor", True)
-        Gui.activeView().setActiveObject("pdbody", self.BodySource)
 
         self.Sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         self.BodySource.addFeature(self.Sketch)
@@ -301,7 +299,6 @@ class PartDesignTransformed(unittest.TestCase):
             b for b in self.Doc.Objects if b.isDerivedFrom("PartDesign::Body") and b.Tip == pad
         ][0]
         Gui.activateView("Gui::View3DInventor", True)
-        Gui.activeView().setActiveObject("pdbody", self.Body)
         Gui.Selection.clearSelection()
         Gui.Selection.addSelection(other.Tip)
         seen = []
@@ -321,7 +318,7 @@ class PartDesignTransformed(unittest.TestCase):
         if Gui.Control.activeDialog():
             Gui.Control.activeTaskDialog().accept()
 
-        # The pattern extends the selected body's chain; the body that was active is untouched.
+        # The pattern extends the selected body's chain; the other body is untouched.
         # (A pattern whose copies do not touch splits into one body per solid, so the selected
         # body object itself may be replaced; its chain is what carries on.)
         self.assertEqual(seen, [])
@@ -329,7 +326,6 @@ class PartDesignTransformed(unittest.TestCase):
         self.assertEqual(len(patterns), 1)
         self.assertEqual(patterns[0].BaseFeature, pad)
         self.assertEqual(self.Body.Tip.Name, "BodyBox")
-        self.assertNotEqual(Gui.activeView().getActiveObject("pdbody"), self.Body)
 
 
 class CreateSketch(unittest.TestCase):
@@ -343,7 +339,6 @@ class CreateSketch(unittest.TestCase):
         App.activeDocument().addObject("PartDesign::Body", "Body")
         App.ActiveDocument.getObject("Body").Label = "Body"
         FreeCADGui.activateView("Gui::View3DInventor", True)
-        FreeCADGui.activeView().setActiveObject("pdbody", App.activeDocument().Body)
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.runCommand("Std_OrthographicCamera", 1)
         # Owned and stopped: a leaked single-shot used to fire into the next test and accept

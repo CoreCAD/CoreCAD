@@ -82,7 +82,7 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
         App::DocumentObject* feature = selection.front().pObject;
         PartDesign::Body* body = nullptr;
 
-        body = PartDesignGui::getBodyFor(feature, false, false, true);
+        body = PartDesignGui::getBodyFor(feature, false);
         // lote of assertion so feature should be marked as a tip
         if (selection.size() == 1 && feature && body
             && (feature->isDerivedFrom<PartDesign::Feature>()

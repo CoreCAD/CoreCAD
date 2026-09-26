@@ -44,7 +44,6 @@
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "Utils.h"
-#include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
 #include "SketchPickDialog.h"
 
@@ -101,131 +100,17 @@ bool setEdit(App::DocumentObject* obj, PartDesign::Body* /*body*/)
     return true;
 }
 
-/*!
- * \brief Return active body or show a warning message.
- * If \a autoActivate is true (the default) then if there is
- * only single body in the document it will be activated.
- * \param messageIfNot
- * \param autoActivate
- * \return Body
- */
-PartDesign::Body* getBody(
-    bool messageIfNot,
-    bool autoActivate,
-    bool assertModern,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
-{
-    PartDesign::Body* activeBody = nullptr;
-    Gui::MDIView* activeView = Gui::Application::Instance->activeView();
-
-    if (activeView) {
-        auto doc = activeView->getAppDocument();
-        bool singleBodyDocument = doc->countObjectsOfType<PartDesign::Body>() == 1;
-        if (assertModern) {
-            activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY, topParent, subname);
-
-            if (!activeBody && singleBodyDocument && autoActivate) {
-                auto bodies = doc->getObjectsOfType(PartDesign::Body::getClassTypeId());
-                App::DocumentObject* body = nullptr;
-                if (bodies.size() == 1) {
-                    body = bodies[0];
-                    activeBody = makeBodyActive(body, doc, topParent, subname);
-                }
-            }
-            if (!activeBody && messageIfNot) {
-                DlgActiveBody dia(
-                    Gui::getMainWindow(),
-                    doc,
-                    QObject::tr(
-                        "To use Part Design, an active body is required in the document. "
-                        "Activate a body by double-clicking it."
-                    )
-                );
-                if (dia.exec() == QDialog::DialogCode::Accepted) {
-                    activeBody = dia.getActiveBody();
-                }
-            }
-        }
-    }
-
-    return activeBody;
-}
-
-PartDesign::Body* makeBodyActive(
-    App::DocumentObject* body,
-    App::Document* doc,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
-{
-    App::DocumentObject* parent = nullptr;
-    std::string sub;
-
-    for (auto& v : body->getParents()) {
-        if (v.first->getDocument() != doc) {
-            continue;
-        }
-        if (parent) {
-            body = nullptr;
-            break;
-        }
-        parent = v.first;
-        sub = v.second;
-    }
-
-    if (body) {
-        auto _doc = parent ? parent->getDocument() : body->getDocument();
-        Gui::cmdGuiDocument(
-            _doc,
-            std::stringstream() << "ActiveView.setActiveObject('" << PDBODYKEY << "',"
-                                << Gui::Command::getObjectCmd(parent ? parent : body) << ",'" << sub
-                                << "')"
-        );
-        return Gui::Application::Instance->activeView()
-            ->getActiveObject<PartDesign::Body*>(PDBODYKEY, topParent, subname);
-    }
-
-    return dynamic_cast<PartDesign::Body*>(body);
-}
-
-void needActiveBodyError()
-{
-    QMessageBox::warning(
-        Gui::getMainWindow(),
-        QObject::tr("Active Body Required"),
-        QObject::tr(
-            "To create a new Part Design object, an active body is required in the document. "
-            "Activate an existing body (double-click) or create a new one."
-        )
-    );
-}
-
 // (Cruth §4.6/§4.8) makeBody() is gone. It birthed a bare Body with no feature in it — the
 // placeholder Body the architecture rules out. Bodies now come into being only with the solid
 // feature that starts them, via PartDesign::Body::spawnAutoBody() inside the feature's own
 // transaction.
 
-PartDesign::Body* getBodyFor(
-    const App::DocumentObject* obj,
-    bool messageIfNot,
-    bool autoActivate,
-    bool assertModern,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
+PartDesign::Body* getBodyFor(const App::DocumentObject* obj, bool messageIfNot)
 {
     if (!obj) {
         return nullptr;
     }
 
-    // The body we RETURN is obj's own, found by reverse lookup up the BaseFeature chain,
-    // not a Group read: a de-owned feature is never in the active body's (empty) Group
-    // (Cruth §11 step 5e). getBody() is still called for its side effects only — active-body
-    // housekeeping: autoActivate a lone body and fill the topParent/subname out-params — so
-    // its return value is deliberately discarded.
-    getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
     PartDesign::Body* rv = PartDesign::Body::findBodyOf(obj);
     if (rv) {
         return rv;
@@ -244,6 +129,33 @@ PartDesign::Body* getBodyFor(
     return nullptr;
 }
 
+std::vector<PartDesign::Body*> selectedBodies(const App::Document* doc)
+{
+    std::vector<PartDesign::Body*> bodies;
+    if (!doc) {
+        return bodies;
+    }
+    // A Body picked directly, or any feature/sub-shape resolved to its Body (getBodyFor walks
+    // the BaseFeature chain).
+    for (auto* obj :
+         Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId(), doc->getName())) {
+        auto* body = freecad_cast<PartDesign::Body*>(obj);
+        if (!body) {
+            body = getBodyFor(obj, /*messageIfNot=*/false);
+        }
+        if (body && std::find(bodies.begin(), bodies.end(), body) == bodies.end()) {
+            bodies.push_back(body);
+        }
+    }
+    return bodies;
+}
+
+PartDesign::Body* soleSelectedBody(const App::Document* doc)
+{
+    auto bodies = selectedBodies(doc);
+    return bodies.size() == 1 ? bodies.front() : nullptr;
+}
+
 PartDesign::Body* resolveTargetBody(Gui::Command* cmd)
 {
     if (!cmd) {
@@ -254,21 +166,9 @@ PartDesign::Body* resolveTargetBody(Gui::Command* cmd)
         return nullptr;
     }
 
-    // Cruth §8.5/§4.6: a combinator (subtractive primitive, Boolean) is *told* the solid it
-    // operates on — it never reads an active body. Resolve the target from the selection: a
-    // Body picked directly, or any feature/sub-shape resolved to its Body (getBodyFor walks the
-    // BaseFeature chain). Collect the distinct Bodies the selection points at.
-    std::vector<PartDesign::Body*> selectedBodies;
-    for (auto* obj : cmd->getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId())) {
-        auto* body = freecad_cast<PartDesign::Body*>(obj);
-        if (!body) {
-            body = getBodyFor(obj, /*messageIfNot=*/false);
-        }
-        if (body
-            && std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
-            selectedBodies.push_back(body);
-        }
-    }
+    // Cruth §8.5/§4.6: a command is *told* the solid it operates on — there is no active body.
+    // Resolve the target from the bodies the selection points at.
+    std::vector<PartDesign::Body*> selectedBodies = PartDesignGui::selectedBodies(doc);
 
     if (selectedBodies.size() == 1) {
         return selectedBodies.front();  // one body indicated — unambiguous
@@ -311,19 +211,8 @@ PartDesign::Body* resolveBooleanTarget(Gui::Command* cmd)
         return nullptr;
     }
 
-    // The selection names the tools; collect the distinct Bodies it points at (a Body picked
-    // directly, or a feature resolved to its Body by walking the BaseFeature chain).
-    std::vector<PartDesign::Body*> selectedBodies;
-    for (auto* obj : cmd->getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId())) {
-        auto* body = freecad_cast<PartDesign::Body*>(obj);
-        if (!body) {
-            body = getBodyFor(obj, /*messageIfNot=*/false);
-        }
-        if (body
-            && std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
-            selectedBodies.push_back(body);
-        }
-    }
+    // The selection names the tools.
+    std::vector<PartDesign::Body*> selectedBodies = PartDesignGui::selectedBodies(cmd->getDocument());
 
     // The target is chosen from the bodies the selection leaves over.
     std::vector<PartDesign::Body*> candidates;

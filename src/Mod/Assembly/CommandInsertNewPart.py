@@ -165,11 +165,8 @@ class TaskAssemblyNewPart(JointObject.TaskAssemblyCreateJoint):
 
         self.link.Label = partName
 
-        # Set the body as active in the assembly doc
         self.expandLinkManually(self.link)
-        doc = self.assembly.Document
-        Gui.getDocument(doc).ActiveView.setActiveObject("pdbody", body)
-        doc.recompute()
+        self.assembly.Document.recompute()
 
     def expandLinkManually(self, link):
         # Should not be necessary

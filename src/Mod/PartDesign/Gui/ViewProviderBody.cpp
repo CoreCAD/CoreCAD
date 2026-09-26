@@ -35,7 +35,6 @@
 #include <App/Origin.h>
 #include <App/VarSet.h>
 #include <Base/Console.h>
-#include <Gui/ActionFunction.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
@@ -240,99 +239,16 @@ void ViewProviderBody::setOverrideMode(const std::string& mode)
 
 void ViewProviderBody::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
-    Q_UNUSED(receiver);
-    Q_UNUSED(member);
-    Gui::ActionFunction* func = new Gui::ActionFunction(menu);
-
-    QAction* act = menu->addAction(tr("Active Body"));
-    act->setCheckable(true);
-    act->setChecked(isActiveBody());
-    func->trigger(act, [this]() { this->toggleActiveBody(); });
-
+    // Skip the dragger's Transform entry: a body has no placement of its own.
     Gui::ViewProviderGeometryObject::setupContextMenu(menu, receiver, member);  // clazy:exclude=skipped-base-method
-}
-
-bool ViewProviderBody::isActiveBody()
-{
-    auto activeDoc = Gui::Application::Instance->activeDocument();
-    if (!activeDoc) {
-        activeDoc = getDocument();
-    }
-    auto activeView = activeDoc->setActiveView(this);
-    if (!activeView) {
-        return false;
-    }
-
-    if (activeView->isActiveObject(getObject(), PDBODYKEY)) {
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
-void ViewProviderBody::toggleActiveBody()
-{
-    if (isActiveBody()) {
-        // active body double-clicked. Deactivate.
-        Gui::Command::doCommand(
-            Gui::Command::Gui,
-            "Gui.ActiveDocument.ActiveView.setActiveObject('%s', None)",
-            PDBODYKEY
-        );
-    }
-    else {
-
-        // assure the PartDesign workbench
-        if (App::GetApplication()
-                .GetUserParameter()
-                .GetGroup("BaseApp")
-                ->GetGroup("Preferences")
-                ->GetGroup("Mod/PartDesign")
-                ->GetBool("SwitchToWB", true)) {
-            Gui::Command::assureWorkbench("PartDesignWorkbench");
-        }
-
-        Gui::Command::doCommand(
-            Gui::Command::Gui,
-            "Gui.ActiveDocument.ActiveView.setActiveObject('%s',%s)",
-            PDBODYKEY,
-            Gui::Command::getObjectCmd(getObject()).c_str()
-        );
-    }
 }
 
 bool ViewProviderBody::doubleClicked()
 {
-    toggleActiveBody();
-    return true;
+    // Cruth #132: there is no active body to toggle, and a body has no placement of its own to
+    // drag, so a double-click is left to the tree (expand or collapse the body's features).
+    return false;
 }
-
-// TODO To be deleted (2015-09-08, Fat-Zer)
-// void ViewProviderBody::updateTree()
-//{
-//    if (ActiveGuiDoc == NULL) return;
-//
-//    // Highlight active body and all its features
-//    //Base::Console().error("ViewProviderBody::updateTree()\n");
-//    PartDesign::Body* body = getObject<PartDesign::Body>();
-//    bool active = body->IsActive.getValue();
-//    //Base::Console().error("Body is %s\n", active ? "active" : "inactive");
-//    ActiveGuiDoc->signalHighlightObject(*this, Gui::Blue, active);
-//    std::vector<App::DocumentObject*> features = body->getFullModel();
-//    bool highlight = true;
-//    App::DocumentObject* tip = body->Tip.getValue();
-//    for (std::vector<App::DocumentObject*>::const_iterator f = features.begin(); f !=
-//    features.end(); f++) {
-//        //Base::Console().error("Highlighting %s: %s\n", (*f)->getNameInDocument(), highlight ?
-//        "true" : "false"); Gui::ViewProviderDocumentObject* vp =
-//        dynamic_cast<Gui::ViewProviderDocumentObject*>(Gui::Application::Instance->getViewProvider(*f));
-//        if (vp != NULL)
-//            ActiveGuiDoc->signalHighlightObject(*vp, Gui::LightBlue, active ? highlight : false);
-//        if (highlight && (tip == *f))
-//            highlight = false;
-//    }
-//}
 
 bool ViewProviderBody::onDelete(const std::vector<std::string>&)
 {
