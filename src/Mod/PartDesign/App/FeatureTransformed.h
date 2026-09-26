@@ -100,6 +100,14 @@ public:
     /// the pattern's stored shape where the ids are self-consistent, then stores the ordinal.
     App::PropertyIntegerList SkipInstances;
 
+    /// The 1-based index, among this pattern's output solids, of the copy with @p ordinal, or 0
+    /// when that copy is skipped or out of range. Copies are emitted in ordinal order with the
+    /// skipped ones left out (§5.6), so the index counts the survivors before it.
+    int solidIndexOfInstance(long ordinal) const;
+    /// The ordinal of the copy whose solid carries component id @p cid (Body::TipComponentId),
+    /// or -1. Read against this pattern's own stored shape, where the ids agree.
+    long ordinalOfComponent(const std::string& cid) const;
+
     /**
      * Returns the BaseFeature property's object(if any) otherwise return first original,
      *         which serves as "Support" for old style workflows
