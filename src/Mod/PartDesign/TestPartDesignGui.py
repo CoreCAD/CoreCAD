@@ -321,7 +321,7 @@ class PartDesignTransformed(unittest.TestCase):
         if Gui.Control.activeDialog():
             Gui.Control.activeTaskDialog().accept()
 
-        # The pattern extends the selected body's chain; the body that was active is untouched.
+        # The pattern extends the selected body's chain; the other body is untouched.
         # (A pattern whose copies do not touch splits into one body per solid, so the selected
         # body object itself may be replaced; its chain is what carries on.)
         self.assertEqual(seen, [])
@@ -329,7 +329,6 @@ class PartDesignTransformed(unittest.TestCase):
         self.assertEqual(len(patterns), 1)
         self.assertEqual(patterns[0].BaseFeature, pad)
         self.assertEqual(self.Body.Tip.Name, "BodyBox")
-        self.assertNotEqual(Gui.activeView().getActiveObject("pdbody"), self.Body)
 
 
 class CreateSketch(unittest.TestCase):

@@ -165,7 +165,7 @@ CmdPartDesignDuplicateSelection::CmdPartDesignDuplicateSelection()
     sAppModule = "PartDesign";
     sGroup = QT_TR_NOOP("PartDesign");
     sMenuText = QT_TR_NOOP("Duplicate &Object");
-    sToolTipText = QT_TR_NOOP("Duplicates the selected object and adds it to the active body");
+    sToolTipText = QT_TR_NOOP("Duplicates the selected object and adds it to the selected body");
     sWhatsThis = "PartDesign_DuplicateSelection";
     sStatusTip = sToolTipText;
 }
@@ -173,7 +173,8 @@ CmdPartDesignDuplicateSelection::CmdPartDesignDuplicateSelection()
 void CmdPartDesignDuplicateSelection::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/*messageIfNot = */ false);
+    // Cruth #132: the copies join the body the selection points at, if it points at one.
+    PartDesign::Body* pcActiveBody = PartDesignGui::soleSelectedBody(getDocument());
 
     std::vector<App::DocumentObject*> beforeFeatures = getDocument()->getObjects();
 
@@ -196,7 +197,7 @@ void CmdPartDesignDuplicateSelection::activated(int iMsg)
 
         for (auto feature : newFeatures) {
             if (PartDesign::Body::isAllowed(feature)) {
-                // If the feature already belongs to a body, don't re-home it into the active
+                // If the feature already belongs to a body, don't re-home it into the selected
                 // body (issue #6278). Body membership is derived from the feature chain, not
                 // Body.Group, so ask the reverse lookup rather than probing the dormant group.
                 if (!PartDesign::Body::inAnyBody(feature)) {

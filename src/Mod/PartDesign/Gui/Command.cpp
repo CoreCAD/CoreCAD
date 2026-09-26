@@ -80,31 +80,19 @@ FC_LOG_LEVEL_INIT("PartDesign", true, true)
 using namespace std;
 using namespace Attacher;
 
-// Gate all PartDesign feature commands on an active Body. Without a Body there
-// is nothing to add features to, so the commands should not be available.
-static bool hasActiveBody()
-{
-    return PartDesignGui::getBody(/*messageIfNot=*/false) != nullptr;
-}
-
 // Gate for commands whose body comes from the selection (selectedBody): available whenever
-// the document has a Body to work on, active or not.
+// the document has a Body to work on.
 static bool hasAnyBody()
 {
     App::Document* doc = App::GetApplication().getActiveDocument();
     return doc && !doc->getObjectsOfType(PartDesign::Body::getClassTypeId()).empty();
 }
 
-// Cruth #130: the selection decides the body a dress-up or pattern extends: the body of the
-// selected geometry, else the sole body, else the chooser. That body becomes the active one,
-// so the rest of the interface agrees with where the feature went.
+// Cruth #130/#132: the selection decides the body a dress-up or pattern extends: the body of
+// the selected geometry, else the sole body, else the chooser. There is no active body.
 static PartDesign::Body* selectedBody(Gui::Command* cmd)
 {
-    PartDesign::Body* body = PartDesignGui::resolveTargetBody(cmd);
-    if (body) {
-        PartDesignGui::makeBodyActive(body, body->getDocument());
-    }
-    return body;
+    return PartDesignGui::resolveTargetBody(cmd);
 }
 
 // Cruth §8.5/§4.6 spawn-vs-extend decision (GUI entry point).
@@ -274,20 +262,17 @@ void CmdPartDesignShapeBinder::activated(int iMsg)
         PartDesignGui::setEdit(support.getValue());
     }
     else {
-        PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/*messageIfNot = */ true);
-        if (!pcActiveBody) {
-            return;
-        }
-
-        std::string FeatName = getUniqueObjectName("ShapeBinder", pcActiveBody);
+        // Cruth #132: a binder carries geometry to wherever it is used; no body owns it, so it
+        // is born at document level. The selection names its source, not a target body.
+        std::string FeatName = getUniqueObjectName("ShapeBinder");
 
         openCommand(QT_TRANSLATE_NOOP("Command", "Create Shape Binder"));
-
-        // remove the body from links in case it's selected as
-        // otherwise a cyclic dependency will be created
-        support.removeValue(pcActiveBody);
-
-        auto Feat = PartDesignGui::createFeature(pcActiveBody, "PartDesign::ShapeBinder", FeatName);
+        doCommand(
+            Command::Doc,
+            "App.ActiveDocument.addObject('PartDesign::ShapeBinder','%s')",
+            FeatName.c_str()
+        );
+        auto Feat = getDocument()->getObject(FeatName.c_str());
         if (!Feat) {
             return;
         }
@@ -297,14 +282,14 @@ void CmdPartDesignShapeBinder::activated(int iMsg)
             FCMD_OBJ_CMD(Feat, "Support = " << support.getPyReprString());
         }
         updateActive();
-        PartDesignGui::setEdit(Feat, pcActiveBody);
+        PartDesignGui::setEdit(Feat);
     }
     // TODO do a proper error processing (2015-09-11, Fat-Zer)
 }
 
 bool CmdPartDesignShapeBinder::isActive()
 {
-    return hasActiveBody();
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -334,8 +319,6 @@ void CmdPartDesignSubShapeBinder::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    App::DocumentObject* parent = nullptr;
-    std::string parentSub;
     std::map<App::DocumentObject*, std::vector<std::string>> values;
     for (auto& sel : Gui::Selection().getCompleteSelection(Gui::ResolveMode::NoResolve)) {
         if (!sel.pObject) {
@@ -347,48 +330,21 @@ void CmdPartDesignSubShapeBinder::activated(int iMsg)
         }
     }
 
-    std::string FeatName;
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(false, true, true, &parent, &parentSub);
-    FeatName = getUniqueObjectName("Binder", pcActiveBody);
-    if (parent) {
-        decltype(values) links;
-        for (auto& v : values) {
-            App::DocumentObject* obj = v.first;
-            if (obj != parent) {
-                auto& subs = links[obj];
-                subs.insert(subs.end(), v.second.begin(), v.second.end());
-                continue;
-            }
-            for (auto& sub : v.second) {
-                auto link = obj;
-                auto linkSub = parentSub;
-                parent->resolveRelativeLink(linkSub, link, sub);
-                if (link && link != pcActiveBody) {
-                    links[link].push_back(sub);
-                }
-            }
-        }
-        values = std::move(links);
-    }
+    // Cruth #132: like the shape binder, a sub-shape binder is born at document level; the
+    // selection names its sources, not a body to put it in.
+    std::string FeatName = getUniqueObjectName("Binder");
 
     PartDesign::SubShapeBinder* binder = nullptr;
     try {
         openCommand(QT_TRANSLATE_NOOP("Command", "Create Sub-Shape Binder"));
-        if (pcActiveBody) {
-            binder = dynamic_cast<PartDesign::SubShapeBinder*>(
-                PartDesignGui::createFeature(pcActiveBody, "PartDesign::SubShapeBinder", FeatName)
-            );
-        }
-        else {
-            doCommand(
-                Command::Doc,
-                "App.ActiveDocument.addObject('PartDesign::SubShapeBinder','%s')",
-                FeatName.c_str()
-            );
-            binder = dynamic_cast<PartDesign::SubShapeBinder*>(
-                App::GetApplication().getActiveDocument()->getObject(FeatName.c_str())
-            );
-        }
+        doCommand(
+            Command::Doc,
+            "App.ActiveDocument.addObject('PartDesign::SubShapeBinder','%s')",
+            FeatName.c_str()
+        );
+        binder = dynamic_cast<PartDesign::SubShapeBinder*>(
+            App::GetApplication().getActiveDocument()->getObject(FeatName.c_str())
+        );
         if (!binder) {
             return;
         }
@@ -409,7 +365,7 @@ void CmdPartDesignSubShapeBinder::activated(int iMsg)
 
 bool CmdPartDesignSubShapeBinder::isActive()
 {
-    return hasActiveBody();
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -1002,7 +958,7 @@ void CmdPartDesignPocket::activated(int iMsg)
 
 bool CmdPartDesignPocket::isActive()
 {
-    return hasActiveBody();
+    return hasAnyBody();
 }
 
 //===========================================================================

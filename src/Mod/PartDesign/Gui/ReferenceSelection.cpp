@@ -109,8 +109,8 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
 
 PartDesign::Body* ReferenceSelection::getBody() const
 {
-    auto* body = support ? PartDesign::Body::findBodyOf(support) : PartDesignGui::getBody(false);
-    return body;
+    // The body the reference is taken for is the support's; with no support there is none.
+    return support ? PartDesign::Body::findBodyOf(support) : nullptr;
 }
 
 bool ReferenceSelection::allowOrigin(PartDesign::Body* body, App::DocumentObject* pObj) const
@@ -148,10 +148,10 @@ bool ReferenceSelection::allowOrigin(PartDesign::Body* body, App::DocumentObject
 
 bool ReferenceSelection::allowDatum(PartDesign::Body* body, App::DocumentObject* pObj) const
 {
-    if (!body) {  // Allow selecting datum features from the active Body
-        return false;
-    }
-    else if (!type.testFlag(AllowSelection::OTHERBODY) && !PartDesign::Body::backsBody(pObj, body)) {
+    // With no body to take the reference for, any datum will do (Cruth #132: there is no
+    // active body to fall back on).
+    if (body && !type.testFlag(AllowSelection::OTHERBODY)
+        && !PartDesign::Body::backsBody(pObj, body)) {
         return false;
     }
 

@@ -85,18 +85,17 @@ PartDesign::Body* makeBodyActive(
 /// Display error when there are existing Body objects, but none are active
 void needActiveBodyError();
 
+/// Finds the body the given feature belongs to, and shows a message if there is none.
+PartDesign::Body* getBodyFor(const App::DocumentObject*, bool messageIfNot);
+
 /**
- * Finds a body for the given feature. And shows a message if not found
- * Also unlike Body::findBodyFor it checks if the active body has the feature first.
+ * The distinct bodies the current selection in \a doc points at: a Body picked directly, or
+ * any feature or sub-shape resolved to its Body. Shows no message and asks nothing.
  */
-PartDesign::Body* getBodyFor(
-    const App::DocumentObject*,
-    bool messageIfNot,
-    bool autoActivate = true,
-    bool assertModern = true,
-    App::DocumentObject** topParent = nullptr,
-    std::string* subname = nullptr
-);
+std::vector<PartDesign::Body*> selectedBodies(const App::Document* doc);
+
+/// The one body the selection in \a doc points at, or nullptr when it points at none or several.
+PartDesign::Body* soleSelectedBody(const App::Document* doc);
 
 /**
  * Cruth §8.5/§4.6: resolve the target Body a combinator (subtractive primitive, Boolean)

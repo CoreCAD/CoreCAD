@@ -207,25 +207,12 @@ void needActiveBodyError()
 // feature that starts them, via PartDesign::Body::spawnAutoBody() inside the feature's own
 // transaction.
 
-PartDesign::Body* getBodyFor(
-    const App::DocumentObject* obj,
-    bool messageIfNot,
-    bool autoActivate,
-    bool assertModern,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
+PartDesign::Body* getBodyFor(const App::DocumentObject* obj, bool messageIfNot)
 {
     if (!obj) {
         return nullptr;
     }
 
-    // The body we RETURN is obj's own, found by reverse lookup up the BaseFeature chain,
-    // not a Group read: a de-owned feature is never in the active body's (empty) Group
-    // (Cruth §11 step 5e). getBody() is still called for its side effects only — active-body
-    // housekeeping: autoActivate a lone body and fill the topParent/subname out-params — so
-    // its return value is deliberately discarded.
-    getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
     PartDesign::Body* rv = PartDesign::Body::findBodyOf(obj);
     if (rv) {
         return rv;
@@ -244,6 +231,33 @@ PartDesign::Body* getBodyFor(
     return nullptr;
 }
 
+std::vector<PartDesign::Body*> selectedBodies(const App::Document* doc)
+{
+    std::vector<PartDesign::Body*> bodies;
+    if (!doc) {
+        return bodies;
+    }
+    // A Body picked directly, or any feature/sub-shape resolved to its Body (getBodyFor walks
+    // the BaseFeature chain).
+    for (auto* obj :
+         Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId(), doc->getName())) {
+        auto* body = freecad_cast<PartDesign::Body*>(obj);
+        if (!body) {
+            body = getBodyFor(obj, /*messageIfNot=*/false);
+        }
+        if (body && std::find(bodies.begin(), bodies.end(), body) == bodies.end()) {
+            bodies.push_back(body);
+        }
+    }
+    return bodies;
+}
+
+PartDesign::Body* soleSelectedBody(const App::Document* doc)
+{
+    auto bodies = selectedBodies(doc);
+    return bodies.size() == 1 ? bodies.front() : nullptr;
+}
+
 PartDesign::Body* resolveTargetBody(Gui::Command* cmd)
 {
     if (!cmd) {
@@ -254,21 +268,9 @@ PartDesign::Body* resolveTargetBody(Gui::Command* cmd)
         return nullptr;
     }
 
-    // Cruth §8.5/§4.6: a combinator (subtractive primitive, Boolean) is *told* the solid it
-    // operates on — it never reads an active body. Resolve the target from the selection: a
-    // Body picked directly, or any feature/sub-shape resolved to its Body (getBodyFor walks the
-    // BaseFeature chain). Collect the distinct Bodies the selection points at.
-    std::vector<PartDesign::Body*> selectedBodies;
-    for (auto* obj : cmd->getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId())) {
-        auto* body = freecad_cast<PartDesign::Body*>(obj);
-        if (!body) {
-            body = getBodyFor(obj, /*messageIfNot=*/false);
-        }
-        if (body
-            && std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
-            selectedBodies.push_back(body);
-        }
-    }
+    // Cruth §8.5/§4.6: a command is *told* the solid it operates on — there is no active body.
+    // Resolve the target from the bodies the selection points at.
+    std::vector<PartDesign::Body*> selectedBodies = PartDesignGui::selectedBodies(doc);
 
     if (selectedBodies.size() == 1) {
         return selectedBodies.front();  // one body indicated — unambiguous
@@ -311,19 +313,8 @@ PartDesign::Body* resolveBooleanTarget(Gui::Command* cmd)
         return nullptr;
     }
 
-    // The selection names the tools; collect the distinct Bodies it points at (a Body picked
-    // directly, or a feature resolved to its Body by walking the BaseFeature chain).
-    std::vector<PartDesign::Body*> selectedBodies;
-    for (auto* obj : cmd->getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId())) {
-        auto* body = freecad_cast<PartDesign::Body*>(obj);
-        if (!body) {
-            body = getBodyFor(obj, /*messageIfNot=*/false);
-        }
-        if (body
-            && std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
-            selectedBodies.push_back(body);
-        }
-    }
+    // The selection names the tools.
+    std::vector<PartDesign::Body*> selectedBodies = PartDesignGui::selectedBodies(cmd->getDocument());
 
     // The target is chosen from the bodies the selection leaves over.
     std::vector<PartDesign::Body*> candidates;

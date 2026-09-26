@@ -218,8 +218,6 @@ public:
 
     void createSupport()
     {
-        createBodyOrThrow();
-
         if (faceFilter.match()) {
             Gui::SelectionObject faceSelObject = faceFilter.Result[0][0];
             SupportFaceValidator validator {faceSelObject};
@@ -288,17 +286,6 @@ public:
         }
         Gui::Command::updateActive();
         PartDesignGui::setEdit(Feat, activeBody);
-    }
-
-private:
-    void createBodyOrThrow()
-    {
-        if (!activeBody) {
-            activeBody = PartDesignGui::getBody(/* messageIfNot = */ true);
-            if (!activeBody) {
-                throw RejectException();
-            }
-        }
     }
 
 private:
@@ -378,18 +365,16 @@ private:
             return obj && obj->isDerivedFrom<Part::Part2DObject>();
         });
 
-        // Create sketch. CoreCAD POC: when there is an active Body, nest the sketch
-        // in it (legacy behaviour); otherwise create it free at document level and,
-        // if a Part workspace is active, add it there. The Pad anchor walk decides
-        // Body ownership later.
+        // Create sketch: linked to the body the selection points at, otherwise free at
+        // document level. The Pad anchor walk decides the body later.
         App::Document* doc = guidocument->getDocument();
         std::string FeatName = doc->getUniqueObjectName("Sketch");
         if (activeBody) {
             PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
         }
         else {
-            // No active body: the bodyless sketch lives directly in the document (the
-            // document is the container, ARCHITECTURE §7.1). No App::Part to file it into.
+            // No body: the sketch lives directly in the document (the document is the
+            // container, ARCHITECTURE §7.1).
             Gui::Command::doCommand(
                 Gui::Command::Doc,
                 "App.activeDocument().addObject('Sketcher::SketchObject','%s')",
@@ -524,10 +509,8 @@ void SketchWorkflow::tryCreateSketch()
     // to the attachment dialog instead of showing an error.
     // A selected sketch, multiple references, no selection, Shift, or preference on
     // all go through the attachment dialog.
-    // CoreCAD POC: the fast path requires a Body to host the sketch and is not
-    // null-safe, so skip it entirely when no Body is active. Sketches are now
-    // born free (see shouldCreateBody/createSketchAndShowAttachment).
-    if (activeBody && !useAttachment && !shiftHeld && sketchOnFace.isSingleFaceOrPlane()) {
+    // A sketch with no body is born free (see createSketchOnSupport).
+    if (!useAttachment && !shiftHeld && sketchOnFace.isSingleFaceOrPlane()) {
         try {
             sketchOnFace.createSupport();
             sketchOnFace.createSketchOnSupport(sketchOnFace.getSupport());
@@ -550,26 +533,16 @@ void SketchWorkflow::tryCreateSketch()
 
 std::tuple<bool, PartDesign::Body*> SketchWorkflow::shouldCreateBody()
 {
-    // CoreCAD POC: sketches are now born free. Sketch creation never spawns a
-    // Body and never shows the legacy DlgActiveBody modal — the Pad anchor walk
-    // is the single thing that decides Body spawn-vs-extend. We simply report
-    // the active Body if there is one (it may be null).
-    // If we are inside a link, we still need to use its placement.
-    // CoreCAD POC: autoActivate is OFF here. We deliberately do NOT let getBody
-    // auto-activate the lone Body of a single-Body document — otherwise every
-    // sketch would nest into that Body and a second independent Body could never
-    // be started. A Body is used only when one is genuinely active; with no
-    // active Body the sketch is born free and Pad's anchor walk owns the spawn.
+    // Sketches are born free: sketch creation never spawns a Body and never asks for one — the
+    // Pad anchor walk is the single thing that decides Body spawn-vs-extend. The body reported
+    // here is the one the selection points at (a face of that body, say), or none (Cruth #132:
+    // there is no active body to fall back on).
     //
     // (issue #12) A de-owned Body carries no frame of its own, so the former "sketch inside a
     // Link: copy the Link's placement onto the Body" step is gone — a Body has no Placement to
     // write. When editing inside a Link, the sketch resolves its own world position through its
     // attachment and the Link's global placement, not through a mutated Body frame.
-    PartDesign::Body* pdBody = PartDesignGui::getBody(
-        /* messageIfNot = */ false,
-        /* autoActivate = */ false,
-        /* assertModern = */ true
-    );
+    PartDesign::Body* pdBody = PartDesignGui::soleSelectedBody(guidocument->getDocument());
 
     return std::make_tuple(false, pdBody);
 }

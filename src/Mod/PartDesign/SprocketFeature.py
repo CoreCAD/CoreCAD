@@ -44,10 +44,6 @@ def makeSprocket(name):
     if FreeCAD.GuiUp:
         ViewProviderSprocket(obj.ViewObject)
     # FreeCAD.ActiveDocument.recompute()
-    if FreeCAD.GuiUp:
-        body = FreeCADGui.ActiveDocument.ActiveView.getActiveObject("pdbody")
-        if body:
-            body.addFeature(obj)
     return obj
 
 
