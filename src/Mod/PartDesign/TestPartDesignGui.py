@@ -446,6 +446,67 @@ class TestClosingAFeatureDialog(unittest.TestCase):
 #       FreeCAD.closeDocument("SketchGuiTest")
 
 
+class TestBodyColumn(unittest.TestCase):
+    """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch, and in
+    brackets the bodies a step only references. A profile sketch builds nothing and shows
+    nothing."""
+
+    def setUp(self):
+        self.Doc = App.newDocument("BodyColumn", type="Part")
+        Gui.activateWorkbench("PartDesignWorkbench")
+
+    def tearDown(self):
+        App.closeDocument(self.Doc.Name)
+
+    def square(self, name, x):
+        sketch = self.Doc.addObject("Sketcher::SketchObject", name)
+        sketch.Placement.Base = App.Vector(x, 0, 0)
+        pts = [(0, 0), (10, 0), (10, 10), (0, 10)]
+        for i in range(4):
+            a, b = pts[i], pts[(i + 1) % 4]
+            sketch.addGeometry(Part.LineSegment(App.Vector(*a, 0), App.Vector(*b, 0)))
+        self.Doc.recompute()
+        return sketch
+
+    def columnTexts(self):
+        # The tree applies changes on a short timer; let it run.
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(300, loop.quit)
+        loop.exec_()
+        trees = [
+            t for t in Gui.getMainWindow().findChildren(QtGui.QTreeWidget) if t.columnCount() == 4
+        ]
+        self.assertTrue(trees)
+        texts = {}
+
+        def walk(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                texts[child.text(0)] = (child.text(3), not child.icon(3).isNull())
+                walk(child)
+
+        walk(trees[0].invisibleRootItem())
+        return texts
+
+    def testBodyColumnNamesWhatEachStepBuilds(self):
+        s1 = self.square("S1", 0)
+        pad = PartDesign.makeFeature(s1, "Pad")
+        s2 = self.square("S2", 50)
+        # S2 references a face of the first body; it builds nothing itself.
+        s2.AttachmentSupport = (pad, [""])
+        s2.MapMode = "ObjectXY"
+        self.Doc.recompute()
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        body.Label = "Housing"
+        self.Doc.recompute()
+        texts = self.columnTexts()
+        self.assertIn("Pad", texts, sorted(texts))
+        self.assertEqual(texts["Pad"], ("Housing", True))
+        self.assertEqual(texts["S1"], ("", False))
+        self.assertEqual(texts["S2"], ("(Housing)", False))
+        self.assertEqual(texts["Housing"], ("", True))
+
+
 class TestDatumPlane(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane", type="Part")

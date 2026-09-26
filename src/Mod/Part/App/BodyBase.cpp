@@ -67,6 +67,33 @@ BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
     return nullptr;
 }
 
+std::vector<BodyBase*> BodyBase::findBodiesBuiltBy(const App::DocumentObject* f)
+{
+    std::vector<BodyBase*> result;
+    App::Document* doc = f ? f->getDocument() : nullptr;
+    if (!doc) {
+        return result;
+    }
+    for (auto* obj : doc->getObjectsOfType(BodyBase::getClassTypeId())) {
+        auto* body = static_cast<BodyBase*>(obj);
+        if (body->isBuiltBy(f)) {
+            result.push_back(body);
+        }
+    }
+    return result;
+}
+
+bool BodyBase::isBuiltBy(const App::DocumentObject* f)
+{
+    std::vector<App::DocumentObject*> model = getFullModel();
+    return std::ranges::find(model, f) != model.end();
+}
+
+Base::Color BodyBase::getIdentityColor() const
+{
+    return Base::Color(0.5F, 0.5F, 0.5F);
+}
+
 void BodyBase::rebaseBodySubReferencesToTip(
     std::vector<App::DocumentObject*>& objs,
     std::vector<std::string>& subs

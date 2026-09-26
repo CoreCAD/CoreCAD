@@ -26,7 +26,9 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <QColor>
 #include <QIcon>
+#include <QString>
 #include <fastsignals/signal.h>
 #include <boost/intrusive_ptr.hpp>
 
@@ -515,6 +517,21 @@ public:
      */
     virtual int replaceObject(App::DocumentObject* oldObj, App::DocumentObject* newObj);
     //@}
+
+    /** What the tree's Body column shows for this object (Cruth ARCHITECTURE §8.7): the bodies
+     *  it builds, as colour swatches and names, and in brackets the bodies it only references.
+     *  The core knows nothing of bodies; a module that has them answers. Empty shows nothing.
+     */
+    struct TreeBodyColumn
+    {
+        QString text;
+        std::vector<QColor> swatches;
+        bool operator==(const TreeBodyColumn&) const = default;
+    };
+    virtual TreeBodyColumn getTreeBodyColumn() const
+    {
+        return {};
+    }
 
     /** Tell the tree view if this object should appear there */
     virtual bool showInTree() const

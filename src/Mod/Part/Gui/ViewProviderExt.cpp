@@ -50,6 +50,7 @@
 
 #include <QAction>
 #include <QMenu>
+#include <QStringList>
 #include <sstream>
 
 #include <Inventor/SoPickedPoint.h>
@@ -83,6 +84,7 @@
 #include <Gui/ViewParams.h>
 #include <Gui/Utilities.h>
 
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/ShapeMapHasher.h>
 #include <Mod/Part/App/Tools.h>
 
@@ -534,6 +536,92 @@ void ViewProviderPartExt::attach(App::DocumentObject* pcFeat)
     addDisplayMaskMode(pcFlatRoot, "Shaded");
     addDisplayMaskMode(pcWireframeRoot, "Wireframe");
     addDisplayMaskMode(pcPointsRoot, "Point");
+}
+
+namespace
+{
+QColor toQColor(const Base::Color& color)
+{
+    return QColor::fromRgbF(color.r, color.g, color.b);
+}
+
+/// "A, B + 3 more": at most two names, then a count.
+QString joinBodyNames(const std::vector<Part::BodyBase*>& bodies)
+{
+    constexpr std::size_t shown = 2;
+    QStringList names;
+    for (std::size_t i = 0; i < bodies.size() && i < shown; ++i) {
+        names << QString::fromUtf8(bodies[i]->Label.getValue());
+    }
+    QString text = names.join(QStringLiteral(", "));
+    if (bodies.size() > shown) {
+        text += QObject::tr(" + %1 more").arg(bodies.size() - shown);
+    }
+    return text;
+}
+}  // namespace
+
+Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
+{
+    TreeBodyColumn column;
+    App::DocumentObject* obj = getObject();
+    if (!obj || !obj->isAttachedToDocument()) {
+        return column;
+    }
+
+    // A body's own row carries its swatch, so its colour can be matched against the rows below.
+    if (auto* body = freecad_cast<Part::BodyBase*>(obj)) {
+        column.swatches.push_back(toQColor(body->getIdentityColor()));
+        return column;
+    }
+
+    // The bodies this object builds: every body whose chain holds it.
+    std::vector<Part::BodyBase*> built = Part::BodyBase::findBodiesBuiltBy(obj);
+
+    // What counts as foreign. For a solid feature, any body it does not build. A sketch or other
+    // input builds nothing itself; a body it feeds (through the feature that consumes it) is not
+    // foreign either, so only a reference beyond those shows.
+    std::vector<Part::BodyBase*> own = built;
+    if (built.empty()) {
+        for (auto* consumer : obj->getInList()) {
+            for (auto* body : Part::BodyBase::findBodiesBuiltBy(consumer)) {
+                if (std::ranges::find(own, body) == own.end()) {
+                    own.push_back(body);
+                }
+            }
+        }
+    }
+
+    // A reference counts when it points at a body, or at a step that builds one. A free input
+    // (the profile sketch a pad consumes) builds nothing, so it adds no bracket here; its own row
+    // shows what it references.
+    std::vector<Part::BodyBase*> referenced;
+    auto addReferenced = [&](Part::BodyBase* body) {
+        if (std::ranges::find(own, body) == own.end()
+            && std::ranges::find(referenced, body) == referenced.end()) {
+            referenced.push_back(body);
+        }
+    };
+    for (auto* target : obj->getOutList()) {
+        if (auto* body = freecad_cast<Part::BodyBase*>(target)) {
+            addReferenced(body);
+            continue;
+        }
+        for (auto* body : Part::BodyBase::findBodiesBuiltBy(target)) {
+            addReferenced(body);
+        }
+    }
+
+    for (auto* body : built) {
+        column.swatches.push_back(toQColor(body->getIdentityColor()));
+    }
+    column.text = joinBodyNames(built);
+    if (!referenced.empty()) {
+        QString refs = joinBodyNames(referenced);
+        column.text = built.empty() ? QStringLiteral("(%1)").arg(refs)
+                                    : QObject::tr("%1 (uses %2)").arg(column.text, refs);
+    }
+    return column;
 }
 
 void ViewProviderPartExt::setDisplayMode(const char* ModeName)

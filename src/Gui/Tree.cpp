@@ -132,6 +132,47 @@ void TreeParams::onItemBackgroundChanged()
 
 using DocumentObjectItems = std::set<DocumentObjectItem*>;
 
+namespace
+{
+constexpr int BodyColumn = 3;
+
+/// Swatches side by side, one per body an object builds (Cruth ARCHITECTURE §8.7).
+QIcon bodySwatchIcon(const std::vector<QColor>& swatches)
+{
+    if (swatches.empty()) {
+        return {};
+    }
+    constexpr int side = 10;
+    constexpr int gap = 2;
+    constexpr int maxShown = 3;
+    const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
+    QPixmap pixmap(count * side + (count - 1) * gap, side);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    for (int i = 0; i < count; ++i) {
+        painter.fillRect(i * (side + gap), 0, side, side, swatches[i]);
+        painter.setPen(swatches[i].darker(150));
+        painter.drawRect(i * (side + gap), 0, side - 1, side - 1);
+    }
+    // A hidden object's row is drawn greyed out; its swatch must keep its colour, or the column
+    // stops matching the body it names.
+    QIcon icon;
+    icon.addPixmap(pixmap, QIcon::Normal);
+    icon.addPixmap(pixmap, QIcon::Disabled);
+    icon.addPixmap(pixmap, QIcon::Selected);
+    return icon;
+}
+
+void applyBodyColumn(QTreeWidgetItem* item, const Gui::ViewProviderDocumentObject& vp)
+{
+    auto column = vp.getTreeBodyColumn();
+    if (item->text(BodyColumn) != column.text) {
+        item->setText(BodyColumn, column.text);
+    }
+    item->setIcon(BodyColumn, bodySwatchIcon(column.swatches));
+}
+}  // namespace
+
 class Gui::DocumentObjectData
 {
 public:
@@ -583,7 +624,7 @@ TreeWidget::TreeWidget(const char* name, QWidget* parent)
 
     this->setDragEnabled(true);
     this->setAcceptDrops(true);
-    this->setColumnCount(3);
+    this->setColumnCount(4);
     this->setItemDelegate(new TreeWidgetItemDelegate(this));
     this->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
@@ -743,6 +784,8 @@ TreeWidget::TreeWidget(const char* name, QWidget* parent)
     setColumnHidden(1, TreeParams::getHideColumn());
     setColumnHidden(2, TreeParams::getHideInternalNames());
     header()->setVisible(!TreeParams::getHideColumn() || !TreeParams::getHideInternalNames());
+    // The Body column (Cruth ARCHITECTURE §8.7) is always shown, right after the label.
+    header()->moveSection(header()->visualIndex(3), 1);
     TreeParams::onFontSizeChanged();
 }
 
@@ -1715,6 +1758,7 @@ void TreeWidget::setupResizableColumn(TreeWidget* tree)
             inst->header()->setSectionResizeMode(0, mode);
             inst->header()->setSectionResizeMode(1, mode);
             inst->header()->setSectionResizeMode(2, mode);
+            inst->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
             if (TreeParams::getResizableColumn()) {
                 QSignalBlocker blocker(inst);
                 if (TreeParams::getColumnSize1() > 0) {
@@ -3511,6 +3555,7 @@ void TreeWidget::onUpdateStatus()
     // Use a local copy in case of nested calls
     auto localChangedObjects = ChangedObjects;
     ChangedObjects.clear();
+    const bool bodiesMayHaveMoved = !localChangedObjects.empty() || !localNewObjects.empty();
 
     // Update children of changed objects
     for (auto& v : localChangedObjects) {
@@ -3547,6 +3592,9 @@ void TreeWidget::onUpdateStatus()
     FC_LOG("update item status");
     for (auto pos = DocumentMap.begin(); pos != DocumentMap.end(); ++pos) {
         pos->second->testStatus();
+        if (bodiesMayHaveMoved) {
+            pos->second->updateBodyColumn();
+        }
     }
 
     // Checking for just restored documents
@@ -3824,6 +3872,7 @@ void TreeWidget::setupText()
     this->headerItem()->setText(0, tr("Labels & Attributes"));
     this->headerItem()->setText(1, tr("Description"));
     this->headerItem()->setText(2, tr("Internal name"));
+    this->headerItem()->setText(3, tr("Body"));
 
     this->showHiddenAction->setText(tr("Show Items Hidden in Tree View"));
     this->showHiddenAction->setStatusTip(
@@ -4510,6 +4559,7 @@ bool DocumentItem::createNewItem(
         item->setText(1, QString::fromUtf8(data->label2.c_str()));
     }
     item->setText(2, QString::fromUtf8(data->internalName.c_str()));
+    applyBodyColumn(item, obj);
     if (!obj.showInTree() && !showHidden()) {
         item->setHidden(true);
     }
@@ -5419,6 +5469,15 @@ void DocumentItem::slotRecomputed(const App::Document&, const std::vector<App::D
 Gui::Document* DocumentItem::document() const
 {
     return this->pDocument;
+}
+
+void DocumentItem::updateBodyColumn()
+{
+    for (const auto& v : ObjectMap) {
+        for (auto* item : v.second->items) {
+            applyBodyColumn(item, *v.second->viewObject);
+        }
+    }
 }
 
 void DocumentItem::testStatus()
