@@ -66,8 +66,6 @@ public:
 
     bool doubleClicked() override;
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
-    bool isActiveBody();
-    void toggleActiveBody();
 
     std::vector<std::string> getDisplayModes() const override;
     void setDisplayMode(const char* ModeName) override;
