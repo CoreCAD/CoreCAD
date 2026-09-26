@@ -534,6 +534,12 @@ protected:
     void onDocumentRestored() override;
 
 private:
+    /// The pattern copy this Body stands for, or chain::WholeOutput.
+    long tipCopy() const;
+    /// Builds @p feature on copy @p copy of the Tip, ahead of what followed there, and makes it
+    /// the Tip.
+    void appendAtTip(PartDesign::Feature* feature, long copy);
+
     fastsignals::scoped_connection connection;
     bool showTip = false;
 };

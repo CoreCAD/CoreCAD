@@ -478,14 +478,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     // ARCHITECTURE §3.3), so all bodies' features anchor to one Origin.
     relinkFeatureToOrigin(feature, getDocumentOrigin());
 
-    // #3: this Body may be one copy of a pattern, named by its component id against the Tip. A
-    // step added here builds on that copy alone, so it keeps the copy's ordinal; the other
-    // copies' bodies are untouched.
-    long baseInstance = -1;
-    if (auto* pattern = freecad_cast<PartDesign::Transformed*>(Tip.getValue());
-        pattern && !TipComponentId.getStrValue().empty()) {
-        baseInstance = pattern->ordinalOfComponent(TipComponentId.getStrValue());
-    }
+    const long copy = tipCopy();
 
     if (isSolidFeature(feature) && !feature->isDerivedFrom<PartDesign::Feature>()) {
         // A solid feature with no BaseFeature of its own (an import, §7.8) cannot be spliced
@@ -500,29 +493,14 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         Tip.setValue(feature);
     }
     else if (isSolidFeature(feature)) {
-        // Splice the new solid into the chain at the Tip: its base is the old Tip,
-        // and the Body now propagates the new feature.
-        // Mid-chain insert: the Tip's next step on this copy now builds on the new feature.
-        App::DocumentObject* prevTip = Tip.getValue();
-        spliceAfter(static_cast<PartDesign::Feature*>(feature), prevTip, baseInstance);
-        if (baseInstance >= 0) {
-            // The new Tip's output is this copy alone; the id named a copy of the old Tip.
-            TipComponentId.setValue("");
-        }
-        Tip.setValue(feature);
-
-        // Tip visibility bookkeeping: only the current Tip shows by default.
-        if (prevTip && prevTip->isDerivedFrom<PartDesign::Feature>()
-            && prevTip->Visibility.getValue()) {
-            prevTip->Visibility.setValue(false);
-        }
+        appendAtTip(static_cast<PartDesign::Feature*>(feature), copy);
     }
     else if (feature->isDerivedFrom<PartDesign::Transformed>()) {
         // A new pattern reads as non-solid until configured (#1). Wire its base now, while
         // the Tip is known; it takes the Tip once configured (adoptConfiguredPattern, #125).
         auto* pattern = static_cast<PartDesign::Transformed*>(feature);
         pattern->BaseFeature.setValue(Tip.getValue());
-        pattern->BaseInstance.setValue(baseInstance);
+        pattern->BaseInstance.setValue(copy);
         pattern->markAwaitingTip(this);
     }
 
@@ -540,16 +518,24 @@ void Body::adoptConfiguredPattern(App::DocumentObject* pattern)
         return;
     }
 
-    // Mid-chain insert: addFeature wired the pattern's base but not the steps after it.
-    spliceAfter(feature, prevTip, feature->BaseInstance.getValue());
+    appendAtTip(feature, feature->BaseInstance.getValue());
+}
 
-    Tip.setValue(pattern);
-    if (feature->BaseInstance.getValue() >= 0) {
-        // Same as the solid splice: the id named a copy of the old Tip.
-        TipComponentId.setValue("");
+long Body::tipCopy() const
+{
+    auto* pattern = freecad_cast<PartDesign::Transformed*>(Tip.getValue());
+    const std::string cid = TipComponentId.getStrValue();
+    return pattern && !cid.empty() ? pattern->ordinalOfComponent(cid) : chain::WholeOutput;
+}
+
+void Body::appendAtTip(PartDesign::Feature* feature, long copy)
+{
+    App::DocumentObject* prevTip = Tip.getValue();
+    spliceAfter(feature, prevTip, copy);
+    if (copy >= 0) {
+        TipComponentId.setValue("");  // the new Tip's whole output is that one copy
     }
-
-    // Same Tip visibility bookkeeping as the solid splice in addObject.
+    Tip.setValue(feature);
     if (prevTip && prevTip->isDerivedFrom<PartDesign::Feature>() && prevTip->Visibility.getValue()) {
         prevTip->Visibility.setValue(false);
     }
@@ -614,9 +600,7 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
         }
     }
     else {
-        // Tip end.
-        spliceAfter(pd, Tip.getValue(), -1);
-        Tip.setValue(feature);
+        appendAtTip(pd, tipCopy());
     }
 }
 
@@ -690,84 +674,26 @@ App::DocumentObjectExecReturn* Body::execute()
     Part::BodyBase::execute();
 
     App::DocumentObject* tip = Tip.getValue();
-
-    Part::TopoShape tipShape;
-    if (tip) {
-        // Any feature whose output stands as a part of its own may tip a Body (§4.6); an
-        // import does so without being a PartDesign feature (§7.8).
-        if (!isSolidFeature(tip)) {
-            return new App::DocumentObjectExecReturn(
-                QT_TRANSLATE_NOOP("Exception", "Linked object is not a solid feature")
-            );
-        }
-
-        // get the shape of the tip
-        tipShape = static_cast<Part::ShapeFeature*>(tip)->Shape.getShape();
-
-        if (tipShape.getShape().IsNull()) {
-            return new App::DocumentObjectExecReturn(
-                QT_TRANSLATE_NOOP("Exception", "Tip shape is empty")
-            );
-        }
-
-        // Cruth §3.3: a multi-output Body represents one component of its Tip's
-        // shape, named by TipComponentId. Empty id = the implicit single-component
-        // case (propagate the whole shape). It is never a silent fall-back to the
-        // whole shape — that would show wrong geometry.
-        //
-        // A set id that no longer resolves is NOT an execute-level failure. Per
-        // ARCHITECTURE §4.6/§4.7 a Body whose Tip stops yielding its component is
-        // simply *retired* — lifecycle owned by the reconciler (reconcileMultiOutput,
-        // which runs on signalRecomputed after every recompute), not by execute. The
-        // P7 fail-loud belongs to anything that still *references* the retired Body
-        // (assembly/drawing/BOM), which surfaces at those consumers, not here. So a
-        // component miss means either (a) this Body is about to be retired this same
-        // pass, or (b) it is the §4.3 "Vanish deferred" case (a transient empty/failed
-        // compute the reconciler keeps): in both, leave the last-good Shape untouched
-        // and return normally rather than logging a spurious error every edit.
-        const std::string cid = TipComponentId.getStrValue();
-        if (!cid.empty()) {
-            Part::TopoShape component = extractSolidById(tip, tipShape, cid);
-            if (component.isNull()) {
-                return App::DocumentObject::StdReturn;
-            }
-            // A pattern stores each instance's offset in the solid's placement, not
-            // its geometry. Bake that placement into the geometry (an identity
-            // transform with copy bakes the location and resets it) so this Body
-            // keeps its own pattern position; otherwise every component would
-            // collapse onto the Tip origin. (Cruth §3.3 multi-output.)
-            component.transformShape(Base::Matrix4D(), true);
-            tipShape = component;
-        }
-
-        // We should hide here the transformation of the baseFeature
-        tipShape.transformShape(tipShape.getTransform(), true);
-    }
-    else {
-        // Cruth §4.6/§4.8: a Body is the system's accounting of a connected solid — it
-        // exists only because a feature's recompute produced one, and its identity IS
-        // its Tip. A Body that reaches recompute with no Tip has no such component: it
-        // is the illegal authored-empty-Body state (a raw addObject('PartDesign::Body')
-        // with nothing spliced in, or a spawn whose feature never arrived). Fail loudly
-        // rather than sit in the tree looking healthy with an empty shape. Legitimate
-        // emptying — the last feature removed — retires the Body by deleting it in
-        // removeFeature() within the same synchronous call, so execute() never observes
-        // a *live* Tipless Body except this never-populated case.
+    if (!tip) {
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
             "Exception",
             "A Body must have at least one feature; empty bodies are not allowed"
         ));
     }
-
-    // Cruth §3.3: a Body owns no geometry — its shape is DERIVED from the Tip, never authored.
-    // Publish that derivation into the Transient, ReadOnly Shape property (flagged in the ctor)
-    // so it is a live, element-mapped mirror rather than stored state: this is what lets a direct
-    // reader — getPropertyOfGeometry(), or any consumer that reads .Shape without going through
-    // getSubObject (FEM meshing, Inspection, the Transform bbox) — see real geometry. It is
-    // recomputed every pass and never serialized, so it cannot desync or leak into the recipe.
-    // The computation above still fails loud on an empty/non-PartDesign/empty-shape Tip (P7); a
-    // missing named component already returned above, leaving the last mirror untouched (§4.7).
-    Shape.setValue(tipShape);
+    if (!isSolidFeature(tip)) {
+        return new App::DocumentObjectExecReturn(
+            QT_TRANSLATE_NOOP("Exception", "Linked object is not a solid feature")
+        );
+    }
+    if (static_cast<Part::ShapeFeature*>(tip)->Shape.getShape().isNull()) {
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Tip shape is empty"));
+    }
+    // Empty here means this Body's copy is gone: the reconciler retires it after this
+    // recompute, so keep the last good shape rather than report an error.
+    Part::TopoShape shape = derivedTipShape();
+    if (!shape.isNull()) {
+        Shape.setValue(shape);
+    }
     return App::DocumentObject::StdReturn;
 }
 
@@ -917,12 +843,7 @@ PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
     return nullptr;
 }
 
-// ARCHITECTURE §3.3/§4: a Body stores no geometry of its own — its shape is its Tip's
-// shape, derived on demand and returned already world-placed. This is the single source
-// used by both the render path (ViewProviderPartExt::getRenderedShape ->
-// Part::Feature::getTopoShape -> getSubObject) and any generic consumer. It mirrors the
-// geometry Body::execute() currently materialises into the (soon-to-be-retired) Shape
-// property, so the two agree while both exist.
+// The Tip's shape, or the one copy of it this Body stands for, placed in the world.
 Part::TopoShape Body::derivedTipShape() const
 {
     App::DocumentObject* tip = Tip.getValue();
@@ -939,12 +860,10 @@ Part::TopoShape Body::derivedTipShape() const
         if (component.isNull()) {
             return {};
         }
-        // A pattern stores each instance's offset in the solid's placement, not its
-        // geometry; bake it in so this component keeps its own pattern position (§3.3).
+        // A pattern keeps each copy's offset in its placement; bake it into the geometry.
         component.transformShape(Base::Matrix4D(), true);
         tipShape = component;
     }
-    // Bake in the tip feature's own transform (matches Body::execute()).
     tipShape.transformShape(tipShape.getTransform(), true);
     return tipShape;
 }
