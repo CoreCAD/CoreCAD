@@ -107,6 +107,13 @@ public:
     /// column names the body each step builds (ARCHITECTURE §8.1, §8.7).
     std::vector<App::DocumentObject*> claimChildren() const override;
 
+    /// A body has no row in the timeline either: it is not a step the user performed, and the
+    /// Body column already names it beside every step that builds it (ARCHITECTURE §8.1, §8.7).
+    bool showInTree() const override
+    {
+        return false;
+    }
+
     /**
      * Derive the body's 3D scene-graph children from the BaseFeature chain. The base OriginGroup
      * extension parents only Group members under the body's coordinate node, so a de-owned feature
