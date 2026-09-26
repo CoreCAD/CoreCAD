@@ -271,7 +271,11 @@ void ViewProvider::updatePreview()
 
 void ViewProvider::makeChildrenVisible()
 {
-    for (const auto child : claimChildren()) {
+    std::vector<App::DocumentObject*> children = claimChildren();
+    for (auto* profile : consumedProfiles()) {
+        children.push_back(profile);
+    }
+    for (const auto child : children) {
         if (auto vp = Gui::Application::Instance->getViewProvider(child)) {
             vp->show();
         }

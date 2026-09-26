@@ -42,7 +42,7 @@ ViewProviderPipe::ViewProviderPipe() = default;
 
 ViewProviderPipe::~ViewProviderPipe() = default;
 
-std::vector<App::DocumentObject*> ViewProviderPipe::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderPipe::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
 

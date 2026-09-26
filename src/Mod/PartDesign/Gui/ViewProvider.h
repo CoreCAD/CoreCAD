@@ -113,6 +113,14 @@ protected:
     void attachPreview() override;
     void updatePreview() override;
 
+    /// The sketches this feature consumes. They are its inputs, not its tree children: the tree
+    /// is the timeline (Cruth ARCHITECTURE §8.1), so a sketch keeps its own row at the point it
+    /// was made, and one sketch shared by two features is one row, not two.
+    virtual std::vector<App::DocumentObject*> consumedProfiles() const
+    {
+        return {};
+    }
+
     virtual void makeChildrenVisible();
     bool onDelete(const std::vector<std::string>&) override;
 

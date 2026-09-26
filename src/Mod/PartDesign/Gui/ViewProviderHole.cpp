@@ -112,7 +112,7 @@ void ViewProviderHole::clearThreadTextures()
     m_threadOverlays.clear();
 }
 
-std::vector<App::DocumentObject*> ViewProviderHole::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderHole::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
 
