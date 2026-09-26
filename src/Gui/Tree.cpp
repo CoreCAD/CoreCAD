@@ -4941,9 +4941,15 @@ int DocumentItem::findRootIndex(App::DocumentObject* childObj)
 
     int first, last;
 
+    // An unranked object takes its place in the document's object list, which is the order the
+    // objects were made. (The object ID used to serve, but a Cruth ID is a durable random
+    // identifier, not a counter, so ordering by it scrambled the root.)
     auto getTreeRank = [](Gui::ViewProviderDocumentObject* vp) -> int {
         if (vp->getTreeRank() == -1) {
-            vp->setTreeRank(vp->getObject()->getID());
+            App::DocumentObject* obj = vp->getObject();
+            const auto& objs = obj->getDocument()->getObjects();
+            auto it = std::find(objs.begin(), objs.end(), obj);
+            vp->setTreeRank(static_cast<int>(std::distance(objs.begin(), it)));
         }
         return vp->getTreeRank();
     };
@@ -5889,6 +5895,16 @@ DocumentObjectItem* DocumentItem::findItem(
                     return res;
                 }
             }
+        }
+    }
+
+    // Cruth #3 (ARCHITECTURE §8.1): a body lists no children in the tree, so a path through
+    // one ("Body.Pad.Face6") names a step that has its own row at the document level. Continue
+    // from that row. Not through a link: a face picked through a link belongs to the link's row.
+    if (!found && obj->getLinkedObject(false) == obj && subObj->getDocument() == obj->getDocument()) {
+        auto root = ObjectMap.find(subObj);
+        if (root != ObjectMap.end() && root->second->rootItem) {
+            return findItem(sync, root->second->rootItem, nextsub, select);
         }
     }
 

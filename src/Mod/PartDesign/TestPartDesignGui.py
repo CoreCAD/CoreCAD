@@ -506,6 +506,52 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(texts["S2"], ("(Housing)", False))
         self.assertEqual(texts["Housing"], ("", True))
 
+    def tree(self):
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(300, loop.quit)
+        loop.exec_()
+        return [
+            t for t in Gui.getMainWindow().findChildren(QtGui.QTreeWidget) if t.columnCount() == 4
+        ][0]
+
+    def rootRows(self):
+        """(label, child count) of every row directly under this document, read in one pass."""
+        root = self.tree().invisibleRootItem()
+        for i in range(root.childCount()):
+            doc = root.child(i)
+            if doc.text(0) == self.Doc.Label:
+                return [
+                    (doc.child(j).text(0), doc.child(j).childCount())
+                    for j in range(doc.childCount())
+                ]
+        self.fail("document not in the tree")
+
+    def testTreeIsTheTimeline(self):
+        # §8.1: every step at the document level, in the order it was made; a body holds none.
+        pad1 = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        pad2 = PartDesign.makeFeature(self.square("S2", 50), "Pad")
+        self.Doc.recompute()
+        rows = self.rootRows()
+        labels = [label for label, _ in rows]
+        bodies = [o.Label for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]
+        self.assertEqual(len(bodies), 2)
+        for body in bodies:
+            self.assertIn((body, 0), rows)
+        self.assertIn(pad1.Label, labels)
+        self.assertIn(pad2.Label, labels)
+        made = [o.Label for o in self.Doc.Objects if o.Label in labels]
+        self.assertEqual([label for label in labels if label in made], made)
+
+    def testFacePickedThroughABodyHighlightsTheStep(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        self.Doc.recompute()
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body.Name, pad.Name + ".Face6")
+        selected = [i.text(0) for i in self.tree().selectedItems()]
+        Gui.Selection.clearSelection()
+        self.assertEqual(selected, [pad.Label])
+
 
 class TestDatumPlane(unittest.TestCase):
     def setUp(self):
