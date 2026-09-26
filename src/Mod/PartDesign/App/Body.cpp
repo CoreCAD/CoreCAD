@@ -70,6 +70,7 @@
 #include "FeaturePocket.h"
 
 #include "Body.h"
+#include "BodyChain.h"
 #include "BodyPy.h"
 #include "FeatureBakedShape.h"
 #include "FeatureBase.h"
@@ -208,65 +209,6 @@ void relinkFeatureToOrigin(App::DocumentObject* obj, App::Origin* origin)
     }
 }
 
-// Cruth §8.5 anchor-walk recursion cap. Realistic chains are
-// sketch → datum → datum → body face (3 hops); 4 gives safety margin against
-// pathological user-created datum cycles.
-constexpr int MaxAnchorWalkDepth = 4;
-
-// Cruth §8.5 anchor walk. Recurses through a feature's attachment chain,
-// collecting any Bodies the chain terminates on. Returns true if at least one
-// branch ends at a global plane, free datum, or otherwise unanchored geometry —
-// the signal to spawn a new Body when no Body is found.
-//
-// Order of checks matters: a datum carries AttachExtension and may also be a
-// solid feature, so the AttachExtension branch must come first to avoid treating
-// it as a solid feature.
-bool walkAnchorChain(App::DocumentObject* obj, std::set<PartDesign::Body*>& bodies, int depth)
-{
-    if (!obj || depth > MaxAnchorWalkDepth) {
-        return true;
-    }
-
-    auto* attach = obj->getExtensionByType<Part::AttachExtension>(true);
-    if (attach) {
-        const auto& support = attach->AttachmentSupport.getValues();
-        if (support.empty()) {
-            return true;
-        }
-        bool reachedGlobal = false;
-        for (auto* link : support) {
-            if (walkAnchorChain(link, bodies, depth + 1)) {
-                reachedGlobal = true;
-            }
-        }
-        return reachedGlobal;
-    }
-
-    if (obj->isDerivedFrom(App::DatumElement::getClassTypeId())) {
-        return true;
-    }
-
-    if (Part::hasShape(obj)) {
-        // A Body is itself a ShapeFeature (via BodyBase) and provides the displayed
-        // solid, so a datum/sketch attached to a face of its own Body anchors onto the
-        // Body object. It is its own answer: never findBodyOf a Body, which re-enters
-        // getFullModel and recurses without bound (getFullModel → walkAnchorChain →
-        // findBodyOf → BodyBase::findBodyOf → getFullModel), SIGSEGV on create and on
-        // document load (#46).
-        if (auto* body = freecad_cast<Body*>(obj)) {
-            bodies.insert(body);
-            return false;
-        }
-        if (auto* body = PartDesign::Body::findBodyOf(obj)) {
-            bodies.insert(body);
-            return false;
-        }
-        return true;
-    }
-
-    return true;
-}
-
 // Return the solid sub-shape whose component key matches, or a null shape if none. The key is
 // resolved via Body::componentKeyOfSolid, so it matches whatever the reconciler stamped —
 // native-ancestry provenance for a built-geometry Tip, the instance-selector for a pattern.
@@ -285,32 +227,11 @@ Part::TopoShape extractSolidById(
     return Part::TopoShape();
 }
 
-// The chain edits (#139). A feature can have several next steps, one per pattern copy, so every
-// edit goes through these instead of taking the first step found.
-constexpr long AnyCopy = -2;
-
-// The steps built on copy `copy` of `base` (-1: its whole output; AnyCopy: all of them).
-std::vector<PartDesign::Feature*> nextSteps(const App::DocumentObject* base, long copy = AnyCopy)
-{
-    std::vector<PartDesign::Feature*> steps;
-    if (!base || !base->getDocument()) {
-        return steps;
-    }
-    for (auto* obj : base->getDocument()->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
-        auto* step = static_cast<PartDesign::Feature*>(obj);
-        if (step->BaseFeature.getValue() == base
-            && (copy == AnyCopy || step->BaseInstance.getValue() == copy)) {
-            steps.push_back(step);
-        }
-    }
-    return steps;
-}
-
 // Build `feature` on copy `copy` of `base`; the steps that were there now build on it.
 // Returns how many moved.
 std::size_t spliceAfter(PartDesign::Feature* feature, App::DocumentObject* base, long copy)
 {
-    auto steps = nextSteps(base, copy);
+    auto steps = chain::nextSteps(base, copy);
     std::erase(steps, feature);
     feature->BaseFeature.setValue(base);
     feature->BaseInstance.setValue(copy);
@@ -328,7 +249,7 @@ void unsplice(App::DocumentObject* feature)
     auto* pd = freecad_cast<PartDesign::Feature*>(feature);
     App::DocumentObject* base = pd ? pd->BaseFeature.getValue() : nullptr;
     const long copy = pd ? pd->BaseInstance.getValue() : -1;
-    for (auto* step : nextSteps(feature, -1)) {
+    for (auto* step : chain::nextSteps(feature, chain::WholeOutput)) {
         step->BaseInstance.setValue(copy);
         step->BaseFeature.setValue(base);
         step->onBaseFeatureRerouted(feature, base);  // re-find its edges on the new base
@@ -529,92 +450,6 @@ Body* Body::breakOutInstance(Body* instanceBody)
     return newBody;
 }
 
-Body* Body::resolveBaseBody(Part::Part2DObject* sketch, bool& ambiguous)
-{
-    ambiguous = false;
-
-    std::set<Body*> bodies;
-    if (sketch) {
-        auto* attach = sketch->getExtensionByType<Part::AttachExtension>(true);
-        if (attach) {
-            for (auto* link : attach->AttachmentSupport.getValues()) {
-                walkAnchorChain(link, bodies, 1);
-            }
-        }
-    }
-
-    if (bodies.size() == 1) {
-        return *bodies.begin();
-    }
-    if (bodies.size() > 1) {
-        ambiguous = true;
-    }
-
-    // Empty chain (no Body reached) → nullptr with ambiguous == false. This is a
-    // pure query: the auto-spawn (§4.6) is the caller's explicit spawnAutoBody()
-    // step, run inside its undo transaction so a cancelled feature leaks no Body
-    // (#17). Nothing is created here.
-    return nullptr;
-}
-
-Body* Body::resolveMergeCandidate(App::DocumentObject* feature)
-{
-    auto* pdFeature = freecad_cast<PartDesign::Feature*>(feature);
-    if (!pdFeature) {
-        return nullptr;
-    }
-
-    Body* home = findBodyOf(pdFeature);
-
-    // While the feature extends a chain, the Body it extends IS the target to come back to.
-    if (pdFeature->BaseFeature.getValue()) {
-        return home;
-    }
-
-    // Standing alone: infer from the profile's anchor chain, exactly as feature creation
-    // does. Anything that is not profile-based has no chain to walk.
-    auto* profileBased = freecad_cast<PartDesign::ProfileBased*>(pdFeature);
-    if (!profileBased) {
-        return nullptr;
-    }
-
-    bool ambiguous = false;
-    Body* candidate = resolveBaseBody(profileBased->getVerifiedSketch(true), ambiguous);
-    if (ambiguous) {
-        return nullptr;  // §8.3 belongs to the picker, never resolved silently
-    }
-
-    // A candidate the feature already lives in is not something to merge into.
-    return candidate == home ? nullptr : candidate;
-}
-
-std::vector<Body*> Body::mergeCandidates(App::DocumentObject* feature)
-{
-    auto* pdFeature = freecad_cast<PartDesign::Feature*>(feature);
-    if (!pdFeature || !pdFeature->getDocument()) {
-        return {};
-    }
-
-    // Everything that reaches this feature, by any route. A Body in here cannot receive the
-    // feature: the splice would close a cycle (the feature would end up its own ancestor).
-    //
-    // This one rule also excludes the Body the feature already lives in, which is why there
-    // is no second test for it: a Body's Tip chain runs through its own features, so the
-    // home Body always reaches the feature. An explicit `body == home` check beside this
-    // looks like a second rule but can never fire on its own -- proven by breaking each in
-    // turn and watching the tests stay green.
-    const std::vector<App::DocumentObject*> dependents = pdFeature->getInListRecursive();
-
-    std::vector<Body*> candidates;
-    for (auto* obj : pdFeature->getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
-        if (std::ranges::find(dependents, obj) != dependents.end()) {
-            continue;
-        }
-        candidates.push_back(static_cast<Body*>(obj));
-    }
-    return candidates;
-}
-
 short Body::mustExecute() const
 {
     if (Tip.isTouched()) {
@@ -666,7 +501,7 @@ App::DocumentObject* Body::getNextSolidFeature(App::DocumentObject* start)
     // The first step on `start`'s whole output, skipping non-solids; cycle-guarded.
     std::set<App::DocumentObject*> seen {start};
     for (App::DocumentObject* cursor = start; cursor;) {
-        auto steps = nextSteps(cursor, -1);
+        auto steps = chain::nextSteps(cursor, chain::WholeOutput);
         App::DocumentObject* next = steps.empty() ? nullptr : steps.front();
         if (!next || !seen.insert(next).second) {
             return nullptr;  // chain end or cycle
@@ -741,331 +576,6 @@ bool Body::isAllowed(const App::DocumentObject* obj)
     return obj->isDerivedFrom<PartDesign::Feature>() || obj->isDerivedFrom<Part::Part2DObject>()
         || obj->isDerivedFrom<App::DatumElement>()
         || obj->isDerivedFrom<App::LocalCoordinateSystem>() || obj->isDerivedFrom<App::VarSet>();
-}
-
-
-std::vector<Body*> Body::bodiesOf(const App::DocumentObject* feature)
-{
-    // Cruth ownership-query contract — the honest, N-valued reverse lookup. This is a
-    // reverse lookup, not an ownership read: a Body only ever points one way, at the Tip it
-    // marks. Asking "which Bodies is this feature under" means walking the BaseFeature chain
-    // forward from the feature and stopping at the FIRST feature that is some Body's Tip —
-    // the nearest downstream marker — then returning EVERY Body naming that Tip. Under
-    // de-ownership a single Tip feature can back several Bodies at once, one per output
-    // component of a pattern or a severed solid (§4.7), told apart by TipComponentId. The
-    // result is a derived view of the current graph, never an attribute the feature carries:
-    // nothing feature->Body is stored. De-owned features (ARCHITECTURE §3.2/§3.3) sit in no
-    // Group, so this forward walk — not hasObject() — is the source of truth.
-    //
-    // Stopping at the FIRST downstream Tip (not the chain terminal) is what keeps a
-    // cross-body seam correct: where Body B's chain bases on Body A's Tip (via a
-    // FeatureBase), A's upstream features must resolve to A — they would otherwise be
-    // dragged across the seam to B's Tip at the terminal of the merged chain.
-    std::vector<Body*> result;
-    if (!feature) {
-        return result;
-    }
-
-    if (!feature->isDerivedFrom<PartDesign::Feature>()) {
-        // Non-PartDesign objects never back multiple Bodies: defer to the base
-        // BodyBase::findBodyOf (derived-membership lookup) and wrap its 0-or-1 answer as
-        // a list.
-        if (auto* body = static_cast<Body*>(BodyBase::findBodyOf(feature))) {
-            result.push_back(body);
-        }
-        return result;
-    }
-
-    App::Document* doc = feature->getDocument();
-    if (!doc) {
-        return result;
-    }
-    // Walk every branch forward to its nearest Tip. Past a Tip only the steps on single copies
-    // continue: each carries a copy that no Body at that Tip stands for.
-    std::set<Body*> found;
-    std::set<const App::DocumentObject*> seen;
-    std::vector<const App::DocumentObject*> frontier {feature};
-    while (!frontier.empty()) {
-        const App::DocumentObject* cursor = frontier.back();
-        frontier.pop_back();
-        if (!seen.insert(cursor).second) {
-            continue;
-        }
-        const auto tipped = bodiesTippedAt(cursor);
-        found.insert(tipped.begin(), tipped.end());
-        for (auto* step : nextSteps(cursor)) {
-            if (tipped.empty() || step->BaseInstance.getValue() >= 0) {
-                frontier.push_back(step);
-            }
-        }
-    }
-    result.assign(found.begin(), found.end());
-    return result;
-}
-
-std::vector<Body*> Body::bodiesTippedAt(const App::DocumentObject* feature)
-{
-    std::vector<Body*> result;
-    if (!feature || !feature->getDocument()) {
-        return result;
-    }
-    for (auto* obj : feature->getDocument()->getObjectsOfType(Body::getClassTypeId())) {
-        auto* body = static_cast<Body*>(obj);
-        if (body->Tip.getValue() == feature) {
-            result.push_back(body);
-        }
-    }
-    return result;
-}
-
-Body* Body::findBodyOf(const App::DocumentObject* feature)
-{
-    // CPART_DESIGN §9.1 scalar convenience over the N-valued bodiesOf primitive. Returns the
-    // nearest downstream marker; when several Bodies share that Tip (a multi-output feature)
-    // it returns the FIRST — callers that must disambiguate use bodyOf(feature, subElement),
-    // which fails loud rather than guessing (Cruth ownership-query contract, P7). Kept
-    // best-effort (not fail-loud) here so the ~40 pre-sweep callers keep their current
-    // behaviour; the #7 sweep moves the ones that mean "the one Body" onto bodyOf.
-    // Derived every time, never cached (#140): nothing clears a cache when the graph changes.
-    if (!feature) {
-        return nullptr;
-    }
-
-    if (feature->isDerivedFrom<PartDesign::Feature>()) {
-        const std::vector<Body*> found = bodiesOf(feature);
-        if (!found.empty()) {
-            return found.front();
-        }
-    }
-
-    // Fall-through for non-PartDesign objects: the base BodyBase::findBodyOf, a
-    // derived-membership lookup (getFullModel), no longer a Group scan. The derived chain
-    // walk above has already handled every PartDesign::Feature case.
-    return static_cast<Body*>(BodyBase::findBodyOf(feature));
-}
-
-bool Body::backsBody(const App::DocumentObject* feature, const Body* body)
-{
-    // CPART_DESIGN §9 honest membership over the N-valued bodiesOf primitive. `body` counts as
-    // backed when it is among EVERY Body the feature backs, not just the first marker that a
-    // scalar findBodyOf would report. Ownership stays derived — this reads the graph and holds
-    // no stored feature→Body link (Cruth ownership-query invariant).
-    if (!feature || !body) {
-        return false;
-    }
-    const std::vector<Body*> bodies = bodiesOf(feature);
-    return std::find(bodies.begin(), bodies.end(), body) != bodies.end();
-}
-
-bool Body::inAnyBody(const App::DocumentObject* feature)
-{
-    // Honest membership: the yes/no that call sites really wanted when they tested the
-    // truthiness of a scalar findBodyOf. Non-empty bodiesOf ⇔ the feature reaches some Body.
-    // Derived over the graph, no stored feature→Body link (Cruth ownership-query invariant).
-    return feature && !bodiesOf(feature).empty();
-}
-
-bool Body::sameBody(const App::DocumentObject* a, const App::DocumentObject* b)
-{
-    // Honest same-body test: true iff the two feature→Body sets overlap. Comparing the sets
-    // directly avoids the straddle coin-flip of picking one feature's scalar Body and testing
-    // the other against it. Derived over bodiesOf, no stored link (ownership-query invariant).
-    if (!a || !b) {
-        return false;
-    }
-    const std::vector<Body*> ba = bodiesOf(a);
-    const std::vector<Body*> bb = bodiesOf(b);
-    return std::any_of(ba.begin(), ba.end(), [&bb](Body* body) {
-        return std::find(bb.begin(), bb.end(), body) != bb.end();
-    });
-}
-
-std::string Body::componentIdOfSub(const App::DocumentObject* feature, const char* subElement)
-{
-    // Discriminator half of bodyOf: turn a picked sub-element (e.g. "Face5") into the
-    // component-id of the solid that owns it. Empty on any miss — a missing/blank name, a
-    // non-shape feature, an unresolvable element, or a sub-element owned by no solid — so
-    // the caller falls through to its fail-loud path rather than matching the wrong Body.
-    if (!subElement || subElement[0] == '\0') {
-        return {};
-    }
-    auto* geo = freecad_cast<Part::ShapeFeature*>(const_cast<App::DocumentObject*>(feature));
-    if (!geo) {
-        return {};
-    }
-    const Part::TopoShape shape = geo->Shape.getShape();
-    if (shape.isNull()) {
-        return {};
-    }
-
-    TopoDS_Shape sub;
-    try {
-        sub = shape.getSubShape(subElement, /*silent*/ true);
-    }
-    catch (const Standard_Failure&) {
-        return {};
-    }
-    if (sub.IsNull()) {
-        return {};
-    }
-
-    // A picked face/edge/vertex resolves to its owning solid via the ancestor map. A picked
-    // solid has no solid ancestor, so match it against the shape's own solids by identity.
-    if (sub.ShapeType() == TopAbs_SOLID) {
-        const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
-        for (int i = 1; i <= count; ++i) {
-            if (shape.getSubShape(TopAbs_SOLID, i, /*silent*/ true).IsSame(sub)) {
-                return componentKeyOfSolid(feature, shape, i);
-            }
-        }
-        return {};
-    }
-
-    const std::vector<int> solids = shape.findAncestors(sub, TopAbs_SOLID);
-    if (solids.empty()) {
-        return {};
-    }
-    return componentKeyOfSolid(feature, shape, solids.front());
-}
-
-Body* Body::bodyOf(const App::DocumentObject* feature, const char* subElement)
-{
-    // Cruth ownership-query contract, P7 fail-loud. One candidate → the sub-element is
-    // irrelevant, return it. Several candidates (a multi-output Tip) → the picked
-    // sub-element names the component; match the Body carrying that component-id. Asking for
-    // "the" Body of a multi-output feature with NO usable sub-element is ambiguous and
-    // THROWS rather than silently guessing a Body.
-    const std::vector<Body*> bodies = bodiesOf(feature);
-    if (bodies.empty()) {
-        return nullptr;
-    }
-    if (bodies.size() == 1) {
-        return bodies.front();
-    }
-
-    const std::string cid = componentIdOfSub(feature, subElement);
-    if (cid.empty()) {
-        throw Base::RuntimeError(
-            "This feature backs several bodies; a picked sub-element is required to say "
-            "which one is meant."
-        );
-    }
-    for (auto* body : bodies) {
-        if (body->TipComponentId.getStrValue() == cid) {
-            return body;
-        }
-    }
-    throw Base::RuntimeError(
-        "The picked sub-element does not match any of the bodies this feature backs."
-    );
-}
-
-
-std::vector<App::DocumentObject*> Body::getFullModel()
-{
-    // CPART_DESIGN §9.1-inverse. A de-owned Body keeps no Group (ARCHITECTURE §3.2/§3.3),
-    // so "what features make up this Body" is derived from the graph — the mirror image of
-    // findBodyOf — never read from a stored list. Two sources, matching the two ways a
-    // feature joins a Body:
-    //   1. Solid features: those whose findBodyOf resolves to this Body. Collected by
-    //      walking the BaseFeature chain back from the Tip, which stops naturally at a
-    //      cross-body seam (the upstream feature there belongs to the other Body).
-    //   2. Loose features (sketches, datums, shapebinders): those whose §8.5 attachment
-    //      anchor-walk terminates on this Body.
-    // Returned solids-first in build order, then the loose features.
-    std::vector<App::DocumentObject*> rv;
-    App::Document* doc = getDocument();
-    if (!doc) {
-        return rv;
-    }
-
-    // Re-entrancy guard (#46). Part 2 below walks each loose feature's attachment chain and
-    // calls findBodyOf on the anchor solid; when that anchor is not a PartDesign::Feature the
-    // query routes through BodyBase::findBodyOf, which calls getFullModel on every Body —
-    // re-entering this one. A datum/sketch attached to a face of its own Body closes that loop
-    // (getFullModel → walkAnchorChain → findBodyOf → BodyBase::findBodyOf → getFullModel) and it
-    // recurses without bound, SIGSEGV on sketch-create and on document load. The solid chain
-    // (part 1) is recursion-free, so on re-entry we compute only the solids and skip the
-    // anchor-walk: an anchor that is a member solid is still found there, which is all the
-    // findBodyOf that re-entered us needs to resolve membership.
-    static thread_local std::set<const Body*> inProgress;
-    const bool reentrant = !inProgress.insert(this).second;
-    struct ProgressGuard
-    {
-        std::set<const Body*>& set;
-        const Body* body;
-        bool owns;
-        ~ProgressGuard()
-        {
-            if (owns) {
-                set.erase(body);
-            }
-        }
-    } progressGuard {inProgress, this, !reentrant};
-
-    // 1) Solid chain, Tip → base, including only members (backsBody(cursor, this)); the
-    //    membership test is what halts the walk at a seam. backsBody, not the scalar
-    //    findBodyOf: a multi-output straddler backs several Bodies at once, and first-match
-    //    could report a sibling Body and truncate this Body's model at the seam. Reversed
-    //    afterwards to give build order.
-    std::set<App::DocumentObject*> seen;
-    for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
-        auto* pd = freecad_cast<PartDesign::Feature*>(cursor);
-        if (!pd) {
-            // A Tip with no chain of its own (an import, §7.8) is this Body's whole solid
-            // model, and the walk ends with it. Membership is not asked of it -- being the
-            // Tip is what membership means -- which also keeps the query out of the
-            // findBodyOf/getFullModel cycle the guard above exists for.
-            if (cursor == Tip.getValue() && isSolidFeature(cursor)) {
-                rv.push_back(cursor);
-            }
-            break;
-        }
-        if (!backsBody(cursor, this)) {
-            break;  // crossed the seam into another Body
-        }
-        rv.push_back(cursor);
-        cursor = pd->BaseFeature.getValue();
-    }
-    std::reverse(rv.begin(), rv.end());
-    const std::set<App::DocumentObject*> solidMembers(rv.begin(), rv.end());
-
-    if (reentrant) {
-        return rv;  // solids only — breaks the getFullModel↔findBodyOf cycle (#46)
-    }
-
-    // 2) Loose features (sketches, datums, shapebinders) that are not part of the solid
-    //    chain. One belongs to this Body when either:
-    //      (a) a member solid references it — e.g. a profile sketch consumed by a Pad, even
-    //          when that sketch sits on a global plane; or
-    //      (b) its §8.5 attachment anchor-walk terminates on this Body — e.g. a datum
-    //          attached to one of this Body's faces.
-    for (auto* obj : doc->getObjects()) {
-        if (obj->isDerivedFrom<PartDesign::Feature>()) {
-            continue;  // solids handled by the chain walk above
-        }
-        if (!obj->getExtensionByType<Part::AttachExtension>(true)) {
-            continue;  // only attachable geometry can belong to a Body
-        }
-
-        bool member = false;
-        for (auto* consumer : obj->getInList()) {  // (a) referenced by a member solid
-            if (solidMembers.count(consumer)) {
-                member = true;
-                break;
-            }
-        }
-        if (!member) {  // (b) anchored into this Body's geometry
-            std::set<PartDesign::Body*> bodies;
-            walkAnchorChain(obj, bodies, 0);
-            member = bodies.count(this) > 0;
-        }
-        if (member) {
-            rv.push_back(obj);
-        }
-    }
-
-    return rv;
 }
 
 
@@ -1245,7 +755,7 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         prevSolidFeature = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
     }
-    const auto steps = nextSteps(feature, -1);
+    const auto steps = chain::nextSteps(feature, chain::WholeOutput);
     App::DocumentObject* nextSolidFeature = steps.empty() ? nullptr : steps.front();
     unsplice(feature);
 
@@ -1405,26 +915,11 @@ void Body::onChanged(const App::Property* prop)
         if (prop == &BaseFeature) {
             FeatureBase* bf = nullptr;
 
-            // The chain root — the existing FeatureBase, if any — used to be Group.front().
-            // A de-owned Body has no Group (§9.1), so find the root by walking the
-            // BaseFeature chain back from the Tip until it leaves this Body (null base, or a
-            // base belonging to another Body across a seam). There is no Group to read, so
-            // without this walk we would mint a duplicate FeatureBase on every BaseFeature
-            // re-set.
-            App::DocumentObject* first = nullptr;
-            std::set<App::DocumentObject*> seen;
-            for (App::DocumentObject* cursor = Tip.getValue(); cursor && seen.insert(cursor).second;) {
-                auto* pd = freecad_cast<PartDesign::Feature*>(cursor);
-                if (!pd) {
-                    break;
-                }
-                App::DocumentObject* base = pd->BaseFeature.getValue();
-                if (!base || !backsBody(base, this)) {
-                    first = cursor;  // earliest member of this Body's chain
-                    break;
-                }
-                cursor = base;
-            }
+            const auto solids = ownSolids();
+            App::DocumentObject* first = solids.empty()
+                    || !solids.front()->isDerivedFrom<PartDesign::Feature>()
+                ? nullptr
+                : solids.front();
 
             if (BaseFeature.getValue()) {
                 // setup the FeatureBase if needed

@@ -24,6 +24,8 @@ SET(Features_SRCS
     Body.cpp
     BodyReconcile.cpp
     BodyGestures.cpp
+    BodyMembership.cpp
+    BodyChain.h
     Body.h
     FeatureBase.h
     FeatureBase.cpp

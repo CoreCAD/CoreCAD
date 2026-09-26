@@ -392,101 +392,27 @@ public:
         return isAllowed(obj);
     }
 
-    /**
-     * Return the nearest downstream Body marker for @p feature, or NULL.
-     *
-     * CPART_DESIGN §9.1: this is a reverse lookup, not an ownership read. A Body points
-     * only one way — at the Tip it marks — so "which Body is this feature under" is
-     * answered by walking the BaseFeature chain forward to the first feature that is some
-     * Body's Tip and returning that marker. The result is a derived view of the current
-     * graph, never a stored attribute of the feature. Group membership is no longer
-     * consulted for PartDesign features (it is empty under de-ownership).
-     */
+    // Membership is read from the chain, never stored: a Body points only at its Tip.
+
+    /// The first of bodiesOf, or null. Use bodyOf when the choice matters.
     static Body* findBodyOf(const App::DocumentObject* feature);
-
-    /**
-     * Return EVERY Body that @p feature backs — the honest, N-valued reverse lookup.
-     *
-     * Cruth ownership-query contract. findBodyOf is scalar (one feature → one Body), which
-     * is correct only while chains are linear. Under de-ownership a single Tip feature can
-     * back several Bodies at once — one per output component of a pattern or a severed solid
-     * (§4.7), told apart by TipComponentId. This walks the BaseFeature chain forward to the
-     * first feature that is some Body's Tip (the nearest downstream marker) and returns all
-     * Bodies naming that Tip. Ownership stays derived: it reads the graph, never a stored
-     * feature→Body link or a Group. Empty when the feature reaches no Body.
-     */
+    /// Every Body the feature feeds, up to the nearest Tip on each branch.
     static std::vector<Body*> bodiesOf(const App::DocumentObject* feature);
-
-    /// Every Body whose Tip is @p feature (several when it outputs several solids).
     static std::vector<Body*> bodiesTippedAt(const App::DocumentObject* feature);
-
-    /**
-     * Resolve @p feature plus the caller's picked @p subElement to the single Body meant.
-     *
-     * Cruth ownership-query contract, P7 fail-loud. One candidate → the sub-element is
-     * irrelevant, return it. Several candidates (a multi-output Tip) → the picked
-     * sub-element names the component: map it to its solid, take that solid's component-id
-     * and return the Body carrying it. Asking for "the" Body of a multi-output feature with
-     * NO sub-element is ambiguous and THROWS rather than silently guessing a Body. Returns
-     * NULL only when the feature backs no Body at all.
-     */
+    /// The one Body meant by a pick on @p feature; throws when several fit and the pick
+    /// cannot tell them apart.
     static Body* bodyOf(const App::DocumentObject* feature, const char* subElement);
-
-    /**
-     * Component-id of the solid that owns @p subElement on @p feature's shape, or empty.
-     *
-     * The discriminator half of bodyOf: resolves a picked sub-element (e.g. "Face5") to its
-     * owning solid and returns that solid's componentIdOfSolid. Empty when the sub-element
-     * is missing, unresolvable, or owned by no solid. Shared with the §7 import
-     * face-identity work (same fingerprint need).
-     */
+    /// The component id of the solid that owns @p subElement, or empty.
     static std::string componentIdOfSub(const App::DocumentObject* feature, const char* subElement);
-
-    /**
-     * True when @p feature is one of the makers of @p body — honest membership.
-     *
-     * Cruth ownership-query contract. The pre-sweep idiom `findBodyOf(x) == body` asks "does x
-     * belong to body?" but findBodyOf returns only the FIRST marker, so it answers false for a
-     * feature that legitimately backs @p body alongside others (a multi-output Tip, §4.7). This
-     * tests whether @p body is among ALL the Bodies @p feature backs. Derived over bodiesOf —
-     * reads the graph, stores nothing.
-     */
     static bool backsBody(const App::DocumentObject* feature, const Body* body);
-
-    /**
-     * True when @p feature backs at least one Body — an honest membership predicate.
-     *
-     * Cruth ownership-query contract. Several call sites use `findBodyOf(x)` purely as a
-     * yes/no ("is x already in a body?"), never touching the returned Body. Phrased that way
-     * the scalar lookup answers a question it was not asked and hides that the real intent is
-     * membership, not identity. This says only what those sites mean: does @p feature reach
-     * any Body? Derived over bodiesOf — reads the graph, stores nothing.
-     */
     static bool inAnyBody(const App::DocumentObject* feature);
-
-    /**
-     * True when @p a and @p b share at least one Body — an honest same-body test.
-     *
-     * Cruth ownership-query contract. Code that asks "are these two features in the same
-     * body?" tended to materialize one feature's Body via a scalar findBodyOf and then test
-     * the other against it. That middleman coin-flips when a feature straddles several Bodies
-     * (§4.7): the arbitrary first marker may miss the Body they genuinely share. This compares
-     * the two feature→Body sets directly and is true iff they overlap. Derived over bodiesOf —
-     * reads the graph, stores nothing.
-     */
     static bool sameBody(const App::DocumentObject* a, const App::DocumentObject* b);
 
-    /**
-     * Return the features that make up this Body, derived from the feature graph.
-     *
-     * CPART_DESIGN §9.1-inverse: a de-owned Body keeps no Group, so its member list is
-     * computed, not stored — the mirror image of findBodyOf. Solid features are those
-     * whose findBodyOf resolves to this Body (collected along the BaseFeature chain from
-     * the Tip back, which stops naturally at a cross-body seam). Loose features (sketches,
-     * datums, shapebinders) belong here when their §8.5 attachment anchor-walk terminates
-     * on this Body. Returned solids-first in build order, then the loose features.
-     */
+    /// This Body's solid steps in build order, then the sketches and datums they use or that
+    /// are attached to them.
     std::vector<App::DocumentObject*> getFullModel() override;
+    /// This Body's solid steps in build order.
+    std::vector<App::DocumentObject*> ownSolids() const;
 
     /// Only a solid feature on the chain builds the body; its profiles and datums are inputs.
     bool isBuiltBy(const App::DocumentObject* f) override
@@ -503,61 +429,13 @@ public:
     /// nullptr if none. Membership is derived (backsBody).
     PartDesign::Feature* findOwnedFeature(const std::string& name) const;
 
-    /**
-     * Cruth §8.5/§4.6: PURE reverse query — resolve the base Body for a new
-     * sketch-based feature by walking the sketch's anchor chain (AttachmentSupport
-     * through datums/reference geometry). No side effects; it never creates anything.
-     *  - chain terminates on exactly one Body → return that Body (extend);
-     *  - chain reaches more than one Body → return nullptr, set @p ambiguous
-     *    (the caller surfaces the §8.3 ambiguity prompt);
-     *  - chain ends at a global plane / independent geometry (no Body) → return
-     *    nullptr with @p ambiguous false. This is the auto-spawn case: the caller
-     *    decides to create a Body (§4.6) via the explicit spawnAutoBody() step, and
-     *    must do so INSIDE its undo transaction so a cancelled feature does not leak
-     *    a stray Body (#17).
-     *
-     * Lives in the App layer so the Gui command and the Python API share one code
-     * path — the P8 (Programmatic Equivalence) guarantee. Both resolve purely here,
-     * then spawn explicitly.
-     */
+    /// The Body a new feature on @p sketch extends: the one its attachment chain ends on.
+    /// Null when it ends on none (the caller spawns one) or on several (@p ambiguous).
     static Body* resolveBaseBody(Part::Part2DObject* sketch, bool& ambiguous);
-
-    /**
-     * Cruth §8.5 (Merge Result, #32): which Body could @p feature merge into, asked as an
-     * INDEPENDENT question. The answer must never be read off the arrangement the user is
-     * trying to toggle out of — deriving "the body I could merge into" from "the body I
-     * currently extend" makes the control one-way, which is the defect this exists to close.
-     *
-     *  - @p feature extends a chain → the Body it extends (the target to return to);
-     *  - otherwise → resolveBaseBody's anchor walk over its profile;
-     *  - chain reaches nothing → nullptr (§8.5 leaves the default unset: a new Body);
-     *  - chain reaches several → nullptr (§8.3 ambiguity belongs to the picker, and is
-     *    never resolved silently here);
-     *  - a candidate the feature already lives in → nullptr (nothing to merge into).
-     *
-     * A pure, non-throwing query: it runs inside a dialog constructor and must degrade
-     * rather than throw. Lives here so the GUI control and the Python API share one code
-     * path (P8 Programmatic Equivalence).
-     */
+    /// The Body @p feature could merge into, asked independently of where it is now so the
+    /// choice can be undone. Never throws; null when there is none or it is ambiguous.
     static Body* resolveMergeCandidate(App::DocumentObject* feature);
-
-    /**
-     * Cruth §8.5 (Merge Result, #26): every Body @p feature could legally be merged into —
-     * the candidate list behind the "Extend a different body..." picker, for the case where
-     * the anchor chain inferred nothing (a sketch on a global plane) or inferred the wrong
-     * Body. The inferred default of resolveMergeCandidate is a default, not a verdict.
-     *
-     * Excluded, and only these:
-     *  - the Body @p feature already lives in (merging into it would do nothing);
-     *  - any Body that depends on @p feature, directly or through any chain — splicing
-     *    the feature onto such a Body's Tip would make the feature its own ancestor. The
-     *    dependency graph answers this; the Tip chain alone would not, because a Body can
-     *    reach the feature through a datum or a sub-shape reference as well as through its
-     *    own pipeline.
-     *
-     * A pure, non-throwing query, in the App layer so the picker and the Python API share
-     * one code path (P8 Programmatic Equivalence). Order follows the document's.
-     */
+    /// Every Body @p feature could merge into: all that do not already depend on it.
     static std::vector<Body*> mergeCandidates(App::DocumentObject* feature);
 
     /**
