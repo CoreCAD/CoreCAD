@@ -546,34 +546,13 @@ Body* Body::breakOutInstance(Body* instanceBody)
     // shape, so translate the selected Body's id to its ordinal HERE, once, where the ids agree,
     // and store the stable ordinal. The originating Body becomes an orphan and is retired by the
     // reconciler (§4.7).
-    const Part::TopoShape patShape = pattern->Shape.getShape();
-    const auto solidCount = static_cast<int>(patShape.countSubShapes(TopAbs_SOLID));
-    int keptPos = -1;  // the selected instance's position among the pattern's CURRENTLY-kept solids
-    for (int i = 1; i <= solidCount; ++i) {
-        if (Body::componentIdOfSolid(patShape, i) == cid) {
-            keptPos = i - 1;
-            break;
-        }
-    }
-    if (keptPos < 0) {
+    const long ordinal = pattern->ordinalOfComponent(cid);
+    if (ordinal < 0) {
         // The Body's component is not present in the pattern output (already broken out or
         // retired); nothing to skip. The freshly baked independent Body still stands.
         return newBody;
     }
-    // Map the kept-position back to an original ordinal by stepping over already-skipped ones:
-    // the ordinal space spans every generated instance, the kept space only the survivors.
     std::vector<long> skips = pattern->SkipInstances.getValues();
-    const std::set<long> skipSet(skips.begin(), skips.end());
-    long ordinal = 0;
-    for (int seen = 0;; ++ordinal) {
-        if (skipSet.count(ordinal)) {
-            continue;
-        }
-        if (seen == keptPos) {
-            break;
-        }
-        ++seen;
-    }
     skips.push_back(ordinal);
     pattern->SkipInstances.setValues(skips);
     doc->recompute();
@@ -1148,12 +1127,29 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             }
         }
 
+        // #3: a copy that a later step builds on (its BaseInstance) is carried by that step's
+        // Body, so the pattern spawns none of its own for it.
+        std::vector<bool> carriedDownstream(static_cast<std::size_t>(solidCount), false);
+        if (auto* pattern = freecad_cast<PartDesign::Transformed*>(feature)) {
+            for (auto* user : pattern->getInList()) {
+                auto* step = freecad_cast<PartDesign::Feature*>(user);
+                if (!step || step->BaseFeature.getValue() != pattern
+                    || step->BaseInstance.getValue() < 0) {
+                    continue;
+                }
+                const int index = pattern->solidIndexOfInstance(step->BaseInstance.getValue());
+                if (index > 0 && index <= solidCount) {
+                    carriedDownstream[static_cast<std::size_t>(index - 1)] = true;
+                }
+            }
+        }
+
         // Spawn a fresh Body per unclaimed solid — split children, union results, new components.
         // Identity resets (fresh name/UUID/colour via spawnAutoBody+setupObject, fresh component-id
         // here); material inherits only when the donors for this solid agree on one.
         const bool multiSolid = solidCount > 1;
         for (std::size_t s = 0; s < solidProv.size(); ++s) {
-            if (solidOwner[s]) {
+            if (solidOwner[s] || carriedDownstream[s]) {
                 continue;
             }
             Body* body = Body::spawnAutoBody(doc);
@@ -1906,6 +1902,15 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
     }
 
+    // #3: this Body may be one copy of a pattern, named by its component id against the Tip. A
+    // step added here builds on that copy alone, so it keeps the copy's ordinal; the other
+    // copies' bodies are untouched.
+    long baseInstance = -1;
+    if (auto* pattern = freecad_cast<PartDesign::Transformed*>(Tip.getValue());
+        pattern && !TipComponentId.getStrValue().empty()) {
+        baseInstance = pattern->ordinalOfComponent(TipComponentId.getStrValue());
+    }
+
     if (isSolidFeature(feature) && !feature->isDerivedFrom<PartDesign::Feature>()) {
         // A solid feature with no BaseFeature of its own (an import, §7.8) cannot be spliced
         // into a chain: there is nothing on it to point at the previous Tip. It can only
@@ -1941,6 +1946,11 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         App::DocumentObject* successor = getNextSolidFeatureByChain(prevTip);
 
         static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(prevTip);
+        static_cast<PartDesign::Feature*>(feature)->BaseInstance.setValue(baseInstance);
+        if (baseInstance >= 0) {
+            // The new Tip's output is this copy alone; the id named a copy of the old Tip.
+            TipComponentId.setValue("");
+        }
 
         // Mid-chain insert: reroute the displaced successor onto the new feature so
         // the chain stays linear (prevTip -> feature -> successor -> ...).
@@ -1977,6 +1987,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         // the same Body as the GUI (#125, P8).
         auto* pattern = static_cast<PartDesign::Transformed*>(feature);
         pattern->BaseFeature.setValue(Tip.getValue());
+        pattern->BaseInstance.setValue(baseInstance);
         pattern->markAwaitingTip();
     }
 
@@ -2008,6 +2019,10 @@ void Body::adoptConfiguredPattern(App::DocumentObject* pattern)
     }
 
     Tip.setValue(pattern);
+    if (feature->BaseInstance.getValue() >= 0) {
+        // Same as the solid splice: the id named a copy of the old Tip.
+        TipComponentId.setValue("");
+    }
 
     // Same Tip visibility bookkeeping as the solid splice in addObject.
     if (prevTip && prevTip->isDerivedFrom<PartDesign::Feature>() && prevTip->Visibility.getValue()) {

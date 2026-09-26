@@ -128,3 +128,74 @@ class TestBreakOut(unittest.TestCase):
         ]
         self.assertEqual(len(colours), 6)
         self.assertEqual(len(set(colours)), len(colours))
+
+
+class TestStepOnOneCopy(unittest.TestCase):
+    """#3: a step added to one copy's body builds on that copy alone. The other copies keep
+    their bodies, the pattern spawns no replacement for the copy the step carries, and the step
+    fails -- rather than fall back to the whole pattern -- once its copy is gone."""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("PartDesignTestStepOnOneCopy", type="Part")
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
+        body.addFeature(self.box)
+        self.box.Length = self.box.Width = self.box.Height = 10.0
+        self.Doc.recompute()
+        self.lp = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+        self.lp.TransformMode = "Whole shape"
+        self.lp.MultiBody = True
+        self.lp.Direction = (_x_axis(self.Doc), [""])
+        self.lp.Length = 90.0  # x = 5, 35, 65, 95
+        self.lp.Occurrences = 4
+        body.addFeature(self.lp)
+        self.Doc.recompute()
+
+    def tearDown(self):
+        FreeCAD.closeDocument(self.Doc.Name)
+
+    def _bodies(self):
+        return [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]
+
+    def _filletThirdCopy(self):
+        third = sorted(
+            [b for b in self._bodies() if b.Tip is self.lp],
+            key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
+        )[2]
+        edge = next(
+            i
+            for i, e in enumerate(self.lp.Shape.Edges, 1)
+            if 59 < e.BoundBox.XMin < 71 and e.BoundBox.ZLength > 9
+        )
+        fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
+        fillet.Base = (self.lp, ["Edge%d" % edge])
+        fillet.Radius = 2.0
+        third.addFeature(fillet)
+        self.Doc.recompute()
+        return third, fillet
+
+    def testFilletOnOneCopyRoundsThatCopyAlone(self):
+        third, fillet = self._filletThirdCopy()
+        # Four bodies, not eight: three still end at the pattern, one at the fillet.
+        self.assertEqual(len(self._bodies()), 4)
+        self.assertTrue(fillet.isValid(), fillet.getStatusString())
+        self.assertEqual(len(fillet.Shape.Solids), 1)
+        self.assertAlmostEqual(fillet.Shape.Solids[0].CenterOfMass.x, 65.0, delta=0.5)
+        self.assertLess(fillet.Shape.Volume, 1000.0)
+        self.assertEqual(fillet.BaseInstance, 2)
+        self.assertEqual(sorted(b.Tip.Name for b in self._bodies()).count("LinearPattern"), 3)
+        self.assertIs(third.Tip, fillet)
+
+        # A pattern edit re-runs the pattern; it must not spawn a body for the carried copy.
+        self.box.Length = 12.0
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid(), fillet.getStatusString())
+        self.assertAlmostEqual(fillet.Shape.Solids[0].CenterOfMass.x, 66.0, delta=0.5)
+        self.assertEqual(len(self._bodies()), 4)
+
+    def testStepFailsWhenItsCopyIsGone(self):
+        _, fillet = self._filletThirdCopy()
+        self.lp.Occurrences = 2
+        self.Doc.recompute()
+        self.assertFalse(fillet.isValid())
+        self.assertIn("no longer exists", fillet.getStatusString())

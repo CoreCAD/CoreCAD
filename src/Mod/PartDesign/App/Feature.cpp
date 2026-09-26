@@ -46,6 +46,7 @@
 #include "Feature.h"
 #include "FeaturePy.h"
 #include "Body.h"
+#include "FeatureTransformed.h"
 
 #include <BRep_Builder.hxx>
 
@@ -89,6 +90,13 @@ Feature::Feature()
         App::Prop_NoRecompute,
         "Shared tag for the sibling features of one multi-body cut/common gesture (Amendment 5 "
         "§5.3). Inert: changing it touches nothing for recompute and no membership derives from it."
+    );
+    ADD_PROPERTY_TYPE(
+        BaseInstance,
+        (-1),
+        "Base",
+        App::Prop_Hidden,
+        "The copy of a pattern this step builds on, by its ordinal; -1 for the whole base."
     );
     BaseFeature.setStatus(App::Property::Hidden, true);
 
@@ -139,7 +147,7 @@ void Feature::updateSuppressedShape()
 
 short Feature::mustExecute() const
 {
-    if (BaseFeature.isTouched()) {
+    if (BaseFeature.isTouched() || BaseInstance.isTouched()) {
         return 1;
     }
     return Part::ShapeFeature::mustExecute();
@@ -322,7 +330,8 @@ TopoDS_Shape Feature::getBaseShape() const
         throw Base::ValueError("Base feature's shape is not defined");
     }
 
-    const TopoDS_Shape result = Part::getShape(BaseObject).getShape();
+    const TopoDS_Shape result
+        = narrowToBaseInstance(BaseObject, Part::getShape(BaseObject), false).getShape();
     if (result.IsNull()) {
         throw Base::ValueError("Base feature's shape is invalid");
     }
@@ -353,7 +362,7 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
         }
     }
 
-    result = Part::getShape(BaseObject);
+    result = narrowToBaseInstance(BaseObject, Part::getShape(BaseObject), silent);
     if (!silent) {
         if (result.isNull()) {
             throw Base::ValueError("Base feature's TopoShape is invalid");
@@ -366,6 +375,47 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
         result.setShape(TopoDS_Shape());
     }
     return result;
+}
+
+Part::TopoShape Feature::narrowToBaseInstance(
+    const App::DocumentObject* base,
+    const Part::TopoShape& shape,
+    bool silent
+) const
+{
+    const long ordinal = BaseInstance.getValue();
+    if (ordinal < 0 || !base || base != BaseFeature.getValue()) {
+        return shape;
+    }
+    const auto* pattern = freecad_cast<const Transformed*>(base);
+    const int index = pattern ? pattern->solidIndexOfInstance(ordinal) : 0;
+    if (index > 0) {
+        Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
+        if (!solid.isNull()) {
+            // A pattern keeps each copy's offset in the solid's own placement, and a step
+            // resets its base's top-level placement. Hand the copy over inside a compound, as
+            // the pattern did, so the offset stays on the solid and survives that reset. A
+            // compound of one solid numbers its faces and edges exactly as the solid does, so
+            // the solid's element map carries over whole and the step still finds the edges it
+            // names. (Baking the offset into the geometry, or building the compound through
+            // the element-map machinery, renames every one of them.)
+            TopoDS_Compound holder;
+            BRep_Builder builder;
+            builder.MakeCompound(holder);
+            builder.Add(holder, solid.getShape());
+            Part::TopoShape compound(holder, solid.Tag, solid.Hasher);
+            solid.flushElementMap();  // a sub-shape's map is filled in lazily
+            compound.resetElementMap(solid.resetElementMap());
+            return compound;
+        }
+    }
+    if (silent) {
+        return {};
+    }
+    throw Base::ValueError(
+        "Copy " + std::to_string(ordinal + 1) + " of '" + base->Label.getValue()
+        + "' no longer exists, so there is nothing for this step to build on"
+    );
 }
 
 void Feature::getGeneratedShapes(

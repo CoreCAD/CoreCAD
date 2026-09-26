@@ -118,6 +118,34 @@ void Transformed::purgeTouchedTransformations()
     // MultiTransform can override it to purge the touched state of its linked sub-transformations.
 }
 
+int Transformed::solidIndexOfInstance(long ordinal) const
+{
+    const std::vector<long>& skips = SkipInstances.getValues();
+    if (ordinal < 0 || std::ranges::find(skips, ordinal) != skips.end()) {
+        return 0;
+    }
+    const auto skippedBefore = std::ranges::count_if(skips, [ordinal](long s) { return s < ordinal; });
+    const long index = ordinal - skippedBefore + 1;
+    const auto solidCount = static_cast<long>(Shape.getShape().countSubShapes(TopAbs_SOLID));
+    return index <= solidCount ? static_cast<int>(index) : 0;
+}
+
+long Transformed::ordinalOfComponent(const std::string& cid) const
+{
+    const Part::TopoShape shape = Shape.getShape();
+    const auto solidCount = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+    for (long ordinal = 0, index = 1; index <= solidCount; ++ordinal) {
+        if (std::ranges::find(SkipInstances.getValues(), ordinal) != SkipInstances.getValues().end()) {
+            continue;
+        }
+        if (Body::componentIdOfSolid(shape, static_cast<int>(index)) == cid) {
+            return ordinal;
+        }
+        ++index;
+    }
+    return -1;
+}
+
 App::DocumentObject* Transformed::getBaseObject(bool silent) const
 {
     App::DocumentObject* rv = Feature::getBaseObject(/* silent = */ true);
@@ -274,7 +302,8 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
     const auto mode = static_cast<Mode>(TransformMode.getValue());
 
     App::DocumentObject* supportFeature = getBaseObject();
-    const Part::TopoShape supportShape = Part::getShape(supportFeature);
+    const Part::TopoShape supportShape
+        = narrowToBaseInstance(supportFeature, Part::getShape(supportFeature), true);
 
     if (supportShape.isNull()) {
         return App::DocumentObject::StdReturn;
@@ -399,7 +428,13 @@ App::DocumentObjectExecReturn* Transformed::execute()
         return new App::DocumentObjectExecReturn(e.what());
     }
 
-    const Part::TopoShape supportTopShape = Part::getShape(supportFeature);
+    Part::TopoShape supportTopShape;
+    try {
+        supportTopShape = narrowToBaseInstance(supportFeature, Part::getShape(supportFeature), false);
+    }
+    catch (Base::Exception& e) {
+        return new App::DocumentObjectExecReturn(e.what());
+    }
     if (supportTopShape.getShape().IsNull()) {
         return new App::DocumentObjectExecReturn(
             QT_TRANSLATE_NOOP("Exception", "Cannot transform invalid support shape")
