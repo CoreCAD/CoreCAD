@@ -17,6 +17,7 @@ add_executable(App_tests_run
         ContentPlacedByWhatProducedIt.cpp
         DocumentsDoNotNameCode.cpp
         DocumentObject.cpp
+        FilingNeverMoves.cpp
         DocumentObserver.cpp
         Expression.cpp
         ExpressionParser.cpp
