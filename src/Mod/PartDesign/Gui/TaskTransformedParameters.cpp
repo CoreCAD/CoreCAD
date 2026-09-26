@@ -633,4 +633,38 @@ bool TaskDlgTransformedParameters::reject()
     return TaskDlgFeatureParameters::reject();
 }
 
+void TaskTransformedParameters::showOriginElements(Gui::DatumElements elements)
+{
+    // The frame is the shared document Origin (Cruth §11 step 5e) — reach it directly.
+    auto* feature = getObject();
+    App::Origin* origin = feature ? PartDesign::Body::findDocumentOrigin(feature->getDocument())
+                                  : nullptr;
+    if (!origin) {
+        return;
+    }
+    auto* vpOrigin = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
+        Gui::Application::Instance->getViewProvider(origin)
+    );
+    if (vpOrigin) {
+        vpOrigin->setTemporaryVisibility(elements);
+        shownOrigin = App::DocumentObjectT(origin);
+    }
+}
+
+void TaskTransformedParameters::resetOriginElements()
+{
+    // Cruth #131: the Origin is found through what showOriginElements() recorded, not through
+    // the feature, which may already have been rolled back and deleted.
+    auto* origin = shownOrigin.getObject();
+    shownOrigin = App::DocumentObjectT();
+    if (!origin) {
+        return;
+    }
+    if (auto* vpOrigin = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
+            Gui::Application::Instance->getViewProvider(origin)
+        )) {
+        vpOrigin->resetTemporaryVisibility();
+    }
+}
+
 #include "moc_TaskTransformedParameters.cpp"

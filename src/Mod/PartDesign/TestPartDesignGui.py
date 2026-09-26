@@ -407,6 +407,28 @@ class TestClosingAFeatureDialog(unittest.TestCase):
         self.assertFalse(self.Doc.HasPendingTransaction)
         self.assertEqual(self.Doc.UndoNames, ["Make Pad", "sketch"])
 
+    def testCloseDialogOfANewPatternDoesNotCrash(self):
+        # Cruth #131: rolling back a new pattern or mirror deleted it before its panel was
+        # destroyed, and the panel's clean-up (hiding the origin planes/axes it had shown)
+        # then read the deleted feature and brought the application down.
+        Gui.activateView("Gui::View3DInventor", True)
+        self.startPad()
+        Gui.ActiveDocument.resetEdit()
+        pad = self.Doc.getObject("Pad")
+        before = {o.Name for o in self.Doc.Objects}
+        for command in (
+            "PartDesign_LinearPattern",
+            "PartDesign_PolarPattern",
+            "PartDesign_Mirrored",
+        ):
+            with self.subTest(command=command):
+                Gui.Selection.clearSelection()
+                Gui.Selection.addSelection(pad)
+                Gui.runCommand(command)
+                self.assertTrue(Gui.Control.activeDialog())
+                Gui.Control.closeDialog()
+                self.assertEqual({o.Name for o in self.Doc.Objects}, before)
+
 
 # class PartDesignGuiTestCases(unittest.TestCase):
 #   def setUp(self):

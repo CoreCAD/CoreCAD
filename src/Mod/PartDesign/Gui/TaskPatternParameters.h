@@ -78,7 +78,6 @@ private:
     void bindProperties();
 
     // Task-specific logic remains
-    void showOriginAxes(bool show);
     void enterReferenceSelectionMode();
     void exitReferenceSelectionMode();  // Ensure this clears gates etc.
 

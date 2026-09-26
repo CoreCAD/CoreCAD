@@ -26,9 +26,11 @@
 #pragma once
 
 #include <Gui/ComboLinks.h>
+#include <App/DocumentObserver.h>
 #include <Gui/DocumentObserver.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/TaskView/TaskView.h>
+#include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/PartDesign/Gui/EnumFlags.h>
 
@@ -208,10 +210,18 @@ protected:
     ViewProviderTransformed* TransformedView = nullptr;
     SelectionMode selectionMode = SelectionMode::None;
 
+    /// Temporarily show the document Origin's planes and/or axes for picking. Remembers which
+    /// Origin it touched.
+    void showOriginElements(Gui::DatumElements elements);
+    /// Undo showOriginElements(). Safe after the feature has gone (a Cancel or bare close
+    /// rolls it back before the panel is destroyed), so it never reads the feature.
+    void resetOriginElements();
+
     /// Lock updateUI(), applying changes to the underlying feature and calling recomputeFeature()
     bool blockUpdate = false;
 
 private:
+    App::DocumentObjectT shownOrigin;
     int transactionID = 0;
     bool enableTransaction = true;
     /// The MultiTransform parent task of this task
