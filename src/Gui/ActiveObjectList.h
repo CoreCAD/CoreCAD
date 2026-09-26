@@ -103,5 +103,4 @@ private:
 
 }  // namespace Gui
 
-static const char PDBODYKEY[] = "pdbody";
 static const char ASSEMBLYKEY[] = "assembly";

@@ -56,7 +56,6 @@ set(PartDesignGui_UIC_SRCS
     TaskPipeScaling.ui
     TaskLoftParameters.ui
     DlgReference.ui
-    DlgActiveBody.ui
     TaskHelixParameters.ui
 )
 
@@ -188,8 +187,6 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskHelixParameters.ui
     TaskHelixParameters.h
     TaskHelixParameters.cpp
-    DlgActiveBody.h
-    DlgActiveBody.cpp
     SketchPickDialog.cpp
     SketchPickDialog.h
 )

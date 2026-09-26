@@ -108,7 +108,6 @@ class PartDesignGuiTestCases(unittest.TestCase):
         )
         self.BodySource = self.Doc.addObject("PartDesign::Body", "Body")
         Gui.activateView("Gui::View3DInventor", True)
-        Gui.activeView().setActiveObject("pdbody", self.BodySource)
 
         self.BoxObj = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
         self.BoxObj.Length = 10.0
@@ -175,7 +174,6 @@ class PartDesignGuiTestCases(unittest.TestCase):
         FreeCAD.Console.PrintMessage("Testing moving one feature from one body to another\n")
         self.BodySource = self.Doc.addObject("PartDesign::Body", "Body")
         Gui.activateView("Gui::View3DInventor", True)
-        Gui.activeView().setActiveObject("pdbody", self.BodySource)
 
         self.Sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         self.BodySource.addFeature(self.Sketch)
@@ -301,7 +299,6 @@ class PartDesignTransformed(unittest.TestCase):
             b for b in self.Doc.Objects if b.isDerivedFrom("PartDesign::Body") and b.Tip == pad
         ][0]
         Gui.activateView("Gui::View3DInventor", True)
-        Gui.activeView().setActiveObject("pdbody", self.Body)
         Gui.Selection.clearSelection()
         Gui.Selection.addSelection(other.Tip)
         seen = []
@@ -342,7 +339,6 @@ class CreateSketch(unittest.TestCase):
         App.activeDocument().addObject("PartDesign::Body", "Body")
         App.ActiveDocument.getObject("Body").Label = "Body"
         FreeCADGui.activateView("Gui::View3DInventor", True)
-        FreeCADGui.activeView().setActiveObject("pdbody", App.activeDocument().Body)
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.runCommand("Std_OrthographicCamera", 1)
         # Owned and stopped: a leaked single-shot used to fire into the next test and accept

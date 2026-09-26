@@ -64,7 +64,6 @@
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 
-#include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
 #include "SketchPickDialog.h"
 #include "SketchWorkflow.h"

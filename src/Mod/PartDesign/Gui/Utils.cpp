@@ -44,7 +44,6 @@
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "Utils.h"
-#include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
 #include "SketchPickDialog.h"
 
@@ -99,107 +98,6 @@ bool setEdit(App::DocumentObject* obj, PartDesign::Body* /*body*/)
         std::ostringstream() << "setEdit(" << Gui::Command::getObjectCmd(obj) << ", 0, '')"
     );
     return true;
-}
-
-/*!
- * \brief Return active body or show a warning message.
- * If \a autoActivate is true (the default) then if there is
- * only single body in the document it will be activated.
- * \param messageIfNot
- * \param autoActivate
- * \return Body
- */
-PartDesign::Body* getBody(
-    bool messageIfNot,
-    bool autoActivate,
-    bool assertModern,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
-{
-    PartDesign::Body* activeBody = nullptr;
-    Gui::MDIView* activeView = Gui::Application::Instance->activeView();
-
-    if (activeView) {
-        auto doc = activeView->getAppDocument();
-        bool singleBodyDocument = doc->countObjectsOfType<PartDesign::Body>() == 1;
-        if (assertModern) {
-            activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY, topParent, subname);
-
-            if (!activeBody && singleBodyDocument && autoActivate) {
-                auto bodies = doc->getObjectsOfType(PartDesign::Body::getClassTypeId());
-                App::DocumentObject* body = nullptr;
-                if (bodies.size() == 1) {
-                    body = bodies[0];
-                    activeBody = makeBodyActive(body, doc, topParent, subname);
-                }
-            }
-            if (!activeBody && messageIfNot) {
-                DlgActiveBody dia(
-                    Gui::getMainWindow(),
-                    doc,
-                    QObject::tr(
-                        "To use Part Design, an active body is required in the document. "
-                        "Activate a body by double-clicking it."
-                    )
-                );
-                if (dia.exec() == QDialog::DialogCode::Accepted) {
-                    activeBody = dia.getActiveBody();
-                }
-            }
-        }
-    }
-
-    return activeBody;
-}
-
-PartDesign::Body* makeBodyActive(
-    App::DocumentObject* body,
-    App::Document* doc,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
-{
-    App::DocumentObject* parent = nullptr;
-    std::string sub;
-
-    for (auto& v : body->getParents()) {
-        if (v.first->getDocument() != doc) {
-            continue;
-        }
-        if (parent) {
-            body = nullptr;
-            break;
-        }
-        parent = v.first;
-        sub = v.second;
-    }
-
-    if (body) {
-        auto _doc = parent ? parent->getDocument() : body->getDocument();
-        Gui::cmdGuiDocument(
-            _doc,
-            std::stringstream() << "ActiveView.setActiveObject('" << PDBODYKEY << "',"
-                                << Gui::Command::getObjectCmd(parent ? parent : body) << ",'" << sub
-                                << "')"
-        );
-        return Gui::Application::Instance->activeView()
-            ->getActiveObject<PartDesign::Body*>(PDBODYKEY, topParent, subname);
-    }
-
-    return dynamic_cast<PartDesign::Body*>(body);
-}
-
-void needActiveBodyError()
-{
-    QMessageBox::warning(
-        Gui::getMainWindow(),
-        QObject::tr("Active Body Required"),
-        QObject::tr(
-            "To create a new Part Design object, an active body is required in the document. "
-            "Activate an existing body (double-click) or create a new one."
-        )
-    );
 }
 
 // (Cruth §4.6/§4.8) makeBody() is gone. It birthed a bare Body with no feature in it — the

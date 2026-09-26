@@ -262,7 +262,6 @@ class TestSuppressedStrikethrough(unittest.TestCase):
 
     def _createBodyWithBox(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        FreeCADGui.activeView().setActiveObject("pdbody", self.Body)
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
         self.Body.addFeature(self.Box)
         self.Box.Length = 10.0
