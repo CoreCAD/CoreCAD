@@ -22,6 +22,7 @@ SET(Features_SRCS
     FeatureSolid.cpp
     FeatureSolid.h
     Body.cpp
+    BodyReconcile.cpp
     Body.h
     FeatureBase.h
     FeatureBase.cpp
