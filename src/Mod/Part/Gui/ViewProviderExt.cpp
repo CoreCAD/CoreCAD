@@ -545,8 +545,8 @@ QColor toQColor(const Base::Color& color)
     return QColor::fromRgbF(color.r, color.g, color.b);
 }
 
-/// The bodies one pattern emits share that pattern as their Tip; they show as one swatch with
-/// their count (ARCHITECTURE §5.5), in the colour of the first. Aggregation is presentation only.
+/// The bodies one pattern emits share that pattern as their Tip; they show as one group, drawn
+/// as a stack with a count when large (ARCHITECTURE §5.5). Aggregation is presentation only.
 std::vector<std::vector<Part::BodyBase*>> groupByPattern(const std::vector<Part::BodyBase*>& bodies)
 {
     std::vector<std::vector<Part::BodyBase*>> groups;
@@ -571,31 +571,30 @@ std::vector<Gui::ViewProvider::BodySwatch> swatches(
 {
     std::vector<Gui::ViewProvider::BodySwatch> result;
     for (const auto& group : groups) {
-        result.push_back({toQColor(group.front()->getIdentityColor()), static_cast<int>(group.size())});
+        Gui::ViewProvider::BodySwatch swatch;
+        for (auto* body : group) {
+            swatch.colors.push_back(toQColor(body->getIdentityColor()));
+        }
+        result.push_back(std::move(swatch));
     }
     return result;
 }
 
-/// The names, with a long pattern family cut short: "Body 1, Body 2 + 10 more" (§8.7).
-QString joinBodyNames(const std::vector<std::vector<Part::BodyBase*>>& groups)
+/// Every body by name, one to a line, each after a square of its own colour (§8.7): the column
+/// draws at most three of a pattern's colours, so this is where each body can be told apart.
+QString listBodies(const QString& heading, const std::vector<std::vector<Part::BodyBase*>>& groups)
 {
-    constexpr std::size_t namesShown = 2;
-    QStringList names;
+    QStringList lines {heading.toHtmlEscaped()};
     for (const auto& group : groups) {
-        QStringList groupNames;
-        for (std::size_t i = 0; i < group.size() && i < namesShown; ++i) {
-            groupNames << QString::fromUtf8(group[i]->Label.getValue());
+        for (auto* body : group) {
+            lines << QStringLiteral("<span style=\"color:%1\">&#9632;</span> %2")
+                         .arg(
+                             toQColor(body->getIdentityColor()).name(),
+                             QString::fromUtf8(body->Label.getValue()).toHtmlEscaped()
+                         );
         }
-        QString text = groupNames.join(QStringLiteral(", "));
-        if (group.size() > namesShown + 1) {
-            text += QObject::tr(" + %1 more").arg(group.size() - namesShown);
-        }
-        else if (group.size() == namesShown + 1) {
-            text += QStringLiteral(", ") + QString::fromUtf8(group.back()->Label.getValue());
-        }
-        names << text;
     }
-    return names.join(QStringLiteral(", "));
+    return lines.join(QStringLiteral("<br>"));
 }
 }  // namespace
 
@@ -609,7 +608,7 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
 
     // A body's own row (shown only with hidden rows revealed) carries its swatch.
     if (auto* body = freecad_cast<Part::BodyBase*>(obj)) {
-        column.builds.push_back({toQColor(body->getIdentityColor())});
+        column.builds.push_back({{toQColor(body->getIdentityColor())}});
         column.tooltip = QString::fromUtf8(body->Label.getValue());
         return column;
     }
@@ -655,14 +654,14 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
     const auto builtGroups = groupByPattern(built);
     column.builds = swatches(builtGroups);
     if (!built.empty()) {
-        tooltip << QObject::tr("Builds: %1").arg(joinBodyNames(builtGroups));
+        tooltip << listBodies(QObject::tr("Builds:"), builtGroups);
     }
     const auto referencedGroups = groupByPattern(referenced);
     column.references = swatches(referencedGroups);
     if (!referenced.empty()) {
-        tooltip << QObject::tr("Uses: %1").arg(joinBodyNames(referencedGroups));
+        tooltip << listBodies(QObject::tr("Uses:"), referencedGroups);
     }
-    column.tooltip = tooltip.join(QLatin1Char('\n'));
+    column.tooltip = tooltip.join(QStringLiteral("<br>"));
     return column;
 }
 

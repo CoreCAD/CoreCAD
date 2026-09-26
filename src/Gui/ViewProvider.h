@@ -524,10 +524,11 @@ public:
      *  in the tooltip. The core knows nothing of bodies; a module that has them answers. Empty
      *  shows nothing.
      */
+    /// One swatch, or for the bodies one pattern emits, all their colours: drawn as a stack
+    /// with a count when there are more than three.
     struct BodySwatch
     {
-        QColor color;
-        int count = 1;
+        std::vector<QColor> colors;
         bool operator==(const BodySwatch&) const = default;
     };
     struct TreeBodyColumn
