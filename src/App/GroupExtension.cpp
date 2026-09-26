@@ -27,7 +27,6 @@
 #include <Base/Tools.h>
 
 #include "Document.h"
-#include "GeoFeatureGroupExtension.h"
 #include "GroupExtensionPy.h"
 
 
@@ -126,23 +125,11 @@ std::vector<DocumentObject*> GroupExtension::addObjects(std::vector<DocumentObje
             continue;
         }
 
-        // One folder and one membership group per object (see rivalsOf). Being in a placed group
-        // (GeoFeatureGroup) as well is allowed.
+        // One folder and one membership group per object (see rivalsOf). A placed group
+        // (GeoFeatureGroup) is left alone: filing organises, it never moves an object into or
+        // out of the frame that positions it.
         for (auto* rival : rivalsOf(obj, this)) {
             rival->getExtensionByType<App::GroupExtension>()->removeObject(obj);
-        }
-
-        // if we are in a geofeaturegroup we need to ensure the object is too
-        auto geogrp = GeoFeatureGroupExtension::getGroupOfObject(getExtendedObject());
-        auto objgrp = GeoFeatureGroupExtension::getGroupOfObject(obj);
-        if (geogrp != objgrp) {
-            // what to do depends on if we are in  geofeature group or not
-            if (geogrp) {
-                geogrp->getExtensionByType<GeoFeatureGroupExtension>()->addObject(obj);
-            }
-            else {
-                objgrp->getExtensionByType<GeoFeatureGroupExtension>()->removeObject(obj);
-            }
         }
 
         grp.push_back(obj);
