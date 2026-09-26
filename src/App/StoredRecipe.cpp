@@ -48,6 +48,7 @@
 #include <QString>
 
 #include <Base/FileInfo.h>
+#include <Base/Persistence.h>
 #include <Base/Uuid.h>
 #include <Base/Reader.h>
 #include <Base/Stream.h>
@@ -183,6 +184,17 @@ std::string writtenByItsOwnSerializer(const Property& prop)
     scratch.incInd();
     prop.Save(scratch);
     return scratch.getString();
+}
+
+/// ` name="value"`, with the value made safe to stand inside the quotes.
+///
+/// Every attribute this form writes goes through here. Much of what it writes is a person's own
+/// text -- a property's tooltip, its group, the name of a picked part -- and that can hold any
+/// character. Measured before this: one `&` in a tooltip saved without complaint and the document
+/// then refused to open at all (#138).
+std::string attribute(const char* name, const std::string& value)
+{
+    return std::string(" ") + name + "=\"" + Base::Persistence::encodeAttribute(value) + "\"";
 }
 
 /// One end of a reference: the target's durable id, and the part of it that was picked.
@@ -707,19 +719,20 @@ void writeProperties(Base::Writer& writer,
             writer.Stream() << entry->verbatim;
             continue;
         }
-        writer.Stream() << writer.ind() << "<Property name=\"" << entry->name << "\" type=\""
-                        << entry->type << "\"";
+        writer.Stream() << writer.ind() << "<Property" << attribute("name", entry->name)
+                        << attribute("type", entry->type);
         if (entry->isReference) {
-            writer.Stream() << " reference=\"1\"";
+            writer.Stream() << attribute("reference", "1");
         }
         if (!entry->asset.empty()) {
-            writer.Stream() << " asset=\"" << entry->asset << "\"";
+            writer.Stream() << attribute("asset", entry->asset);
         }
         if (entry->dynamic) {
-            writer.Stream() << " dynamic=\"1\" group=\"" << entry->group << "\" doc=\""
-                            << entry->documentation << "\" attributes=\"" << entry->attributes
-                            << "\" readonly=\"" << (entry->readOnly ? 1 : 0) << "\" hidden=\""
-                            << (entry->hidden ? 1 : 0) << "\"";
+            writer.Stream() << attribute("dynamic", "1") << attribute("group", entry->group)
+                            << attribute("doc", entry->documentation)
+                            << attribute("attributes", std::to_string(entry->attributes))
+                            << attribute("readonly", entry->readOnly ? "1" : "0")
+                            << attribute("hidden", entry->hidden ? "1" : "0");
         }
         if (!entry->valueStated) {
             // Closed where it stands: the file states that the property exists and states no
@@ -738,9 +751,9 @@ void writeProperties(Base::Writer& writer,
             for (const Binding& binding : entry->bindings) {
                 // A target named with no part says nothing about a part. `sub=""` is a part too
                 // -- an empty one -- and writing the two alike made the reader drop it (#137).
-                writer.Stream() << writer.ind() << "<Target uuid=\"" << binding.uuid << "\"";
+                writer.Stream() << writer.ind() << "<Target" << attribute("uuid", binding.uuid);
                 if (!binding.noPart) {
-                    writer.Stream() << " sub=\"" << binding.sub << "\"";
+                    writer.Stream() << attribute("sub", binding.sub);
                 }
                 writer.Stream() << "/>\n";
             }
@@ -759,8 +772,9 @@ void writeProperties(Base::Writer& writer,
     writer.Stream() << writer.ind() << "<Unrecorded>\n";
     writer.incInd();
     for (const StoredProperty* entry : unrecorded) {
-        writer.Stream() << writer.ind() << "<Property name=\"" << entry->name << "\" type=\""
-                        << entry->type << "\" reason=\"" << entry->reason << "\"/>\n";
+        writer.Stream() << writer.ind() << "<Property" << attribute("name", entry->name)
+                        << attribute("type", entry->type) << attribute("reason", entry->reason)
+                        << "/>\n";
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</Unrecorded>\n";
@@ -905,7 +919,7 @@ std::string liftDisplayBlock(const std::string& objectWords)
 /// and only one, so the words the file used are the words that belong there.
 std::string liftPropertyBlock(const std::string& objectWords, const std::string& name)
 {
-    const std::string opening = "<Property name=\"" + name + "\"";
+    const std::string opening = "<Property" + attribute("name", name);
     const std::size_t at = objectWords.find(opening);
     if (at == std::string::npos) {
         return {};
@@ -1278,18 +1292,18 @@ void writeObject(Base::Writer& writer,
         }
     }
 
-    writer.Stream() << writer.ind() << "<Object uuid=\"" << obj.Uid.getValueStr() << "\" type=\""
-                    << obj.getTypeId().getName() << "\" name=\"" << obj.getNameInDocument()
-                    << "\"";
+    writer.Stream() << writer.ind() << "<Object" << attribute("uuid", obj.Uid.getValueStr())
+                    << attribute("type", obj.getTypeId().getName())
+                    << attribute("name", obj.getNameInDocument());
     if (!asked.empty()) {
         // Marked on the object for the same reason the appearance is: so a reader knows whether
         // to expect the block without having to look ahead for it.
-        writer.Stream() << " extensions=\"1\"";
+        writer.Stream() << attribute("extensions", "1");
     }
     if (statesAppearance) {
         // Marked on the object, so a reader knows whether to expect the block without having to
         // look ahead for it.
-        writer.Stream() << " display=\"1\"";
+        writer.Stream() << attribute("display", "1");
     }
     writer.Stream() << ">\n";
     writer.incInd();
@@ -1297,7 +1311,7 @@ void writeObject(Base::Writer& writer,
         writer.Stream() << writer.ind() << "<Extensions>\n";
         writer.incInd();
         for (const std::string& type : asked) {
-            writer.Stream() << writer.ind() << "<Extension type=\"" << type << "\"/>\n";
+            writer.Stream() << writer.ind() << "<Extension" << attribute("type", type) << "/>\n";
         }
         writer.decInd();
         writer.Stream() << writer.ind() << "</Extensions>\n";
@@ -1345,7 +1359,8 @@ std::string App::formatStoredRecipe(const Document& doc,
     // one: "this rendering says nothing about a document" and "the document states nothing" are
     // different facts, and only the first one is true of a copy.
     if (scope.withDocumentProperties) {
-        writer.Stream() << writer.ind() << "<Document uuid=\"" << doc.Uid.getValueStr() << "\">\n";
+        writer.Stream() << writer.ind() << "<Document" << attribute("uuid", doc.Uid.getValueStr())
+                        << ">\n";
         writer.incInd();
         writeProperties(writer, doc, assetDirectory);
         writer.decInd();
@@ -1453,7 +1468,7 @@ std::string liftDocumentWords(const std::string& source)
 
 std::string liftObjectWords(const std::string& source, const std::string& uuid)
 {
-    const std::string opening = "<Object uuid=\"" + uuid + "\"";
+    const std::string opening = "<Object" + attribute("uuid", uuid);
     const std::size_t start = source.find(opening);
     if (start == std::string::npos) {
         return {};
@@ -1470,7 +1485,7 @@ std::string liftObjectWords(const std::string& source, const std::string& uuid)
 
 std::string liftObjectBlock(const std::string& source, const std::string& uuid)
 {
-    const std::string opening = "<Object uuid=\"" + uuid + "\"";
+    const std::string opening = "<Object" + attribute("uuid", uuid);
     const std::size_t start = source.find(opening);
     if (start == std::string::npos) {
         return {};

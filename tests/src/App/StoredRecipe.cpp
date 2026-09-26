@@ -502,6 +502,45 @@ TEST_F(StoredRecipeTest, anEmptyPartIsNotTheSameAsNoPart)
     EXPECT_EQ(returnedNone->getValue(), _rebuilt->getObject("Axis"));
 }
 
+// A person's own text goes into the file as the value of an attribute -- a tooltip, a group, the
+// name of a picked part -- and it can hold any character. Measured before this: one `&` in a
+// tooltip saved without complaint, and the document then refused to open at all (#138).
+TEST_F(StoredRecipeTest, textAPersonTypedComesBackWhateverItHolds)
+{
+    // Arrange
+    const std::string awkward = "a \"quoted\" & <tagged> 'word'\tand a\nsecond line";
+    auto* target = _source->addObject("Part::Box", "Target");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* clearance = holder->addDynamicProperty(
+        "App::PropertyLength",
+        "Clearance",
+        awkward.c_str(),
+        awkward.c_str()
+    );
+    ASSERT_NE(clearance, nullptr);
+    auto* picked = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "Picked", "Base", "")
+    );
+    ASSERT_NE(picked, nullptr);
+    picked->setValue(target, std::vector<std::string> {awkward});
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    ASSERT_NE(rebuilt->getPropertyByName("Clearance"), nullptr);
+    EXPECT_EQ(std::string(rebuilt->getPropertyGroup("Clearance")), awkward);
+    EXPECT_EQ(std::string(rebuilt->getPropertyDocumentation("Clearance")), awkward);
+    auto* returned = static_cast<PropertyLinkSub*>(rebuilt->getPropertyByName("Picked"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(returned->getValue(), _rebuilt->getObject("Target"));
+    EXPECT_EQ(returned->getSubValues(), std::vector<std::string> {awkward});
+}
+
 // A reference comes back pointing at the same object, and the file says so by durable id rather
 // than by the target's name.
 TEST_F(StoredRecipeTest, aReferenceReturnsAndIsWrittenByDurableId)
