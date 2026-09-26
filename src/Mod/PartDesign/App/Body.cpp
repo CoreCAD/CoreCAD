@@ -1011,12 +1011,7 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
     }
     Base::StateLocker guard(g_reconciling);
 
-    // All Bodies in the document, so we can find which ones point at a given Tip.
-    std::vector<Body*> allBodies;
-    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
-        allBodies.push_back(static_cast<Body*>(obj));
-    }
-    if (allBodies.empty()) {
+    if (doc->getObjectsOfType(Body::getClassTypeId()).empty()) {
         return;
     }
 
@@ -1028,14 +1023,8 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
             continue;
         }
 
-        // Bodies whose Tip is this feature. Only a Tip feature's components spawn
-        // Bodies; a mid-chain feature is referenced by none and is skipped.
-        std::vector<Body*> bodies;
-        for (auto* body : allBodies) {
-            if (body->Tip.getValue() == feature) {
-                bodies.push_back(body);
-            }
-        }
+        // Only a Tip feature's components spawn Bodies; a mid-chain feature is skipped.
+        std::vector<Body*> bodies = bodiesTippedAt(feature);
         if (bodies.empty()) {
             continue;
         }
@@ -1235,12 +1224,9 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
         // recomputeFeature takes the direct _recomputeFeature path, which computes the
         // shape but does not purge the touched flag — purge explicitly so the document
         // settles instead of looping on perpetually-touched Bodies.
-        for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
-            auto* body = static_cast<Body*>(obj);
-            if (body->Tip.getValue() == feature) {
-                body->recomputeFeature();
-                body->purgeTouched();
-            }
+        for (auto* body : bodiesTippedAt(feature)) {
+            body->recomputeFeature();
+            body->purgeTouched();
         }
     }
 }
@@ -1255,13 +1241,7 @@ void Body::retireOrRetreatTippedBodies(App::Document* doc, App::DocumentObject* 
         return;
     }
 
-    std::vector<Body*> tipped;
-    for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
-        auto* body = static_cast<Body*>(obj);
-        if (body->Tip.getValue() == feature) {
-            tipped.push_back(body);
-        }
-    }
+    const std::vector<Body*> tipped = bodiesTippedAt(feature);
     if (tipped.empty()) {
         // Non-Tip feature, or the GUI path already retreated the Tips via removeFeature.
         return;
@@ -1622,20 +1602,13 @@ std::vector<Body*> Body::bodiesOf(const App::DocumentObject* feature)
         return result;
     }
     const auto pdFeats = doc->getObjectsOfType(PartDesign::Feature::getClassTypeId());
-    const auto bodies = doc->getObjectsOfType(Body::getClassTypeId());
-
     // Walk forward, collecting every Body whose Tip is the current feature — the nearest
     // downstream marker — before advancing. The seen-set guards against a malformed cyclic
     // chain.
     App::DocumentObject* cursor = const_cast<App::DocumentObject*>(feature);
     std::set<const App::DocumentObject*> seen;
     while (cursor && seen.insert(cursor).second) {
-        for (auto* it : bodies) {
-            auto* body = static_cast<Body*>(it);
-            if (body->Tip.getValue() == cursor) {
-                result.push_back(body);
-            }
-        }
+        result = bodiesTippedAt(cursor);
         if (!result.empty()) {
             return result;  // nearest downstream Tip reached — do not walk past it
         }
@@ -1647,6 +1620,21 @@ std::vector<Body*> Body::bodiesOf(const App::DocumentObject* feature)
             }
         }
         cursor = next;
+    }
+    return result;
+}
+
+std::vector<Body*> Body::bodiesTippedAt(const App::DocumentObject* feature)
+{
+    std::vector<Body*> result;
+    if (!feature || !feature->getDocument()) {
+        return result;
+    }
+    for (auto* obj : feature->getDocument()->getObjectsOfType(Body::getClassTypeId())) {
+        auto* body = static_cast<Body*>(obj);
+        if (body->Tip.getValue() == feature) {
+            result.push_back(body);
+        }
     }
     return result;
 }
@@ -2092,17 +2080,11 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
     // edit, is what restores the originals; a forward delete never silently re-owns the merge.
     App::DocumentObject* const retreatTo = prevSolidFeature ? prevSolidFeature : nextSolidFeature;
     App::Document* doc = getDocument();
-    std::size_t tippedByFeature = 0;
-    if (doc) {
-        for (auto* obj : doc->getObjectsOfType(Body::getClassTypeId())) {
-            auto* sibling = static_cast<Body*>(obj);
-            if (sibling->Tip.getValue() == feature) {
-                ++tippedByFeature;
-                sibling->Tip.setValue(retreatTo);
-            }
-        }
+    const std::vector<Body*> tippedByFeature = bodiesTippedAt(feature);
+    for (auto* sibling : tippedByFeature) {
+        sibling->Tip.setValue(retreatTo);
     }
-    if (tippedByFeature > 1 && retreatTo) {
+    if (tippedByFeature.size() > 1 && retreatTo) {
         // Force the merged base into the next recompute's signalRecomputed set — the
         // reconciler keys off that list, and nothing downstream touches the base (the
         // deleted feature was the Tip, so it had no successor to propagate a touch).
