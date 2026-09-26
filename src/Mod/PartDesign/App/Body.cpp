@@ -104,6 +104,28 @@ Base::Color paletteColorFor(std::size_t index)
     return Base::Color(rgb[0], rgb[1], rgb[2], 1.0F);
 }
 
+// The palette colour the fewest other bodies in the document wear, earliest on a tie. A count of
+// bodies is not enough: bodies retire and respawn (pattern and split results), so the count
+// repeats and two live bodies would share a colour.
+Base::Color leastUsedPaletteColor(const App::Document* doc, const PartDesign::Body* self)
+{
+    std::array<int, bodyPalette.size()> uses {};
+    for (auto* other : doc->getObjectsOfType<PartDesign::Body>()) {
+        if (other == self) {
+            continue;
+        }
+        const Base::Color color = other->Color.getValue();
+        for (std::size_t i = 0; i < bodyPalette.size(); ++i) {
+            if (color == paletteColorFor(i)) {
+                ++uses[i];
+                break;
+            }
+        }
+    }
+    const auto least = std::ranges::min_element(uses);
+    return paletteColorFor(static_cast<std::size_t>(least - uses.begin()));
+}
+
 // Cruth §11 step 5e: retarget a feature's origin/datum links onto the given shared Origin.
 // Ported from the retired OriginGroupExtension::relinkToOrigin — it walks the feature's link
 // properties and replaces any link pointing at an origin datum element (matched by Role) with
@@ -2397,12 +2419,10 @@ void Body::setupObject()
     // rather than lazily bootstrapping the coordinate system off the body.
     getDocumentOrigin();
 
-    // Cruth §4.6: assign a deterministic identity colour at spawn time.
-    // Per-document index — count Bodies already in the doc (excluding this one,
-    // which is in the doc but not yet visible to countObjectsOfType).
+    // Cruth §4.6: assign a deterministic identity colour at spawn time, one no live body is
+    // wearing while the palette lasts.
     if (auto* doc = getDocument()) {
-        const std::size_t index = doc->countObjectsOfType<PartDesign::Body>();
-        Color.setValue(paletteColorFor(index ? index - 1 : 0));
+        Color.setValue(leastUsedPaletteColor(doc, this));
     }
 }
 
