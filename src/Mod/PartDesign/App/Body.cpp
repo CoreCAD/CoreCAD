@@ -726,32 +726,18 @@ bool Body::isAllowed(const App::DocumentObject* obj)
         return false;
     }
 
-    // TODO: Should we introduce a PartDesign::FeaturePython class? This should then also return
-    // true for isSolidFeature()
-    // A feature whose output stands as a part of its own (§4.6) is a member like any other
-    // solid feature; an import is the first that is not a PartDesign::Feature.
+    // An import whose output stands as a part of its own (§4.6) is a member like a solid feature.
     if (const auto* shapeFeature = freecad_cast<const Part::ShapeFeature*>(obj)) {
         if (shapeFeature->spawnsBodyForOutput()) {
             return true;
         }
     }
 
-    return (
-        obj->isDerivedFrom<PartDesign::Feature>()
-        // Lean datums: App::Plane/Line/Point (via App::DatumElement) and the local coordinate
-        // system are valid body members.
+    // Solid features, sketches, lean datums and the local coordinate system, and VarSets for
+    // parameters.
+    return obj->isDerivedFrom<PartDesign::Feature>() || obj->isDerivedFrom<Part::Part2DObject>()
         || obj->isDerivedFrom<App::DatumElement>()
-        || obj->isDerivedFrom<App::LocalCoordinateSystem>() ||
-        // TODO Shouldn't we replace it with Sketcher::SketchObject? (2015-08-13, Fat-Zer)
-        obj->isDerivedFrom<Part::Part2DObject>() ||
-        // TODO Why this lines was here? why should we allow anything of those? (2015-08-13,
-        // Fat-Zer) obj->isDerivedFrom<Part::FeaturePython>() // trouble with this line on Windows!?
-        // Linker fails to find getClassTypeId() of the Part::FeaturePython...
-        // obj->isDerivedFrom<Part::ShapeFeature>()
-        // allow VarSets for parameterization
-        obj->isDerivedFrom<App::VarSet>() || obj->isDerivedFrom<App::DatumElement>()
-        || obj->isDerivedFrom<App::LocalCoordinateSystem>()
-    );
+        || obj->isDerivedFrom<App::LocalCoordinateSystem>() || obj->isDerivedFrom<App::VarSet>();
 }
 
 
