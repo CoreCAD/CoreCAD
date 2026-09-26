@@ -670,38 +670,6 @@ class CorePartWorkbench(Gui.Workbench):
                 "Modeling tools",
                 "PartDesign_Body",
             ),
-            # ShapeBinder selected
-            FilterWatcher(
-                "SELECT PartDesign::ShapeBinder COUNT 1",
-                [
-                    "PartDesign_Pad",
-                    "PartDesign_Pocket",
-                    "PartDesign_Revolution",
-                    "PartDesign_Groove",
-                    "PartDesign_AdditiveLoft",
-                    "PartDesign_SubtractiveLoft",
-                    "PartDesign_AdditivePipe",
-                    "PartDesign_SubtractivePipe",
-                ],
-                "Modeling tools",
-                "PartDesign_Body",
-            ),
-            # SubShapeBinder selected
-            FilterWatcher(
-                "SELECT PartDesign::SubShapeBinder COUNT 1",
-                [
-                    "PartDesign_Pad",
-                    "PartDesign_Pocket",
-                    "PartDesign_Revolution",
-                    "PartDesign_Groove",
-                    "PartDesign_AdditiveLoft",
-                    "PartDesign_SubtractiveLoft",
-                    "PartDesign_AdditivePipe",
-                    "PartDesign_SubtractivePipe",
-                ],
-                "Modeling tools",
-                "PartDesign_Body",
-            ),
             # SketchBased feature selected → suggest transformation
             FilterWatcher(
                 "SELECT PartDesign::SketchBased",

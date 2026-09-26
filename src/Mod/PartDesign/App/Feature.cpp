@@ -46,7 +46,6 @@
 #include "Feature.h"
 #include "FeaturePy.h"
 #include "Body.h"
-#include "ShapeBinder.h"
 
 #include <BRep_Builder.hxx>
 
@@ -323,11 +322,6 @@ TopoDS_Shape Feature::getBaseShape() const
         throw Base::ValueError("Base feature's shape is not defined");
     }
 
-    if (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
-        || BaseObject->isDerivedFrom<PartDesign::SubShapeBinder>()) {
-        throw Base::ValueError("Base shape of shape binder cannot be used");
-    }
-
     const TopoDS_Shape result = Part::getShape(BaseObject).getShape();
     if (result.IsNull()) {
         throw Base::ValueError("Base feature's shape is invalid");
@@ -356,13 +350,6 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
                 return result;
             }
             throw Base::RuntimeError("Missing container body");
-        }
-        if (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
-            || BaseObject->isDerivedFrom<PartDesign::SubShapeBinder>()) {
-            if (silent) {
-                return result;
-            }
-            throw Base::ValueError("Base shape of shape binder cannot be used");
         }
     }
 

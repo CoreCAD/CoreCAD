@@ -303,42 +303,6 @@ void Workbench::activated()
         "PartDesign_Body"
     ));
 
-    const char* ShapeBinder[] = {
-        "PartDesign_Pad",
-        "PartDesign_Pocket",
-        "PartDesign_Revolution",
-        "PartDesign_Groove",
-        "PartDesign_AdditiveLoft",
-        "PartDesign_SubtractiveLoft",
-        "PartDesign_AdditivePipe",
-        "PartDesign_SubtractivePipe",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::ShapeBinder COUNT 1",
-        ShapeBinder,
-        "Modeling tools",
-        "PartDesign_Body"
-    ));
-
-    const char* SubShapeBinder[] = {
-        "PartDesign_Pad",
-        "PartDesign_Pocket",
-        "PartDesign_Revolution",
-        "PartDesign_Groove",
-        "PartDesign_AdditiveLoft",
-        "PartDesign_SubtractiveLoft",
-        "PartDesign_AdditivePipe",
-        "PartDesign_SubtractivePipe",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::SubShapeBinder COUNT 1",
-        SubShapeBinder,
-        "Modeling tools",
-        "PartDesign_Body"
-    ));
-
     const char* Transformed[] = {
         "PartDesign_Mirrored",
         "PartDesign_LinearPattern",

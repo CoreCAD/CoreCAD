@@ -54,7 +54,6 @@
 #include "FeatureSolid.h"
 #include "FeatureThickness.h"
 #include "FeatureTransformed.h"
-#include "ShapeBinder.h"
 
 
 namespace PartDesign
@@ -123,9 +122,6 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::Helix                       ::init();
     PartDesign::AdditiveHelix               ::init();
     PartDesign::SubtractiveHelix            ::init();
-    PartDesign::ShapeBinder                 ::init();
-    PartDesign::SubShapeBinder              ::init();
-    PartDesign::SubShapeBinderPython        ::init();
     PartDesign::Boolean                     ::init();
     PartDesign::FeaturePrimitive            ::init();
     PartDesign::Box                         ::init();

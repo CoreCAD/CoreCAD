@@ -459,7 +459,7 @@ bool TaskPipeParameters::accept()
         QMessageBox::warning(this, tr("Input error"), tr("No active body"));
         return false;
     }
-    // CoreCAD Phase 2: cross-Body references are valid. No ShapeBinder copy needed.
+    // CoreCAD Phase 2: cross-Body references are valid. No copy needed.
 
     App::DocumentObject* spine = pipe->Spine.getValue();
 
