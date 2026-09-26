@@ -94,6 +94,8 @@ public:
 
     void attach(App::DocumentObject*) override;
     void setDisplayMode(const char* ModeName) override;
+    /// The tree's Body column (§8.7): the bodies this object builds, and the bodies it references.
+    TreeBodyColumn getTreeBodyColumn() const override;
     /// returns a list of all possible modes
     std::vector<std::string> getDisplayModes() const override;
     /// Update the view representation

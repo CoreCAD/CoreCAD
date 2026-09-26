@@ -25,6 +25,7 @@
 #pragma once
 
 #include <App/PropertyStandard.h>
+#include <Base/Color.h>
 
 #include <Mod/Part/PartGlobal.h>
 
@@ -92,6 +93,17 @@ public:
      * TODO introduce a findBodiesOf() if needed (2015-08-04, Fat-Zer)
      */
     static BodyBase* findBodyOf(const App::DocumentObject* f);
+
+    /// Every body that \a f builds (isBuiltBy). More than one when several bodies share a
+    /// feature (a multi-output feature, §5.6).
+    static std::vector<BodyBase*> findBodiesBuiltBy(const App::DocumentObject* f);
+
+    /// Whether \a f is a step that builds this body's solid, not merely an input to one (a
+    /// profile sketch, a datum). The base answers by membership; a body with a chain refines it.
+    virtual bool isBuiltBy(const App::DocumentObject* f);
+
+    /// The body's identity colour (§4.6), shown wherever the body is named. Default grey.
+    virtual Base::Color getIdentityColor() const;
 
     /**
      * Re-anchor sub-element references off a Body marker onto the Body's Tip feature.

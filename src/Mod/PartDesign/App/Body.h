@@ -489,6 +489,17 @@ public:
      */
     std::vector<App::DocumentObject*> getFullModel() override;
 
+    /// Only a solid feature on the chain builds the body; its profiles and datums are inputs.
+    bool isBuiltBy(const App::DocumentObject* f) override
+    {
+        return isSolidFeature(f) && Part::BodyBase::isBuiltBy(f);
+    }
+
+    Base::Color getIdentityColor() const override
+    {
+        return Color.getValue();
+    }
+
     /// Cruth de-ownership (§3.3): find a pipeline feature that resolves to this Body (via
     /// the derived Feature::_Body marker) whose name (or $-prefixed label) matches, for
     /// sub-object path resolution. Features are no longer Group members, so the Group-based

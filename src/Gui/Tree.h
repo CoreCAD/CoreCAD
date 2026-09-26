@@ -362,6 +362,8 @@ public:
     void selectItems(SelectionReason reason = SR_SELECT);
 
     void testStatus();
+    /// Refresh the Body column (§8.7) of every item; bodies are derived, so any change can move it.
+    void updateBodyColumn();
     void setData(int column, int role, const QVariant& value) override;
     void populateItem(DocumentObjectItem* item, bool refresh = false, bool delayUpdate = true);
     bool populateObject(App::DocumentObject* obj);
