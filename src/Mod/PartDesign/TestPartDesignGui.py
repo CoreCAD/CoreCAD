@@ -542,6 +542,21 @@ class TestBodyColumn(unittest.TestCase):
         made = [o.Label for o in self.Doc.Objects if o.Label in labels]
         self.assertEqual([label for label in labels if label in made], made)
 
+    def testSketchHasItsOwnRow(self):
+        # §8.1: a sketch is a step of its own, not a child of the feature that consumes it. Two
+        # features sharing one sketch show it once, before both.
+        sketch = self.square("S1", 0)
+        pad1 = PartDesign.makeFeature(sketch, "Pad")
+        pad2 = PartDesign.makeFeature(sketch, "Pad")
+        self.Doc.recompute()
+        rows = self.rootRows()
+        labels = [label for label, _ in rows]
+        self.assertEqual(labels.count(sketch.Label), 1)
+        self.assertIn((pad1.Label, 0), rows)
+        self.assertIn((pad2.Label, 0), rows)
+        self.assertLess(labels.index(sketch.Label), labels.index(pad1.Label))
+        self.assertLess(labels.index(sketch.Label), labels.index(pad2.Label))
+
     def testFacePickedThroughABodyHighlightsTheStep(self):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         self.Doc.recompute()

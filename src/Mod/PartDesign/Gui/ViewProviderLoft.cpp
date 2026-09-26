@@ -42,7 +42,7 @@ ViewProviderLoft::ViewProviderLoft() = default;
 
 ViewProviderLoft::~ViewProviderLoft() = default;
 
-std::vector<App::DocumentObject*> ViewProviderLoft::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderLoft::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
 

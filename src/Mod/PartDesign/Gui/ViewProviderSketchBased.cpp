@@ -74,7 +74,7 @@ ViewProviderSketchBased::ViewProviderSketchBased()
 ViewProviderSketchBased::~ViewProviderSketchBased() = default;
 
 
-std::vector<App::DocumentObject*> ViewProviderSketchBased::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderSketchBased::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
     App::DocumentObject* sketch = getObject<PartDesign::ProfileBased>()->Profile.getValue();

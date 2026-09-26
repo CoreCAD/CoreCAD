@@ -73,7 +73,7 @@ QIcon ViewProviderHelix::getIcon() const
     );
 }
 
-std::vector<App::DocumentObject*> ViewProviderHelix::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderHelix::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
     App::DocumentObject* sketch = getObject<PartDesign::ProfileBased>()->Profile.getValue();
