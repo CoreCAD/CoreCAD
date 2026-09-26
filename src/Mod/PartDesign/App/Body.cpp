@@ -1659,27 +1659,14 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
     // which fails loud rather than guessing (Cruth ownership-query contract, P7). Kept
     // best-effort (not fail-loud) here so the ~40 pre-sweep callers keep their current
     // behaviour; the #7 sweep moves the ones that mean "the one Body" onto bodyOf.
-    //
-    // The answer is memoised on the feature's transient _Body link (Prop_Output, so writing
-    // it neither dirties the feature nor triggers recompute; Prop_Transient, so it is never
-    // serialised — CPART_DESIGN §9 / §8.2).
+    // Derived every time, never cached (#140): nothing clears a cache when the graph changes.
     if (!feature) {
         return nullptr;
     }
 
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
-        auto* pdFeat = const_cast<PartDesign::Feature*>(
-            static_cast<const PartDesign::Feature*>(feature)
-        );
-
-        // Cache hit.
-        if (auto* cached = freecad_cast<Body*>(pdFeat->_Body.getValue())) {
-            return cached;
-        }
-
         const std::vector<Body*> found = bodiesOf(feature);
         if (!found.empty()) {
-            pdFeat->_Body.setValue(found.front());
             return found.front();
         }
     }
@@ -1940,12 +1927,6 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     // ARCHITECTURE §3.3), so all bodies' features anchor to one Origin.
     relinkFeatureToOrigin(feature, getDocumentOrigin());
 
-    // Associate the feature with this Body by reference (used by findBodyOf and
-    // active-body tooling) without imprisoning it in the group.
-    if (feature->isDerivedFrom<PartDesign::Feature>()) {
-        static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
-    }
-
     // #3: this Body may be one copy of a pattern, named by its component id against the Tip. A
     // step added here builds on that copy alone, so it keeps the copy's ordinal; the other
     // copies' bodies are untouched.
@@ -1991,7 +1972,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         auto* pattern = static_cast<PartDesign::Transformed*>(feature);
         pattern->BaseFeature.setValue(Tip.getValue());
         pattern->BaseInstance.setValue(baseInstance);
-        pattern->markAwaitingTip();
+        pattern->markAwaitingTip(this);
     }
 
     return {feature};
@@ -2000,7 +1981,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
 void Body::adoptConfiguredPattern(App::DocumentObject* pattern)
 {
     auto* feature = freecad_cast<PartDesign::Feature*>(pattern);
-    if (!feature || feature->_Body.getValue() != this) {
+    if (!feature) {
         return;
     }
     App::DocumentObject* prevTip = Tip.getValue();
@@ -2036,10 +2017,8 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
 {
     // The chain is the Body's order, so wiring BaseFeature links is the insert.
 
-    // Validate target membership via the de-ownership back-pointer (there is no Group).
     if (target) {
-        auto* tf = freecad_cast<PartDesign::Feature*>(target);
-        if (!tf || tf->_Body.getValue() != this) {
+        if (!target->isDerivedFrom<PartDesign::Feature>() || !backsBody(target, this)) {
             throw Base::ValueError(
                 "Body: the feature we should insert relative to is not part of that body"
             );
@@ -2048,10 +2027,6 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
 
     // Resolve origin/datum links against the shared document-level Origin (Stage 3a).
     relinkFeatureToOrigin(feature, getDocumentOrigin());
-
-    if (feature->isDerivedFrom<PartDesign::Feature>()) {
-        static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
-    }
 
     // Non-solid members (sketches, datums) carry no pipeline position — nothing to splice.
     if (!isSolidFeature(feature)) {
@@ -2403,11 +2378,9 @@ PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
     const bool byLabel = name[0] == '$';
     const std::string key = byLabel ? name.substr(1) : name;
     for (auto* feat : doc->getObjectsOfType<PartDesign::Feature>()) {
-        if (feat->_Body.getValue() != this) {
-            continue;
-        }
         const char* fname = feat->getNameInDocument();
-        if (byLabel ? (key == feat->Label.getStrValue()) : (fname && key == fname)) {
+        if ((byLabel ? (key == feat->Label.getStrValue()) : (fname && key == fname))
+            && backsBody(feat, this)) {
             return feat;
         }
     }
@@ -2548,51 +2521,8 @@ App::DocumentObject* Body::getSubObject(
     return App::DocumentObject::getSubObject(subname, pyObj, pmat, transform, depth);
 }
 
-void Body::rebuildBodyCacheFromChain()
-{
-    App::Document* doc = getDocument();
-    if (!doc) {
-        return;
-    }
-
-    // The Tips that OTHER bodies mark are the seams where this body's chain ends: walking
-    // back from our Tip, the first feature that is another body's Tip has that upstream
-    // marker as its nearest downstream Tip (the cross-body FeatureBase reference), and so
-    // does everything before it — none of it resolves to us.
-    std::set<const App::DocumentObject*> otherTips;
-    for (auto* it : doc->getObjectsOfType(Body::getClassTypeId())) {
-        auto* body = static_cast<Body*>(it);
-        if (body != this && body->Tip.getValue()) {
-            otherTips.insert(body->Tip.getValue());
-        }
-    }
-
-    // Walk back from the Tip along BaseFeature, memoising this marker on each feature that
-    // resolves to us, up to the seam. The seen-set guards against a malformed cyclic chain.
-    App::DocumentObject* cursor = Tip.getValue();
-    std::set<const App::DocumentObject*> seen;
-    while (cursor && seen.insert(cursor).second) {
-        if (otherTips.count(cursor)) {
-            break;
-        }
-        if (!cursor->isDerivedFrom<PartDesign::Feature>()) {
-            break;
-        }
-        auto* pdFeat = static_cast<PartDesign::Feature*>(cursor);
-        pdFeat->_Body.setValue(this);
-        cursor = pdFeat->BaseFeature.getValue();
-    }
-}
-
 void Body::onDocumentRestored()
 {
-    // CPART_DESIGN §9 / §8.3: the feature->marker relationship is not serialised; it is
-    // re-derived by query at load. Repopulate the transient _Body cache from the
-    // BaseFeature chain (a de-owned Body has no Group to read). findBodyOf self-heals on
-    // demand, but direct _Body readers — findOwnedFeature, the de-owned sub-element path
-    // — need the cache warm before the first selection click.
-    rebuildBodyCacheFromChain();
-
     // (Cruth §3.3, issue #79-interim) The derived Shape mirror is Transient — not serialized —
     // so after a reload it is empty until the next recompute. Repopulate it from the Tip now:
     // the Tip's own Shape IS serialized and has already been restored at this point, so

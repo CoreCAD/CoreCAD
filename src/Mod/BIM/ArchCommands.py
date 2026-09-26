@@ -1827,7 +1827,11 @@ def resolve_pd_object(obj):
     App::DocumentObject
         The parent PartDesign::Body if ``obj`` is a member of one, otherwise ``obj`` unchanged.
     """
-    body = getattr(obj, "_Body", None)
+    body = None
+    if obj.isDerivedFrom("PartDesign::Feature"):
+        import PartDesign
+
+        body = PartDesign.findBodyOf(obj)
     if body is not None:
         return body
     return obj

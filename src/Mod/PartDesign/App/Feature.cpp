@@ -74,14 +74,6 @@ Feature::Feature()
 {
     ADD_PROPERTY(BaseFeature, (nullptr));
     BaseFeature.setScope(App::LinkScope::Global);  // CoreCAD Phase 3: allow Part::Feature as base
-    ADD_PROPERTY_TYPE(
-        _Body,
-        (nullptr),
-        "Base",
-        (App::PropertyType)(App::Prop_ReadOnly | App::Prop_Hidden | App::Prop_Output
-                            | App::Prop_Transient),
-        0
-    );
     ADD_PROPERTY(SuppressedShape, (TopoShape()));
     ADD_PROPERTY_TYPE(
         GestureId,
@@ -530,9 +522,7 @@ TopoShape Feature::makeTopoShapeFromPlane(const App::DocumentObject* obj)
 
 Body* Feature::getFeatureBody() const
 {
-    // De-owned features sit in no Group, so a Body's membership is a reverse lookup up the
-    // BaseFeature chain, not a Group read (Cruth §11 step 5e). findBodyOf already honours the
-    // transient _Body cache, so this simply delegates.
+    // Derived from the BaseFeature chain; a feature stores no Body.
     return Body::findBodyOf(this);
 }
 

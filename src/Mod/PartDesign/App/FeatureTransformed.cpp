@@ -363,10 +363,11 @@ void Transformed::onChanged(const App::Property* prop)
         Originals.setStatus(App::Property::Status::Hidden, mode == Mode::WholeShape);
     }
 
-    if (awaitingTip && (prop == &Originals || prop == &TransformMode) && !isRestoring()
+    if (!awaitingBody.expired() && (prop == &Originals || prop == &TransformMode) && !isRestoring()
         && !isMultiTransformChild()) {
-        awaitingTip = false;
-        if (auto* body = getFeatureBody()) {
+        auto* body = awaitingBody.get<Body>();
+        awaitingBody.reset();
+        if (body) {
             body->adoptConfiguredPattern(this);
         }
     }

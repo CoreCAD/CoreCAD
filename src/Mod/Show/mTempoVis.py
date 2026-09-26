@@ -44,6 +44,15 @@ S_RESTORED = 2  # TV has been restored
 S_INTERNAL = 3  # TV instance is being used by another TV instance as a redo data storage
 
 
+def _bodyOf(obj):
+    """The PartDesign Body a feature builds, derived from its chain; None otherwise."""
+    if not obj.isDerivedFrom("PartDesign::Feature"):
+        return None
+    import PartDesign
+
+    return PartDesign.findBodyOf(obj)
+
+
 def _printTraceback(err):
     import sys
 
@@ -313,7 +322,7 @@ class TempoVis(object):
         objs = []
         bodies = set()
         for obj in doc_obj_or_list:
-            body = getattr(obj, "_Body", None)
+            body = _bodyOf(obj)
             if not body or body in bodies:
                 continue
             bodies.add(body)

@@ -358,11 +358,7 @@ bool ViewProvider::onDelete(const std::vector<std::string>&)
         Gui::Application::Instance->getViewProvider(previousfeat)->show();
     }
 
-    // find surrounding features in the tree. Resolve the owning Body through the
-    // feature's own _Body reference (Cruth intra-body de-ownership, ARCHITECTURE
-    // §3.2/§3.3) rather than Group membership, so a de-owned feature — which is
-    // not a Group member — is still cleaned up on delete. getFeatureBody() falls
-    // back to the Group/in-list scan, so legacy bodies resolve identically.
+    // The Body is derived from the chain; a feature stores none.
     Part::BodyBase* body = feature->getFeatureBody();
 
     if (body) {

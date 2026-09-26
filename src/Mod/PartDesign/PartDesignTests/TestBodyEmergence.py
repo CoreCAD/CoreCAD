@@ -6,6 +6,8 @@
 # front. makeFeature composes the GUI-shared primitives (resolveBaseBody + spawnBody +
 # Body.addFeature) so a script and a click produce identical structure.
 
+import os
+import tempfile
 import unittest
 
 import FreeCAD
@@ -83,6 +85,32 @@ class TestBodyEmergence(unittest.TestCase):
         self.assertEqual(PartDesign.findBodyOf(pocket), body)
         self.assertEqual(body.Tip, pocket)
         self.assertEqual(len(self._bodies()), 1)  # no new Body spawned
+
+    def testBodyOfAFeatureIsTheSameAfterReopen(self):
+        # #140: a feature's Body is derived from the chain, never remembered. Rolling the Tip
+        # back past a step must give that step the same answer now as after save and reopen.
+        pad = PartDesign.makeFeature(_square(self.Doc, "S1"), "Pad")
+        pad.Length = 5
+        self.Doc.recompute()
+        body = PartDesign.findBodyOf(pad)
+        pocket = PartDesign.makeFeature(
+            _square(self.Doc, "S2", x0=2, y0=2, side=4), "Pocket", body=body
+        )
+        pocket.Length = 2
+        self.Doc.recompute()
+        body.Tip = pad
+        self.Doc.recompute()
+        now = PartDesign.findBodyOf(pocket)
+        nowUid = now.Uid if now else None
+        uid = pocket.Uid
+
+        path = os.path.join(tempfile.mkdtemp(), "reopen.FCStd")
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        reopened = next(o for o in self.Doc.Objects if o.Uid == uid)
+        after = PartDesign.findBodyOf(reopened)
+        self.assertEqual(nowUid, after.Uid if after else None)
 
     def testFullTypeNameAccepted(self):
         # Both the short ('Pad') and fully-qualified ('PartDesign::Pad') forms work.
