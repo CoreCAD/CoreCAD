@@ -706,26 +706,28 @@ PropertyData::~PropertyData() = default;
 
 void PropertyData::addProperty(OffsetBase offsetBase,const char* PropName, Property *Prop, const char* PropertyGroup , PropertyType Type, const char* PropertyDocu)
 {
-#ifdef FC_DEBUG
-    if(!parentMerged)
-#endif
-    {
-        short offset = offsetBase.getOffsetTo(Prop);
-        if(offset < 0)
-            throw Base::RuntimeError("Invalid static property");
-        auto &index = impl->propertyData.get<1>();
-        auto it = index.find(PropName);
-        if(it == index.end()) {
-            if(parentMerged)
-                throw Base::RuntimeError("Cannot add static property");
-            index.emplace(PropName, PropertyGroup, PropertyDocu, offset, Type);
-        } else{
-#ifdef FC_DEBUG
-            if(it->Offset != offset) {
-                FC_ERR("Duplicate property '" << PropName << "'");
-            }
-#endif
+    short offset = offsetBase.getOffsetTo(Prop);
+    if(offset < 0)
+        throw Base::RuntimeError("Invalid static property");
+    auto &index = impl->propertyData.get<1>();
+    auto it = index.find(PropName);
+    if(it == index.end()) {
+        if(parentMerged) {
+            // Cruth #42: the table was sealed (a by-name lookup merged the parent's
+            // entries) before this class finished registering. Skipping would make the
+            // property silently vanish, so fail loudly, in every build type.
+            auto* container = Prop->getContainer();
+            throw Base::RuntimeError(std::string("Cannot add static property '") + PropName
+                + "' to " + (container ? container->getTypeId().getName() : "a container")
+                + ": its property table was sealed by a lookup during construction");
         }
+        index.emplace(PropName, PropertyGroup, PropertyDocu, offset, Type);
+    } else{
+#ifdef FC_DEBUG
+        if(it->Offset != offset) {
+            FC_ERR("Duplicate property '" << PropName << "'");
+        }
+#endif
     }
 
     Prop->syncType(Type);
