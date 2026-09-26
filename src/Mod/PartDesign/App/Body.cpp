@@ -403,16 +403,7 @@ std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* featu
     App::DocumentObject* const retreatTo = base ? base : (steps.empty() ? nullptr : steps.front());
     unsplice(feature);
 
-    // Every Body the feature tips retreats, not only this one: a feature that split a solid
-    // tips every piece.
-    const std::vector<Body*> tipped = bodiesTippedAt(feature);
-    for (auto* body : tipped) {
-        body->Tip.setValue(retreatTo);
-    }
-    if (tipped.size() > 1 && retreatTo) {
-        // Nothing else touches the base, and the reconciler only sees what was recomputed.
-        retreatTo->touch();
-    }
+    retreatTippedBodies(feature, retreatTo);
 
     // Retire an emptied Body. removeObject can destroy `this`, so it must be the last action.
     App::Document* doc = getDocument();

@@ -21,6 +21,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <Mod/Material/App/Materials.h>
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
@@ -208,6 +209,38 @@ TEST_F(ReconcileMultiOutputTest, SplitRetiresOriginalAndMintsFreshHalves)
     EXPECT_EQ(std::count(uids.begin(), uids.end(), origUid), 0)
         << "a split must not transfer the original UUID to a half (#33)";
     EXPECT_NE(uids[0], uids[1]) << "the two halves must have distinct fresh UUIDs";
+}
+
+// Both halves of a split bar are made of what the bar was made of.
+TEST_F(ReconcileMultiOutputTest, SplitHalvesKeepTheBarsMaterial)
+{
+    auto* body = _doc->addObject<PartDesign::Body>();
+    auto* base = newSketch(body, "Base");
+    addRect(base, 0, 0, 40, 10);
+    auto* pad = _doc->addObject<PartDesign::Pad>("Pad");
+    body->addFeature(pad);
+    pad->Profile.setValue(base, {""});
+    pad->Length.setValue(10.0);
+    recomputeAndReconcile();
+
+    Materials::Material steel;
+    steel.setUUID(QStringLiteral("a0f0c0de-0000-4000-8000-000000000001"));
+    ASSERT_EQ(bodies().size(), 1U);
+    bodies().front()->Material.setValue(steel);
+
+    auto* cut = newSketch(body, "Cut");
+    addRect(cut, 18, -5, 22, 15);
+    auto* pocket = _doc->addObject<PartDesign::Pocket>("Pocket");
+    body->addFeature(pocket);
+    pocket->Profile.setValue(cut, {""});
+    pocket->Type.setValue("ThroughAll");
+    pocket->Midplane.setValue(true);
+    recomputeAndReconcile();
+
+    ASSERT_EQ(bodies().size(), 2U);
+    for (auto* half : bodies()) {
+        EXPECT_EQ(half->Material.getValue().getUUID(), steel.getUUID());
+    }
 }
 
 // Piece 3 (native-ancestry match, the churn fix): a genuinely two-lump part keeps BOTH body UUIDs

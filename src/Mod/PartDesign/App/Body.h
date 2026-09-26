@@ -276,6 +276,8 @@ private:
     /// The pattern copy this Body stands for, or chain::WholeOutput.
     long tipCopy() const;
     void appendAtTip(PartDesign::Feature* feature, long copy);
+    /// Moves every Body tipped at @p feature back to @p retreatTo.
+    static void retreatTippedBodies(App::DocumentObject* feature, App::DocumentObject* retreatTo);
 
     bool showTip = false;
 };
