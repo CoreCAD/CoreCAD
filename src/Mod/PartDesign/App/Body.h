@@ -417,6 +417,9 @@ public:
      */
     static std::vector<Body*> bodiesOf(const App::DocumentObject* feature);
 
+    /// Every Body whose Tip is @p feature (several when it outputs several solids).
+    static std::vector<Body*> bodiesTippedAt(const App::DocumentObject* feature);
+
     /**
      * Resolve @p feature plus the caller's picked @p subElement to the single Body meant.
      *
