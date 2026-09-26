@@ -545,11 +545,55 @@ QColor toQColor(const Base::Color& color)
     return QColor::fromRgbF(color.r, color.g, color.b);
 }
 
-QString joinBodyNames(const std::vector<Part::BodyBase*>& bodies)
+/// The bodies one pattern emits share that pattern as their Tip; they show as one swatch with
+/// their count (ARCHITECTURE §5.5), in the colour of the first. Aggregation is presentation only.
+std::vector<std::vector<Part::BodyBase*>> groupByPattern(const std::vector<Part::BodyBase*>& bodies)
 {
-    QStringList names;
+    std::vector<std::vector<Part::BodyBase*>> groups;
     for (auto* body : bodies) {
-        names << QString::fromUtf8(body->Label.getValue());
+        App::DocumentObject* tip = body->Tip.getValue();
+        auto group = std::ranges::find_if(groups, [&](const auto& g) {
+            return tip && g.front()->Tip.getValue() == tip;
+        });
+        if (group != groups.end()) {
+            group->push_back(body);
+        }
+        else {
+            groups.push_back({body});
+        }
+    }
+    return groups;
+}
+
+std::vector<Gui::ViewProvider::BodySwatch> swatches(
+    const std::vector<std::vector<Part::BodyBase*>>& groups
+)
+{
+    std::vector<Gui::ViewProvider::BodySwatch> result;
+    for (const auto& group : groups) {
+        result.push_back({toQColor(group.front()->getIdentityColor()), static_cast<int>(group.size())});
+    }
+    return result;
+}
+
+/// The names, with a long pattern family cut short: "Body 1, Body 2 + 10 more" (§8.7).
+QString joinBodyNames(const std::vector<std::vector<Part::BodyBase*>>& groups)
+{
+    constexpr std::size_t namesShown = 2;
+    QStringList names;
+    for (const auto& group : groups) {
+        QStringList groupNames;
+        for (std::size_t i = 0; i < group.size() && i < namesShown; ++i) {
+            groupNames << QString::fromUtf8(group[i]->Label.getValue());
+        }
+        QString text = groupNames.join(QStringLiteral(", "));
+        if (group.size() > namesShown + 1) {
+            text += QObject::tr(" + %1 more").arg(group.size() - namesShown);
+        }
+        else if (group.size() == namesShown + 1) {
+            text += QStringLiteral(", ") + QString::fromUtf8(group.back()->Label.getValue());
+        }
+        names << text;
     }
     return names.join(QStringLiteral(", "));
 }
@@ -565,7 +609,7 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
 
     // A body's own row (shown only with hidden rows revealed) carries its swatch.
     if (auto* body = freecad_cast<Part::BodyBase*>(obj)) {
-        column.builds.push_back(toQColor(body->getIdentityColor()));
+        column.builds.push_back({toQColor(body->getIdentityColor())});
         column.tooltip = QString::fromUtf8(body->Label.getValue());
         return column;
     }
@@ -608,17 +652,15 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
     }
 
     QStringList tooltip;
-    for (auto* body : built) {
-        column.builds.push_back(toQColor(body->getIdentityColor()));
-    }
+    const auto builtGroups = groupByPattern(built);
+    column.builds = swatches(builtGroups);
     if (!built.empty()) {
-        tooltip << QObject::tr("Builds: %1").arg(joinBodyNames(built));
+        tooltip << QObject::tr("Builds: %1").arg(joinBodyNames(builtGroups));
     }
-    for (auto* body : referenced) {
-        column.references.push_back(toQColor(body->getIdentityColor()));
-    }
+    const auto referencedGroups = groupByPattern(referenced);
+    column.references = swatches(referencedGroups);
     if (!referenced.empty()) {
-        tooltip << QObject::tr("Uses: %1").arg(joinBodyNames(referenced));
+        tooltip << QObject::tr("Uses: %1").arg(joinBodyNames(referencedGroups));
     }
     column.tooltip = tooltip.join(QLatin1Char('\n'));
     return column;

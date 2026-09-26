@@ -142,8 +142,9 @@ namespace
 constexpr int BodyColumn = 3;
 
 /// The Bodies column (Cruth ARCHITECTURE §8.7): a swatch per body the object builds, then the
-/// bodies it only references, in brackets. At most three of each are drawn, with an ellipsis
-/// when there are more; the tooltip names them all.
+/// bodies it only references, in brackets. The bodies one pattern emits are one swatch followed
+/// by their count, "× 12" (§5.5). At most three swatches of each are drawn, with an ellipsis when
+/// there are more; the tooltip names them all.
 QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
 {
     if (column.builds.empty() && column.references.empty()) {
@@ -154,9 +155,21 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
     constexpr int bracket = 3;
     constexpr int ellipsis = 8;
     constexpr int maxShown = 3;
-    auto groupWidth = [&](const std::vector<QColor>& swatches) {
+    QFont font;
+    font.setPixelSize(side + 1);
+    const QFontMetrics metrics(font);
+    auto countText = [](const Gui::ViewProvider::BodySwatch& swatch) {
+        return QStringLiteral("\u00d7%1").arg(swatch.count);
+    };
+    auto groupWidth = [&](const std::vector<Gui::ViewProvider::BodySwatch>& swatches) {
         const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
-        int width = count * side + std::max(count - 1, 0) * gap;
+        int width = std::max(count - 1, 0) * gap;
+        for (int i = 0; i < count; ++i) {
+            width += side;
+            if (swatches[i].count > 1) {
+                width += gap + metrics.horizontalAdvance(countText(swatches[i]));
+            }
+        }
         if (static_cast<int>(swatches.size()) > maxShown) {
             width += gap + ellipsis;
         }
@@ -171,15 +184,26 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
     QPixmap pixmap(width, side);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
+    painter.setFont(font);
     const QColor ink(128, 128, 128);  // readable on light and dark backgrounds
     int x = 0;
-    auto drawGroup = [&](const std::vector<QColor>& swatches) {
+    auto drawGroup = [&](const std::vector<Gui::ViewProvider::BodySwatch>& swatches) {
         const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
         for (int i = 0; i < count; ++i) {
-            painter.fillRect(x, 0, side, side, swatches[i]);
-            painter.setPen(swatches[i].darker(150));
+            const QColor& color = swatches[i].color;
+            painter.fillRect(x, 0, side, side, color);
+            painter.setPen(color.darker(150));
             painter.drawRect(x, 0, side - 1, side - 1);
-            x += side + (i + 1 < count ? gap : 0);
+            x += side;
+            if (swatches[i].count > 1) {
+                const QString text = countText(swatches[i]);
+                const int textWidth = metrics.horizontalAdvance(text);
+                x += gap;
+                painter.setPen(ink);
+                painter.drawText(QRect(x, 0, textWidth, side), Qt::AlignLeft | Qt::AlignVCenter, text);
+                x += textWidth;
+            }
+            x += i + 1 < count ? gap : 0;
         }
         if (static_cast<int>(swatches.size()) > maxShown) {
             x += gap;
@@ -4309,7 +4333,7 @@ void TreeWidget::updateLineage()
         if (column.builds.empty()) {
             return std::nullopt;
         }
-        return column.builds.front();
+        return column.builds.front().color;
     };
     std::optional<QColor> selectedColor;
     for (auto* step : selected) {

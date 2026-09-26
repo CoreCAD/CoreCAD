@@ -510,6 +510,48 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(texts["S1"], ("", "", False))
         self.assertEqual(texts["S2"], ("", "Uses: Housing", True))
 
+    def testPatternBodiesAreOneSwatchWithACount(self):
+        # §5.5 / §8.7: the bodies a pattern emits are one swatch and "× N", not a swatch each, and
+        # the tooltip cuts a long family short.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        origin = next(o for o in self.Doc.Objects if o.isDerivedFrom("App::Origin"))
+        y_axis = next(f for f in origin.OriginFeatures if getattr(f, "Role", "") == "Y_Axis")
+        pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.TransformMode = "Whole shape"
+        pattern.MultiBody = True
+        pattern.Direction = (y_axis, [""])
+        pattern.Length = 60.0
+        pattern.Occurrences = 4
+        body.addFeature(pattern)
+        self.Doc.recompute()
+        self.assertEqual(
+            len([o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]), 4
+        )
+        texts = self.columnTexts()
+        self.assertRegex(texts[pattern.Label][1], r"^Builds: [^,]+, [^,]+ \+ 2 more$")
+        # The pad feeds every copy, so its row is the same aggregate.
+        self.assertRegex(texts[pad.Label][1], r"^Builds: [^,]+, [^,]+ \+ 2 more$")
+        # One swatch and a count is narrower than the three swatches and ellipsis of four bodies.
+        self.assertLess(self.columnIconWidth(pattern.Label), 34)
+
+    def columnIconWidth(self, label):
+        """The Bodies column icon's width at its drawn height, read while the row is live."""
+
+        def walk(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                if child.text(0) == label:
+                    return child.icon(3).actualSize(QtCore.QSize(1000, 10)).width()
+                found = walk(child)
+                if found is not None:
+                    return found
+            return None
+
+        width = walk(self.tree().invisibleRootItem())
+        self.assertIsNotNone(width, label)
+        return width
+
     def tree(self):
         loop = QtCore.QEventLoop()
         QtCore.QTimer.singleShot(300, loop.quit)
