@@ -164,6 +164,7 @@ class TestStepOnOneCopy(unittest.TestCase):
             [b for b in self._bodies() if b.Tip is self.lp],
             key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
         )[2]
+        self.thirdCopyId = third.TipComponentId
         edge = next(
             i
             for i, e in enumerate(self.lp.Shape.Edges, 1)
@@ -252,6 +253,49 @@ class TestStepOnOneCopy(unittest.TestCase):
         self.assertTrue(chamfer.isValid(), chamfer.getStatusString())
         self.assertEqual(len(self._bodies()), 4)
         self.assertEqual(sorted(b.Tip.Name for b in self._bodies()).count("LinearPattern"), 2)
+
+    def _chamferFirstCopy(self):
+        first = sorted(
+            [b for b in self._bodies() if b.Tip is self.lp],
+            key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
+        )[0]
+        chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
+        chamfer.Base = (self.lp, [first.tipSubElement("Edge1")])
+        chamfer.Size = 1.0
+        first.addFeature(chamfer)
+        self.Doc.recompute()
+        return chamfer
+
+    def testDeletingThePatternMovesTheStepOnEveryCopy(self):
+        """#139: every step on the deleted pattern moves to its base, not only the first found."""
+        _, fillet = self._filletThirdCopy()
+        chamfer = self._chamferFirstCopy()
+        body = next(b for b in self._bodies() if b.Tip is self.lp)
+        body.removeFeature(self.lp)
+        self.assertEqual((fillet.BaseFeature, chamfer.BaseFeature), (self.box, self.box))
+        self.assertEqual((fillet.BaseInstance, chamfer.BaseInstance), (-1, -1))
+        self.Doc.removeObject(self.lp.Name)
+        self.Doc.recompute()
+        # The first copy sits where the box is, so its edge is still there; the third's is not,
+        # and that step fails rather than round some other edge (#146).
+        self.assertTrue(chamfer.isValid(), chamfer.getStatusString())
+        self.assertFalse(fillet.isValid())
+
+    def testStepOnACopyGoesUnderThatCopysNextStep(self):
+        """#139: a step added mid-chain on one copy goes in front of that copy's next step, even
+        when a step on another copy is found first."""
+        chamfer = self._chamferFirstCopy()
+        third, fillet = self._filletThirdCopy()
+        copy = fillet.BaseInstance
+        third.Tip = self.lp
+        third.TipComponentId = self.thirdCopyId
+        step = self.Doc.addObject("PartDesign::Chamfer", "Chamfer001")
+        step.Base = (self.lp, fillet.Base[1])
+        step.Size = 0.5
+        third.addFeature(step)
+        self.assertEqual((step.BaseFeature, step.BaseInstance), (self.lp, copy))
+        self.assertEqual((fillet.BaseFeature, fillet.BaseInstance), (step, -1))
+        self.assertEqual((chamfer.BaseFeature, chamfer.BaseInstance), (self.lp, 0))
 
 
 class TestPatternDirectionSurvivesReopen(unittest.TestCase):

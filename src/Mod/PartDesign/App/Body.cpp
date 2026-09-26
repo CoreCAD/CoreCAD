@@ -365,6 +365,55 @@ Part::TopoShape extractSolidById(
 
 // Guards reconcileMultiOutput against re-entry while it spawns/recomputes Bodies.
 bool g_reconciling = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+// The chain edits (#139). A feature can have several next steps, one per pattern copy, so every
+// edit goes through these instead of taking the first step found.
+constexpr long anyCopy = -2;
+
+// The steps built on copy `copy` of `base` (-1: its whole output; anyCopy: every copy).
+std::vector<PartDesign::Feature*> nextSteps(const App::DocumentObject* base, long copy)
+{
+    std::vector<PartDesign::Feature*> steps;
+    if (!base || !base->getDocument()) {
+        return steps;
+    }
+    for (auto* obj : base->getDocument()->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
+        auto* step = static_cast<PartDesign::Feature*>(obj);
+        if (step->BaseFeature.getValue() == base
+            && (copy == anyCopy || step->BaseInstance.getValue() == copy)) {
+            steps.push_back(step);
+        }
+    }
+    return steps;
+}
+
+// Build `feature` on copy `copy` of `base`; the steps that were there now build on it.
+// Returns how many moved.
+std::size_t spliceAfter(PartDesign::Feature* feature, App::DocumentObject* base, long copy)
+{
+    auto steps = nextSteps(base, copy);
+    std::erase(steps, feature);
+    feature->BaseFeature.setValue(base);
+    feature->BaseInstance.setValue(copy);
+    for (auto* step : steps) {
+        step->BaseFeature.setValue(feature);
+        step->BaseInstance.setValue(-1);
+    }
+    return steps.size();
+}
+
+// Take `feature` out of the chain: every step on it, whichever copy, moves to its base.
+void unsplice(App::DocumentObject* feature)
+{
+    auto* pd = freecad_cast<PartDesign::Feature*>(feature);
+    App::DocumentObject* base = pd ? pd->BaseFeature.getValue() : nullptr;
+    const long copy = pd ? pd->BaseInstance.getValue() : -1;
+    for (auto* step : nextSteps(feature, anyCopy)) {
+        step->BaseInstance.setValue(copy);
+        step->BaseFeature.setValue(base);
+        step->onBaseFeatureRerouted(feature, base);  // re-find its edges on the new base
+    }
+}
 }  // namespace
 
 Body::Body()
@@ -1443,14 +1492,11 @@ App::DocumentObject* Body::getNextSolidFeature(App::DocumentObject* start)
         return nullptr;
     }
 
-    // Cruth de-ownership (Stage 3b-i): the chain successor is the feature whose
-    // BaseFeature links back to `start`. Walk forward across any non-solid link,
-    // returning the first solid successor; cycle-guarded. Mirrors
-    // getNextSolidFeatureByChain but preserves the solid-only filter the callers
-    // expect. ARCHITECTURE §3.2/§3.3.
+    // The first step on `start`'s whole output, skipping non-solids; cycle-guarded.
     std::set<App::DocumentObject*> seen {start};
     for (App::DocumentObject* cursor = start; cursor;) {
-        App::DocumentObject* next = getNextSolidFeatureByChain(cursor);
+        auto steps = nextSteps(cursor, -1);
+        App::DocumentObject* next = steps.empty() ? nullptr : steps.front();
         if (!next || !seen.insert(next).second) {
             return nullptr;  // chain end or cycle
         }
@@ -1926,41 +1972,13 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     else if (isSolidFeature(feature)) {
         // Splice the new solid into the chain at the Tip: its base is the old Tip,
         // and the Body now propagates the new feature.
+        // Mid-chain insert: the Tip's next step on this copy now builds on the new feature.
         App::DocumentObject* prevTip = Tip.getValue();
-
-        // Clear any BaseFeature the caller pre-set on the incoming feature before we
-        // scan for prevTip's successor (Cruth #18). addFeature owns the chain wiring;
-        // if the feature already pointed at prevTip, the successor scan below would
-        // return the new feature itself and the reroute would set
-        // feature.BaseFeature = feature — a self-cycle that fails recompute with "The
-        // graph must be a DAG". Clearing first also lets the scan find the *genuine*
-        // mid-chain successor instead of the pre-wired feature.
-        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(nullptr);
-
-        // Capture the insert point's existing chain successor BEFORE rewiring.
-        // When the Tip is not the last feature (mid-chain insert), the new feature
-        // must splice between prevTip and its successor rather than forking the
-        // chain — otherwise the displaced tail is silently orphaned (its geometry
-        // drops out of the Body with no error). The successor scan reads the
-        // BaseFeature chain — a de-owned Body has no Group ordering to read.
-        App::DocumentObject* successor = getNextSolidFeatureByChain(prevTip);
-
-        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(prevTip);
-        static_cast<PartDesign::Feature*>(feature)->BaseInstance.setValue(baseInstance);
+        spliceAfter(static_cast<PartDesign::Feature*>(feature), prevTip, baseInstance);
         if (baseInstance >= 0) {
             // The new Tip's output is this copy alone; the id named a copy of the old Tip.
             TipComponentId.setValue("");
         }
-
-        // Mid-chain insert: reroute the displaced successor onto the new feature so
-        // the chain stays linear (prevTip -> feature -> successor -> ...). A step that
-        // builds on another copy of a pattern is not a successor here: it is the next step
-        // of that copy's body, and rerouting it would put this step under it (#136).
-        if (successor && successor->isDerivedFrom<PartDesign::Feature>()
-            && static_cast<PartDesign::Feature*>(successor)->BaseInstance.getValue() == baseInstance) {
-            static_cast<PartDesign::Feature*>(successor)->BaseFeature.setValue(feature);
-        }
-
         Tip.setValue(feature);
 
         // Tip visibility bookkeeping: only the current Tip shows by default.
@@ -1970,24 +1988,8 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         }
     }
     else if (feature->isDerivedFrom<PartDesign::Transformed>()) {
-        // A freshly-created Transformed feature (LinearPattern/PolarPattern/Mirror/
-        // MultiTransform) is misclassified by isSolidFeature() during the init phase:
-        // isMultiTransformChild() heuristically reports true while TransformMode is at
-        // its default and Originals is still empty (they are set after creation). That
-        // skips the solid-splice above, leaving BaseFeature unset — so the pattern, and
-        // hence its input feature, never join the BaseFeature chain (issue #1).
-        //
-        // A Transformed reaching addObject is always a standalone, body-level pattern:
-        // MultiTransform *children* are held in the parent's Transformations list and
-        // are never added to the Body. The execute-time self-wiring (FeatureTransformed
-        // execute -> Body::setBaseProperty) cannot recover here because by execute time
-        // the caller has set Tip to the pattern, so getPrevSolidFeature() (which walks
-        // the BaseFeature chain) finds nothing. Wire BaseFeature now, while the previous
-        // Tip is still known. Tip is intentionally NOT advanced: the caller advances it
-        // once Originals are set, avoiding a transient recompute with an unconfigured
-        // pattern as Tip. The pattern itself asks for the Tip when that happens
-        // (adoptConfiguredPattern), so a script that adds before configuring ends up with
-        // the same Body as the GUI (#125, P8).
+        // A new pattern reads as non-solid until configured (#1). Wire its base now, while
+        // the Tip is known; it takes the Tip once configured (adoptConfiguredPattern, #125).
         auto* pattern = static_cast<PartDesign::Transformed*>(feature);
         pattern->BaseFeature.setValue(Tip.getValue());
         pattern->BaseInstance.setValue(baseInstance);
@@ -2008,20 +2010,8 @@ void Body::adoptConfiguredPattern(App::DocumentObject* pattern)
         return;
     }
 
-    // Mid-chain insert: the solid splice in addObject reroutes the displaced successor, but a
-    // pattern skipped that branch, so its base still has a second child. Reroute it now, or
-    // the tail after the pattern silently drops out of the Body.
-    if (prevTip) {
-        for (auto* obj : getDocument()->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
-            auto* next = static_cast<PartDesign::Feature*>(obj);
-            // A step on another copy of prevTip belongs to that copy's body (#136).
-            if (next != pattern && next->BaseFeature.getValue() == prevTip
-                && next->BaseInstance.getValue() == feature->BaseInstance.getValue()) {
-                next->BaseFeature.setValue(pattern);
-                break;
-            }
-        }
-    }
+    // Mid-chain insert: addFeature wired the pattern's base but not the steps after it.
+    spliceAfter(feature, prevTip, feature->BaseInstance.getValue());
 
     Tip.setValue(pattern);
     if (feature->BaseInstance.getValue() >= 0) {
@@ -2046,11 +2036,7 @@ std::vector<App::DocumentObject*> Body::addFeatures(std::vector<App::DocumentObj
 
 void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after)
 {
-    // Cruth de-ownership (Stage 3b-i): splice `feature` into the BaseFeature chain at
-    // the requested position. A de-owned Body has no Group to edit; the pipeline is
-    // derived from the chain, so wiring BaseFeature links *is* the insert. Generalizes
-    // the Tip-splice addObject performs to an arbitrary (target, after) anchor.
-    // ARCHITECTURE §3.2/§3.3.
+    // The chain is the Body's order, so wiring BaseFeature links is the insert.
 
     // Validate target membership via the de-ownership back-pointer (there is no Group).
     if (target) {
@@ -2074,112 +2060,53 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
         return;
     }
 
-    // Resolve the predecessor/successor solids that will bracket `feature`.
-    App::DocumentObject* pred = nullptr;
-    App::DocumentObject* succ = nullptr;
-    if (target) {
-        if (after) {
-            pred = target;
-            succ = getNextSolidFeature(target);
+    auto* pd = static_cast<PartDesign::Feature*>(feature);
+    auto* targetPd = freecad_cast<PartDesign::Feature*>(target);
+    if (target && after) {
+        if (spliceAfter(pd, target, -1) == 0) {
+            Tip.setValue(feature);  // nothing followed the target
+        }
+    }
+    else if (targetPd && targetPd->BaseFeature.getValue()) {
+        // Before the target: on the target's own base and copy, so the target builds on it.
+        spliceAfter(pd, targetPd->BaseFeature.getValue(), targetPd->BaseInstance.getValue());
+    }
+    else if (target || after) {
+        // Base end (or before the root): the feature becomes the root the old root builds on.
+        App::DocumentObject* root = target ? target : Tip.getValue();
+        std::set<App::DocumentObject*> seen;
+        for (auto* cur = freecad_cast<PartDesign::Feature*>(root);
+             cur && cur->BaseFeature.getValue() && seen.insert(cur).second;
+             cur = freecad_cast<PartDesign::Feature*>(root)) {
+            root = cur->BaseFeature.getValue();
+        }
+        pd->BaseFeature.setValue(nullptr);
+        pd->BaseInstance.setValue(-1);
+        if (auto* rootPd = freecad_cast<PartDesign::Feature*>(root)) {
+            rootPd->BaseFeature.setValue(feature);
         }
         else {
-            pred = getPrevSolidFeature(target);
-            succ = target;
+            Tip.setValue(feature);  // empty body
         }
-    }
-    else if (after) {
-        // Base end: feature becomes the new chain root; the old root rebases onto it.
-        std::set<App::DocumentObject*> seen;
-        App::DocumentObject* root = Tip.getValue();
-        for (auto* pd = freecad_cast<PartDesign::Feature*>(root); pd;
-             pd = freecad_cast<PartDesign::Feature*>(root)) {
-            App::DocumentObject* base = pd->BaseFeature.getValue();
-            if (!base || !seen.insert(root).second) {
-                break;
-            }
-            root = base;
-        }
-        succ = root;
     }
     else {
-        // Tip end: feature appends after the current Tip.
-        pred = Tip.getValue();
-    }
-
-    static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(pred);
-    if (succ && succ->isDerivedFrom<PartDesign::Feature>()) {
-        static_cast<PartDesign::Feature*>(succ)->BaseFeature.setValue(feature);
-    }
-    if (!succ) {
-        // No chain successor → feature is the new Tip.
+        // Tip end.
+        spliceAfter(pd, Tip.getValue(), -1);
         Tip.setValue(feature);
     }
 }
 
-void Body::setBaseProperty(App::DocumentObject* feature)
-{
-    if (Body::isSolidFeature(feature)) {
-        // Set BaseFeature property to previous feature (this might be the Tip feature)
-        App::DocumentObject* prevSolidFeature = getPrevSolidFeature(feature);
-        // NULL is ok here, it just means we made the current one fiature the base solid
-        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(prevSolidFeature);
-
-        // Reroute the next solid feature's BaseFeature property to this feature
-        App::DocumentObject* nextSolidFeature = getNextSolidFeature(feature);
-        if (nextSolidFeature) {
-            assert(nextSolidFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId()));
-            static_cast<PartDesign::Feature*>(nextSolidFeature)->BaseFeature.setValue(feature);
-        }
-    }
-}
-
-// Cruth intra-body de-ownership: find the chain successor of a feature — the
-// solid feature whose BaseFeature links back to it — by scanning the document
-// (a de-owned Body has no Group ordering to read). BaseFeature is an intra-body
-// link, so the successor is unique. ARCHITECTURE §3.2/§3.3.
-App::DocumentObject* Body::getNextSolidFeatureByChain(App::DocumentObject* feature) const
-{
-    if (!feature) {
-        return nullptr;
-    }
-    App::Document* doc = feature->getDocument();
-    if (!doc) {
-        return nullptr;
-    }
-    for (auto* obj : doc->getObjectsOfType(PartDesign::Feature::getClassTypeId())) {
-        if (static_cast<PartDesign::Feature*>(obj)->BaseFeature.getValue() == feature) {
-            return obj;
-        }
-    }
-    return nullptr;
-}
-
-// Cruth intra-body de-ownership (Day 4): delete a feature by rewiring the
-// BaseFeature chain. The chain successor (the solid whose BaseFeature points at
-// this feature) is relinked to this feature's own base, and the Tip retreats
-// along the chain. A de-owned Body has no Group ordering, so the chain is the
-// sole source of order. ARCHITECTURE §3.2/§3.3.
+// Every step on the feature moves to its base, the Tip retreats, and an emptied Body retires.
 std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* feature)
 {
-    // This method must be called BEFORE the feature is removed from the Document!
-    // De-ownership is the only path: heal the BaseFeature chain directly, retreat the
-    // Tip, and retire the Body if its chain empties — there is no Group order to consult.
+    // Call BEFORE the feature is removed from the Document.
     App::DocumentObject* prevSolidFeature = nullptr;
     if (feature->isDerivedFrom<PartDesign::Feature>()) {
         prevSolidFeature = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
     }
-    App::DocumentObject* nextSolidFeature = getNextSolidFeatureByChain(feature);
-
-    // Reroute the chain successor's base past the feature being removed.
-    if (nextSolidFeature && nextSolidFeature->isDerivedFrom<PartDesign::Feature>()) {
-        auto* nextPD = static_cast<PartDesign::Feature*>(nextSolidFeature);
-        if (nextPD->BaseFeature.getValue() == feature) {
-            nextPD->BaseFeature.setValue(prevSolidFeature);
-            // Re-map subelement links (fillet/chamfer faces, direct face profiles)
-            // from the deleted base onto the matching geometry of the new base.
-            nextPD->onBaseFeatureRerouted(feature, prevSolidFeature);
-        }
-    }
+    const auto steps = nextSteps(feature, anyCopy);
+    App::DocumentObject* nextSolidFeature = steps.empty() ? nullptr : steps.front();
+    unsplice(feature);
 
     // Retreat the Tip of EVERY Body tipped by the removed feature — not only this one.
     // A splitter (e.g. a Pocket that severs a solid) is the Tip of ALL the halves it

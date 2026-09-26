@@ -140,8 +140,6 @@ public:
      */
     void insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after = false);
 
-    void setBaseProperty(App::DocumentObject* feature);
-
     /**
      * A pattern added before it was configured becomes the Tip once it is (#125). addFeature
      * wires such a pattern's base but holds the Tip back, so no recompute runs with an empty
@@ -161,8 +159,6 @@ public:
     /// Convenience: removeFeature over a list (used when re-homing features between bodies).
     void removeFeatures(const std::vector<App::DocumentObject*>& features);
 
-    /// Cruth: chain successor of a feature (the solid whose BaseFeature links to it).
-    App::DocumentObject* getNextSolidFeatureByChain(App::DocumentObject* feature) const;
 
     /**
      * Cruth §4.8 multi-output spawn. Run after a document recompute: for each
