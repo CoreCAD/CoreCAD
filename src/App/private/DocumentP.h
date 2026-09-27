@@ -106,6 +106,8 @@ struct DocumentP
     bool undoing {false};  ///< document in the middle of undo or redo
     bool committing {false};
     bool opentransaction {false};
+    bool joinLastTransaction {false};
+    bool resumedLastTransaction {false};
     std::bitset<32> StatusBits;
     int iUndoMode {0};
     unsigned int UndoMemSize {0};

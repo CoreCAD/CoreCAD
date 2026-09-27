@@ -532,6 +532,10 @@ void Document::_checkTransaction(DocumentObject* pcDelObj, const Property* What,
     if (d->iUndoMode == 0 || isPerformingTransaction() || d->activeUndoTransaction) {
         return;
     }
+    const bool mayModify = !What || !What->testStatus(Property::NoModify);
+    if (d->joinLastTransaction && mayModify && !testStatus(Restoring) && _resumeLastTransaction()) {
+        return;
+    }
 
     if (!testStatus(Restoring) || testStatus(Importing)) {
 
@@ -628,6 +632,7 @@ bool Document::_commitTransaction(const bool notify)
     }
 
     d->bookedTransaction = 0;
+    d->resumedLastTransaction = false;
     bool committed = false;
     if (d->activeUndoTransaction) {
         {
@@ -687,6 +692,7 @@ void Document::_abortTransaction()
     }
 
     d->bookedTransaction = 0;
+    d->resumedLastTransaction = false;
     bool aborted = false;
     if (d->activeUndoTransaction) {
         {
@@ -707,6 +713,24 @@ void Document::_abortTransaction()
     if (aborted) {
         signalBecameStable(*this);
     }
+}
+
+bool Document::_resumeLastTransaction()
+{
+    if (d->iUndoMode == 0 || d->activeUndoTransaction || d->bookedTransaction != 0 || transacting()
+        || GetApplication().getGlobalTransaction() != 0 || mUndoTransactions.empty()
+        || !mRedoTransactions.empty()) {
+        return false;
+    }
+    d->activeUndoTransaction = mUndoTransactions.back();
+    mUndoTransactions.pop_back();
+    d->bookedTransaction = d->activeUndoTransaction->getID();
+    d->resumedLastTransaction = true;
+    GetApplication().setTransactionDescription(
+        d->bookedTransaction,
+        TransactionDescription {.initiator = this, .name = d->activeUndoTransaction->Name}
+    );
+    return true;
 }
 
 bool Document::hasPendingTransaction() const
@@ -4030,6 +4054,9 @@ int Document::recompute(const std::vector<DocumentObject*>& objs,
     // recompute teardown has finished. signalBecameStable() is the first
     // point where observers may treat the document as stable again.
 
+    // What observers edit in answer to a recompute joins the undo step that prompted it, so one
+    // undo reverses both. The step is reopened only when they edit something.
+    Base::FlagToggler<> joinLast(d->joinLastTransaction);
     signalRecomputed(*this, topoSortedObjects);
     recomputingStatus.reset();
     signalBecameStable(*this);
@@ -4064,6 +4091,9 @@ int Document::recompute(const std::vector<DocumentObject*>& objs,
                                                      << o.getObjectName());
             }
         }
+    }
+    if (d->resumedLastTransaction) {
+        commitTransaction();
     }
     return objectCount;
 }
