@@ -98,6 +98,10 @@ Feature::Feature()
 
 App::DocumentObjectExecReturn* Feature::recompute()
 {
+    // Past the roll-back marker: keep the last shape until the marker moves past this step.
+    if (Body::isRolledBackPast(this)) {
+        return App::DocumentObject::StdReturn;
+    }
     if (Suppressed.getValue()) {
         Shape.setValue(getBaseTopoShape(true));
         updateSuppressedShape();

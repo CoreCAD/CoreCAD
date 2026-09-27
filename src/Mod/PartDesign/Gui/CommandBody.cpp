@@ -64,8 +64,10 @@ CmdPartDesignMoveTip::CmdPartDesignMoveTip()
 {
     sAppModule = "PartDesign";
     sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Set Tip");
-    sToolTipText = QT_TR_NOOP("Moves the tip of the body to the selected feature");
+    sMenuText = QT_TR_NOOP("Roll Back to Here");
+    sToolTipText = QT_TR_NOOP(
+        "Stops the body at the selected step; select its last step or the body to compute it all"
+    );
     sWhatsThis = "PartDesign_MoveTip";
     sStatusTip = sToolTipText;
     sPixmap = "PartDesign_MoveTip";
@@ -78,23 +80,7 @@ void CmdPartDesignMoveTip::activated(int iMsg)
         App::DocumentObject::getClassTypeId()
     );
     std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
-    App::DocumentObject* selFeature;
-    PartDesign::Body* body = nullptr;
-
-    if (features.size() == 1) {
-        selFeature = features.front();
-        if (selFeature->isDerivedFrom<PartDesign::Body>()) {
-            body = static_cast<PartDesign::Body*>(selFeature);
-        }
-        else {
-            body = PartDesignGui::getBodyFor(selFeature, /* messageIfNot =*/false);
-        }
-    }
-    else {
-        selFeature = nullptr;
-    }
-
-    if (!selFeature) {
+    if (features.size() != 1) {
         QMessageBox::warning(
             nullptr,
             QObject::tr("Selection error"),
@@ -102,49 +88,39 @@ void CmdPartDesignMoveTip::activated(int iMsg)
         );
         return;
     }
-    else if (!body) {
+    App::DocumentObject* selFeature = features.front();
+    auto* body = freecad_cast<PartDesign::Body*>(selFeature);
+    if (!body) {
+        body = PartDesignGui::getBodyFor(selFeature, /* messageIfNot =*/false);
+    }
+    if (!body) {
         QMessageBox::warning(
             nullptr,
             QObject::tr("Selection error"),
-            QObject::tr(
-                "Could not determine a body for the selected feature '%s'.",
-                selFeature->Label.getValue()
-            )
+            QObject::tr("Could not determine a body for the selected feature '%1'.")
+                .arg(QString::fromUtf8(selFeature->Label.getValue()))
         );
         return;
     }
-    else if (
-        !selFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId()) && selFeature != body
-        && body->BaseFeature.getValue() != selFeature
-    ) {
+    // Selecting the Body or its Tip rolls the marker to the end.
+    App::DocumentObject* marker = selFeature == body || selFeature == body->Tip.getValue()
+        ? nullptr
+        : selFeature;
+    const auto solids = body->ownSolids();
+    if (marker && std::ranges::find(solids, marker) == solids.end()) {
         QMessageBox::warning(
             nullptr,
             QObject::tr("Selection error"),
-            QObject::tr("Only a solid feature can be the tip of a body.")
+            QObject::tr("Only a solid step of the body can hold the roll-back marker.")
         );
         return;
     }
-
-    App::DocumentObject* oldTip = body->Tip.getValue();
-    if (oldTip == selFeature) {  // it's not generally an error, so print only a console message
-        Base::Console().message("%s is already the tip of the body\n", selFeature->getNameInDocument());
+    if (body->RollbackMarker.getValue() == marker) {
         return;
     }
 
-    openCommand(QT_TRANSLATE_NOOP("Command", "Move tip to selected feature"));
-
-    if (selFeature == body) {
-        FCMD_OBJ_CMD(body, "Tip = None");
-    }
-    else {
-        FCMD_OBJ_CMD(body, "Tip = " << getObjectCmd(selFeature));
-
-        // Adjust visibility to show only the Tip feature
-        FCMD_OBJ_SHOW(selFeature);
-    }
-
-    // TODO: Hide all datum features after the Tip feature? But the user might have already hidden
-    // some and wants to see others, so we would have to remember their state somehow
+    openCommand(QT_TRANSLATE_NOOP("Command", "Roll back to selected step"));
+    FCMD_OBJ_CMD(body, "RollbackMarker = " << (marker ? getObjectCmd(marker) : std::string("None")));
     updateActive();
 }
 

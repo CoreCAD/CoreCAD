@@ -81,10 +81,10 @@ class Body(BodyBase):
         """
         ...
 
-    def tipSubElement(self, sub: str, /) -> str:
+    def shownSubElement(self, sub: str, /) -> str:
         """
-        The name, on the Tip's shape, of the face, edge or vertex that sub names on this
-        Body's shape; empty when it names none. For one copy of a pattern the two shapes
+        The name, on the shown step's shape (the roll-back marker, or the Tip), of the face,
+        edge or vertex that sub names on this Body's shape; empty when it names none. For one copy of a pattern the two shapes
         number their elements differently, so the element is matched by itself.
         """
         ...

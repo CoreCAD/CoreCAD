@@ -281,7 +281,7 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
 
     // check if we already have a feature as subtractive ones work only if we have
     // something to subtract from.
-    App::DocumentObject* prevSolid = targetBody->Tip.getValue();
+    App::DocumentObject* prevSolid = targetBody->shownStep();
     if (!prevSolid) {
         QMessageBox::warning(
             Gui::getMainWindow(),

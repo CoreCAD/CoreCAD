@@ -62,6 +62,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestInvoluteGear.py
     PartDesignTests/TestSketch.py
     PartDesignTests/TestBodyEmergence.py
+    PartDesignTests/TestRollbackMarker.py
 )
 
 if(BUILD_GUI)

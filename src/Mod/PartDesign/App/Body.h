@@ -65,6 +65,9 @@ public:
     App::PropertyUUID Uid;
     /// Uids of Bodies whose overlap with this one the user acknowledged.
     App::PropertyStringList AcknowledgedOverlaps;
+    /// The step the Body stops computing at; empty computes the whole chain. The steps past it
+    /// keep their place and are skipped.
+    App::PropertyLink RollbackMarker;
 
     Body();
 
@@ -81,7 +84,7 @@ public:
 
     // Editing the chain (Body.cpp). None of these create or destroy the feature.
 
-    /// Builds @p feature on the Tip, ahead of what followed there, and makes it the Tip.
+    /// Builds @p feature on the shown step, ahead of what followed there, and shows it.
     std::vector<App::DocumentObject*> addFeature(App::DocumentObject* feature);
     std::vector<DocumentObject*> addFeatures(std::vector<DocumentObject*> features);
     /// Before @p target, or after it when @p after; at the start or the Tip when @p target is
@@ -232,12 +235,21 @@ public:
 
     // Shape and selection (Body.cpp).
 
+    /// The step the Body shows and new steps build on: the marker, or the Tip.
+    App::DocumentObject* shownStep() const;
+    /// True when @p step lies past this Body's marker.
+    bool stopsBefore(const App::DocumentObject* step) const;
+    /// True when every Body @p step feeds stops before it, so computing it is wasted.
+    static bool isRolledBackPast(const App::DocumentObject* step);
     /// The Tip's shape, or the one copy of it this Body stands for, placed in the world. Null
     /// when there is no such shape.
     Part::TopoShape derivedTipShape() const;
-    /// The name on the Tip's shape of the element @p bodySub names on this Body's shape; empty
-    /// when none. For a pattern copy the numbers differ, so the element is matched by itself.
-    std::string tipSubElement(const char* bodySub) const;
+    /// As derivedTipShape, for the shown step.
+    Part::TopoShape shownShape() const;
+    /// The name on the shown step's shape of the element @p bodySub names on this Body's shape;
+    /// empty when none. For a pattern copy the numbers differ, so the element is matched by
+    /// itself.
+    std::string shownSubElement(const char* bodySub) const;
     Base::Color getIdentityColor() const override
     {
         return Color.getValue();
@@ -267,6 +279,7 @@ public:
     }
 
 protected:
+    void onBeforeChange(const App::Property* prop) override;
     /// Keeps a FeatureBase at the start of the chain carrying this Body's BaseFeature.
     void onChanged(const App::Property* prop) override;
     void setupObject() override;
@@ -276,10 +289,24 @@ private:
     /// The pattern copy this Body stands for, or chain::WholeOutput.
     long tipCopy() const;
     void appendAtTip(PartDesign::Feature* feature, long copy);
+    void insertAtMarker(PartDesign::Feature* feature);
+    /// The step after the marker on the way to the Tip, or null.
+    PartDesign::Feature* stepAfterMarker() const;
+    /// The solid of @p step's @p shape this Body stands for; sets @p whole instead when it
+    /// stands for all of it.
+    Part::TopoShape standInSolid(
+        const App::DocumentObject* step,
+        const Part::TopoShape& shape,
+        bool& whole
+    ) const;
+    Part::TopoShape placedShapeOf(const App::DocumentObject* step) const;
+    /// Touches every step past @p marker, which were skipped while it stood there.
+    void touchStepsPast(const App::DocumentObject* marker);
     /// Moves every Body tipped at @p feature back to @p retreatTo.
     static void retreatTippedBodies(App::DocumentObject* feature, App::DocumentObject* retreatTo);
 
     bool showTip = false;
+    App::DocumentObject* markerBeforeChange = nullptr;
 };
 
 }  // namespace PartDesign
