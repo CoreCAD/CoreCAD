@@ -148,7 +148,7 @@ short Feature::mustExecute() const
 void Feature::onBaseFeatureRerouted(App::DocumentObject* /*oldBase*/, App::DocumentObject* /*newBase*/)
 {}
 
-bool Feature::relinkToMatchingSubelements(
+bool Feature::relinkByLineage(
     App::PropertyLinkSub& link,
     App::DocumentObject* oldBase,
     App::DocumentObject* newBase
@@ -170,31 +170,29 @@ bool Feature::relinkToMatchingSubelements(
         return false;
     }
 
-    const auto& oldSubs = link.getSubValues();
     std::vector<std::string> newSubs;
-    newSubs.reserve(oldSubs.size());
-
-    for (const auto& sub : oldSubs) {
-        if (sub.empty()) {
-            newSubs.emplace_back();
-            continue;
+    for (const auto& sub : link.getSubValues()) {
+        std::string ancestor;
+        if (!sub.empty()) {
+            // oldBase's history names each element's ancestor in newBase. An element oldBase
+            // created has none there, so the step fails rather than guess.
+            Data::MappedName original;
+            auto mapped = oldShape.getElementName(sub.c_str()).name;
+            if (!mapped || oldShape.getElementHistory(mapped, &original) != newShape.Tag) {
+                return false;
+            }
+            auto index = newShape.getIndexedName(original);
+            if (!index) {
+                index = original.toIndexedName();
+            }
+            if (!index || newShape.getSubShape(index.toString().c_str(), true).IsNull()) {
+                return false;
+            }
+            ancestor = index.toString();
         }
-
-        auto oldSubShape = oldShape.getSubTopoShape(sub.c_str(), true);
-        if (oldSubShape.isNull()) {
-            return false;
+        if (std::ranges::find(newSubs, ancestor) == newSubs.end()) {
+            newSubs.push_back(std::move(ancestor));
         }
-
-        std::vector<std::string> names;
-        auto matches = newShape.findSubShapesWithSharedVertex(
-            oldSubShape,
-            &names,
-            Data::SearchOption::CheckGeometry
-        );
-        if (matches.size() != 1 || names.size() != 1) {
-            return false;
-        }
-        newSubs.push_back(names.front());
     }
 
     link.setValue(newBase, std::move(newSubs));

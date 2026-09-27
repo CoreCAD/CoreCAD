@@ -151,7 +151,7 @@ public:
 
 protected:
     static int countSolids(const TopoDS_Shape&, TopAbs_ShapeEnum type = TopAbs_SOLID);
-    static bool relinkToMatchingSubelements(
+    static bool relinkByLineage(
         App::PropertyLinkSub& link,
         App::DocumentObject* oldBase,
         App::DocumentObject* newBase
