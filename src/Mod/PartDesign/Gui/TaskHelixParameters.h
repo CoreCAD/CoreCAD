@@ -26,6 +26,7 @@
 
 #include <Gui/Inventor/Draggers/Gizmo.h>
 
+#include "OriginDisplay.h"
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderHelix.h"
 
@@ -117,11 +118,11 @@ private:
     void assignProperties();
     void setValuesFromProperties();
     void bindProperties();
-    void showCoordinateAxes();
 
 private:
     QWidget* proxy;
     std::unique_ptr<Ui_TaskHelixParameters> ui;
+    OriginDisplay originDisplay;
 
     /**
      * @brief axesInList is the list of links corresponding to axis combo; must

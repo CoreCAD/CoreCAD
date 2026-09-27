@@ -134,7 +134,7 @@ void TaskPatternParameters::setupParameterUI(QWidget* widget)
     bindProperties();
 
     // --- Task Specific Setup ---
-    showOriginElements(Gui::DatumElement::Axes);  // origin helper axes
+    originDisplay.show(getObject(), Gui::DatumElement::Axes);
 
     updateViewTimer = new QTimer(this);
     updateViewTimer->setSingleShot(true);
@@ -337,7 +337,6 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 
 TaskPatternParameters::~TaskPatternParameters()
 {
-    resetOriginElements();         // Clean up temporary visibility
     exitReferenceSelectionMode();  // Ensure gates are removed etc.
     // ui unique_ptr handles deletion
     // parametersWidget is deleted by Qt parent mechanism if added to layout correctly

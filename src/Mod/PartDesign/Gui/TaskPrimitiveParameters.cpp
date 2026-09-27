@@ -261,16 +261,7 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
     Gui::Document* doc = vp->getDocument();
     this->attachDocument(doc);
 
-    //show the parts coordinate system axis for selection (shared document Origin, Cruth §11 step 5e)
-    if(App::Origin * origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument())) {
-        try {
-            Gui::ViewProviderCoordinateSystem* vpOrigin {};
-            vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
-            vpOrigin->setTemporaryVisibility(Gui::DatumElement::Planes | Gui::DatumElement::Axes);
-        } catch (const Base::Exception &ex) {
-            Base::Console().error ("%s\n", ex.what () );
-        }
-    }
+    originDisplay.show(getObject(), Gui::DatumElement::Planes | Gui::DatumElement::Axes);
 
     // box
     connect(ui->boxLength, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
@@ -376,28 +367,7 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
 }
 // clang-format on
 
-/*
- *  Destroys the object and frees any allocated resources
- */
-TaskBoxPrimitives::~TaskBoxPrimitives()
-{
-    // hide the parts coordinate system axis for selection
-    try {
-        auto obj = getObject();
-        App::Origin* origin = obj ? PartDesign::Body::findDocumentOrigin(obj->getDocument())
-                                  : nullptr;
-        if (origin) {
-            Gui::ViewProviderCoordinateSystem* vpOrigin;
-            vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->resetTemporaryVisibility();
-        }
-    }
-    catch (const Base::Exception& ex) {
-        Base::Console().error("%s\n", ex.what());
-    }
-}
+TaskBoxPrimitives::~TaskBoxPrimitives() = default;
 
 void TaskBoxPrimitives::slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj)
 {

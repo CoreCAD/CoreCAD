@@ -87,8 +87,7 @@ void TaskMirroredParameters::setupParameterUI(QWidget* widget)
         this->fillPlanesCombo(planeLinks, nullptr);
     }
 
-    // show the document Origin's planes for selection
-    showOriginElements(Gui::DatumElement::Planes);
+    originDisplay.show(getObject(), Gui::DatumElement::Planes);
 
     updateUI();
 }
@@ -211,10 +210,7 @@ void TaskMirroredParameters::apply()
     FCMD_OBJ_CMD(getObject(), "MirrorPlane = " << mirrorPlane);
 }
 
-TaskMirroredParameters::~TaskMirroredParameters()
-{
-    resetOriginElements();
-}
+TaskMirroredParameters::~TaskMirroredParameters() = default;
 
 //**************************************************************************
 //**************************************************************************
