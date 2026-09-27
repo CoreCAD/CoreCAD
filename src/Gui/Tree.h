@@ -103,6 +103,7 @@ public:
 
     static const int DocumentType;
     static const int ObjectType;
+    static const int StopRowType;
 
     void markItem(const App::DocumentObject* Obj, bool mark);
     void syncView(ViewProviderDocumentObject* vp);
@@ -148,6 +149,7 @@ protected:
     void onSelectionChanged(const SelectionChanges& msg) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
     void drawRow(QPainter*, const QStyleOptionViewItem&, const QModelIndex&) const override;
+    void drawRowBody(QPainter*, const QStyleOptionViewItem&, const QModelIndex&) const;
     /** @name Drag and drop */
     //@{
     void startDrag(Qt::DropActions supportedActions) override;
@@ -194,6 +196,8 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
     void showEvent(QShowEvent* ev) override;
     void hideEvent(QHideEvent* ev) override;
@@ -205,6 +209,11 @@ private:
     void updateLineage();
     std::map<App::DocumentObject*, QColor> lineageTints;
     std::set<App::DocumentObject*> lineageSelected;
+
+    /// The stop row being dragged, and the step row it would land after.
+    QTreeWidgetItem* draggedStopRow = nullptr;
+    QTreeWidgetItem* stopRowTarget = nullptr;
+    QTreeWidgetItem* stopRowTargetAt(const QPoint& pos) const;
 
     // Helpers for the two-stage "Select All" feature
     void selectGroupItems(const QTreeWidgetItem* group, bool recursive);
@@ -371,6 +380,10 @@ public:
     void testStatus();
     /// Refresh the Body column (§8.7) of every item; bodies are derived, so any change can move it.
     void updateBodyColumn();
+    /// Put each view provider's stop row just after its step; see ViewProvider::getTreeStopRow.
+    void updateStopRows();
+    /// The object whose stop row @p row is, or null.
+    ViewProviderDocumentObject* stopRowOwner(const QTreeWidgetItem* row) const;
     void setData(int column, int role, const QVariant& value) override;
     void populateItem(DocumentObjectItem* item, bool refresh = false, bool delayUpdate = true);
     bool populateObject(App::DocumentObject* obj);

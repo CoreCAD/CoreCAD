@@ -103,6 +103,10 @@ public:
     /// Override to return the color of the tip instead of the body, which doesn't really have color
     std::map<std::string, Base::Color> getElementColors(const char* element) const override;
 
+    /// The roll-back marker's row in the tree; dropping it on the Tip rolls the Body to the end.
+    TreeStopRow getTreeStopRow() const override;
+    bool moveTreeStopRow(App::DocumentObject* step) override;
+
     /// A body lists no children in the tree: the tree is the flat timeline and the Body
     /// column names the body each step builds (ARCHITECTURE §8.1, §8.7).
     std::vector<App::DocumentObject*> claimChildren() const override;

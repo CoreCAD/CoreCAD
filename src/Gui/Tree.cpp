@@ -97,6 +97,7 @@ std::set<TreeWidget*> TreeWidget::Instances;
 static TreeWidget* _LastSelectedTreeWidget;
 const int TreeWidget::DocumentType = 1000;
 const int TreeWidget::ObjectType = 1001;
+const int TreeWidget::StopRowType = 1002;
 static bool _DraggingActive;
 static bool _DragEventFilter;
 
@@ -2134,6 +2135,14 @@ void TreeWidget::keyPressEvent(QKeyEvent* event)
 
 void TreeWidget::mousePressEvent(QMouseEvent* event)
 {
+    QTreeWidgetItem* pressed = itemAt(event->pos());
+    if (pressed && pressed->type() == StopRowType && event->button() == Qt::LeftButton) {
+        draggedStopRow = pressed;
+        stopRowTarget = nullptr;
+        viewport()->setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
     if (isVisibilityIconEnabled()) {
         QTreeWidgetItem* item = itemAt(event->pos());
         if (item && item->type() == TreeWidget::ObjectType && event->button() == Qt::LeftButton) {
@@ -2264,6 +2273,51 @@ void TreeWidget::mouseDoubleClickEvent(QMouseEvent* event)
     }
     catch (...) {
         FC_ERR("Unknown exception");
+    }
+}
+
+QTreeWidgetItem* TreeWidget::stopRowTargetAt(const QPoint& pos) const
+{
+    QTreeWidgetItem* item = itemAt(pos);
+    if (!draggedStopRow || !item || item->type() != ObjectType
+        || item->parent() != draggedStopRow->parent()) {
+        return nullptr;
+    }
+    return item;
+}
+
+void TreeWidget::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!draggedStopRow) {
+        QTreeWidget::mouseMoveEvent(event);
+        return;
+    }
+    QTreeWidgetItem* target = stopRowTargetAt(event->pos());
+    if (target != stopRowTarget) {
+        stopRowTarget = target;
+        viewport()->update();
+    }
+    event->accept();
+}
+
+void TreeWidget::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (!draggedStopRow) {
+        QTreeWidget::mouseReleaseEvent(event);
+        return;
+    }
+    QTreeWidgetItem* row = draggedStopRow;
+    QTreeWidgetItem* target = stopRowTargetAt(event->pos());
+    draggedStopRow = nullptr;
+    stopRowTarget = nullptr;
+    viewport()->unsetCursor();
+    viewport()->update();
+    event->accept();
+
+    auto* docItem = dynamic_cast<DocumentItem*>(row->parent());
+    ViewProviderDocumentObject* owner = docItem ? docItem->stopRowOwner(row) : nullptr;
+    if (owner && target) {
+        owner->moveTreeStopRow(static_cast<DocumentObjectItem*>(target)->object()->getObject());
     }
 }
 
@@ -3407,6 +3461,23 @@ void TreeWidget::drawRow(
     const QModelIndex& index
 ) const
 {
+    drawRowBody(painter, options, index);
+    // Where a dragged stop row would land: a line under the step it would follow.
+    if (stopRowTarget && itemFromIndex(index) == stopRowTarget) {
+        const int bottom = options.rect.bottom();
+        painter->fillRect(
+            QRect(0, bottom - 1, viewport()->width(), 2),
+            palette().color(QPalette::Highlight)
+        );
+    }
+}
+
+void TreeWidget::drawRowBody(
+    QPainter* painter,
+    const QStyleOptionViewItem& options,
+    const QModelIndex& index
+) const
+{
     // Cruth #3 (ARCHITECTURE §8.2): the rows a selected step came from are tinted with their
     // body's colour across the whole row, and the selected row gets the same tint a step stronger,
     // in place of the default selection highlight, so the two read as one family.
@@ -3735,6 +3806,7 @@ void TreeWidget::onUpdateStatus()
         if (bodiesMayHaveMoved) {
             pos->second->updateBodyColumn();
         }
+        pos->second->updateStopRows();
     }
 
     // Checking for just restored documents
@@ -5710,6 +5782,95 @@ void DocumentItem::updateBodyColumn()
             applyBodyColumn(item, *v.second->viewObject);
         }
     }
+}
+
+namespace
+{
+bool standsAfter(const QTreeWidgetItem* row, const QTreeWidgetItem* step)
+{
+    const QTreeWidgetItem* parent = row->parent();
+    if (!parent || parent != step->parent()) {
+        return false;
+    }
+    int index = parent->indexOfChild(const_cast<QTreeWidgetItem*>(row)) - 1;
+    while (index >= 0 && parent->child(index)->type() == TreeWidget::StopRowType) {
+        --index;
+    }
+    return index >= 0 && parent->child(index) == step;
+}
+}  // namespace
+
+// Stop rows sit only among the document's own rows, never inside an object's children.
+void DocumentItem::updateStopRows()
+{
+    struct Wanted
+    {
+        QString owner;
+        ViewProvider::TreeStopRow row;
+        QTreeWidgetItem* step;
+    };
+    std::vector<Wanted> wanted;
+    for (const auto& [obj, data] : ObjectMap) {
+        ViewProvider::TreeStopRow row = data->viewObject->getTreeStopRow();
+        auto found = row.after ? ObjectMap.find(row.after) : ObjectMap.end();
+        if (found == ObjectMap.end()) {
+            continue;
+        }
+        for (auto* item : found->second->items) {
+            if (item->parent() == this) {
+                wanted.push_back({QString::fromLatin1(obj->getNameInDocument()), std::move(row), item});
+                break;
+            }
+        }
+    }
+
+    std::vector<QTreeWidgetItem*> existing;
+    for (int i = 0; i < childCount(); ++i) {
+        if (child(i)->type() == TreeWidget::StopRowType) {
+            existing.push_back(child(i));
+        }
+    }
+    const bool inPlace = existing.size() == wanted.size()
+        && std::ranges::all_of(wanted, [&existing](const Wanted& w) {
+                             return std::ranges::any_of(existing, [&w](QTreeWidgetItem* row) {
+                                 return row->data(0, Qt::UserRole).toString() == w.owner
+                                     && row->text(0) == w.row.text && standsAfter(row, w.step);
+                             });
+                         });
+    if (inPlace) {
+        return;
+    }
+
+    QSignalBlocker guard(treeWidget());
+    for (auto* row : existing) {
+        if (getTree()->draggedStopRow == row) {
+            getTree()->draggedStopRow = nullptr;
+            getTree()->stopRowTarget = nullptr;
+        }
+        delete row;
+    }
+    for (auto& w : wanted) {
+        auto* row = new QTreeWidgetItem(TreeWidget::StopRowType);
+        row->setText(0, w.row.text);
+        row->setIcon(0, w.row.icon);
+        row->setToolTip(0, w.row.tooltip);
+        row->setData(0, Qt::UserRole, w.owner);
+        row->setFlags(Qt::ItemIsEnabled);
+        int index = indexOfChild(w.step) + 1;
+        while (index < childCount() && child(index)->type() == TreeWidget::StopRowType) {
+            ++index;
+        }
+        insertChild(index, row);
+    }
+}
+
+ViewProviderDocumentObject* DocumentItem::stopRowOwner(const QTreeWidgetItem* row) const
+{
+    const QByteArray name = row->data(0, Qt::UserRole).toString().toLatin1();
+    App::DocumentObject* obj = document()->getDocument()->getObject(name.constData());
+    return obj
+        ? dynamic_cast<ViewProviderDocumentObject*>(Application::Instance->getViewProvider(obj))
+        : nullptr;
 }
 
 void DocumentItem::testStatus()

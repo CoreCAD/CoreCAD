@@ -543,6 +543,25 @@ public:
         return {};
     }
 
+    /// A row the tree shows just after the step @p after, which the user drags onto another step
+    /// to move it: a roll-back marker.
+    struct TreeStopRow
+    {
+        App::DocumentObject* after = nullptr;
+        QString text;
+        QIcon icon;
+        QString tooltip;
+    };
+    virtual TreeStopRow getTreeStopRow() const
+    {
+        return {};
+    }
+    /// Moves the stop row to just after @p step; false when it cannot stand there.
+    virtual bool moveTreeStopRow(App::DocumentObject* /*step*/)
+    {
+        return false;
+    }
+
     /** Tell the tree view if this object should appear there */
     virtual bool showInTree() const
     {

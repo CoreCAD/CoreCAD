@@ -31,11 +31,13 @@
 #include <set>
 #include <vector>
 
+#include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <App/VarSet.h>
 #include <Base/Console.h>
 #include <Gui/Application.h>
+#include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MDIView.h>
@@ -494,6 +496,42 @@ std::map<std::string, Base::Color> ViewProviderBody::getElementColors(const char
     return ViewProviderPart::getElementColors(element);
 }
 
+
+Gui::ViewProvider::TreeStopRow ViewProviderBody::getTreeStopRow() const
+{
+    auto* body = getObject<PartDesign::Body>();
+    if (!body || !body->RollbackMarker.getValue()) {
+        return {};
+    }
+    const QString label = QString::fromUtf8(body->Label.getValue());
+    return {
+        body->RollbackMarker.getValue(),
+        tr("%1 stops here").arg(label),
+        Gui::BitmapFactory().iconFromTheme("PartDesign_MoveTip"),
+        tr("%1 is not computed past this row. Drag it onto another step to move it.").arg(label),
+    };
+}
+
+bool ViewProviderBody::moveTreeStopRow(App::DocumentObject* step)
+{
+    auto* body = getObject<PartDesign::Body>();
+    const auto solids = body->ownSolids();
+    if (std::ranges::find(solids, step) == solids.end()) {
+        return false;
+    }
+    App::DocumentObject* marker = step == body->Tip.getValue() ? nullptr : step;
+    if (marker != body->RollbackMarker.getValue()) {
+        App::AutoTransaction guard(
+            getDocument()->openCommand(QT_TRANSLATE_NOOP("Command", "Roll back to selected step"))
+        );
+        FCMD_OBJ_CMD(
+            body,
+            "RollbackMarker = " << (marker ? Gui::Command::getObjectCmd(marker) : std::string("None"))
+        );
+        Gui::Command::updateActive();
+    }
+    return true;
+}
 
 std::vector<App::DocumentObject*> ViewProviderBody::pipelineChain() const
 {
