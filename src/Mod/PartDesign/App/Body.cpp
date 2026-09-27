@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -644,6 +645,41 @@ bool Body::isRolledBackPast(const App::DocumentObject* step)
     const auto bodies = bodiesOf(step);
     return !bodies.empty()
         && std::ranges::all_of(bodies, [step](Body* body) { return body->stopsBefore(step); });
+}
+
+namespace
+{
+bool heldBack(const App::DocumentObject* obj, std::map<const App::DocumentObject*, bool>& known)
+{
+    if (auto found = known.find(obj); found != known.end()) {
+        return found->second;
+    }
+    known[obj] = false;  // a cycle holds nothing back
+    bool result = false;
+    if (Body::isSolidFeature(obj)) {
+        result = Body::isRolledBackPast(obj);
+    }
+    else {
+        const auto users = obj->getInList();
+        result = !users.empty() && std::ranges::all_of(users, [&known](App::DocumentObject* user) {
+            return heldBack(user, known);
+        });
+    }
+    known[obj] = result;
+    return result;
+}
+}  // namespace
+
+bool Body::isHeldBack(const App::DocumentObject* obj)
+{
+    App::Document* doc = obj ? obj->getDocument() : nullptr;
+    if (!doc || std::ranges::none_of(doc->getObjectsOfType<Body>(), [](Body* body) {
+            return body->RollbackMarker.getValue() != nullptr;
+        })) {
+        return false;
+    }
+    std::map<const App::DocumentObject*, bool> known;
+    return heldBack(obj, known);
 }
 
 // The marker stands for the copy the next step builds on; the Tip for its component id.

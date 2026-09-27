@@ -286,8 +286,7 @@ void ViewProvider::onChanged(const App::Property* prop)
 {
 
     // A step past its Body's roll-back marker is not computed, so there is nothing true to show.
-    if (prop == &Visibility && Visibility.getValue()
-        && PartDesign::Body::isRolledBackPast(getObject())) {
+    if (prop == &Visibility && Visibility.getValue() && PartDesign::Body::isHeldBack(getObject())) {
         Visibility.setValue(false);
         return;
     }
