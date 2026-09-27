@@ -169,6 +169,7 @@ private:
      * single-component Bodies, which already sit in "Through" mode.
      */
     void applyMultiOutputDisplay();
+    void showShownStep();
 
     void afterRecompute(const App::Document&, const std::vector<App::DocumentObject*>& recomputedObjs);
     fastsignals::scoped_connection m_RecomputedConn;

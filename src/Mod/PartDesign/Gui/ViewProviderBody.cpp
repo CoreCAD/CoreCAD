@@ -266,19 +266,18 @@ void ViewProviderBody::updateData(const App::Property* prop)
         setVisualBodyMode(true);
     }
 
-    if (prop == &body->Tip) {
-        // We changed Tip
-        App::DocumentObject* tip = body->Tip.getValue();
-
-        auto features = body->getFullModel();
-
-        // restore icons
-        for (auto feature : features) {
+    if (prop == &body->Tip || prop == &body->RollbackMarker) {
+        App::DocumentObject* shown = body->shownStep();
+        for (auto feature : body->getFullModel()) {
             Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(feature);
             if (vp && vp->isDerivedFrom<PartDesignGui::ViewProvider>()) {
-                static_cast<PartDesignGui::ViewProvider*>(vp)->setTipIcon(feature == tip);
+                static_cast<PartDesignGui::ViewProvider*>(vp)->setTipIcon(feature == shown);
             }
         }
+    }
+
+    if (prop == &body->RollbackMarker && !isRestoring()) {
+        showShownStep();
     }
 
     if (prop == &body->Tip || prop == &body->TipComponentId) {
@@ -286,6 +285,27 @@ void ViewProviderBody::updateData(const App::Property* prop)
     }
 
     PartGui::ViewProviderPart::updateData(prop);
+}
+
+// A body the user hid stays hidden; otherwise the step it now stops at is the one on screen. A
+// multi-output Body draws its own shape instead.
+void ViewProviderBody::showShownStep()
+{
+    auto* body = getObject<PartDesign::Body>();
+    if (!body->TipComponentId.getStrValue().empty()) {
+        return;
+    }
+    App::DocumentObject* shown = body->shownStep();
+    const auto solids = body->ownSolids();
+    const bool bodyOnScreen = std::ranges::any_of(solids, [](App::DocumentObject* step) {
+        return step->Visibility.getValue();
+    });
+    if (!shown || !bodyOnScreen) {
+        return;
+    }
+    if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(shown)) {
+        vp->show();
+    }
 }
 
 void ViewProviderBody::finishRestoring()
@@ -466,9 +486,9 @@ std::map<std::string, Base::Color> ViewProviderBody::getElementColors(const char
     // and its subshapes are the ones that have actual colors. If you query a body's ViewProvider
     // for its element colors, what you are really asking for is the element colors of its tip.
     PartDesign::Body* body = static_cast<PartDesign::Body*>(getObject());
-    if (App::DocumentObject* tip = body->Tip.getValue()) {
-        Gui::Document* guiDoc = Gui::Application::Instance->getDocument(tip->getDocument());
-        Gui::ViewProvider* vp = guiDoc->getViewProvider(tip);
+    if (App::DocumentObject* shown = body->shownStep()) {
+        Gui::Document* guiDoc = Gui::Application::Instance->getDocument(shown->getDocument());
+        Gui::ViewProvider* vp = guiDoc->getViewProvider(shown);
         return vp->getElementColors(element);
     }
     return ViewProviderPart::getElementColors(element);
@@ -713,7 +733,7 @@ void ViewProviderBody::show()
 
     auto* body = static_cast<PartDesign::Body*>(getObject());
 
-    auto tip = body->Tip.getValue();
+    auto tip = body->shownStep();
     if (!tip || tip->Visibility.getValue()) {
         return;
     }
