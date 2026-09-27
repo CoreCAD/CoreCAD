@@ -74,7 +74,7 @@ TaskHelixParameters::TaskHelixParameters(PartDesignGui::ViewProviderHelix* Helix
 
     connectSlots();
     setFocus();
-    showCoordinateAxes();
+    originDisplay.show(getObject(), Gui::DatumElement::Axes);
 
     setupGizmos(HelixView);
 }
@@ -166,23 +166,6 @@ void TaskHelixParameters::connectSlots()
     connect(ui->checkBoxOutside, &QCheckBox::toggled,
             this, &TaskHelixParameters::onOutsideChanged);
     // clang-format on
-}
-
-void TaskHelixParameters::showCoordinateAxes()
-{
-    // show the parts coordinate system axis for selection (shared document Origin, Cruth §11 step 5e)
-    if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument())) {
-        try {
-            ViewProviderCoordinateSystem* vpOrigin;
-            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->setTemporaryVisibility(Gui::DatumElement::Axes);
-        }
-        catch (const Base::Exception& ex) {
-            ex.reportException();
-        }
-    }
 }
 
 void TaskHelixParameters::fillAxisCombo(bool forceRefill)
@@ -585,25 +568,7 @@ void TaskHelixParameters::onOutsideChanged(bool on)
 }
 
 
-TaskHelixParameters::~TaskHelixParameters()
-{
-    try {
-        // hide the parts coordinate system axis for selection
-        auto obj = getObject();
-        App::Origin* origin = obj ? PartDesign::Body::findDocumentOrigin(obj->getDocument())
-                                  : nullptr;
-        if (origin) {
-            ViewProviderCoordinateSystem* vpOrigin {};
-            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->resetTemporaryVisibility();
-        }
-    }
-    catch (const Base::Exception& ex) {
-        ex.reportException();
-    }
-}
+TaskHelixParameters::~TaskHelixParameters() = default;
 
 void TaskHelixParameters::changeEvent(QEvent* e)
 {

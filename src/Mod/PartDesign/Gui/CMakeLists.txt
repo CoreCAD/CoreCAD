@@ -148,6 +148,8 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskTransformedMessages.ui
     TaskTransformedMessages.cpp
     TaskTransformedMessages.h
+    OriginDisplay.cpp
+    OriginDisplay.h
     TaskTransformedParameters.cpp
     TaskTransformedParameters.h
     TaskMirroredParameters.ui

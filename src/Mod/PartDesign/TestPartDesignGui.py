@@ -430,6 +430,32 @@ class TestClosingAFeatureDialog(unittest.TestCase):
                 Gui.Control.closeDialog()
                 self.assertEqual({o.Name for o in self.Doc.Objects}, before)
 
+    def testCloseDialogOfANewRevolveOrHelixRestoresTheOrigin(self):
+        # The #131 crash in other panels: Revolve and Groove read the deleted feature and
+        # crashed; Helix and the primitives skipped the clean-up and left the origin shown.
+        Gui.activateView("Gui::View3DInventor", True)
+        self.startPad()
+        Gui.ActiveDocument.resetEdit()
+        before = {o.Name for o in self.Doc.Objects}
+        axis = self.Doc.X_Axis
+        shown = axis.ViewObject.isVisible()
+        for command, selected in (
+            ("PartDesign_Revolution", self.Sketch),
+            ("PartDesign_Groove", self.Sketch),
+            ("PartDesign_AdditiveHelix", self.Sketch),
+            ("PartDesign_CompPrimitiveAdditive", None),
+        ):
+            with self.subTest(command=command):
+                Gui.Selection.clearSelection()
+                if selected:
+                    Gui.Selection.addSelection(selected)
+                Gui.runCommand(command, 0)
+                self.assertTrue(Gui.Control.activeDialog())
+                self.assertTrue(axis.ViewObject.isVisible())
+                Gui.Control.closeDialog()
+                self.assertEqual({o.Name for o in self.Doc.Objects}, before)
+                self.assertEqual(axis.ViewObject.isVisible(), shown)
+
 
 class TestFeatureCommands(unittest.TestCase):
     """Cruth #143: the feature commands, driven from the selection as a user would."""

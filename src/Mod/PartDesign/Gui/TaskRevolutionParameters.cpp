@@ -91,31 +91,9 @@ TaskRevolutionParameters::TaskRevolutionParameters(
 
     setFocus();
 
-    // show the parts coordinate system axis for selection
-    try {
-        if (auto vpOrigin = getOriginView()) {
-            vpOrigin->setTemporaryVisibility(Gui::DatumElement::Axes);
-        }
-    }
-    catch (const Base::Exception& ex) {
-        ex.reportException();
-    }
+    originDisplay.show(getObject(), Gui::DatumElement::Axes);
 
     setupGizmos(RevolutionView);
-}
-
-Gui::ViewProviderCoordinateSystem* TaskRevolutionParameters::getOriginView() const
-{
-    // show the parts coordinate system axis for selection. The frame is the shared document
-    // Origin (Cruth §11 step 5e) — reach it directly, not through an arbitrary owning body.
-    App::Origin* origin = PartDesign::Body::findDocumentOrigin(getObject()->getDocument());
-    if (origin) {
-        return freecad_cast<ViewProviderCoordinateSystem*>(
-            Gui::Application::Instance->getViewProvider(origin)
-        );
-    }
-
-    return nullptr;
 }
 
 void TaskRevolutionParameters::setupDialog()
@@ -659,16 +637,6 @@ bool TaskRevolutionParameters::getReversed() const
 
 TaskRevolutionParameters::~TaskRevolutionParameters()
 {
-    // hide the parts coordinate system axis for selection
-    try {
-        if (auto vpOrigin = getOriginView()) {
-            vpOrigin->resetTemporaryVisibility();
-        }
-    }
-    catch (const Base::Exception& ex) {
-        ex.reportException();
-    }
-
     axesInList.clear();
 }
 

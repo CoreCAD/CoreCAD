@@ -34,6 +34,7 @@
 
 #include <Mod/Part/Gui/TaskAttacher.h>
 
+#include "OriginDisplay.h"
 #include "ViewProviderPrimitive.h"
 #include "TaskFeatureParameters.h"
 
@@ -127,6 +128,7 @@ private:
     QWidget* proxy;
     std::unique_ptr<Ui_DlgPrimitives> ui;
     ViewProviderPrimitive* vp;
+    OriginDisplay originDisplay;
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
     Gui::LinearGizmo* lengthGizmo = nullptr;
