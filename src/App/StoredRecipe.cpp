@@ -170,12 +170,19 @@ public:
     }
 };
 
+/// A property's own serialization of itself, and whether it asked for a file of its own.
+struct OwnWords
+{
+    std::string text;
+    bool wantedSideFile {false};
+};
+
 /// The property's own serialization of itself, inline.
 ///
 /// The one value dialect in the program is the property's own writer, so anything the recipe
 /// cannot say better in its own words is said in that one -- at full precision, and inline,
 /// because a recipe that pointed at a second file would not be one file you can read.
-std::string writtenByItsOwnSerializer(const Property& prop)
+OwnWords writtenByItsOwnSerializer(const Property& prop)
 {
     ScratchWriter scratch;
     scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
@@ -183,7 +190,7 @@ std::string writtenByItsOwnSerializer(const Property& prop)
     scratch.incInd();
     scratch.incInd();
     prop.Save(scratch);
-    return scratch.getString();
+    return {scratch.getString(), scratch.wantedSideFile()};
 }
 
 /// ` name="value"`, with the value made safe to stand inside the quotes.
@@ -487,6 +494,190 @@ bool loadAsset(Property& prop, const std::string& directory, const std::string& 
     return true;
 }
 
+/// Everything the stored form says about a property before anything is said about its value:
+/// what it is called, what kind it is, and -- for one a person added -- its declaration.
+StoredProperty declarationOf(const std::string& name,
+                             const Property& prop,
+                             const PropertyContainer& owner)
+{
+    StoredProperty entry;
+    entry.name = name;
+    entry.type = prop.getTypeId().getName();
+    if (prop.testStatus(Property::PropDynamic)) {
+        const DynamicProperty::PropData data = owner.getDynamicPropertyData(&prop);
+        entry.dynamic = true;
+        entry.group = data.group;
+        entry.documentation = data.doc;
+        entry.attributes = data.attr;
+        entry.readOnly = data.readonly;
+        entry.hidden = data.hidden;
+    }
+    return entry;
+}
+
+/// A reference, stated as the durable ids it points at wherever this file can say so.
+void stateReference(StoredProperty& entry,
+                    const std::string& name,
+                    const Property& prop,
+                    const PropertyContainer& owner)
+{
+    // An expression engine is a reference property by inheritance -- it holds the formulas an
+    // object was given -- but what it points at lives inside the text of each formula, which
+    // speaks object names. It is written by its own serializer here, which states the durable
+    // identity of each intra-document reference beside the formula, keyed by the part of the text
+    // it was written from. References that leave the document remain name-based, reserved for the
+    // PropertyXLink step.
+    if (prop.isDerivedFrom(PropertyExpressionContainer::getClassTypeId())) {
+        entry.body = writtenByItsOwnSerializer(prop).text;
+        return;
+    }
+
+    // Where this session could not resolve what the file stated, the file says it again. The
+    // live property holds nothing, so deriving the reference from memory would write "points at
+    // nothing" over "points at that object" -- a fact about this session published as a fact
+    // about the design (Amendment 19).
+    if (const auto* kept = owner.unresolvedReference(name.c_str())) {
+        for (const PropertyContainer::StatedTarget& target : *kept) {
+            entry.bindings.push_back({target.uuid, target.sub, /*external=*/false, target.noPart});
+        }
+        entry.isReference = true;
+        return;
+    }
+
+    const auto* asObject = dynamic_cast<const DocumentObject*>(&owner);
+    const std::optional<std::vector<Binding>> bindings =
+        referenceBindings(prop, asObject != nullptr ? asObject->getDocument() : nullptr);
+    if (!bindings) {
+        entry.reason = "reference kind not carried yet";
+        return;
+    }
+
+    const bool leavesTheDocument =
+        std::any_of(bindings->begin(), bindings->end(), [](const Binding& binding) {
+            return binding.external;
+        });
+    if (leavesTheDocument) {
+        // A reference that leaves the document asks a second question -- which document -- and
+        // the link property already answers it durably: it writes the target document's uuid
+        // beside the object's, keeping the file path as a locator hint only (Clause 3.7). So the
+        // file lets that property speak for itself rather than inventing a second, weaker way of
+        // saying the same thing.
+        entry.body = writtenByItsOwnSerializer(prop).text;
+        return;
+    }
+
+    entry.bindings = *bindings;
+    entry.isReference = true;
+}
+
+/// A value, stated inline when it can be read there and placed in the source store when not.
+///
+/// Answers false when there is nothing to state at all: a property holding no bulk is not a gap
+/// and not a value, and a document rebuilt without it holds nothing too.
+bool stateValue(StoredProperty& entry, const Property& prop, const std::string& assetDirectory)
+{
+    // The property states its own value in the file. That is the rule and not the exception: a
+    // colour, a placement, a list of numbers is authored content, and a record that pointed at a
+    // second file for it could lose the value while still looking complete.
+    if (!prop.holdsOpaqueBulk()) {
+        const OwnWords words = writtenByItsOwnSerializer(prop);
+        if (!words.wantedSideFile) {
+            if (words.text.empty()) {
+                // The property wrote nothing and asked for nowhere to put it. An empty block is
+                // not a value: its own reader looks for an element that is not there and reports
+                // the whole document as corrupt. Named as a gap, which is what it is.
+                entry.reason = "the property wrote no value";
+            }
+            else {
+                entry.body = words.text;
+            }
+            return true;
+        }
+        // It says it is not bulk and then asks for a file anyway. That is a fault in the property,
+        // not a reason to drop the value, so it goes to the store like bulk does and the fault
+        // stays visible in the file.
+        Base::Console().warning("Stored recipe: property '%s' (%s) states no value inline "
+                                "yet asks for a file of its own.\n",
+                                entry.name.c_str(),
+                                entry.type.c_str());
+    }
+
+    // Compiled bulk -- a solid, a mesh, a point cloud, an embedded file. It goes to the project's
+    // source store and the recipe names it by the content it holds, which stores one imported
+    // body once however many parts use it.
+    if (!assetDirectory.empty()) {
+        const AssetOutcome outcome = storeAsset(prop, assetDirectory);
+        if (outcome.result == AssetOutcome::Result::NothingToKeep) {
+            return false;
+        }
+        if (outcome.result == AssetOutcome::Result::Failed) {
+            // The value is real and the store would not take it. Named, because a write that
+            // failed and a property that was empty must not read the same on disk.
+            entry.reason = "value could not be written to the project store";
+            return true;
+        }
+        entry.asset = outcome.id;
+        return true;
+    }
+
+    // No store to put it in -- a document with no folder yet. Whatever the property can say
+    // inline is better than nothing, and for a solid that is the whole solid as text.
+    const OwnWords inlined = writtenByItsOwnSerializer(prop);
+    if (!inlined.wantedSideFile && !inlined.text.empty()) {
+        entry.body = inlined.text;
+    }
+    else {
+        entry.reason = "value kept beside the document, which has no folder yet";
+    }
+    return true;
+}
+
+/// What the stored form says about one property, or nothing when it is not the file's to state.
+std::optional<StoredProperty> storedProperty(const std::string& name,
+                                             const Property& prop,
+                                             const PropertyContainer& owner,
+                                             const std::string& assetDirectory)
+{
+    const bool carried = App::theRecipeCarries(prop, owner);
+    const bool declaredOnly = !carried && onlyItsDeclarationIsCarried(prop, owner);
+    if (!carried && !declaredOnly) {
+        return std::nullopt;
+    }
+    if (owner.statedProperties().count(name) != 0) {
+        // The file's own words stand for this name until something supersedes them, and they are
+        // written by the caller. Saying it twice would be a file that disagrees with itself.
+        return std::nullopt;
+    }
+
+    StoredProperty entry = declarationOf(name, prop, owner);
+    if (declaredOnly) {
+        // Stated as a property that exists and no more. The value is whatever the object makes of
+        // it on the next recompute, which is exactly what its flags say.
+        entry.valueStated = false;
+        return entry;
+    }
+    if (isReference(prop)) {
+        stateReference(entry, name, prop, owner);
+        return entry;
+    }
+
+    // Source material this session was told about and could not find. The property holds
+    // nothing as a result, and re-deriving the record from what is in memory would write that
+    // emptiness over the name -- destroying the one thing that could reunite the document with
+    // its material. The record keeps the name and states the gap.
+    const std::string missing = owner.missingSource(name.c_str());
+    if (!missing.empty()) {
+        entry.asset = missing;
+        entry.reason = "source material '" + missing + "' was not found";
+        return entry;
+    }
+
+    if (!stateValue(entry, prop, assetDirectory)) {
+        return std::nullopt;
+    }
+    return entry;
+}
+
 /// Everything the stored form has to say about one container's properties, in name order.
 std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
                                             const std::string& assetDirectory)
@@ -496,178 +687,13 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
 
     std::vector<StoredProperty> stored;
     for (const auto& [name, prop] : properties) {
-        const bool carried = prop != nullptr && App::theRecipeCarries(*prop, owner);
-        const bool declaredOnly =
-            prop != nullptr && !carried && onlyItsDeclarationIsCarried(*prop, owner);
-        if (prop == nullptr || (!carried && !declaredOnly)) {
+        if (prop == nullptr) {
             continue;
         }
-
-        if (owner.statedProperties().count(name) != 0) {
-            // The file's own words stand for this name until something supersedes them, and they
-            // are written below. Saying it twice would be a file that disagrees with itself.
-            continue;
+        if (std::optional<StoredProperty> entry =
+                storedProperty(name, *prop, owner, assetDirectory)) {
+            stored.push_back(std::move(*entry));
         }
-
-        StoredProperty entry;
-        entry.name = name;
-        entry.type = prop->getTypeId().getName();
-        if (prop->testStatus(Property::PropDynamic)) {
-            const DynamicProperty::PropData data = owner.getDynamicPropertyData(prop);
-            entry.dynamic = true;
-            entry.group = data.group;
-            entry.documentation = data.doc;
-            entry.attributes = data.attr;
-            entry.readOnly = data.readonly;
-            entry.hidden = data.hidden;
-        }
-
-        if (declaredOnly) {
-            // Stated as a property that exists and no more. The value is whatever the object
-            // makes of it on the next recompute, which is exactly what its flags say.
-            entry.valueStated = false;
-            stored.push_back(entry);
-            continue;
-        }
-
-        if (isReference(*prop)) {
-            // An expression engine is a reference property by inheritance -- it holds the
-            // formulas an object was given -- but what it points at lives inside the text of
-            // each formula, which speaks object names. It is written by its own serializer
-            // here, which states the durable identity of each intra-document reference beside
-            // the formula, keyed by the part of the text it was written from. References that
-            // leave the document remain name-based, reserved for the PropertyXLink step.
-            if (prop->isDerivedFrom(PropertyExpressionContainer::getClassTypeId())) {
-                entry.body = writtenByItsOwnSerializer(*prop);
-                stored.push_back(entry);
-                continue;
-            }
-
-            // Where this session could not resolve what the file stated, the file says it again.
-            // The live property holds nothing, so deriving the reference from memory would write
-            // "points at nothing" over "points at that object" -- a fact about this session
-            // published as a fact about the design (Amendment 19).
-            if (const auto* kept = owner.unresolvedReference(name.c_str())) {
-                for (const PropertyContainer::StatedTarget& target : *kept) {
-                    entry.bindings.push_back(
-                        {target.uuid, target.sub, /*external=*/false, target.noPart});
-                }
-                entry.isReference = true;
-                stored.push_back(entry);
-                continue;
-            }
-
-            const auto* asObject = dynamic_cast<const DocumentObject*>(&owner);
-            const std::optional<std::vector<Binding>> bindings =
-                referenceBindings(*prop, asObject != nullptr ? asObject->getDocument() : nullptr);
-            if (!bindings) {
-                entry.reason = "reference kind not carried yet";
-                stored.push_back(entry);
-                continue;
-            }
-
-            const bool leavesTheDocument =
-                std::any_of(bindings->begin(), bindings->end(), [](const Binding& binding) {
-                    return binding.external;
-                });
-            if (leavesTheDocument) {
-                // A reference that leaves the document asks a second question -- which document
-                // -- and the link property already answers it durably: it writes the target
-                // document's uuid beside the object's, keeping the file path as a locator hint
-                // only (Clause 3.7). So the file lets that property speak for itself rather than
-                // inventing a second, weaker way of saying the same thing.
-                entry.body = writtenByItsOwnSerializer(*prop);
-                stored.push_back(entry);
-                continue;
-            }
-
-            entry.bindings = *bindings;
-            entry.isReference = true;
-            stored.push_back(entry);
-            continue;
-        }
-
-        // Source material this session was told about and could not find. The property holds
-        // nothing as a result, and re-deriving the record from what is in memory would write that
-        // emptiness over the name -- destroying the one thing that could reunite the document
-        // with its material. The record keeps the name and states the gap.
-        const std::string missing = owner.missingSource(name.c_str());
-        if (!missing.empty()) {
-            entry.asset = missing;
-            entry.reason = "source material '" + missing + "' was not found";
-            stored.push_back(entry);
-            continue;
-        }
-
-        // The property states its own value in the file. That is the rule and not the exception:
-        // a colour, a placement, a list of numbers is authored content, and a record that pointed
-        // at a second file for it could lose the value while still looking complete.
-        if (!prop->holdsOpaqueBulk()) {
-            ScratchWriter scratch;
-            scratch.Stream().precision(std::numeric_limits<double>::max_digits10);
-            scratch.setForceXML(true);
-            scratch.incInd();
-            scratch.incInd();
-            prop->Save(scratch);
-            if (!scratch.wantedSideFile()) {
-                if (scratch.getString().empty()) {
-                    // The property wrote nothing and asked for nowhere to put it. An empty block
-                    // is not a value: its own reader looks for an element that is not there and
-                    // reports the whole document as corrupt. Named as a gap, which is what it is.
-                    entry.reason = "the property wrote no value";
-                }
-                else {
-                    entry.body = scratch.getString();
-                }
-                stored.push_back(entry);
-                continue;
-            }
-            // It says it is not bulk and then asks for a file anyway. That is a fault in the
-            // property, not a reason to drop the value, so it goes to the store like bulk does
-            // and the fault stays visible in the file.
-            Base::Console().warning("Stored recipe: property '%s' (%s) states no value inline "
-                                    "yet asks for a file of its own.\n",
-                                    name.c_str(),
-                                    entry.type.c_str());
-        }
-
-        // Compiled bulk -- a solid, a mesh, a point cloud, an embedded file. It goes to the
-        // project's source store and the recipe names it by the content it holds, which stores
-        // one imported body once however many parts use it.
-        if (!assetDirectory.empty()) {
-            const AssetOutcome outcome = storeAsset(*prop, assetDirectory);
-            if (outcome.result == AssetOutcome::Result::NothingToKeep) {
-                // Not a gap and not a value -- the property holds nothing, and a document rebuilt
-                // without it holds nothing too.
-                continue;
-            }
-            if (outcome.result == AssetOutcome::Result::Failed) {
-                // The value is real and the store would not take it. Named, because a write that
-                // failed and a property that was empty must not read the same on disk.
-                entry.reason = "value could not be written to the project store";
-                stored.push_back(entry);
-                continue;
-            }
-            entry.asset = outcome.id;
-            stored.push_back(entry);
-            continue;
-        }
-
-        // No store to put it in -- a document with no folder yet. Whatever the property can say
-        // inline is better than nothing, and for a solid that is the whole solid as text.
-        ScratchWriter inlined;
-        inlined.Stream().precision(std::numeric_limits<double>::max_digits10);
-        inlined.setForceXML(true);
-        inlined.incInd();
-        inlined.incInd();
-        prop->Save(inlined);
-        if (!inlined.wantedSideFile() && !inlined.getString().empty()) {
-            entry.body = inlined.getString();
-        }
-        else {
-            entry.reason = "value kept beside the document, which has no folder yet";
-        }
-        stored.push_back(entry);
     }
 
     // Given back in their own place among the properties this build does understand, so a save
@@ -843,9 +869,6 @@ void refuseAFormatThisBuildDoesNotRead(const Base::XMLReader& reader)
     }
 }
 
-std::string liftObjectWords(const std::string& source, const std::string& uuid);
-std::string liftDocumentWords(const std::string& source);
-
 /// A reader that answers what this document called the objects a file named.
 ///
 /// A recipe read into an empty document keeps every name the file states, so nothing is remapped
@@ -884,6 +907,27 @@ private:
     std::map<std::string, std::string> _names;
 };
 
+/// Where the line holding position `at` begins.
+std::size_t lineStartOf(const std::string& text, std::size_t at)
+{
+    const std::size_t newline = text.rfind('\n', at);
+    return newline == std::string::npos ? 0 : newline + 1;
+}
+
+/// The whole lines from the one holding `at` to the one holding `end`, or nothing when
+/// something other than indentation shares the line before `at` -- not a shape this writer
+/// produces, and not a block to guess the extent of.
+std::string wholeLines(const std::string& text, std::size_t at, std::size_t end)
+{
+    const std::size_t lineStart = lineStartOf(text, at);
+    if (text.find_first_not_of(" \t", lineStart) != at) {
+        return {};
+    }
+    const std::size_t lineEnd = text.find('\n', end);
+    const std::size_t stop = lineEnd == std::string::npos ? text.size() : lineEnd + 1;
+    return text.substr(lineStart, stop - lineStart);
+}
+
 /// One object's appearance block, exactly as the file states it, indentation and all.
 ///
 /// Lifted rather than rebuilt for the same reason a property block is: a session with no display
@@ -894,21 +938,11 @@ std::string liftDisplayBlock(const std::string& objectWords)
     if (at == std::string::npos) {
         return {};
     }
-    std::size_t lineStart = objectWords.rfind('\n', at);
-    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
-    if (objectWords.find_first_not_of(" \t", lineStart) != at) {
-        // Something else shares the line. Not a shape this writer produces.
-        return {};
-    }
-    const std::string closing = "</Display>";
-    const std::size_t end = objectWords.find(closing, at);
+    const std::size_t end = objectWords.find("</Display>", at);
     if (end == std::string::npos) {
         return {};
     }
-    const std::size_t lineEnd = objectWords.find('\n', end);
-    return objectWords.substr(lineStart,
-                              (lineEnd == std::string::npos ? objectWords.size() : lineEnd + 1)
-                                  - lineStart);
+    return wholeLines(objectWords, at, end);
 }
 
 /// One property's block, exactly as the file states it, indentation and all.
@@ -924,14 +958,6 @@ std::string liftPropertyBlock(const std::string& objectWords, const std::string&
     if (at == std::string::npos) {
         return {};
     }
-    std::size_t lineStart = objectWords.rfind('\n', at);
-    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
-    if (objectWords.find_first_not_of(" \t", lineStart) != at) {
-        // Something else shares the line. Not a shape this writer produces, and not a block to
-        // guess the extent of.
-        return {};
-    }
-
     // Counted rather than searched for, so a value that states properties of its own inside its
     // body cannot end the block early.
     std::size_t depth = 0;
@@ -957,19 +983,12 @@ std::string liftPropertyBlock(const std::string& objectWords, const std::string&
         --depth;
         scan = close + std::strlen("</Property>");
         if (depth == 0) {
-            const std::size_t lineEnd = objectWords.find('\n', scan);
-            return objectWords.substr(lineStart,
-                                      (lineEnd == std::string::npos ? objectWords.size()
-                                                                    : lineEnd + 1)
-                                          - lineStart);
+            return wholeLines(objectWords, at, scan);
         }
     }
     return {};
 }
 
-/// Restore the values of one `<Properties>` block onto a container, then step over the
-/// `<Unrecorded>` block that follows it: what the writer could not say, the reader cannot
-/// invent.
 /// A reference read from the file, waiting for the objects it points at to exist.
 using PendingReference = std::pair<Property*, std::vector<Binding>>;
 
@@ -1029,6 +1048,183 @@ void keepUnreadValue(Document& doc,
         why.c_str());
 }
 
+/// The property the file's statement belongs in, declaring it first when a person added it.
+///
+/// Null when this build has nowhere to put it.
+Property* placeFor(const Base::XMLReader& reader,
+                   PropertyContainer& owner,
+                   const std::string& name,
+                   const std::string& type)
+{
+    Property* prop = owner.getPropertyByName(name.c_str());
+    if (prop == nullptr && reader.getAttribute<long>("dynamic", 0) == 1) {
+        // A property the object was given at runtime has to be declared before it can hold
+        // anything, so the file carries the declaration and the reader replays it.
+        try {
+            prop = owner.addDynamicProperty(
+                type.c_str(),
+                name.c_str(),
+                reader.getAttribute<const char*>("group", ""),
+                reader.getAttribute<const char*>("doc", ""),
+                static_cast<short>(reader.getAttribute<long>("attributes", 0)),
+                reader.getAttribute<long>("readonly", 0) == 1,
+                reader.getAttribute<long>("hidden", 0) == 1);
+        }
+        catch (const Base::Exception&) {
+            // A property type this build does not have -- an add-on's own kind. Declaring it
+            // fails, and the read used to stop there, taking the rest of the document with it.
+            // The block is kept as stated instead (Amendment 19).
+            prop = nullptr;
+        }
+    }
+    if (prop == nullptr || prop->getTypeId().getName() != type) {
+        return nullptr;
+    }
+    return prop;
+}
+
+/// The durable ids a `<Reference>` block names, in the order it names them.
+std::vector<Binding> readBindings(Base::XMLReader& reader)
+{
+    std::vector<Binding> bindings;
+    reader.readElement("Reference");
+    const int reference = reader.level();
+    while (nextChildOf(reader, reference)) {
+        if (std::strcmp(reader.localName(), "Target") != 0) {
+            refuse("Target", reader);
+        }
+        const bool noPart = !reader.hasAttribute("sub");
+        bindings.push_back({reader.getAttribute<const char*>("uuid"),
+                            noPart ? "" : reader.getAttribute<const char*>("sub"),
+                            /*external=*/false,
+                            noPart});
+    }
+    reader.readEndElement("Reference");
+    return bindings;
+}
+
+/// Source material the file names by its content, read back from the project's source store.
+void readAsset(PropertyContainer& owner,
+               Property& prop,
+               const std::string& name,
+               const std::string& asset,
+               const std::string& assetDirectory)
+{
+    if (!assetDirectory.empty() && loadAsset(prop, assetDirectory, asset)) {
+        return;
+    }
+    // The file names source material this project does not hold. Said out loud, because a part
+    // quietly missing the body it was built from looks exactly like a part that never had one --
+    // and remembered, because the next save would otherwise write the absence over the name and
+    // make the loss permanent even after the material came back.
+    Base::Console().warning("Stored recipe: missing source material '%s'\n", asset.c_str());
+    owner.rememberMissingSource(name.c_str(), asset);
+}
+
+/// A value stated inline, handed to the property's own reader.
+void readInlineValue(Base::XMLReader& reader,
+                     Document& doc,
+                     PropertyContainer& owner,
+                     Property& prop,
+                     const std::string& name,
+                     const std::string& type,
+                     const std::function<std::string(const std::string&)>& wordsFor)
+{
+    try {
+        prop.Restore(reader);
+    }
+    catch (const Base::XMLParseException&) {
+        // The file's STRUCTURE is broken here, which is not a value this build cannot read: a
+        // refusal for that is total and belongs to the reader, not here (Amendment 19 Clause
+        // 19.2).
+        throw;
+    }
+    catch (const Base::Exception& e) {
+        keepUnreadValue(doc, owner, prop, name, type, e.what(), wordsFor(name));
+    }
+    catch (const std::exception& e) {
+        // A value that fails in the standard library rather than in ours -- a number that is not
+        // one reaches `stod`, which throws something no catch of ours used to name. Measured: one
+        // such value and the document did not open at all, not even as its own beginning.
+        keepUnreadValue(doc, owner, prop, name, type, e.what(), wordsFor(name));
+    }
+}
+
+/// A statement this build has no place for: no property of that name, or one of a different type.
+///
+/// Stepping over it is how a document quietly comes back smaller than it was written, so the
+/// file's own words are kept and given back.
+void keepWithNoPlace(Document& doc,
+                     PropertyContainer& owner,
+                     const std::string& name,
+                     const std::string& type,
+                     std::string words)
+{
+    if (words.empty()) {
+        Base::Console().warning(
+            "Stored recipe: '%s' (%s) is not a property this build has, and its words could not "
+            "be kept. Saving this document would lose it.\n",
+            name.c_str(),
+            type.c_str());
+        // Warned about AND recorded: what a save would lose has to be answerable at the moment of
+        // the save, and a message printed at load time is gone by then.
+        doc.recordUnkeptStatement("'" + name + "' (" + type
+                                  + "), which this build has no property for and whose words "
+                                    "could not be kept");
+        return;
+    }
+    owner.rememberStatedProperty(name.c_str(),
+                                 std::move(words),
+                                 "this build has no property of that name and type");
+    Base::Console().warning("Stored recipe: '%s' (%s) is not a property this build has. It is "
+                            "kept as written and the document is not whole.\n",
+                            name.c_str(),
+                            type.c_str());
+}
+
+/// Choices still waiting, once the whole container is read, for a list that offers them.
+///
+/// An enumeration states the value that was chosen by name, and some lists are not fixed: a
+/// hole's thread class is built from its thread type, so a name may not be lookupable at the
+/// moment it is read. Such a name waits for a list that offers it, and every property read after
+/// it is a chance for one to arrive. A name still waiting here is one nothing here offers -- a
+/// value this build cannot honour, kept as the file worded it rather than quietly replaced by the
+/// default (Amendment 19).
+void keepChoicesNothingOffers(Document& doc,
+                              PropertyContainer& owner,
+                              const std::function<std::string(const std::string&)>& wordsFor)
+{
+    std::vector<Property*> declared;
+    owner.getPropertyList(declared);
+    for (Property* prop : declared) {
+        auto* choice = freecad_cast<PropertyEnumeration*>(prop);
+        if (choice == nullptr || choice->nameAwaitingItsList().empty()) {
+            continue;
+        }
+        const std::string why =
+            "'" + choice->nameAwaitingItsList() + "' is not a value this build offers for it";
+        const char* named = choice->getName();
+        const std::string name = named != nullptr ? named : std::string {};
+        choice->stopAwaitingItsList();
+        keepUnreadValue(doc, owner, *choice, name, choice->getTypeId().getName(), why,
+                        wordsFor(name));
+    }
+}
+
+/// Step over the `<Unrecorded>` block: what the writer could not say, the reader cannot invent.
+void stepOverUnrecorded(Base::XMLReader& reader)
+{
+    reader.readElement("Unrecorded");
+    const int unrecorded = reader.level();
+    while (nextChildOf(reader, unrecorded)) {
+        if (std::strcmp(reader.localName(), "Property") != 0) {
+            refuse("Property", reader);
+        }
+    }
+    reader.readEndElement("Unrecorded");
+}
+
+/// Restore the values of one `<Properties>` block onto a container, and the block that follows it.
 void readProperties(Base::XMLReader& reader,
                     Document& doc,
                     PropertyContainer& owner,
@@ -1043,7 +1239,7 @@ void readProperties(Base::XMLReader& reader,
     // the two would be worse than losing it.
     std::string containerWords;
     bool lifted = false;
-    const auto wordsFor = [&](const std::string& name) {
+    const std::function<std::string(const std::string&)> wordsFor = [&](const std::string& name) {
         if (!lifted) {
             // The file's words as written, indentation and all -- not the dedented form a kept
             // object is stored in, because a property block is given back at the depth it was
@@ -1062,154 +1258,36 @@ void readProperties(Base::XMLReader& reader,
         }
         const std::string name = reader.getAttribute<const char*>("name");
         const std::string type = reader.getAttribute<const char*>("type");
-        // A property closed where it stands states that it exists and states no value for it.
-        // A self-closing element has already ended by the time it is read, so its level is the
+        // A property closed where it stands states that it exists and states no value for it. A
+        // self-closing element has already ended by the time it is read, so its level is the
         // level of the list around it -- that, and not a flag, is what says a value is there.
         const bool valueStated = reader.level() > properties;
 
-        Property* prop = owner.getPropertyByName(name.c_str());
-        if (prop == nullptr && reader.getAttribute<long>("dynamic", 0) == 1) {
-            // A property the object was given at runtime has to be declared before it can hold
-            // anything, so the file carries the declaration and the reader replays it.
-            try {
-                prop = owner.addDynamicProperty(
-                    type.c_str(),
-                    name.c_str(),
-                    reader.getAttribute<const char*>("group", ""),
-                    reader.getAttribute<const char*>("doc", ""),
-                    static_cast<short>(reader.getAttribute<long>("attributes", 0)),
-                    reader.getAttribute<long>("readonly", 0) == 1,
-                    reader.getAttribute<long>("hidden", 0) == 1);
-            }
-            catch (const Base::Exception&) {
-                // A property type this build does not have -- an add-on's own kind. Declaring it
-                // fails, and the read used to stop there, taking the rest of the document with
-                // it. The block is kept as stated instead (Amendment 19).
-                prop = nullptr;
-            }
+        Property* prop = placeFor(reader, owner, name, type);
+        if (prop == nullptr) {
+            keepWithNoPlace(doc, owner, name, type, wordsFor(name));
         }
-        if (prop != nullptr && prop->getTypeId().getName() == type) {
-            const std::string asset = reader.getAttribute<const char*>("asset", "");
-            if (!asset.empty()) {
-                if (assetDirectory.empty() || !loadAsset(*prop, assetDirectory, asset)) {
-                    // The file names source material this project does not hold. Said out loud,
-                    // because a part quietly missing the body it was built from looks exactly
-                    // like a part that never had one -- and remembered, because the next save
-                    // would otherwise write the absence over the name and make the loss
-                    // permanent even after the material came back.
-                    Base::Console().warning("Stored recipe: missing source material '%s'\n",
-                                            asset.c_str());
-                    owner.rememberMissingSource(name.c_str(), asset);
-                }
-            }
-            else if (reader.getAttribute<long>("reference", 0) == 1) {
-                std::vector<Binding> bindings;
-                reader.readElement("Reference");
-                const int reference = reader.level();
-                while (nextChildOf(reader, reference)) {
-                    if (std::strcmp(reader.localName(), "Target") != 0) {
-                        refuse("Target", reader);
-                    }
-                    const bool noPart = !reader.hasAttribute("sub");
-                    bindings.push_back({reader.getAttribute<const char*>("uuid"),
-                                        noPart ? "" : reader.getAttribute<const char*>("sub"),
-                                        /*external=*/false,
-                                        noPart});
-                }
-                reader.readEndElement("Reference");
-                // Held until every object in the file exists: a reference may point forwards,
-                // and a file whose meaning depended on the order it was read would have brought
-                // back the ordering problem this form was written to remove.
-                pending.emplace_back(prop, std::move(bindings));
-            }
-            else if (!valueStated) {
-                // Declared and left as the object makes it. Asking the property to read a value
-                // the file does not state is how a reader invents one.
-            }
-            else {
-                try {
-                    prop->Restore(reader);
-                }
-                catch (const Base::XMLParseException&) {
-                    // The file's STRUCTURE is broken here, which is not a value this build cannot
-                    // read: a refusal for that is total and belongs to the reader, not here
-                    // (Amendment 19 Clause 19.2).
-                    throw;
-                }
-                catch (const Base::Exception& e) {
-                    keepUnreadValue(doc, owner, *prop, name, type, e.what(), wordsFor(name));
-                }
-                catch (const std::exception& e) {
-                    // A value that fails in the standard library rather than in ours -- a number
-                    // that is not one reaches `stod`, which throws something no catch of ours
-                    // used to name. Measured: one such value and the document did not open at
-                    // all, not even as its own beginning.
-                    keepUnreadValue(doc, owner, *prop, name, type, e.what(), wordsFor(name));
-                }
-            }
+        else if (const std::string asset = reader.getAttribute<const char*>("asset", "");
+                 !asset.empty()) {
+            readAsset(owner, *prop, name, asset, assetDirectory);
         }
-        else {
-            // This build has no place for what the file states here: no property of that name, or
-            // one of a different type. Stepping over it is how a document quietly comes back
-            // smaller than it was written, so the file's own words are kept and given back.
-            std::string words = wordsFor(name);
-            if (words.empty()) {
-                Base::Console().warning(
-                    "Stored recipe: '%s' (%s) is not a property this build has, and its words "
-                    "could not be kept. Saving this document would lose it.\n",
-                    name.c_str(),
-                    type.c_str());
-                // Warned about AND recorded: what a save would lose has to be answerable at the
-                // moment of the save, and a message printed at load time is gone by then.
-                doc.recordUnkeptStatement("'" + name + "' (" + type
-                                          + "), which this build has no property for and whose "
-                                            "words could not be kept");
-            }
-            else {
-                owner.rememberStatedProperty(name.c_str(),
-                                             std::move(words),
-                                             "this build has no property of that name and type");
-                Base::Console().warning(
-                    "Stored recipe: '%s' (%s) is not a property this build has. It is kept as "
-                    "written and the document is not whole.\n",
-                    name.c_str(),
-                    type.c_str());
-            }
+        else if (reader.getAttribute<long>("reference", 0) == 1) {
+            // Held until every object in the file exists: a reference may point forwards, and a
+            // file whose meaning depended on the order it was read would have brought back the
+            // ordering problem this form was written to remove.
+            pending.emplace_back(prop, readBindings(reader));
         }
+        else if (valueStated) {
+            readInlineValue(reader, doc, owner, *prop, name, type, wordsFor);
+        }
+        // Otherwise declared and left as the object makes it. Asking the property to read a value
+        // the file does not state is how a reader invents one.
         reader.readEndElement("Property");
     }
     reader.readEndElement("Properties");
 
-    // An enumeration states the value that was chosen by name, and some lists are not fixed: a
-    // hole's thread class is built from its thread type, so a name may not be lookupable at the
-    // moment it is read. Such a name waits for a list that offers it, and every property read
-    // after it is a chance for one to arrive. Here the container has been read in full, so a name
-    // still waiting is one nothing here offers -- a value this build cannot honour, kept as the
-    // file worded it rather than quietly replaced by the default (Amendment 19).
-    std::vector<Property*> declared;
-    owner.getPropertyList(declared);
-    for (Property* prop : declared) {
-        auto* choice = freecad_cast<PropertyEnumeration*>(prop);
-        if (choice == nullptr || choice->nameAwaitingItsList().empty()) {
-            continue;
-        }
-        const std::string why =
-            "'" + choice->nameAwaitingItsList() + "' is not a value this build offers for it";
-        const char* named = choice->getName();
-        const std::string name = named != nullptr ? named : std::string {};
-        choice->stopAwaitingItsList();
-        keepUnreadValue(doc, owner, *choice, name, choice->getTypeId().getName(), why,
-                        wordsFor(name));
-    }
-
-    reader.readElement("Unrecorded");
-    const int unrecorded = reader.level();
-    while (nextChildOf(reader, unrecorded)) {
-        if (std::strcmp(reader.localName(), "Property") != 0) {
-            refuse("Property", reader);
-        }
-    }
-    reader.readEndElement("Unrecorded");
+    keepChoicesNothingOffers(doc, owner, wordsFor);
+    stepOverUnrecorded(reader);
 }
 
 /// The container holding an object's chosen appearance, or null when this session has none.
@@ -1348,7 +1426,8 @@ std::string App::formatStoredRecipe(const Document& doc,
     // reads this file at all before it starts interpreting it (Clause 19.7). The one constant the
     // reader checks against, so the stamp can never come to mean something the check does not.
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
-                    << "<Recipe Version=\"" << storedRecipeFormat << "\">\n";
+                    << "<Recipe" << attribute("Version", std::to_string(storedRecipeFormat))
+                    << ">\n";
     writer.incInd();
 
     // The document's own authored facts -- who wrote it, when it was created, what it is called
@@ -1435,96 +1514,112 @@ std::string App::formatStoredRecipe(const Document& doc,
 namespace
 {
 
-/// One object's block, lifted from the file exactly as the file states it.
+/// The file a recipe was read from, kept as text so that what this build cannot construct is
+/// given back in the file's own words rather than in this session's reading of them (Amendment
+/// 19).
 ///
-/// Cruth (Amendment 19): a document may name an object this build cannot construct -- a module
-/// that was not compiled in, an add-on that is absent, a scripted class that is gone. The block is
-/// taken from the source text rather than rebuilt from what the reader understood, because what is
-/// owed here is the statement itself and not this session's reading of it.
-///
-/// Object blocks are siblings and never nest, so the first `</Object>` after the opening tag is
-/// this object's own end. The leading indentation is removed so the block can be given back at
-/// whatever depth the writer is at, and restored on the way out.
-/// One object's block, exactly as the file states it, indentation and all.
-/// The document's own block, exactly as the file states it, indentation and all.
-///
-/// The document is not an object and has no durable id to be found by, but it states properties
-/// like any other container and they are kept on the same terms.
-std::string liftDocumentWords(const std::string& source)
+/// Objects are read in the order the file states them, so each object's block is looked for from
+/// where the last one was found. Searching from the top for every object made a headless open of
+/// a document with appearances scan the whole file once per object.
+class RecipeSource
 {
-    const std::size_t start = source.find("<Document ");
-    if (start == std::string::npos) {
-        return {};
-    }
-    const std::string closing = "</Document>";
-    const std::size_t end = source.find(closing, start);
-    if (end == std::string::npos) {
-        return {};
-    }
-    std::size_t lineStart = source.rfind('\n', start);
-    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
-    return source.substr(lineStart, end + closing.size() - lineStart);
-}
+public:
+    explicit RecipeSource(std::string text)
+        : _text(std::move(text))
+    {}
 
-std::string liftObjectWords(const std::string& source, const std::string& uuid)
-{
-    const std::string opening = "<Object" + attribute("uuid", uuid);
-    const std::size_t start = source.find(opening);
-    if (start == std::string::npos) {
-        return {};
-    }
-    const std::string closing = "</Object>";
-    const std::size_t end = source.find(closing, start);
-    if (end == std::string::npos) {
-        return {};
-    }
-    std::size_t lineStart = source.rfind('\n', start);
-    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
-    return source.substr(lineStart, end + closing.size() - lineStart);
-}
-
-std::string liftObjectBlock(const std::string& source, const std::string& uuid)
-{
-    const std::string opening = "<Object" + attribute("uuid", uuid);
-    const std::size_t start = source.find(opening);
-    if (start == std::string::npos) {
-        return {};
-    }
-    const std::string closing = "</Object>";
-    const std::size_t end = source.find(closing, start);
-    if (end == std::string::npos) {
-        return {};
+    const std::string& text() const
+    {
+        return _text;
     }
 
-    std::string block = source.substr(start, end + closing.size() - start);
-
-    // The depth this block was written at, taken from the line it starts on.
-    std::size_t lineStart = source.rfind('\n', start);
-    lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
-    const std::string indent = source.substr(lineStart, start - lineStart);
-    if (indent.find_first_not_of(" \t") != std::string::npos) {
-        return block;
+    /// The document's own block, exactly as the file states it, indentation and all.
+    ///
+    /// The document is not an object and has no durable id to be found by, but it states
+    /// properties like any other container and they are kept on the same terms.
+    std::string documentWords() const
+    {
+        return linesThrough(_text.find("<Document "), "</Document>");
     }
 
-    std::string dedented;
-    dedented.reserve(block.size());
-    std::size_t at = 0;
-    while (at <= block.size()) {
-        std::size_t nl = block.find('\n', at);
-        const std::size_t stop = (nl == std::string::npos) ? block.size() : nl;
-        std::string line = block.substr(at, stop - at);
-        if (!indent.empty() && line.rfind(indent, 0) == 0) {
-            line.erase(0, indent.size());
+    /// One object's block, exactly as the file states it, indentation and all.
+    std::string objectWords(const std::string& uuid)
+    {
+        return linesThrough(findObject(uuid), "</Object>");
+    }
+
+    /// One object's block with the depth it was written at removed, so it can be given back at
+    /// whatever depth the writer is at and restored on the way out.
+    ///
+    /// Cruth (Amendment 19): a document may name an object this build cannot construct -- a
+    /// module that was not compiled in, an add-on that is absent, a scripted class that is gone.
+    /// What is owed then is the statement itself and not this session's reading of it.
+    std::string objectBlock(const std::string& uuid)
+    {
+        const std::size_t found = findObject(uuid);
+        const std::string words = linesThrough(found, "</Object>");
+        if (words.empty()) {
+            return {};
         }
-        dedented += line;
-        if (nl == std::string::npos) {
-            break;
+        const std::size_t start = found - lineStartOf(_text, found);
+        const std::string indent = words.substr(0, start);
+        if (indent.find_first_not_of(" \t") != std::string::npos) {
+            return words.substr(start);
         }
-        dedented += '\n';
-        at = nl + 1;
+        std::string dedented;
+        dedented.reserve(words.size());
+        std::size_t at = 0;
+        while (at <= words.size()) {
+            const std::size_t nl = words.find('\n', at);
+            const std::size_t stop = (nl == std::string::npos) ? words.size() : nl;
+            std::string line = words.substr(at, stop - at);
+            if (!indent.empty() && line.rfind(indent, 0) == 0) {
+                line.erase(0, indent.size());
+            }
+            dedented += line;
+            if (nl == std::string::npos) {
+                break;
+            }
+            dedented += '\n';
+            at = nl + 1;
+        }
+        return dedented;
     }
-    return dedented;
-}
+
+private:
+    std::size_t findObject(const std::string& uuid)
+    {
+        const std::string opening = "<Object" + attribute("uuid", uuid);
+        std::size_t found = _text.find(opening, _cursor);
+        if (found == std::string::npos) {
+            found = _text.find(opening);
+        }
+        if (found != std::string::npos) {
+            _cursor = found;
+        }
+        return found;
+    }
+
+    /// From the start of the line `start` is on to the end of the first `closing` after it.
+    ///
+    /// Blocks of one kind are siblings and never nest, so the first closing tag is this block's
+    /// own end.
+    std::string linesThrough(std::size_t start, const std::string& closing) const
+    {
+        if (start == std::string::npos) {
+            return {};
+        }
+        const std::size_t end = _text.find(closing, start);
+        if (end == std::string::npos) {
+            return {};
+        }
+        const std::size_t lineStart = lineStartOf(_text, start);
+        return _text.substr(lineStart, end + closing.size() - lineStart);
+    }
+
+    std::string _text;
+    std::size_t _cursor {0};
+};
 
 }  // namespace
 
@@ -1544,9 +1639,9 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
     const std::string& assetDirectory = how.assetDirectory;
     // Read once and kept, because a block this build cannot construct is given back from the
     // file's own words rather than from this session's reading of them (Amendment 19).
-    const std::string sourceText((std::istreambuf_iterator<char>(source)),
-                                 std::istreambuf_iterator<char>());
-    std::istringstream parsed(sourceText);
+    RecipeSource sourceText(std::string((std::istreambuf_iterator<char>(source)),
+                                        std::istreambuf_iterator<char>()));
+    std::istringstream parsed(sourceText.text());
 
     ArrivingReader reader("StoredRecipe", parsed, how.intoExistingContent);
     if (!reader.isValid()) {
@@ -1598,7 +1693,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
         // as an object's: from the document's own block, so a name here cannot be confused with
         // the same name on an object.
         readProperties(reader, doc, doc, pending, assetDirectory, [&] {
-            return liftDocumentWords(sourceText);
+            return sourceText.documentWords();
         });
         reader.readEndElement("Document");
         // A document's identity is its own, and the document model refuses to let two open
@@ -1637,7 +1732,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
             // dropping it would take every object stated after it as well, and the next save would
             // write all of that away. The block is kept exactly as stated, and the document reports
             // itself not whole (Amendment 19).
-            std::string block = liftObjectBlock(sourceText, uuid);
+            std::string block = sourceText.objectBlock(uuid);
             if (block.empty()) {
                 throw;
             }
@@ -1681,7 +1776,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
                 reader.readEndElement("Extensions");
             }
             readProperties(reader, doc, *obj, pending, assetDirectory, [&] {
-                return liftObjectWords(sourceText, uuid);
+                return sourceText.objectWords(uuid);
             });
             obj->setStatus(ObjectStatus::Restore, false);
 
@@ -1693,7 +1788,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
                 reader.readElement("Display");
                 PropertyContainer* appearance = appearanceOf(*obj);
                 if (appearance == nullptr) {
-                    obj->keepStatedAppearance(liftDisplayBlock(liftObjectWords(sourceText, uuid)));
+                    obj->keepStatedAppearance(liftDisplayBlock(sourceText.objectWords(uuid)));
                     if (obj->statedAppearance().empty()) {
                         Base::Console().warning(
                             "Stored recipe: '%s' states an appearance this session has nowhere "
@@ -1709,7 +1804,7 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
                     // From the appearance block's own words: a name in here may also name one of
                     // the object's own properties, and the two are different statements.
                     readProperties(reader, doc, *appearance, pending, assetDirectory, [&] {
-                        return liftDisplayBlock(liftObjectWords(sourceText, uuid));
+                        return liftDisplayBlock(sourceText.objectWords(uuid));
                     });
                 }
                 reader.readEndElement("Display");
