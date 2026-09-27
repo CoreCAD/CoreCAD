@@ -145,6 +145,14 @@ void relinkToOrigin(App::DocumentObject* obj, App::Origin* origin)
     }
 }
 
+Part::TopoShape solidOfCopy(const App::DocumentObject* step, const Part::TopoShape& shape, long copy)
+{
+    auto* pattern = freecad_cast<const PartDesign::Transformed*>(step);
+    const int index = pattern ? pattern->solidIndexOfInstance(copy) : 0;
+    return index > 0 ? shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true)
+                     : Part::TopoShape();
+}
+
 Part::TopoShape solidWithComponentKey(
     const App::DocumentObject* tip,
     const Part::TopoShape& shape,
@@ -210,6 +218,13 @@ Body::Body()
         static_cast<App::PropertyType>(App::Prop_Hidden | App::Prop_NoRecompute),
         "Uids of Bodies whose overlap with this one the user acknowledged"
     );
+    ADD_PROPERTY_TYPE(
+        RollbackMarker,
+        (nullptr),
+        "Base",
+        App::Prop_None,
+        "The step the Body stops computing at; empty computes the whole chain"
+    );
 
     // Derived from the Tip on every recompute and on load, never authored or saved.
     Shape.setStatus(App::Property::Transient, true);
@@ -218,7 +233,7 @@ Body::Body()
 
 short Body::mustExecute() const
 {
-    if (Tip.isTouched()) {
+    if (Tip.isTouched() || RollbackMarker.isTouched()) {
         return 1;
     }
     return Part::BodyBase::mustExecute();
@@ -294,6 +309,9 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         }
         Tip.setValue(feature);
     }
+    else if (isSolidFeature(feature) && RollbackMarker.getValue()) {
+        insertAtMarker(static_cast<PartDesign::Feature*>(feature));
+    }
     else if (isSolidFeature(feature)) {
         appendAtTip(static_cast<PartDesign::Feature*>(feature), copy);
     }
@@ -327,6 +345,30 @@ void Body::appendAtTip(PartDesign::Feature* feature, long copy)
     if (prevTip && prevTip->isDerivedFrom<PartDesign::Feature>() && prevTip->Visibility.getValue()) {
         prevTip->Visibility.setValue(false);
     }
+}
+
+PartDesign::Feature* Body::stepAfterMarker() const
+{
+    const auto solids = ownSolids();
+    const auto marker = std::ranges::find(solids, RollbackMarker.getValue());
+    if (marker == solids.end() || marker + 1 == solids.end()) {
+        return nullptr;
+    }
+    return freecad_cast<PartDesign::Feature*>(*(marker + 1));
+}
+
+// Only the step on this Body's way moves: another Body may fork from the marker too.
+void Body::insertAtMarker(PartDesign::Feature* feature)
+{
+    PartDesign::Feature* next = stepAfterMarker();
+    if (!next) {
+        throw Base::RuntimeError("Body: the roll-back marker is not on this body's chain");
+    }
+    feature->BaseFeature.setValue(RollbackMarker.getValue());
+    feature->BaseInstance.setValue(next->BaseInstance.getValue());
+    next->BaseFeature.setValue(feature);
+    next->BaseInstance.setValue(chain::WholeOutput);
+    RollbackMarker.setValue(feature);
 }
 
 std::vector<App::DocumentObject*> Body::addFeatures(std::vector<App::DocumentObject*> features)
@@ -378,6 +420,9 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
             Tip.setValue(feature);
         }
     }
+    else if (RollbackMarker.getValue()) {
+        insertAtMarker(pd);
+    }
     else {
         appendAtTip(pd, tipCopy());
     }
@@ -427,20 +472,59 @@ App::DocumentObjectExecReturn* Body::execute()
             QT_TRANSLATE_NOOP("Exception", "Linked object is not a solid feature")
         );
     }
-    if (static_cast<Part::ShapeFeature*>(tip)->Shape.getShape().isNull()) {
+    if (RollbackMarker.getValue() && !stepAfterMarker()) {
+        return new App::DocumentObjectExecReturn(
+            QT_TRANSLATE_NOOP("Exception", "The roll-back marker is not on this body's chain")
+        );
+    }
+    // Only the shown step must have a shape; steps past the marker may not have one yet.
+    auto* shown = static_cast<Part::ShapeFeature*>(shownStep());
+    if (shown->Shape.getShape().isNull()) {
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Tip shape is empty"));
     }
     // Empty here means this Body's copy is gone: the reconciler retires it after this
     // recompute, so keep the last good shape rather than report an error.
-    Part::TopoShape shape = derivedTipShape();
+    Part::TopoShape shape = shownShape();
     if (!shape.isNull()) {
         Shape.setValue(shape);
     }
     return App::DocumentObject::StdReturn;
 }
 
+void Body::onBeforeChange(const App::Property* prop)
+{
+    if (prop == &RollbackMarker) {
+        markerBeforeChange = RollbackMarker.getValue();
+    }
+    Part::BodyBase::onBeforeChange(prop);
+}
+
+void Body::touchStepsPast(const App::DocumentObject* marker)
+{
+    const auto solids = ownSolids();
+    auto step = std::ranges::find(solids, marker);
+    if (step == solids.end()) {
+        return;
+    }
+    for (++step; step != solids.end(); ++step) {
+        (*step)->touch();
+    }
+}
+
 void Body::onChanged(const App::Property* prop)
 {
+    if (prop == &RollbackMarker) {
+        if (!isRestoring()) {
+            touchStepsPast(markerBeforeChange);
+        }
+        markerBeforeChange = nullptr;
+    }
+    // A marker at the Tip holds nothing back.
+    if ((prop == &RollbackMarker || prop == &Tip) && RollbackMarker.getValue()
+        && RollbackMarker.getValue() == Tip.getValue() && !isRestoring()) {
+        RollbackMarker.setValue(nullptr);
+    }
+
     const bool userEdit = !isRestoring() && getDocument()
         && !getDocument()->isPerformingTransaction();
     if (userEdit && prop == &BaseFeature) {
@@ -534,47 +618,102 @@ PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
     return nullptr;
 }
 
-Part::TopoShape Body::derivedTipShape() const
+App::DocumentObject* Body::shownStep() const
 {
-    App::DocumentObject* tip = Tip.getValue();
-    if (!tip || !isSolidFeature(tip)) {
-        return {};
+    return RollbackMarker.getValue() ? RollbackMarker.getValue() : Tip.getValue();
+}
+
+bool Body::stopsBefore(const App::DocumentObject* step) const
+{
+    if (!RollbackMarker.getValue() || !step) {
+        return false;
     }
-    Part::TopoShape tipShape = static_cast<Part::ShapeFeature*>(tip)->Shape.getShape();
-    if (tipShape.isNull()) {
-        return {};
+    const auto solids = ownSolids();
+    const auto marker = std::ranges::find(solids, RollbackMarker.getValue());
+    return marker != solids.end() && std::find(marker + 1, solids.end(), step) != solids.end();
+}
+
+bool Body::isRolledBackPast(const App::DocumentObject* step)
+{
+    App::Document* doc = step ? step->getDocument() : nullptr;
+    if (!doc || std::ranges::none_of(doc->getObjectsOfType<Body>(), [](Body* body) {
+            return body->RollbackMarker.getValue() != nullptr;
+        })) {
+        return false;
+    }
+    const auto bodies = bodiesOf(step);
+    return !bodies.empty()
+        && std::ranges::all_of(bodies, [step](Body* body) { return body->stopsBefore(step); });
+}
+
+// The marker stands for the copy the next step builds on; the Tip for its component id.
+Part::TopoShape Body::standInSolid(
+    const App::DocumentObject* step,
+    const Part::TopoShape& shape,
+    bool& whole
+) const
+{
+    if (step == RollbackMarker.getValue()) {
+        const PartDesign::Feature* next = stepAfterMarker();
+        const long copy = next ? next->BaseInstance.getValue() : chain::WholeOutput;
+        whole = copy < 0;
+        return whole ? Part::TopoShape() : solidOfCopy(step, shape, copy);
     }
     const std::string cid = TipComponentId.getStrValue();
-    if (!cid.empty()) {
-        Part::TopoShape solid = solidWithComponentKey(tip, tipShape, cid);
+    whole = cid.empty();
+    return whole ? Part::TopoShape() : solidWithComponentKey(step, shape, cid);
+}
+
+Part::TopoShape Body::placedShapeOf(const App::DocumentObject* step) const
+{
+    if (!step || !isSolidFeature(step)) {
+        return {};
+    }
+    Part::TopoShape shape = static_cast<const Part::ShapeFeature*>(step)->Shape.getShape();
+    if (shape.isNull()) {
+        return {};
+    }
+    bool whole = true;
+    Part::TopoShape solid = standInSolid(step, shape, whole);
+    if (!whole) {
         if (solid.isNull()) {
             return {};
         }
         // A pattern keeps each copy's offset in its placement; bake it into the geometry.
         solid.transformShape(Base::Matrix4D(), true);
-        tipShape = solid;
+        shape = solid;
     }
-    tipShape.transformShape(tipShape.getTransform(), true);
-    return tipShape;
+    shape.transformShape(shape.getTransform(), true);
+    return shape;
 }
 
-std::string Body::tipSubElement(const char* bodySub) const
+Part::TopoShape Body::derivedTipShape() const
 {
-    App::DocumentObject* tip = Tip.getValue();
-    if (!tip || !isSolidFeature(tip) || !bodySub || !*bodySub) {
+    return placedShapeOf(Tip.getValue());
+}
+
+Part::TopoShape Body::shownShape() const
+{
+    return placedShapeOf(shownStep());
+}
+
+std::string Body::shownSubElement(const char* bodySub) const
+{
+    App::DocumentObject* step = shownStep();
+    if (!step || !isSolidFeature(step) || !bodySub || !*bodySub) {
         return {};
     }
-    const Part::TopoShape tipShape = static_cast<Part::ShapeFeature*>(tip)->Shape.getShape();
-    if (tipShape.isNull()) {
+    const Part::TopoShape shape = static_cast<Part::ShapeFeature*>(step)->Shape.getShape();
+    if (shape.isNull()) {
         return {};
     }
-    const std::string cid = TipComponentId.getStrValue();
-    if (cid.empty()) {
-        return tipShape.findShape(bodySub).IsNull() ? std::string() : std::string(bodySub);
+    bool whole = true;
+    const Part::TopoShape solid = standInSolid(step, shape, whole);
+    if (whole) {
+        return shape.findShape(bodySub).IsNull() ? std::string() : std::string(bodySub);
     }
     // The copy's solid is placed but not renumbered, so find the picked element on it and read
     // back its number in the whole shape.
-    const Part::TopoShape solid = solidWithComponentKey(tip, tipShape, cid);
     if (solid.isNull()) {
         return {};
     }
@@ -582,7 +721,7 @@ std::string Body::tipSubElement(const char* bodySub) const
     if (element.IsNull()) {
         return {};
     }
-    const int index = tipShape.findShape(element);
+    const int index = shape.findShape(element);
     if (index <= 0) {
         return {};
     }
@@ -622,7 +761,7 @@ App::DocumentObject* Body::getSubObject(
 void Body::onDocumentRestored()
 {
     // The Tip's shape is already loaded, so the unsaved Shape can be filled without a recompute.
-    Part::TopoShape restoredShape = derivedTipShape();
+    Part::TopoShape restoredShape = shownShape();
     if (!restoredShape.isNull()) {
         Shape.setValue(restoredShape);
     }

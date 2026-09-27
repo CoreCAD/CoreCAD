@@ -216,14 +216,14 @@ class TestStepOnOneCopy(unittest.TestCase):
             for i, e in enumerate(third.Shape.Edges, 1)
             if e.BoundBox.ZLength > 9 and e.BoundBox.XMin > 69
         )
-        tipSub = third.tipSubElement("Edge%d" % bodyIndex)
+        tipSub = third.shownSubElement("Edge%d" % bodyIndex)
         self.assertTrue(tipSub.startswith("Edge"), tipSub)
         tipEdge = self.lp.Shape.getElement(tipSub)
         self.assertAlmostEqual(tipEdge.CenterOfMass.distanceToPoint(bodyEdge.CenterOfMass), 0, 6)
         # The raw number means another edge on the pattern (a different copy).
         rawEdge = self.lp.Shape.getElement("Edge%d" % bodyIndex)
         self.assertGreater(rawEdge.CenterOfMass.distanceToPoint(bodyEdge.CenterOfMass), 1.0)
-        self.assertEqual(third.tipSubElement("Edge999"), "")
+        self.assertEqual(third.shownSubElement("Edge999"), "")
 
         fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
         fillet.Base = (self.lp, [tipSub])
@@ -243,7 +243,7 @@ class TestStepOnOneCopy(unittest.TestCase):
             key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
         )[0]
         chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
-        chamfer.Base = (self.lp, [first.tipSubElement("Edge1")])
+        chamfer.Base = (self.lp, [first.shownSubElement("Edge1")])
         chamfer.Size = 1.0
         first.addFeature(chamfer)
         self.Doc.recompute()
@@ -260,7 +260,7 @@ class TestStepOnOneCopy(unittest.TestCase):
             key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
         )[0]
         chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
-        chamfer.Base = (self.lp, [first.tipSubElement("Edge1")])
+        chamfer.Base = (self.lp, [first.shownSubElement("Edge1")])
         chamfer.Size = 1.0
         first.addFeature(chamfer)
         self.Doc.recompute()
@@ -304,7 +304,7 @@ class TestStepOnOneCopy(unittest.TestCase):
             key=lambda b: b.Shape.Solids[0].CenterOfMass.x,
         )[2]
         chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
-        chamfer.Base = (self.lp, [third.tipSubElement("Edge1")])
+        chamfer.Base = (self.lp, [third.shownSubElement("Edge1")])
         chamfer.Size = 1.0
         third.insertObject(chamfer, None)
         self.Doc.recompute()

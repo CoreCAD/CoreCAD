@@ -1172,8 +1172,8 @@ static void warnWrongSelection(const QString& text)
 }
 
 // #136: a pattern copy is drawn through its Body, so a pick names the Body's own elements.
-// A step names what it builds on against the Tip, so each pick is translated there.
-static std::optional<std::vector<std::string>> tipElementsOf(
+// A step names what it builds on against the shown step, so each pick is translated there.
+static std::optional<std::vector<std::string>> shownElementsOf(
     PartDesign::Body* body,
     std::vector<std::string> picked,
     bool edgesByDefault
@@ -1182,9 +1182,9 @@ static std::optional<std::vector<std::string>> tipElementsOf(
     if (picked.empty() && edgesByDefault) {
         picked = allEdgeNames(body->Shape.getShape());
     }
-    std::vector<std::string> onTip;
+    std::vector<std::string> onShown;
     for (const auto& element : picked) {
-        std::string tipElement = body->tipSubElement(element.c_str());
+        std::string tipElement = body->shownSubElement(element.c_str());
         if (tipElement.empty()) {
             warnWrongSelection(
                 QObject::tr("%1 is not part of this body's last feature.")
@@ -1192,9 +1192,9 @@ static std::optional<std::vector<std::string>> tipElementsOf(
             );
             return std::nullopt;
         }
-        onTip.push_back(std::move(tipElement));
+        onShown.push_back(std::move(tipElement));
     }
-    return onTip;
+    return onShown;
 }
 
 // With nothing picked, the dress-up works on the selected body's last step. The user's
@@ -1212,21 +1212,18 @@ static std::optional<DressupPick> pickForDressup(Gui::Command* cmd, const Dressu
         return std::nullopt;
     }
     if (selection.empty()) {
-        return DressupPick {
-            .base = static_cast<Part::ShapeFeature*>(body->Tip.getValue()),
-            .elements = {}
-        };
+        return DressupPick {.base = static_cast<Part::ShapeFeature*>(body->shownStep()), .elements = {}};
     }
 
     App::DocumentObject* picked = selection.front().getObject();
     std::vector<std::string> elements = selection.front().getSubNames();
-    if (picked == body && body->Tip.getValue()) {
-        auto onTip = tipElementsOf(body, elements, kind.edgesByDefault);
-        if (!onTip) {
+    if (picked == body && body->shownStep()) {
+        auto onShown = shownElementsOf(body, elements, kind.edgesByDefault);
+        if (!onShown) {
             return std::nullopt;
         }
-        picked = body->Tip.getValue();
-        elements = std::move(*onTip);
+        picked = body->shownStep();
+        elements = std::move(*onShown);
     }
     if (PartDesignGui::getBodyFor(picked, false) != body
         && !PartDesign::Body::backsBody(picked, body)) {
@@ -1665,7 +1662,7 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
     PartDesign::Transformed* trFeat = static_cast<PartDesign::Transformed*>(features.front());
 
     // Move the insert point back one feature
-    App::DocumentObject* oldTip = pcActiveBody->Tip.getValue();
+    App::DocumentObject* oldTip = pcActiveBody->shownStep();
     App::DocumentObject* prevFeature = pcActiveBody->getPrevSolidFeature(trFeat);
     Gui::Selection().clearSelection();
     if (prevFeature) {

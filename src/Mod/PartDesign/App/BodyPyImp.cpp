@@ -220,13 +220,13 @@ PyObject* BodyPy::breakOutInstance(PyObject* args)
     return newBody->getPyObject();
 }
 
-PyObject* BodyPy::tipSubElement(PyObject* args)
+PyObject* BodyPy::shownSubElement(PyObject* args)
 {
     const char* sub = nullptr;
     if (!PyArg_ParseTuple(args, "s", &sub)) {
         return nullptr;
     }
-    return Py::new_reference_to(Py::String(getBodyPtr()->tipSubElement(sub)));
+    return Py::new_reference_to(Py::String(getBodyPtr()->shownSubElement(sub)));
 }
 
 Py::Object BodyPy::getVisibleFeature() const

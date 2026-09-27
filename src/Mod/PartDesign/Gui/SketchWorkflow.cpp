@@ -94,7 +94,7 @@ public:
         // dependency. So, instead we use the tip object as reference.
         // https://forum.freecad.org/viewtopic.php?f=3&t=37448
         if (object == activeBody) {
-            App::DocumentObject* tip = activeBody->Tip.getValue();
+            App::DocumentObject* tip = activeBody->shownStep();
             if (tip && Part::hasShape(tip) && elements.size() == 1) {
                 Gui::SelectionChanges msg;
                 msg.pDocName = faceSelection.getDocName();
