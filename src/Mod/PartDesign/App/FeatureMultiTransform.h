@@ -43,6 +43,7 @@ public:
     /** @name methods override feature */
     //@{
     short mustExecute() const override;
+    void onChanged(const App::Property* prop) override;
 
     /// returns the type name of the view provider
     const char* getViewProviderName() const override

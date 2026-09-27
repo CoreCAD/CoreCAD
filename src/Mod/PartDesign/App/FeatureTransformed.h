@@ -143,7 +143,8 @@ public:
     /// Return the sketch of the first original
     App::DocumentObject* getSketchObject() const;
 
-    /// Return true if this feature is a child of a MultiTransform
+    /// True when a MultiTransform lists this in its Transformations. A child is one step of
+    /// its MultiTransform, not a step of any chain.
     bool isMultiTransformChild() const;
 
     /// Get the list of transformations describing the members of the pattern
@@ -159,8 +160,8 @@ public:
      * Gets the transformations from the virtual getTransformations() method of the sub class
      * and applies them to every member of Originals. The total number of copies including
      * the untransformed Originals will be sizeof(Originals) times sizeof(getTransformations())
-     * If Originals is empty, execute() returns immediately without doing anything as
-     * the actual processing will happen in the MultiTransform feature
+     * With nothing to copy yet, the base passes through unchanged. A MultiTransform child
+     * computes nothing itself; its MultiTransform does.
      */
     App::DocumentObjectExecReturn* execute() override;
     short mustExecute() const override;
@@ -169,13 +170,6 @@ public:
     App::DocumentObjectExecReturn* recomputePreview() override;
 
     void onChanged(const App::Property* prop) override;
-
-    /// Set by Body::addFeature on a pattern added before it was configured: @p body holds
-    /// its Tip back until the pattern's settings make it computable (#125).
-    void markAwaitingTip(App::DocumentObject* body)
-    {
-        awaitingBody = body;
-    }
 
 protected:
     void Restore(Base::XMLReader& reader) override;
@@ -189,11 +183,6 @@ protected:
     /// nothing; MultiTransform overrides it to purge the touched state of its
     /// linked sub-transformations during a recompute.
     virtual void purgeTouchedTransformations();
-
-private:
-    /// Not saved: it only bridges the gap between creation and first configuration. The
-    /// pattern is on no Body's chain yet, so its Body cannot be derived.
-    App::DocumentObjectWeakPtrT awaitingBody {nullptr};
 };
 
 }  // namespace PartDesign

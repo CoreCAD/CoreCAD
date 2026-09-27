@@ -9,6 +9,7 @@
 #include <App/DocumentObjectGroup.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
+#include <Mod/PartDesign/App/FeatureMultiTransform.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 
 // Cruth #18: Body::addFeature owns the pipeline wiring (BaseFeature chain + Tip). A caller
@@ -86,48 +87,13 @@ TEST_F(AddFeatureTest, NormalAppendWiresChain)
     EXPECT_EQ(_body->Tip.getValue(), pad2);
 }
 
-// Cruth #125: a pattern added before it is configured must become the Tip once it is, the
-// same Body the GUI builds. addFeature holds the Tip back (an unconfigured pattern as Tip
-// would recompute an empty Body); the pattern takes it when its Originals are set.
-TEST_F(AddFeatureTest, PatternAddedBeforeConfiguringBecomesTipOnceConfigured)
+// A new pattern is a step like any other: it takes the Tip at once, before it is configured.
+TEST_F(AddFeatureTest, UnconfiguredPatternTakesTheTip)
 {
     auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
     _body->addFeature(lp);
 
-    // Not yet configured: the Tip waits.
     EXPECT_EQ(lp->BaseFeature.getValue(), _pad1);
-    EXPECT_EQ(_body->Tip.getValue(), _pad1);
-
-    lp->Originals.setValues({_pad1});
-
-    EXPECT_EQ(_body->Tip.getValue(), lp);
-    EXPECT_EQ(lp->BaseFeature.getValue(), _pad1);
-}
-
-// Whole-shape mode needs no Originals; switching to it is what makes the pattern computable.
-TEST_F(AddFeatureTest, PatternSwitchedToWholeShapeBecomesTip)
-{
-    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
-    _body->addFeature(lp);
-
-    lp->TransformMode.setValue(static_cast<long>(PartDesign::Transformed::Mode::WholeShape));
-
-    EXPECT_EQ(_body->Tip.getValue(), lp);
-}
-
-// A solid added while the pattern waits is spliced in ahead of it; configuring the pattern
-// then makes it the Tip at the end of a still-linear chain (pad1 -> pad2 -> LP).
-TEST_F(AddFeatureTest, SolidAddedWhilePatternWaitsKeepsChainLinear)
-{
-    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
-    _body->addFeature(lp);
-    auto* pad2 = _doc->addObject<PartDesign::Pad>("Pad2");
-    _body->addFeature(pad2);
-
-    lp->Originals.setValues({_pad1});
-
-    EXPECT_EQ(pad2->BaseFeature.getValue(), _pad1);
-    EXPECT_EQ(lp->BaseFeature.getValue(), pad2);
     EXPECT_EQ(_body->Tip.getValue(), lp);
 }
 
@@ -141,27 +107,47 @@ TEST_F(AddFeatureTest, PatternInsertedMidChainKeepsTheTail)
 
     auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
     _body->addFeature(lp);
-    lp->Originals.setValues({_pad1});
 
     EXPECT_EQ(lp->BaseFeature.getValue(), _pad1);
     EXPECT_EQ(pad2->BaseFeature.getValue(), lp);
     EXPECT_EQ(_body->Tip.getValue(), lp);
 }
 
-// The hand-over happens once. A user who later moves the Tip back to the pattern's base and
-// edits the pattern keeps the Tip where they put it.
-TEST_F(AddFeatureTest, PatternTakesTipOnlyOnFirstConfiguration)
+// Cruth #142: the MultiTransform panel adds a child to the Body, then lists it. Listing it
+// takes it off the chain, so the MultiTransform is the Tip again.
+TEST_F(AddFeatureTest, ListingAPatternInAMultiTransformTakesItOffTheChain)
+{
+    auto* multi = _doc->addObject<PartDesign::MultiTransform>("MT");
+    _body->addFeature(multi);
+    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
+    _body->addFeature(lp);
+    ASSERT_EQ(_body->Tip.getValue(), lp);
+
+    multi->Transformations.setValues({lp});
+
+    EXPECT_TRUE(lp->isMultiTransformChild());
+    EXPECT_FALSE(PartDesign::Body::isSolidFeature(lp));
+    EXPECT_EQ(lp->BaseFeature.getValue(), nullptr);
+    EXPECT_EQ(_body->Tip.getValue(), multi);
+}
+
+// Converting a pattern mid-chain: the MultiTransform goes in ahead of it, then lists it. What
+// built on the pattern builds on the MultiTransform.
+TEST_F(AddFeatureTest, ConvertingAPatternMidChainKeepsTheTail)
 {
     auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
     _body->addFeature(lp);
-    lp->Originals.setValues({_pad1});
-    ASSERT_EQ(_body->Tip.getValue(), lp);
-
+    auto* pad2 = _doc->addObject<PartDesign::Pad>("Pad2");
+    _body->addFeature(pad2);
     _body->Tip.setValue(_pad1);
-    lp->Originals.setValues({});
-    lp->Originals.setValues({_pad1});
 
-    EXPECT_EQ(_body->Tip.getValue(), _pad1);
+    auto* multi = _doc->addObject<PartDesign::MultiTransform>("MT");
+    _body->addFeature(multi);
+    multi->Transformations.setValues({lp});
+
+    EXPECT_EQ(multi->BaseFeature.getValue(), _pad1);
+    EXPECT_EQ(pad2->BaseFeature.getValue(), multi);
+    EXPECT_EQ(lp->BaseFeature.getValue(), nullptr);
 }
 
 // Cruth #37: a folder is the user's filing and a body's membership is a reference, so

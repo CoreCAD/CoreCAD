@@ -241,29 +241,14 @@ void Transformed::Restore(Base::XMLReader& reader)
 
 bool Transformed::isMultiTransformChild() const
 {
-    // Checking for a MultiTransform in the dependency list is not reliable on initialization
-    // because the dependencies are only established after creation.
-    /*
-    for (auto const* obj : getInList()) {
-        auto mt = freecad_cast<PartDesign::MultiTransform*>(obj);
-        if (!mt) {
-            continue;
+    return std::ranges::any_of(getInList(), [this](const App::DocumentObject* obj) {
+        auto* multi = freecad_cast<const MultiTransform*>(obj);
+        if (!multi) {
+            return false;
         }
-
-        auto const transfmt = mt->Transformations.getValues();
-        if (std::find(transfmt.begin(), transfmt.end(), this) != transfmt.end()) {
-            return true;
-        }
-    }
-    */
-
-    // instead check for default property values because these are invalid for a standalone
-    // transform feature. This will mislabel standalone features during the initialization phase.
-    if (TransformMode.getValue() == 0 && Originals.getValue().empty()) {
-        return true;
-    }
-
-    return false;
+        const auto& children = multi->Transformations.getValues();
+        return std::ranges::find(children, this) != children.end();
+    });
 }
 
 void Transformed::handleChangedPropertyType(
@@ -363,15 +348,6 @@ void Transformed::onChanged(const App::Property* prop)
         Originals.setStatus(App::Property::Status::Hidden, mode == Mode::WholeShape);
     }
 
-    if (!awaitingBody.expired() && (prop == &Originals || prop == &TransformMode) && !isRestoring()
-        && !isMultiTransformChild()) {
-        auto* body = awaitingBody.get<Body>();
-        awaitingBody.reset();
-        if (body) {
-            body->adoptConfiguredPattern(this);
-        }
-    }
-
     FeatureRefine::onChanged(prop);
 }
 
@@ -386,6 +362,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
     std::vector<DocumentObject*> originals = getOriginals();
 
     if (mode == Mode::Features && originals.empty()) {
+        Shape.setValue(getBaseTopoShape(true));
         return App::DocumentObject::StdReturn;
     }
 
@@ -410,7 +387,8 @@ App::DocumentObjectExecReturn* Transformed::execute()
     }
 
     if (transformations.empty()) {
-        return App::DocumentObject::StdReturn;  // No transformations defined, exit silently
+        Shape.setValue(getBaseTopoShape(true));
+        return App::DocumentObject::StdReturn;
     }
 
     // Get the support

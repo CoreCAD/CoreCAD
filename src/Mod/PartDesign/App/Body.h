@@ -87,13 +87,13 @@ public:
     /// Before @p target, or after it when @p after; at the start or the Tip when @p target is
     /// null. Moves the Tip only when the feature lands at the end.
     void insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after = false);
-    /// A pattern added before it was configured takes the Tip once it is, unless the Tip has
-    /// moved since.
-    void adoptConfiguredPattern(App::DocumentObject* pattern);
     /// Takes @p feature out of the chain and retires the Body if nothing is left. Call before the
     /// feature leaves the document.
     std::vector<DocumentObject*> removeFeature(DocumentObject* feature);
     void removeFeatures(const std::vector<App::DocumentObject*>& features);
+
+    /// Every Body loses @p feature: what built on it builds on its base, and it keeps no base.
+    static void takeOffChain(PartDesign::Feature* feature);
 
     static bool isSolidFeature(const App::DocumentObject* obj);
     static bool isAllowed(const App::DocumentObject* obj);

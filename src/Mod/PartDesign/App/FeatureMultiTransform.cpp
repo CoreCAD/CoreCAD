@@ -28,7 +28,10 @@
 #include <Precision.hxx>
 
 
+#include <App/Document.h>
+
 #include "FeatureMultiTransform.h"
+#include "Body.h"
 #include "FeatureAddSub.h"
 #include "FeatureScaled.h"
 
@@ -70,6 +73,20 @@ short MultiTransform::mustExecute() const
         return 1;
     }
     return Transformed::mustExecute();
+}
+
+void MultiTransform::onChanged(const App::Property* prop)
+{
+    // A pattern often joins a Body before it is listed here; listing it takes it off the chain.
+    if (prop == &Transformations && !isRestoring() && getDocument()
+        && !getDocument()->isPerformingTransaction()) {
+        for (auto* child : Transformations.getValues()) {
+            if (auto* pattern = freecad_cast<Transformed*>(child)) {
+                Body::takeOffChain(pattern);
+            }
+        }
+    }
+    Transformed::onChanged(prop);
 }
 
 const std::list<gp_Trsf> MultiTransform::getTransformations(
