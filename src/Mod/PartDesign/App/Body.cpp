@@ -297,27 +297,16 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
     else if (isSolidFeature(feature)) {
         appendAtTip(static_cast<PartDesign::Feature*>(feature), copy);
     }
-    else if (auto* pattern = freecad_cast<PartDesign::Transformed*>(feature)) {
-        // A new pattern reads as non-solid until configured; wire its base now, while the Tip
-        // is known, and it takes the Tip once configured (adoptConfiguredPattern).
-        pattern->BaseFeature.setValue(Tip.getValue());
-        pattern->BaseInstance.setValue(copy);
-        pattern->markAwaitingTip(this);
-    }
     return {feature};
 }
 
-void Body::adoptConfiguredPattern(App::DocumentObject* pattern)
+void Body::takeOffChain(PartDesign::Feature* feature)
 {
-    auto* feature = freecad_cast<PartDesign::Feature*>(pattern);
-    if (!feature) {
-        return;
-    }
-    App::DocumentObject* prevTip = Tip.getValue();
-    if (prevTip == pattern || prevTip != feature->BaseFeature.getValue()) {
-        return;
-    }
-    appendAtTip(feature, feature->BaseInstance.getValue());
+    App::DocumentObject* base = feature->BaseFeature.getValue();
+    unsplice(feature);
+    retreatTippedBodies(feature, base);
+    feature->BaseFeature.setValue(nullptr);
+    feature->BaseInstance.setValue(chain::WholeOutput);
 }
 
 long Body::tipCopy() const
