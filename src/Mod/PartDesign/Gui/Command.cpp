@@ -24,24 +24,18 @@
 
 
 #include <algorithm>
+#include <optional>
 
-#include <BRep_Tool.hxx>
 #include <BRepAdaptor_Surface.hxx>
-#include <GeomLib_IsPlanarSurface.hxx>
-#include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QMessageBox>
 #include <QVBoxLayout>
-#include <TopExp_Explorer.hxx>
-#include <TopLoc_Location.hxx>
 #include <TopoDS.hxx>
-#include <TopoDS_Face.hxx>
 
 
-#include <App/Datums.h>
 #include <App/Origin.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
@@ -50,13 +44,10 @@
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
-#include <Gui/MDIView.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/Selection/SelectionObject.h>
-#include <Mod/Part/App/AttachExtension.h>
-#include <Mod/Sketcher/App/SketchObject.h>
+#include <Mod/Part/App/Part2DObject.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/FeatureBoolean.h>
 #include <Mod/PartDesign/App/FeatureGroove.h>
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
 #include <Mod/PartDesign/App/FeatureRevolution.h>
@@ -68,15 +59,11 @@
 #include "SketchWorkflow.h"
 #include "Utils.h"
 #include "ViewProvider.h"
-#include "ViewProviderBody.h"
 
-
-// TODO Remove this header after fixing code so it won;t be needed here (2015-10-20, Fat-Zer)
 
 FC_LOG_LEVEL_INIT("PartDesign", true, true)
 
 using namespace std;
-using namespace Attacher;
 
 // Gate for commands whose body comes from the selection (selectedBody): available whenever
 // the document has a Body to work on.
@@ -84,6 +71,40 @@ static bool hasAnyBody()
 {
     App::Document* doc = App::GetApplication().getActiveDocument();
     return doc && !doc->getObjectsOfType(PartDesign::Body::getClassTypeId()).empty();
+}
+
+static bool hasAnySketch()
+{
+    App::Document* doc = App::GetApplication().getActiveDocument();
+    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+}
+
+// A Python list literal of element names, escaped so a quote in a name cannot break the command.
+static std::string pythonNameList(const std::vector<std::string>& names)
+{
+    std::string list = "[";
+    for (const auto& name : names) {
+        list += "'" + Base::Tools::escapeEncodeString(name) + "',";
+    }
+    return list + "]";
+}
+
+static std::vector<std::string> allEdgeNames(const Part::TopoShape& shape)
+{
+    std::vector<std::string> names;
+    const int count = shape.countSubElements("Edge");
+    for (int i = 1; i <= count; ++i) {
+        names.push_back("Edge" + std::to_string(i));
+    }
+    return names;
+}
+
+static void copyAppearance(App::DocumentObject* to, App::DocumentObject* from)
+{
+    for (const char* attr :
+         {"ShapeAppearance", "LineColor", "PointColor", "Transparency", "DisplayMode"}) {
+        Gui::Command::copyVisual(to, attr, from);
+    }
 }
 
 // Cruth #130/#132: the selection decides the body a dress-up or pattern extends: the body of
@@ -124,11 +145,8 @@ static PartDesign::Body* decideBaseBody(Part::Part2DObject* sketch, bool& abort)
     return body;
 }
 
-// Cruth §8.5: push a resolved sketch into the GUI selection so the shared
-// feature-creation path (prepareProfileBased's "a profile is selected" fast-path)
-// consumes exactly this sketch. Without this, that lower path sees an empty selection
-// and hits its no-usable-profile guard, leaving the user unable to reach the feature's
-// parameter dialog.
+// Cruth §8.5: makeProfileFeature reads its profile from the selection, so a sketch resolved
+// any other way is put there.
 static void selectResolvedSketch(Part::Part2DObject* sketch)
 {
     if (!sketch) {
@@ -189,7 +207,7 @@ static Part::Part2DObject* resolveSketchFromSelection(Gui::Command* cmd, App::Do
 //
 // Returns false (after showing the appropriate message) when there is no usable sketch or
 // the anchor chain is ambiguous. On success @p body is the Body to extend, or nullptr for
-// the auto-spawn case — prepareProfileBased() then spawns the Body inside the feature's
+// the auto-spawn case — makeProfileFeature() then spawns the Body inside the feature's
 // undo transaction (#17), so a cancelled feature leaks nothing.
 static bool resolveBaseBodyForNewFeature(Gui::Command* cmd, PartDesign::Body*& body)
 {
@@ -280,11 +298,7 @@ void CmdPartDesignClone::activated(int iMsg)
         Gui::cmdAppObject(cloneObj, std::stringstream() << "BaseFeature = " << objCmd);
 
         updateActive();
-        copyVisual(cloneObj, "ShapeAppearance", obj);
-        copyVisual(cloneObj, "LineColor", obj);
-        copyVisual(cloneObj, "PointColor", obj);
-        copyVisual(cloneObj, "Transparency", obj);
-        copyVisual(cloneObj, "DisplayMode", obj);
+        copyAppearance(cloneObj, obj);
         commitCommand();
     }
 }
@@ -340,20 +354,9 @@ static void finishFeature(
     const bool updateDocument = true
 )
 {
-    PartDesign::Body* activeBody;
-
-    if (prevSolidFeature) {
-        // insert into the same body as the given previous one
-        activeBody = PartDesignGui::getBodyFor(prevSolidFeature, /*messageIfNot = */ false);
-    }
-    else {
-        // Marker model (§4.6): the feature has already been created inside its owning body
-        // — which, for an anchor-walk that reached no body, is a freshly auto-spawned one,
-        // NOT the GUI's active body. Resolve the body the feature actually landed in so the
-        // subsequent setEdit targets the right container; using the stale active body builds
-        // an edit path the feature isn't under, and the parameter panel silently fails to open.
-        activeBody = PartDesignGui::getBodyFor(feature, /*messageIfNot = */ false);
-    }
+    // The body the feature landed in, which for a fresh profile is a newly spawned one.
+    PartDesign::Body* body
+        = PartDesignGui::getBodyFor(prevSolidFeature ? prevSolidFeature : feature, false);
 
     if (hidePrevSolid && prevSolidFeature) {
         FCMD_OBJ_HIDE(prevSolidFeature);
@@ -367,22 +370,30 @@ static void finishFeature(
     if (base) {
         base = dynamic_cast<PartDesign::Feature*>(base->getBaseObject(true));
     }
-    App::DocumentObject* obj = base;
-    if (!obj) {
-        obj = activeBody;
+    App::DocumentObject* looksLike = base ? static_cast<App::DocumentObject*>(base) : body;
+
+    // Before setEdit, so the 'Shape preview' mode is not overridden (#0003621).
+    if (looksLike) {
+        copyAppearance(feature, looksLike);
     }
 
-    // Do this before calling setEdit to avoid to override the 'Shape preview' mode (#0003621)
-    if (obj) {
-        cmd->copyVisual(feature, "ShapeAppearance", obj);
-        cmd->copyVisual(feature, "LineColor", obj);
-        cmd->copyVisual(feature, "PointColor", obj);
-        cmd->copyVisual(feature, "Transparency", obj);
-        cmd->copyVisual(feature, "DisplayMode", obj);
-    }
-
-    PartDesignGui::setEdit(feature, activeBody);
+    PartDesignGui::setEdit(feature, body);
     cmd->doCommand(cmd->Gui, "Gui.Selection.clearSelection()");
+}
+
+// Opens the undo step and creates the feature in @p body, or aborts the step and returns null.
+static App::DocumentObject* startFeature(Gui::Command* cmd, PartDesign::Body* body, const char* type)
+{
+    const std::string featureType = std::string("PartDesign::") + type;
+    auto* feature = PartDesignGui::createFeature(
+        body,
+        featureType.c_str(),
+        cmd->getUniqueObjectName(type, body)
+    );
+    if (!feature) {
+        cmd->abortCommand();
+    }
+    return feature;
 }
 
 //===========================================================================
@@ -396,7 +407,6 @@ static void finishFeature(
  *
  * @param prop  The property ( generally a Profile link )
  * @param _sobjs    Subobjects to use
- * @param report    True if we should raise a dialog, otherwise raise and exception
  * @return  True if elements were found
  */
 bool importExternalElements(App::PropertyLinkSub& prop, std::vector<App::SubObjectT> _sobjs)
@@ -430,18 +440,12 @@ bool importExternalElements(App::PropertyLinkSub& prop, std::vector<App::SubObje
             );
         }
         sobjT.normalized();
-        // Make sure that if a subelement is chosen for some object,
-        // we exclude whole object reference for that object.
+        // An element picked on an object replaces a whole-object reference to it.
         auto& subs = links[sobj];
         std::string element = sobjT.getOldElementName();
         if (element.size()) {
             if (subs.size() == 1 && subs.front().empty()) {
-                for (auto it = sobjs.begin(); it != sobjs.end();) {
-                    if (it->getSubObject() == sobj) {
-                        sobjs.erase(it);
-                        break;
-                    }
-                }
+                std::erase_if(sobjs, [sobj](const auto& s) { return s.getSubObject() == sobj; });
             }
         }
         else if (subs.size() > 0) {
@@ -484,273 +488,274 @@ bool importExternalElements(App::PropertyLinkSub& prop, std::vector<App::SubObje
     return false;
 }
 
-
-void prepareProfileBased(
-    PartDesign::Body* pcActiveBody,
-    Gui::Command* cmd,
-    const std::string& which,
-    std::function<void(Part::ShapeFeature*, App::DocumentObject*)> func
+static void setProfile(
+    App::DocumentObject* feature,
+    App::DocumentObject* profile,
+    const std::vector<std::string>& elements
 )
 {
-    auto base_worker = [=](App::DocumentObject* feature, const std::vector<std::string>& subs) {
-        if (!feature || !Part::hasShape(feature)) {
-            return;
-        }
-
-        // Related to #0002760: when an operation can't be performed due to a broken
-        // profile then make sure that it is recomputed when cancelling the operation
-        // otherwise it might be impossible to see that it's broken.
-        if (feature->isTouched()) {
-            feature->recomputeFeature();
-        }
-
-        cmd->openCommand(std::string("Make ") + which);
-
-        // Cruth §4.6/#17: if the anchor chain reached no Body, auto-spawn one now —
-        // INSIDE the transaction just opened — so cancelling the feature (which
-        // aborts this command) also removes the Body. resolveBaseBody is a pure
-        // query; creation happens here, never during the lookup.
-        PartDesign::Body* activeBody = pcActiveBody;
-        if (!activeBody) {
-            activeBody = PartDesign::Body::spawnAutoBody(cmd->getDocument());
-            if (!activeBody) {
-                cmd->abortCommand();
-                return;
-            }
-        }
-
-        std::string FeatName = cmd->getUniqueObjectName(which.c_str(), activeBody);
-
-        const std::string featType = std::string("PartDesign::") + which;
-        auto Feat = PartDesignGui::createFeature(activeBody, featType.c_str(), FeatName);
-
-        auto objCmd = Gui::Command::getObjectCmd(feature);
-
-        // Populate the subs parameter by checking for external elements before
-        // we construct our command.
-        auto ProfileFeature = freecad_cast<PartDesign::ProfileBased*>(Feat);
-
-        std::vector<std::string>& cmdSubs = const_cast<vector<std::string>&>(subs);
-        if (subs.size() == 0) {
-            // CoreCAD Phase 2: skip importExternalElements for cross-body profiles —
-            // it returns false for them anyway, and the cycle check inside it incorrectly
-            // fires because the new feature is already in the body's InList at this point.
-            if (PartDesign::Body::backsBody(feature, activeBody)) {
-                importExternalElements(ProfileFeature->Profile, {feature});
-                cmdSubs = ProfileFeature->Profile.getSubValues();
-            }
-        }
-        // run the command in console to set the profile (without selected subelements)
-        auto runProfileCmd = [=]() {
-            FCMD_OBJ_CMD(Feat, "Profile = " << objCmd);
-        };
-
-        // run the command in console to set the profile with selected subelements
-        // useful to set, say, a face of a solid as the "profile"
-        auto runProfileCmdWithSubs = [=]() {
-            std::ostringstream ss;
-            for (auto& s : cmdSubs) {
-                ss << "'" << s << "',";
-            }
-            FCMD_OBJ_CMD(Feat, "Profile = (" << objCmd << ", [" << ss.str() << "])");
-        };
-
-        if (which.compare("AdditiveLoft") == 0 || which.compare("SubtractiveLoft") == 0) {
-            // for additive and subtractive lofts set subvalues even for sketches
-            // when a vertex is first selected
-            auto subName = subs.empty() ? "" : subs.front();
-
-            // `ProfileBased::getProfileShape()` and other methods will return
-            // just the sub-shapes if they are set. So when whole sketches are
-            // desired, do not set sub-values.
-            if (feature->isDerivedFrom<Part::Part2DObject>() && subName.compare(0, 6, "Vertex") != 0) {
-                runProfileCmd();
-            }
-            else {
-                runProfileCmdWithSubs();
-            }
-
-            // for additive and subtractive lofts allow the user to preselect the sections
-            std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
-            if (selection.size() > 1) {  // treat additional selected objects as sections
-                for (std::vector<Gui::SelectionObject>::size_type ii = 1; ii < selection.size();
-                     ii++) {
-                    // Add subvalues even for sketches in case we just want points
-                    auto objCmdSection = Gui::Command::getObjectCmd(selection[ii].getObject());
-                    const auto& subnames = selection[ii].getSubNames();
-                    std::ostringstream ss;
-                    if (!subnames.empty()) {
-                        for (auto& s : subnames) {
-                            ss << "'" << s << "',";
-                        }
-                    }
-                    else {
-                        // an empty string indicates the whole object
-                        ss << "''";
-                    }
-                    FCMD_OBJ_CMD(Feat, "Sections += [(" << objCmdSection << ", [" << ss.str() << "])]");
-                }
-            }
-        }
-        else if (which.compare("AdditivePipe") == 0 || which.compare("SubtractivePipe") == 0) {
-            // for additive and subtractive pipes set subvalues even for sketches
-            // to support point sections
-            auto subName = subs.empty() ? "" : subs.front();
-
-            // `ProfileBased::getProfileShape()` and other methods will return
-            // just the sub-shapes if they are set. So when whole sketches are
-            // desired, don't set sub-values.
-            if (feature->isDerivedFrom<Part::Part2DObject>() && subName.compare(0, 6, "Vertex") != 0) {
-                runProfileCmd();
-            }
-            else {
-                runProfileCmdWithSubs();
-            }
-
-            // for additive and subtractive pipes allow the user to preselect the spines
-            std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
-            if (selection.size() == 2) {  // treat additional selected object as spine
-                std::vector<string> subnames = selection[1].getSubNames();
-                auto objCmdSpine = Gui::Command::getObjectCmd(selection[1].getObject());
-                if (selection[1].getObject()->isDerivedFrom<Part::Part2DObject>()
-                    && subnames.empty()) {
-                    FCMD_OBJ_CMD(Feat, "Spine = " << objCmdSpine);
-                }
-                else {
-                    std::ostringstream ss;
-                    for (auto& s : subnames) {
-                        if (s.find("Edge") != std::string::npos) {
-                            ss << "'" << s << "',";
-                        }
-                    }
-                    FCMD_OBJ_CMD(Feat, "Spine = (" << objCmdSpine << ", [" << ss.str() << "])");
-                }
-            }
-        }
-        else {
-            // Always use the subs
-            runProfileCmdWithSubs();
-        }
-
-        func(static_cast<Part::ShapeFeature*>(feature), Feat);
-    };
-
-
-    // in case of subtractive types, check that there is something to subtract from
-    if ((which.find("Subtractive") != std::string::npos) || (which.compare("Groove") == 0)
-        || (which.compare("Pocket") == 0)) {
-
-        // A subtractive feature needs an existing solid. If the anchor chain reached
-        // no Body (pcActiveBody == nullptr, the auto-spawn case) there is nothing to
-        // subtract from — reject here, before the transaction, so no stray Body is
-        // ever spawned for an operation that cannot succeed (#17).
-        if (!pcActiveBody || !pcActiveBody->isSolid()) {
-            QMessageBox msgBox(Gui::getMainWindow());
-            msgBox.setText(
-                QObject::tr("Cannot use this command as there is no solid to subtract from.")
-            );
-            msgBox.setInformativeText(
-                QObject::tr("Ensure that the body contains a feature before attempting a subtractive command.")
-            );
-            msgBox.setStandardButtons(QMessageBox::Ok);
-            msgBox.setDefaultButton(QMessageBox::Ok);
-            msgBox.exec();
-            return;
-        }
-    }
-
-
-    // if a profile is selected we can make our life easy and fast
-    std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
-    if (!selection.empty()) {
-        auto* selObj = selection.front().getObject();
-        const auto& subNames = selection.front().getSubNames();
-        bool isSketch = selObj->isDerivedFrom(Part::Part2DObject::getClassTypeId());
-        bool hasFaceSub = !subNames.empty();
-        if (isSketch || hasFaceSub) {
-            // CoreCAD Phase 2: cross-body profiles are valid.
-            base_worker(selObj, subNames);
-            return;
-        }
-        // Selection is not a usable profile (e.g. a Body was selected in the tree)
-        // — fall through to the guard below.
-    }
-
-    // Cruth §8.5: every command resolves its profile up front — resolveBaseBodyForNewFeature →
-    // resolveSketchFromSelection leaves exactly one sketch in the selection (via the de-owned
-    // SketchPickDialog when several candidates exist) or aborts. So the "a profile is selected"
-    // fast-path above handles the real flow; reaching here means no usable profile is selected.
-    // The old active-body sketch chooser (TaskFeaturePick / validateSketches) used to live here
-    // and is retired — this is now a defensive guard, not a second picker.
-    QMessageBox::warning(
-        Gui::getMainWindow(),
-        QObject::tr("No sketch to work on"),
-        QObject::tr("Select a sketch to use as the profile.")
+    FCMD_OBJ_CMD(
+        feature,
+        "Profile = (" << Gui::Command::getObjectCmd(profile) << ", " << pythonNameList(elements) << ")"
     );
 }
 
-void finishProfileBased(
-    const Gui::Command* cmd,
-    const Part::ShapeFeature* sketch,
-    App::DocumentObject* Feat
+// A profile with elements is only those elements, so a whole sketch is set without them —
+// unless the pick is a vertex, which makes a point section.
+static void setSketchOrPointProfile(
+    App::DocumentObject* feature,
+    App::DocumentObject* profile,
+    const std::vector<std::string>& elements
 )
 {
-    if (sketch && sketch->isDerivedFrom<Part::Part2DObject>()) {
-        FCMD_OBJ_HIDE(sketch);
+    const bool pointPicked = !elements.empty() && elements.front().starts_with("Vertex");
+    if (profile->isDerivedFrom<Part::Part2DObject>() && !pointPicked) {
+        FCMD_OBJ_CMD(feature, "Profile = " << Gui::Command::getObjectCmd(profile));
     }
-    finishFeature(cmd, Feat);
+    else {
+        setProfile(feature, profile, elements);
+    }
 }
 
-void prepareProfileBased(Gui::Command* cmd, const std::string& which, double length)
+using TakeSelection = void (*)(
+    App::DocumentObject* feature,
+    App::DocumentObject* profile,
+    const std::vector<std::string>& elements,
+    const std::vector<Gui::SelectionObject>& selection
+);
+
+static void takeProfile(
+    App::DocumentObject* feature,
+    App::DocumentObject* profile,
+    const std::vector<std::string>& elements,
+    const std::vector<Gui::SelectionObject>& /*selection*/
+)
 {
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — the auto-spawn case handled inside
-    // prepareProfileBased(pcActiveBody, ...).
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(cmd, pcActiveBody)) {
+    setProfile(feature, profile, elements);
+}
+
+// Every pick after the profile is a section; a pick without elements is the whole object.
+static void takeProfileAndSections(
+    App::DocumentObject* feature,
+    App::DocumentObject* profile,
+    const std::vector<std::string>& elements,
+    const std::vector<Gui::SelectionObject>& selection
+)
+{
+    setSketchOrPointProfile(feature, profile, elements);
+    for (std::size_t i = 1; i < selection.size(); ++i) {
+        std::vector<std::string> names = selection[i].getSubNames();
+        if (names.empty()) {
+            names.emplace_back();
+        }
+        FCMD_OBJ_CMD(
+            feature,
+            "Sections += [(" << Gui::Command::getObjectCmd(selection[i].getObject()) << ", "
+                             << pythonNameList(names) << ")]"
+        );
+    }
+}
+
+// A second pick is the spine: a whole sketch, or the edges picked on it.
+static void takeProfileAndSpine(
+    App::DocumentObject* feature,
+    App::DocumentObject* profile,
+    const std::vector<std::string>& elements,
+    const std::vector<Gui::SelectionObject>& selection
+)
+{
+    setSketchOrPointProfile(feature, profile, elements);
+    if (selection.size() != 2) {
+        return;
+    }
+    const App::DocumentObject* spine = selection[1].getObject();
+    std::vector<std::string> names = selection[1].getSubNames();
+    if (spine->isDerivedFrom<Part::Part2DObject>() && names.empty()) {
+        FCMD_OBJ_CMD(feature, "Spine = " << Gui::Command::getObjectCmd(spine));
+        return;
+    }
+    std::erase_if(names, [](const std::string& name) {
+        return name.find("Edge") == std::string::npos;
+    });
+    FCMD_OBJ_CMD(
+        feature,
+        "Spine = (" << Gui::Command::getObjectCmd(spine) << ", " << pythonNameList(names) << ")"
+    );
+}
+
+struct ProfileKind
+{
+    const char* type;  // after "PartDesign::"; also names the feature and its undo step
+    bool subtractive;
+    std::function<void(Part::ShapeFeature* profile, App::DocumentObject* feature)> configure;
+    TakeSelection takeSelection = takeProfile;
+};
+
+static void warnNothingToSubtractFrom()
+{
+    QMessageBox msgBox(Gui::getMainWindow());
+    msgBox.setText(QObject::tr("Cannot use this command as there is no solid to subtract from."));
+    msgBox.setInformativeText(
+        QObject::tr("Ensure that the body contains a feature before attempting a subtractive command.")
+    );
+    msgBox.setStandardButtons(QMessageBox::Ok);
+    msgBox.setDefaultButton(QMessageBox::Ok);
+    msgBox.exec();
+}
+
+// Cruth §8.3, the single-reach case: a cut whose profile anchors to no body cuts the one body
+// the document holds.
+static PartDesign::Body* soleBody(App::Document* doc)
+{
+    auto bodies = doc->getObjectsOfType(PartDesign::Body::getClassTypeId());
+    return bodies.size() == 1 ? static_cast<PartDesign::Body*>(bodies.front()) : nullptr;
+}
+
+static void makeProfileFeature(Gui::Command* cmd, const ProfileKind& kind)
+{
+    // Null means the profile anchors to no body; one is spawned inside the undo step below,
+    // so cancelling the feature removes it too (#17).
+    PartDesign::Body* body = nullptr;
+    if (!resolveBaseBodyForNewFeature(cmd, body)) {
+        return;
+    }
+    if (kind.subtractive) {
+        if (!body) {
+            body = soleBody(cmd->getDocument());
+        }
+        if (!body || !body->isSolid()) {
+            warnNothingToSubtractFrom();
+            return;
+        }
+    }
+
+    // resolveBaseBodyForNewFeature leaves the profile first in the selection.
+    std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
+    App::DocumentObject* profile = selection.empty() ? nullptr : selection.front().getObject();
+    std::vector<std::string> elements = selection.empty() ? std::vector<std::string>()
+                                                          : selection.front().getSubNames();
+    if (!profile || (!profile->isDerivedFrom<Part::Part2DObject>() && elements.empty())) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No sketch to work on"),
+            QObject::tr("Select a sketch to use as the profile.")
+        );
+        return;
+    }
+    if (!Part::hasShape(profile)) {
         return;
     }
 
-    // Cruth §8.3 (Scope contract, 1-reach case): a subtractive feature whose profile does
-    // not anchor to a Body — e.g. a sketch on a global origin plane — has no anchor thread
-    // back to the solid it cuts. When the document holds exactly one Body, that Body is
-    // unambiguously the target: the single-reach case of the §8.3 Scope contract, resolved
-    // without a prompt. The feature then chains onto that Body's Tip (createFeature), so a
-    // through-cut that severs it splits into fresh Bodies via the §4.7 matcher, as normal.
-    // Multi-body targeting (a cut reaching >1 candidate Body, the "Apply to A/B/Both"
-    // prompt) is deferred to the Scope amendment and is NOT handled here.
-    const bool subtractive = which.find("Subtractive") != std::string::npos || which == "Groove"
-        || which == "Pocket";
-    if (!pcActiveBody && subtractive) {
-        auto bodies = cmd->getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId());
-        if (bodies.size() == 1) {
-            pcActiveBody = static_cast<PartDesign::Body*>(bodies.front());
-        }
+    // #0002760: recompute a broken profile now, so it still shows as broken if the user cancels.
+    if (profile->isTouched()) {
+        profile->recomputeFeature();
     }
 
-    auto worker = [cmd, length](Part::ShapeFeature* profile, App::DocumentObject* Feat) {
-        if (!Feat) {
+    cmd->openCommand((std::string("Make ") + kind.type).c_str());
+    if (!body) {
+        body = PartDesign::Body::spawnAutoBody(cmd->getDocument());
+        if (!body) {
+            cmd->abortCommand();
             return;
         }
+    }
+    App::DocumentObject* feature = startFeature(cmd, body, kind.type);
+    auto* profileBased = freecad_cast<PartDesign::ProfileBased*>(feature);
+    if (!profileBased) {
+        if (feature) {
+            cmd->abortCommand();
+        }
+        return;
+    }
 
-        // specific parameters for Pad/Pocket
-        FCMD_OBJ_CMD(Feat, "Length = " << length);
+    // A cross-body profile is skipped: importing finds nothing for it, and its cycle check
+    // would trip on the new feature, which is already in the body's in-list.
+    if (elements.empty() && PartDesign::Body::backsBody(profile, body)) {
+        importExternalElements(profileBased->Profile, {profile});
+        elements = profileBased->Profile.getSubValues();
+    }
+    kind.takeSelection(feature, profile, elements, selection);
+    kind.configure(static_cast<Part::ShapeFeature*>(profile), feature);
+}
+
+static void finishProfileBased(
+    const Gui::Command* cmd,
+    const Part::ShapeFeature* profile,
+    App::DocumentObject* feature
+)
+{
+    if (profile->isDerivedFrom<Part::Part2DObject>()) {
+        FCMD_OBJ_HIDE(profile);
+    }
+    finishFeature(cmd, feature);
+}
+
+// A sketch's own vertical axis; anything else has none, so the document origin's Y axis.
+static void setVerticalReferenceAxis(App::DocumentObject* feature, Part::ShapeFeature* profile)
+{
+    if (profile->isDerivedFrom<Part::Part2DObject>()) {
+        FCMD_OBJ_CMD(
+            feature,
+            "ReferenceAxis = (" << Gui::Command::getObjectCmd(profile) << ",['V_Axis'])"
+        );
+    }
+    else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(feature->getDocument())) {
+        FCMD_OBJ_CMD(
+            feature,
+            "ReferenceAxis = (" << Gui::Command::getObjectCmd(origin->getY()) << ",[''])"
+        );
+    }
+}
+
+static auto extrude(const Gui::Command* cmd, double length)
+{
+    return [cmd, length](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+        FCMD_OBJ_CMD(feature, "Length = " << length);
         Gui::Command::updateActive();
-
-        Part::Part2DObject* sketch = dynamic_cast<Part::Part2DObject*>(profile);
-
-        if (sketch) {
-            std::ostringstream str;
-            Gui::cmdAppObject(
-                Feat,
-                str << "ReferenceAxis = (" << Gui::Command::getObjectCmd(sketch) << ",['N_Axis'])"
+        if (profile->isDerivedFrom<Part::Part2DObject>()) {
+            FCMD_OBJ_CMD(
+                feature,
+                "ReferenceAxis = (" << Gui::Command::getObjectCmd(profile) << ",['N_Axis'])"
             );
         }
-
-        finishProfileBased(cmd, sketch, Feat);
+        finishProfileBased(cmd, profile, feature);
     };
+}
 
-    prepareProfileBased(pcActiveBody, cmd, which, worker);
+static auto sweep(const Gui::Command* cmd)
+{
+    return [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+        Gui::Command::updateActive();
+        finishProfileBased(cmd, profile, feature);
+    };
+}
+
+static auto helix(const Gui::Command* cmd)
+{
+    return [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+        // A helix with default values is often invalid until the user sets more of them.
+        Base::ObjectStatusLocker<App::Document::Status, App::Document> guard(
+            App::Document::IgnoreErrorOnRecompute,
+            feature->getDocument(),
+            true
+        );
+        Gui::Command::updateActive();
+        setVerticalReferenceAxis(feature, profile);
+        finishProfileBased(cmd, profile, feature);
+
+        // A failed first build would otherwise leave nothing visible to edit against.
+        if (!feature->isError()) {
+            return;
+        }
+        App::DocumentObject* base = static_cast<PartDesign::Feature*>(feature)->BaseFeature.getValue();
+        auto* view = base ? dynamic_cast<PartDesignGui::ViewProvider*>(
+                                Gui::Application::Instance->getViewProvider(base)
+                            )
+                          : nullptr;
+        if (view) {
+            view->makeTemporaryVisible(true);
+        }
+    };
 }
 
 //===========================================================================
@@ -773,16 +778,12 @@ CmdPartDesignPad::CmdPartDesignPad()
 void CmdPartDesignPad::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    prepareProfileBased(this, "Pad", 10.0);
+    makeProfileFeature(this, {.type = "Pad", .subtractive = false, .configure = extrude(this, 10.0)});
 }
 
 bool CmdPartDesignPad::isActive()
 {
-    // CoreCAD §4.6: Pad is enabled when the document holds at least one sketch.
-    // The Body is auto-spawned by prepareProfileBased() when the user clicks Pad.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 //===========================================================================
@@ -805,8 +806,7 @@ CmdPartDesignPocket::CmdPartDesignPocket()
 void CmdPartDesignPocket::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    prepareProfileBased(this, "Pocket", 5.0);
+    makeProfileFeature(this, {.type = "Pocket", .subtractive = true, .configure = extrude(this, 5.0)});
 }
 
 bool CmdPartDesignPocket::isActive()
@@ -835,31 +835,20 @@ CmdPartDesignHole::CmdPartDesignHole()
 void CmdPartDesignHole::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        finishProfileBased(cmd, sketch, Feat);
-    };
-
-    prepareProfileBased(pcActiveBody, this, "Hole", worker);
+    const Gui::Command* cmd = this;
+    makeProfileFeature(
+        this,
+        {.type = "Hole",
+         .subtractive = true,
+         .configure = [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+             finishProfileBased(cmd, profile, feature);
+         }}
+    );
 }
 
 bool CmdPartDesignHole::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 //===========================================================================
@@ -884,46 +873,22 @@ CmdPartDesignRevolution::CmdPartDesignRevolution()
 void CmdPartDesignRevolution::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
+    const Gui::Command* cmd = this;
+    auto configure = [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+        setVerticalReferenceAxis(feature, profile);
+        FCMD_OBJ_CMD(feature, "Angle = 360.0");
+        auto* revolution = dynamic_cast<PartDesign::Revolution*>(feature);
+        if (revolution && revolution->suggestReversed()) {
+            FCMD_OBJ_CMD(feature, "Reversed = 1");
         }
-
-        if (sketch->isDerivedFrom<Part::Part2DObject>()) {
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
-        }
-        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
-            // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
-        }
-
-        FCMD_OBJ_CMD(Feat, "Angle = 360.0");
-        PartDesign::Revolution* pcRevolution = dynamic_cast<PartDesign::Revolution*>(Feat);
-        if (pcRevolution && pcRevolution->suggestReversed()) {
-            FCMD_OBJ_CMD(Feat, "Reversed = 1");
-        }
-
-        finishProfileBased(cmd, sketch, Feat);
+        finishProfileBased(cmd, profile, feature);
     };
-
-    prepareProfileBased(pcActiveBody, this, "Revolution", worker);
+    makeProfileFeature(this, {.type = "Revolution", .subtractive = false, .configure = configure});
 }
 
 bool CmdPartDesignRevolution::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 //===========================================================================
@@ -948,54 +913,28 @@ CmdPartDesignGroove::CmdPartDesignGroove()
 void CmdPartDesignGroove::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        if (sketch->isDerivedFrom<Part::Part2DObject>()) {
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
-        }
-        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
-            // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
-        }
-
-        FCMD_OBJ_CMD(Feat, "Angle = 360.0");
-
+    const Gui::Command* cmd = this;
+    auto configure = [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+        setVerticalReferenceAxis(feature, profile);
+        FCMD_OBJ_CMD(feature, "Angle = 360.0");
         try {
-            // This raises as exception if line is perpendicular to sketch/support face.
-            // Here we should continue to give the user a chance to change the default values.
-            PartDesign::Groove* pcGroove = dynamic_cast<PartDesign::Groove*>(Feat);
-            if (pcGroove && pcGroove->suggestReversed()) {
-                FCMD_OBJ_CMD(Feat, "Reversed = 1");
+            // Throws when the axis is perpendicular to the sketch; the user can still fix it.
+            auto* groove = dynamic_cast<PartDesign::Groove*>(feature);
+            if (groove && groove->suggestReversed()) {
+                FCMD_OBJ_CMD(feature, "Reversed = 1");
             }
         }
         catch (const Base::Exception& e) {
             e.reportException();
         }
-
-        finishProfileBased(cmd, sketch, Feat);
+        finishProfileBased(cmd, profile, feature);
     };
-
-    prepareProfileBased(pcActiveBody, this, "Groove", worker);
+    makeProfileFeature(this, {.type = "Groove", .subtractive = true, .configure = configure});
 }
 
 bool CmdPartDesignGroove::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 //===========================================================================
@@ -1020,34 +959,18 @@ CmdPartDesignAdditivePipe::CmdPartDesignAdditivePipe()
 void CmdPartDesignAdditivePipe::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        // specific parameters for pipe
-        Gui::Command::updateActive();
-
-        finishProfileBased(cmd, sketch, Feat);
-    };
-
-    prepareProfileBased(pcActiveBody, this, "AdditivePipe", worker);
+    makeProfileFeature(
+        this,
+        {.type = "AdditivePipe",
+         .subtractive = false,
+         .configure = sweep(this),
+         .takeSelection = takeProfileAndSpine}
+    );
 }
 
 bool CmdPartDesignAdditivePipe::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 
@@ -1073,34 +996,18 @@ CmdPartDesignSubtractivePipe::CmdPartDesignSubtractivePipe()
 void CmdPartDesignSubtractivePipe::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        // specific parameters for pipe
-        Gui::Command::updateActive();
-
-        finishProfileBased(cmd, sketch, Feat);
-    };
-
-    prepareProfileBased(pcActiveBody, this, "SubtractivePipe", worker);
+    makeProfileFeature(
+        this,
+        {.type = "SubtractivePipe",
+         .subtractive = true,
+         .configure = sweep(this),
+         .takeSelection = takeProfileAndSpine}
+    );
 }
 
 bool CmdPartDesignSubtractivePipe::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 
@@ -1126,34 +1033,18 @@ CmdPartDesignAdditiveLoft::CmdPartDesignAdditiveLoft()
 void CmdPartDesignAdditiveLoft::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        // specific parameters for pipe
-        Gui::Command::updateActive();
-
-        finishProfileBased(cmd, sketch, Feat);
-    };
-
-    prepareProfileBased(pcActiveBody, this, "AdditiveLoft", worker);
+    makeProfileFeature(
+        this,
+        {.type = "AdditiveLoft",
+         .subtractive = false,
+         .configure = sweep(this),
+         .takeSelection = takeProfileAndSections}
+    );
 }
 
 bool CmdPartDesignAdditiveLoft::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 
@@ -1179,34 +1070,18 @@ CmdPartDesignSubtractiveLoft::CmdPartDesignSubtractiveLoft()
 void CmdPartDesignSubtractiveLoft::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        // specific parameters for pipe
-        Gui::Command::updateActive();
-
-        finishProfileBased(cmd, sketch, Feat);
-    };
-
-    prepareProfileBased(pcActiveBody, this, "SubtractiveLoft", worker);
+    makeProfileFeature(
+        this,
+        {.type = "SubtractiveLoft",
+         .subtractive = true,
+         .configure = sweep(this),
+         .takeSelection = takeProfileAndSections}
+    );
 }
 
 bool CmdPartDesignSubtractiveLoft::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 //===========================================================================
@@ -1231,67 +1106,12 @@ CmdPartDesignAdditiveHelix::CmdPartDesignAdditiveHelix()
 void CmdPartDesignAdditiveHelix::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        // Creating a helix with default values isn't always valid but fixes
-        // itself when more values are set. So, this guard is used to suppress
-        // errors before the user is able to change the parameters.
-        Base::ObjectStatusLocker<App::Document::Status, App::Document> guard(
-            App::Document::IgnoreErrorOnRecompute,
-            Feat->getDocument(),
-            true
-        );
-
-        // specific parameters for helix
-        Gui::Command::updateActive();
-
-        if (sketch->isDerivedFrom<Part::Part2DObject>()) {
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
-        }
-        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
-            // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
-        }
-
-        finishProfileBased(cmd, sketch, Feat);
-
-        // If the initial helix creation fails then it leaves the base object invisible which makes
-        // things more difficult for the user. To avoid this the base object will be made tmp.
-        // visible again.
-        if (Feat->isError()) {
-            App::DocumentObject* base = static_cast<PartDesign::Feature*>(Feat)->BaseFeature.getValue();
-            if (base) {
-                PartDesignGui::ViewProvider* view = dynamic_cast<PartDesignGui::ViewProvider*>(
-                    Gui::Application::Instance->getViewProvider(base)
-                );
-                if (view) {
-                    view->makeTemporaryVisible(true);
-                }
-            }
-        }
-    };
-
-    prepareProfileBased(pcActiveBody, this, "AdditiveHelix", worker);
+    makeProfileFeature(this, {.type = "AdditiveHelix", .subtractive = false, .configure = helix(this)});
 }
 
 bool CmdPartDesignAdditiveHelix::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 
@@ -1317,254 +1137,197 @@ CmdPartDesignSubtractiveHelix::CmdPartDesignSubtractiveHelix()
 void CmdPartDesignSubtractiveHelix::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    // Cruth §4.6/§8.5: resolve the base Body from the profile's anchor chain (no active
-    // body). pcActiveBody may be null — prepareProfileBased() auto-spawns in that case.
-    PartDesign::Body* pcActiveBody = nullptr;
-    if (!resolveBaseBodyForNewFeature(this, pcActiveBody)) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](Part::ShapeFeature* sketch, App::DocumentObject* Feat) {
-        if (!Feat) {
-            return;
-        }
-
-        // specific parameters for helix
-        Gui::Command::updateActive();
-
-        if (sketch->isDerivedFrom<Part::Part2DObject>()) {
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(sketch) << ",['V_Axis'])");
-        }
-        else if (App::Origin* origin = PartDesign::Body::findDocumentOrigin(Feat->getDocument())) {
-            // Cruth §8.5: a non-sketch profile has no V_Axis; fall back to the Y axis of the
-            // shared document Origin (Cruth §11 step 5e), not an arbitrary owning body's.
-            FCMD_OBJ_CMD(Feat, "ReferenceAxis = (" << getObjectCmd(origin->getY()) << ",[''])");
-        }
-
-        finishProfileBased(cmd, sketch, Feat);
-    };
-
-    prepareProfileBased(pcActiveBody, this, "SubtractiveHelix", worker);
+    makeProfileFeature(
+        this,
+        {.type = "SubtractiveHelix", .subtractive = true, .configure = helix(this)}
+    );
 }
 
 bool CmdPartDesignSubtractiveHelix::isActive()
 {
-    // Cruth §4.6: enabled when the document holds a sketch; a Body is not a precondition.
-    auto* doc = getDocument();
-    return doc && !doc->getObjectsOfType(Part::Part2DObject::getClassTypeId()).empty();
+    return hasAnySketch();
 }
 
 //===========================================================================
 // Common utility functions for Dressup features
 //===========================================================================
 
-bool dressupGetSelected(
-    Gui::Command* cmd,
-    const std::string& which,
-    Gui::SelectionObject& selected,
-    bool& useAllEdges,
-    bool& noSelection,
-    PartDesign::Body*& body
+struct DressupKind
+{
+    const char* type;     // after "PartDesign::"; also names the feature and its undo step
+    bool edgesByDefault;  // a pick of the whole shape means every edge
+    bool (*keeps)(const Part::TopoShape& shape, const std::string& element) = nullptr;
+};
+
+struct DressupPick
+{
+    Part::ShapeFeature* base = nullptr;
+    std::vector<std::string> elements;
+    bool allEdges = false;
+};
+
+static void warnWrongSelection(const QString& text)
+{
+    QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong selection"), text);
+}
+
+// #136: a pattern copy is drawn through its Body, so a pick names the Body's own elements.
+// A step names what it builds on against the Tip, so each pick is translated there.
+static std::optional<std::vector<std::string>> tipElementsOf(
+    PartDesign::Body* body,
+    std::vector<std::string> picked,
+    bool edgesByDefault
 )
 {
-    std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
-
-    if (selection.size() > 1) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("Wrong selection"),
-            QObject::tr("Select an edge, face, or body from a single body.")
-        );
-        return false;
+    if (picked.empty() && edgesByDefault) {
+        picked = allEdgeNames(body->Shape.getShape());
     }
-
-    body = selectedBody(cmd);
-    if (!body) {
-        return false;
-    }
-
-    if (selection.empty()) {
-        noSelection = true;
-        return true;
-    }
-    if (selection[0].getObject() == body && body->Tip.getValue()) {
-        // #136: a pattern copy is drawn through its Body, so the pick names the Body's own
-        // elements. A step names what it builds on against the Tip; translate each pick there.
-        std::vector<std::string> subs = selection[0].getSubNames();
-        if (subs.empty() && (which == "Fillet" || which == "Chamfer")) {
-            const int count = body->Shape.getShape().countSubElements("Edge");
-            for (int i = 1; i <= count; ++i) {
-                subs.push_back("Edge" + std::to_string(i));
-            }
-        }
-        App::DocumentObject* tip = body->Tip.getValue();
-        Gui::Selection().clearSelection();
-        for (const auto& sub : subs) {
-            const std::string tipSub = body->tipSubElement(sub.c_str());
-            if (tipSub.empty()) {
-                QMessageBox::warning(
-                    Gui::getMainWindow(),
-                    QObject::tr("Wrong selection"),
-                    QObject::tr("%1 is not part of this body's last feature.")
-                        .arg(QString::fromStdString(sub))
-                );
-                return false;
-            }
-            Gui::Selection().addSelection(
-                tip->getDocument()->getName(),
-                tip->getNameInDocument(),
-                tipSub.c_str()
+    std::vector<std::string> onTip;
+    for (const auto& element : picked) {
+        std::string tipElement = body->tipSubElement(element.c_str());
+        if (tipElement.empty()) {
+            warnWrongSelection(
+                QObject::tr("%1 is not part of this body's last feature.")
+                    .arg(QString::fromStdString(element))
             );
+            return std::nullopt;
         }
-        if (subs.empty()) {
-            Gui::Selection().addSelection(tip->getDocument()->getName(), tip->getNameInDocument());
-        }
-        selection = cmd->getSelection().getSelectionEx();
-        if (selection.size() != 1) {
-            return false;
-        }
+        onTip.push_back(std::move(tipElement));
     }
-    if (PartDesignGui::getBodyFor(selection[0].getObject(), false) != body
-        && !PartDesign::Body::backsBody(selection[0].getObject(), body)) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("Wrong selection"),
-            QObject::tr("Select an edge, face, or body from a body.")
-        );
-        return false;
+    return onTip;
+}
+
+// With nothing picked, the dress-up works on the selected body's last step. The user's
+// selection is left as it is when the pick is refused.
+static std::optional<DressupPick> pickForDressup(Gui::Command* cmd, const DressupKind& kind)
+{
+    std::vector<Gui::SelectionObject> selection = cmd->getSelection().getSelectionEx();
+    if (selection.size() > 1) {
+        warnWrongSelection(QObject::tr("Select an edge, face, or body from a single body."));
+        return std::nullopt;
     }
 
-    Gui::Selection().clearSelection();
+    PartDesign::Body* body = selectedBody(cmd);
+    if (!body) {
+        return std::nullopt;
+    }
+    if (selection.empty()) {
+        return DressupPick {
+            .base = static_cast<Part::ShapeFeature*>(body->Tip.getValue()),
+            .elements = {}
+        };
+    }
 
-    // set the
-    selected = selection[0];
-
-    if (!Part::hasShape(selected.getObject())) {
+    App::DocumentObject* picked = selection.front().getObject();
+    std::vector<std::string> elements = selection.front().getSubNames();
+    if (picked == body && body->Tip.getValue()) {
+        auto onTip = tipElementsOf(body, elements, kind.edgesByDefault);
+        if (!onTip) {
+            return std::nullopt;
+        }
+        picked = body->Tip.getValue();
+        elements = std::move(*onTip);
+    }
+    if (PartDesignGui::getBodyFor(picked, false) != body
+        && !PartDesign::Body::backsBody(picked, body)) {
+        warnWrongSelection(QObject::tr("Select an edge, face, or body from a body."));
+        return std::nullopt;
+    }
+    if (!Part::hasShape(picked)) {
         QMessageBox::warning(
             Gui::getMainWindow(),
             QObject::tr("Wrong object type"),
-            QObject::tr("%1 works only on parts.").arg(QString::fromStdString(which))
+            QObject::tr("%1 works only on parts.").arg(QString::fromLatin1(kind.type))
         );
-        return false;
+        return std::nullopt;
     }
 
-    Part::ShapeFeature* base = static_cast<Part::ShapeFeature*>(selected.getObject());
-
-    const Part::TopoShape& TopShape = base->Shape.getShape();
-
-    if (TopShape.getShape().IsNull()) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("Wrong selection"),
-            QObject::tr("Shape of the selected part is empty")
-        );
-        return false;
+    DressupPick pick {.base = static_cast<Part::ShapeFeature*>(picked), .elements = std::move(elements)};
+    const Part::TopoShape& shape = pick.base->Shape.getShape();
+    if (shape.getShape().IsNull()) {
+        warnWrongSelection(QObject::tr("Shape of the selected part is empty"));
+        return std::nullopt;
     }
-
-    // if 1 Part::Feature object selected, but no subobjects, select all edges for the user
-    // but only for fillet and chamfer (not for draft or thickness)
-    if (selection[0].getSubNames().empty()
-        && (which.compare("Fillet") == 0 || which.compare("Chamfer") == 0)) {
-        useAllEdges = true;
-        std::string edgeTypeName = Part::TopoShape::shapeName(TopAbs_EDGE);  //"Edge"
-        int count = TopShape.countSubElements(edgeTypeName.c_str());
-        std::string docName = App::GetApplication().getDocumentName(base->getDocument());
-        std::string objName = base->getNameInDocument();
-        for (int ii = 0; ii < count; ii++) {
-            std::ostringstream edgeName;
-            edgeName << edgeTypeName << ii + 1;
-            Gui::Selection().addSelection(docName.c_str(), objName.c_str(), edgeName.str().c_str());
-        }
-        selection = cmd->getSelection().getSelectionEx();
-        if (selection.size() == 1) {
-            selected = selection[0];
-        }
+    if (pick.elements.empty() && kind.edgesByDefault) {
+        pick.allEdges = true;
+        pick.elements = allEdgeNames(shape);
     }
-    return true;
+    return pick;
 }
 
-void finishDressupFeature(
-    Gui::Command* cmd,
-    const std::string& which,
-    Part::ShapeFeature* base,
-    const std::vector<std::string>& SubNames,
-    const bool useAllEdges
-)
+static void finishDressupFeature(Gui::Command* cmd, const char* type, const DressupPick& pick)
 {
-    std::ostringstream str;
-    str << '(' << Gui::Command::getObjectCmd(base) << ",[";
-    for (const auto& SubName : SubNames) {
-        str << "'" << SubName << "',";
-    }
-    str << "])";
-
-    std::string FeatName = cmd->getUniqueObjectName(which.c_str(), base);
-
-    // Route the dress-up to the Body that actually owns the picked geometry. When the base
-    // feature backs several component bodies (Cruth §4.7 multi-output) first-match is wrong:
-    // resolve through the picked sub-element so the feature lands in the body whose solid the
-    // user clicked. Falls back to first-match when no sub was picked or the pick is ambiguous.
+    // A base feature may back several bodies (Cruth §4.7); the picked element decides which
+    // one the dress-up extends, falling back to the first when that is ambiguous.
     PartDesign::Body* body = nullptr;
-    if (!SubNames.empty()) {
+    if (!pick.elements.empty()) {
         try {
-            body = PartDesign::Body::bodyOf(base, SubNames.front().c_str());
+            body = PartDesign::Body::bodyOf(pick.base, pick.elements.front().c_str());
         }
         catch (const Base::Exception&) {
             body = nullptr;
         }
     }
     if (!body) {
-        body = PartDesignGui::getBodyFor(base, false);
+        body = PartDesignGui::getBodyFor(pick.base, false);
     }
     if (!body) {
         return;
     }
-    cmd->openCommand(std::string("Make ") + which);
-    const std::string featType = std::string("PartDesign::") + which;
-    auto Feat = PartDesignGui::createFeature(body, featType.c_str(), FeatName);
-    FCMD_OBJ_CMD(Feat, "Base = " << str.str());
-    if (useAllEdges && (which.compare("Fillet") == 0 || which.compare("Chamfer") == 0)) {
-        FCMD_OBJ_CMD(Feat, "UseAllEdges = True");
-    }
-    Gui::Command::doCommand(cmd->Gui, "Gui.Selection.clearSelection()");
-    finishFeature(cmd, Feat, base);
 
-    App::DocumentObject* baseFeature = static_cast<PartDesign::DressUp*>(Feat)->Base.getValue();
-    if (baseFeature) {
-        PartDesignGui::ViewProvider* view = dynamic_cast<PartDesignGui::ViewProvider*>(
-            Gui::Application::Instance->getViewProvider(baseFeature)
-        );
-        // in case there is an error, for example when a fillet is larger than the available space
-        // display the base feature to avoid that the user sees nothing
-        if (view && Feat->isError()) {
-            view->Visibility.setValue(true);
-        }
+    cmd->openCommand((std::string("Make ") + type).c_str());
+    App::DocumentObject* feature = startFeature(cmd, body, type);
+    if (!feature) {
+        return;
+    }
+    FCMD_OBJ_CMD(
+        feature,
+        "Base = (" << Gui::Command::getObjectCmd(pick.base) << ", " << pythonNameList(pick.elements)
+                   << ")"
+    );
+    if (pick.allEdges) {
+        FCMD_OBJ_CMD(feature, "UseAllEdges = True");
+    }
+    finishFeature(cmd, feature, pick.base);
+
+    // A failed dress-up (a fillet too large for its edge) would otherwise leave nothing shown.
+    App::DocumentObject* base = static_cast<PartDesign::DressUp*>(feature)->Base.getValue();
+    auto* view = base
+        ? dynamic_cast<PartDesignGui::ViewProvider*>(Gui::Application::Instance->getViewProvider(base))
+        : nullptr;
+    if (view && feature->isError()) {
+        view->Visibility.setValue(true);
     }
 }
 
-void makeChamferOrFillet(Gui::Command* cmd, const std::string& which)
+static void makeDressup(Gui::Command* cmd, const DressupKind& kind)
 {
-    bool useAllEdges = false;
-    bool noSelection = false;
-    Gui::SelectionObject selected;
-    PartDesign::Body* body = nullptr;
-    if (!dressupGetSelected(cmd, which, selected, useAllEdges, noSelection, body)) {
+    std::optional<DressupPick> pick = pickForDressup(cmd, kind);
+    if (!pick) {
         return;
     }
-
-    Part::ShapeFeature* base;
-    std::vector<std::string> SubNames;
-    if (noSelection) {
-        base = static_cast<Part::ShapeFeature*>(body->Tip.getValue());
+    if (kind.keeps) {
+        const Part::TopoShape& shape = pick->base->Shape.getShape();
+        std::erase_if(pick->elements, [&](const std::string& element) {
+            return !kind.keeps(shape, element);
+        });
     }
-    else {
-        base = static_cast<Part::ShapeFeature*>(selected.getObject());
-        SubNames = std::vector<std::string>(selected.getSubNames());
-    }
+    finishDressupFeature(cmd, kind.type, *pick);
+}
 
-    finishDressupFeature(cmd, which, base, SubNames, useAllEdges);
+static bool isFace(const Part::TopoShape& /*shape*/, const std::string& element)
+{
+    return element.starts_with("Face");
+}
+
+static bool isDraftableFace(const Part::TopoShape& shape, const std::string& element)
+{
+    if (!isFace(shape, element)) {
+        return false;
+    }
+    BRepAdaptor_Surface surface(TopoDS::Face(shape.getSubShape(element.c_str())));
+    const GeomAbs_SurfaceType type = surface.GetType();
+    return type == GeomAbs_Plane || type == GeomAbs_Cylinder || type == GeomAbs_Cone;
 }
 
 //===========================================================================
@@ -1587,7 +1350,7 @@ CmdPartDesignFillet::CmdPartDesignFillet()
 void CmdPartDesignFillet::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    makeChamferOrFillet(this, "Fillet");
+    makeDressup(this, {.type = "Fillet", .edgesByDefault = true});
 }
 
 bool CmdPartDesignFillet::isActive()
@@ -1615,8 +1378,7 @@ CmdPartDesignChamfer::CmdPartDesignChamfer()
 void CmdPartDesignChamfer::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    makeChamferOrFillet(this, "Chamfer");
-    doCommand(Gui, "Gui.Selection.clearSelection()");
+    makeDressup(this, {.type = "Chamfer", .edgesByDefault = true});
 }
 
 bool CmdPartDesignChamfer::isActive()
@@ -1644,49 +1406,7 @@ CmdPartDesignDraft::CmdPartDesignDraft()
 void CmdPartDesignDraft::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    Gui::SelectionObject selected;
-    bool useAllEdges = false;
-    bool noSelection = false;
-    PartDesign::Body* body = nullptr;
-    if (!dressupGetSelected(this, "Draft", selected, useAllEdges, noSelection, body)) {
-        return;
-    }
-
-    Part::ShapeFeature* base;
-    std::vector<std::string> SubNames;
-    if (noSelection) {
-        base = static_cast<Part::ShapeFeature*>(body->Tip.getValue());
-    }
-    else {
-        base = static_cast<Part::ShapeFeature*>(selected.getObject());
-        SubNames = std::vector<std::string>(selected.getSubNames());
-
-        const Part::TopoShape& TopShape = base->Shape.getShape();
-
-        // filter out the edges
-        size_t i = 0;
-        while (i < SubNames.size()) {
-            std::string aSubName = SubNames.at(i);
-
-            if (aSubName.compare(0, 4, "Face") == 0) {
-                // Check for valid face types
-                TopoDS_Face face = TopoDS::Face(TopShape.getSubShape(aSubName.c_str()));
-                BRepAdaptor_Surface sf(face);
-                if ((sf.GetType() != GeomAbs_Plane) && (sf.GetType() != GeomAbs_Cylinder)
-                    && (sf.GetType() != GeomAbs_Cone)) {
-                    SubNames.erase(SubNames.begin() + i);
-                }
-            }
-            else {
-                // empty name or any other sub-element
-                SubNames.erase(SubNames.begin() + i);
-            }
-
-            i++;
-        }
-    }
-
-    finishDressupFeature(this, "Draft", base, SubNames, useAllEdges);
+    makeDressup(this, {.type = "Draft", .edgesByDefault = false, .keeps = isDraftableFace});
 }
 
 bool CmdPartDesignDraft::isActive()
@@ -1715,38 +1435,7 @@ CmdPartDesignThickness::CmdPartDesignThickness()
 void CmdPartDesignThickness::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    Gui::SelectionObject selected;
-    bool useAllEdges = false;
-    bool noSelection = false;
-    PartDesign::Body* body = nullptr;
-    if (!dressupGetSelected(this, "Thickness", selected, useAllEdges, noSelection, body)) {
-        return;
-    }
-
-
-    Part::ShapeFeature* base;
-    std::vector<std::string> SubNames;
-    if (noSelection) {
-        base = static_cast<Part::ShapeFeature*>(body->Tip.getValue());
-    }
-    else {
-        base = static_cast<Part::ShapeFeature*>(selected.getObject());
-        SubNames = std::vector<std::string>(selected.getSubNames());
-
-        // filter out the edges
-        size_t i = 0;
-        while (i < SubNames.size()) {
-            std::string aSubName = SubNames.at(i);
-
-            if (aSubName.compare(0, 4, "Face") != 0) {
-                // empty name or any other sub-element
-                SubNames.erase(SubNames.begin() + i);
-            }
-            i++;
-        }
-    }
-
-    finishDressupFeature(this, "Thickness", base, SubNames, useAllEdges);
+    makeDressup(this, {.type = "Thickness", .edgesByDefault = false, .keeps = isFace});
 }
 
 bool CmdPartDesignThickness::isActive()
@@ -1758,65 +1447,49 @@ bool CmdPartDesignThickness::isActive()
 // Common functions for all Transformed features
 //===========================================================================
 
-void prepareTransformed(
-    PartDesign::Body* pcActiveBody,
+using ConfigureTransformed
+    = std::function<void(App::DocumentObject* feature, const std::vector<App::DocumentObject*>& originals)>;
+
+// The selected features are the originals; with none, the pattern repeats the whole shape.
+static void makeTransformed(
     Gui::Command* cmd,
-    const std::string& which,
-    std::function<void(App::DocumentObject*, std::vector<App::DocumentObject*>)> func
+    PartDesign::Body* body,
+    const char* type,
+    const ConfigureTransformed& configure
 )
 {
-    std::string FeatName = cmd->getUniqueObjectName(which.c_str(), pcActiveBody);
-
-    auto worker = [=](std::vector<App::DocumentObject*> features) {
-        std::string msg("Make ");
-        msg += which;
-        cmd->openCommand(msg.c_str());
-        const std::string featType = std::string("PartDesign::") + which;
-        auto Feat = PartDesignGui::createFeature(pcActiveBody, featType.c_str(), FeatName);
-        Gui::Command::updateActive();
-
-        if (features.empty()) {
-            FCMD_OBJ_CMD(Feat, "TransformMode = \"Whole shape\"");
-        }
-        else {
-            std::stringstream str;
-            str << "Originals = [";
-            for (auto feature : features) {
-                str << cmd->getObjectCmd(feature) << ",";
-            }
-            str << "]";
-            FCMD_OBJ_CMD(Feat, str.str().c_str());
-        }
-
-        // TODO What is this function supposed to do? (2015-08-05, Fat-Zer)
-        func(Feat, features);
-
-        // Set the tip of the body
-        FCMD_OBJ_CMD(pcActiveBody, "Tip = " << Gui::Command::getObjectCmd(Feat));
-        Gui::Command::updateActive();
-    };
-
-    // Get a valid original from the user
-    std::vector<App::DocumentObject*> features = cmd->getSelection().getObjectsOfType(
+    const std::vector<App::DocumentObject*> originals = cmd->getSelection().getObjectsOfType(
         PartDesign::Feature::getClassTypeId()
     );
-
-    for (auto feature : features) {
-        if (pcActiveBody != PartDesignGui::getBodyFor(feature, false)) {
-            QMessageBox::warning(
-                Gui::getMainWindow(),
-                QObject::tr("Wrong selection"),
-                QObject::tr("Select features from a single body.")
-            );
+    for (auto* original : originals) {
+        if (PartDesignGui::getBodyFor(original, false) != body) {
+            warnWrongSelection(QObject::tr("Select features from a single body."));
             return;
         }
     }
-    worker(features);
+
+    cmd->openCommand((std::string("Make ") + type).c_str());
+    App::DocumentObject* feature = startFeature(cmd, body, type);
+    if (!feature) {
+        return;
+    }
+    Gui::Command::updateActive();
+    if (originals.empty()) {
+        FCMD_OBJ_CMD(feature, "TransformMode = \"Whole shape\"");
+    }
+    else {
+        FCMD_OBJ_CMD(feature, "Originals = " << PartDesignGui::buildLinkListPythonStr(originals));
+    }
+    configure(feature, originals);
+    finishFeature(cmd, feature);
 }
 
-void finishTransformed(Gui::Command* cmd, App::DocumentObject* Feat)
+static Part::Part2DObject* sketchOfFirst(const std::vector<App::DocumentObject*>& originals)
 {
-    finishFeature(cmd, Feat);
+    auto* profileBased = originals.empty()
+        ? nullptr
+        : freecad_cast<PartDesign::ProfileBased*>(originals.front());
+    return profileBased ? profileBased->getVerifiedSketch(/*silent=*/true) : nullptr;
 }
 
 //===========================================================================
@@ -1839,36 +1512,21 @@ CmdPartDesignMirrored::CmdPartDesignMirrored()
 void CmdPartDesignMirrored::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    PartDesign::Body* pcActiveBody = selectedBody(this);
-
-    if (!pcActiveBody) {
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
         return;
     }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd,
-                   pcActiveBody](App::DocumentObject* Feat, std::vector<App::DocumentObject*> features) {
-        bool direction = false;
-        if (!features.empty() && features.front()->isDerivedFrom<PartDesign::ProfileBased>()) {
-            Part::Part2DObject* sketch = (static_cast<PartDesign::ProfileBased*>(features.front()))
-                                             ->getVerifiedSketch(/* silent =*/true);
-            if (sketch) {
-                FCMD_OBJ_CMD(Feat, "MirrorPlane = (" << getObjectCmd(sketch) << ", ['V_Axis'])");
-                direction = true;
-            }
+    makeTransformed(this, body, "Mirrored", [body](auto* feature, const auto& originals) {
+        if (Part::Part2DObject* sketch = sketchOfFirst(originals)) {
+            FCMD_OBJ_CMD(feature, "MirrorPlane = (" << getObjectCmd(sketch) << ", ['V_Axis'])");
         }
-        if (!direction) {
+        else {
             FCMD_OBJ_CMD(
-                Feat,
-                "MirrorPlane = (" << getObjectCmd(pcActiveBody->getOrigin()->getXY()) << ", [''])"
+                feature,
+                "MirrorPlane = (" << getObjectCmd(body->getOrigin()->getXY()) << ", [''])"
             );
         }
-
-        finishTransformed(cmd, Feat);
-    };
-
-    prepareTransformed(pcActiveBody, this, "Mirrored", worker);
+    });
 }
 
 bool CmdPartDesignMirrored::isActive()
@@ -1898,46 +1556,21 @@ CmdPartDesignLinearPattern::CmdPartDesignLinearPattern()
 void CmdPartDesignLinearPattern::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    PartDesign::Body* pcActiveBody = selectedBody(this);
-
-    if (!pcActiveBody) {
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
         return;
     }
-
-    Gui::Command* cmd = this;
-    auto worker =
-        [cmd, pcActiveBody](App::DocumentObject* Feat, std::vector<App::DocumentObject*> features) {
-            bool direction = false;
-            if (!features.empty() && features.front()->isDerivedFrom<PartDesign::ProfileBased>()) {
-                Part::Part2DObject* sketch = (static_cast<PartDesign::ProfileBased*>(features.front()))
-                                                 ->getVerifiedSketch(/* silent =*/true);
-                if (sketch) {
-                    FCMD_OBJ_CMD(
-                        Feat,
-                        "Direction = (" << Gui::Command::getObjectCmd(sketch) << ", ['H_Axis'])"
-                    );
-                    FCMD_OBJ_CMD(
-                        Feat,
-                        "Direction2 = (" << Gui::Command::getObjectCmd(sketch) << ", ['V_Axis'])"
-                    );
-                    direction = true;
-                }
-            }
-            if (!direction) {
-                FCMD_OBJ_CMD(
-                    Feat,
-                    "Direction = (" << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getX())
-                                    << ",[''])"
-                );
-            }
-            FCMD_OBJ_CMD(Feat, "Length = 100");
-            FCMD_OBJ_CMD(Feat, "Occurrences = 2");
-
-            finishTransformed(cmd, Feat);
-        };
-
-    prepareTransformed(pcActiveBody, this, "LinearPattern", worker);
+    makeTransformed(this, body, "LinearPattern", [body](auto* feature, const auto& originals) {
+        if (Part::Part2DObject* sketch = sketchOfFirst(originals)) {
+            FCMD_OBJ_CMD(feature, "Direction = (" << getObjectCmd(sketch) << ", ['H_Axis'])");
+            FCMD_OBJ_CMD(feature, "Direction2 = (" << getObjectCmd(sketch) << ", ['V_Axis'])");
+        }
+        else {
+            FCMD_OBJ_CMD(feature, "Direction = (" << getObjectCmd(body->getOrigin()->getX()) << ",[''])");
+        }
+        FCMD_OBJ_CMD(feature, "Length = 100");
+        FCMD_OBJ_CMD(feature, "Occurrences = 2");
+    });
 }
 
 bool CmdPartDesignLinearPattern::isActive()
@@ -1967,85 +1600,23 @@ CmdPartDesignPolarPattern::CmdPartDesignPolarPattern()
 void CmdPartDesignPolarPattern::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-
-    PartDesign::Body* pcActiveBody = selectedBody(this);
-
-    if (!pcActiveBody) {
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
         return;
     }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd,
-                   pcActiveBody](App::DocumentObject* Feat, std::vector<App::DocumentObject*> features) {
-        bool direction = false;
-        if (!features.empty() && features.front()->isDerivedFrom<PartDesign::ProfileBased>()) {
-            Part::Part2DObject* sketch = (static_cast<PartDesign::ProfileBased*>(features.front()))
-                                             ->getVerifiedSketch(/* silent =*/true);
-            if (sketch) {
-                FCMD_OBJ_CMD(Feat, "Axis = (" << Gui::Command::getObjectCmd(sketch) << ",['N_Axis'])");
-                direction = true;
-            }
+    makeTransformed(this, body, "PolarPattern", [body](auto* feature, const auto& originals) {
+        if (Part::Part2DObject* sketch = sketchOfFirst(originals)) {
+            FCMD_OBJ_CMD(feature, "Axis = (" << getObjectCmd(sketch) << ",['N_Axis'])");
         }
-        if (!direction) {
-            FCMD_OBJ_CMD(
-                Feat,
-                "Axis = (" << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getZ()) << ",[''])"
-            );
+        else {
+            FCMD_OBJ_CMD(feature, "Axis = (" << getObjectCmd(body->getOrigin()->getZ()) << ",[''])");
         }
-
-        FCMD_OBJ_CMD(Feat, "Angle = 360");
-        FCMD_OBJ_CMD(Feat, "Occurrences = 2");
-
-        finishTransformed(cmd, Feat);
-    };
-
-    prepareTransformed(pcActiveBody, this, "PolarPattern", worker);
+        FCMD_OBJ_CMD(feature, "Angle = 360");
+        FCMD_OBJ_CMD(feature, "Occurrences = 2");
+    });
 }
 
 bool CmdPartDesignPolarPattern::isActive()
-{
-    return hasAnyBody();
-}
-
-//===========================================================================
-// PartDesign_Scaled
-//===========================================================================
-DEF_STD_CMD_A(CmdPartDesignScaled)
-
-CmdPartDesignScaled::CmdPartDesignScaled()
-    : Command("PartDesign_Scaled")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Scale");
-    sToolTipText = QT_TR_NOOP("Scales the selected features or the active body");
-    sWhatsThis = "PartDesign_Scaled";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_Scaled";
-}
-
-void CmdPartDesignScaled::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-
-    PartDesign::Body* pcActiveBody = selectedBody(this);
-
-    if (!pcActiveBody) {
-        return;
-    }
-
-    Gui::Command* cmd = this;
-    auto worker = [cmd](App::DocumentObject* Feat, std::vector<App::DocumentObject*> /*features*/) {
-        FCMD_OBJ_CMD(Feat, "Factor = 2");
-        FCMD_OBJ_CMD(Feat, "Occurrences = 2");
-
-        finishTransformed(cmd, Feat);
-    };
-
-    prepareTransformed(pcActiveBody, this, "Scale", worker);
-}
-
-bool CmdPartDesignScaled::isActive()
 {
     return hasAnyBody();
 }
@@ -2078,85 +1649,57 @@ void CmdPartDesignMultiTransform::activated(int iMsg)
         return;
     }
 
-    std::vector<App::DocumentObject*> features;
-
-    // Check if a Transformed feature has been selected, convert it to MultiTransform
-    features = getSelection().getObjectsOfType(PartDesign::Transformed::getClassTypeId());
-    if (!features.empty()) {
-        // Throw out MultiTransform features, we don't want to nest them
-        for (std::vector<App::DocumentObject*>::iterator f = features.begin(); f != features.end();) {
-            if ((*f)->isDerivedFrom<PartDesign::MultiTransform>()) {
-                f = features.erase(f);
-            }
-            else {
-                f++;
-            }
-        }
-
-        if (features.empty()) {
-            return;
-        }
-        // Note: If multiple Transformed features were selected, only the first one is used
-        PartDesign::Transformed* trFeat = static_cast<PartDesign::Transformed*>(features.front());
-
-        // Move the insert point back one feature
-        App::DocumentObject* oldTip = nullptr;
-        App::DocumentObject* prevFeature = nullptr;
-        if (pcActiveBody) {
-            oldTip = pcActiveBody->Tip.getValue();
-            prevFeature = pcActiveBody->getPrevSolidFeature(trFeat);
-        }
-        Gui::Selection().clearSelection();
-        if (prevFeature) {
-            Gui::Selection().addSelection(
-                prevFeature->getDocument()->getName(),
-                prevFeature->getNameInDocument()
-            );
-        }
-
-        openCommand(QT_TRANSLATE_NOOP("Command", "Convert to Multi-Transform feature"));
-
-        Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
-        rcCmdMgr.runCommandByName("PartDesign_MoveTip");
-
-        // Built ahead of the pattern; listing the pattern then takes it off the chain.
-        std::string FeatName = getUniqueObjectName("MultiTransform", pcActiveBody);
-        auto Feat = PartDesignGui::createFeature(pcActiveBody, "PartDesign::MultiTransform", FeatName);
-        auto objCmd = getObjectCmd(trFeat);
-        FCMD_OBJ_CMD(Feat, "Originals = " << objCmd << ".Originals");
-        FCMD_OBJ_CMD(Feat, "TransformMode = " << objCmd << ".TransformMode");
-        FCMD_OBJ_CMD(Feat, "Transformations = [" << objCmd << "]");
-
-        FCMD_OBJ_CMD(trFeat, "Originals = []");
-
-        // Add the MultiTransform into the Body at the current insert point
-        finishFeature(this, Feat);
-
-        // Restore the insert point
-        if (pcActiveBody && oldTip != trFeat) {
-            Gui::Selection().clearSelection();
-            Gui::Selection().addSelection(oldTip->getDocument()->getName(), oldTip->getNameInDocument());
-            rcCmdMgr.runCommandByName("PartDesign_MoveTip");
-            Gui::Selection().clearSelection();
-        }  // otherwise the insert point remains at the new MultiTransform, which is fine
+    // A selected pattern is converted into a MultiTransform; one is never nested in another.
+    std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
+        PartDesign::Transformed::getClassTypeId()
+    );
+    std::erase_if(features, [](App::DocumentObject* f) {
+        return f->isDerivedFrom<PartDesign::MultiTransform>();
+    });
+    if (features.empty()) {
+        makeTransformed(this, pcActiveBody, "MultiTransform", [](auto*, const auto&) {});
+        return;
     }
-    else {
 
-        Gui::Command* cmd = this;
-        auto worker =
-            [cmd,
-             pcActiveBody](App::DocumentObject* Feat, std::vector<App::DocumentObject*> /*features*/) {
-                // Make sure the user isn't presented with an empty screen because no
-                // transformations are defined yet...
-                App::DocumentObject* prevSolid = pcActiveBody->Tip.getValue();
-                if (prevSolid) {
-                    Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(prevSolid);
-                    FCMD_OBJ_CMD(Feat, "Shape = " << getObjectCmd(feat) << ".Shape");
-                }
-                finishFeature(cmd, Feat);
-            };
+    // Only the first selected pattern is converted.
+    PartDesign::Transformed* trFeat = static_cast<PartDesign::Transformed*>(features.front());
 
-        prepareTransformed(pcActiveBody, this, "MultiTransform", worker);
+    // Move the insert point back one feature
+    App::DocumentObject* oldTip = pcActiveBody->Tip.getValue();
+    App::DocumentObject* prevFeature = pcActiveBody->getPrevSolidFeature(trFeat);
+    Gui::Selection().clearSelection();
+    if (prevFeature) {
+        Gui::Selection().addSelection(
+            prevFeature->getDocument()->getName(),
+            prevFeature->getNameInDocument()
+        );
+    }
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Convert to Multi-Transform feature"));
+
+    Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
+    rcCmdMgr.runCommandByName("PartDesign_MoveTip");
+
+    // Built ahead of the pattern; listing the pattern then takes it off the chain.
+    App::DocumentObject* Feat = startFeature(this, pcActiveBody, "MultiTransform");
+    if (!Feat) {
+        return;
+    }
+    auto objCmd = getObjectCmd(trFeat);
+    FCMD_OBJ_CMD(Feat, "Originals = " << objCmd << ".Originals");
+    FCMD_OBJ_CMD(Feat, "TransformMode = " << objCmd << ".TransformMode");
+    FCMD_OBJ_CMD(Feat, "Transformations = [" << objCmd << "]");
+
+    FCMD_OBJ_CMD(trFeat, "Originals = []");
+
+    finishFeature(this, Feat);
+
+    // Restore the insert point; when the pattern was the Tip, the MultiTransform now is.
+    if (oldTip != trFeat) {
+        Gui::Selection().clearSelection();
+        Gui::Selection().addSelection(oldTip->getDocument()->getName(), oldTip->getNameInDocument());
+        rcCmdMgr.runCommandByName("PartDesign_MoveTip");
+        Gui::Selection().clearSelection();
     }
 }
 
@@ -2298,8 +1841,10 @@ void CmdPartDesignBoolean::activated(int iMsg)
     }
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Boolean"));
-    std::string FeatName = getUniqueObjectName("Boolean", pcTargetBody);
-    auto Feat = PartDesignGui::createFeature(pcTargetBody, "PartDesign::Boolean", FeatName);
+    App::DocumentObject* Feat = startFeature(this, pcTargetBody, "Boolean");
+    if (!Feat) {
+        return;
+    }
 
     // If we don't add an object to the boolean group then don't update the body
     // as otherwise this will fail and it will be marked as invalid
