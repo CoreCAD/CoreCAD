@@ -701,7 +701,7 @@ void ProfileBased::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::Docu
     // Sketches are independent objects with their own attachment; leave them
     // alone. Only redirect when Profile references the deleted base directly.
     if (Profile.getValue() && !Profile.getValue()->isDerivedFrom<Part::Part2DObject>()) {
-        relinkToMatchingSubelements(Profile, oldBase, newBase);
+        relinkByLineage(Profile, oldBase, newBase);
     }
 }
 

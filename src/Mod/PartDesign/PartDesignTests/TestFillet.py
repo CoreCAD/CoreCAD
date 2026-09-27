@@ -32,36 +32,6 @@ class TestFillet(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("PartDesignTestFillet", type="Part")
 
-    def _create_box_with_fillet(self):
-        body = self.Doc.addObject("PartDesign::Body", "Body")
-        box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        box.Length = 10.00
-        box.Width = 10.00
-        box.Height = 10.00
-        body.addFeature(box)
-        self.Doc.recompute()
-
-        fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
-        fillet.Base = (box, ["Edge1"])
-        fillet.Radius = 1.0
-        body.addFeature(fillet)
-        self.Doc.recompute()
-        self.assertTrue(fillet.isValid())
-        return body, box, fillet
-
-    def _find_edge_with_match_count(self, source_shape, target_shape, match_count):
-        for index in range(1, source_shape.countElement("Edge") + 1):
-            source_name = "Edge" + str(index)
-            source_edge = source_shape.getElement(source_name, True)
-            matches = target_shape.findSubShapesWithSharedVertex(
-                source_edge,
-                needName=True,
-                checkGeometry=True,
-            )
-            if len(matches) == match_count:
-                return source_name, matches[0][0] if matches else None
-        self.skipTest("Test model did not contain a suitable edge")
-
     def testFilletCubeToSphere(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
@@ -89,36 +59,71 @@ class TestFillet(unittest.TestCase):
         self.Doc.recompute()
         self.assertNotAlmostEqual(self.Fillet.Shape.Volume, 4 / 3 * pi * 5**3, places=3)
 
-    def testDeletingPreviousFeatureRelinksUniqueMatchingBaseEdge(self):
-        body, box, fillet = self._create_box_with_fillet()
-        old_edge, new_edge = self._find_edge_with_match_count(fillet.Shape, box.Shape, 1)
-
-        followup = self.Doc.addObject("PartDesign::Fillet", "FollowupFillet")
-        followup.Base = (fillet, [old_edge])
-        followup.Radius = 0.25
-        body.addFeature(followup)
+    def _box_with_notch(self):
+        """A 20x20x10 box with a notch cut through its top-front edge at x 5..10."""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 20.0
+        box.Height = 10.0
+        body.addFeature(box)
+        notch = self.Doc.addObject("PartDesign::SubtractiveBox", "Notch")
+        notch.Length = notch.Height = 5.0
+        notch.Width = 4.0
+        notch.Placement = FreeCAD.Placement(FreeCAD.Vector(5, -1, 6), FreeCAD.Rotation())
+        body.addFeature(notch)
         self.Doc.recompute()
-        self.assertTrue(followup.isValid())
+        return body, box, notch
 
-        body.removeFeature(fillet)
+    @staticmethod
+    def _edge(shape, xmin, xmax, ymin, ymax, zmin, zmax):
+        want = (xmin, xmax, ymin, ymax, zmin, zmax)
+        for index, edge in enumerate(shape.Edges, 1):
+            bb = edge.BoundBox
+            got = (bb.XMin, bb.XMax, bb.YMin, bb.YMax, bb.ZMin, bb.ZMax)
+            if all(abs(a - b) < 1e-6 for a, b in zip(got, want)):
+                return "Edge%d" % index
+        raise AssertionError("no edge with bounds %s" % (want,))
 
-        self.assertEqual(followup.Base[0].Name, box.Name)
-        self.assertEqual(list(followup.Base[1]), [new_edge])
-
-    def testDeletingPreviousFeatureDoesNotRelinkUnsafeBaseEdge(self):
-        body, box, fillet = self._create_box_with_fillet()
-        old_edge, _new_edge = self._find_edge_with_match_count(fillet.Shape, box.Shape, 0)
-
-        followup = self.Doc.addObject("PartDesign::Fillet", "FollowupFillet")
-        followup.Base = (fillet, [old_edge])
-        followup.Radius = 0.25
-        body.addFeature(followup)
+    def _fillet_then_delete_notch(self, pick):
+        """Fillets the notch edges `pick` returns, deletes the notch, returns (box, fillet)."""
+        body, box, notch = self._box_with_notch()
+        fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
+        fillet.Base = (notch, pick(notch.Shape))
+        fillet.Radius = 0.5
+        body.addFeature(fillet)
         self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        body.removeFeature(notch)
+        self.Doc.removeObject(notch.Name)
+        self.Doc.recompute()
+        return box, fillet
 
-        body.removeFeature(fillet)
+    def testDeletedFeatureNeverTouchedTheEdge(self):
+        box, fillet = self._fillet_then_delete_notch(
+            lambda s: [self._edge(s, 20, 20, 20, 20, 0, 10)]
+        )
+        self.assertIs(fillet.Base[0], box)
+        self.assertEqual(list(fillet.Base[1]), [self._edge(box.Shape, 20, 20, 20, 20, 0, 10)])
+        self.assertTrue(fillet.isValid())
 
-        if followup.Base[0]:
-            self.assertNotEqual(followup.Base[0].Name, box.Name)
+    def testEdgeTheDeletedFeatureCreatedFails(self):
+        box, fillet = self._fillet_then_delete_notch(lambda s: [self._edge(s, 5, 5, 0, 0, 6, 10)])
+        self.assertIsNone(fillet.Base)
+        self.assertFalse(fillet.isValid())
+
+    def testEdgeTheDeletedFeatureTrimmedFollowsBackToTheWholeEdge(self):
+        box, fillet = self._fillet_then_delete_notch(lambda s: [self._edge(s, 0, 5, 0, 0, 10, 10)])
+        self.assertIs(fillet.Base[0], box)
+        self.assertEqual(list(fillet.Base[1]), [self._edge(box.Shape, 0, 20, 0, 0, 10, 10)])
+        self.assertTrue(fillet.isValid())
+
+    def testBothTrimmedPiecesFollowBackToOneEdge(self):
+        box, fillet = self._fillet_then_delete_notch(
+            lambda s: [self._edge(s, 0, 5, 0, 0, 10, 10), self._edge(s, 10, 20, 0, 0, 10, 10)]
+        )
+        self.assertIs(fillet.Base[0], box)
+        self.assertEqual(list(fillet.Base[1]), [self._edge(box.Shape, 0, 20, 0, 0, 10, 10)])
+        self.assertTrue(fillet.isValid())
 
     def tearDown(self):
         # closing doc

@@ -92,7 +92,8 @@ App::DocumentObject* DressUp::getBaseObject(bool silent) const
         }
     }
     else {
-        err = "No Base object linked";
+        err = "This step has no edges or faces to work on; "
+              "the feature they came from may have been deleted";
     }
 
     if (!silent && err) {
@@ -285,7 +286,7 @@ void DressUp::onChanged(const App::Property* prop)
 
 void DressUp::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase)
 {
-    relinkToMatchingSubelements(Base, oldBase, newBase);
+    relinkByLineage(Base, oldBase, newBase);
 }
 
 void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShape)
