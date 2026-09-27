@@ -285,6 +285,13 @@ void ViewProvider::makeChildrenVisible()
 void ViewProvider::onChanged(const App::Property* prop)
 {
 
+    // A step past its Body's roll-back marker is not computed, so there is nothing true to show.
+    if (prop == &Visibility && Visibility.getValue()
+        && PartDesign::Body::isRolledBackPast(getObject())) {
+        Visibility.setValue(false);
+        return;
+    }
+
     // if the object is inside of a body we make sure it is the only visible one on activation
     if (prop == &Visibility && Visibility.getValue()) {
 
