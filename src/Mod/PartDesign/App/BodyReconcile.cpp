@@ -125,17 +125,12 @@ bool answeredForElsewhere(const App::DocumentObject* obj)
 }
 
 // The Body for each solid that continues: the one Body whose roots only that solid holds.
-// Pattern copies share roots, so a pattern matches nothing.
 std::vector<Body*> matchByProvenance(
     const std::vector<Body*>& bodies,
-    const std::vector<Provenance>& solids,
-    bool isPattern
+    const std::vector<Provenance>& solids
 )
 {
     std::vector<Body*> owner(solids.size(), nullptr);
-    if (isPattern) {
-        return owner;
-    }
     std::vector<int> solidsHoldingBody(bodies.size(), 0);
     std::vector<int> heldBy(bodies.size(), -1);
     std::vector<int> bodiesHeldBySolid(solids.size(), 0);
@@ -160,6 +155,31 @@ std::vector<Body*> matchByProvenance(
             if (bodies[b]->TipComponentId.getStrValue() != key) {
                 bodies[b]->TipComponentId.setValue(key);
             }
+        }
+    }
+    return owner;
+}
+
+// Pattern copies share roots, so each copy's Body continues by the copy's own face name. A
+// solid with no face names has only its position to go by, and position is not identity.
+std::vector<Body*> matchPatternCopies(
+    const std::vector<Body*>& bodies,
+    const Part::TopoShape& shape,
+    int solidCount
+)
+{
+    std::vector<Body*> owner(static_cast<std::size_t>(solidCount), nullptr);
+    for (int s = 1; s <= solidCount; ++s) {
+        const std::string key = Body::componentIdOfSolid(shape, s);
+        if (key == "Solid" + std::to_string(s)) {
+            continue;
+        }
+        const auto match = std::ranges::find_if(bodies, [&](Body* body) {
+            return body->TipComponentId.getStrValue() == key
+                && std::ranges::find(owner, body) == owner.end();
+        });
+        if (match != bodies.end()) {
+            owner[static_cast<std::size_t>(s - 1)] = *match;
         }
     }
     return owner;
@@ -238,7 +258,8 @@ void reconcileTip(App::Document* doc, Part::ShapeFeature* feature, std::vector<B
         );
     }
     const bool isPattern = freecad_cast<PartDesign::Transformed*>(feature) != nullptr;
-    const std::vector<Body*> owner = matchByProvenance(bodies, solids, isPattern);
+    const std::vector<Body*> owner = isPattern ? matchPatternCopies(bodies, shape, solidCount)
+                                               : matchByProvenance(bodies, solids);
 
     // Every other Body retires; new ones are spawned below for the solids left unclaimed.
     std::erase_if(bodies, [&owner](Body* body) {
