@@ -262,6 +262,21 @@ class TestPad(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Pad.Shape.Volume, 1.5)
 
+    def testSketchOnOtherBodyFaceDoesNotCopyThatBody(self):
+        import PartDesign
+
+        firstSketch = self.Doc.addObject("Sketcher::SketchObject", "FirstSketch")
+        TestSketcherApp.CreateRectangleSketch(firstSketch, (0, 0), (10, 10))
+        secondSketch = self.Doc.addObject("Sketcher::SketchObject", "SecondSketch")
+        TestSketcherApp.CreateRectangleSketch(secondSketch, (50, 0), (10, 10))
+        firstPad = PartDesign.makeFeature(firstSketch, "Pad")
+        secondPad = PartDesign.makeFeature(secondSketch, "Pad")
+        secondSketch.AttachmentSupport = (firstPad, ["Face6"])
+        secondSketch.MapMode = "FlatFace"
+        self.Doc.recompute()
+        self.assertEqual(len(secondPad.Shape.Solids), 1)
+        self.assertAlmostEqual(secondPad.Shape.Volume, firstPad.Shape.Volume)
+
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument("PartDesignTestPad")

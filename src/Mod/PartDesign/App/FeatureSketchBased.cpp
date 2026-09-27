@@ -649,48 +649,6 @@ int ProfileBased::getSketchAxisCount() const
     return sketch->getAxisCount();
 }
 
-App::DocumentObject* ProfileBased::getBaseObject(bool silent) const
-{
-    // Test the base's class feature.
-    App::DocumentObject* rv = Feature::getBaseObject(/* silent = */ true);
-    if (rv || patternDeleted(silent)) {
-        return rv;
-    }
-
-    // getVerifiedObject() may throw it's own exception if fail
-    Part::ShapeFeature* obj = getVerifiedObject(silent);
-
-    if (!obj) {
-        return nullptr;
-    }
-
-    if (!obj->isDerivedFrom<Part::Part2DObject>()) {
-        return obj;
-    }
-
-    // due to former test we know we have a 2d object
-    Part::Part2DObject* sketch = getVerifiedSketch(silent);
-    const char* err = nullptr;
-    App::DocumentObject* spt = sketch->AttachmentSupport.getValue();
-    if (spt) {
-        if (Part::hasShape(spt)) {
-            rv = spt;
-        }
-        else {
-            err = "No base set, sketch support is not Part::Feature";
-        }
-    }
-    else {
-        err = "No base set, no sketch support either";
-    }
-
-    if (!silent && err) {
-        throw Base::RuntimeError(err);
-    }
-
-    return rv;
-}
-
 void ProfileBased::onChanged(const App::Property* prop)
 {
     FeatureAddSub::onChanged(prop);
