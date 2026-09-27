@@ -1691,6 +1691,8 @@ protected:
      * @param[in] line The line number where this function is called.
      */
     void _checkTransaction(DocumentObject* pcDelObj, const Property* What, int line);
+    /// Reopen the last undo step, only while nothing is open, booked or undone.
+    bool _resumeLastTransaction();
 
     /**
      * @brief Break dependencies of an object.

@@ -108,6 +108,44 @@ class TestMultiOutputDelete(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(_bodies(self.Doc)), 0)
 
+    def testOneUndoReversesADeleteCommittedBeforeTheRecompute(self):
+        # CoreCAD/CoreCAD#147: the merge that follows the delete joins the delete's undo step.
+        self.Doc.UndoMode = 1
+        box, lp = self._multibody_pattern(occurrences=4)
+        before = sorted(b.Uid for b in _bodies(self.Doc))
+
+        self.Doc.openTransaction("Delete pattern")
+        self.Doc.removeObject(lp.Name)
+        self.Doc.commitTransaction()
+        self.Doc.recompute()
+        self.assertEqual(len(_bodies(self.Doc)), 1)
+        self.assertEqual(self.Doc.UndoNames[0], "Delete pattern")
+
+        self.Doc.undo()
+        self.Doc.recompute()
+        self.assertIn(lp.Name, [o.Name for o in self.Doc.Objects])
+        self.assertEqual(sorted(b.Uid for b in _bodies(self.Doc)), before)
+        self.assertEqual(self.Doc.RedoNames, ["Delete pattern"])
+
+        self.Doc.redo()
+        self.Doc.recompute()
+        self.assertEqual(len(_bodies(self.Doc)), 1)
+        self.assertEqual(self.Doc.UndoNames[0], "Delete pattern")
+
+    def testNextEditGetsItsOwnUndoStep(self):
+        self.Doc.UndoMode = 1
+        box, lp = self._multibody_pattern(occurrences=4)
+        self.Doc.openTransaction("Delete pattern")
+        self.Doc.removeObject(lp.Name)
+        self.Doc.commitTransaction()
+        self.Doc.recompute()
+
+        self.Doc.openTransaction("Resize")
+        box.Length = 20.0
+        self.Doc.commitTransaction()
+        self.Doc.recompute()
+        self.assertEqual(self.Doc.UndoNames[:2], ["Resize", "Delete pattern"])
+
 
 if __name__ == "__main__":
     unittest.main()
