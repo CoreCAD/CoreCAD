@@ -174,6 +174,7 @@ private:
      */
     void applyMultiOutputDisplay();
     void showShownStep();
+    void hideHeldBack();
 
     void afterRecompute(const App::Document&, const std::vector<App::DocumentObject*>& recomputedObjs);
     fastsignals::scoped_connection m_RecomputedConn;

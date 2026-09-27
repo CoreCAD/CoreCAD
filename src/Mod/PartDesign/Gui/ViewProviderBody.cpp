@@ -142,6 +142,12 @@ void ViewProviderBody::onChangedObject(const Gui::ViewProvider& vp, const App::P
     if (!changedObj) {
         return;
     }
+    // Held back past a roll-back marker, so nothing true to show (see also
+    // PartDesignGui::ViewProvider::onChanged, which stops a step before it draws).
+    if (vpd->Visibility.getValue() && PartDesign::Body::isHeldBack(changedObj)) {
+        const_cast<Gui::ViewProviderDocumentObject*>(vpd)->Visibility.setValue(false);
+        return;
+    }
 
     auto* body = this->getObject<PartDesign::Body>();
     if (!body) {
@@ -280,6 +286,7 @@ void ViewProviderBody::updateData(const App::Property* prop)
 
     if (prop == &body->RollbackMarker && !isRestoring()) {
         showShownStep();
+        hideHeldBack();
     }
 
     if (prop == &body->Tip || prop == &body->TipComponentId) {
@@ -307,6 +314,17 @@ void ViewProviderBody::showShownStep()
     }
     if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(shown)) {
         vp->show();
+    }
+}
+
+void ViewProviderBody::hideHeldBack()
+{
+    for (App::DocumentObject* obj : getObject()->getDocument()->getObjects()) {
+        if (obj->Visibility.getValue() && PartDesign::Body::isHeldBack(obj)) {
+            if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj)) {
+                vp->hide();
+            }
+        }
     }
 }
 

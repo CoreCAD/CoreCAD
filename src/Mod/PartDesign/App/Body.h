@@ -241,6 +241,9 @@ public:
     bool stopsBefore(const App::DocumentObject* step) const;
     /// True when every Body @p step feeds stops before it, so computing it is wasted.
     static bool isRolledBackPast(const App::DocumentObject* step);
+    /// True for a step rolled back past, and for anything whose every user is held back, such as
+    /// the sketch of such a step: none of it is computed, so none of it may be shown.
+    static bool isHeldBack(const App::DocumentObject* obj);
     /// The Tip's shape, or the one copy of it this Body stands for, placed in the world. Null
     /// when there is no such shape.
     Part::TopoShape derivedTipShape() const;
