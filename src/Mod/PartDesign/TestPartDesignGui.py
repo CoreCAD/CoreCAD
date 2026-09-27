@@ -431,6 +431,75 @@ class TestClosingAFeatureDialog(unittest.TestCase):
                 self.assertEqual({o.Name for o in self.Doc.Objects}, before)
 
 
+class TestFeatureCommands(unittest.TestCase):
+    """Cruth #143: the feature commands, driven from the selection as a user would."""
+
+    def setUp(self):
+        self.Doc = App.newDocument("FeatureCommands", type="Part")
+        self.Pad = PartDesign.makeFeature(self.square("Profile", 0, 10), "Pad")
+        self.Doc.recompute()
+        Gui.activateWorkbench("PartDesignWorkbench")
+        Gui.activateView("Gui::View3DInventor", True)
+
+    def tearDown(self):
+        if Gui.Control.activeDialog():
+            Gui.Control.closeDialog()
+        App.closeDocument(self.Doc.Name)
+
+    def square(self, name, x0, x1):
+        sketch = self.Doc.addObject("Sketcher::SketchObject", name)
+        corners = [(x0, 0), (x1, 0), (x1, 10), (x0, 10)]
+        for start, end in zip(corners, corners[1:] + corners[:1]):
+            sketch.addGeometry(Part.LineSegment(App.Vector(*start, 0), App.Vector(*end, 0)))
+        self.Doc.recompute()
+        return sketch
+
+    def runCommand(self, command):
+        """Runs a command, dismissing and recording any message box it raises."""
+        seen = []
+
+        def dismiss():
+            dialog = QApplication.activeModalWidget()
+            if dialog is not None:
+                seen.append(dialog.windowTitle() or dialog.text())
+                dialog.reject()
+
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(dismiss)
+        timer.start(500)
+        Gui.runCommand(command)
+        timer.stop()
+        return seen
+
+    def testFaceDressUpsDropEveryPickedEdge(self):
+        # Removing an edge used to skip the element after it, so a second edge survived.
+        for command, kind in (
+            ("PartDesign_Thickness", "PartDesign::Thickness"),
+            ("PartDesign_Draft", "PartDesign::Draft"),
+        ):
+            with self.subTest(command=command):
+                Gui.Selection.clearSelection()
+                for element in ("Edge1", "Edge2", "Face6"):
+                    Gui.Selection.addSelection(self.Doc.Name, self.Pad.Name, element)
+                self.assertEqual(self.runCommand(command), [])
+                feature = [o for o in self.Doc.Objects if o.isDerivedFrom(kind)][0]
+                self.assertEqual(feature.Base[1], ["Face6"])
+                Gui.Control.closeDialog()
+
+    def testEveryCutFindsTheOnlyBody(self):
+        # Cruth §8.3: a cut drawn on an origin plane cuts the one body there is. Only Pocket
+        # used to; the other cuts said there was no solid to subtract from.
+        cutter = self.square("Cutter", 2, 4)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(cutter)
+        self.assertEqual(self.runCommand("PartDesign_Groove"), [])
+        Gui.ActiveDocument.resetEdit()
+        grooves = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Groove")]
+        self.assertEqual(len(grooves), 1)
+        self.assertEqual(grooves[0].BaseFeature, self.Pad)
+
+
 # class PartDesignGuiTestCases(unittest.TestCase):
 #   def setUp(self):
 #       self.Doc = FreeCAD.newDocument("SketchGuiTest")
