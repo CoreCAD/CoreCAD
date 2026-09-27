@@ -52,6 +52,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestBoolean.py
     PartDesignTests/TestBreakOut.py
     PartDesignTests/TestKeepCopiesApart.py
+    PartDesignTests/TestPatternCopyBodies.py
     PartDesignTests/TestMultiOutputDelete.py
     PartDesignTests/TestFillet.py
     PartDesignTests/TestChamfer.py
