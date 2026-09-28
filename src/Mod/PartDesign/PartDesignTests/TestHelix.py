@@ -42,7 +42,7 @@ class TestHelix(unittest.TestCase):
 
     def testHelicalTubeCase(self):
         body = self.Doc.addObject("PartDesign::Body", "Body")
-        sketch = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
+        sketch = body.Document.addObject("Sketcher::SketchObject", "Sketch")
         sketch.AttachmentSupport = (self.Doc.getObject("XY_Plane"), [""])
         sketch.MapMode = "FlatFace"
 
@@ -77,7 +77,6 @@ class TestHelix(unittest.TestCase):
         """Test helix based on circle in Quadrant 1"""
         body = self.Doc.addObject("PartDesign::Body", "Body")
         profileSketch = self.Doc.addObject("Sketcher::SketchObject", "ProfileSketch")
-        body.addFeature(profileSketch)
         TestSketcherApp.CreateCircleSketch(profileSketch, (2, 0), 1)
         self.Doc.recompute()
         helix = self.Doc.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
@@ -106,7 +105,6 @@ class TestHelix(unittest.TestCase):
         """Test helix based on a rectangle"""
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
         gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-        body.addFeature(gearSketch)
         TestSketcherApp.CreateRectangleSketch(gearSketch, (0, 0), (5, 5))
         self.Doc.recompute()
 
@@ -145,7 +143,6 @@ class TestHelix(unittest.TestCase):
             exponent = float(iexponent)
             body = self.Doc.addObject("PartDesign::Body", "GearBody")
             gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-            body.addFeature(gearSketch)
             TestSketcherApp.CreateRectangleSketch(
                 gearSketch, (10 * (10**exponent), 0), (1 * (10**exponent), 1 * (10**exponent))
             )
@@ -198,7 +195,6 @@ class TestHelix(unittest.TestCase):
             exponent = float(iexponent)
             body = self.Doc.addObject("PartDesign::Body", "GearBody")
             gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-            body.addFeature(gearSketch)
             TestSketcherApp.CreateRectangleSketch(
                 gearSketch, (10 * (10**exponent), 0), (1 * (10**exponent), 1 * (10**exponent))
             )
@@ -259,7 +255,6 @@ class TestHelix(unittest.TestCase):
             exponent = float(iexponent)
             body = self.Doc.addObject("PartDesign::Body", "GearBody")
             gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-            body.addFeature(gearSketch)
             TestSketcherApp.CreateRectangleSketch(
                 gearSketch, (10 * (10**exponent), 0), (1 * (10**exponent), 1 * (10**exponent))
             )
@@ -311,7 +306,6 @@ class TestHelix(unittest.TestCase):
         """Test helix following a cone"""
         body = self.Doc.addObject("PartDesign::Body", "ConeBody")
         coneSketch = self.Doc.addObject("Sketcher::SketchObject", "ConeSketch")
-        body.addFeature(coneSketch)
 
         geoList = []
         geoList.append(Part.LineSegment(FreeCAD.Vector(-5, -5, 0), FreeCAD.Vector(-3, 0, 0)))
@@ -358,7 +352,6 @@ class TestHelix(unittest.TestCase):
         """Test helix following a cone with a negative angle"""
         body = self.Doc.addObject("PartDesign::Body", "ConeBody")
         coneSketch = self.Doc.addObject("Sketcher::SketchObject", "ConeSketch")
-        body.addFeature(coneSketch)
 
         geoList = []
         geoList.append(Part.LineSegment(FreeCAD.Vector(5, 5, 0), FreeCAD.Vector(3, 0, 0)))

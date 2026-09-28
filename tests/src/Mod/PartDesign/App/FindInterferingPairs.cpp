@@ -59,7 +59,6 @@ protected:
         auto* body = _doc->addObject<PartDesign::Body>(name);
 
         auto* sk = _doc->addObject<Sketcher::SketchObject>();
-        body->addFeature(sk);
         sk->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
         sk->MapMode.setValue("FlatFace");
         const std::vector<Base::Vector3d> corners {

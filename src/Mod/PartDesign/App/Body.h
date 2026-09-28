@@ -100,6 +100,8 @@ public:
 
     static bool isSolidFeature(const App::DocumentObject* obj);
     static bool isAllowed(const App::DocumentObject* obj);
+    /// Throws unless @p obj can join a body's chain.
+    static void refuseOffChain(const App::DocumentObject* obj);
     /// The solid step before @p start (default: the Tip), skipping sketches and datums.
     App::DocumentObject* getPrevSolidFeature(App::DocumentObject* start = nullptr);
     bool isSolid();

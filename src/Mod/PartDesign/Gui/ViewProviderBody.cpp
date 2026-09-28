@@ -694,21 +694,9 @@ bool ViewProviderBody::canDropObjects() const
 
 bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
 {
-    if (obj->isDerivedFrom<App::VarSet>()) {
-        return true;
-    }
-    else if (obj->isDerivedFrom<App::DatumElement>()) {
-        // accept only datums that are not part of a LCS.
-        auto* lcs = static_cast<App::DatumElement*>(obj)->getLCS();
-        return !lcs;
-    }
-    else if (obj->isDerivedFrom<App::LocalCoordinateSystem>()) {
-        return !obj->isDerivedFrom<App::Origin>();
-    }
-    else if (obj->isDerivedFrom<Part::Part2DObject>()) {
-        return true;
-    }
-    else if (!Part::hasShape(obj)) {
+    if (obj->isDerivedFrom<App::VarSet>() || obj->isDerivedFrom<App::DatumElement>()
+        || obj->isDerivedFrom<App::LocalCoordinateSystem>()
+        || obj->isDerivedFrom<Part::Part2DObject>() || !Part::hasShape(obj)) {
         return false;
     }
     else if (PartDesign::Body::inAnyBody(obj)) {
@@ -724,11 +712,7 @@ bool ViewProviderBody::canDropObject(App::DocumentObject* obj) const
 void ViewProviderBody::dropObject(App::DocumentObject* obj)
 {
     auto* body = getObject<PartDesign::Body>();
-    if (obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<App::DatumElement>()
-        || obj->isDerivedFrom<App::LocalCoordinateSystem>()) {
-        body->addFeature(obj);
-    }
-    else if (PartDesign::Body::isAllowed(obj) && PartDesignGui::isFeatureMovable(obj)) {
+    if (PartDesign::Body::isSolidFeature(obj) && PartDesignGui::isFeatureMovable(obj)) {
         std::vector<App::DocumentObject*> move;
         move.push_back(obj);
         std::vector<App::DocumentObject*> deps = PartDesignGui::collectMovableDependencies(move);

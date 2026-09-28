@@ -41,11 +41,9 @@ class TestLoft(unittest.TestCase):
     def testSimpleAdditiveLoftCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.ProfileSketch = self.Doc.addObject("Sketcher::SketchObject", "ProfileSketch")
-        self.Body.addFeature(self.ProfileSketch)
         TestSketcherApp.CreateRectangleSketch(self.ProfileSketch, (0, 0), (1, 1))
         self.Doc.recompute()
         self.LoftSketch = self.Doc.addObject("Sketcher::SketchObject", "LoftSketch")
-        self.Body.addFeature(self.LoftSketch)
         self.LoftSketch.MapMode = "FlatFace"
         self.LoftSketch.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         self.Doc.recompute()
@@ -61,7 +59,6 @@ class TestLoft(unittest.TestCase):
     def testSimpleSubtractiveLoftCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (1, 1))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
@@ -70,11 +67,9 @@ class TestLoft(unittest.TestCase):
         self.Pad.Length = 2
         self.Doc.recompute()
         self.ProfileSketch = self.Doc.addObject("Sketcher::SketchObject", "ProfileSketch")
-        self.Body.addFeature(self.ProfileSketch)
         TestSketcherApp.CreateRectangleSketch(self.ProfileSketch, (0, 0), (1, 1))
         self.Doc.recompute()
         self.LoftSketch = self.Doc.addObject("Sketcher::SketchObject", "LoftSketch")
-        self.Body.addFeature(self.LoftSketch)
         self.LoftSketch.MapMode = "FlatFace"
         self.LoftSketch.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         self.Doc.recompute()
@@ -91,7 +86,7 @@ class TestLoft(unittest.TestCase):
         """Test issue #6156: Loft tool "Closed" option not working"""
         body = self.Doc.addObject("PartDesign::Body", "Body")
 
-        sketch1 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
+        sketch1 = body.Document.addObject("Sketcher::SketchObject", "Sketch")
         sketch1.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         sketch1.MapMode = "FlatFace"
         sketch1.addGeometry(
@@ -103,7 +98,7 @@ class TestLoft(unittest.TestCase):
         sketch1.addConstraint(Sketcher.Constraint("Distance", -1, 1, 0, 3, 40.0))
         sketch1.setDatum(2, Units.Quantity("40.000000 mm"))
 
-        sketch2 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
+        sketch2 = body.Document.addObject("Sketcher::SketchObject", "Sketch001")
         sketch2.AttachmentSupport = (self.Doc.YZ_Plane, "")
         sketch2.MapMode = "FlatFace"
         sketch2.addGeometry(
@@ -115,7 +110,7 @@ class TestLoft(unittest.TestCase):
         sketch2.addConstraint(Sketcher.Constraint("Distance", -1, 1, 0, 3, 40.0))
         sketch2.setDatum(2, Units.Quantity("40.000000 mm"))
 
-        sketch3 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch002"))
+        sketch3 = body.Document.addObject("Sketcher::SketchObject", "Sketch002")
         sketch3.AttachmentSupport = (self.Doc.getObject("YZ_Plane"), "")
         sketch3.MapMode = "FlatFace"
         sketch3.addGeometry(
@@ -127,7 +122,7 @@ class TestLoft(unittest.TestCase):
         sketch3.addConstraint(Sketcher.Constraint("Diameter", 0, 20.0))
         sketch3.setDatum(2, Units.Quantity("20.000000 mm"))
 
-        sketch4 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch003"))
+        sketch4 = body.Document.addObject("Sketcher::SketchObject", "Sketch003")
         sketch4.AttachmentSupport = (self.Doc.XZ_Plane, "")
         sketch4.MapMode = "FlatFace"
         sketch4.addGeometry(
@@ -159,9 +154,7 @@ class TestLoft(unittest.TestCase):
         """Test issue #15138 adapted from a script by chennes"""
         body = self.Doc.addObject("PartDesign::Body", "Body")
         body.Label = "Body"
-        coneBottomSketch = body.addFeature(
-            body.Document.addObject("Sketcher::SketchObject", "ConeBottomSketch")
-        )
+        coneBottomSketch = body.Document.addObject("Sketcher::SketchObject", "ConeBottomSketch")
         coneBottomSketch.AttachmentSupport = (self.Doc.getObject("XY_Plane"), [""])
         coneBottomSketch.MapMode = "FlatFace"
 
@@ -195,9 +188,7 @@ class TestLoft(unittest.TestCase):
         coneBottomSketch.addConstraint(Sketcher.Constraint("Diameter", 1, 40.000000))
         coneBottomSketch.addConstraint(Sketcher.Constraint("Coincident", 1, 3, 0, 3))
 
-        coneTopSketch = body.addFeature(
-            body.Document.addObject("Sketcher::SketchObject", "ConeTopSketch")
-        )
+        coneTopSketch = body.Document.addObject("Sketcher::SketchObject", "ConeTopSketch")
         coneTopSketch.AttachmentSupport = (self.Doc.getObject("XY_Plane"), [""])
         coneTopSketch.MapMode = "FlatFace"
 
@@ -311,7 +302,7 @@ class TestLoft(unittest.TestCase):
         """Test issue #19183: Loft tool "Loft between faces no longer works"""
         body = self.Doc.addObject("PartDesign::Body", "Body")
 
-        sketch1 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
+        sketch1 = body.Document.addObject("Sketcher::SketchObject", "Sketch")
 
         sketch1.addGeometry(
             Part.LineSegment(
@@ -376,7 +367,7 @@ class TestLoft(unittest.TestCase):
         sketch1.addConstraint(Sketcher.Constraint("Distance", 0, 30.965710))
         sketch1.setDatum(10, Units.Quantity("30.000000 mm"))
 
-        sketch2 = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch001"))
+        sketch2 = body.Document.addObject("Sketcher::SketchObject", "Sketch001")
         sketch2.addGeometry(
             Part.LineSegment(
                 Base.Vector(-2.060394, -1.332045, 0),

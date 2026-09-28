@@ -46,12 +46,10 @@ class TestDraft(unittest.TestCase):
         self.DatumPlane = self.Doc.addObject("Part::DatumPlane", "DatumPlane")
         self.DatumPlane.AttachmentSupport = [(self.Doc.YZ_Plane, "")]
         self.DatumPlane.MapMode = "FlatFace"
-        self.Body.addFeature(self.DatumPlane)
         self.Doc.recompute()
         self.DatumLine = self.Doc.addObject("Part::DatumLine", "DatumLine")
         self.DatumLine.AttachmentSupport = [(self.Doc.X_Axis, "")]
         self.DatumLine.MapMode = "TwoPointLine"
-        self.Body.addFeature(self.DatumLine)
         self.Doc.recompute()
         self.Draft = self.Doc.addObject("PartDesign::Draft", "Draft")
         # Draft.Base needs to be top face

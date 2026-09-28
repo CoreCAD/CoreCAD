@@ -69,7 +69,6 @@ protected:
     Sketcher::SketchObject* newSketch(PartDesign::Body* body, const char* name)
     {
         auto* sk = _doc->addObject<Sketcher::SketchObject>(name);
-        body->addFeature(sk);
         sk->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
         sk->MapMode.setValue("FlatFace");
         return sk;

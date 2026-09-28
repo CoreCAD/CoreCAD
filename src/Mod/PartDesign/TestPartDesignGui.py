@@ -121,7 +121,6 @@ class PartDesignGuiTestCases(unittest.TestCase):
         self.Sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
         self.Sketch.AttachmentSupport = (self.BoxObj, ("Face3",))
         self.Sketch.MapMode = "FlatFace"
-        self.BodySource.addFeature(self.Sketch)
 
         geoList = []
         geoList.append(Part.LineSegment(App.Vector(2.0, 8.0, 0), App.Vector(8.0, 8.0, 0)))
@@ -177,7 +176,6 @@ class PartDesignGuiTestCases(unittest.TestCase):
         Gui.activateView("Gui::View3DInventor", True)
 
         self.Sketch = self.Doc.addObject("Sketcher::SketchObject", "Sketch")
-        self.BodySource.addFeature(self.Sketch)
         self.Sketch.AttachmentSupport = (self.BodySource.Origin.OriginFeatures[3], [""])
         self.Sketch.MapMode = "FlatFace"
 
@@ -814,7 +812,7 @@ class TestDatumPlane(unittest.TestCase):
         body.addFeature(box)
 
         self.Doc.recompute()
-        datum = body.addFeature(body.Document.addObject("Part::DatumPlane", "DatumPlane"))
+        datum = body.Document.addObject("Part::DatumPlane", "DatumPlane")
         datum.AttachmentSupport = [(box, "Face6")]
         datum.MapMode = "FlatFace"
         self.Doc.recompute()

@@ -39,7 +39,6 @@ class TestMultiTransform(unittest.TestCase):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
@@ -76,7 +75,6 @@ class TestMultiTransform(unittest.TestCase):
         Body = Doc.addObject("PartDesign::Body", "Body")
         # Make first offset cube Pad
         PadSketch = Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        Body.addFeature(PadSketch)
         xw = yw = zw = 10
         TestSketcherApp.CreateRectangleSketch(PadSketch, (0, 0), (xw, yw))
         Doc.recompute()

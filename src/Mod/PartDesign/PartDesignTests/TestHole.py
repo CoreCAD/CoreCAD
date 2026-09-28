@@ -44,7 +44,6 @@ class TestHole(unittest.TestCase):
         self.HoleSketch.AttachmentSupport = (self.Doc.XY_Plane, [""])
         self.HoleSketch.MapMode = "FlatFace"
         self.HoleSketch.MapReversed = True
-        self.Body.addFeature(self.HoleSketch)
         TestSketcherApp.CreateCircleSketch(self.HoleSketch, (-5, 5), 1)
         self.Doc.recompute()
         self.Hole = self.Doc.addObject("PartDesign::Hole", "Hole")
