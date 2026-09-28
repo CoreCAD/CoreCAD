@@ -131,6 +131,16 @@ class TestBodyEmergence(unittest.TestCase):
         finally:
             FreeCAD.closeDocument(plain.Name)
 
+    def testBodyRefusesWhatCannotJoinItsChain(self):
+        pad = PartDesign.makeFeature(_square(self.Doc, "S1"), "Pad")
+        body = PartDesign.findBodyOf(pad)
+        loose = _square(self.Doc, "S2", x0=50)
+        with self.assertRaisesRegex(Exception, "belongs to the document"):
+            body.addFeature(loose)
+        with self.assertRaisesRegex(Exception, "belongs to the document"):
+            body.insertObject(loose, pad, True)
+        self.assertEqual(body.Tip, pad)
+
     def tearDown(self):
         FreeCAD.closeDocument(self.Doc.Name)
 

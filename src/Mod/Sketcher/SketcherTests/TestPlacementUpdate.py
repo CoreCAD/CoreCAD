@@ -53,7 +53,6 @@ class TestSketchPlacementUpdate(unittest.TestCase):
 
         # create a sketch and attach it to the bottom face of the cylinder
         self.sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
-        self.body.addFeature(self.sketch)
 
         # attach the sketch to Face2, ie. bottom circle face of the cylinder
         self.sketch.AttachmentSupport = (self.cylinder, ["Face2"])
@@ -171,7 +170,6 @@ class TestSketchPlacementUpdate(unittest.TestCase):
         """
         # create an unattached sketch for comparison
         unattached = self.doc.addObject("Sketcher::SketchObject", "UnattachedSketch")
-        self.body.addFeature(unattached)
 
         import Part
 

@@ -104,7 +104,7 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
                     for (auto sel : selection) {
                         // if at least one selected feature cannot be moved to a body
                         // disable the entry
-                        if (addMoveFeature && !PartDesign::Body::isAllowed(sel.pObject)) {
+                        if (addMoveFeature && !PartDesign::Body::isSolidFeature(sel.pObject)) {
                             addMoveFeature = false;
                         }
                         // if all at least one selected feature doesn't belong to the same body

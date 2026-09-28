@@ -36,7 +36,6 @@ protected:
                    .newDocument("BodyShapeCapability_test", "testUser", {.documentType = "Part"});
         _body = _doc->addObject<PartDesign::Body>();
         _sketch = _doc->addObject<Sketcher::SketchObject>("Sketch");
-        _body->addFeature(_sketch);
 
         _sketch->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
         _sketch->MapMode.setValue("FlatFace");

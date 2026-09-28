@@ -290,7 +290,6 @@ class TestInvoluteGear(unittest.TestCase):
     def testUsagePadGearProfile(self):
         profile = InvoluteGearFeature.makeInvoluteGear("GearProfile")
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
-        body.addFeature(profile)
         pad = body.addFeature(body.Document.addObject("PartDesign::Pad", "GearPad"))
         pad.Profile = profile
         pad.Length = "5 mm"  # that our gear's "Face Width"
@@ -304,7 +303,6 @@ class TestInvoluteGear(unittest.TestCase):
         profile.HighPrecision = False
         profile.NumberOfTeeth = 8
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
-        body.addFeature(profile)
         cylinder = body.addFeature(
             body.Document.addObject("PartDesign::AdditiveCylinder", "GearCylinder")
         )

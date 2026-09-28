@@ -41,7 +41,6 @@ protected:
         _doc = App::GetApplication().newDocument("WorldFrame_test", "testUser", {.documentType = "Part"});
         _body = _doc->addObject<PartDesign::Body>();
         _sketch = _doc->addObject<Sketcher::SketchObject>("Sketch");
-        _body->addFeature(_sketch);
 
         // Tilt the anchor sketch into the world XZ plane (90 deg about world X). Its local XY now
         // maps to world XZ, so any residual local-frame handling would show up as a wrong bbox.
@@ -137,7 +136,6 @@ TEST_F(WorldFrameTest, PadWithAttachmentOffsetOnPlacedSupport)
 
     // A datum plane with a genuinely non-identity placement (offset + tilt off XY_Plane).
     auto* datum = _doc->addObject<Part::DatumPlane>("Datum");
-    _body->addFeature(datum);
     datum->AttachmentSupport.setValue(xy, "");
     datum->MapMode.setValue("FlatFace");
     datum->AttachmentOffset.setValue(
@@ -146,7 +144,6 @@ TEST_F(WorldFrameTest, PadWithAttachmentOffsetOnPlacedSupport)
 
     // A sketch attached to that placed datum, with its own non-zero attachment offset.
     auto* sketch = _doc->addObject<Sketcher::SketchObject>("OffsetSketch");
-    _body->addFeature(sketch);
     sketch->AttachmentSupport.setValue(datum, "");
     sketch->MapMode.setValue("FlatFace");
     sketch->AttachmentOffset.setValue(

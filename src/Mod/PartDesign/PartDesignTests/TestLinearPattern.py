@@ -103,7 +103,6 @@ class TestLinearPattern(unittest.TestCase):
     def testNormalSketchAxisLinearPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
@@ -126,7 +125,6 @@ class TestLinearPattern(unittest.TestCase):
     def testVerticalSketchAxisLinearPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
@@ -149,7 +147,6 @@ class TestLinearPattern(unittest.TestCase):
     def testHorizontalSketchAxisLinearPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")

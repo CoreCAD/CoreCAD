@@ -48,7 +48,7 @@ class TestSketch(unittest.TestCase):
         box.Label = "Object"
         self.doc.commitTransaction()
 
-        sketch = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
+        sketch = body.Document.addObject("Sketcher::SketchObject", "Sketch")
         sketch.AttachmentSupport = (plane, [""])
         sketch.MapMode = "FlatFace"
         self.doc.recompute()
@@ -93,7 +93,7 @@ class TestSketch(unittest.TestCase):
         box.Label = "Object"
         self.doc.commitTransaction()
 
-        sketch = body.addFeature(body.Document.addObject("Sketcher::SketchObject", "Sketch"))
+        sketch = body.Document.addObject("Sketcher::SketchObject", "Sketch")
         sketch.AttachmentSupport = (plane, [""])
         sketch.MapMode = "FlatFace"
         self.doc.recompute()

@@ -293,11 +293,19 @@ bool Body::isAllowed(const App::DocumentObject* obj)
         || obj->isDerivedFrom<App::LocalCoordinateSystem>() || obj->isDerivedFrom<App::VarSet>();
 }
 
+void Body::refuseOffChain(const App::DocumentObject* obj)
+{
+    if (!isSolidFeature(obj)) {
+        throw Base::ValueError(
+            "Body: only a step that builds the solid joins a body; a sketch, datum or other "
+            "object belongs to the document"
+        );
+    }
+}
+
 std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
 {
-    if (!isAllowed(feature)) {
-        throw Base::ValueError("Body: object is not allowed");
-    }
+    refuseOffChain(feature);
     relinkToOrigin(feature, getOrigin());
     const long copy = tipCopy();
 
@@ -387,10 +395,8 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
             "Body: the feature we should insert relative to is not part of that body"
         );
     }
+    refuseOffChain(feature);
     relinkToOrigin(feature, getOrigin());
-    if (!isSolidFeature(feature)) {
-        return;
-    }
 
     auto* pd = static_cast<PartDesign::Feature*>(feature);
     auto* targetPd = freecad_cast<PartDesign::Feature*>(target);

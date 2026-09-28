@@ -94,7 +94,6 @@ class TestPolarPattern(unittest.TestCase):
     def testNormalSketchAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
@@ -117,7 +116,6 @@ class TestPolarPattern(unittest.TestCase):
     def testVerticalSketchAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
@@ -140,7 +138,6 @@ class TestPolarPattern(unittest.TestCase):
     def testHorizontalSketchAxisPolarPattern(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addFeature(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")

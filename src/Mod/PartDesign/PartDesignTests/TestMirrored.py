@@ -38,7 +38,6 @@ class TestMirrored(unittest.TestCase):
         """
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Rect = self.Doc.addObject("Sketcher::SketchObject", "Rect")
-        self.Body.addFeature(self.Rect)
         TestSketcherApp.CreateRectangleSketch(self.Rect, (0, 0), (1, 1))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
@@ -76,7 +75,6 @@ class TestMirrored(unittest.TestCase):
     def testMirroredOffsetCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.Rect = self.Doc.addObject("Sketcher::SketchObject", "Rect")
-        self.Body.addFeature(self.Rect)
         TestSketcherApp.CreateRectangleSketch(self.Rect, (0, 1), (1, 1))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")

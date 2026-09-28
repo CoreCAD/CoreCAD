@@ -172,7 +172,7 @@ void CmdPartDesignDuplicateSelection::activated(int iMsg)
         );
 
         for (auto feature : newFeatures) {
-            if (PartDesign::Body::isAllowed(feature)) {
+            if (PartDesign::Body::isSolidFeature(feature)) {
                 // If the feature already belongs to a body, don't re-home it into the selected
                 // body (issue #6278). Body membership is derived from the feature chain, not
                 // Body.Group, so ask the reverse lookup rather than probing the dormant group.

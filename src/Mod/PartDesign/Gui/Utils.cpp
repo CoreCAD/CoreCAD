@@ -264,7 +264,7 @@ App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, con
 
     // ... then splice it into this Body's pipeline (Tip + BaseFeature chain) — a pipeline edit,
     // not a container add.
-    if (feature) {
+    if (feature && PartDesign::Body::isSolidFeature(feature)) {
         Gui::Command::doCommand(
             Gui::Command::Doc,
             "%s.addFeature(%s)",
@@ -363,11 +363,6 @@ void fixSketchSupport(Sketcher::SketchObject* sketch)
         FCMD_OBJ_CMD(obj, "AttachmentSupport = [(" << Gui::Command::getObjectCmd(plane) << ",'')]");
         FCMD_OBJ_CMD(obj, "MapMode = '" << AttachEngine::getModeName(Attacher::mmFlatFace) << "'");
         FCMD_OBJ_CMD(obj, "AttachmentOffset.Base.z = " << offset);
-        FCMD_OBJ_CMD(
-            body,
-            "insertObject(" << Gui::Command::getObjectCmd(obj) << ','
-                            << Gui::Command::getObjectCmd(sketch) << ")"
-        );
         FCMD_OBJ_CMD(sketch, "AttachmentSupport = (" << Gui::Command::getObjectCmd(obj) << ",[''])");
         FCMD_OBJ_CMD(sketch, "MapReversed = " << (reverseSketch ? "True" : "False"));
         FCMD_OBJ_CMD(

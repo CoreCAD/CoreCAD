@@ -78,7 +78,6 @@ protected:
     {
         auto* body = _doc->addObject<PartDesign::Body>();
         auto* sk = _doc->addObject<Sketcher::SketchObject>();
-        body->addFeature(sk);
         sk->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
         sk->MapMode.setValue("FlatFace");
         addRect(sk, x0, y0, x1, y1);

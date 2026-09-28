@@ -73,14 +73,6 @@ PyObject* BodyPy::insertObject(PyObject* args)
         target = static_cast<App::DocumentObjectPy*>(targetPy)->getDocumentObjectPtr();
     }
 
-    if (!Body::isAllowed(feature)) {
-        PyErr_SetString(
-            PyExc_SystemError,
-            "Only PartDesign features, datum features and sketches can be inserted into a Body"
-        );
-        return nullptr;
-    }
-
     bool after = Base::asBoolean(afterPy);
     Body* body = this->getBodyPtr();
 
@@ -104,14 +96,6 @@ PyObject* BodyPy::addFeature(PyObject* args)
 
     App::DocumentObject* feature
         = static_cast<App::DocumentObjectPy*>(featurePy)->getDocumentObjectPtr();
-
-    if (!Body::isAllowed(feature)) {
-        PyErr_SetString(
-            PyExc_SystemError,
-            "Only PartDesign features, datum features and sketches can be added to a Body"
-        );
-        return nullptr;
-    }
 
     try {
         this->getBodyPtr()->addFeature(feature);
