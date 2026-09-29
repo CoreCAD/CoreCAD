@@ -90,12 +90,17 @@ public:
     PyObject* getPyObject() override;
 
     QIcon mergeColorfulOverlayIcons(const QIcon& orig) const override;
+    QString getToolTip() const override;
 
     /// Default implementation is a no-op; derived classes override if needed.
     /// Called on recompute and when any feature in the Body changes visibility.
     /// Serves as the entry point for ViewProviders that apply visual overlays
     /// (e.g. textures, highlights, thread visualization).
     virtual void updateOverlay() {};
+
+    /// Re-derive whether this step changes nothing and is not yet accepted (#39); on a change,
+    /// redraw the notice mark and the row's hover text. Called after every recompute.
+    void refreshNoEffectNotice();
 
     /// True while unsetEdit is closing the task dialog. The edit is being finished, so the
     /// dialog must not roll its feature back from under this view provider (#20).
@@ -134,6 +139,7 @@ protected:
     ViewProvider* previouslyShownViewProvider {nullptr};
 
     bool isSetTipIcon {false};
+    bool showsNoEffectNotice {false};
 
 private:
     Gui::CoinPtr<PartGui::SoPreviewShape> pcToolPreview;

@@ -371,6 +371,12 @@ public:
     //@{
     /// deliver the icon shown in the tree view
     virtual QIcon getIcon() const;
+    /// The hover text of the object's tree row; empty for none. A change is announced with
+    /// signalChangeToolTip, and a row created later reads it here.
+    virtual QString getToolTip() const
+    {
+        return {};
+    }
 
     /**
      * @brief Whether the viewprovider should allow to toggle the visibility.

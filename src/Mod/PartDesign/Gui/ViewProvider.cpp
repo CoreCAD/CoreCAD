@@ -108,6 +108,25 @@ void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* 
     QAction* act = menu->addAction(iconObject, QObject::tr("Set Face Colors"), receiver, member);
 
     act->setData(QVariant((int)ViewProvider::Color));
+
+    auto* feature = getObject<PartDesign::Feature>();
+    if (feature && feature->hasNoEffect()) {
+        const bool accepted = feature->NoEffectAcknowledged.getValue();
+        QAction* accept = menu->addAction(
+            accepted ? QObject::tr("Stop Accepting That This Step Changes Nothing")
+                     : QObject::tr("Accept That This Step Changes Nothing")
+        );
+        QObject::connect(accept, &QAction::triggered, [feature, accepted]() {
+            App::Document* doc = feature->getDocument();
+            doc->openTransaction(
+                accepted ? QT_TRANSLATE_NOOP("Command", "Stop accepting a step that changes nothing")
+                         : QT_TRANSLATE_NOOP("Command", "Accept a step that changes nothing")
+            );
+            Gui::cmdAppObjectArgs(feature, "NoEffectAcknowledged = %s", accepted ? "False" : "True");
+            doc->commitTransaction();
+        });
+    }
+
     // Call the extensions
     Gui::ViewProvider::setupContextMenu(menu, receiver, member);
 }
@@ -215,6 +234,10 @@ void ViewProvider::unsetEdit(int ModNum)
 
 void ViewProvider::updateData(const App::Property* prop)
 {
+    if (auto* feature = getObject<PartDesign::Feature>();
+        feature && (prop == &feature->Shape || prop == &feature->NoEffectAcknowledged)) {
+        refreshNoEffectNotice();
+    }
     if (strcmp(prop->getName(), "PreviewShape") == 0) {
         updatePreview();
     }
@@ -338,9 +361,34 @@ void ViewProvider::setTipIcon(bool onoff)
     signalChangeIcon();
 }
 
+void ViewProvider::refreshNoEffectNotice()
+{
+    auto* feature = getObject<PartDesign::Feature>();
+    const bool shows = feature && !feature->NoEffectAcknowledged.getValue() && feature->hasNoEffect();
+    if (shows == showsNoEffectNotice) {
+        return;
+    }
+    showsNoEffectNotice = shows;
+    signalChangeIcon();
+    signalChangeToolTip(getToolTip());
+}
+
+QString ViewProvider::getToolTip() const
+{
+    return showsNoEffectNotice
+        ? QObject::tr("This step changes nothing. Right-click to accept it if that is intended.")
+        : QString();
+}
+
 QIcon ViewProvider::mergeColorfulOverlayIcons(const QIcon& orig) const
 {
     QIcon mergedicon = orig;
+
+    if (showsNoEffectNotice) {
+        static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("overlay_notice", QSize(10, 10)));
+        mergedicon
+            = Gui::BitmapFactoryInst::mergePixmap(mergedicon, px, Gui::BitmapFactoryInst::BottomLeft);
+    }
 
     if (isSetTipIcon) {
         static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("PartDesign_Overlay_Tip", QSize(10, 10)));
