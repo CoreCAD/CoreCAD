@@ -829,3 +829,67 @@ class TestDatumPlane(unittest.TestCase):
         )
 
         self.assertEqual(packed_color, color)
+
+
+class TestNoEffectNotice(unittest.TestCase):
+    """Cruth #39: a step that changes nothing carries a notice on its row until accepted."""
+
+    def setUp(self):
+        import TestSketcherApp
+
+        self.Doc = App.newDocument("NoEffectNotice", type="Part")
+        block = self.Doc.addObject("Sketcher::SketchObject", "BlockSketch")
+        TestSketcherApp.CreateRectangleSketch(block, (0, 0), (100, 100))
+        self.Pad = PartDesign.makeFeature(block, "Pad")
+        self.Doc.recompute()
+        missing = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
+        TestSketcherApp.CreateRectangleSketch(missing, (200, 200), (10, 10))
+        missing.AttachmentSupport = (self.Pad, ["Face6"])
+        missing.MapMode = "FlatFace"
+        self.Pocket = PartDesign.makeFeature(missing, "Pocket")
+        self.Doc.recompute()
+        Gui.updateGui()
+
+    def tearDown(self):
+        App.closeDocument(self.Doc.Name)
+
+    def rowToolTip(self, obj):
+        """The hover text of obj's timeline row, waiting for the tree's deferred update."""
+        import time
+        from PySide import QtWidgets
+
+        deadline = time.monotonic() + 2
+        seen = []
+        while time.monotonic() < deadline:
+            QApplication.processEvents()
+            seen = []
+            for tree in Gui.getMainWindow().findChildren(QtWidgets.QTreeWidget):
+                tree.expandAll()
+                rows = QtWidgets.QTreeWidgetItemIterator(tree)
+                while rows.value():
+                    row = rows.value()
+                    if row.text(0) == obj.Label:
+                        return row.toolTip(0)
+                    seen.append(row.text(0))
+                    rows += 1
+        self.fail(f"no tree row for {obj.Label}: {seen}")
+
+    def testTheRowSaysTheStepChangesNothing(self):
+        self.assertTrue(self.Pocket.hasNoEffect())
+        self.assertIn("changes nothing", self.rowToolTip(self.Pocket))
+        self.assertEqual(self.rowToolTip(self.Pad), "")
+
+    def testAcceptingClearsTheNotice(self):
+        self.Pocket.NoEffectAcknowledged = True
+        self.Doc.recompute()
+        Gui.updateGui()
+        self.assertEqual(self.rowToolTip(self.Pocket), "")
+
+    def testMovingTheSketchOntoTheBodyClearsTheNotice(self):
+        self.Pocket.Profile[0].AttachmentOffset = App.Placement(
+            App.Vector(-190, -190, 0), App.Rotation()
+        )
+        self.Doc.recompute()
+        Gui.updateGui()
+        self.assertFalse(self.Pocket.hasNoEffect())
+        self.assertEqual(self.rowToolTip(self.Pocket), "")

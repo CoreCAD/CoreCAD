@@ -185,6 +185,7 @@ void ViewProviderBody::refreshOverlays()
         Gui::ViewProvider* vpBase = Gui::Application::Instance->getViewProvider(obj);
         if (auto* vpPartDesign = dynamic_cast<PartDesignGui::ViewProvider*>(vpBase)) {
             vpPartDesign->updateOverlay();
+            vpPartDesign->refreshNoEffectNotice();
         }
     }
 }

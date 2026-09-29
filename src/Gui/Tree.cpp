@@ -328,6 +328,9 @@ public:
     void insertItem(DocumentObjectItem* item)
     {
         items.insert(item);
+        if (const QString tip = viewObject->getToolTip(); !tip.isEmpty()) {
+            item->setToolTip(0, tip);
+        }
         dirtyFlag = true;
     }
 
