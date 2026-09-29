@@ -24,6 +24,12 @@
 
 
 #include <BRep_Tool.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <algorithm>
+#include <cmath>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepCheck_Solid.hxx>
 #include <BRepCheck_Status.hxx>
@@ -89,6 +95,13 @@ Feature::Feature()
         "Base",
         App::Prop_Hidden,
         "The copy of a pattern this step builds on, by its ordinal; -1 for the whole base."
+    );
+    ADD_PROPERTY_TYPE(
+        NoEffectAcknowledged,
+        (false),
+        "Base",
+        App::Prop_NoRecompute,
+        "The user accepted that this step changes the shape it builds on in no way"
     );
     BaseFeature.setStatus(App::Property::Hidden, true);
 
@@ -338,6 +351,54 @@ TopoDS_Shape Feature::getBaseShape() const
     }
 
     return result;
+}
+
+namespace
+{
+bool sameSolid(const TopoDS_Shape& a, const TopoDS_Shape& b)
+{
+    for (auto type : {TopAbs_SOLID, TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX}) {
+        TopTools_IndexedMapOfShape inA;
+        TopTools_IndexedMapOfShape inB;
+        TopExp::MapShapes(a, type, inA);
+        TopExp::MapShapes(b, type, inB);
+        if (inA.Extent() != inB.Extent()) {
+            return false;
+        }
+    }
+    // A boolean that changes nothing rebuilds the same faces, so its measures agree to rounding;
+    // any real change of material moves the volume or the area far past this.
+    auto agree = [](double x, double y) {
+        return std::abs(x - y) <= 1e-9 * std::max({std::abs(x), std::abs(y), 1.0});
+    };
+    GProp_GProps volumeA, volumeB, areaA, areaB;
+    BRepGProp::VolumeProperties(a, volumeA);
+    BRepGProp::VolumeProperties(b, volumeB);
+    BRepGProp::SurfaceProperties(a, areaA);
+    BRepGProp::SurfaceProperties(b, areaB);
+    return agree(volumeA.Mass(), volumeB.Mass()) && agree(areaA.Mass(), areaB.Mass());
+}
+}  // namespace
+
+bool Feature::hasNoEffect() const
+{
+    if (Suppressed.getValue() || isError() || Body::isRolledBackPast(this)) {
+        return false;
+    }
+    try {
+        const TopoDS_Shape base = getBaseTopoShape(true).getShape();
+        const TopoDS_Shape result = Shape.getShape().getShape();
+        if (base.IsNull() || result.IsNull()) {
+            return false;
+        }
+        return sameSolid(base, result);
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+    catch (const Base::Exception&) {
+        return false;
+    }
 }
 
 Part::TopoShape Feature::getBaseTopoShape(bool silent) const
