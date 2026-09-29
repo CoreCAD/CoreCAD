@@ -82,6 +82,11 @@ public:
     /// whole pattern.
     App::PropertyInteger BaseInstance;
 
+    /// The user accepted that this step changes nothing (#39): a guard cut, or a feature that
+    /// reaches material only in some configurations. Authored, so it persists; it changes
+    /// nothing about the geometry, so editing it recomputes nothing.
+    App::PropertyBool NoEffectAcknowledged;
+
     App::DocumentObjectExecReturn* recompute() override;
     App::DocumentObjectExecReturn* recomputePreview() override;
 
@@ -104,6 +109,10 @@ public:
     virtual TopoDS_Shape getBaseShape() const;
     /// Returns the BaseFeature property's TopoShape (if any)
     Part::TopoShape getBaseTopoShape(bool silent = false) const;
+    /// True when this step leaves the shape it builds on unchanged (#39). Derived from the two
+    /// shapes whenever asked, never stored. A first step, a suppressed or rolled-back step and a
+    /// failed step are never reported: each is already accounted for.
+    bool hasNoEffect() const;
     /// True when this step was built on one copy of a pattern that has since been deleted
     /// (#139). It has nothing to build on; unless @p silent, throw saying so.
     bool patternDeleted(bool silent) const;
