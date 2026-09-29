@@ -371,6 +371,11 @@ void StdCmdToggleSkipRecompute::activated(int iMsg)
         _pcAction->setChecked((bool)iMsg);
     }
     Command::commitCommand();
+    if (!iMsg) {
+        if (auto* guiDoc = Application::Instance->getDocument(doc)) {
+            guiDoc->scheduleRebuild();
+        }
+    }
 }
 
 bool StdCmdToggleSkipRecompute::isActive()
