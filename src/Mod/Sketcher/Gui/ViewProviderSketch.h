@@ -706,9 +706,6 @@ public:
     bool addSelection(const std::string& subNameSuffix, float x = 0, float y = 0, float z = 0);
     bool addSelection2(const std::string& subNameSuffix, float x = 0, float y = 0, float z = 0);
 
-    /// Control the overlays appearing on the Tree and reflecting different sketcher states
-    QIcon mergeColorfulOverlayIcons(const QIcon& orig) const override;
-
     /** @name Signals for controlling information in Task dialogs */
     //@{
     /// signals if the constraints list has changed

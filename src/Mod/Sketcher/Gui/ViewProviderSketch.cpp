@@ -4467,19 +4467,6 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string>& subList)
     return PartGui::ViewProviderPart::onDelete(subList);
 }
 
-QIcon ViewProviderSketch::mergeColorfulOverlayIcons(const QIcon& orig) const
-{
-    QIcon mergedicon = orig;
-
-    if (!getSketchObject()->FullyConstrained.getValue()) {
-        static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("Sketcher_NotFullyConstrained", QSize(10, 10)));
-        mergedicon = Gui::BitmapFactoryInst::mergePixmap(
-            mergedicon, px, Gui::BitmapFactoryInst::BottomRight);
-    }
-
-    return Gui::ViewProvider::mergeColorfulOverlayIcons(mergedicon);
-}
-
 void ViewProviderSketch::slotToolWidgetChanged(QWidget* newwidget)
 {
     if (sketchHandler)
