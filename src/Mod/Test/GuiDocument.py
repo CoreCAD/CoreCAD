@@ -163,6 +163,73 @@ class TestGuiDocument(unittest.TestCase):
         self.assertEqual(proxy.executed_thread_id, threading.get_ident())
         self.assertGreaterEqual(elapsed, 0.04)
 
+    def _countingFeature(self, fails=False):
+        class CountingProxy:
+            def __init__(self):
+                self.runs = 0
+
+            def execute(self, obj):
+                self.runs += 1
+                if fails:
+                    raise RuntimeError("this step cannot be built")
+
+        proxy = CountingProxy()
+        obj = self.doc.addObject("App::FeaturePython", "Counted")
+        obj.addProperty("App::PropertyInteger", "Value")
+        obj.Proxy = proxy
+        self.doc.recompute()
+        proxy.runs = 0
+        return obj, proxy
+
+    def _settle(self):
+        for _ in range(20):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents, 10)
+
+    def testAChangeIsRebuiltOnceTheAppIsIdle(self):
+        obj, proxy = self._countingFeature()
+        obj.Value = 1
+        obj.Value = 2
+        self.assertTrue(self.doc.mustExecute())
+
+        self._settle()
+
+        self.assertFalse(self.doc.mustExecute())
+        self.assertEqual(proxy.runs, 1)
+
+    def testTheSkipSwitchHoldsTheRebuildUntilItIsTurnedOff(self):
+        obj, proxy = self._countingFeature()
+        FreeCADGui.runCommand("Std_ToggleSkipRecompute", 1)
+        obj.Value = 1
+        self._settle()
+        self.assertTrue(self.doc.mustExecute())
+        self.assertEqual(proxy.runs, 0)
+
+        FreeCADGui.runCommand("Std_ToggleSkipRecompute", 0)
+        self._settle()
+
+        self.assertFalse(self.doc.mustExecute())
+        self.assertEqual(proxy.runs, 1)
+
+    def testAnOpenTransactionIsRebuiltWhenItCommits(self):
+        obj, proxy = self._countingFeature()
+        self.doc.openTransaction("Edit")
+        obj.Value = 1
+        self._settle()
+        self.assertEqual(proxy.runs, 0)
+
+        self.doc.commitTransaction()
+        self._settle()
+
+        self.assertEqual(proxy.runs, 1)
+
+    def testAStepThatFailsIsNotRebuiltOverAndOver(self):
+        obj, proxy = self._countingFeature(fails=True)
+        obj.Value = 1
+
+        self._settle()
+
+        self.assertEqual(proxy.runs, 1)
+
     def testRecoverySnapshotCarriesTheChosenAppearance(self):
         self.doc.addObject("App::FeaturePython", "RecoveryGuiObject")
 

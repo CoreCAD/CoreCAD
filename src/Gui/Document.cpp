@@ -37,6 +37,7 @@
 #include <QOpenGLWidget>
 #include <QTextStream>
 #include <QStatusBar>
+#include <QTimer>
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/nodes/SoSeparator.h>
 
@@ -123,6 +124,7 @@ struct DocumentP
     std::set<const App::DocumentObject*> _contested3D;
     /// Guards the refresh sweep against re-entering itself.
     bool _reconciling3D = false;
+    bool _rebuildScheduled = false;
 
     using Connection = fastsignals::connection;
     using AdvancedConnection = fastsignals::advanced_connection;
@@ -149,6 +151,7 @@ struct DocumentP
     Connection connectTransactionAppend;
     Connection connectTransactionRemove;
     Connection connectTouchedObject;
+    Connection connectCommitTransaction;
     Connection connectChangePropertyEditor;
     AdvancedConnection connectChangeDocument;
 
@@ -530,6 +533,9 @@ Document::Document(App::Document* pcDocument, Application* app)
     d->connectTouchedObject = pcDocument->signalTouchedObject.connect(
         std::bind(&Gui::Document::slotTouchedObject, this, sp::_1)
     );
+    d->connectCommitTransaction = pcDocument->signalCommitTransaction.connect(
+        std::bind(&Gui::Document::slotCommitTransaction, this, sp::_1)
+    );
 
     d->connectTransactionAppend = pcDocument->signalTransactionAppend.connect(
         std::bind(&Gui::Document::slotTransactionAppend, this, sp::_1, sp::_2)
@@ -583,6 +589,7 @@ Document::~Document()
     d->connectTransactionAppend.disconnect();
     d->connectTransactionRemove.disconnect();
     d->connectTouchedObject.disconnect();
+    d->connectCommitTransaction.disconnect();
     d->connectChangePropertyEditor.disconnect();
     d->connectChangeDocument.disconnect();
 
@@ -732,6 +739,7 @@ void Document::resetEdit()
     if (vpIsNotNull && vpHasChanged && shouldRestorePrevious) {
         setEdit(vpToRestore, modeToRestore);
     }
+    scheduleRebuild();
 }
 
 void Document::_resetEdit()
@@ -1165,6 +1173,7 @@ void Document::slotChangedObject(const App::DocumentObject& Obj, const App::Prop
     }
 
     getMainWindow()->updateActions(true);
+    scheduleRebuild();
 }
 
 void Document::slotRelabelObject(const App::DocumentObject& Obj)
@@ -1223,6 +1232,7 @@ void Document::slotUndoDocument(const App::Document& doc)
 
     signalUndoDocument(*this);
     getMainWindow()->updateActions();
+    scheduleRebuild();
 }
 
 void Document::slotRedoDocument(const App::Document& doc)
@@ -1233,6 +1243,7 @@ void Document::slotRedoDocument(const App::Document& doc)
 
     signalRedoDocument(*this);
     getMainWindow()->updateActions();
+    scheduleRebuild();
 }
 
 void Document::slotRecomputed(const App::Document& doc)
@@ -1293,6 +1304,55 @@ void Document::slotTouchedObject(const App::DocumentObject& Obj)
     if (!isModified()) {
         FC_LOG(Obj.getFullName() << " touched");
         setModified(true);
+    }
+    scheduleRebuild();
+}
+
+void Document::slotCommitTransaction(const App::Document&)
+{
+    scheduleRebuild();
+}
+
+void Document::scheduleRebuild()
+{
+    // What a rebuild itself changes must not schedule the next one, or a step that stays
+    // stale after failing would be rebuilt forever.
+    if (d->_rebuildScheduled || d->_isClosing
+        || d->_pcDocument->testStatus(App::Document::Recomputing)) {
+        return;
+    }
+    d->_rebuildScheduled = true;
+    QTimer::singleShot(0, [name = std::string(d->_pcDocument->getName())] {
+        auto* doc = App::GetApplication().getDocument(name.c_str());
+        if (auto* guiDoc = doc ? Application::Instance->getDocument(doc) : nullptr) {
+            guiDoc->rebuildIfStale();
+        }
+    });
+}
+
+void Document::rebuildIfStale()
+{
+    d->_rebuildScheduled = false;
+    App::Document* doc = d->_pcDocument;
+    // An open edit or command rebuilds on its own terms; its commit or close comes back here.
+    if (d->_isClosing || doc->testStatus(App::Document::SkipRecompute)
+        || doc->testStatus(App::Document::Restoring) || doc->testStatus(App::Document::Recomputing)
+        || App::GetApplication().isRestoring() || doc->isPerformingTransaction()
+        || d->_isTransacting || doc->hasPendingTransaction()
+        || Application::Instance->editDocument() || Control().activeDialog()) {
+        return;
+    }
+    if (!doc->mustExecute()) {
+        return;
+    }
+    try {
+        doc->recompute({}, false, nullptr, App::Document::DepNoCycle);
+    }
+    catch (const Base::BadGraphError&) {
+        // A cycle stays stale and marked; the user resolves it through an explicit recompute.
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
     }
 }
 

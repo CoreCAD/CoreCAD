@@ -104,9 +104,15 @@ protected:
     void slotSkipRecompute(const App::Document& doc, const std::vector<App::DocumentObject*>& objs);
     void slotTouchedObject(const App::DocumentObject&);
     void slotChangePropertyEditor(const App::Document&, const App::Property&);
+    void slotCommitTransaction(const App::Document&);
     //@}
 
 public:
+    /// The model is kept matching its values: after a change, once the app is idle, whatever
+    /// went stale is rebuilt. The document's skip-recompute switch opts out.
+    void scheduleRebuild();
+    void rebuildIfStale();
+
     void addViewProvider(Gui::ViewProviderDocumentObject*);
 
     /** @name Signals of the document */
