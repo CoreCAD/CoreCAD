@@ -354,13 +354,6 @@ Gui::ViewProvider* ViewProvider::startEditing(int ModNum)
     return ViewProviderPart::startEditing(ModNum);
 }
 
-void ViewProvider::setTipIcon(bool onoff)
-{
-    isSetTipIcon = onoff;
-
-    signalChangeIcon();
-}
-
 void ViewProvider::refreshNoEffectNotice()
 {
     auto* feature = getObject<PartDesign::Feature>();
@@ -388,12 +381,6 @@ QIcon ViewProvider::mergeColorfulOverlayIcons(const QIcon& orig) const
         static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("overlay_notice", QSize(10, 10)));
         mergedicon
             = Gui::BitmapFactoryInst::mergePixmap(mergedicon, px, Gui::BitmapFactoryInst::BottomLeft);
-    }
-
-    if (isSetTipIcon) {
-        static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("PartDesign_Overlay_Tip", QSize(10, 10)));
-        mergedicon
-            = Gui::BitmapFactoryInst::mergePixmap(mergedicon, px, Gui::BitmapFactoryInst::BottomRight);
     }
 
     return Gui::ViewProvider::mergeColorfulOverlayIcons(mergedicon);

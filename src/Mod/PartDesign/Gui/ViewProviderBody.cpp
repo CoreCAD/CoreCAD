@@ -275,16 +275,6 @@ void ViewProviderBody::updateData(const App::Property* prop)
         setVisualBodyMode(true);
     }
 
-    if (prop == &body->Tip || prop == &body->RollbackMarker) {
-        App::DocumentObject* shown = body->shownStep();
-        for (auto feature : body->getFullModel()) {
-            Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(feature);
-            if (vp && vp->isDerivedFrom<PartDesignGui::ViewProvider>()) {
-                static_cast<PartDesignGui::ViewProvider*>(vp)->setTipIcon(feature == shown);
-            }
-        }
-    }
-
     if (prop == &body->RollbackMarker && !isRestoring()) {
         showShownStep();
         hideHeldBack();

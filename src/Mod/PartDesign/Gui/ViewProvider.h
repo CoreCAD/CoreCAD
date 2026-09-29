@@ -66,8 +66,6 @@ public:
 
     Gui::ViewProvider* startEditing(int ModNum) override;
 
-    void setTipIcon(bool onoff);
-
     // body mode means that the object is part of a body and that the body is used to set the
     // visual properties, not the features. Hence setting body mode to true will hide most
     // viewprovider properties.
@@ -138,7 +136,6 @@ protected:
     std::string oldWb;
     ViewProvider* previouslyShownViewProvider {nullptr};
 
-    bool isSetTipIcon {false};
     bool showsNoEffectNotice {false};
 
 private:
