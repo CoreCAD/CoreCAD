@@ -21,23 +21,36 @@
 # *                                                                         *
 # ***************************************************************************/
 
-"""The Document test suite, gathered from one file per job."""
 
-from DocumentObjectTests import DocumentBasicCases, DocumentPropertyCases, DocumentAutoCreatedCases
-from DocumentStorageTests import (
-    DocumentSaveRestoreCases,
-    DocumentRecoveryCases,
-    DocumentPlatformCases,
-    DocumentFileIncludeCases,
-)
-from DocumentRecomputeTests import (
-    DocumentRecomputeCases,
-    DocumentExpressionCases,
-    FeatureTestColumn,
-    FeatureTestRow,
-    FeatureTestAbsAddress,
-    FeatureTestAttribute,
-)
-from DocumentTransactionTests import UndoRedoCases, DocumentBacklinks, MultiDocumentUndo
-from DocumentGroupTests import DocumentGroupCases
-from DocumentObserverTests import DocumentObserverCases
+def _placedGroup(doc, name="Group"):
+    """A container with its own placement that owns what it holds (a geo-feature group).
+
+    App::Part used to be the stock example; the type is retired, so the tests that exercise
+    geo-feature-group behaviour build the same thing from the generic extensions."""
+    grp = doc.addObject("App::GeometryPython", name)
+    grp.addExtension("App::GeoFeatureGroupExtensionPython")
+    grp.addExtension("App::PlacementExtensionPython")
+    return grp
+
+
+class Proxy:
+    def __init__(self, obj):
+        self.Dictionary = {}
+        self.obj = obj
+        obj.Proxy = self
+
+    def dumps(self):
+        return self.Dictionary
+
+    def loads(self, data):
+        self.Dictionary = data
+
+
+class MyFeature:
+    def __init__(self, obj):
+        obj.Proxy = self
+        obj.addProperty("App::PropertyLinkList", "propLink")
+
+    def onDocumentRestored(self, obj):
+        if hasattr(obj, "propLink"):
+            obj.removeProperty("propLink")
