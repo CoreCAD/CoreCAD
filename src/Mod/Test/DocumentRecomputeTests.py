@@ -37,7 +37,6 @@ class DocumentRecomputeCases(unittest.TestCase):
         self.L3 = self.Doc.addObject("App::FeatureTest", "Label_3")
 
     def testDescent(self):
-        # testing the up and downstream stuff
         FreeCAD.Console.PrintLog("def testDescent(self):Testcase not implemented\n")
         self.L1.Link = self.L2
         self.L2.Link = self.L3
@@ -143,7 +142,6 @@ class DocumentRecomputeCases(unittest.TestCase):
         self.Doc.removeObject(L8.Name)
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("RecomputeTests")
 
 
@@ -188,7 +186,6 @@ class DocumentExpressionCases(unittest.TestCase):
         # must not raise a topological error
         self.assertEqual(self.Doc.recompute(), 2)
 
-        # add test for issue #6948
         self.Obj3 = self.Doc.addObject("App::FeatureTest", "Test")
         self.Obj3.setExpression("Float", "2*(5%3)")
         self.Doc.recompute()
@@ -246,7 +243,6 @@ class DocumentExpressionCases(unittest.TestCase):
             obj.setExpression(".Placement.Base.y", ".Placement.Base.x + 10mm")
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument(self.Doc.Name)
 
 

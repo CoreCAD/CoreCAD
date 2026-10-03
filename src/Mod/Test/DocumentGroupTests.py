@@ -32,7 +32,6 @@ class DocumentGroupCases(unittest.TestCase):
         self.Doc = FreeCAD.newDocument("GroupTests")
 
     def testGroup(self):
-        # Add an object to the group
         L2 = self.Doc.addObject("App::FeatureTest", "Label_2")
         G1 = self.Doc.addObject("App::DocumentObjectGroup", "Group")
         G1.addObject(L2)
@@ -48,7 +47,6 @@ class DocumentGroupCases(unittest.TestCase):
 
         self.Doc.UndoMode = 1
 
-        # Remove object from group
         self.Doc.openTransaction("Remove")
         self.Doc.removeObject("Label_2")
         self.Doc.commitTransaction()
@@ -83,10 +81,8 @@ class DocumentGroupCases(unittest.TestCase):
         self.Doc.removeObject("Group")
         self.Doc.commitTransaction()
         self.Doc.undo()
-        # FIXME: See bug #1820554
         self.assertTrue(G1.getObject("Label_2") is not None)
 
-        # Add a second object to the group
         L3 = self.Doc.addObject("App::FeatureTest", "Label_3")
         G1.addObject(L3)
         self.Doc.openTransaction("Remove")
@@ -102,7 +98,6 @@ class DocumentGroupCases(unittest.TestCase):
 
         self.Doc.UndoMode = 0
 
-        # Cleanup
         self.Doc.removeObject("Group")
         self.Doc.removeObject("Label_2")
         self.Doc.removeObject("Label_3")
@@ -174,12 +169,12 @@ class DocumentGroupCases(unittest.TestCase):
         prt1.addObject(cyl)
         fus.LinkList = [cyl, box]
         self.Doc.recompute()
-        # self.assertTrue(fus.State[0] == 'Invalid')
+        # should be Invalid: links may not cross geo-feature groups; not enforced yet
         fus.LinkList = []
         prt1.addObject(box)
         fus.LinkList = [cyl, box]
         self.Doc.recompute()
-        # self.assertTrue(fus.State[0] == 'Invalid')
+        # should be Invalid: links may not cross geo-feature groups; not enforced yet
         fus.LinkList = []
         prt1.addObject(fus)
         fus.LinkList = [cyl, box]
@@ -189,7 +184,7 @@ class DocumentGroupCases(unittest.TestCase):
         self.Doc.recompute()
         self.assertTrue(fus.State[0] == "Up-to-date")
 
-        # grouping must be resilient against cyclic links and not crash: #issue 0002567
+        # grouping must survive cyclic links without crashing
         prt1.addObject(prt2)
         grp = prt2.Group
         grp.append(prt1)
@@ -242,5 +237,4 @@ class DocumentGroupCases(unittest.TestCase):
         self.assertTrue(len(self.prt.Group) == 0)
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("GroupTests")

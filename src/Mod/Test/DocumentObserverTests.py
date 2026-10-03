@@ -277,8 +277,7 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
 
         self.Doc2.openTransaction("test")
-        # openTransaction() now only setup pending transaction, which will only be
-        # created when there is actual change
+        # openTransaction() only sets up a pending transaction; the first change creates it
         self.Doc2.addObject("App::FeatureTest", "test")
         self.assertEqual(self.Obs.signal[0], "DocOpenTransaction")
         self.assertEqual(self.Obs.signal.count("DocOpenTransaction"), 1)
@@ -292,8 +291,6 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
 
         self.Doc2.openTransaction("test2")
-        # openTransaction() now only setup pending transaction, which will only be
-        # created when there is actual change
         self.Doc2.addObject("App::FeatureTest", "test")
         self.assertEqual(self.Obs.signal[0], "DocOpenTransaction")
         self.assertEqual(self.Obs.signal.count("DocOpenTransaction"), 1)
@@ -579,7 +576,6 @@ class DocumentObserverCases(unittest.TestCase):
         self.GuiObs.clear()
 
     def tearDown(self):
-        # closing doc
         FreeCAD.removeDocumentObserver(self.Obs)
         self.Obs.clear()
         self.Obs = None

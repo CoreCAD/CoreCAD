@@ -36,7 +36,6 @@ class UndoRedoCases(unittest.TestCase):
         self.Doc.getObject("Del").Integer = 2
 
     def testUndoProperties(self):
-        # switch on the Undo
         self.Doc.UndoMode = 1
 
         # first transaction
@@ -47,12 +46,6 @@ class UndoRedoCases(unittest.TestCase):
         self.Doc.getObject("test1").Float = 1.0
         self.Doc.getObject("test1").Bool = 1
 
-        # self.Doc.getObject("test1").IntegerList  = 1
-        # self.Doc.getObject("test1").FloatList  = 1.0
-
-        # self.Doc.getObject("test1").Matrix  = (1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0)
-        # self.Doc.getObject("test1").Vector  = (1.0,1.0,1.0)
-
         # second transaction
         self.Doc.openTransaction("Transaction2")
         self.Doc.getObject("test1").Integer = 2
@@ -60,11 +53,9 @@ class UndoRedoCases(unittest.TestCase):
         self.Doc.getObject("test1").Float = 2.0
         self.Doc.getObject("test1").Bool = 0
 
-        # switch on the Undo OFF
         self.Doc.UndoMode = 0
 
     def testUndoClear(self):
-        # switch on the Undo
         self.Doc.UndoMode = 1
         self.assertEqual(self.Doc.UndoNames, [])
         self.assertEqual(self.Doc.UndoCount, 0)
@@ -83,7 +74,6 @@ class UndoRedoCases(unittest.TestCase):
         self.assertEqual(self.Doc.ActiveObject, None)
 
     def testUndo(self):
-        # switch on the Undo
         self.Doc.UndoMode = 1
         self.assertEqual(self.Doc.UndoNames, [])
         self.assertEqual(self.Doc.UndoCount, 0)
@@ -103,7 +93,7 @@ class UndoRedoCases(unittest.TestCase):
 
         # second transaction
         self.Doc.openTransaction("Transaction2")
-        # new behavior: no change, no transaction
+        # no change, so no transaction
         self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
         self.assertEqual(self.Doc.UndoCount, 1)
         self.assertEqual(self.Doc.RedoNames, [])
@@ -251,7 +241,6 @@ class UndoRedoCases(unittest.TestCase):
         self.assertEqual(self.Doc.RedoNames, ["Transaction9"])
         self.assertEqual(self.Doc.RedoCount, 1)
 
-        # switch on the Undo OFF
         self.Doc.UndoMode = 0
         self.assertEqual(self.Doc.UndoNames, [])
         self.assertEqual(self.Doc.UndoCount, 0)
@@ -328,7 +317,6 @@ class UndoRedoCases(unittest.TestCase):
         self.assertTrue(self.Doc.recompute() >= 0)
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("UndoTest")
 
 
@@ -347,12 +335,10 @@ class DocumentBacklinks(unittest.TestCase):
         self.Doc.openTransaction("Create object")
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("BackLinks")
 
 
 # Test if actions done on two documents are undone together
-# (working toward making this test pass)
 class MultiDocumentUndo(unittest.TestCase):
     def setUp(self):
         self.Doc1 = FreeCAD.newDocument("Doc1")
@@ -392,6 +378,5 @@ class MultiDocumentUndo(unittest.TestCase):
         self.assertEqual(self.Doc2.getObject("Obj2Name"), None)
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("Doc1")
         FreeCAD.closeDocument("Doc2")
