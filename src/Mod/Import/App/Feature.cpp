@@ -5,6 +5,7 @@
 
 #ifndef _PreComp_
 # include <map>
+# include <memory>
 # include <set>
 # include <string>
 # include <vector>
@@ -23,6 +24,7 @@
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
+#include <App/ElementMap.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Mod/Part/App/SubShapeSignature.h>
@@ -94,6 +96,116 @@ Feature::Feature()
     );
 }
 
+namespace
+{
+
+/// A short, fixed-length stand-in for an identity, fit to go inside an element name.
+std::string identityToken(const std::string& identity)
+{
+    const QByteArray digest
+        = QCryptographicHash::hash(QByteArray::fromStdString(identity), QCryptographicHash::Sha1)
+              .toHex()
+              .left(16);
+    return {digest.constData(), static_cast<std::size_t>(digest.size())};
+}
+
+/**
+ * Names every sub-shape of one kind after the identities of the faces around it.
+ *
+ * An edge or vertex has no identity of its own on record; it is identified by the
+ * faces it sits between. Where that leaves two of them with the same name (two edges
+ * joining the same pair of faces), their own signatures tell them apart. Where even
+ * that fails, or a neighbouring face has no identity, the sub-shape stays unnamed.
+ */
+void nameByNeighbouringFaces(
+    Part::TopoShape& shape,
+    TopAbs_ShapeEnum type,
+    const char* prefix,
+    const std::map<int, std::string>& tokenOfFace,
+    const TopLoc_Location& toOwnFrame
+)
+{
+    const char* typeName = type == TopAbs_EDGE ? "Edge" : "Vertex";
+    std::map<std::string, std::vector<int>> byName;
+    const int count = static_cast<int>(shape.countSubShapes(type));
+    for (int i = 1; i <= count; ++i) {
+        const TopoDS_Shape sub = shape.getSubShape(type, i, /*silent*/ true);
+        if (sub.IsNull()) {
+            continue;
+        }
+        std::set<std::string> tokens;
+        bool complete = true;
+        for (int face : shape.findAncestors(sub, TopAbs_FACE)) {
+            const auto token = tokenOfFace.find(face);
+            if (token == tokenOfFace.end()) {
+                complete = false;
+                break;
+            }
+            tokens.insert(token->second);
+        }
+        if (!complete || tokens.empty()) {
+            continue;
+        }
+        std::string name = prefix;
+        for (const auto& token : tokens) {
+            name += token + "_";
+        }
+        name.pop_back();
+        byName[name].push_back(i);
+    }
+
+    std::map<std::string, std::vector<int>> named;
+    for (const auto& [name, subs] : byName) {
+        if (subs.size() == 1) {
+            named[name].push_back(subs.front());
+            continue;
+        }
+        for (int i : subs) {
+            const TopoDS_Shape sub = shape.getSubShape(type, i, /*silent*/ true);
+            const std::string signature = Part::subShapeSignature(sub.Moved(toOwnFrame));
+            if (!signature.empty()) {
+                named[name + "_s" + identityToken(signature)].push_back(i);
+            }
+        }
+    }
+
+    for (const auto& [name, subs] : named) {
+        if (subs.size() != 1) {
+            continue;
+        }
+        shape.setElementName(
+            Data::IndexedName::fromConst(typeName, subs.front()),
+            Data::MappedName(name),
+            shape.Tag
+        );
+    }
+}
+
+}  // namespace
+
+void Feature::handOverIdentities(const std::map<int, std::string>& identityOfFace)
+{
+    Part::TopoShape named(Shape.getShape().getShape());
+    named.Tag = getID();
+    named.resetElementMap(std::make_shared<Data::ElementMap>());
+    const TopLoc_Location toOwnFrame = named.getShape().Location().Inverted();
+
+    std::map<int, std::string> tokenOfFace;
+    for (const auto& [face, identity] : identityOfFace) {
+        const std::string token = identityToken(identity);
+        tokenOfFace.emplace(face, token);
+        named.setElementName(
+            Data::IndexedName::fromConst("Face", face),
+            Data::MappedName("f" + token),
+            named.Tag
+        );
+    }
+    nameByNeighbouringFaces(named, TopAbs_EDGE, "e", tokenOfFace, toOwnFrame);
+    nameByNeighbouringFaces(named, TopAbs_VERTEX, "v", tokenOfFace, toOwnFrame);
+
+    Shape.setValue(named);
+}
+
 Feature::FaceMatch Feature::matchFaceIdentities()
 {
     FaceMatch report;
@@ -115,7 +227,7 @@ Feature::FaceMatch Feature::matchFaceIdentities()
     // How many faces of the shape in hand carry each signature. A count above one
     // is the whole reason the ambiguous case exists: two faces answering to one
     // identity cannot be told apart by geometry alone.
-    std::map<std::string, int> present;
+    std::map<std::string, std::vector<int>> present;
     const int faceCount = static_cast<int>(stored.countSubShapes(TopAbs_FACE));
     for (int i = 1; i <= faceCount; ++i) {
         const TopoDS_Shape face = stored.getSubShape(TopAbs_FACE, i, /*silent*/ true);
@@ -124,7 +236,7 @@ Feature::FaceMatch Feature::matchFaceIdentities()
         }
         const std::string signature = Part::subShapeSignature(face.Moved(toOwnFrame));
         if (!signature.empty()) {
-            ++present[signature];
+            present[signature].push_back(i);
         }
     }
 
@@ -135,7 +247,7 @@ Feature::FaceMatch Feature::matchFaceIdentities()
         const std::string& identity = entry.first;
         const std::string& lastSeen = entry.second;
         const auto found = present.find(lastSeen);
-        const int count = found == present.end() ? 0 : found->second;
+        const int count = found == present.end() ? 0 : static_cast<int>(found->second.size());
 
         if (count == 1) {
             identities.emplace(identity, lastSeen);
@@ -167,6 +279,18 @@ Feature::FaceMatch Feature::matchFaceIdentities()
             ++report.added;
         }
     }
+
+    // A face carries an identity only when it alone answers to it. Where several
+    // faces answer to one signature, none of them is named: naming one would be
+    // the guess the ambiguous case exists to refuse.
+    std::map<int, std::string> identityOfFace;
+    for (const auto& [identity, signature] : identities) {
+        const auto faces = present.find(signature);
+        if (faces != present.end() && faces->second.size() == 1) {
+            identityOfFace.emplace(faces->second.front(), identity);
+        }
+    }
+    handOverIdentities(identityOfFace);
 
     if (identities != FaceIdentities.getValues()) {
         FaceIdentities.setValues(identities);
