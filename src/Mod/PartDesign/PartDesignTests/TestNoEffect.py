@@ -57,6 +57,37 @@ class TestNoEffect(unittest.TestCase):
         self.assertNotIn("Invalid", pad.State)
         self.assertTrue(pad.hasNoEffect())
 
+    def booleanWithTool(self, corner, size, height, z, kind):
+        sketch = self.Doc.addObject("Sketcher::SketchObject", "ToolSketch")
+        TestSketcherApp.CreateRectangleSketch(sketch, corner, size)
+        sketch.AttachmentOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, z), FreeCAD.Rotation())
+        toolPad = PartDesign.makeFeature(sketch, "Pad")
+        toolPad.Length = height
+        self.Doc.recompute()
+        boolean = self.Doc.addObject("PartDesign::Boolean", "Boolean")
+        PartDesign.findBodyOf(self.Block).addFeature(boolean)
+        boolean.Tools = [PartDesign.findBodyOf(toolPad)]
+        boolean.Type = kind
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", boolean.State)
+        return boolean
+
+    def testCommonWithToolAroundTheBodyHasNoEffect(self):
+        common = self.booleanWithTool((-10, -10), (120, 120), 40, -10, kind=2)
+        self.assertTrue(common.hasNoEffect())
+
+    def testCommonThatTrimsHasEffect(self):
+        common = self.booleanWithTool((50, 0), (100, 100), 20, 0, kind=2)
+        self.assertFalse(common.hasNoEffect())
+
+    def testCutWithToolOffTheBodyHasNoEffect(self):
+        cut = self.booleanWithTool((200, 200), (10, 10), 20, 0, kind=1)
+        self.assertTrue(cut.hasNoEffect())
+
+    def testFuseOfSeparatePieceHasEffect(self):
+        fuse = self.booleanWithTool((200, 200), (10, 10), 20, 0, kind=0)
+        self.assertFalse(fuse.hasNoEffect())
+
     def testFirstStepIsNeverReported(self):
         self.assertFalse(self.Block.hasNoEffect())
 
