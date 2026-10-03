@@ -60,7 +60,6 @@ class DocumentSaveRestoreCases(unittest.TestCase):
         FreeCAD.Console.PrintLog("  Using temp path: " + self.TempPath + "\n")
 
     def testSaveAndRestore(self):
-        # saving and restoring
         SaveName = self.TempPath + os.sep + "SaveRestoreTests.FCStd"
         self.assertTrue(self.Doc.Label_1.TypeTransient == 4711)
         self.Doc.Label_1.TypeTransient = 4712
@@ -69,7 +68,6 @@ class DocumentSaveRestoreCases(unittest.TestCase):
         self.Doc.Label_2.Link = self.Doc.Label_3
         self.Doc.Label_1.LinkSub = (self.Doc.Label_2, ["Sub1", "Sub2"])
         self.Doc.Label_2.LinkSub = (self.Doc.Label_3, ["Sub3", "Sub4"])
-        # save the document
         self.Doc.saveAs(SaveName)
         FreeCAD.closeDocument("SaveRestoreTests")
         self.Doc = FreeCAD.open(SaveName)
@@ -87,7 +85,6 @@ class DocumentSaveRestoreCases(unittest.TestCase):
     def testRestore(self):
         Doc = FreeCAD.newDocument("RestoreTests")
         Doc.addObject("App::FeatureTest", "Label_1")
-        # saving and restoring
         FileName = self.TempPath + os.sep + "Test2.FCStd"
         Doc.saveAs(FileName)
         # restore must first clear the current content
@@ -96,7 +93,6 @@ class DocumentSaveRestoreCases(unittest.TestCase):
         FreeCAD.closeDocument("RestoreTests")
 
     def testActiveDocument(self):
-        # open 2nd doc
         Second = FreeCAD.newDocument("Active")
         FreeCAD.closeDocument("Active")
         try:
@@ -110,7 +106,6 @@ class DocumentSaveRestoreCases(unittest.TestCase):
             self.assertTrue(True)
 
     def testExtensionSaveRestore(self):
-        # saving and restoring
         SaveName = self.TempPath + os.sep + "SaveRestoreExtensions.FCStd"
         Doc = FreeCAD.newDocument("SaveRestoreExtensions")
         # we try to create a normal python object and add an extension to it
@@ -167,7 +162,6 @@ class DocumentSaveRestoreCases(unittest.TestCase):
         FreeCAD.closeDocument("DumpTest")
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("SaveRestoreTests")
 
 
@@ -236,7 +230,6 @@ class DocumentPlatformCases(unittest.TestCase):
     def testFloatList(self):
         self.Doc.Test.FloatList = [-0.05, 2.5, 5.2]
 
-        # saving and restoring
         self.Doc.saveAs(self.DocName)
         FreeCAD.closeDocument("PlatformTests")
         self.Doc = FreeCAD.open(self.DocName)
@@ -248,7 +241,6 @@ class DocumentPlatformCases(unittest.TestCase):
     def testColorList(self):
         self.Doc.Test.ColourList = [(1.0, 0.5, 0.0), (0.0, 0.5, 1.0)]
 
-        # saving and restoring
         self.Doc.saveAs(self.DocName)
         FreeCAD.closeDocument("PlatformTests")
         self.Doc = FreeCAD.open(self.DocName)
@@ -265,7 +257,6 @@ class DocumentPlatformCases(unittest.TestCase):
     def testVectorList(self):
         self.Doc.Test.VectorList = [(-0.05, 2.5, 5.2), (-0.05, 2.5, 5.2)]
 
-        # saving and restoring
         self.Doc.saveAs(self.DocName)
         FreeCAD.closeDocument("PlatformTests")
         self.Doc = FreeCAD.open(self.DocName)
@@ -276,7 +267,6 @@ class DocumentPlatformCases(unittest.TestCase):
         try:
             self.Doc.addObject("Points::Feature", "Points")
 
-            # saving and restoring
             self.Doc.saveAs(self.DocName)
             FreeCAD.closeDocument("PlatformTests")
             self.Doc = FreeCAD.open(self.DocName)
@@ -286,14 +276,12 @@ class DocumentPlatformCases(unittest.TestCase):
             pass
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("PlatformTests")
 
 
 class DocumentFileIncludeCases(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("FileIncludeTests")
-        # testing with undo
         self.Doc.UndoMode = 1
 
     def testApplyFiles(self):
@@ -308,42 +296,34 @@ class DocumentFileIncludeCases(unittest.TestCase):
         file = open(self.Doc.getTempFileName("test"), "w")
         file.write("test No1")
         file.close()
-        # applying the file
         self.L1.File = (file.name, "Test.txt")
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No1")
         file.close()
         file = open(self.TempPath + "/testNest.txt", "w")
         file.write("test No2")
         file.close()
-        # applying the file
         self.Doc.openTransaction("Transaction2")
         self.L1.File = file.name
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No2")
         file.close()
         self.Doc.undo()
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No1")
         file.close()
         self.Doc.undo()
-        # read again
         self.assertTrue(self.L1.File == "")
         self.Doc.redo()
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No1")
         file.close()
         self.Doc.redo()
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        # read again
         file = open(self.L1.File, "r")
         self.assertTrue(file.read() == "test No2")
         file.close()
@@ -361,7 +341,7 @@ class DocumentFileIncludeCases(unittest.TestCase):
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
         file.close()
 
-        # test for bug #94 (File overlap in PropertyFileIncluded)
+        # two files with the same base name must not overwrite each other
         L2 = self.Doc.addObject("App::DocumentObjectFileIncluded", "FileObject2")
         L3 = self.Doc.addObject("App::DocumentObjectFileIncluded", "FileObject3")
 
@@ -406,5 +386,4 @@ class DocumentFileIncludeCases(unittest.TestCase):
         FreeCAD.closeDocument("Doc2")
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("FileIncludeTests")

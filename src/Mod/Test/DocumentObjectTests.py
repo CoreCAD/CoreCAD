@@ -36,7 +36,6 @@ class DocumentBasicCases(unittest.TestCase):
         self.Doc = FreeCAD.newDocument("CreateTest")
 
     def saveAndRestore(self):
-        # saving and restoring
         SaveName = tempfile.gettempdir() + os.sep + "CreateTest.FCStd"
         self.Doc.saveAs(SaveName)
         FreeCAD.closeDocument("CreateTest")
@@ -81,20 +80,16 @@ class DocumentBasicCases(unittest.TestCase):
         self.assertEqual(self.Doc.getObject(obj.ID + 1), None)
 
     def testCreateDestroy(self):
-        # FIXME: Causes somehow a ref count error but it's _not_ FreeCAD.getDocument()!!!
-        # If we remove the whole method no error appears.
         self.assertTrue(FreeCAD.getDocument("CreateTest") is not None, "Creating Document failed")
 
     def testAddition(self):
-        # Cannot write a real test case for that but when debugging the
-        # C-code there shouldn't be a memory leak (see rev. 1814)
+        # No assertion: this is for running under a leak checker.
         self.Doc.openTransaction("Add")
         L1 = self.Doc.addObject("App::FeatureTest", "Label")
         self.Doc.commitTransaction()
         self.Doc.undo()
 
     def testAddRemoveUndo(self):
-        # Bug #0000525
         self.Doc.openTransaction("Add")
         obj = self.Doc.addObject("App::FeatureTest", "Label")
         self.Doc.commitTransaction()
@@ -149,8 +144,7 @@ class DocumentBasicCases(unittest.TestCase):
         self.Doc.saveAs(SaveName)
 
     def testRemoval(self):
-        # Cannot write a real test case for that but when debugging the
-        # C-code there shouldn't be a memory leak (see rev. 1814)
+        # No assertion: this is for running under a leak checker.
         self.Doc.openTransaction("Add")
         L1 = self.Doc.addObject("App::FeatureTest", "Label")
         self.Doc.commitTransaction()
@@ -166,7 +160,7 @@ class DocumentBasicCases(unittest.TestCase):
         self.Doc.UndoMode
         self.Doc.UndoRedoMemSize
         self.Doc.UndoCount
-        # test read only mechanismus
+        # UndoCount is read-only
         try:
             self.Doc.UndoCount = 3
         except Exception:
@@ -219,12 +213,6 @@ class DocumentBasicCases(unittest.TestCase):
             sorted(L1.getEnumerationsOfProperty("Enum"))
             == sorted(["Zero", "One", "Two", "Three", "Four"])
         )
-
-        # self.assertTrue(L1.IntegerList  == [4711]   )
-        # f = L1.FloatList
-        # self.assertTrue(f -47.11<0.001    )
-        # self.assertTrue(L1.Matrix  == [1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0] )
-        # self.assertTrue(L1.Vector  == [1.0,2.0,3.0])
 
         self.assertTrue(L1.Label == "Label_1", "Invalid object name")
         L1.Label = "Label_2"
@@ -302,7 +290,6 @@ class DocumentBasicCases(unittest.TestCase):
         obj.Plm.Rotation.Axis = (1, 2, 3)
         obj.Rot.Axis = (3, 2, 1)
 
-        # saving and restoring
         SaveName = tempfile.gettempdir() + os.sep + "CreateTest.FCStd"
         self.Doc.saveAs(SaveName)
         FreeCAD.closeDocument("CreateTest")
@@ -319,7 +306,6 @@ class DocumentBasicCases(unittest.TestCase):
 
     def testAddRemove(self):
         L1 = self.Doc.addObject("App::FeatureTest", "Label_1")
-        # must delete object
         self.Doc.removeObject(L1.Name)
         try:
             L1.Name
@@ -329,7 +315,6 @@ class DocumentBasicCases(unittest.TestCase):
             self.assertTrue(False)
         del L1
 
-        # What do we expect here?
         self.Doc.openTransaction("AddRemove")
         L2 = self.Doc.addObject("App::FeatureTest", "Label_2")
         self.Doc.removeObject(L2.Name)
@@ -396,7 +381,6 @@ class DocumentBasicCases(unittest.TestCase):
             obj.getSubObject("YZ_Plane", retType=4),
         )
 
-        # Create a second origin object
         obj2 = self.Doc.addObject("App::Origin", "Origin2")
         self.Doc.recompute()
 
@@ -545,7 +529,6 @@ class DocumentBasicCases(unittest.TestCase):
             obj.addProperty("App::PropertyString", "String" + str(i), "", "", i)
             list_of_types.append(obj.getTypeOfProperty("String" + str(i)))
 
-        # saving and restoring
         SaveName = tempfile.gettempdir() + os.sep + "CreateTest.FCStd"
         self.Doc.saveAs(SaveName)
         FreeCAD.closeDocument("CreateTest")
@@ -574,7 +557,6 @@ class DocumentBasicCases(unittest.TestCase):
         if not FreeCAD.GuiUp:
             return
 
-        # works only if Gui is shown
         class ViewProvider:
             def __init__(self, vobj):
                 vobj.Proxy = self
@@ -608,19 +590,16 @@ class DocumentBasicCases(unittest.TestCase):
         self.assertNotEqual(ext.Link, sli)
 
     def testIssue4823(self):
-        # https://forum.freecad.org/viewtopic.php?f=3&t=52775
-        # The issue was only visible in GUI mode and it crashed in the tree view
+        # Removing an origin must not crash the tree view in GUI mode.
         obj = self.Doc.addObject("App::Origin")
         self.Doc.removeObject(obj.Name)
 
     def testSamePropertyOfLinkAndLinkedObject(self):
-        # See also https://github.com/FreeCAD/FreeCAD/pull/6787
         test = self.Doc.addObject("App::FeaturePython", "Python")
         link = self.Doc.addObject("App::Link", "Link")
         test.addProperty("App::PropertyFloat", "Test")
         link.addProperty("App::PropertyFloat", "Test")
         link.LinkedObject = test
-        # saving and restoring
         SaveName = tempfile.gettempdir() + os.sep + "CreateTest.FCStd"
         self.Doc.saveAs(SaveName)
         FreeCAD.closeDocument("CreateTest")
@@ -672,7 +651,6 @@ class DocumentBasicCases(unittest.TestCase):
         self.assertEqual(self.Doc.ActiveObject.Label, "abc_ef")
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("CreateTest")
 
 
@@ -685,7 +663,6 @@ class DocumentPropertyCases(unittest.TestCase):
         self.Obj = self.Doc.addObject("App::FeaturePython", "Test")
 
     def testDescent(self):
-        # testing the up and downstream stuff
         props = self.Obj.supportedProperties()
         for i in props:
             self.Obj.addProperty(i, i.replace(":", "_"))
@@ -737,7 +714,6 @@ class DocumentPropertyCases(unittest.TestCase):
         obj.Test = "test"
 
     def tearDown(self):
-        # closing doc
         FreeCAD.closeDocument("PropertyTests")
 
 
