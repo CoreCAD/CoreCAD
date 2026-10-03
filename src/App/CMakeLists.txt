@@ -147,6 +147,12 @@ SET(Document_CPP_SRCS
     BackupPolicy.cpp
     Configuration.cpp
     Document.cpp
+    DocumentObjects.cpp
+    DocumentRecompute.cpp
+    DocumentStorage.cpp
+    DocumentTransactions.cpp
+    DocumentType.cpp
+    DocumentUnkeptStatements.cpp
     RecoverySnapshot.cpp
     DocumentObject.cpp
     Extension.cpp
