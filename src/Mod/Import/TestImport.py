@@ -207,3 +207,113 @@ class ImportBodyCase(unittest.TestCase):
 
         self.assertEqual(len([o for o in self.doc.Objects if o.TypeId == "Import::Feature"]), 2)
         self.assertEqual(self.bodies(), [])
+
+
+class ImportIdentityHandoverCase(unittest.TestCase):
+    """A step built on an imported part stays on the edge it was built on across a re-import.
+
+    The reader numbers faces and edges in whatever order the file lists them, and a
+    revision of the file can list the same solid in a different order. The import hands
+    the next steps its own identities in place of those numbers, so their history begins
+    at something that lasts. Before it did, a chamfer kept its edge number, landed on a
+    different edge of the same solid, and reported success.
+    """
+
+    def setUp(self):
+        self.doc = FreeCAD.newDocument("ImportHandover", type="Part")
+        self.doc.recompute()
+        self.dir = tempfile.mkdtemp(prefix="cc_import_handover_")
+        self.source = os.path.join(self.dir, "notched.step")
+
+    def tearDown(self):
+        FreeCAD.closeDocument(self.doc.Name)
+        for name in os.listdir(self.dir):
+            os.remove(os.path.join(self.dir, name))
+        os.rmdir(self.dir)
+
+    @staticmethod
+    def notchedBlock(facesReversed=False):
+        """A block with a notch cut from one corner; no two of its faces look alike."""
+        block = (
+            Part.makeBox(40, 20, 10)
+            .cut(Part.makeBox(15, 8, 10, FreeCAD.Vector(25, 0, 0)))
+            .removeSplitter()
+        )
+        faces = list(block.Faces)
+        if facesReversed:
+            faces.reverse()
+        return Part.Solid(Part.Shell(faces))
+
+    @staticmethod
+    def edgeAt(shape, point):
+        """Sub-name of the one edge whose midpoint is at the point."""
+        hits = [
+            "Edge%d" % (i + 1)
+            for i, e in enumerate(shape.Edges)
+            if (e.valueAt((e.FirstParameter + e.LastParameter) / 2) - point).Length < 1e-6
+        ]
+        assert len(hits) == 1, hits
+        return hits[0]
+
+    def importBlock(self):
+        self.notchedBlock().exportStep(self.source)
+        Import.insert(self.source, self.doc.Name)
+        self.doc.recompute()
+        imported = [o for o in self.doc.Objects if o.TypeId == "Import::Feature"][0]
+        return imported, self.doc.findObjects("PartDesign::Body")[0]
+
+    def addDressUp(self, body, kind, base, sub):
+        step = self.doc.addObject("PartDesign::" + kind, kind)
+        step.Base = (base, [sub])
+        if kind == "Chamfer":
+            step.Size = 1
+        else:
+            step.Radius = 1
+        body.addFeature(step)
+        self.doc.recompute()
+        return step
+
+    def reimport(self, imported, shape):
+        shape.exportStep(self.source)
+        imported.touch()
+        self.doc.recompute()
+
+    def testAChamferStaysOnItsEdgeWhenTheFileListsFacesInAnotherOrder(self):
+        imported, body = self.importBlock()
+        backTop = FreeCAD.Vector(20, 20, 10)
+        chamfer = self.addDressUp(body, "Chamfer", imported, self.edgeAt(imported.Shape, backTop))
+        volume = chamfer.Shape.Volume
+
+        self.reimport(imported, self.notchedBlock(facesReversed=True))
+
+        self.assertEqual(chamfer.Base[1], [self.edgeAt(imported.Shape, backTop)])
+        self.assertNotIn("Invalid", chamfer.State)
+        self.assertAlmostEqual(chamfer.Shape.Volume, volume, places=6)
+
+    def testAStepFurtherDownStaysOnItsEdge(self):
+        """The edge's history passes through a chamfer before it reaches the fillet."""
+        imported, body = self.importBlock()
+        chamfer = self.addDressUp(
+            body, "Chamfer", imported, self.edgeAt(imported.Shape, FreeCAD.Vector(20, 20, 10))
+        )
+        frontLeft = FreeCAD.Vector(0, 0, 5)
+        fillet = self.addDressUp(body, "Fillet", chamfer, self.edgeAt(chamfer.Shape, frontLeft))
+        volume = fillet.Shape.Volume
+
+        self.reimport(imported, self.notchedBlock(facesReversed=True))
+
+        self.assertEqual(fillet.Base[1], [self.edgeAt(chamfer.Shape, frontLeft)])
+        self.assertNotIn("Invalid", fillet.State)
+        self.assertAlmostEqual(fillet.Shape.Volume, volume, places=6)
+
+    def testAChamferWhoseEdgeIsGoneFailsRatherThanMoving(self):
+        imported, body = self.importBlock()
+        notchFloorEdge = FreeCAD.Vector(25, 4, 10)
+        chamfer = self.addDressUp(
+            body, "Chamfer", imported, self.edgeAt(imported.Shape, notchFloorEdge)
+        )
+
+        plain = Part.makeBox(40, 20, 10)
+        self.reimport(imported, Part.Solid(Part.Shell(list(reversed(plain.Faces)))))
+
+        self.assertIn("Invalid", chamfer.State)

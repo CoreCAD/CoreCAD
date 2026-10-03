@@ -4,6 +4,7 @@
 #ifndef IMPORT_FEATURE_H
 #define IMPORT_FEATURE_H
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -190,6 +191,18 @@ public:
      * recompute that changes nothing leaves the document alone.
      */
     FaceMatch matchFaceIdentities();
+
+private:
+    /**
+     * Writes each face's identity onto the shape this feature hands downstream.
+     *
+     * The reader's face, edge and vertex numbers are its own and change between
+     * revisions of a file. Every step built on this import takes its history from
+     * the names on this shape, so they have to be the import's identities, not the
+     * reader's numbers. Edges and vertices are named by the faces around them.
+     * Called by matchFaceIdentities(), so a match is never left without it.
+     */
+    void handOverIdentities(const std::map<int, std::string>& identityOfFace);
 };
 
 }  // namespace Import
