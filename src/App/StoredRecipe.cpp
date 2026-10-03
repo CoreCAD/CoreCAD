@@ -80,48 +80,21 @@ namespace fs = std::filesystem;
 namespace
 {
 
-/// Derived and non-persisted state is never authored source. The same declaration the recipe
-/// emitter reads (ObjectRecipe.cpp), so the stored form and the readable view agree about what
-/// counts as authored — two answers to that question would be two definitions of the document.
+/// Derived and non-persisted state is never authored source. Shared with the readable view
+/// (ObjectRecipe.cpp) so the two agree on what counts as authored.
 constexpr short excludedPropertyFlags = Prop_Output | Prop_Transient | Prop_NoPersist;
 
-/// Properties that ARE authored even though their declared flags say otherwise.
-///
-/// An object's name for the user is declared `Prop_Output`, which in this vocabulary means
-/// "changing it need not recompute anything" and not "the program computed it" — but the stored
-/// form reads that same flag as the line between source and rebuilt output, so a name a person
-/// typed was being dropped. The flags cannot answer a question they were not asked; until the
-/// document model says outright which properties are authored, the exceptions are named here
-/// rather than inferred, so the list is visible and short instead of silent.
+/// Authored despite its flags. `Label` is `Prop_Output` only in the sense "changing it needs no
+/// recompute"; a name a person typed is still source.
 bool isAuthoredDespiteItsFlags(const std::string& name)
 {
     return name == "Label";
 }
 
-/// Content the recipe PRODUCES, as opposed to content the document was handed.
+/// Bulk the object itself builds, so the recipe leaves it out and a rebuild makes it again.
 ///
-/// A part's shape is declared `Prop_None` -- it claims to be neither output nor transient -- so
-/// the flags do not keep it out, and asking the writer to inline bulky values put the whole solid
-/// into the recipe as text. That is not a big file, it is a wrong one: for a feature the recipe
-/// is the source and the shape is what the source builds, and a file carrying both can disagree
-/// with itself. Measured: with the shape inline, a test that rebuilt a part from the recipe with
-/// none of its references restored still produced the right solid -- the file was answering with
-/// the old geometry instead of rebuilding.
-///
-/// An imported solid, a scanned mesh, a measured point cloud, the bytes of a file a person handed
-/// over are the opposite case: no step of the document produces them, so that content IS the
-/// authored content. Excluding those by kind dropped them without a word -- an imported part came
-/// back empty.
-///
-/// **The object answers, and the property's class is never tested** (Amendment 18 Clause 18.2).
-/// It used to be tested: only a `PropertyGeometry` could be output, so every other kind of bulk
-/// was authored content whatever produced it. Measured: a machine toolpath -- produced by the job
-/// above it, and reproducible from it -- was written into the source store, visible and versioned
-/// and kept for ever, beside the imported bodies a person chose.
-///
-/// Which leaves one question for the property, and it is a different question: whether the value
-/// can be stated in a file meant to be read at all (`holdsOpaqueBulk`). A colour is not placed
-/// anywhere; it is simply written down.
+/// The object answers, never the property's class (Amendment 18 Clause 18.2): the same kind of
+/// value is output on a feature and authored content on an import.
 bool theObjectProducedIt(const Property& prop, const PropertyContainer& owner)
 {
     if (!prop.holdsOpaqueBulk()) {
@@ -158,17 +131,11 @@ std::vector<Property*> App::rebuiltProperties(const PropertyContainer& owner)
         if (prop == nullptr) {
             continue;
         }
-        // Nothing the archive itself refuses to keep. A value declared transient is regenerated
-        // by whatever produces it, and a store that claimed to hold it would be lying about a
-        // value that was never written.
+        // A transient value is never stored at all, so no store can claim to hold it.
         if (prop->testStatus(Property::PropNoPersist) || prop->testStatus(Property::Transient)
             || (owner.getPropertyType(prop) & Prop_Transient) != 0) {
             continue;
         }
-        // Output, in the two ways an object says it: content it says it produced, and a value
-        // it declares is a result rather than a setting. `Label` says the second and means
-        // neither -- it is the one authored value wearing the output flag, and the recipe keeps
-        // it.
         if (theObjectProducedIt(*prop, owner)
             || ((owner.getPropertyType(prop) & Prop_Output) != 0
                 && !isAuthoredDespiteItsFlags(name))) {
