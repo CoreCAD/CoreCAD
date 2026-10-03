@@ -682,6 +682,202 @@ private:
     std::size_t _cursor {0};
 };
 
+/// What one read of a recipe carries from step to step.
+struct RecipeRead
+{
+    Document& doc;
+    ArrivingReader& reader;
+    RecipeSource& source;
+    const RecipeArrival& how;
+    std::vector<PendingReference> pending;
+    std::vector<DocumentObject*> restored;
+    /// By the Uid the file stated; see restoreReference.
+    std::map<std::string, DocumentObject*> arrived;
+};
+
+/// The optional `<Document>` block, leaving the reader on `<Objects>`. A copy states none, so
+/// read whichever element is actually there.
+void readDocumentBlock(RecipeRead& read, int recipe)
+{
+    Base::XMLReader& reader = read.reader;
+    if (!nextChildOf(reader, recipe)) {
+        refuse("Objects", reader);
+    }
+    if (std::strcmp(reader.localName(), "Document") == 0) {
+        const std::string documentUid = reader.getAttribute<const char*>("uuid");
+        readProperties(reader, read.doc, read.doc, read.pending, read.how.assetDirectory, [&] {
+            return read.source.documentWords();
+        });
+        reader.readEndElement("Document");
+        // The document model mints a fresh Uid if another open document already has this one.
+        read.doc.Uid.setValue(documentUid);
+
+        if (!nextChildOf(reader, recipe)) {
+            refuse("Objects", reader);
+        }
+    }
+    if (std::strcmp(reader.localName(), "Objects") != 0) {
+        refuse("Objects", reader);
+    }
+}
+
+/// The object the file states, under the stated name (formulas speak it), or null when this
+/// build has no such type and the block is kept as stated instead (Amendment 19).
+DocumentObject* constructObject(RecipeRead& read,
+                                const std::string& uuid,
+                                const std::string& type,
+                                const std::string& name)
+{
+    try {
+        return read.doc.addObject(type.c_str(), name.c_str(), /*isNew=*/false);
+    }
+    catch (const Base::Exception&) {
+        std::string block = read.source.objectBlock(uuid);
+        if (block.empty()) {
+            throw;
+        }
+        read.doc.keepUnreadObject(uuid, type, std::move(block));
+        Base::Console().warning(
+            "Stored recipe: '%s' is of type '%s', which this build cannot construct. "
+            "Its content is kept as written and the document is not whole.\n",
+            name.c_str(),
+            type.c_str());
+        return nullptr;
+    }
+}
+
+/// The `<Extensions>` block. Read before the properties: a capability gives its properties
+/// somewhere to live.
+void readCapabilities(RecipeRead& read, DocumentObject& obj, const std::string& name)
+{
+    Base::XMLReader& reader = read.reader;
+    reader.readElement("Extensions");
+    const int extensions = reader.level();
+    while (nextChildOf(reader, extensions)) {
+        if (std::strcmp(reader.localName(), "Extension") != 0) {
+            refuse("Extension", reader);
+        }
+        const std::string asks = reader.getAttribute<const char*>("type");
+        grantCapability(read.doc, obj, asks, name);
+    }
+    reader.readEndElement("Extensions");
+}
+
+/// The `<Display>` block. A headless session keeps the file's words, or open-and-save would
+/// strip every chosen colour (Amendment 19 Clause 19.1).
+void readAppearance(RecipeRead& read,
+                    DocumentObject& obj,
+                    const std::string& uuid,
+                    const std::string& name)
+{
+    read.reader.readElement("Display");
+    PropertyContainer* appearance = appearanceOf(obj);
+    if (appearance == nullptr) {
+        obj.keepStatedAppearance(liftDisplayBlock(read.source.objectWords(uuid)));
+        if (obj.statedAppearance().empty()) {
+            Base::Console().warning(
+                "Stored recipe: '%s' states an appearance this session has nowhere "
+                "to put, and its words could not be kept. Saving this document would "
+                "lose it.\n",
+                name.c_str());
+            read.doc.recordUnkeptStatement("the appearance '" + name
+                                           + "' states, which this session has nowhere to "
+                                             "put and whose words could not be kept");
+        }
+    }
+    if (appearance != nullptr) {
+        readProperties(read.reader,
+                       read.doc,
+                       *appearance,
+                       read.pending,
+                       read.how.assetDirectory,
+                       [&] {
+                           return liftDisplayBlock(read.source.objectWords(uuid));
+                       });
+    }
+    read.reader.readEndElement("Display");
+}
+
+/// One `<Object>` block, from its opening element to its end.
+void readObject(RecipeRead& read)
+{
+    Base::XMLReader& reader = read.reader;
+    const std::string uuid = reader.getAttribute<const char*>("uuid");
+    const std::string type = reader.getAttribute<const char*>("type");
+    const std::string name = reader.getAttribute<const char*>("name");
+    const bool display = reader.getAttribute<long>("display", 0) == 1;
+    const bool asked = reader.getAttribute<long>("extensions", 0) == 1;
+
+    DocumentObject* obj = constructObject(read, uuid, type, name);
+    if (obj != nullptr) {
+        obj->Uid.setValue(uuid);
+        read.restored.push_back(obj);
+        read.arrived.emplace(uuid, obj);
+        reader.addName(name.c_str(), obj->getNameInDocument());
+        if (read.how.arrived != nullptr) {
+            read.how.arrived->emplace_back(uuid, obj);
+        }
+        // As the archive does: stops features rebuilding on each property before references
+        // are bound.
+        obj->setStatus(ObjectStatus::Restore, true);
+        if (asked) {
+            readCapabilities(read, *obj, name);
+        }
+        readProperties(reader, read.doc, *obj, read.pending, read.how.assetDirectory, [&] {
+            return read.source.objectWords(uuid);
+        });
+        obj->setStatus(ObjectStatus::Restore, false);
+
+        if (display) {
+            readAppearance(read, *obj, uuid, name);
+        }
+    }
+    reader.readEndElement("Object");
+}
+
+/// Point every held reference at its targets, now that every object exists. One that cannot be
+/// bound is kept, not dropped: a merge needs it to tell a deleted target from no reference.
+void bindReferences(RecipeRead& read)
+{
+    for (const auto& [prop, bindings] : read.pending) {
+        if (restoreReference(*prop, bindings, read.doc, read.arrived)) {
+            continue;
+        }
+        PropertyContainer* owner = prop->getContainer();
+        const char* name = prop->getName();
+        if (owner != nullptr && name != nullptr) {
+            std::vector<PropertyContainer::StatedTarget> stated;
+            stated.reserve(bindings.size());
+            for (const Binding& binding : bindings) {
+                stated.push_back({binding.uuid, binding.sub, binding.noPart});
+            }
+            owner->rememberUnresolvedReference(name, std::move(stated));
+        }
+        Base::Console().warning(
+            "Stored recipe: '%s' names an object this document does not hold. Where it "
+            "pointed is kept as written and the document is not whole.\n",
+            name != nullptr ? name : "");
+    }
+}
+
+/// What follows the read: the formula pass, and marking everything for a rebuild.
+void finishRead(RecipeRead& read)
+{
+    // The second pass that binds formulas, unless an opening document runs it itself.
+    if (read.how.finish) {
+        read.doc.afterRestore(read.restored, false);
+    }
+
+    // The file carries steps, never geometry, so everything still has to be built.
+    for (DocumentObject* obj : read.restored) {
+        obj->enforceRecompute();
+    }
+
+    // Blocked by what it holds, not by a rebuild request: cached geometry skips the rebuild
+    // (Amendment 19).
+    read.doc.blockWhatCouldNotBeHonoured();
+}
+
 }  // namespace
 
 void App::restoreStoredRecipe(Document& doc,
@@ -697,7 +893,6 @@ void App::restoreStoredRecipe(Document& doc,
 
 void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeArrival& how)
 {
-    const std::string& assetDirectory = how.assetDirectory;
     RecipeSource sourceText(std::string((std::istreambuf_iterator<char>(source)),
                                         std::istreambuf_iterator<char>()));
     std::istringstream parsed(sourceText.text());
@@ -717,159 +912,23 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
         naming.emplace(reader);
     }
 
-    std::vector<PendingReference> pending;
-    std::vector<DocumentObject*> restored;
-    // By the Uid the file stated; see restoreReference.
-    std::map<std::string, DocumentObject*> arrived;
+    RecipeRead read {doc, reader, sourceText, how, {}, {}, {}};
 
     reader.readElement("Recipe");
     refuseAFormatThisBuildDoesNotRead(reader);
     const int recipe = reader.level();
 
-    // A copy states no `<Document>` block, so read whichever element is actually there.
-    if (!nextChildOf(reader, recipe)) {
-        refuse("Objects", reader);
-    }
-    if (std::strcmp(reader.localName(), "Document") == 0) {
-        const std::string documentUid = reader.getAttribute<const char*>("uuid");
-        readProperties(reader, doc, doc, pending, assetDirectory, [&] {
-            return sourceText.documentWords();
-        });
-        reader.readEndElement("Document");
-        // The document model mints a fresh Uid if another open document already has this one.
-        doc.Uid.setValue(documentUid);
-
-        if (!nextChildOf(reader, recipe)) {
-            refuse("Objects", reader);
-        }
-    }
-    if (std::strcmp(reader.localName(), "Objects") != 0) {
-        refuse("Objects", reader);
-    }
+    readDocumentBlock(read, recipe);
     const int objects = reader.level();
     while (nextChildOf(reader, objects)) {
         if (std::strcmp(reader.localName(), "Object") != 0) {
             refuse("Object", reader);
         }
-        const std::string uuid = reader.getAttribute<const char*>("uuid");
-        const std::string type = reader.getAttribute<const char*>("type");
-        const std::string name = reader.getAttribute<const char*>("name");
-        const bool display = reader.getAttribute<long>("display", 0) == 1;
-        const bool asked = reader.getAttribute<long>("extensions", 0) == 1;
-
-        // The stated name, not a fresh one: formulas speak it.
-        DocumentObject* obj = nullptr;
-        try {
-            obj = doc.addObject(type.c_str(), name.c_str(), /*isNew=*/false);
-        }
-        catch (const Base::Exception&) {
-            // No such type in this build: keep the block as stated and read on (Amendment 19).
-            std::string block = sourceText.objectBlock(uuid);
-            if (block.empty()) {
-                throw;
-            }
-            doc.keepUnreadObject(uuid, type, std::move(block));
-            Base::Console().warning(
-                "Stored recipe: '%s' is of type '%s', which this build cannot construct. "
-                "Its content is kept as written and the document is not whole.\n",
-                name.c_str(),
-                type.c_str());
-            reader.readEndElement("Object");
-            continue;
-        }
-        if (obj != nullptr) {
-            obj->Uid.setValue(uuid);
-            restored.push_back(obj);
-            arrived.emplace(uuid, obj);
-            reader.addName(name.c_str(), obj->getNameInDocument());
-            if (how.arrived != nullptr) {
-                how.arrived->emplace_back(uuid, obj);
-            }
-            // As the archive does: stops features rebuilding on each property before references
-            // are bound.
-            obj->setStatus(ObjectStatus::Restore, true);
-            if (asked) {
-                // Before the properties: a capability gives its properties somewhere to live.
-                reader.readElement("Extensions");
-                const int extensions = reader.level();
-                while (nextChildOf(reader, extensions)) {
-                    if (std::strcmp(reader.localName(), "Extension") != 0) {
-                        refuse("Extension", reader);
-                    }
-                    const std::string asks = reader.getAttribute<const char*>("type");
-                    grantCapability(doc, *obj, asks, name);
-                }
-                reader.readEndElement("Extensions");
-            }
-            readProperties(reader, doc, *obj, pending, assetDirectory, [&] {
-                return sourceText.objectWords(uuid);
-            });
-            obj->setStatus(ObjectStatus::Restore, false);
-
-            if (display) {
-                // A headless session keeps the file's words, or open-and-save would strip every
-                // chosen colour (Amendment 19 Clause 19.1).
-                reader.readElement("Display");
-                PropertyContainer* appearance = appearanceOf(*obj);
-                if (appearance == nullptr) {
-                    obj->keepStatedAppearance(liftDisplayBlock(sourceText.objectWords(uuid)));
-                    if (obj->statedAppearance().empty()) {
-                        Base::Console().warning(
-                            "Stored recipe: '%s' states an appearance this session has nowhere "
-                            "to put, and its words could not be kept. Saving this document would "
-                            "lose it.\n",
-                            name.c_str());
-                        doc.recordUnkeptStatement("the appearance '" + name
-                                                  + "' states, which this session has nowhere to "
-                                                    "put and whose words could not be kept");
-                    }
-                }
-                if (appearance != nullptr) {
-                    readProperties(reader, doc, *appearance, pending, assetDirectory, [&] {
-                        return liftDisplayBlock(sourceText.objectWords(uuid));
-                    });
-                }
-                reader.readEndElement("Display");
-            }
-        }
-        reader.readEndElement("Object");
+        readObject(read);
     }
     reader.readEndElement("Objects");
-
     reader.readEndElement("Recipe");
 
-    // Now that every object exists, point the references at them.
-    for (const auto& [prop, bindings] : pending) {
-        if (!restoreReference(*prop, bindings, doc, arrived)) {
-            // Kept, not dropped: a merge needs it to tell a deleted target from no reference.
-            PropertyContainer* owner = prop->getContainer();
-            const char* name = prop->getName();
-            if (owner != nullptr && name != nullptr) {
-                std::vector<PropertyContainer::StatedTarget> stated;
-                stated.reserve(bindings.size());
-                for (const Binding& binding : bindings) {
-                    stated.push_back({binding.uuid, binding.sub, binding.noPart});
-                }
-                owner->rememberUnresolvedReference(name, std::move(stated));
-            }
-            Base::Console().warning(
-                "Stored recipe: '%s' names an object this document does not hold. Where it "
-                "pointed is kept as written and the document is not whole.\n",
-                name != nullptr ? name : "");
-        }
-    }
-
-    // The second pass that binds formulas, unless an opening document runs it itself.
-    if (how.finish) {
-        doc.afterRestore(restored, false);
-    }
-
-    // The file carries steps, never geometry, so everything still has to be built.
-    for (DocumentObject* obj : restored) {
-        obj->enforceRecompute();
-    }
-
-    // Blocked by what it holds, not by a rebuild request: cached geometry skips the rebuild
-    // (Amendment 19).
-    doc.blockWhatCouldNotBeHonoured();
+    bindReferences(read);
+    finishRead(read);
 }
