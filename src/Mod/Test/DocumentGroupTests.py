@@ -32,6 +32,17 @@ class DocumentGroupCases(unittest.TestCase):
         self.Doc = FreeCAD.newDocument("GroupTests")
 
     def testGroup(self):
+        G1 = self.groupMembership()
+        self.Doc.UndoMode = 1
+        self.removalOrdersUndo(G1)
+        self.removeSeveralThenUndo(G1)
+        self.Doc.UndoMode = 0
+
+        self.Doc.removeObject("Group")
+        self.Doc.removeObject("Label_2")
+        self.Doc.removeObject("Label_3")
+
+    def groupMembership(self):
         L2 = self.Doc.addObject("App::FeatureTest", "Label_2")
         G1 = self.Doc.addObject("App::DocumentObjectGroup", "Group")
         G1.addObject(L2)
@@ -44,9 +55,9 @@ class DocumentGroupCases(unittest.TestCase):
             FreeCAD.Console.PrintLog("Cannot add group to itself, OK\n")
         else:
             self.fail("Adding the group to itself must not be possible")
+        return G1
 
-        self.Doc.UndoMode = 1
-
+    def removalOrdersUndo(self, G1):
         self.Doc.openTransaction("Remove")
         self.Doc.removeObject("Label_2")
         self.Doc.commitTransaction()
@@ -83,6 +94,7 @@ class DocumentGroupCases(unittest.TestCase):
         self.Doc.undo()
         self.assertTrue(G1.getObject("Label_2") is not None)
 
+    def removeSeveralThenUndo(self, G1):
         L3 = self.Doc.addObject("App::FeatureTest", "Label_3")
         G1.addObject(L3)
         self.Doc.openTransaction("Remove")
@@ -96,14 +108,14 @@ class DocumentGroupCases(unittest.TestCase):
         self.assertTrue(G1.getObject("Label_3") is not None)
         self.assertTrue(G1.getObject("Label_2") is not None)
 
-        self.Doc.UndoMode = 0
-
-        self.Doc.removeObject("Group")
-        self.Doc.removeObject("Label_2")
-        self.Doc.removeObject("Label_3")
-
     def testGroupAndGeoFeatureGroup(self):
+        obj1, grp1, grp2 = self.oneGroupAtATime()
+        prt1, prt2 = self.groupInsideGeoFeatureGroup(obj1, grp2)
+        self.oneGeoFeatureGroupAtATime(obj1, grp1, grp2, prt1, prt2)
+        self.crossLinksBetweenGeoFeatureGroups(prt1, prt2)
+        self.cyclicGrouping(prt1, prt2)
 
+    def oneGroupAtATime(self):
         # an object can only be in one group at once, that must be enforced
         obj1 = self.Doc.addObject("App::FeatureTest", "obj1")
         grp1 = self.Doc.addObject("App::DocumentObjectGroup", "Group1")
@@ -115,7 +127,9 @@ class DocumentGroupCases(unittest.TestCase):
         grp2.addObject(obj1)
         self.assertTrue(grp1.hasObject(obj1) == False)
         self.assertTrue(grp2.hasObject(obj1))
+        return obj1, grp1, grp2
 
+    def groupInsideGeoFeatureGroup(self, obj1, grp2):
         # an object is allowed to be in a group and a geofeaturegroup
         prt1 = _placedGroup(self.Doc, "Part1")
         prt2 = _placedGroup(self.Doc, "Part2")
@@ -126,7 +140,9 @@ class DocumentGroupCases(unittest.TestCase):
         self.assertTrue(grp2.hasObject(obj1))
         self.assertTrue(prt1.hasObject(grp2))
         self.assertTrue(prt1.hasObject(obj1))
+        return prt1, prt2
 
+    def oneGeoFeatureGroupAtATime(self, obj1, grp1, grp2, prt1, prt2):
         # it is not allowed to be in 2 geofeaturegroups
         prt2.addObject(grp2)
         self.assertTrue(grp2.hasObject(obj1))
@@ -155,6 +171,7 @@ class DocumentGroupCases(unittest.TestCase):
         else:
             self.fail("No exception thrown when object is in multiple Groups")
 
+    def crossLinksBetweenGeoFeatureGroups(self, prt1, prt2):
         # cross linking between GeoFeatureGroups is not allowed
         self.Doc.recompute()
         box = self.Doc.addObject("App::FeatureTest", "Box")
@@ -184,6 +201,7 @@ class DocumentGroupCases(unittest.TestCase):
         self.Doc.recompute()
         self.assertTrue(fus.State[0] == "Up-to-date")
 
+    def cyclicGrouping(self, prt1, prt2):
         # grouping must survive cyclic links without crashing
         prt1.addObject(prt2)
         grp = prt2.Group

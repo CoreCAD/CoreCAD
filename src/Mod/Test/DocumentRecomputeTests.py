@@ -42,7 +42,13 @@ class DocumentRecomputeCases(unittest.TestCase):
         self.L2.Link = self.L3
 
     def testRecompute(self):
+        L1, L2, L3, L4, L5, L6, L7, L8 = self.buildRecomputeGraph()
+        self.assertTopologicalOrder(L1, L2, L3, L5)
+        self.recomputeOnlyWhatIsTouched(L1, L2, L3, L4, L5, L6)
+        for obj in (L1, L2, L3, L4, L5, L6, L7, L8):
+            self.Doc.removeObject(obj.Name)
 
+    def buildRecomputeGraph(self):
         # sequence to test recompute behaviour
         #       L1---\    L7
         #      /  \   \    |
@@ -66,7 +72,9 @@ class DocumentRecomputeCases(unittest.TestCase):
 
         self.assertTrue(L7 in self.Doc.RootObjects)
         self.assertTrue(L1 in self.Doc.RootObjects)
+        return L1, L2, L3, L4, L5, L6, L7, L8
 
+    def assertTopologicalOrder(self, L1, L2, L3, L5):
         self.assertTrue(len(self.Doc.Objects) == len(self.Doc.TopologicalSortedObjects))
 
         seqDic = {}
@@ -82,64 +90,33 @@ class DocumentRecomputeCases(unittest.TestCase):
         self.assertTrue(seqDic[L5] > seqDic[L3])
         self.assertTrue(seqDic[L5] > seqDic[L1])
 
-        self.assertTrue(
-            (0, 0, 0, 0, 0, 0)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+    def recomputeOnlyWhatIsTouched(self, L1, L2, L3, L4, L5, L6):
+        objs = (L1, L2, L3, L4, L5, L6)
+        self.assertExecCounts(objs, (0, 0, 0, 0, 0, 0))
         self.assertTrue(self.Doc.recompute() == 4)
-        self.assertTrue(
-            (1, 1, 1, 0, 0, 0)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (1, 1, 1, 0, 0, 0))
         L5.enforceRecompute()
-        self.assertTrue(
-            (1, 1, 1, 0, 0, 0)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (1, 1, 1, 0, 0, 0))
         self.assertTrue(self.Doc.recompute() == 4)
-        self.assertTrue(
-            (2, 2, 2, 0, 1, 0)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (2, 2, 2, 0, 1, 0))
         L4.enforceRecompute()
         self.assertTrue(self.Doc.recompute() == 3)
-        self.assertTrue(
-            (3, 3, 2, 1, 1, 0)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (3, 3, 2, 1, 1, 0))
         L5.enforceRecompute()
         self.assertTrue(self.Doc.recompute() == 4)
-        self.assertTrue(
-            (4, 4, 3, 1, 2, 0)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (4, 4, 3, 1, 2, 0))
         L6.enforceRecompute()
         self.assertTrue(self.Doc.recompute() == 3)
-        self.assertTrue(
-            (5, 4, 4, 1, 2, 1)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (5, 4, 4, 1, 2, 1))
         L2.enforceRecompute()
         self.assertTrue(self.Doc.recompute() == 2)
-        self.assertTrue(
-            (6, 5, 4, 1, 2, 1)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (6, 5, 4, 1, 2, 1))
         L1.enforceRecompute()
         self.assertTrue(self.Doc.recompute() == 1)
-        self.assertTrue(
-            (7, 5, 4, 1, 2, 1)
-            == (L1.ExecCount, L2.ExecCount, L3.ExecCount, L4.ExecCount, L5.ExecCount, L6.ExecCount)
-        )
+        self.assertExecCounts(objs, (7, 5, 4, 1, 2, 1))
 
-        self.Doc.removeObject(L1.Name)
-        self.Doc.removeObject(L2.Name)
-        self.Doc.removeObject(L3.Name)
-        self.Doc.removeObject(L4.Name)
-        self.Doc.removeObject(L5.Name)
-        self.Doc.removeObject(L6.Name)
-        self.Doc.removeObject(L7.Name)
-        self.Doc.removeObject(L8.Name)
+    def assertExecCounts(self, objs, counts):
+        self.assertTrue(counts == tuple(obj.ExecCount for obj in objs))
 
     def tearDown(self):
         FreeCAD.closeDocument("RecomputeTests")

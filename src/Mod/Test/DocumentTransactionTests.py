@@ -35,6 +35,12 @@ class UndoRedoCases(unittest.TestCase):
         self.Doc.addObject("App::FeatureTest", "Del")
         self.Doc.getObject("Del").Integer = 2
 
+    def assertStacks(self, undo, redo):
+        self.assertEqual(self.Doc.UndoNames, undo)
+        self.assertEqual(self.Doc.UndoCount, len(undo))
+        self.assertEqual(self.Doc.RedoNames, redo)
+        self.assertEqual(self.Doc.RedoCount, len(redo))
+
     def testUndoProperties(self):
         self.Doc.UndoMode = 1
 
@@ -57,10 +63,7 @@ class UndoRedoCases(unittest.TestCase):
 
     def testUndoClear(self):
         self.Doc.UndoMode = 1
-        self.assertEqual(self.Doc.UndoNames, [])
-        self.assertEqual(self.Doc.UndoCount, 0)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks([], [])
 
         self.Doc.openTransaction("Transaction1")
         # becomes the active object
@@ -75,177 +78,97 @@ class UndoRedoCases(unittest.TestCase):
 
     def testUndo(self):
         self.Doc.UndoMode = 1
-        self.assertEqual(self.Doc.UndoNames, [])
-        self.assertEqual(self.Doc.UndoCount, 0)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks([], [])
+        self.openFourTransactions()
+        self.undoAllFour()
+        self.redoTwoThenUndoOne()
+        self.newTransactionsDropTheRedos()
+        self.Doc.UndoMode = 0
+        self.assertStacks([], [])
 
-        # first transaction
+    def openFourTransactions(self):
         self.Doc.openTransaction("Transaction1")
         self.Doc.addObject("App::FeatureTest", "test1")
         self.Doc.getObject("test1").Integer = 1
         self.Doc.getObject("Del").Integer = 1
         self.Doc.removeObject("Del")
-        self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 1)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction1"], [])
 
-        # second transaction
         self.Doc.openTransaction("Transaction2")
         # no change, so no transaction
-        self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 1)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction1"], [])
 
         self.Doc.getObject("test1").Integer = 2
-        self.assertEqual(self.Doc.UndoNames, ["Transaction2", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 2)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction2", "Transaction1"], [])
 
-        # abort second transaction
         self.Doc.abortTransaction()
-        self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 1)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction1"], [])
         self.assertEqual(self.Doc.getObject("test1").Integer, 1)
 
-        # again second transaction
         self.Doc.openTransaction("Transaction2")
         self.Doc.getObject("test1").Integer = 2
-        self.assertEqual(self.Doc.UndoNames, ["Transaction2", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 2)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction2", "Transaction1"], [])
 
-        # third transaction
         self.Doc.openTransaction("Transaction3")
         self.Doc.getObject("test1").Integer = 3
-        self.assertEqual(self.Doc.UndoNames, ["Transaction3", "Transaction2", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 3)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction3", "Transaction2", "Transaction1"], [])
 
-        # fourth transaction
         self.Doc.openTransaction("Transaction4")
         self.Doc.getObject("test1").Integer = 4
-        self.assertEqual(
-            self.Doc.UndoNames, ["Transaction4", "Transaction3", "Transaction2", "Transaction1"]
-        )
-        self.assertEqual(self.Doc.UndoCount, 4)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction4", "Transaction3", "Transaction2", "Transaction1"], [])
 
-        # undo the fourth transaction
+    def undoAllFour(self):
         self.Doc.undo()
         self.assertEqual(self.Doc.getObject("test1").Integer, 3)
-        self.assertEqual(self.Doc.UndoNames, ["Transaction3", "Transaction2", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 3)
-        self.assertEqual(self.Doc.RedoNames, ["Transaction4"])
-        self.assertEqual(self.Doc.RedoCount, 1)
+        self.assertStacks(["Transaction3", "Transaction2", "Transaction1"], ["Transaction4"])
 
-        # undo the third transaction
         self.Doc.undo()
         self.assertEqual(self.Doc.getObject("test1").Integer, 2)
-        self.assertEqual(self.Doc.UndoNames, ["Transaction2", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 2)
-        self.assertEqual(self.Doc.RedoNames, ["Transaction3", "Transaction4"])
-        self.assertEqual(self.Doc.RedoCount, 2)
+        self.assertStacks(["Transaction2", "Transaction1"], ["Transaction3", "Transaction4"])
 
-        # undo the second transaction
         self.Doc.undo()
         self.assertEqual(self.Doc.getObject("test1").Integer, 1)
-        self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 1)
-        self.assertEqual(self.Doc.RedoNames, ["Transaction2", "Transaction3", "Transaction4"])
-        self.assertEqual(self.Doc.RedoCount, 3)
+        self.assertStacks(["Transaction1"], ["Transaction2", "Transaction3", "Transaction4"])
 
-        # undo the first transaction
         self.Doc.undo()
         self.assertTrue(self.Doc.getObject("test1") is None)
         self.assertTrue(self.Doc.getObject("Del").Integer == 2)
-        self.assertEqual(self.Doc.UndoNames, [])
-        self.assertEqual(self.Doc.UndoCount, 0)
-        self.assertEqual(
-            self.Doc.RedoNames, ["Transaction1", "Transaction2", "Transaction3", "Transaction4"]
-        )
-        self.assertEqual(self.Doc.RedoCount, 4)
+        self.assertStacks([], ["Transaction1", "Transaction2", "Transaction3", "Transaction4"])
 
-        # redo the first transaction
+    def redoTwoThenUndoOne(self):
         self.Doc.redo()
         self.assertEqual(self.Doc.getObject("test1").Integer, 1)
-        self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 1)
-        self.assertEqual(self.Doc.RedoNames, ["Transaction2", "Transaction3", "Transaction4"])
-        self.assertEqual(self.Doc.RedoCount, 3)
+        self.assertStacks(["Transaction1"], ["Transaction2", "Transaction3", "Transaction4"])
 
-        # redo the second transaction
         self.Doc.redo()
         self.assertEqual(self.Doc.getObject("test1").Integer, 2)
-        self.assertEqual(self.Doc.UndoNames, ["Transaction2", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 2)
-        self.assertEqual(self.Doc.RedoNames, ["Transaction3", "Transaction4"])
-        self.assertEqual(self.Doc.RedoCount, 2)
+        self.assertStacks(["Transaction2", "Transaction1"], ["Transaction3", "Transaction4"])
 
-        # undo the second transaction
         self.Doc.undo()
         self.assertEqual(self.Doc.getObject("test1").Integer, 1)
-        self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 1)
-        self.assertEqual(self.Doc.RedoNames, ["Transaction2", "Transaction3", "Transaction4"])
-        self.assertEqual(self.Doc.RedoCount, 3)
+        self.assertStacks(["Transaction1"], ["Transaction2", "Transaction3", "Transaction4"])
 
-        # new transaction eight
+    def newTransactionsDropTheRedos(self):
         self.Doc.openTransaction("Transaction8")
         self.Doc.getObject("test1").Integer = 8
-        self.assertEqual(self.Doc.UndoNames, ["Transaction8", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 2)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction8", "Transaction1"], [])
         self.Doc.abortTransaction()
-        self.assertEqual(self.Doc.UndoNames, ["Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 1)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction1"], [])
 
-        # again new transaction eight
         self.Doc.openTransaction("Transaction8")
         self.Doc.getObject("test1").Integer = 8
-        self.assertEqual(self.Doc.UndoNames, ["Transaction8", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 2)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction8", "Transaction1"], [])
 
-        # again new transaction nine
         self.Doc.openTransaction("Transaction9")
         self.Doc.getObject("test1").Integer = 9
-        self.assertEqual(self.Doc.UndoNames, ["Transaction9", "Transaction8", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 3)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction9", "Transaction8", "Transaction1"], [])
         self.Doc.commitTransaction()
-        self.assertEqual(self.Doc.UndoNames, ["Transaction9", "Transaction8", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 3)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction9", "Transaction8", "Transaction1"], [])
         self.assertEqual(self.Doc.getObject("test1").Integer, 9)
 
-        # undo the ninth transaction
         self.Doc.undo()
         self.assertEqual(self.Doc.getObject("test1").Integer, 8)
-        self.assertEqual(self.Doc.UndoNames, ["Transaction8", "Transaction1"])
-        self.assertEqual(self.Doc.UndoCount, 2)
-        self.assertEqual(self.Doc.RedoNames, ["Transaction9"])
-        self.assertEqual(self.Doc.RedoCount, 1)
-
-        self.Doc.UndoMode = 0
-        self.assertEqual(self.Doc.UndoNames, [])
-        self.assertEqual(self.Doc.UndoCount, 0)
-        self.assertEqual(self.Doc.RedoNames, [])
-        self.assertEqual(self.Doc.RedoCount, 0)
+        self.assertStacks(["Transaction8", "Transaction1"], ["Transaction9"])
 
     def testUndoInList(self):
 

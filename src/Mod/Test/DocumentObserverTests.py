@@ -196,6 +196,9 @@ class DocumentObserverCases(unittest.TestCase):
             self.signal.append("ObjResetEdit")
             self.parameter.append(obj)
 
+    def assertQuiet(self, observer):
+        self.assertTrue(not observer.signal and not observer.parameter and not observer.parameter2)
+
     def setUp(self):
         self.Obs = self.Observer()
         FreeCAD.addDocumentObserver(self.Obs)
@@ -227,43 +230,35 @@ class DocumentObserverCases(unittest.TestCase):
         if FreeCAD.GuiUp and FreeCAD.activeDocument():
             return
 
-        # testing document level signals
-        self.Doc1 = FreeCAD.newDocument("Observer1")
+        self.Doc1 = self.newObservedDocument("Observer1")
+        self.Doc2 = self.newObservedDocument("Observer2")
+        self.activationSignals()
+        self.transactionSignals()
+        self.changeAndCloseSignals()
+
+    def newObservedDocument(self, name):
+        doc = FreeCAD.newDocument(name)
         if FreeCAD.GuiUp:
             self.assertEqual(self.Obs.signal.pop(0), "DocActivated")
-            self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
+            self.assertTrue(self.Obs.parameter.pop(0) is doc)
         self.assertEqual(self.Obs.signal.pop(0), "DocCreated")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
+        self.assertTrue(self.Obs.parameter.pop(0) is doc)
         self.assertEqual(self.Obs.signal.pop(0), "DocBeforeChange")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
+        self.assertTrue(self.Obs.parameter.pop(0) is doc)
         self.assertEqual(self.Obs.parameter2.pop(0), "Label")
         self.assertEqual(self.Obs.signal.pop(0), "DocChanged")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
+        self.assertTrue(self.Obs.parameter.pop(0) is doc)
         self.assertEqual(self.Obs.parameter2.pop(0), "Label")
         self.assertEqual(self.Obs.signal.pop(0), "DocRelabled")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertTrue(self.Obs.parameter.pop(0) is doc)
+        self.assertQuiet(self.Obs)
+        return doc
 
-        self.Doc2 = FreeCAD.newDocument("Observer2")
-        if FreeCAD.GuiUp:
-            self.assertEqual(self.Obs.signal.pop(0), "DocActivated")
-            self.assertTrue(self.Obs.parameter.pop(0) is self.Doc2)
-        self.assertEqual(self.Obs.signal.pop(0), "DocCreated")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc2)
-        self.assertEqual(self.Obs.signal.pop(0), "DocBeforeChange")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc2)
-        self.assertEqual(self.Obs.parameter2.pop(0), "Label")
-        self.assertEqual(self.Obs.signal.pop(0), "DocChanged")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc2)
-        self.assertEqual(self.Obs.parameter2.pop(0), "Label")
-        self.assertEqual(self.Obs.signal.pop(0), "DocRelabled")
-        self.assertTrue(self.Obs.parameter.pop(0) is self.Doc2)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
-
+    def activationSignals(self):
         FreeCAD.setActiveDocument("Observer1")
         self.assertEqual(self.Obs.signal.pop(), "DocActivated")
         self.assertTrue(self.Obs.parameter.pop() is self.Doc1)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         # undo/redo is not enabled in cmd line mode by default
         self.Doc2.UndoMode = 1
@@ -274,8 +269,9 @@ class DocumentObserverCases(unittest.TestCase):
         FreeCAD.setActiveDocument("Observer2")
         self.assertEqual(self.Obs.signal.pop(), "DocActivated")
         self.assertTrue(self.Obs.parameter.pop() is self.Doc2)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
+    def transactionSignals(self):
         self.Doc2.openTransaction("test")
         # openTransaction() only sets up a pending transaction; the first change creates it
         self.Doc2.addObject("App::FeatureTest", "test")
@@ -288,7 +284,7 @@ class DocumentObserverCases(unittest.TestCase):
         self.Doc2.commitTransaction()
         self.assertEqual(self.Obs.signal.pop(), "DocCommitTransaction")
         self.assertTrue(self.Obs.parameter.pop() is self.Doc2)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         self.Doc2.openTransaction("test2")
         self.Doc2.addObject("App::FeatureTest", "test")
@@ -317,6 +313,7 @@ class DocumentObserverCases(unittest.TestCase):
         # there will be other signals because redoing the above addObject()
         self.Obs.clear()
 
+    def changeAndCloseSignals(self):
         self.Doc1.Comment = "test comment"
         self.assertEqual(self.Obs.signal.pop(0), "DocBeforeChange")
         self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
@@ -332,19 +329,22 @@ class DocumentObserverCases(unittest.TestCase):
             # only has document activated signal when running in GUI mode
             self.assertEqual(self.Obs.signal.pop(), "DocActivated")
             self.assertTrue(self.Obs.parameter.pop() is self.Doc1)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         FreeCAD.closeDocument(self.Doc1.Name)
         self.assertEqual(self.Obs.signal.pop(), "DocDeleted")
         self.assertEqual(self.Obs.parameter.pop(), self.Doc1)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
     def testObject(self):
-        # testing signal on object changes
-
         self.Doc1 = FreeCAD.newDocument("Observer1")
         self.Obs.clear()
+        self.objectLifecycleSignals()
+        self.dynamicPropertySignals()
+        FreeCAD.closeDocument(self.Doc1.Name)
+        self.Obs.clear()
 
+    def objectLifecycleSignals(self):
         obj = self.Doc1.addObject("App::DocumentObject", "obj")
         self.assertTrue(self.Obs.signal.pop() == "ObjCreated")
         self.assertTrue(self.Obs.parameter.pop() is obj)
@@ -358,13 +358,13 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(self.Obs.signal.pop(0) == "ObjChanged")
         self.assertTrue(self.Obs.parameter.pop(0) is obj)
         self.assertTrue(self.Obs.parameter2.pop(0) == "Label")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         obj.enforceRecompute()
         obj.recompute()
         self.assertTrue(self.Obs.signal.pop(0) == "ObjRecomputed")
         self.assertTrue(self.Obs.parameter.pop(0) is obj)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         obj.enforceRecompute()
         self.Doc1.recompute()
@@ -372,32 +372,33 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(self.Obs.parameter.pop(0) is obj)
         self.assertTrue(self.Obs.signal.pop(0) == "DocRecomputed")
         self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         FreeCAD.ActiveDocument.removeObject(obj.Name)
         self.assertTrue(self.Obs.signal.pop(0) == "ObjDeleted")
         self.assertTrue(self.Obs.parameter.pop(0) is obj)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
+    def dynamicPropertySignals(self):
         pyobj = self.Doc1.addObject("App::FeaturePython", "pyobj")
         self.Obs.clear()
         pyobj.addProperty("App::PropertyLength", "Prop", "Group", "test property")
         self.assertTrue(self.Obs.signal.pop() == "ObjAddDynProp")
         self.assertTrue(self.Obs.parameter.pop() is pyobj)
         self.assertTrue(self.Obs.parameter2.pop() == "Prop")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         pyobj.setEditorMode("Prop", ["ReadOnly"])
         self.assertTrue(self.Obs.signal.pop() == "ObjChangePropEdit")
         self.assertTrue(self.Obs.parameter.pop() is pyobj)
         self.assertTrue(self.Obs.parameter2.pop() == "Prop")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         pyobj.removeProperty("Prop")
         self.assertTrue(self.Obs.signal.pop() == "ObjRemoveDynProp")
         self.assertTrue(self.Obs.parameter.pop() is pyobj)
         self.assertTrue(self.Obs.parameter2.pop() == "Prop")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         pyobj.addExtension("App::GroupExtensionPython")
         self.assertTrue(self.Obs.signal.pop() == "ObjDynExt")
@@ -407,9 +408,6 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(self.Obs.parameter.pop(0) is pyobj)
         self.assertTrue(self.Obs.parameter2.pop(0) == "App::GroupExtensionPython")
         # a proxy property was changed, hence those events are also in the signal list
-        self.Obs.clear()
-
-        FreeCAD.closeDocument(self.Doc1.Name)
         self.Obs.clear()
 
     def testUndoDisabledDocument(self):
@@ -423,7 +421,7 @@ class DocumentObserverCases(unittest.TestCase):
         self.Doc1.commitTransaction()
         self.Doc1.undo()
         self.Doc1.redo()
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
 
         FreeCAD.closeDocument(self.Doc1.Name)
         self.Obs.clear()
@@ -440,6 +438,22 @@ class DocumentObserverCases(unittest.TestCase):
 
         self.GuiObs = self.GuiObserver()
         FreeCAD.Gui.addDocumentObserver(self.GuiObs)
+        self.guiDocumentSignals()
+        obj = self.guiObjectCreated()
+        self.viewObjectPropertySignals(obj)
+        self.editSignals(obj)
+        self.guiObjectRemoved(obj)
+
+        FreeCAD.closeDocument(self.Doc1.Name)
+        self.Obs.clear()
+        self.assertTrue(self.GuiObs.signal.pop() == "DocDeleted")
+        self.assertTrue(self.GuiObs.parameter.pop() is self.GuiDoc1)
+        self.assertQuiet(self.GuiObs)
+
+        FreeCAD.Gui.removeDocumentObserver(self.GuiObs)
+        self.GuiObs.clear()
+
+    def guiDocumentSignals(self):
         self.Doc1 = FreeCAD.newDocument("Observer1")
         self.GuiDoc1 = FreeCAD.Gui.getDocument(self.Doc1.Name)
         self.Obs.clear()
@@ -449,9 +463,7 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(self.GuiObs.parameter.pop(0) is self.GuiDoc1)
         self.assertTrue(self.GuiObs.signal.pop(0) == "DocRelabled")
         self.assertTrue(self.GuiObs.parameter.pop(0) is self.GuiDoc1)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.GuiObs)
 
         self.Doc1.Label = "test"
         self.assertTrue(self.Obs.signal.pop() == "DocRelabled")
@@ -460,20 +472,17 @@ class DocumentObserverCases(unittest.TestCase):
         self.Obs.clear()
         self.assertTrue(self.GuiObs.signal.pop(0) == "DocRelabled")
         self.assertTrue(self.GuiObs.parameter.pop(0) is self.GuiDoc1)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.GuiObs)
 
         FreeCAD.setActiveDocument(self.Doc1.Name)
         self.assertTrue(self.Obs.signal.pop() == "DocActivated")
         self.assertTrue(self.Obs.parameter.pop() is self.Doc1)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
         self.assertTrue(self.GuiObs.signal.pop() == "DocActivated")
         self.assertTrue(self.GuiObs.parameter.pop() is self.GuiDoc1)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.GuiObs)
 
+    def guiObjectCreated(self):
         obj = self.Doc1.addObject("App::FeaturePython", "obj")
         self.assertTrue(self.Obs.signal.pop() == "ObjCreated")
         self.assertTrue(self.Obs.parameter.pop() is obj)
@@ -484,7 +493,9 @@ class DocumentObserverCases(unittest.TestCase):
 
         # There are object change signals, caused by sync of obj.Visibility. Same below.
         self.GuiObs.clear()
+        return obj
 
+    def viewObjectPropertySignals(self, obj):
         obj.ViewObject.Visibility = False
         self.assertTrue(self.Obs.signal.pop() == "ObjChanged")
         self.assertTrue(self.Obs.parameter.pop() is obj)
@@ -492,57 +503,47 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(self.Obs.signal.pop() == "ObjBeforeChange")
         self.assertTrue(self.Obs.parameter.pop() is obj)
         self.assertTrue(self.Obs.parameter2.pop() == "Visibility")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
         self.assertTrue(self.GuiObs.signal.pop(0) == "ObjChanged")
         self.assertTrue(self.GuiObs.parameter.pop(0) is obj.ViewObject)
         self.assertTrue(self.GuiObs.parameter2.pop(0) == "Visibility")
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.GuiObs)
 
         obj.ViewObject.addProperty("App::PropertyLength", "Prop", "Group", "test property")
         self.assertTrue(self.Obs.signal.pop() == "ObjAddDynProp")
         self.assertTrue(self.Obs.parameter.pop() is obj.ViewObject)
         self.assertTrue(self.Obs.parameter2.pop() == "Prop")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.Obs)
+        self.assertQuiet(self.GuiObs)
 
         obj.ViewObject.setEditorMode("Prop", ["ReadOnly"])
         self.assertTrue(self.Obs.signal.pop() == "ObjChangePropEdit")
         self.assertTrue(self.Obs.parameter.pop() is obj.ViewObject)
         self.assertTrue(self.Obs.parameter2.pop() == "Prop")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.Obs)
+        self.assertQuiet(self.GuiObs)
 
         obj.ViewObject.removeProperty("Prop")
         self.assertTrue(self.Obs.signal.pop() == "ObjRemoveDynProp")
         self.assertTrue(self.Obs.parameter.pop() is obj.ViewObject)
         self.assertTrue(self.Obs.parameter2.pop() == "Prop")
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.Obs)
+        self.assertQuiet(self.GuiObs)
 
+    def editSignals(self, obj):
         self.GuiDoc1.setEdit("obj", 0)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
         self.assertTrue(self.GuiObs.signal.pop(0) == "ObjInEdit")
         self.assertTrue(self.GuiObs.parameter.pop(0) is obj.ViewObject)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.GuiObs)
 
         self.GuiDoc1.resetEdit()
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
         self.assertTrue(self.GuiObs.signal.pop(0) == "ObjResetEdit")
         self.assertTrue(self.GuiObs.parameter.pop(0) is obj.ViewObject)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
+        self.assertQuiet(self.GuiObs)
 
+    def guiObjectRemoved(self, obj):
         obj.ViewObject.addExtension("Gui::ViewProviderGroupExtensionPython")
         self.assertTrue(self.Obs.signal.pop() == "ObjDynExt")
         self.assertTrue(self.Obs.parameter.pop() is obj.ViewObject)
@@ -557,23 +558,10 @@ class DocumentObserverCases(unittest.TestCase):
         FreeCAD.ActiveDocument.removeObject(obj.Name)
         self.assertTrue(self.Obs.signal.pop(0) == "ObjDeleted")
         self.assertTrue(self.Obs.parameter.pop(0) is obj)
-        self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
+        self.assertQuiet(self.Obs)
         self.assertTrue(self.GuiObs.signal.pop() == "ObjDeleted")
         self.assertTrue(self.GuiObs.parameter.pop() is vo)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
-
-        FreeCAD.closeDocument(self.Doc1.Name)
-        self.Obs.clear()
-        self.assertTrue(self.GuiObs.signal.pop() == "DocDeleted")
-        self.assertTrue(self.GuiObs.parameter.pop() is self.GuiDoc1)
-        self.assertTrue(
-            not self.GuiObs.signal and not self.GuiObs.parameter and not self.GuiObs.parameter2
-        )
-
-        FreeCAD.Gui.removeDocumentObserver(self.GuiObs)
-        self.GuiObs.clear()
+        self.assertQuiet(self.GuiObs)
 
     def tearDown(self):
         FreeCAD.removeDocumentObserver(self.Obs)
