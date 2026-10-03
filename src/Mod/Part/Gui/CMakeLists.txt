@@ -84,6 +84,11 @@ SET(PartGui_SRCS
     BoxSelection.cpp
     BoxSelection.h
     Command.cpp
+    CommandBoolean.cpp
+    CommandDatum.cpp
+    CommandShapeTools.cpp
+    CommandSupport.cpp
+    CommandSupport.h
     CommandFilter.cpp
     CommandSimple.cpp
     CommandParametric.cpp
