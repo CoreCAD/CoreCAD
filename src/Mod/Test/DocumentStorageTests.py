@@ -284,7 +284,18 @@ class DocumentFileIncludeCases(unittest.TestCase):
         self.Doc = FreeCAD.newDocument("FileIncludeTests")
         self.Doc.UndoMode = 1
 
+    def assertFileReads(self, path, text):
+        file = open(path, "r")
+        self.assertTrue(file.read() == text)
+        file.close()
+
     def testApplyFiles(self):
+        self.fileUndoRedo()
+        self.fileSurvivesSaveAndReopen()
+        L3 = self.sameBaseNameFiles()
+        self.filesCopiedFromAnotherDocument(L3)
+
+    def fileUndoRedo(self):
         self.Doc.openTransaction("Transaction0")
         self.L1 = self.Doc.addObject("App::DocumentObjectFileIncluded", "FileObject1")
         self.assertTrue(self.L1.File == "")
@@ -298,36 +309,27 @@ class DocumentFileIncludeCases(unittest.TestCase):
         file.close()
         self.L1.File = (file.name, "Test.txt")
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        file = open(self.L1.File, "r")
-        self.assertTrue(file.read() == "test No1")
-        file.close()
+        self.assertFileReads(self.L1.File, "test No1")
         file = open(self.TempPath + "/testNest.txt", "w")
         file.write("test No2")
         file.close()
         self.Doc.openTransaction("Transaction2")
         self.L1.File = file.name
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        file = open(self.L1.File, "r")
-        self.assertTrue(file.read() == "test No2")
-        file.close()
+        self.assertFileReads(self.L1.File, "test No2")
         self.Doc.undo()
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        file = open(self.L1.File, "r")
-        self.assertTrue(file.read() == "test No1")
-        file.close()
+        self.assertFileReads(self.L1.File, "test No1")
         self.Doc.undo()
         self.assertTrue(self.L1.File == "")
         self.Doc.redo()
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        file = open(self.L1.File, "r")
-        self.assertTrue(file.read() == "test No1")
-        file.close()
+        self.assertFileReads(self.L1.File, "test No1")
         self.Doc.redo()
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
-        file = open(self.L1.File, "r")
-        self.assertTrue(file.read() == "test No2")
-        file.close()
-        # Save restore test
+        self.assertFileReads(self.L1.File, "test No2")
+
+    def fileSurvivesSaveAndReopen(self):
         FileName = self.TempPath + "/FileIncludeTests.fcstd"
         self.Doc.saveAs(FileName)
         FreeCAD.closeDocument("FileIncludeTests")
@@ -341,6 +343,7 @@ class DocumentFileIncludeCases(unittest.TestCase):
         self.assertTrue(self.L1.File.split("/")[-1] == "Test.txt")
         file.close()
 
+    def sameBaseNameFiles(self):
         # two files with the same base name must not overwrite each other
         L2 = self.Doc.addObject("App::DocumentObjectFileIncluded", "FileObject2")
         L3 = self.Doc.addObject("App::DocumentObjectFileIncluded", "FileObject3")
@@ -357,13 +360,11 @@ class DocumentFileIncludeCases(unittest.TestCase):
         L2.File = (file1.name, "Test.txt")
         L3.File = (file2.name, "Test.txt")
 
-        file = open(L2.File, "r")
-        self.assertTrue(file.read() == "test No1")
-        file.close()
-        file = open(L3.File, "r")
-        self.assertTrue(file.read() == "test No2")
-        file.close()
+        self.assertFileReads(L2.File, "test No1")
+        self.assertFileReads(L3.File, "test No2")
+        return L3
 
+    def filesCopiedFromAnotherDocument(self, L3):
         # create a second document, copy a file and close the document
         # the test is about to put the file to the correct transient dir
         doc2 = FreeCAD.newDocument("Doc2")

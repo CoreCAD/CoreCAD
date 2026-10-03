@@ -154,6 +154,20 @@ class DocumentBasicCases(unittest.TestCase):
 
     def testObjects(self):
         L1 = self.Doc.addObject("App::FeatureTest", "Label_1")
+        self.documentMembersAreReadable()
+        self.Doc.recompute()
+        self.featureTestDefaults(L1)
+        self.propertyMetadata(L1)
+        self.constraintsClamp(L1)
+        self.enumProperty(L1)
+
+        self.assertTrue(L1.Label == "Label_1", "Invalid object name")
+        L1.Label = "Label_2"
+        self.Doc.recompute()
+        self.assertTrue(L1.Label == "Label_2", "Invalid object name")
+        self.Doc.removeObject("Label_1")
+
+    def documentMembersAreReadable(self):
         # call members to check for errors in ref counting
         self.Doc.ActiveObject
         self.Doc.Objects
@@ -170,7 +184,8 @@ class DocumentBasicCases(unittest.TestCase):
         self.Doc.RedoCount
         self.Doc.UndoNames
         self.Doc.RedoNames
-        self.Doc.recompute()
+
+    def featureTestDefaults(self, L1):
         self.assertTrue(L1.Integer == 4711)
         self.assertTrue(L1.Float - 47.11 < 0.001)
         self.assertTrue(L1.Bool == True)
@@ -178,12 +193,13 @@ class DocumentBasicCases(unittest.TestCase):
         self.assertTrue(float(L1.Angle) - 3.0 < 0.001)
         self.assertTrue(float(L1.Distance) - 47.11 < 0.001)
 
-        # test basic property stuff
+    def propertyMetadata(self, L1):
         self.assertTrue(not L1.getDocumentationOfProperty("Source1") == "")
         self.assertTrue(L1.getGroupOfProperty("Source1") == "Feature Test")
         self.assertTrue(L1.getTypeOfProperty("Source1") == [])
         self.assertTrue(L1.getEnumerationsOfProperty("Source1") is None)
 
+    def constraintsClamp(self, L1):
         # test the constraint types ( both are constraint to percent range)
         self.assertTrue(L1.ConstraintInt == 5)
         self.assertTrue(L1.ConstraintFloat - 5.0 < 0.001)
@@ -196,7 +212,7 @@ class DocumentBasicCases(unittest.TestCase):
         self.assertTrue(L1.ConstraintInt == 0)
         self.assertTrue(L1.ConstraintFloat - 0.0 < 0.001)
 
-        # test enum property
+    def enumProperty(self, L1):
         # in App::FeatureTest the current value is set to 4
         self.assertTrue(L1.Enum == "Four")
         L1.Enum = "Three"
@@ -213,12 +229,6 @@ class DocumentBasicCases(unittest.TestCase):
             sorted(L1.getEnumerationsOfProperty("Enum"))
             == sorted(["Zero", "One", "Two", "Three", "Four"])
         )
-
-        self.assertTrue(L1.Label == "Label_1", "Invalid object name")
-        L1.Label = "Label_2"
-        self.Doc.recompute()
-        self.assertTrue(L1.Label == "Label_2", "Invalid object name")
-        self.Doc.removeObject("Label_1")
 
     def testEnum(self):
         enumeration_choices = ["one", "two"]
@@ -331,47 +341,25 @@ class DocumentBasicCases(unittest.TestCase):
     def testSubObject(self):
         obj = self.Doc.addObject("App::Origin", "Origin")
         self.Doc.recompute()
+        self.subObjectPlacements(obj)
+        self.subObjectTuple(obj)
+        self.subObjectsByOutListName()
 
-        res = obj.getSubObject("X_Axis", retType=2)
-        self.assertEqual(
-            res[1].multVec(FreeCAD.Vector(1, 0, 0)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
-        )
+    def assertTurnsTo(self, matrix, local, world):
+        self.assertEqual(matrix.multVec(local).getAngle(world), 0.0)
 
-        res = obj.getSubObject("Y_Axis", retType=2)
-        self.assertEqual(
-            res[1].multVec(FreeCAD.Vector(1, 0, 0)).getAngle(FreeCAD.Vector(0, 1, 0)), 0.0
-        )
+    def subObjectPlacements(self, obj):
+        x, y, z = FreeCAD.Vector(1, 0, 0), FreeCAD.Vector(0, 1, 0), FreeCAD.Vector(0, 0, 1)
+        self.assertTurnsTo(obj.getSubObject("X_Axis", retType=2)[1], x, x)
+        self.assertTurnsTo(obj.getSubObject("Y_Axis", retType=2)[1], x, y)
+        self.assertTurnsTo(obj.getSubObject("Z_Axis", retType=2)[1], x, z)
+        self.assertTurnsTo(obj.getSubObject("XY_Plane", retType=2)[1], z, z)
+        self.assertTurnsTo(obj.getSubObject("XZ_Plane", retType=2)[1], z, FreeCAD.Vector(0, -1, 0))
+        self.assertTurnsTo(obj.getSubObject("YZ_Plane", retType=2)[1], z, x)
+        self.assertTurnsTo(obj.getSubObject("YZ_Plane", retType=3), z, x)
+        self.assertTurnsTo(obj.getSubObject("YZ_Plane", retType=4), z, x)
 
-        res = obj.getSubObject("Z_Axis", retType=2)
-        self.assertEqual(
-            res[1].multVec(FreeCAD.Vector(1, 0, 0)).getAngle(FreeCAD.Vector(0, 0, 1)), 0.0
-        )
-
-        res = obj.getSubObject("XY_Plane", retType=2)
-        self.assertEqual(
-            res[1].multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(0, 0, 1)), 0.0
-        )
-
-        res = obj.getSubObject("XZ_Plane", retType=2)
-        self.assertEqual(
-            res[1].multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(0, -1, 0)), 0.0
-        )
-
-        res = obj.getSubObject("YZ_Plane", retType=2)
-        self.assertEqual(
-            res[1].multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
-        )
-
-        res = obj.getSubObject("YZ_Plane", retType=3)
-        self.assertEqual(
-            res.multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
-        )
-
-        res = obj.getSubObject("YZ_Plane", retType=4)
-        self.assertEqual(
-            res.multVec(FreeCAD.Vector(0, 0, 1)).getAngle(FreeCAD.Vector(1, 0, 0)), 0.0
-        )
-
+    def subObjectTuple(self, obj):
         self.assertEqual(
             obj.getSubObject(("XY_Plane", "YZ_Plane"), retType=4)[0],
             obj.getSubObject("XY_Plane", retType=4),
@@ -381,6 +369,7 @@ class DocumentBasicCases(unittest.TestCase):
             obj.getSubObject("YZ_Plane", retType=4),
         )
 
+    def subObjectsByOutListName(self):
         obj2 = self.Doc.addObject("App::Origin", "Origin2")
         self.Doc.recompute()
 
