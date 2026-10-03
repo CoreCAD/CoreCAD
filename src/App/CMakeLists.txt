@@ -331,6 +331,8 @@ SET(FreeCADApp_CPP_SRCS
     SealedArchive.cpp
     UnreferencedFiles.cpp
     StoredRecipe.cpp
+    StoredRecipeReader.cpp
+    StoredRecipeWriter.cpp
     RecipeDetail.cpp
     ElementNamingUtils.cpp
     ProgramInformation.cpp
