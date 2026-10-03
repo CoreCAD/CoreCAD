@@ -191,6 +191,11 @@ SOURCE_GROUP("TaskDialogs" FILES ${PartDesignGuiTaskDlgs_SRCS})
 SET(PartDesignGuiModule_SRCS
     AppPartDesignGui.cpp
     Command.cpp
+    CommandDressUp.cpp
+    CommandProfileBased.cpp
+    CommandSupport.cpp
+    CommandSupport.h
+    CommandTransformed.cpp
     CommandPrimitive.cpp
     CommandBody.cpp
     EnumFlags.h
