@@ -69,6 +69,8 @@ namespace App
 using HasherMap = boost::bimap<StringHasherRef, int>;
 class Transaction;
 
+extern bool globalIsRestoring;
+
 // Pimpl class
 struct DocumentP
 {
@@ -203,5 +205,11 @@ struct DocumentP
     partialTopologicalSort(const std::vector<App::DocumentObject*>& objects);
     static void checkStringHasher(const Base::XMLReader& reader);
 };
+
+inline bool transactionStateBlocksRecoveryWrite(const DocumentP& documentPrivate)
+{
+    return documentPrivate.bookedTransaction != NullTransaction
+        || documentPrivate.activeUndoTransaction != nullptr || documentPrivate.committing;
+}
 
 }  // namespace App
