@@ -91,6 +91,15 @@ enum class MessageOption {
     Throw, ///< Throw an exception. */
 };
 
+/// What a file carrying the identity of a document already open is.
+enum class DuplicateAnswer
+{
+    Unanswered,
+    SamePart,  ///< A clone or relocation: it keeps the identity.
+    NewPart,   ///< A fork: it gets a fresh identity; its objects keep theirs.
+    DontOpen,
+};
+
 /// Options for document initialization.
 struct DocumentInitFlags {
     bool createView {true}; ///< Whether to hide the document in the tree view.
@@ -98,6 +107,8 @@ struct DocumentInitFlags {
     /// Cruth document-type marker to stamp on creation (e.g. "Part"); empty = untyped/legacy.
     /// A typed CAD document (e.g. "Part") mints its shared world frame at creation.
     std::string documentType {};
+    /// The caller's answer for a file that turns out to be a copy of an open document.
+    DuplicateAnswer duplicate {DuplicateAnswer::Unanswered};
 };
 
 /**
@@ -991,6 +1002,8 @@ private:
 
     static void cleanupUnits();
 
+    /// False when the newcomer is not to be opened; throws when nobody answered.
+    bool settleDuplicate(Document& newcomer, DuplicateAnswer answer);
     App::Document* openDocumentPrivate(const char * FileName, const char *propFileName,
             const char *label, bool isMainDoc, DocumentInitFlags initFlags, std::vector<std::string> &&objNames);
 

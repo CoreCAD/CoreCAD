@@ -136,8 +136,10 @@ protected:
         std::filesystem::copy_file(baseP, aP, std::filesystem::copy_options::overwrite_existing, ec);
         std::filesystem::copy_file(baseP, bP, std::filesystem::copy_options::overwrite_existing, ec);
 
-        out.a = sketchOf(App::GetApplication().openDocument(aP.c_str()));
-        out.b = sketchOf(App::GetApplication().openDocument(bP.c_str()));
+        App::DocumentInitFlags branch;
+        branch.duplicate = App::DuplicateAnswer::SamePart;
+        out.a = sketchOf(App::GetApplication().openDocument(aP.c_str(), branch));
+        out.b = sketchOf(App::GetApplication().openDocument(bP.c_str(), branch));
         return out;
     }
 

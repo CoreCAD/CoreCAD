@@ -1281,6 +1281,10 @@ Document* Application::openDocumentPrivate(const char * FileName,
     try {
         // read the document
         newDoc->restore(File.filePath().c_str(),true,objNames);
+        if (!settleDuplicate(*newDoc, isMainDoc ? initFlags.duplicate : DuplicateAnswer::Unanswered)) {
+            closeDocument(newDoc->getName());
+            return nullptr;
+        }
         if(!DocFileMap.empty())
             DocFileMap[Base::FileInfo(newDoc->FileName.getValue()).filePath()] = newDoc;
         return newDoc;
@@ -1312,11 +1316,52 @@ Document* Application::openDocumentPrivate(const char * FileName,
         closeDocument(newDoc->getName());
         throw;
     }
+    catch (const DocumentDuplicateError&) {
+        closeDocument(newDoc->getName());
+        throw;
+    }
     // but for any other exceptions leave it open to give the
     // user a chance to fix it
     catch (...) {
         throw;
     }
+}
+
+bool Application::settleDuplicate(Document& newcomer, DuplicateAnswer answer)
+{
+    const Document* live = nullptr;
+    for (const auto& [name, doc] : DocMap) {
+        if (doc != &newcomer && doc->Uid.getValueStr() == newcomer.Uid.getValueStr()) {
+            live = doc;
+            break;
+        }
+    }
+    if (!live) {
+        return true;
+    }
+    const std::string path = newcomer.FileName.getStrValue();
+    if (answer == DuplicateAnswer::Unanswered) {
+        if (auto* question = Base::provideService<DuplicateDocumentQuestion>()) {
+            answer = question->ask(path, *live);
+        }
+    }
+    switch (answer) {
+        case DuplicateAnswer::SamePart:
+            return true;
+        case DuplicateAnswer::NewPart:
+            newcomer.Uid.setValue(Base::Uuid());
+            newcomer.setStatus(Document::GivenNewIdentity, true);
+            return true;
+        case DuplicateAnswer::DontOpen:
+            return false;
+        case DuplicateAnswer::Unanswered:
+            break;
+    }
+    throw DocumentDuplicateError(
+        "'" + path + "' is a copy of '" + live->FileName.getStrValue()
+        + "', which is already open. Say whether it is the same part or a new one: "
+          "openDocument(path, duplicate='same') or openDocument(path, duplicate='new')."
+    );
 }
 
 Document* Application::getActiveDocument() const

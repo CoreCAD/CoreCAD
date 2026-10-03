@@ -254,6 +254,8 @@ ProjectSurvey App::surveyProjectRebuildStore(const std::string& projectFolder)
             if (doc == nullptr) {
                 DocumentInitFlags how;
                 how.createView = false;
+                // Only read for the names it gives; its identity is not being decided here.
+                how.duplicate = DuplicateAnswer::SamePart;
                 doc = GetApplication().openDocument(recipe.string().c_str(), how);
             }
             if (doc == nullptr) {

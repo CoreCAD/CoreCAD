@@ -90,7 +90,9 @@ TEST_F(RecoverySnapshotTest, aSnapshotCarriesWhatTheRecordCouldNotHonour)
     ASSERT_TRUE(Base::FileInfo(snapshot).exists()) << "no snapshot was written";
 
     auto& app = App::GetApplication();
-    _recovered = app.openDocument(snapshot.c_str());
+    App::DocumentInitFlags sameDocument;
+    sameDocument.duplicate = App::DuplicateAnswer::SamePart;
+    _recovered = app.openDocument(snapshot.c_str(), sameDocument);
     ASSERT_NE(_recovered, nullptr);
 
     App::DocumentObject* holder = _recovered->getObject("Holder");

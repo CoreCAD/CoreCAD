@@ -156,6 +156,16 @@ public:
 };
 
 /**
+ * @brief Thrown when a file is a copy of a document already open and nobody said whether it is
+ * the same part or a new one. The identity is never changed without that answer.
+ */
+class DocumentDuplicateError: public Base::RuntimeError
+{
+public:
+    using Base::RuntimeError::RuntimeError;
+};
+
+/**
  * @brief A class that represents a FreeCAD document.
  *
  * A document is a container for all objects that are part of a FreeCAD
@@ -213,7 +223,9 @@ public:
          * identity by default (§10.7); a move is not duplication and must keep
          * the identity it already has, at every grain.
          */
-        Relocating = 15
+        Relocating = 15,
+        /// Whether opening gave this copy a fresh identity, so it now differs from its file.
+        GivenNewIdentity = 16
     };
     // clang-format on
 

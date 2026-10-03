@@ -202,7 +202,11 @@ void DocumentRecovery::accept()
             }
         }
 
-        auto docs = App::GetApplication().openDocuments(filenames, &paths, &labels, &errs);
+        // A snapshot is the document it was taken of.
+        App::DocumentInitFlags sameDocument;
+        sameDocument.duplicate = App::DuplicateAnswer::SamePart;
+        auto docs
+            = App::GetApplication().openDocuments(filenames, &paths, &labels, &errs, sameDocument);
 
         for (size_t i = 0; i < docs.size(); ++i) {
             auto& info = d->recoveryInfo[indices[i]];

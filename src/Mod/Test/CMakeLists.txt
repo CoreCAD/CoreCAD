@@ -6,6 +6,7 @@ SET(Test_SRCS
     AutoSaverStress.py
     RunAutoSaverStress.py
     Document.py
+    DocumentDuplicate.py
     GuiDocument.py
     Metadata.py
     StringHasher.py
