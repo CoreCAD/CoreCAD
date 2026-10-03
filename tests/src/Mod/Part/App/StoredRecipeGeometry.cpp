@@ -278,7 +278,9 @@ TEST_F(StoredRecipeGeometryTest, aRecordKeepsTheNameOfSourceMaterialItCannotFind
     std::filesystem::copy_file(file, moved);
 
     // Act -- opened where its source material is not, and saved again.
-    App::Document* away = App::GetApplication().openDocument(moved.c_str());
+    App::DocumentInitFlags relocated;
+    relocated.duplicate = App::DuplicateAnswer::SamePart;
+    App::Document* away = App::GetApplication().openDocument(moved.c_str(), relocated);
     ASSERT_NE(away, nullptr);
     auto* orphaned = dynamic_cast<Part::Feature*>(away->getObject("Handed"));
     ASSERT_NE(orphaned, nullptr);
@@ -301,7 +303,7 @@ TEST_F(StoredRecipeGeometryTest, aRecordKeepsTheNameOfSourceMaterialItCannotFind
         std::filesystem::path(elsewhere) / "assets",
         std::filesystem::copy_options::recursive
     );
-    App::Document* repaired = App::GetApplication().openDocument(moved.c_str());
+    App::Document* repaired = App::GetApplication().openDocument(moved.c_str(), relocated);
     ASSERT_NE(repaired, nullptr);
     auto* returned = dynamic_cast<Part::Feature*>(repaired->getObject("Handed"));
     ASSERT_NE(returned, nullptr);

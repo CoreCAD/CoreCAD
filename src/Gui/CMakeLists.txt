@@ -618,6 +618,7 @@ SET(Dialog_CPP_SRCS
     DownloadItem.cpp
     DownloadManager.cpp
     DocumentRecovery.cpp
+    DuplicateDocumentQuestion.cpp
     TaskElementColors.cpp
     Dialogs/DlgObjectSelection.cpp
     Dialogs/DlgAddProperty.cpp
@@ -663,6 +664,7 @@ SET(Dialog_HPP_SRCS
     DownloadItem.h
     DownloadManager.h
     DocumentRecovery.h
+    DuplicateDocumentQuestion.h
     TaskElementColors.h
     Dialogs/DlgObjectSelection.h
     Dialogs/DlgAddProperty.h

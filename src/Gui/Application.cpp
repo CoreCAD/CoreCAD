@@ -76,6 +76,7 @@
 #include "PreferencePages/DlgSettingsCacheDirectory.h"
 #include "DocumentPy.h"
 #include "DocumentRecovery.h"
+#include "DuplicateDocumentQuestion.h"
 #include "EditableDatumLabelPy.h"
 #include "EditorView.h"
 #include "ExpressionBindingPy.h"
@@ -546,6 +547,7 @@ void Application::initStyleParameterManager()
     // A colour a person chose is authored content, so the file of record carries it. That file is
     // written in App and the state lives here, so App asks and this answers.
     Base::registerServiceImplementation<App::DisplayStateProvider>(new GuiDisplayState);
+    Base::registerServiceImplementation<App::DuplicateDocumentQuestion>(new DuplicateDocumentQuestion);
 }
 
 // clang-format off

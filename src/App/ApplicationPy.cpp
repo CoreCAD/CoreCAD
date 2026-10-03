@@ -26,6 +26,7 @@
 #include <FCConfig.h>
 
 #include <array>
+#include <string_view>
 
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -209,7 +210,10 @@ PyMethodDef ApplicationPy::Methods[] = {
      "          or the file cannot be loaded an I/O exception is thrown.\n"
      "          In this case the document is kept alive.\n"
      "hidden: whether to hide document 3D view.\n"
-     "temporary: whether to hide document in the tree view."},
+     "temporary: whether to hide document in the tree view.\n"
+     "duplicate: for a copy of a document already open, 'same' (the same part)\n"
+     "           or 'new' (a new part with a fresh identity). Without it, opening\n"
+     "           such a copy raises RuntimeError."},
     {"newDocument",
      reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(ApplicationPy::sNewDocument)),
      METH_VARARGS | METH_KEYWORDS,
@@ -534,31 +538,53 @@ PyObject* ApplicationPy::sOpenDocument(PyObject* /*self*/, PyObject* args, PyObj
     char* Name {};
     PyObject* hidden = Py_False;
     PyObject* temporary = Py_False;
-    static const std::array<const char*, 4> kwlist {"name", "hidden", "temporary", nullptr};
+    const char* duplicate = nullptr;
+    static const std::array<const char*, 5> kwlist {"name", "hidden", "temporary", "duplicate", nullptr};
     if (!Base::Wrapped_ParseTupleAndKeywords(args,
                                              kwd,
-                                             "et|O!O!",
+                                             "et|O!O!z",
                                              kwlist,
                                              "utf-8",
                                              &Name,
                                              &PyBool_Type,
                                              &hidden,
                                              &PyBool_Type,
-                                             &temporary)) {
+                                             &temporary,
+                                             &duplicate)) {
         return nullptr;
     }
     std::string EncodedName = std::string(Name);
     PyMem_Free(Name);
+
+    DuplicateAnswer answer = DuplicateAnswer::Unanswered;
+    if (duplicate) {
+        if (std::string_view(duplicate) == "same") {
+            answer = DuplicateAnswer::SamePart;
+        }
+        else if (std::string_view(duplicate) == "new") {
+            answer = DuplicateAnswer::NewPart;
+        }
+        else {
+            PyErr_SetString(PyExc_ValueError, "duplicate must be 'same' or 'new'");
+            return nullptr;
+        }
+    }
     try {
         DocumentInitFlags initFlags {
             .createView = !Base::asBoolean(hidden),
-            .temporary = Base::asBoolean(temporary)
+            .temporary = Base::asBoolean(temporary),
+            .duplicate = answer
         };
 
-        // return new document
-        return (GetApplication()
-                    .openDocument(EncodedName.c_str(), initFlags)
-                    ->getPyObject());
+        Document* doc = GetApplication().openDocument(EncodedName.c_str(), initFlags);
+        if (!doc) {
+            Py_Return;
+        }
+        return doc->getPyObject();
+    }
+    catch (const DocumentDuplicateError& e) {
+        e.setPyException();
+        return nullptr;
     }
     catch (const DocumentContentScopeError& e) {
         // A content-scope violation is not an I/O error: surface it as the same

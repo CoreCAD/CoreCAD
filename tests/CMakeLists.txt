@@ -223,6 +223,7 @@ endforeach()
 set(PYTHON_TEST_SUITES
     BaseTests
     Document
+    DocumentDuplicate
     Metadata
     MeshTestsApp
     StringHasher

@@ -3236,7 +3236,7 @@ bool Document::afterRestore(const bool checkPartial)
     GetApplication().signalFinishRestoreDocument(*this);
     setStatus(Document::Restoring, false);
     // Just read: what is held IS what the file states, whatever was set along the way.
-    d->movedOnFromItsFile = false;
+    d->movedOnFromItsFile = testStatus(Document::GivenNewIdentity);
 
     // A document read from a recipe carries the steps and not the solid they make, so opening
     // it includes building it. Reading and rebuilding stay separate acts -- that is what lets a

@@ -101,6 +101,18 @@ public:
     virtual PropertyContainer* appearanceOf(const DocumentObject& object) const = 0;
 };
 
+enum class DuplicateAnswer;
+
+/// Asks the person whether a file carrying an open document's identity is the same part or a new
+/// one. With no implementation registered, opening such a file is refused.
+class DuplicateDocumentQuestion
+{
+public:
+    virtual ~DuplicateDocumentQuestion() = default;
+
+    virtual DuplicateAnswer ask(const std::string& copyPath, const Document& open) const = 0;
+};
+
 /**
 * This service should provide access to shape elements
 */
