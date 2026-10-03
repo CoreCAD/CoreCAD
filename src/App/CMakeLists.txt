@@ -295,6 +295,13 @@ SET(FreeCADApp_CPP_SRCS
     ${Document_CPP_SRCS}
     ${Properties_CPP_SRCS}
     Application.cpp
+    ApplicationFormats.cpp
+    ApplicationOpen.cpp
+    ApplicationParameters.cpp
+    ApplicationPaths.cpp
+    ApplicationRecomputeQueue.cpp
+    ApplicationStartup.cpp
+    ApplicationTypes.cpp
     ApplicationDirectories.cpp
     ApplicationDirectoriesPyImp.cpp
     ApplicationPy.cpp
