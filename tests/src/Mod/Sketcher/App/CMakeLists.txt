@@ -11,6 +11,7 @@ add_executable(Sketcher_tests_run
         SketchObjectChanges.cpp
         SketchObjectSymmetric.cpp
         SketchRecipe.cpp
+        SketchChanges.cpp
 )
 
 add_subdirectory(planegcs)

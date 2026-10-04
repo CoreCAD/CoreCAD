@@ -41,6 +41,7 @@
 #include "DocumentPy.h"
 #include "DocumentObserverPython.h"
 #include "DocumentObjectPy.h"
+#include "DocumentChanges.h"
 #include "ObjectRecipe.h"
 #include "RecoverySnapshot.h"
 #include "UnreferencedFiles.h"
@@ -264,6 +265,14 @@ PyMethodDef ApplicationPy::Methods[] = {
      "not independently rebuilt). Only authored state is reconciled -- no recompute is\n"
      "run and emergent geometry is never matched. Returns a plain-language report of\n"
      "what merged cleanly, what conflicts, and any references left dangling."},
+    {"diffDocuments",
+     (PyCFunction)ApplicationPy::sDiffDocuments,
+     METH_VARARGS,
+     "diffDocuments(before, after) -> list of dict\n\n"
+     "What changed in a model's authored recipe from one version to the next. Objects\n"
+     "are matched by durable identity, so both documents must be versions of one model.\n"
+     "Nothing is recomputed. Each entry has 'object', 'label', 'type', 'section',\n"
+     "'entity', 'kind', 'field', 'before', 'after' and 'text', the change in plain words."},
     {"listDocuments",
      (PyCFunction)ApplicationPy::sListDocuments,
      METH_VARARGS,
@@ -833,6 +842,69 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
     {
         DocumentMergeReport report = mergeDocuments(*ancestor, *branchA, *branchB);
         return Py::new_reference_to(Py::String(formatDocumentReport(report)));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sDiffDocuments(PyObject* /*self*/, PyObject* args)
+{
+    PyObject* beforePy {};
+    PyObject* afterPy {};
+    if (!PyArg_ParseTuple(args,
+                          "O!O!",
+                          &App::DocumentPy::Type,
+                          &beforePy,
+                          &App::DocumentPy::Type,
+                          &afterPy)) {
+        return nullptr;
+    }
+
+    Document* before = static_cast<App::DocumentPy*>(beforePy)->getDocumentPtr();
+    Document* after = static_cast<App::DocumentPy*>(afterPy)->getDocumentPtr();
+    if (!before || !after) {
+        PyErr_SetString(PyExc_RuntimeError, "Invalid document");
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        const auto optionalText = [](const std::optional<std::string>& value) -> Py::Object {
+            return value ? Py::Object(Py::String(*value)) : Py::None();
+        };
+        const auto kindName = [](RecipeChange::Kind kind) {
+            switch (kind) {
+                case RecipeChange::Kind::Added:
+                    return "added";
+                case RecipeChange::Kind::Removed:
+                    return "removed";
+                case RecipeChange::Kind::FieldChanged:
+                    return "field";
+                case RecipeChange::Kind::LinksChanged:
+                    return "links";
+                case RecipeChange::Kind::TypeChanged:
+                    return "type";
+            }
+            return "";
+        };
+
+        Py::List list;
+        for (const DocumentChange& change : diffDocuments(*before, *after)) {
+            Py::Dict entry;
+            entry.setItem("object", Py::String(change.objectId));
+            entry.setItem("label", Py::String(change.label));
+            entry.setItem("type", Py::String(change.objectType));
+            entry.setItem("section", Py::String(change.section));
+            entry.setItem("entity",
+                          change.section.empty() ? Py::Object(Py::None())
+                                                 : Py::Object(Py::String(change.change.id)));
+            entry.setItem("kind", Py::String(kindName(change.change.kind)));
+            entry.setItem("field", Py::String(change.change.field));
+            entry.setItem("before", optionalText(change.change.before));
+            entry.setItem("after", optionalText(change.change.after));
+            entry.setItem("text", Py::String(change.text));
+            list.append(entry);
+        }
+        return Py::new_reference_to(list);
     }
     PY_CATCH;
 }

@@ -423,3 +423,66 @@ TEST(RecipeMergeTest, referentialConflictPassesThroughRefinement)
     EXPECT_EQ(refined[0].id, "cV");
     EXPECT_EQ(refined[0].detail, "references deleted entity g2");
 }
+
+// --- Two-way comparison (history): what changed from one version to the next ---------------
+
+TEST(RecipeDiff, equalSectionsHaveNoChanges)
+{
+    EXPECT_TRUE(RecipeDiff::twoWay(baseConstraints(), baseConstraints()).empty());
+}
+
+TEST(RecipeDiff, oneChangedFieldIsOneChangeNotAWholeNode)
+{
+    const RecipeSection before {{"p", feature("p", {{"Length", "10 mm"}, {"Reversed", "false"}})}};
+    const RecipeSection after {{"p", feature("p", {{"Length", "40 mm"}, {"Reversed", "false"}})}};
+
+    const std::vector<RecipeChange> changes = RecipeDiff::twoWay(before, after);
+
+    ASSERT_EQ(changes.size(), 1u);
+    EXPECT_EQ(changes[0].kind, RecipeChange::Kind::FieldChanged);
+    EXPECT_EQ(changes[0].field, "Length");
+    EXPECT_EQ(changes[0].before, std::optional<std::string>("10 mm"));
+    EXPECT_EQ(changes[0].after, std::optional<std::string>("40 mm"));
+}
+
+TEST(RecipeDiff, aFieldSetOrClearedHasNoValueOnTheMissingSide)
+{
+    const RecipeSection before {{"p", feature("p", {{"Old", "1"}})}};
+    const RecipeSection after {{"p", feature("p", {{"New", "2"}})}};
+
+    const std::vector<RecipeChange> changes = RecipeDiff::twoWay(before, after);
+
+    ASSERT_EQ(changes.size(), 2u);
+    EXPECT_EQ(changes[0].field, "New");
+    EXPECT_FALSE(changes[0].before.has_value());
+    EXPECT_EQ(changes[1].field, "Old");
+    EXPECT_FALSE(changes[1].after.has_value());
+}
+
+TEST(RecipeDiff, addedAndRemovedNodesCarryTheirType)
+{
+    RecipeSection after = baseGeometry();
+    after.erase("g3");
+    after["g9"] = geo("g9", "Circle");
+
+    const std::vector<RecipeChange> changes = RecipeDiff::twoWay(baseGeometry(), after);
+
+    ASSERT_EQ(changes.size(), 2u);
+    EXPECT_EQ(changes[0].kind, RecipeChange::Kind::Removed);
+    EXPECT_EQ(changes[0].id, "g3");
+    EXPECT_EQ(changes[1].kind, RecipeChange::Kind::Added);
+    EXPECT_EQ(changes[1].type, "Circle");
+}
+
+TEST(RecipeDiff, aMovedReferenceIsOneLinksChangeWithBothSets)
+{
+    RecipeSection after = baseConstraints();
+    after["c0"].refs = {{"g0", 2}, {"g3", 1}};
+
+    const std::vector<RecipeChange> changes = RecipeDiff::twoWay(baseConstraints(), after);
+
+    ASSERT_EQ(changes.size(), 1u);
+    EXPECT_EQ(changes[0].kind, RecipeChange::Kind::LinksChanged);
+    EXPECT_EQ(changes[0].refsBefore, baseConstraints().at("c0").refs);
+    EXPECT_EQ(changes[0].refsAfter, after.at("c0").refs);
+}

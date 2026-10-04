@@ -334,6 +334,7 @@ SET(FreeCADApp_CPP_SRCS
     StoredRecipeReader.cpp
     StoredRecipeWriter.cpp
     RecipeDetail.cpp
+    DocumentChanges.cpp
     ElementNamingUtils.cpp
     ProgramInformation.cpp
     SafeMode.cpp
@@ -369,6 +370,7 @@ SET(FreeCADApp_HPP_SRCS
     UnreferencedFiles.h
     StoredRecipe.h
     RecipeDetail.h
+    DocumentChanges.h
     ElementNamingUtils.h
     ProgramInformation.h
     Services.h

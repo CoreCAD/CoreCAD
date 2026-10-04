@@ -27,6 +27,7 @@
 #include <FCGlobal.h>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -127,6 +128,41 @@ struct RefResolution
                           ///< into a readable label; carried so a dropped node (erased from the
                           ///< merged section) can still be described without its id
     std::string detail;   ///< which target dangled / what survives
+};
+
+/// One difference between two versions of a section, at the grain a person reads: a node
+/// arrived, a node went, or one dimension of a node changed — a single field, the node's links
+/// taken as one set, or its type.
+struct RecipeChange
+{
+    enum class Kind
+    {
+        Added,
+        Removed,
+        FieldChanged,  ///< `field` names it; an absent side is nullopt (field set or cleared)
+        LinksChanged,  ///< the node's refs, as a whole set, differ
+        TypeChanged
+    };
+
+    Kind kind;
+    std::string id;     ///< the node's durable id
+    std::string type;   ///< the node's type on the newer side, or the older when it was removed
+    std::string field;  ///< FieldChanged only
+    std::optional<std::string> before;
+    std::optional<std::string> after;
+    std::vector<RecipeRef> refsBefore;  ///< LinksChanged only
+    std::vector<RecipeRef> refsAfter;   ///< LinksChanged only
+};
+
+/** The two-way comparison history needs: what changed from one version to the next. Matching
+ *  is the merge's — by durable id, never position — so a renumber reads as no change. */
+class AppExport RecipeDiff
+{
+public:
+    /// Every change from `before` to `after`, ordered by id. A node present on both sides and
+    /// equal yields nothing; one present on both and different yields one change per differing
+    /// dimension, never a whole-node "changed" line.
+    static std::vector<RecipeChange> twoWay(const RecipeSection& before, const RecipeSection& after);
 };
 
 /** The generic three-way merge — id-keyed, knows nothing about any document type. */
