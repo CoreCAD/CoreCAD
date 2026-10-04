@@ -63,6 +63,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestInvoluteGear.py
     PartDesignTests/TestSketch.py
     PartDesignTests/TestBodyEmergence.py
+    PartDesignTests/TestOverlapAccess.py
     PartDesignTests/TestRollbackMarker.py
 )
 

@@ -26,6 +26,10 @@ bodyOf = _PartDesign.bodyOf
 # the model half of the feature-creation "Merge result" control.
 moveFeatureToBody = _PartDesign.moveFeatureToBody
 
+# Amendment 20, Clause 20.2 rule 6: the overlap check, readable and answerable from a script.
+overlappingPairs = _PartDesign.overlappingPairs
+acknowledgeOverlap = _PartDesign.acknowledgeOverlap
+
 
 def makeFeature(profile, featureType, subs=None, body=None, recompute=True):
     """Create a PartDesign feature the GUI's way: the Body EMERGES from the feature.

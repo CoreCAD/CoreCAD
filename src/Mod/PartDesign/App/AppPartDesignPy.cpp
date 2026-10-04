@@ -103,6 +103,20 @@ public:
             "current Body first, retiring that Body if it empties (§4.7). Returns the\n"
             "Body the feature now belongs to. Shared with the GUI control (P8)."
         );
+        add_varargs_method(
+            "overlappingPairs",
+            &Module::overlappingPairs,
+            "overlappingPairs(doc, includeAcknowledged=False) -> list of (a, b)\n\n"
+            "The pairs of separate solids that share volume, as the Check Interference\n"
+            "command lists them. Acknowledged pairs are left out unless asked for. Costly."
+        );
+        add_varargs_method(
+            "acknowledgeOverlap",
+            &Module::acknowledgeOverlap,
+            "acknowledgeOverlap(a, b)\n\n"
+            "Record that two overlapping bodies are meant to stay separate, as the Check\n"
+            "Interference dialog does. Only a pair of Bodies can be acknowledged."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
@@ -135,6 +149,58 @@ private:
             return Py::None();
         }
         return Py::asObject(result->getPyObject());
+    }
+
+    Py::Object overlappingPairs(const Py::Tuple& args)
+    {
+        PyObject* pyDoc = nullptr;
+        PyObject* includeAcknowledged = Py_False;
+        if (!PyArg_ParseTuple(
+                args.ptr(),
+                "O!|O!",
+                &(App::DocumentPy::Type),
+                &pyDoc,
+                &PyBool_Type,
+                &includeAcknowledged
+            )) {
+            throw Py::Exception();
+        }
+
+        App::Document* doc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+        const auto pairs = Base::asBoolean(includeAcknowledged) ? Body::findInterferingPairs(doc)
+                                                                : Body::liveInterferingPairs(doc);
+        Py::List list;
+        for (const auto& [a, b] : pairs) {
+            list.append(Py::TupleN(Py::asObject(a->getPyObject()), Py::asObject(b->getPyObject())));
+        }
+        return list;
+    }
+
+    Py::Object acknowledgeOverlap(const Py::Tuple& args)
+    {
+        PyObject* pyA = nullptr;
+        PyObject* pyB = nullptr;
+        if (!PyArg_ParseTuple(
+                args.ptr(),
+                "O!O!",
+                &(App::DocumentObjectPy::Type),
+                &pyA,
+                &(App::DocumentObjectPy::Type),
+                &pyB
+            )) {
+            throw Py::Exception();
+        }
+
+        auto* a = static_cast<App::DocumentObjectPy*>(pyA)->getDocumentObjectPtr();
+        auto* b = static_cast<App::DocumentObjectPy*>(pyB)->getDocumentObjectPtr();
+        if (!Body::isInterferenceDismissable(a, b)) {
+            throw Py::TypeError("acknowledgeOverlap expects two Bodies");
+        }
+        if (a == b) {
+            throw Py::ValueError("acknowledgeOverlap expects two different Bodies");
+        }
+        Body::dismissInterference(static_cast<Body*>(a), static_cast<Body*>(b));
+        return Py::None();
     }
 
     Py::Object findBodyOf(const Py::Tuple& args)
