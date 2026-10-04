@@ -15,7 +15,7 @@
 #include <Gui/Selection/Selection.h>
 
 class QDockWidget;
-class QToolButton;
+class QAction;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -54,7 +54,7 @@ private:
     App::DocumentObjectWeakPtrT step {nullptr};
     std::vector<std::unique_ptr<App::DocumentObjectWeakPtrT>> entries;
     QDockWidget* dock = nullptr;
-    QToolButton* pin;
+    QAction* pin;
     QTreeWidget* list;
     bool refreshPending = false;
     bool selecting = false;

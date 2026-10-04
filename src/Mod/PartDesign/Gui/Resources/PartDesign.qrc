@@ -1,6 +1,7 @@
 <RCC>
     <qresource>
         <file>icons/PartDesign_AdditiveBox.svg</file>
+        <file>icons/PartDesign_PanelPin.svg</file>
         <file>icons/PartDesign_AdditiveCone.svg</file>
         <file>icons/PartDesign_AdditiveCylinder.svg</file>
         <file>icons/PartDesign_AdditiveEllipsoid.svg</file>

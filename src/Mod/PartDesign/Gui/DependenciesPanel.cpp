@@ -5,18 +5,19 @@
 #include <map>
 
 #include <QDockWidget>
-#include <QHBoxLayout>
+#include <QAction>
 #include <QHeaderView>
 #include <QTimer>
-#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include <App/Application.h>
 #include <App/Document.h>
 #include <Gui/Application.h>
+#include <Gui/BitmapFactory.h>
 #include <Gui/DockWindowManager.h>
 #include <Gui/Document.h>
+#include <Gui/OverlayManager.h>
 #include <Gui/ViewProviderDocumentObject.h>
 #include <Mod/PartDesign/App/Body.h>
 
@@ -54,14 +55,9 @@ DependenciesPanel::DependenciesPanel(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
-    auto* bar = new QHBoxLayout();
-    pin = new QToolButton(this);
-    pin->setText(tr("Pin"));
+    pin = new QAction(Gui::BitmapFactory().iconFromTheme("PartDesign_PanelPin"), tr("Pin"), this);
     pin->setCheckable(true);
     pin->setToolTip(tr("Keeps the panel on this step instead of following the selection"));
-    bar->addStretch();
-    bar->addWidget(pin);
-    layout->addLayout(bar);
 
     list = new QTreeWidget(this);
     list->setHeaderHidden(true);
@@ -72,7 +68,7 @@ DependenciesPanel::DependenciesPanel(QWidget* parent)
     connect(list, &QTreeWidget::itemClicked, this, &DependenciesPanel::selectEntry);
     connect(list, &QTreeWidget::itemDoubleClicked, this, &DependenciesPanel::editEntry);
     connect(list, &QTreeWidget::itemEntered, this, &DependenciesPanel::preselectEntry);
-    connect(pin, &QToolButton::toggled, this, [this](bool pinned) {
+    connect(pin, &QAction::toggled, this, [this](bool pinned) {
         if (!pinned) {
             const auto selection = Gui::Selection().getSelection();
             if (selection.size() == 1) {
@@ -106,6 +102,8 @@ void DependenciesPanel::showFor(App::DocumentObject* step)
             QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable
             | QDockWidget::DockWidgetFloatable
         );
+        instance->dock->addAction(instance->pin);
+        Gui::OverlayManager::instance()->setupTitleBar(instance->dock);
     }
     instance->pin->setChecked(false);
     instance->setStep(step);
