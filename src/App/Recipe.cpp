@@ -110,6 +110,83 @@ RecipeSection RecipeMerge::threeWay(const RecipeSection& base,
     return merged;
 }
 
+std::vector<RecipeChange> RecipeDiff::twoWay(const RecipeSection& before,
+                                             const RecipeSection& after)
+{
+    std::vector<RecipeChange> changes;
+
+    std::set<std::string> ids;
+    for (const auto& [id, node] : before) {
+        ids.insert(id);
+    }
+    for (const auto& [id, node] : after) {
+        ids.insert(id);
+    }
+
+    for (const std::string& id : ids) {
+        const auto itOld = before.find(id);
+        const auto itNew = after.find(id);
+
+        if (itOld == before.end()) {
+            changes.push_back({RecipeChange::Kind::Added, id, itNew->second.type});
+            continue;
+        }
+        if (itNew == after.end()) {
+            changes.push_back({RecipeChange::Kind::Removed, id, itOld->second.type});
+            continue;
+        }
+
+        const RecipeNode& oldNode = itOld->second;
+        const RecipeNode& newNode = itNew->second;
+        if (oldNode == newNode) {
+            continue;
+        }
+
+        if (oldNode.type != newNode.type) {
+            changes.push_back({RecipeChange::Kind::TypeChanged,
+                               id,
+                               newNode.type,
+                               {},
+                               oldNode.type,
+                               newNode.type});
+        }
+
+        std::set<std::string> fieldNames;
+        for (const auto& [name, value] : oldNode.fields) {
+            fieldNames.insert(name);
+        }
+        for (const auto& [name, value] : newNode.fields) {
+            fieldNames.insert(name);
+        }
+        for (const std::string& name : fieldNames) {
+            const auto valueOf = [&name](const RecipeNode& node) -> std::optional<std::string> {
+                const auto it = node.fields.find(name);
+                return it != node.fields.end() ? std::optional<std::string>(it->second)
+                                               : std::nullopt;
+            };
+            const std::optional<std::string> oldValue = valueOf(oldNode);
+            const std::optional<std::string> newValue = valueOf(newNode);
+            if (oldValue != newValue) {
+                changes.push_back({RecipeChange::Kind::FieldChanged,
+                                   id,
+                                   newNode.type,
+                                   name,
+                                   oldValue,
+                                   newValue});
+            }
+        }
+
+        if (oldNode.refs != newNode.refs) {
+            RecipeChange change {RecipeChange::Kind::LinksChanged, id, newNode.type};
+            change.refsBefore = oldNode.refs;
+            change.refsAfter = newNode.refs;
+            changes.push_back(change);
+        }
+    }
+
+    return changes;
+}
+
 void RecipeMerge::checkReferences(const RecipeSection& withRefs,
                                   const RecipeSection& liveTargets,
                                   std::vector<MergeConflict>& conflicts)
