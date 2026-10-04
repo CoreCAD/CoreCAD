@@ -130,6 +130,43 @@ Body* Body::findBodyOf(const App::DocumentObject* feature)
     return bodies.empty() ? nullptr : bodies.front();
 }
 
+std::vector<App::DocumentObject*> Body::stepsUsedBy(const App::DocumentObject* step)
+{
+    std::vector<App::DocumentObject*> result;
+    for (auto* input : step->getOutList()) {
+        if (auto* body = freecad_cast<Body*>(input)) {
+            input = body->shownStep();
+        }
+        if (input && !contains(result, input)) {
+            result.push_back(input);
+        }
+    }
+    return result;
+}
+
+std::vector<App::DocumentObject*> Body::stepsUsing(const App::DocumentObject* step)
+{
+    std::vector<App::DocumentObject*> result;
+    std::set<const Body*> seen;
+    auto collect = [&](auto&& self, const App::DocumentObject* used) -> void {
+        for (auto* user : used->getInList()) {
+            if (auto* body = freecad_cast<Body*>(user)) {
+                // A Body that shows this step passes it on to its own users; any other link a Body
+                // holds (its base, a Tip past its marker) is not a use.
+                if (body->shownStep() == used && seen.insert(body).second) {
+                    self(self, body);
+                }
+                continue;
+            }
+            if (!contains(result, user)) {
+                result.push_back(user);
+            }
+        }
+    };
+    collect(collect, step);
+    return result;
+}
+
 bool Body::backsBody(const App::DocumentObject* feature, const Body* body)
 {
     return body && contains(bodiesOf(feature), body);

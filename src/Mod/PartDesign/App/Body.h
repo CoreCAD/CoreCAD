@@ -198,6 +198,11 @@ public:
     /// The one Body meant by a pick on @p feature; throws when several fit and the pick
     /// cannot tell them apart.
     static Body* bodyOf(const App::DocumentObject* feature, const char* subElement);
+
+    // What a step directly uses and what directly uses it (BodyMembership.cpp). A Body is read
+    // through to the step it shows, so a step that uses a Body uses that step.
+    static std::vector<App::DocumentObject*> stepsUsedBy(const App::DocumentObject* step);
+    static std::vector<App::DocumentObject*> stepsUsing(const App::DocumentObject* step);
     /// The component id of the solid that owns @p subElement, or empty.
     static std::string componentIdOfSub(const App::DocumentObject* feature, const char* subElement);
     static bool backsBody(const App::DocumentObject* feature, const Body* body);

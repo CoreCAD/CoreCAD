@@ -117,6 +117,18 @@ public:
             "Record that two overlapping bodies are meant to stay separate, as the Check\n"
             "Interference dialog does. Only a pair of Bodies can be acknowledged."
         );
+        add_varargs_method(
+            "stepsUsedBy",
+            &Module::stepsUsedBy,
+            "stepsUsedBy(step) -> list\n\n"
+            "What the step directly uses. A Body it uses is read as the step that Body shows."
+        );
+        add_varargs_method(
+            "stepsUsing",
+            &Module::stepsUsing,
+            "stepsUsing(step) -> list\n\n"
+            "What directly uses the step, including through a Body that shows it."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
@@ -201,6 +213,37 @@ private:
         }
         Body::dismissInterference(static_cast<Body*>(a), static_cast<Body*>(b));
         return Py::None();
+    }
+
+    static Py::List asList(const std::vector<App::DocumentObject*>& objects)
+    {
+        Py::List list;
+        for (auto* obj : objects) {
+            list.append(Py::asObject(obj->getPyObject()));
+        }
+        return list;
+    }
+
+    Py::Object stepsUsedBy(const Py::Tuple& args)
+    {
+        PyObject* pyStep = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyStep)) {
+            throw Py::Exception();
+        }
+        return asList(
+            Body::stepsUsedBy(static_cast<App::DocumentObjectPy*>(pyStep)->getDocumentObjectPtr())
+        );
+    }
+
+    Py::Object stepsUsing(const Py::Tuple& args)
+    {
+        PyObject* pyStep = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyStep)) {
+            throw Py::Exception();
+        }
+        return asList(
+            Body::stepsUsing(static_cast<App::DocumentObjectPy*>(pyStep)->getDocumentObjectPtr())
+        );
     }
 
     Py::Object findBodyOf(const Py::Tuple& args)
