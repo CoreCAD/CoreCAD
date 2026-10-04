@@ -79,7 +79,6 @@ enum ObjectStatus
     PendingTransactionUpdate = 18,
     RecomputeExtension = 19, ///< Whether the extensions of this object should be recomputed.
     TouchOnColorChange = 20, ///< Whether the object should be touched on color change.
-    Freeze = 21, ///< Whether the object is frozen and is excluded from recomputation.
 };
 // clang-format on
 
@@ -139,11 +138,6 @@ public:
 class AppExport DocumentObject: public App::TransactionalObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::DocumentObject);
-
-private:
-    // store read-only property names at freeze
-    // in order to retablish correct status at unfreeze
-    std::vector<const char*> readOnlyProperties;
 
 public:
     /**
@@ -434,32 +428,6 @@ public:
     bool isRemoving() const
     {
         return StatusBits.test(ObjectStatus::Remove);
-    }
-
-    /**
-     * @brief Set this document object freezed.
-     *
-     * A freezed document object is excluded from recomputation.
-     */
-    void freeze();
-
-    /**
-     * @brief Set this document object unfreezed.
-     *
-     * A freezed document object is excluded from recomputation.  This function
-     * enables recomputation and touches the object.
-     *
-     * @param[in] noRecompute: if true, the object will not be recomputed when
-     * touched.
-     *
-     * @see touch()
-     */
-    void unfreeze(bool noRecompute = false);
-
-    /// Check whether this document object is being freezed.
-    bool isFreezed() const
-    {
-        return StatusBits.test(ObjectStatus::Freeze);
     }
 
     /// Get the status bits.

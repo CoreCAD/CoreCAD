@@ -459,9 +459,6 @@ class CorePartWorkbench(Gui.Workbench):
                 self.appendContextMenu("", ["PartDesign_MoveTip"])
 
         if recipient == "Tree":
-            if feature.isDerivedFrom("PartDesign::Body"):
-                self.appendContextMenu("", ["Std_ToggleFreeze"])
-
             if bodies:
                 add_move_feature = True
                 add_move_in_tree = body is not None
@@ -493,6 +490,9 @@ class CorePartWorkbench(Gui.Workbench):
             )
             if transformed_count == 1:
                 self.appendContextMenu("", ["PartDesign_MultiTransform"])
+
+        if len(selection) == 1:
+            self.appendContextMenu("", ["PartDesign_ShowDependencies"])
 
     def _setup_task_watchers(self):
         """Register PartDesign TaskWatchers equivalent to C++ Workbench::activated()."""

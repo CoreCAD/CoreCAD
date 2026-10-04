@@ -63,8 +63,14 @@ void WorkbenchManipulator::addCommandsToTree(Gui::MenuItem* menuBar)
 {
     const char* randomColor = "Std_RandomColor";
     auto par = menuBar->findParentOf(randomColor);
+    Gui::MenuItem* item = par ? par->findItem(randomColor) : nullptr;
+    if (!par) {
+        // The tree menu has no Random Color; Material and Appearance follow Toggle Visibility.
+        const char* visibility = "Std_ToggleVisibility";
+        par = menuBar->findParentOf(visibility);
+        item = par ? par->afterItem(par->findItem(visibility)) : nullptr;
+    }
     if (par) {
-        auto item = par->findItem(randomColor);
 
         auto cmd1 = new Gui::MenuItem();
         cmd1->setCommand("Std_SetMaterial");

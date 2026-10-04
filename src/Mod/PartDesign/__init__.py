@@ -30,6 +30,10 @@ moveFeatureToBody = _PartDesign.moveFeatureToBody
 overlappingPairs = _PartDesign.overlappingPairs
 acknowledgeOverlap = _PartDesign.acknowledgeOverlap
 
+# Amendment 20, Clause 20.2 rule 2: what a step uses and what uses it, read through Bodies.
+stepsUsedBy = _PartDesign.stepsUsedBy
+stepsUsing = _PartDesign.stepsUsing
+
 
 def makeFeature(profile, featureType, subs=None, body=None, recompute=True):
     """Create a PartDesign feature the GUI's way: the Body EMERGES from the feature.

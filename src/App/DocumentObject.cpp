@@ -235,45 +235,6 @@ void DocumentObject::touch(bool noRecompute)
     }
 }
 
-void DocumentObject::freeze()
-{
-    StatusBits.set(ObjectStatus::Freeze);
-
-    // store read-only property names
-    this->readOnlyProperties.clear();
-    std::vector<std::pair<const char*, Property*>> list;
-    static_cast<App::PropertyContainer*>(this)->getPropertyNamedList(list);
-    for (auto pair: list){
-        if (pair.second->isReadOnly()){
-            this->readOnlyProperties.push_back(pair.first);
-        } else {
-            pair.second->setReadOnly(true);
-        }
-    }
-
-    // use the signalTouchedObject to refresh the Gui
-    if (_pDoc) {
-        _pDoc->signalTouchedObject(*this);
-    }
-}
-
-void DocumentObject::unfreeze(bool noRecompute)
-{
-    StatusBits.reset(ObjectStatus::Freeze);
-
-    // reset read-only property status
-    std::vector<std::pair<const char*, Property*>> list;
-    static_cast<App::PropertyContainer*>(this)->getPropertyNamedList(list);
-
-    for (auto pair: list){
-        if (! std::count(readOnlyProperties.begin(), readOnlyProperties.end(), pair.first)){
-            pair.second->setReadOnly(false);
-        }
-    }
-
-    touch(noRecompute);
-}
-
 bool DocumentObject::isTouched() const
 {
     return ExpressionEngine.isTouched() || StatusBits.test(ObjectStatus::Touch);
@@ -286,10 +247,6 @@ void DocumentObject::enforceRecompute()
 
 bool DocumentObject::mustRecompute() const
 {
-    if (StatusBits.test(ObjectStatus::Freeze)) {
-        return false;
-    }
-
     if (StatusBits.test(ObjectStatus::Enforce)) {
         return true;
     }
@@ -328,9 +285,6 @@ const char* DocumentObject::getStatusString() const
     if (isError()) {
         const char* text = getDocument()->getErrorDescription(this);
         return text ? text : "Error";
-    }
-    else if (isFreezed()){
-        return "Freezed";
     }
     else if (isTouched()) {
         return "Touched";
@@ -783,10 +737,6 @@ App::Property* DocumentObject::addDynamicProperty(const char* type,
 
 void DocumentObject::onBeforeChange(const Property* prop)
 {
-    if (isFreezed() && prop != &Visibility) {
-        return;
-    }
-
     // Store current name in oldLabel, to be able to easily retrieve old name of document object later
     // when renaming expressions.
     if (prop == &Label)
@@ -867,10 +817,6 @@ DocumentObject::onProposedLabelChange(std::string& newLabel)
 
 void DocumentObject::onEarlyChange(const Property* prop)
 {
-    if (isFreezed() && prop != &Visibility) {
-        return;
-    }
-
     if (GetApplication().isClosingAll()) {
         return;
     }
@@ -894,10 +840,6 @@ void DocumentObject::onChanged(const Property* prop)
     if (prop == &Label && _pDoc && _pDoc->containsObject(this) && oldLabel != Label.getStrValue()) {
         _pDoc->unregisterLabel(oldLabel);
         _pDoc->registerLabel(Label.getStrValue());
-    }
-
-    if (isFreezed() && prop != &Visibility) {
-        return;
     }
 
     if (GetApplication().isClosingAll()) {
