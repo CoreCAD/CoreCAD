@@ -198,6 +198,8 @@ SET(PartDesignGuiModule_SRCS
     CommandTransformed.cpp
     CommandPrimitive.cpp
     CommandBody.cpp
+    DependenciesPanel.cpp
+    DependenciesPanel.h
     EnumFlags.h
     Resources/PartDesign.qrc
     PreCompiled.h

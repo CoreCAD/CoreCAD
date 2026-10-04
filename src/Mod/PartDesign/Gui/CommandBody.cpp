@@ -51,6 +51,7 @@
 #include <Mod/PartDesign/App/FeatureBase.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 
+#include "DependenciesPanel.h"
 #include "Utils.h"
 
 
@@ -735,6 +736,37 @@ bool CmdPartDesignCheckInterference::isActive()
 }
 
 //===========================================================================
+// PartDesign_ShowDependencies
+//===========================================================================
+
+DEF_STD_CMD_A(CmdPartDesignShowDependencies)
+
+CmdPartDesignShowDependencies::CmdPartDesignShowDependencies()
+    : Command("PartDesign_ShowDependencies")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Show dependencies");
+    sToolTipText = QT_TR_NOOP("Shows what the selected step uses and what uses it");
+    sWhatsThis = "PartDesign_ShowDependencies";
+    sStatusTip = sToolTipText;
+}
+
+void CmdPartDesignShowDependencies::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const auto selection = Gui::Selection().getSelection();
+    if (selection.size() == 1) {
+        PartDesignGui::DependenciesPanel::showFor(selection.front().pObject);
+    }
+}
+
+bool CmdPartDesignShowDependencies::isActive()
+{
+    return Gui::Selection().getSelection().size() == 1;
+}
+
+//===========================================================================
 // Initialization
 //===========================================================================
 
@@ -748,4 +780,5 @@ void CreatePartDesignBodyCommands()
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeature());
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeatureInTree());
     rcCmdMgr.addCommand(new CmdPartDesignCheckInterference());
+    rcCmdMgr.addCommand(new CmdPartDesignShowDependencies());
 }

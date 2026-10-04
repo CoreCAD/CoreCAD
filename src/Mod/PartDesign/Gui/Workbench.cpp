@@ -133,6 +133,10 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
         }
     }
 
+    if (selection.size() == 1) {
+        *item << "PartDesign_ShowDependencies";
+    }
+
     if (item->hasItems()) {
         *item << "Separator";
     }

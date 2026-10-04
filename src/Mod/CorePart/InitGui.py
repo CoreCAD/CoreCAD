@@ -494,6 +494,9 @@ class CorePartWorkbench(Gui.Workbench):
             if transformed_count == 1:
                 self.appendContextMenu("", ["PartDesign_MultiTransform"])
 
+        if len(selection) == 1:
+            self.appendContextMenu("", ["PartDesign_ShowDependencies"])
+
     def _setup_task_watchers(self):
         """Register PartDesign TaskWatchers equivalent to C++ Workbench::activated()."""
 
