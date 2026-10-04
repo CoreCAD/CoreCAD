@@ -1340,7 +1340,7 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
     MenuItem view;
     Gui::Application::Instance->setupContextMenu("Tree", &view);
 
-    view << "Std_Properties" << "Separator" << "Std_Expressions";
+    view << "Std_Properties";
     Workbench::createLinkMenu(&view);
 
     QMenu contextMenu;
@@ -1363,8 +1363,6 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
         // the current document, such as by double-clicking.
         // App::GetApplication().setActiveDocument(doc);
 
-        showHiddenAction->setChecked(docitem->showHidden());
-        contextMenu.addAction(this->showHiddenAction);
         contextMenu.addAction(this->openFileLocationAction);
         contextMenu.addAction(this->searchObjectsAction);
         contextMenu.addAction(this->closeDocAction);
@@ -1394,7 +1392,6 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
             if (doc->testStatus(App::Document::SkipRecompute)) {
                 contextMenu.addAction(this->allowPartialRecomputeAction);
             }
-            contextMenu.addAction(this->markRecomputeAction);
             contextMenu.addAction(this->createGroupAction);
         }
         contextMenu.addSeparator();
@@ -1414,23 +1411,10 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
             }
         }
 
-        showHiddenAction->setChecked(doc->ShowHidden.getValue());
-        contextMenu.addAction(this->showHiddenAction);
-        contextMenu.addAction(this->toggleVisibilityInTreeAction);
-
-        if (!acrossDocuments) {  // is only sensible for selections within one document
-            if (objitem->object()->getObject()->isDerivedFrom<App::DocumentObjectGroup>()) {
-                contextMenu.addAction(this->createGroupAction);
-            }
-            // if there are dependent objects in the selection, add context menu to add them to selection
-            if (CheckForDependents()) {
-                contextMenu.addAction(this->selectDependentsAction);
-            }
+        if (!acrossDocuments  // is only sensible for selections within one document
+            && objitem->object()->getObject()->isDerivedFrom<App::DocumentObjectGroup>()) {
+            contextMenu.addAction(this->createGroupAction);
         }
-
-        contextMenu.addSeparator();
-        contextMenu.addAction(this->markRecomputeAction);
-        contextMenu.addAction(this->recomputeObjectAction);
         contextMenu.addSeparator();
 
         // relabeling is only possible for a single selected document
@@ -1487,8 +1471,11 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
     // add a submenu to present the settings of the tree.
     QMenu settingsMenu;
     settingsMenu.setTitle(tr("Tree Settings"));
-    contextMenu.addSeparator();
-    contextMenu.addMenu(&settingsMenu);
+    // A tree preference, not an action on a step: offered on documents and empty space only.
+    if (!this->contextItem || this->contextItem->type() != ObjectType) {
+        contextMenu.addSeparator();
+        contextMenu.addMenu(&settingsMenu);
+    }
 
     QAction* action = new QAction(tr("Show Description"), this);
     QAction* internalNameAction = new QAction(tr("Show Internal Name"), this);

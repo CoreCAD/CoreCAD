@@ -42,6 +42,7 @@
 #include "Window.h"
 
 #include <App/Application.h>
+#include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/Interpreter.h>
 #include <Gui/ComboView.h>
@@ -363,9 +364,15 @@ void Workbench::setupContextMenu(const char* recipient, MenuItem* item) const
 void Workbench::createMainWindowPopupMenu(MenuItem*) const
 {}
 
+bool Workbench::hasLinks()
+{
+    auto doc = App::GetApplication().getActiveDocument();
+    return doc && strcmp(doc->DocumentType.getValue(), App::Document::DocTypePart) != 0;
+}
+
 void Workbench::createLinkMenu(MenuItem* item)
 {
-    if (!item || !App::GetApplication().getActiveDocument()) {
+    if (!item || !hasLinks()) {
         return;
     }
 
@@ -657,13 +664,11 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
     }
     else if (strcmp(recipient, "Tree") == 0) {
         if (!sels.empty()) {
-            *item << "Std_ToggleFreeze" << "Separator"
-                  << "Std_ToggleVisibility" << "Std_ShowSelection"
-                  << "Std_HideSelection"
-                  << "Std_ToggleSelectability" << "Std_TreeSelectAllInstances" << "Separator"
-                  << "Std_RandomColor" << "Std_ToggleTransparency" << "Separator"
-                  << "Std_Cut" << "Std_Copy" << "Std_Paste" << "Std_Delete"
-                  << "Std_SendToPythonConsole";
+            *item << "Std_ToggleVisibility";
+            if (hasLinks()) {
+                *item << "Std_TreeSelectAllInstances";
+            }
+            *item << "Separator" << "Std_Copy" << "Std_Paste" << "Std_Delete";
         }
     }
 
@@ -705,7 +710,8 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_Refresh" << "Std_BoxSelection" << "Std_BoxElementSelection"
           << "Std_SelectAll" << "Std_Delete" << "Std_SendToPythonConsole"
           << "Separator" << "Std_Placement" << "Std_TransformManip" << "Std_Alignment"
-          << "Std_Edit" << "Std_Properties" << "Separator" << "Std_UserEditMode" << "Separator"
+          << "Std_Edit" << "Std_Properties" << "Std_Expressions" << "Separator"
+          << "Std_UserEditMode" << "Separator"
           << "Std_DlgPreferences";
 
     auto axoviews = new MenuItem;

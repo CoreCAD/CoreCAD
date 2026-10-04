@@ -459,9 +459,6 @@ class CorePartWorkbench(Gui.Workbench):
                 self.appendContextMenu("", ["PartDesign_MoveTip"])
 
         if recipient == "Tree":
-            if feature.isDerivedFrom("PartDesign::Body"):
-                self.appendContextMenu("", ["Std_ToggleFreeze"])
-
             if bodies:
                 add_move_feature = True
                 add_move_in_tree = body is not None
