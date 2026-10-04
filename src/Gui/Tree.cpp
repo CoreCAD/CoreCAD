@@ -6637,8 +6637,7 @@ enum Status
     Recompute = 1 << 1,
     Error = 1 << 2,
     Hidden = 1 << 3,
-    External = 1 << 4,
-    Freezed = 1 << 5
+    External = 1 << 4
 };
 }
 
@@ -6682,10 +6681,8 @@ void DocumentObjectItem::testStatus(bool resetStatus, QIcon& icon1, QIcon& icon2
     auto linked = obj->getLinkedObject(false);
     bool external = object()->getDocument() != getOwnerDocument()->document()
         || (linked && linked->getDocument() != obj->getDocument());
-    bool freezed = pObject->isFreezed();
-
-    int currentStatus = ((freezed ? 1 : 0) << 5) | ((external ? 1 : 0) << 4)
-        | ((object()->showInTree() ? 0 : 1) << 3) | ((pObject->isError() ? 1 : 0) << 2)
+    int currentStatus = ((external ? 1 : 0) << 4) | ((object()->showInTree() ? 0 : 1) << 3)
+        | ((pObject->isError() ? 1 : 0) << 2)
         | ((pObject->isTouched() || pObject->mustExecute() == 1 ? 1 : 0) << 1) | (visible ? 1 : 0);
 
 
@@ -6790,16 +6787,6 @@ void DocumentObjectItem::testStatus(bool resetStatus, QIcon& icon1, QIcon& icon2
             }
             pxOff = BitmapFactory().merge(pxOff, pxExternal, BitmapFactoryInst::BottomRight);
             pxOn = BitmapFactory().merge(pxOn, pxExternal, BitmapFactoryInst::BottomRight);
-        }
-
-        if (currentStatus & Status::Freezed) {
-            static QPixmap pxFreeze;
-            if (pxFreeze.isNull()) {
-                // object is in freezed state
-                pxFreeze = Gui::BitmapFactory().pixmapFromSvg("Std_ToggleFreeze", QSize(16, 16));
-            }
-            pxOff = BitmapFactory().merge(pxOff, pxFreeze, BitmapFactoryInst::TopLeft);
-            pxOn = BitmapFactory().merge(pxOn, pxFreeze, BitmapFactoryInst::TopLeft);
         }
 
         icon.addPixmap(pxOn, QIcon::Normal, QIcon::On);
