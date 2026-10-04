@@ -59,6 +59,7 @@ from PartDesignTests.TestThickness import TestThickness
 from PartDesignTests.TestInvoluteGear import TestInvoluteGear
 from PartDesignTests.TestKeepCopiesApart import TestKeepCopiesApart
 from PartDesignTests.TestNoEffect import TestNoEffect
+from PartDesignTests.TestOverlapAccess import TestOverlapAccess
 from PartDesignTests.TestPatternCopyBodies import TestPatternCopyBodies
 from PartDesignTests.TestSketch import TestSketch
 from PartDesignTests.TestSuppressed import TestSuppressed
