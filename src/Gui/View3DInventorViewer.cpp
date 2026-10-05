@@ -785,6 +785,10 @@ View3DInventorViewer::~View3DInventorViewer()
     this->pcViewProviderRoot = nullptr;
     this->objectGroup->unref();
     this->objectGroup = nullptr;
+    if (this->standIn) {
+        this->standIn->unref();
+        this->standIn = nullptr;
+    }
     this->backlight->unref();
     this->backlight = nullptr;
     this->fillLight->unref();
@@ -993,6 +997,24 @@ void View3DInventorViewer::addViewProvider(ViewProvider* pcProvider)
 
     pcProvider->setOverrideMode(this->getOverrideMode());
     _ViewProviderSet.insert(pcProvider);
+}
+
+void View3DInventorViewer::setStandIn(SoNode* node)
+{
+    SoNode* drawn = standIn ? standIn : objectGroup;
+    const int index = pcViewProviderRoot->findChild(drawn);
+    if (index < 0) {
+        return;
+    }
+    pcViewProviderRoot->replaceChild(index, node ? node : objectGroup);
+    if (standIn) {
+        standIn->unref();
+    }
+    standIn = node;
+    if (standIn) {
+        standIn->ref();
+    }
+    redraw();
 }
 
 void View3DInventorViewer::removeViewProvider(ViewProvider* pcProvider)
