@@ -208,6 +208,7 @@ void HistoryPanel::setDocument(App::Document* doc)
     closeVersionDocuments();
     document = doc;
     versions.clear();
+    versionList->clear();
     scheduleRefresh(true);
 }
 
@@ -233,8 +234,9 @@ void HistoryPanel::readVersions()
     std::string chosen = "uncommitted";
     if (auto* item = versionList->currentItem()) {
         const QVariant index = item->data(0, VersionRole);
-        if (index.isValid() && index.toInt() != NotYetCommitted) {
-            chosen = versions.at(index.toInt()).commit;
+        if (index.isValid() && index.toInt() >= 0
+            && static_cast<std::size_t>(index.toInt()) < versions.size()) {
+            chosen = versions[index.toInt()].commit;
         }
     }
 
@@ -316,7 +318,9 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
 {
     auto* item = versionList->currentItem();
     const QVariant index = item ? item->data(0, VersionRole) : QVariant();
-    if (!document || !index.isValid()) {
+    if (!document || !index.isValid() || versions.empty()
+        || (index.toInt() != NotYetCommitted
+            && static_cast<std::size_t>(index.toInt()) >= versions.size())) {
         return std::nullopt;
     }
     Comparison comparison;
