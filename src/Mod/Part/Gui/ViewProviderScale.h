@@ -42,9 +42,6 @@ public:
     ViewProviderScale();
     /// destructor
     ~ViewProviderScale() override;
-
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
 };
 
 }  // namespace PartGui

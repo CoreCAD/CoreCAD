@@ -63,7 +63,6 @@ public:
     ViewProviderFace();
     ~ViewProviderFace() override;
 
-    std::vector<App::DocumentObject*> claimChildren() const override;
     bool canDragObjects() const override;
     bool canDragObject(App::DocumentObject*) const override;
     void dragObject(App::DocumentObject*) override;

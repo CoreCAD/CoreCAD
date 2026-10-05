@@ -106,15 +106,6 @@ ViewProviderBoolean::ViewProviderBoolean() = default;
 
 ViewProviderBoolean::~ViewProviderBoolean() = default;
 
-std::vector<App::DocumentObject*> ViewProviderBoolean::claimChildren() const
-{
-    std::vector<App::DocumentObject*> temp;
-    temp.push_back(getObject<Part::Boolean>()->Base.getValue());
-    temp.push_back(getObject<Part::Boolean>()->Tool.getValue());
-
-    return temp;
-}
-
 QIcon ViewProviderBoolean::getIcon() const
 {
     App::DocumentObject* obj = getObject();
@@ -257,11 +248,6 @@ ViewProviderMultiFuse::ViewProviderMultiFuse() = default;
 
 ViewProviderMultiFuse::~ViewProviderMultiFuse() = default;
 
-std::vector<App::DocumentObject*> ViewProviderMultiFuse::claimChildren() const
-{
-    return getObject<Part::MultiFuse>()->Shapes.getValues();
-}
-
 QIcon ViewProviderMultiFuse::getIcon() const
 {
     return Gui::BitmapFactory().iconFromTheme("Part_Fuse");
@@ -402,11 +388,6 @@ PROPERTY_SOURCE(PartGui::ViewProviderMultiCommon, PartGui::ViewProviderPart)
 ViewProviderMultiCommon::ViewProviderMultiCommon() = default;
 
 ViewProviderMultiCommon::~ViewProviderMultiCommon() = default;
-
-std::vector<App::DocumentObject*> ViewProviderMultiCommon::claimChildren() const
-{
-    return getObject<Part::MultiCommon>()->Shapes.getValues();
-}
 
 QIcon ViewProviderMultiCommon::getIcon() const
 {

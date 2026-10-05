@@ -43,8 +43,6 @@ public:
     /// destructor
     ~ViewProviderBoolean() override;
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
     QIcon getIcon() const override;
     void updateData(const App::Property*) override;
     bool onDelete(const std::vector<std::string>&) override;
@@ -61,8 +59,6 @@ public:
     /// destructor
     ~ViewProviderMultiFuse() override;
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
     QIcon getIcon() const override;
     void updateData(const App::Property*) override;
     bool onDelete(const std::vector<std::string>&) override;
@@ -87,8 +83,6 @@ public:
     /// destructor
     ~ViewProviderMultiCommon() override;
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
     QIcon getIcon() const override;
     void updateData(const App::Property*) override;
     bool onDelete(const std::vector<std::string>&) override;
