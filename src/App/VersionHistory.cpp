@@ -243,7 +243,7 @@ Document* App::openFileVersion(const std::string& path, const std::string& revis
     DocumentInitFlags flags;
     flags.createView = false;
     flags.temporary = true;
-    const std::string name = GetApplication().getUniqueDocumentName("Version", true);
+    const std::string name = GetApplication().getUniqueDocumentName("Version");
     const std::string label = fs::path(path).stem().string() + " at " + revision.substr(0, 8);
     Document* version = GetApplication().newDocument(name.c_str(), label.c_str(), flags);
 

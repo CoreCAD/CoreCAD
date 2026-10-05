@@ -221,22 +221,32 @@ void appendInteriorChanges(const DocumentObject& oldObj,
     }
 }
 
+void appendAfterDependencies(const DocumentObject* obj,
+                             std::set<const DocumentObject*>& seen,
+                             std::vector<const DocumentObject*>& order)
+{
+    if (!seen.insert(obj).second) {
+        return;
+    }
+    for (const DocumentObject* used : obj->getOutList()) {
+        if (used != nullptr && used->getDocument() == obj->getDocument()) {
+            appendAfterDependencies(used, seen, order);
+        }
+    }
+    order.push_back(obj);
+}
+
 /// Objects in the order the model is built, a sketch before the step that uses it. A document's
-/// own list cannot serve: one read back from its file is in id order.
+/// own list cannot serve: one read back from its file is in id order. A loop between objects, as a
+/// body and its steps make, is broken where it is met rather than reported: an order for reading
+/// is not a recompute.
 std::vector<const DocumentObject*> buildOrder(const Document& doc)
 {
     std::vector<const DocumentObject*> order;
     std::set<const DocumentObject*> seen;
-    const std::vector<DocumentObject*> dependentsFirst = doc.topologicalSort();
-    for (auto it = dependentsFirst.rbegin(); it != dependentsFirst.rend(); ++it) {
-        if (*it != nullptr && seen.insert(*it).second) {
-            order.push_back(*it);
-        }
-    }
-    // A cycle leaves objects out of the sort; they still belong in the list.
     for (const DocumentObject* obj : doc.getObjects()) {
-        if (obj != nullptr && seen.insert(obj).second) {
-            order.push_back(obj);
+        if (obj != nullptr) {
+            appendAfterDependencies(obj, seen, order);
         }
     }
     return order;

@@ -1335,6 +1335,7 @@ SET(View_CPP_SRCS
     MDIViewPyWrap.cpp
     MDIViewWithCamera.cpp
     GraphvizView.cpp
+    HistoryPanel.cpp
     ImageView.cpp
     ActiveObjectList.cpp
 )
@@ -1344,6 +1345,7 @@ SET(View_HPP_SRCS
     MDIViewPyWrap.h
     MDIViewWithCamera.h
     GraphvizView.h
+    HistoryPanel.h
     ImageView.h
     ActiveObjectList.h
 )

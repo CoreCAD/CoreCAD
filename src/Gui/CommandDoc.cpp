@@ -67,6 +67,7 @@
 #include "Dialogs/DlgProjectInformationImp.h"
 #include "Dialogs/DlgProjectUtility.h"
 #include "GraphvizView.h"
+#include "HistoryPanel.h"
 #include "ManualAlignment.h"
 #include "MergeDocuments.h"
 #include "Navigation/NavigationStyle.h"
@@ -767,6 +768,35 @@ void StdCmdMergeDocumentVersions::activated(int iMsg)
 bool StdCmdMergeDocumentVersions::isActive()
 {
     return App::GetApplication().getDocuments().size() >= 3;
+}
+
+//===========================================================================
+// Std_ShowHistory
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdShowHistory)
+
+StdCmdShowHistory::StdCmdShowHistory()
+    : Command("Std_ShowHistory")
+{
+    sGroup = "View";
+    sMenuText = QT_TR_NOOP("&History");
+    sToolTipText = QT_TR_NOOP("Shows the committed versions of the active part and what each changed");
+    sStatusTip = sToolTipText;
+    sWhatsThis = "Std_ShowHistory";
+    sPixmap = "Std_ShowHistory";
+    eType = 0;
+}
+
+void StdCmdShowHistory::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    HistoryPanel::showPanel();
+}
+
+bool StdCmdShowHistory::isActive()
+{
+    return getActiveGuiDocument() != nullptr;
 }
 
 //===========================================================================
@@ -2640,6 +2670,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdExport());
     rcCmdMgr.addCommand(new StdCmdMergeProjects());
     rcCmdMgr.addCommand(new StdCmdMergeDocumentVersions());
+    rcCmdMgr.addCommand(new StdCmdShowHistory());
     rcCmdMgr.addCommand(new StdCmdDependencyGraph());
     rcCmdMgr.addCommand(new StdCmdExportDependencyGraph());
 
