@@ -172,6 +172,17 @@ class HistoryModelViewTest(unittest.TestCase):
         self.assertFalse(self._editable())
         self.assertEqual(self._box.Length, 40)
 
+    def test_the_bar_is_tinted_and_clear_of_the_navigation_cube(self):
+        """Default settings put the navigation cube in the top-right corner of the view."""
+        self._choose(2)
+
+        bar = self._bars()[0]
+        view = bar.parentWidget()
+        cube = App.ParamGet("User parameter:BaseApp/Preferences/NaviCube").GetInt("CubeSize", 132)
+        self.assertLessEqual(bar.geometry().right(), view.width() - cube)
+        painted = bar.grab().toImage().pixelColor(2, 2)
+        self.assertNotEqual(painted, view.palette().window().color())
+
     def test_choosing_not_yet_committed_returns_to_now(self):
         self._choose(2)
         self._choose(0)
