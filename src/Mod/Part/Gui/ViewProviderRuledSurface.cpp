@@ -45,18 +45,6 @@ ViewProviderRuledSurface::ViewProviderRuledSurface()
 
 ViewProviderRuledSurface::~ViewProviderRuledSurface() = default;
 
-std::vector<App::DocumentObject*> ViewProviderRuledSurface::claimChildren() const
-{
-    // in a set each element is unique
-    std::set<App::DocumentObject*> temp;
-    temp.insert(getObject<Part::RuledSurface>()->Curve1.getValue());
-    temp.insert(getObject<Part::RuledSurface>()->Curve2.getValue());
-
-    std::vector<App::DocumentObject*> array;
-    array.insert(array.begin(), temp.begin(), temp.end());
-    return array;
-}
-
 void ViewProviderRuledSurface::updateData(const App::Property* prop)
 {
     PartGui::ViewProviderPart::updateData(prop);

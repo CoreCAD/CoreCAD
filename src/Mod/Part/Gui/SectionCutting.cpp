@@ -37,6 +37,7 @@
 #include <App/Datums.h>
 #include <App/Document.h>
 #include <App/Link.h>
+#include <App/PropertyLinks.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/UnitsApi.h>
@@ -65,6 +66,12 @@ using namespace PartGui;
 
 namespace
 {
+std::vector<App::DocumentObject*> fragmentInputs(App::DocumentObject* fragments)
+{
+    auto objects = dynamic_cast<App::PropertyLinkList*>(fragments->getPropertyByName("Objects"));
+    return objects ? objects->getValues() : std::vector<App::DocumentObject*> {};
+}
+
 struct Refresh
 {
     static const bool notXValue = false;
@@ -353,7 +360,7 @@ Base::BoundBox3d SectionCut::collectObjects()
             if (!pcCompoundPart && pcPartFeature) {
                 // for more security check for validity accessing its ViewProvider
                 auto pcCompoundBF = Gui::Application::Instance->getViewProvider(pcPartFeature);
-                compoundChilds = pcCompoundBF->claimChildren();
+                compoundChilds = fragmentInputs(pcPartFeature);
                 BoundCompound = pcPartFeature->Shape.getBoundingBox();
 
                 auto pcCompoundBFGO = dynamic_cast<Gui::ViewProviderGeometryObject*>(pcCompoundBF);
@@ -562,7 +569,7 @@ void SectionCut::deleteCompound()
                 );
                 return;
             }
-            compoundChilds = pcCompoundDelBF->claimChildren();
+            compoundChilds = fragmentInputs(compoundObject);
         }
         else {
             pcCompoundDelPart->Links.getLinks(compoundChilds);

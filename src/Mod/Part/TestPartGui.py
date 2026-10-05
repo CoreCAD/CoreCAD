@@ -81,6 +81,28 @@ class PartGuiViewProviderTestCases(unittest.TestCase):
         with self.assertRaises(TypeError):
             box.ViewObject.dropObject(box, 0)
 
+    def testFeatureDoesNotNestItsInputs(self):
+        # A feature's inputs keep their own rows in the tree: one feature never folds into another.
+        from BOPTools import SplitFeatures
+
+        box = self.Doc.addObject("Part::Box", "Box")
+        cyl = self.Doc.addObject("Part::Cylinder", "Cylinder")
+        cut = self.Doc.addObject("Part::Cut", "Cut")
+        cut.Base = box
+        cut.Tool = cyl
+        fuse = self.Doc.addObject("Part::MultiFuse", "Fuse")
+        fuse.Shapes = [box, cyl]
+        mirror = self.Doc.addObject("Part::Mirroring", "Mirror")
+        mirror.Source = cut
+        compound = self.Doc.addObject("Part::Compound", "Compound")
+        compound.Links = [box, cyl]
+        fragments = SplitFeatures.makeBooleanFragments("Fragments")
+        fragments.Objects = [box, cyl]
+        self.Doc.recompute()
+        for feature in (cut, fuse, mirror, compound, fragments):
+            self.assertEqual(feature.ViewObject.claimChildren(), [], feature.Name)
+        self.assertEqual(fragments.ViewObject.Proxy.inputs(), [box, cyl])
+
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument("PartGuiTest")

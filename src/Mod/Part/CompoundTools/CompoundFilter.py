@@ -297,7 +297,7 @@ class _ViewProviderCompoundFilter:
     def loads(self, state):
         return None
 
-    def claimChildren(self):
+    def inputs(self):
         children = [self.Object.Base]
         if self.Object.Stencil:
             children.append(self.Object.Stencil)

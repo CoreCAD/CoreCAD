@@ -48,11 +48,6 @@ ViewProviderCompound::ViewProviderCompound()
 
 ViewProviderCompound::~ViewProviderCompound() = default;
 
-std::vector<App::DocumentObject*> ViewProviderCompound::claimChildren() const
-{
-    return getObject<Part::Compound>()->Links.getValues();
-}
-
 bool ViewProviderCompound::onDelete(const std::vector<std::string>& subNames)
 {
     // get the input shapes
