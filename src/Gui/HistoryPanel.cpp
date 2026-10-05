@@ -29,10 +29,25 @@
 #include "Document.h"
 #include "OverlayManager.h"
 #include "Selection/Selection.h"
+#include "WaitCursor.h"
 
 using namespace Gui;
 
 QPointer<HistoryPanel> HistoryPanel::instance;
+
+namespace
+{
+VersionComparer& versionComparer()
+{
+    static VersionComparer comparer;
+    return comparer;
+}
+}  // namespace
+
+void Gui::registerVersionComparer(VersionComparer comparer)
+{
+    versionComparer() = std::move(comparer);
+}
 
 namespace
 {
@@ -80,7 +95,17 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     auto* splitter = new QSplitter(Qt::Vertical, this);
     layout->addWidget(splitter);
 
-    versionList = new QTreeWidget(splitter);
+    auto* versionsPane = new QWidget(splitter);
+    auto* versionsLayout = new QVBoxLayout(versionsPane);
+    versionsLayout->setContentsMargins(0, 0, 0, 0);
+    versionList = new QTreeWidget(versionsPane);
+    versionsLayout->addWidget(versionList);
+    compareButton = new QPushButton(tr("Compare in 3D"), versionsPane);
+    compareButton->setToolTip(
+        tr("Shows the material this entry added and removed, in a tab of its own")
+    );
+    versionsLayout->addWidget(compareButton, 0, Qt::AlignLeft);
+    connect(compareButton, &QPushButton::clicked, this, &HistoryPanel::compareIn3D);
     versionList->setColumnCount(2);
     versionList->setHeaderHidden(true);
     versionList->setRootIsDecorated(false);
@@ -132,6 +157,7 @@ HistoryPanel::HistoryPanel(QWidget* parent)
         if (closingVersions) {
             return;
         }
+        builtVersions.erase(const_cast<App::Document*>(&doc));
         if (&doc == empty) {
             empty = nullptr;
         }
@@ -286,38 +312,60 @@ void HistoryPanel::readVersions()
     versionList->setCurrentItem(current);
 }
 
-void HistoryPanel::showChanges()
+std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
 {
-    changeList->clear();
     auto* item = versionList->currentItem();
     const QVariant index = item ? item->data(0, VersionRole) : QVariant();
     if (!document || !index.isValid()) {
-        return;
+        return std::nullopt;
     }
+    Comparison comparison;
+    if (index.toInt() == NotYetCommitted) {
+        comparison.heading = tr("Not yet committed");
+        comparison.emptyText = tr("Nothing has changed since the last commit.");
+        comparison.before = versionDocument(versions.front().commit);
+        comparison.after = document;
+    }
+    else {
+        const auto at = static_cast<std::size_t>(index.toInt());
+        const QString summary = QString::fromStdString(versions[at].summary);
+        comparison.heading = tr("Changed in “%1”").arg(summary);
+        comparison.emptyText = tr("This version changed nothing in the part.");
+        comparison.before = at + 1 < versions.size() ? versionDocument(versions[at + 1].commit)
+                                                     : emptyDocument();
+        comparison.after = versionDocument(versions[at].commit);
+        comparison.title = tr("Compare — %1").arg(summary);
+    }
+    if (comparison.title.isEmpty()) {
+        comparison.title = tr("Compare — %1").arg(comparison.heading);
+    }
+    return comparison;
+}
 
-    QString heading;
-    QString emptyText;
+void HistoryPanel::showChanges()
+{
+    changeList->clear();
+    compareButton->setVisible(static_cast<bool>(versionComparer()));
+    compareButton->setEnabled(false);
+    auto* item = versionList->currentItem();
+    const QVariant index = item ? item->data(0, VersionRole) : QVariant();
+
+    std::optional<Comparison> chosen;
     std::vector<App::DocumentChange> changes;
     try {
-        if (index.toInt() == NotYetCommitted) {
-            heading = tr("Not yet committed");
-            emptyText = tr("Nothing has changed since the last commit.");
-            changes = App::diffDocuments(*versionDocument(versions.front().commit), *document);
+        chosen = chosenComparison();
+        if (!chosen) {
+            return;
         }
-        else {
-            const auto at = static_cast<std::size_t>(index.toInt());
-            heading = tr("Changed in “%1”").arg(QString::fromStdString(versions[at].summary));
-            emptyText = tr("This version changed nothing in the part.");
-            App::Document* before = at + 1 < versions.size()
-                ? versionDocument(versions[at + 1].commit)
-                : emptyDocument();
-            changes = App::diffDocuments(*before, *versionDocument(versions[at].commit));
-        }
+        changes = App::diffDocuments(*chosen->before, *chosen->after);
     }
     catch (const Base::Exception& e) {
         emptyLine(changeList, tr("This version could not be read: %1").arg(QString::fromUtf8(e.what())));
         return;
     }
+    compareButton->setEnabled(true);
+    const QString heading = chosen->heading;
+    const QString emptyText = chosen->emptyText;
 
     if (index.toInt() == NotYetCommitted) {
         item->setText(0, tr("Not yet committed (%1)").arg(changes.size()));
@@ -338,6 +386,30 @@ void HistoryPanel::showChanges()
         line->setData(0, ObjectRole, QString::fromStdString(change.objectId));
     }
     changeList->expandAll();
+}
+
+void HistoryPanel::compareIn3D()
+{
+    if (!versionComparer()) {
+        return;
+    }
+    WaitCursor wait;
+    try {
+        std::optional<Comparison> chosen = chosenComparison();
+        if (!chosen) {
+            return;
+        }
+        // A version read from its file carries no shapes until it is built; build each once.
+        for (App::Document* side : {chosen->before, chosen->after}) {
+            if (side != document && builtVersions.insert(side).second) {
+                side->recompute();
+            }
+        }
+        versionComparer()(*chosen->before, *chosen->after, chosen->title.toStdString());
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
+    }
 }
 
 App::Document* HistoryPanel::versionDocument(const std::string& commit)
@@ -370,6 +442,7 @@ void HistoryPanel::closeVersionDocuments()
         App::GetApplication().closeDocument(version->getName());
     }
     versionDocuments.clear();
+    builtVersions.clear();
     if (empty) {
         App::GetApplication().closeDocument(empty->getName());
         empty = nullptr;

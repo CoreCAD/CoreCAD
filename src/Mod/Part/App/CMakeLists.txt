@@ -217,7 +217,9 @@ SET(Features_SRCS
     PartFeatures.cpp
     PartFeatures.h
     PartFeature.cpp
+    ShapeComparison.cpp
     PartFeature.h
+    ShapeComparison.h
     PartFeatureReference.cpp
     PartFeatureReference.h
     NeutralRef.cpp

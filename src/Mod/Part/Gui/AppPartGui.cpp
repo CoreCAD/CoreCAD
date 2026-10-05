@@ -36,6 +36,9 @@
 
 #include <Mod/Part/App/PreviewExtension.h>
 
+#include "VersionComparison.h"
+#include <App/Document.h>
+#include <App/DocumentPy.h>
 #include "AttacherTexts.h"
 #include "PropertyEnumAttacherItem.h"
 #include "DlgSettings3DViewPartImp.h"
@@ -104,10 +107,46 @@ public:
     Module()
         : Py::ExtensionModule<Module>("PartGui")
     {
+        add_varargs_method(
+            "showVersionComparison",
+            &Module::showVersionComparison,
+            "showVersionComparison(before, after, title) -> Document\n"
+            "Compare in 3D: open a tab showing the material after shares with before faint, the\n"
+            "material it added blue and the material it removed red. Both documents must hold\n"
+            "built shapes. Returns the hidden document the tab shows."
+        );
         initialize("This module is the PartGui module.");  // register with Python
     }
 
 private:
+    Py::Object showVersionComparison(const Py::Tuple& args)
+    {
+        PyObject* before = nullptr;
+        PyObject* after = nullptr;
+        const char* title = nullptr;
+        if (!PyArg_ParseTuple(
+                args.ptr(),
+                "O!O!s",
+                &App::DocumentPy::Type,
+                &before,
+                &App::DocumentPy::Type,
+                &after,
+                &title
+            )) {
+            throw Py::Exception();
+        }
+        try {
+            App::Document* shown = PartGui::showVersionComparison(
+                *static_cast<App::DocumentPy*>(before)->getDocumentPtr(),
+                *static_cast<App::DocumentPy*>(after)->getDocumentPtr(),
+                title
+            );
+            return Py::asObject(shown->getPyObject());
+        }
+        catch (const Base::Exception& e) {
+            throw Py::RuntimeError(e.what());
+        }
+    }
 };
 
 PyObject* initModule()
@@ -229,6 +268,7 @@ PyMOD_INIT_FUNC(PartGui)
     PartGui::ViewProviderProjectOnSurface           ::init();
 
     PartGui::Workbench                              ::init();
+    PartGui::registerVersionComparison();
     auto manip = std::make_shared<PartGui::WorkbenchManipulator>();
     Gui::WorkbenchManipulator::installManipulator(manip);
 

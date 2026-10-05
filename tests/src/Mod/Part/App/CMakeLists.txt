@@ -27,6 +27,7 @@ add_executable(Part_tests_run
         PartFeature.cpp
         PartFeatures.cpp
         PartTestHelpers.cpp
+        ShapeComparison.cpp
         PrimitiveFaceRole.cpp
         PrimitiveFaceRoleRef.cpp
         ChamferByDistanceAndAngle.cpp
