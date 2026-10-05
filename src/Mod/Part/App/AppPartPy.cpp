@@ -74,6 +74,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
+#include <App/DocumentPy.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -87,6 +88,7 @@
 #include "BSplineSurfacePy.h"
 #include "edgecluster.h"
 #include "FaceMaker.h"
+#include "ShapeComparison.h"
 #include "GeometryCurvePy.h"
 #include "GeometryPy.h"
 #include "ImportIges.h"
@@ -472,6 +474,19 @@ public:
             "getFacets",
             &Module::getFacets,
             "getFacets(shape): simplified mesh generation"
+        );
+        add_varargs_method(
+            "documentSolids",
+            &Module::documentSolids,
+            "documentSolids(doc) -- The solids a person sees in a document, as one compound: "
+            "every\n"
+            "object carrying a solid that no other solid-carrying object builds on."
+        );
+        add_varargs_method(
+            "compareShapes",
+            &Module::compareShapes,
+            "compareShapes(before, after) -> (shared, added, removed) -- Two shapes compared as\n"
+            "material: what both hold, what only after holds, and what only before held."
         );
         add_keyword_method(
             "makeCompound",
@@ -1096,6 +1111,37 @@ private:
         }
         return list;
     }
+    Py::Object documentSolids(const Py::Tuple& args)
+    {
+        PyObject* doc = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &App::DocumentPy::Type, &doc)) {
+            throw Py::Exception();
+        }
+        return shape2pyshape(
+            Part::documentSolids(*static_cast<App::DocumentPy*>(doc)->getDocumentPtr())
+        );
+    }
+
+    Py::Object compareShapes(const Py::Tuple& args)
+    {
+        PyObject* before = nullptr;
+        PyObject* after = nullptr;
+        if (
+            !PyArg_ParseTuple(args.ptr(), "O!O!", &TopoShapePy::Type, &before, &TopoShapePy::Type, &after)
+        ) {
+            throw Py::Exception();
+        }
+        const ShapeComparison comparison = Part::compareShapes(
+            *static_cast<TopoShapePy*>(before)->getTopoShapePtr(),
+            *static_cast<TopoShapePy*>(after)->getTopoShapePtr()
+        );
+        Py::Tuple result(3);
+        result.setItem(0, shape2pyshape(comparison.shared));
+        result.setItem(1, shape2pyshape(comparison.added));
+        result.setItem(2, shape2pyshape(comparison.removed));
+        return result;
+    }
+
     Py::Object makeCompound(const Py::Tuple& args, const Py::Dict& kwds)
     {
         PyObject* pcObj;
