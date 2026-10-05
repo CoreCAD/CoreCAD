@@ -108,40 +108,41 @@ public:
         : Py::ExtensionModule<Module>("PartGui")
     {
         add_varargs_method(
-            "showVersionComparison",
-            &Module::showVersionComparison,
-            "showVersionComparison(before, after, title) -> Document\n"
-            "Compare in 3D: open a tab showing the material after shares with before faint, the\n"
-            "material it added blue and the material it removed red. Both documents must hold\n"
-            "built shapes. Returns the hidden document the tab shows."
+            "versionLayers",
+            &Module::versionLayers,
+            "versionLayers(before, after, showChanges=True) -> Document\n"
+            "How History draws a version in the model view: a hidden document holding after's\n"
+            "material, with what it added over before blue and what it removed red when\n"
+            "showChanges. Both documents must hold built shapes. The caller closes it."
         );
         initialize("This module is the PartGui module.");  // register with Python
     }
 
 private:
-    Py::Object showVersionComparison(const Py::Tuple& args)
+    Py::Object versionLayers(const Py::Tuple& args)
     {
         PyObject* before = nullptr;
         PyObject* after = nullptr;
-        const char* title = nullptr;
+        PyObject* showChanges = Py_True;
         if (!PyArg_ParseTuple(
                 args.ptr(),
-                "O!O!s",
+                "O!O!|O!",
                 &App::DocumentPy::Type,
                 &before,
                 &App::DocumentPy::Type,
                 &after,
-                &title
+                &PyBool_Type,
+                &showChanges
             )) {
             throw Py::Exception();
         }
         try {
-            App::Document* shown = PartGui::showVersionComparison(
+            App::Document* layers = PartGui::versionLayers(
                 *static_cast<App::DocumentPy*>(before)->getDocumentPtr(),
                 *static_cast<App::DocumentPy*>(after)->getDocumentPtr(),
-                title
+                showChanges == Py_True
             );
-            return Py::asObject(shown->getPyObject());
+            return Py::asObject(layers->getPyObject());
         }
         catch (const Base::Exception& e) {
             throw Py::RuntimeError(e.what());
@@ -268,7 +269,7 @@ PyMOD_INIT_FUNC(PartGui)
     PartGui::ViewProviderProjectOnSurface           ::init();
 
     PartGui::Workbench                              ::init();
-    PartGui::registerVersionComparison();
+    PartGui::registerVersionLayers();
     auto manip = std::make_shared<PartGui::WorkbenchManipulator>();
     Gui::WorkbenchManipulator::installManipulator(manip);
 

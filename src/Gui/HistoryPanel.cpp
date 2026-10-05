@@ -5,14 +5,20 @@
 
 #ifndef _PreComp_
 # include <QApplication>
+# include <QCheckBox>
 # include <QDateTime>
 # include <QDockWidget>
+# include <QHBoxLayout>
 # include <QHeaderView>
+# include <QLabel>
 # include <QLocale>
+# include <QPushButton>
 # include <QSplitter>
 # include <QTimer>
 # include <QTreeWidget>
 # include <QVBoxLayout>
+# include <Inventor/nodes/SoPickStyle.h>
+# include <Inventor/nodes/SoSeparator.h>
 #endif
 
 #include <App/Application.h>
@@ -25,10 +31,14 @@
 #include "HistoryPanel.h"
 
 #include "Application.h"
+#include "Command.h"
 #include "DockWindowManager.h"
 #include "Document.h"
 #include "OverlayManager.h"
 #include "Selection/Selection.h"
+#include "View3DInventor.h"
+#include "View3DInventorViewer.h"
+#include "ViewProviderDocumentObject.h"
 #include "WaitCursor.h"
 
 using namespace Gui;
@@ -37,16 +47,16 @@ QPointer<HistoryPanel> HistoryPanel::instance;
 
 namespace
 {
-VersionComparer& versionComparer()
+VersionLayers& versionLayers()
 {
-    static VersionComparer comparer;
-    return comparer;
+    static VersionLayers layers;
+    return layers;
 }
 }  // namespace
 
-void Gui::registerVersionComparer(VersionComparer comparer)
+void Gui::registerVersionLayers(VersionLayers layers)
 {
-    versionComparer() = std::move(comparer);
+    versionLayers() = std::move(layers);
 }
 
 namespace
@@ -100,12 +110,6 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     versionsLayout->setContentsMargins(0, 0, 0, 0);
     versionList = new QTreeWidget(versionsPane);
     versionsLayout->addWidget(versionList);
-    compareButton = new QPushButton(tr("Compare in 3D"), versionsPane);
-    compareButton->setToolTip(
-        tr("Shows the material this entry added and removed, in a tab of its own")
-    );
-    versionsLayout->addWidget(compareButton, 0, Qt::AlignLeft);
-    connect(compareButton, &QPushButton::clicked, this, &HistoryPanel::compareIn3D);
     versionList->setColumnCount(2);
     versionList->setHeaderHidden(true);
     versionList->setRootIsDecorated(false);
@@ -118,7 +122,16 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     changeList->setRootIsDecorated(false);
     changeList->setMouseTracking(true);
 
-    connect(versionList, &QTreeWidget::currentItemChanged, this, [this]() { showChanges(); });
+    // Moving quickly through the list builds only the version it stops on.
+    versionViewTimer = new QTimer(this);
+    versionViewTimer->setSingleShot(true);
+    versionViewTimer->setInterval(150);
+    connect(versionViewTimer, &QTimer::timeout, this, &HistoryPanel::showChosenVersion);
+
+    connect(versionList, &QTreeWidget::currentItemChanged, this, [this]() {
+        showChanges();
+        scheduleVersionView();
+    });
     connect(changeList, &QTreeWidget::itemClicked, this, &HistoryPanel::selectChange);
     connect(changeList, &QTreeWidget::itemEntered, this, &HistoryPanel::preselectChange);
     // A commit made outside the app shows when the user comes back to it.
@@ -158,6 +171,10 @@ HistoryPanel::HistoryPanel(QWidget* parent)
             return;
         }
         builtVersions.erase(const_cast<App::Document*>(&doc));
+        for (auto it = layerDocuments.begin(); it != layerDocuments.end();) {
+            it = (it->second == &doc || it->first.first == &doc) ? layerDocuments.erase(it)
+                                                                 : std::next(it);
+        }
         if (&doc == empty) {
             empty = nullptr;
         }
@@ -171,11 +188,35 @@ HistoryPanel::HistoryPanel(QWidget* parent)
             setDocument(nullptr);
         }
     });
+
+    // Anything that still changes the part while an older version is shown returns the view to
+    // now before it is next drawn (UI_GUIDE §2.2.1).
+    objectChanged = app.signalChangedObject.connect(
+        [this](const App::DocumentObject& obj, const App::Property&) {
+            returnIfShowingPast(obj.getDocument());
+        }
+    );
+    objectAdded = app.signalNewObject.connect([this](const App::DocumentObject& obj) {
+        returnIfShowingPast(obj.getDocument());
+    });
+    objectDeleted = app.signalDeletedObject.connect([this](const App::DocumentObject& obj) {
+        returnIfShowingPast(obj.getDocument());
+    });
+    editStarted = Application::Instance->signalInEdit.connect(
+        [this](const ViewProviderDocumentObject& view) {
+            returnIfShowingPast(view.getDocument()->getDocument());
+        }
+    );
 }
 
 HistoryPanel::~HistoryPanel()
 {
     closeVersionDocuments();
+}
+
+bool HistoryPanel::isShowingPastVersion(const App::Document* doc)
+{
+    return instance && instance->showingPast && doc && instance->document == doc;
 }
 
 void HistoryPanel::showPanel()
@@ -338,10 +379,7 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
         comparison.before = at + 1 < versions.size() ? versionDocument(versions[at + 1].commit)
                                                      : emptyDocument();
         comparison.after = versionDocument(versions[at].commit);
-        comparison.title = tr("Compare — %1").arg(summary);
-    }
-    if (comparison.title.isEmpty()) {
-        comparison.title = tr("Compare — %1").arg(comparison.heading);
+        comparison.barText = tr("Viewing “%1”, %2").arg(summary, ago(versions[at].time));
     }
     return comparison;
 }
@@ -349,8 +387,6 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
 void HistoryPanel::showChanges()
 {
     changeList->clear();
-    compareButton->setVisible(static_cast<bool>(versionComparer()));
-    compareButton->setEnabled(false);
     auto* item = versionList->currentItem();
     const QVariant index = item ? item->data(0, VersionRole) : QVariant();
 
@@ -367,7 +403,6 @@ void HistoryPanel::showChanges()
         emptyLine(changeList, tr("This version could not be read: %1").arg(QString::fromUtf8(e.what())));
         return;
     }
-    compareButton->setEnabled(true);
     const QString heading = chosen->heading;
     const QString emptyText = chosen->emptyText;
 
@@ -392,28 +427,181 @@ void HistoryPanel::showChanges()
     changeList->expandAll();
 }
 
-void HistoryPanel::compareIn3D()
+void HistoryPanel::scheduleVersionView()
 {
-    if (!versionComparer()) {
+    auto* item = versionList->currentItem();
+    const QVariant index = item ? item->data(0, VersionRole) : QVariant();
+    if (!index.isValid() || index.toInt() == NotYetCommitted || !versionLayers()) {
+        versionViewTimer->stop();
+        restoreModelView();
         return;
     }
-    WaitCursor wait;
+    versionViewTimer->start();
+}
+
+void HistoryPanel::showChosenVersion()
+{
+    std::optional<Comparison> chosen;
+    App::Document* layers = nullptr;
     try {
-        std::optional<Comparison> chosen = chosenComparison();
-        if (!chosen) {
+        chosen = chosenComparison();
+        if (!chosen || chosen->after == document) {
+            restoreModelView();
             return;
         }
-        // A version read from its file carries no shapes until it is built; build each once.
-        for (App::Document* side : {chosen->before, chosen->after}) {
-            if (side != document && builtVersions.insert(side).second) {
-                side->recompute();
-            }
-        }
-        versionComparer()(*chosen->before, *chosen->after, chosen->title.toStdString());
+        WaitCursor wait;
+        layers = layersFor(*chosen->before, *chosen->after);
     }
     catch (const Base::Exception& e) {
         e.reportException();
+        restoreModelView();
+        return;
     }
+
+    auto* standIn = new SoSeparator();
+    standIn->ref();
+    auto* unpickable = new SoPickStyle();
+    unpickable->style = SoPickStyle::UNPICKABLE;
+    standIn->addChild(unpickable);
+    for (App::DocumentObject* layer : layers->getObjects()) {
+        if (auto* view = Application::Instance->getViewProvider(layer)) {
+            standIn->addChild(view->getRoot());
+        }
+    }
+
+    restoreModelView();
+    if (Gui::Document* shown = Application::Instance->getDocument(document)) {
+        for (MDIView* mdi : shown->getMDIViewsOfType(View3DInventor::getClassTypeId())) {
+            auto* view = static_cast<View3DInventor*>(mdi);
+            view->getViewer()->setStandIn(standIn);
+            standInViews.emplace_back(view);
+            addBar(view, chosen->barText);
+        }
+    }
+    standIn->unref();
+    showingPast = !standInViews.empty();
+    Application::Instance->commandManager().testActive();
+}
+
+App::Document* HistoryPanel::layersFor(App::Document& before, App::Document& after)
+{
+    const auto key = std::make_pair(&after, drawChanges);
+    auto found = layerDocuments.find(key);
+    if (found != layerDocuments.end()) {
+        return found->second;
+    }
+    // A version read from its file carries no shapes until it is built; build each once.
+    for (App::Document* side : {&before, &after}) {
+        if (side != document && builtVersions.insert(side).second) {
+            side->recompute();
+        }
+    }
+    App::Document* layers = versionLayers()(before, after, drawChanges);
+    layerDocuments[key] = layers;
+    return layers;
+}
+
+namespace
+{
+/// The bar across the top of a model view showing an older version (UI_GUIDE §2.2.1). It follows
+/// the view's width.
+class PastVersionBar: public QFrame
+{
+public:
+    explicit PastVersionBar(QWidget* view)
+        : QFrame(view)
+    {
+        view->installEventFilter(this);
+        setAutoFillBackground(true);
+        setBackgroundRole(QPalette::ToolTipBase);
+        setForegroundRole(QPalette::ToolTipText);
+        setFrameShape(QFrame::StyledPanel);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == parentWidget() && event->type() == QEvent::Resize) {
+            fitToView();
+        }
+        return QFrame::eventFilter(watched, event);
+    }
+
+public:
+    void fitToView()
+    {
+        setGeometry(0, 0, parentWidget()->width(), sizeHint().height());
+        raise();
+    }
+};
+}  // namespace
+
+void HistoryPanel::addBar(View3DInventor* view, const QString& text)
+{
+    auto* bar = new PastVersionBar(view);
+    bar->setObjectName(QStringLiteral("PastVersionBar"));
+    auto* layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(8, 4, 8, 4);
+    layout->addWidget(new QLabel(text, bar), 1);
+
+    auto* changes = new QCheckBox(tr("Show changes"), bar);
+    changes->setChecked(drawChanges);
+    changes->setToolTip(tr("Draws what this version added in blue and what it removed in red"));
+    connect(changes, &QCheckBox::toggled, this, [this](bool on) {
+        drawChanges = on;
+        // Rebuilding here would delete the bar that sent the signal.
+        QTimer::singleShot(0, this, &HistoryPanel::showChosenVersion);
+    });
+    layout->addWidget(changes);
+
+    auto* now = new QPushButton(tr("Return to now"), bar);
+    now->setToolTip(tr("Shows the part as it is now, which can be edited"));
+    connect(now, &QPushButton::clicked, this, [this]() {
+        QTimer::singleShot(0, this, &HistoryPanel::returnToNow);
+    });
+    layout->addWidget(now);
+
+    bar->fitToView();
+    bar->show();
+}
+
+void HistoryPanel::restoreModelView()
+{
+    for (const QPointer<View3DInventor>& view : standInViews) {
+        if (!view) {
+            continue;
+        }
+        view->getViewer()->setStandIn(nullptr);
+        for (auto* bar : view->findChildren<QFrame*>(QStringLiteral("PastVersionBar"))) {
+            bar->hide();
+            bar->deleteLater();
+        }
+    }
+    standInViews.clear();
+    if (showingPast) {
+        showingPast = false;
+        Application::Instance->commandManager().testActive();
+    }
+}
+
+void HistoryPanel::returnToNow()
+{
+    restoreModelView();
+    auto* top = versionList->topLevelItem(0);
+    if (top && top->data(0, VersionRole).toInt() == NotYetCommitted
+        && versionList->currentItem() != top) {
+        versionList->setCurrentItem(top);
+    }
+}
+
+void HistoryPanel::returnIfShowingPast(const App::Document* changed)
+{
+    if (!showingPast || changed != document) {
+        return;
+    }
+    versionViewTimer->stop();
+    restoreModelView();
+    QTimer::singleShot(0, this, &HistoryPanel::returnToNow);
 }
 
 App::Document* HistoryPanel::versionDocument(const std::string& commit)
@@ -441,7 +629,12 @@ App::Document* HistoryPanel::emptyDocument()
 
 void HistoryPanel::closeVersionDocuments()
 {
+    restoreModelView();
     closingVersions = true;
+    for (const auto& [key, layers] : layerDocuments) {
+        App::GetApplication().closeDocument(layers->getName());
+    }
+    layerDocuments.clear();
     for (const auto& [commit, version] : versionDocuments) {
         App::GetApplication().closeDocument(version->getName());
     }

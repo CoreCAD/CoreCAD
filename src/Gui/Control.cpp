@@ -35,6 +35,7 @@
 
 #include "Control.h"
 #include "BitmapFactory.h"
+#include "HistoryPanel.h"
 #include "Tree.h"
 #include "TaskView/TaskView.h"
 
@@ -275,6 +276,9 @@ bool ControlSingleton::isAllowedAlterDocument(App::Document* attachedTo) const
     attachedTo = docOrDefault(attachedTo);
     if (!attachedTo) {
         return true;
+    }
+    if (HistoryPanel::isShowingPastVersion(attachedTo)) {
+        return false;
     }
     Gui::TaskView::TaskDialog* dlg = activeDialog(attachedTo);
 
