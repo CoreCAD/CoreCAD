@@ -81,6 +81,7 @@ set(FreeCADApp_LIBS
     FreeCADBase
     ${Boost_LIBRARIES}
     fmt::fmt
+    libgit2::libgit2
 )
 
 if(BUILD_TRACY_FRAME_PROFILER)
@@ -335,6 +336,7 @@ SET(FreeCADApp_CPP_SRCS
     StoredRecipeWriter.cpp
     RecipeDetail.cpp
     DocumentChanges.cpp
+    VersionHistory.cpp
     ElementNamingUtils.cpp
     ProgramInformation.cpp
     SafeMode.cpp
@@ -371,6 +373,7 @@ SET(FreeCADApp_HPP_SRCS
     StoredRecipe.h
     RecipeDetail.h
     DocumentChanges.h
+    VersionHistory.h
     ElementNamingUtils.h
     ProgramInformation.h
     Services.h

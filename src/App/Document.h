@@ -613,6 +613,8 @@ public:
      * to travel inside the recipe itself.
      */
     std::string assetDirectory() const;
+    /// The same folder for a document file that need not be open, such as a past version.
+    static std::string assetDirectoryFor(const std::string& file);
     /// @}
 
     void Save(Base::Writer& writer) const override;
