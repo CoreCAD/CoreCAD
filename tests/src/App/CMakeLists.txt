@@ -40,6 +40,7 @@ add_executable(App_tests_run
         PropertyRegistration.cpp
         PropertyExpressionEngine.cpp
         DocumentChanges.cpp
+        VersionHistory.cpp
         ObjectRecipe.cpp
         Recipe.cpp
         RecoverySnapshot.cpp

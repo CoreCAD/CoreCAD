@@ -607,7 +607,11 @@ std::string Document::cacheDirectory() const
 
 std::string Document::assetDirectory() const
 {
-    const std::string file = FileName.getStrValue();
+    return assetDirectoryFor(FileName.getStrValue());
+}
+
+std::string Document::assetDirectoryFor(const std::string& file)
+{
     if (file.empty()) {
         return {};
     }

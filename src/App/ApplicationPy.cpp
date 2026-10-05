@@ -43,6 +43,7 @@
 #include "DocumentObjectPy.h"
 #include "DocumentChanges.h"
 #include "ObjectRecipe.h"
+#include "VersionHistory.h"
 #include "RecoverySnapshot.h"
 #include "UnreferencedFiles.h"
 
@@ -273,6 +274,19 @@ PyMethodDef ApplicationPy::Methods[] = {
      "are matched by durable identity, so both documents must be versions of one model.\n"
      "Nothing is recomputed. Each entry has 'object', 'label', 'type', 'section',\n"
      "'entity', 'kind', 'field', 'before', 'after' and 'text', the change in plain words."},
+    {"fileVersions",
+     (PyCFunction)ApplicationPy::sFileVersions,
+     METH_VARARGS,
+     "fileVersions(path) -> list of dict\n\n"
+     "The committed versions of a document file in the git repository it is kept in,\n"
+     "newest first: each a dict with 'commit', 'author', 'time' (seconds since the\n"
+     "epoch) and 'summary'. Empty when the file is not in a repository."},
+    {"openFileVersion",
+     (PyCFunction)ApplicationPy::sOpenFileVersion,
+     METH_VARARGS,
+     "openFileVersion(path, revision) -> Document\n\n"
+     "The file as committed at a revision (a commit id, or a name such as 'HEAD'), read\n"
+     "into a new hidden, temporary document for reading and comparing. Close it after."},
     {"listDocuments",
      (PyCFunction)ApplicationPy::sListDocuments,
      METH_VARARGS,
@@ -905,6 +919,50 @@ PyObject* ApplicationPy::sDiffDocuments(PyObject* /*self*/, PyObject* args)
             list.append(entry);
         }
         return Py::new_reference_to(list);
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sFileVersions(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string file(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        Py::List list;
+        for (const FileVersion& version : fileVersions(file)) {
+            Py::Dict entry;
+            entry.setItem("commit", Py::String(version.commit));
+            entry.setItem("author", Py::String(version.author));
+            entry.setItem("time", Py::Long(static_cast<long long>(version.time)));
+            entry.setItem("summary", Py::String(version.summary));
+            list.append(entry);
+        }
+        return Py::new_reference_to(list);
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sOpenFileVersion(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    char* revision = nullptr;
+    if (!PyArg_ParseTuple(args, "etet", "utf-8", &path, "utf-8", &revision)) {
+        return nullptr;
+    }
+    const std::string file(path);
+    const std::string at(revision);
+    PyMem_Free(path);
+    PyMem_Free(revision);
+
+    PY_TRY
+    {
+        return openFileVersion(file, at)->getPyObject();
     }
     PY_CATCH;
 }
