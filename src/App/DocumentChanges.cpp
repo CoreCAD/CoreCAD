@@ -37,6 +37,7 @@
 
 #include "DocumentChanges.h"
 
+#include "Datums.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "ObjectRecipe.h"
@@ -236,6 +237,20 @@ void appendAfterDependencies(const DocumentObject* obj,
     order.push_back(obj);
 }
 
+/// The world frame a document makes for itself: its origin and that origin's planes, axes and
+/// point. It arrives with the document, not as a step anyone took, so its arrival or removal is
+/// not a change worth listing; an edit to it still is.
+bool isWorldFrame(const DocumentObject& obj)
+{
+    if (const auto* frame = dynamic_cast<const LocalCoordinateSystem*>(&obj)) {
+        return frame->isOrigin();
+    }
+    if (const auto* datum = dynamic_cast<const DatumElement*>(&obj)) {
+        return datum->isOriginFeature();
+    }
+    return false;
+}
+
 /// Objects in the order the model is built, a sketch before the step that uses it. A document's
 /// own list cannot serve: one read back from its file is in id order. A loop between objects, as a
 /// body and its steps make, is broken where it is met rather than reported: an order for reading
@@ -303,7 +318,13 @@ std::vector<DocumentChange> App::diffDocuments(const Document& before, const Doc
             changes.push_back(entry);
         }
 
+        const DocumentObject& object = inNew ? *itNew->second : *itOld->second;
         for (const RecipeChange& change : nodeChanges[id]) {
+            const bool arrivedOrWent = change.kind == RecipeChange::Kind::Added
+                || change.kind == RecipeChange::Kind::Removed;
+            if (arrivedOrWent && isWorldFrame(object)) {
+                continue;
+            }
             DocumentChange entry = about;
             entry.change = change;
             entry.text = describe(change, about.label, newLabels, oldLabels);
