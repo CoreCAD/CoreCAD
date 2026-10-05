@@ -34,6 +34,7 @@
 #include "Command.h"
 #include "DockWindowManager.h"
 #include "Document.h"
+#include "NaviCube.h"
 #include "OverlayManager.h"
 #include "Selection/Selection.h"
 #include "View3DInventor.h"
@@ -504,24 +505,43 @@ App::Document* HistoryPanel::layersFor(App::Document& before, App::Document& aft
 namespace
 {
 /// The bar across the top of a model view showing an older version (UI_GUIDE §2.2.1). It follows
-/// the view's width.
+/// the view's width, tinted with the theme's accent so it reads as a mode, and stops short of the
+/// navigation cube.
 class PastVersionBar: public QFrame
 {
 public:
-    explicit PastVersionBar(QWidget* view)
+    explicit PastVersionBar(View3DInventor* view)
         : QFrame(view)
+        , viewer(view->getViewer())
     {
         view->installEventFilter(this);
-        setAutoFillBackground(true);
-        setBackgroundRole(QPalette::ToolTipBase);
-        setForegroundRole(QPalette::ToolTipText);
-        setFrameShape(QFrame::StyledPanel);
+        // Releasing the mouse may end a drag of the navigation cube.
+        viewer->viewport()->installEventFilter(this);
+        setObjectName(QStringLiteral("PastVersionBar"));
+        const QColor base = palette().color(QPalette::Window);
+        const QColor accent = palette().color(QPalette::Highlight);
+        constexpr double accentShare = 0.35;
+        auto blend = [&](int from, int to) {
+            return static_cast<int>(from + (to - from) * accentShare);
+        };
+        const QColor tint(
+            blend(base.red(), accent.red()),
+            blend(base.green(), accent.green()),
+            blend(base.blue(), accent.blue())
+        );
+        // A style rule, because the theme's style sheet overrides a palette background.
+        setStyleSheet(QStringLiteral(
+                          "#PastVersionBar { background-color: %1; border: none; "
+                          "border-bottom: 1px solid %2; }"
+        )
+                          .arg(tint.name(), accent.name()));
     }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (watched == parentWidget() && event->type() == QEvent::Resize) {
+        if ((watched == parentWidget() && event->type() == QEvent::Resize)
+            || (watched == viewer->viewport() && event->type() == QEvent::MouseButtonRelease)) {
             fitToView();
         }
         return QFrame::eventFilter(watched, event);
@@ -530,16 +550,32 @@ protected:
 public:
     void fitToView()
     {
-        setGeometry(0, 0, parentWidget()->width(), sizeHint().height());
+        QRect band(0, 0, parentWidget()->width(), sizeHint().height());
+        if (viewer->isEnabledNaviCube() && viewer->getNaviCube()) {
+            QRect cube = viewer->getNaviCube()->area();
+            cube.moveTopLeft(viewer->viewport()->mapTo(parentWidget(), cube.topLeft()));
+            if (cube.intersects(band)) {
+                constexpr int gap = 4;
+                if (cube.center().x() > band.center().x()) {
+                    band.setRight(cube.left() - gap);
+                }
+                else {
+                    band.setLeft(cube.right() + gap);
+                }
+            }
+        }
+        setGeometry(band);
         raise();
     }
+
+private:
+    View3DInventorViewer* viewer;
 };
 }  // namespace
 
 void HistoryPanel::addBar(View3DInventor* view, const QString& text)
 {
     auto* bar = new PastVersionBar(view);
-    bar->setObjectName(QStringLiteral("PastVersionBar"));
     auto* layout = new QHBoxLayout(bar);
     layout->setContentsMargins(8, 4, 8, 4);
     layout->addWidget(new QLabel(text, bar), 1);
