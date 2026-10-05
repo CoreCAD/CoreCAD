@@ -211,6 +211,24 @@ TEST_F(DocumentChangesTest, changesFollowTheOrderTheModelIsBuilt)
         << formatDocumentChanges(changes);
 }
 
+// A part's first version, compared with nothing: the world frame came with the document, so only
+// what the person made is listed.
+TEST_F(DocumentChangesTest, theWorldFrameIsNotListedAsAdded)
+{
+    App::DocumentInitFlags typed;
+    typed.documentType = App::Document::DocTypePart;
+    _afterName = App::GetApplication().getUniqueDocumentName("after");
+    auto* after = App::GetApplication().newDocument(_afterName.c_str(), "testUser", typed);
+    ASSERT_GT(after->getObjects().size(), 0u)
+        << "a part document should start with its world frame";
+    box(after, "Box", 10.0);
+
+    const std::vector<DocumentChange> changes = diffDocuments(*_before, *after);
+
+    ASSERT_EQ(changes.size(), 1u) << formatDocumentChanges(changes);
+    EXPECT_EQ(changes[0].text, "Box added");
+}
+
 TEST_F(DocumentChangesTest, scriptsGetOneRecordPerChange)
 {
     box(_before, "Box", 10.0);
