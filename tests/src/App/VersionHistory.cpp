@@ -277,4 +277,32 @@ TEST_F(VersionHistoryTest, aPastVersionOpensAndComparesWithTheOpenDocument)
     EXPECT_EQ(App::GetApplication().getDocumentByUuid(live->Uid.getValue()), live);
 }
 
+// Each version needs a document of its own; two read into one would be compared with itself.
+TEST_F(VersionHistoryTest, twoVersionsOpenSideBySide)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    auto* live = track(
+        App::GetApplication()
+            .newDocument(App::GetApplication().getUniqueDocumentName("live").c_str(), "Widget")
+    );
+    auto* length = static_cast<PropertyLength*>(
+        live->addObject("Part::Box", "Box")->getPropertyByName("Length")
+    );
+    length->setValue(10.0);
+    live->saveAs(file.string().c_str());
+    const std::string first = repository.commit({"Widget.cpart"}, "Ten");
+    length->setValue(40.0);
+    live->save();
+    const std::string second = repository.commit({"Widget.cpart"}, "Forty");
+
+    auto* older = track(openFileVersion(file.string(), first));
+    auto* newer = track(openFileVersion(file.string(), second));
+    const std::vector<DocumentChange> changes = diffDocuments(*older, *newer);
+
+    EXPECT_NE(older, newer);
+    ASSERT_EQ(changes.size(), 1u) << formatDocumentChanges(changes);
+    EXPECT_EQ(changes[0].text, "Box: Length 10 mm → 40 mm");
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

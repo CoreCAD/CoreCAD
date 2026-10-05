@@ -767,7 +767,8 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Separator"
           << "Std_Workbench"
           << "Std_ToolBarMenu"
-          << "Std_DockViewMenu";
+          << "Std_DockViewMenu"
+          << "Std_ShowHistory";
     if (DockWindowManager::instance()->isOverlayActivated()) {
         *view << "Std_DockOverlay";
     }
