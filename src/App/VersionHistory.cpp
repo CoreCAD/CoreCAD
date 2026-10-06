@@ -312,6 +312,20 @@ bool App::isKeptInHistory(const std::string& path)
     return locate(path).has_value();
 }
 
+std::string App::historyFolderOf(const std::string& path)
+{
+    const GitSession session;
+    const std::optional<Located> located = locate(path);
+    if (!located) {
+        return {};
+    }
+    fs::path folder(git_repository_workdir(located->repository.get()));
+    if (!folder.has_filename()) {
+        folder = folder.parent_path();
+    }
+    return fs::weakly_canonical(folder).string();
+}
+
 void App::startHistory(const std::string& folder)
 {
     const GitSession session;
