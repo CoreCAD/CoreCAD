@@ -81,6 +81,10 @@ public:
     static PyObject* sIsKeptInHistory        (PyObject *self,PyObject *args);
     static PyObject* sStartHistory           (PyObject *self,PyObject *args);
     static PyObject* sCommitFile             (PyObject *self,PyObject *args);
+    static PyObject* sProjectFileOf          (PyObject *self,PyObject *args);
+    static PyObject* sProjectName            (PyObject *self,PyObject *args);
+    static PyObject* sCreateProject          (PyObject *self,PyObject *args);
+    static PyObject* sMoveIntoProject        (PyObject *self,PyObject *args);
     static PyObject* sListDocuments          (PyObject *self,PyObject *args);
     static PyObject* sAddDocObserver         (PyObject *self,PyObject *args);
     static PyObject* sRemoveDocObserver      (PyObject *self,PyObject *args);

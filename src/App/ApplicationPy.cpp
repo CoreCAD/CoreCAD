@@ -43,6 +43,7 @@
 #include "DocumentObjectPy.h"
 #include "DocumentChanges.h"
 #include "ObjectRecipe.h"
+#include "Project.h"
 #include "VersionHistory.h"
 #include "RecoverySnapshot.h"
 #include "UnreferencedFiles.h"
@@ -304,6 +305,28 @@ PyMethodDef ApplicationPy::Methods[] = {
      "Record a document file as it is on disk as a new version and return the commit id.\n"
      "Only the file and the source material it names go in; anything else changed or\n"
      "staged in the repository is left as it was. Save the document first."},
+    {"projectFileOf",
+     (PyCFunction)ApplicationPy::sProjectFileOf,
+     METH_VARARGS,
+     "projectFileOf(path) -> str\n\n"
+     "The project file of the project a document file is in, or '' when it is in none."},
+    {"projectName",
+     (PyCFunction)ApplicationPy::sProjectName,
+     METH_VARARGS,
+     "projectName(projectFile) -> str\n\n"
+     "The project's name, as its project file states it."},
+    {"createProject",
+     (PyCFunction)ApplicationPy::sCreateProject,
+     METH_VARARGS,
+     "createProject(folder, name) -> str\n\n"
+     "Make a project in a folder, starting its history unless it is already kept in one,\n"
+     "and return the project file."},
+    {"moveIntoProject",
+     (PyCFunction)ApplicationPy::sMoveIntoProject,
+     METH_VARARGS,
+     "moveIntoProject(document, projectFile) -> str\n\n"
+     "Move a saved document into the project's folder, with its source material, and\n"
+     "return its new path. The old file is removed."},
     {"listDocuments",
      (PyCFunction)ApplicationPy::sListDocuments,
      METH_VARARGS,
@@ -1032,6 +1055,75 @@ PyObject* ApplicationPy::sCommitFile(PyObject* /*self*/, PyObject* args)
     PY_TRY
     {
         return Py::new_reference_to(Py::String(commitFile(file, text)));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sProjectFileOf(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string file(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(projectFileOf(file)));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sProjectName(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string file(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(projectName(file)));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sCreateProject(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    char* name = nullptr;
+    if (!PyArg_ParseTuple(args, "etet", "utf-8", &path, "utf-8", &name)) {
+        return nullptr;
+    }
+    const std::string folder(path);
+    const std::string projectName(name);
+    PyMem_Free(path);
+    PyMem_Free(name);
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(createProject(folder, projectName)));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sMoveIntoProject(PyObject* /*self*/, PyObject* args)
+{
+    PyObject* document = nullptr;
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "O!et", &App::DocumentPy::Type, &document, "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string projectFile(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        auto* doc = static_cast<App::DocumentPy*>(document)->getDocumentPtr();
+        return Py::new_reference_to(Py::String(moveIntoProject(*doc, projectFile)));
     }
     PY_CATCH;
 }

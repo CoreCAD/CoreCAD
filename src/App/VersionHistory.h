@@ -74,6 +74,9 @@ AppExport Document* openFileVersion(const std::string& path, const std::string& 
 /// Whether the file at `path` lies in the working folder of a git repository.
 AppExport bool isKeptInHistory(const std::string& path);
 
+/// The working folder of the git repository the file at `path` is kept in, or empty when none.
+AppExport std::string historyFolderOf(const std::string& path);
+
 /// Start a git repository in `folder`, with the rebuild store ignored. Throws when it cannot.
 AppExport void startHistory(const std::string& folder);
 

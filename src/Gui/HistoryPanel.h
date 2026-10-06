@@ -77,7 +77,8 @@ private:
     void returnIfShowingPast(const App::Document* changed);
     void showCommitArea(bool shown);
     void commit();
-    void startHistoryHere();
+    void newProject();
+    void addToProject();
 
     /// The two documents the chosen entry compares, and how to speak of it.
     struct Comparison
@@ -107,6 +108,7 @@ private:
     QTreeWidget* versionList;
     QTreeWidget* changeList;
     QWidget* commitArea;
+    QWidget* projectOffer;
     QPlainTextEdit* messageBox;
     QPushButton* commitButton;
     QLabel* commitProblem;

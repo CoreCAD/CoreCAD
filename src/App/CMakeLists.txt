@@ -336,6 +336,7 @@ SET(FreeCADApp_CPP_SRCS
     StoredRecipeWriter.cpp
     RecipeDetail.cpp
     DocumentChanges.cpp
+    Project.cpp
     VersionHistory.cpp
     ElementNamingUtils.cpp
     ProgramInformation.cpp
@@ -373,6 +374,7 @@ SET(FreeCADApp_HPP_SRCS
     StoredRecipe.h
     RecipeDetail.h
     DocumentChanges.h
+    Project.h
     VersionHistory.h
     ElementNamingUtils.h
     ProgramInformation.h

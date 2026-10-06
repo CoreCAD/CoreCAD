@@ -1336,6 +1336,7 @@ SET(View_CPP_SRCS
     MDIViewWithCamera.cpp
     GraphvizView.cpp
     HistoryPanel.cpp
+    ProjectDialogs.cpp
     ImageView.cpp
     ActiveObjectList.cpp
 )
@@ -1346,6 +1347,7 @@ SET(View_HPP_SRCS
     MDIViewWithCamera.h
     GraphvizView.h
     HistoryPanel.h
+    ProjectDialogs.h
     ImageView.h
     ActiveObjectList.h
 )
