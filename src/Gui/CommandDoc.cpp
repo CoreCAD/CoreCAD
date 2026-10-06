@@ -26,6 +26,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QDir>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDialog>
@@ -68,6 +69,7 @@
 #include "Dialogs/DlgProjectUtility.h"
 #include "GraphvizView.h"
 #include "HistoryPanel.h"
+#include "ProjectDialogs.h"
 #include "ManualAlignment.h"
 #include "MergeDocuments.h"
 #include "Navigation/NavigationStyle.h"
@@ -797,6 +799,35 @@ void StdCmdShowHistory::activated(int iMsg)
 bool StdCmdShowHistory::isActive()
 {
     return getActiveGuiDocument() != nullptr;
+}
+
+//===========================================================================
+// Std_NewProject
+//===========================================================================
+
+DEF_STD_CMD(StdCmdNewProject)
+
+StdCmdNewProject::StdCmdNewProject()
+    : Command("Std_NewProject")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("New pro&ject…");
+    sToolTipText = QT_TR_NOOP("Makes a new project: a folder that keeps the history of its parts");
+    sStatusTip = sToolTipText;
+    sWhatsThis = "Std_NewProject";
+    eType = NoTransaction;
+}
+
+void StdCmdNewProject::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    NewProjectDialog dialog(nullptr, getMainWindow());
+    if (dialog.exec() == QDialog::Accepted) {
+        getMainWindow()->showMessage(
+            QObject::tr("Made the project %1.").arg(QDir::toNativeSeparators(dialog.projectFile())),
+            5000
+        );
+    }
 }
 
 //===========================================================================
@@ -2671,6 +2702,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdMergeProjects());
     rcCmdMgr.addCommand(new StdCmdMergeDocumentVersions());
     rcCmdMgr.addCommand(new StdCmdShowHistory());
+    rcCmdMgr.addCommand(new StdCmdNewProject());
     rcCmdMgr.addCommand(new StdCmdDependencyGraph());
     rcCmdMgr.addCommand(new StdCmdExportDependencyGraph());
 

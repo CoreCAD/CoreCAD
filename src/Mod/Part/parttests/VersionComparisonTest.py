@@ -373,7 +373,30 @@ class HistoryCommitTest(unittest.TestCase):
         )
         self.assertTrue(self._widget("QPushButton", "HistoryCommitButton").isVisible())
 
-    def test_commit_saves_unsaved_edits_first(self):
+    def test_new_project_from_the_file_menu_moves_nothing(self):
+        from PySide import QtWidgets
+
+        where = os.path.join(self._dir, "Empty")
+        seen = {}
+
+        def create(dialog):
+            dialog.findChild(QtWidgets.QLineEdit, "ProjectName").setText("Empty")
+            folder = dialog.findChild(QtWidgets.QLineEdit, "ProjectFolder")
+            folder.setText(where)
+            folder.textEdited.emit(where)
+            seen["statement"] = dialog.findChild(QtWidgets.QLabel, "ProjectStatement").text()
+            self._button(dialog, "Create project").click()
+
+        self._in_dialog(create)
+        Gui.runCommand("Std_NewProject")
+        self._settle()
+        if self._dialog_failure:
+            raise self._dialog_failure
+
+        self.assertEqual(seen["statement"], "", "a project with no part said something would move")
+        self.assertTrue(os.path.exists(os.path.join(where, "Empty.cproject")))
+        self.assertTrue(os.path.exists(self._path), "the open part was moved")
+
         self._start_and_commit_first()
         self._box.Length = 40
         self._doc.recompute()
