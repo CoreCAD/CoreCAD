@@ -103,6 +103,7 @@ class HistoryModelViewTest(unittest.TestCase):
         self._git("init", "-q")
         self._git("config", "user.email", "test@example.com")
         self._git("config", "user.name", "Test")
+        App.createProject(self._dir, "Model")
         self._doc = App.newDocument("HistoryModel", type="Part")
         self._box = self._doc.addObject("Part::Box", "Box")
         path = os.path.join(self._dir, "part.cpart")
@@ -202,7 +203,7 @@ class HistoryModelViewTest(unittest.TestCase):
 
 
 class HistoryCommitTest(unittest.TestCase):
-    """Committing from the History panel, and starting history where there is none."""
+    """Committing from the History panel, and the offer of a project where there is none."""
 
     def setUp(self):
         self._dir = tempfile.mkdtemp()
@@ -238,10 +239,45 @@ class HistoryCommitTest(unittest.TestCase):
         self.assertIsNotNone(found, name)
         return found
 
-    def _start_button(self):
+    def _offer(self, name):
         from PySide import QtWidgets
 
-        return Gui.getMainWindow().findChild(QtWidgets.QPushButton, "HistoryStartButton")
+        return Gui.getMainWindow().findChild(QtWidgets.QPushButton, name)
+
+    def _in_dialog(self, act, name=None):
+        """Run `act` on the next modal dialog (named `name`, when given) once it is showing; the
+        dialog blocks the caller."""
+        from PySide import QtCore, QtWidgets
+
+        self._dialog_failure = None
+        tries = [50]
+
+        def run():
+            dialog = QtWidgets.QApplication.activeModalWidget()
+            if dialog is None or (name and dialog.objectName() != name):
+                tries[0] -= 1
+                if tries[0] > 0:
+                    QtCore.QTimer.singleShot(100, run)
+                else:
+                    self._dialog_failure = AssertionError("no %s dialog appeared" % name)
+                    if dialog is not None:
+                        dialog.reject()
+                return
+            try:
+                act(dialog)
+            except Exception as failure:  # reported after the dialog has closed
+                self._dialog_failure = failure
+                dialog.reject()
+
+        QtCore.QTimer.singleShot(100, run)
+
+    def _button(self, dialog, text):
+        from PySide import QtWidgets
+
+        for button in dialog.findChildren(QtWidgets.QPushButton):
+            if button.text() == text:
+                return button
+        self.fail("no %s button" % text)
 
     def _versions(self):
         return self._widget("QTreeWidget", "HistoryVersions")
@@ -252,28 +288,90 @@ class HistoryCommitTest(unittest.TestCase):
         self._settle()
 
     def _start_and_commit_first(self):
-        App.startHistory(self._dir)
+        App.createProject(self._dir, "Part")
         App.commitFile(self._path, "Ten")
 
-    def test_a_part_without_history_is_offered_one_and_commits_from_the_panel(self):
+    def test_a_part_not_in_a_project_is_offered_one_and_commits_from_the_panel(self):
+        from PySide import QtWidgets
+
+        # History alone is not a project: the part's versions are not shown until it is in one.
+        App.startHistory(self._dir)
         self._open_panel()
-        start = self._start_button()
-        self.assertIsNotNone(start)
-        self.assertTrue(start.isVisible())
+        self.assertTrue(self._offer("HistoryNewProjectButton").isVisible())
+        self.assertTrue(self._offer("HistoryAddToProjectButton").isVisible())
         self.assertFalse(self._widget("QWidget", "HistoryCommitButton").isVisible())
+        os.makedirs(os.path.join(self._dir, "Taken"))
+        with open(os.path.join(self._dir, "Taken", "part.cpart"), "w") as taken:
+            taken.write("another part")
+        seen = {}
 
-        start.click()
+        def create(dialog):
+            name = dialog.findChild(QtWidgets.QLineEdit, "ProjectName")
+            statement = dialog.findChild(QtWidgets.QLabel, "ProjectStatement")
+            problem = dialog.findChild(QtWidgets.QLabel, "ProjectProblem")
+            create_button = self._button(dialog, "Create project")
+            seen["empty"] = create_button.isEnabled()
+            name.setText("Taken")
+            seen["taken"] = (create_button.isEnabled(), problem.text())
+            name.setText("Gearbox")
+            seen["statement"] = statement.text()
+            create_button.click()
+
+        self._in_dialog(create)
+        self._offer("HistoryNewProjectButton").click()
         self._settle()
+        if self._dialog_failure:
+            raise self._dialog_failure
 
-        self.assertIsNone(self._start_button())
-        self.assertTrue(App.isKeptInHistory(self._path))
+        self.assertFalse(seen["empty"], "a project could be made without a name")
+        self.assertFalse(seen["taken"][0], "the move could overwrite another part")
+        self.assertIn("part.cpart", seen["taken"][1])
+        moved = os.path.join(self._dir, "Gearbox", "part.cpart")
+        self.assertEqual(
+            seen["statement"], "part.cpart will be moved to %s." % os.path.dirname(moved)
+        )
+        self.assertFalse(os.path.exists(self._path), "the part was copied, not moved")
+        self.assertEqual(os.path.realpath(self._doc.FileName), os.path.realpath(moved))
+        self.assertTrue(App.projectFileOf(moved).endswith("Gearbox.cproject"))
+        self.assertFalse(self._offer("HistoryNewProjectButton").isVisible())
         self.assertTrue(self._widget("QPushButton", "HistoryCommitButton").isVisible())
         self._commit("Start the part")
 
-        versions = App.fileVersions(self._path)
+        versions = App.fileVersions(moved)
         self.assertEqual([v["summary"] for v in versions], ["Start the part"])
         self.assertEqual(self._versions().topLevelItemCount(), 2)
         self.assertFalse(self._widget("QPushButton", "HistoryCommitButton").isVisible())
+
+    def test_add_to_project_moves_the_part_into_a_chosen_project(self):
+        project = App.createProject(os.path.join(self._dir, "Gearbox"), "Gearbox")
+        self._open_panel()
+        seen = {}
+
+        def choose(dialog):
+            dialog.findChild(QtWidgets.QLineEdit, "fileNameEdit").setText(project)
+            self._in_dialog(confirm, "AddToProjectDialog")
+            dialog.accept()
+
+        def confirm(dialog):
+            seen["statement"] = dialog.findChild(QtWidgets.QLabel, "ProjectStatement").text()
+            self._button(dialog, "Move to project").click()
+
+        from PySide import QtWidgets
+
+        self._in_dialog(choose)
+        self._offer("HistoryAddToProjectButton").click()
+        self._settle()
+        if self._dialog_failure:
+            raise self._dialog_failure
+
+        moved = os.path.join(self._dir, "Gearbox", "part.cpart")
+        self.assertIn("in the project Gearbox", seen["statement"])
+        self.assertFalse(os.path.exists(self._path))
+        self.assertTrue(os.path.exists(moved))
+        self.assertEqual(
+            os.path.realpath(App.projectFileOf(self._doc.FileName)), os.path.realpath(project)
+        )
+        self.assertTrue(self._widget("QPushButton", "HistoryCommitButton").isVisible())
 
     def test_commit_saves_unsaved_edits_first(self):
         self._start_and_commit_first()

@@ -28,6 +28,7 @@
 #include <App/Document.h>
 #include <App/DocumentChanges.h>
 #include <App/DocumentObject.h>
+#include <App/Project.h>
 #include <Base/Exception.h>
 #include <Base/Uuid.h>
 
@@ -37,8 +38,10 @@
 #include "Command.h"
 #include "DockWindowManager.h"
 #include "Document.h"
+#include "MainWindow.h"
 #include "NaviCube.h"
 #include "OverlayManager.h"
+#include "ProjectDialogs.h"
 #include "Selection/Selection.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -115,6 +118,29 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     versionList = new QTreeWidget(versionsPane);
     versionList->setObjectName(QStringLiteral("HistoryVersions"));
     versionsLayout->addWidget(versionList);
+    // Outside the list, because a list row cannot wrap and the offer's sentence is long.
+    projectOffer = new QWidget(versionsPane);
+    auto* offerLayout = new QVBoxLayout(projectOffer);
+    auto* offerText
+        = new QLabel(tr("This part is not in a project, so it has no history."), projectOffer);
+    offerText->setWordWrap(true);
+    offerLayout->addWidget(offerText);
+    auto* offerButtons = new QHBoxLayout();
+    auto* create = new QPushButton(tr("New project"), projectOffer);
+    create->setObjectName(QStringLiteral("HistoryNewProjectButton"));
+    create->setToolTip(tr("Make a project for this part and move the part into its folder."));
+    auto* add = new QPushButton(tr("Add to project"), projectOffer);
+    add->setObjectName(QStringLiteral("HistoryAddToProjectButton"));
+    add->setToolTip(tr("Move this part into an existing project."));
+    offerButtons->addWidget(create);
+    offerButtons->addWidget(add);
+    offerButtons->addStretch();
+    offerLayout->addLayout(offerButtons);
+    offerLayout->addStretch();
+    versionsLayout->addWidget(projectOffer);
+    projectOffer->hide();
+    connect(create, &QPushButton::clicked, this, &HistoryPanel::newProject);
+    connect(add, &QPushButton::clicked, this, &HistoryPanel::addToProject);
     versionList->setColumnCount(2);
     versionList->setHeaderHidden(true);
     versionList->setRootIsDecorated(false);
@@ -342,6 +368,8 @@ void HistoryPanel::readVersions()
 
     const QSignalBlocker blocker(versionList);
     versionList->clear();
+    projectOffer->hide();
+    versionList->show();
     if (dock) {
         dock->setWindowTitle(
             document ? tr("History — %1").arg(QString::fromUtf8(document->Label.getValue()))
@@ -356,20 +384,9 @@ void HistoryPanel::readVersions()
         emptyLine(versionList, tr("Save this part to start its history."));
         return;
     }
-    if (versions.empty() && !App::isKeptInHistory(documentFile)) {
-        emptyLine(versionList, tr("This part has no history yet."));
-        // A row of the list, so the offer sits under the sentence it answers.
-        auto* row = emptyLine(versionList, QString());
-        auto* holder = new QWidget();
-        auto* holderLayout = new QHBoxLayout(holder);
-        holderLayout->setContentsMargins(0, 2, 0, 2);
-        auto* start = new QPushButton(tr("Start history here"), holder);
-        start->setObjectName(QStringLiteral("HistoryStartButton"));
-        start->setToolTip(tr("Keep versions of the parts in this folder."));
-        holderLayout->addWidget(start);
-        holderLayout->addStretch();
-        versionList->setItemWidget(row, 0, holder);
-        connect(start, &QPushButton::clicked, this, &HistoryPanel::startHistoryHere);
+    if (App::projectFileOf(documentFile).empty()) {
+        versionList->hide();
+        projectOffer->show();
         return;
     }
 
@@ -506,20 +523,22 @@ void HistoryPanel::commit()
     scheduleRefresh(true);
 }
 
-void HistoryPanel::startHistoryHere()
+void HistoryPanel::newProject()
 {
-    if (documentFile.empty()) {
+    if (!document) {
         return;
     }
-    try {
-        App::startHistory(std::filesystem::path(documentFile).parent_path().string());
+    NewProjectDialog dialog(document, getMainWindow());
+    if (dialog.exec() == QDialog::Accepted) {
+        scheduleRefresh(true);
     }
-    catch (const Base::Exception& e) {
-        e.reportException();
-        emptyLine(versionList, tr("History was not started: %1").arg(QString::fromUtf8(e.what())));
-        return;
+}
+
+void HistoryPanel::addToProject()
+{
+    if (document && Gui::addToProject(document, getMainWindow())) {
+        scheduleRefresh(true);
     }
-    scheduleRefresh(true);
 }
 
 void HistoryPanel::scheduleVersionView()
