@@ -199,3 +199,125 @@ class HistoryModelViewTest(unittest.TestCase):
 
         self.assertEqual(self._versions.currentItem(), self._versions.topLevelItem(0))
         self.assertTrue(self._editable())
+
+
+class HistoryCommitTest(unittest.TestCase):
+    """Committing from the History panel, and starting history where there is none."""
+
+    def setUp(self):
+        self._dir = tempfile.mkdtemp()
+        self._path = os.path.join(self._dir, "part.cpart")
+        self._doc = App.newDocument("HistoryCommit", type="Part")
+        self._box = self._doc.addObject("Part::Box", "Box")
+        self._box.Length = 10
+        self._doc.recompute()
+        self._doc.saveAs(self._path)
+        App.setActiveDocument(self._doc.Name)
+
+    def tearDown(self):
+        App.closeDocument(self._doc.Name)
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def _open_panel(self):
+        Gui.runCommand("Std_ShowHistory")
+        self._settle()
+
+    def _settle(self, rounds=3):
+        from PySide import QtCore, QtWidgets
+
+        app = QtWidgets.QApplication.instance()
+        for _ in range(rounds):
+            app.processEvents()
+            QtCore.QThread.msleep(200)
+            app.processEvents()
+
+    def _widget(self, kind, name):
+        from PySide import QtWidgets
+
+        found = Gui.getMainWindow().findChild(getattr(QtWidgets, kind), name)
+        self.assertIsNotNone(found, name)
+        return found
+
+    def _start_button(self):
+        from PySide import QtWidgets
+
+        return Gui.getMainWindow().findChild(QtWidgets.QPushButton, "HistoryStartButton")
+
+    def _versions(self):
+        return self._widget("QTreeWidget", "HistoryVersions")
+
+    def _commit(self, message):
+        self._widget("QPlainTextEdit", "HistoryCommitMessage").setPlainText(message)
+        self._widget("QPushButton", "HistoryCommitButton").click()
+        self._settle()
+
+    def _start_and_commit_first(self):
+        App.startHistory(self._dir)
+        App.commitFile(self._path, "Ten")
+
+    def test_a_part_without_history_is_offered_one_and_commits_from_the_panel(self):
+        self._open_panel()
+        start = self._start_button()
+        self.assertIsNotNone(start)
+        self.assertTrue(start.isVisible())
+        self.assertFalse(self._widget("QWidget", "HistoryCommitButton").isVisible())
+
+        start.click()
+        self._settle()
+
+        self.assertIsNone(self._start_button())
+        self.assertTrue(App.isKeptInHistory(self._path))
+        self.assertTrue(self._widget("QPushButton", "HistoryCommitButton").isVisible())
+        self._commit("Start the part")
+
+        versions = App.fileVersions(self._path)
+        self.assertEqual([v["summary"] for v in versions], ["Start the part"])
+        self.assertEqual(self._versions().topLevelItemCount(), 2)
+        self.assertFalse(self._widget("QPushButton", "HistoryCommitButton").isVisible())
+
+    def test_commit_saves_unsaved_edits_first(self):
+        self._start_and_commit_first()
+        self._box.Length = 40
+        self._doc.recompute()
+        self._open_panel()
+
+        self._commit("Forty")
+
+        self.assertFalse(Gui.getDocument(self._doc.Name).Modified)
+        committed = App.openFileVersion(self._path, "HEAD")
+        try:
+            self.assertEqual(committed.getObject("Box").Length, 40)
+        finally:
+            App.closeDocument(committed.Name)
+        self.assertEqual(self._widget("QPlainTextEdit", "HistoryCommitMessage").toPlainText(), "")
+
+    def test_commit_waits_for_a_message(self):
+        self._start_and_commit_first()
+        self._box.Length = 40
+        self._doc.recompute()
+        self._open_panel()
+        message = self._widget("QPlainTextEdit", "HistoryCommitMessage")
+        button = self._widget("QPushButton", "HistoryCommitButton")
+
+        message.setPlainText("  \n ")
+        self.assertFalse(button.isEnabled())
+        message.setPlainText("Forty")
+        self.assertTrue(button.isEnabled())
+
+    def test_nothing_to_commit_and_older_versions_offer_no_commit(self):
+        self._start_and_commit_first()
+        self._open_panel()
+        button = self._widget("QPushButton", "HistoryCommitButton")
+        self.assertFalse(button.isVisible(), "offered to commit with nothing changed")
+
+        self._box.Length = 40
+        self._doc.recompute()
+        self._settle()
+        self.assertTrue(button.isVisible())
+
+        versions = self._versions()
+        versions.setCurrentItem(versions.topLevelItem(1))
+        self._settle()
+        self.assertFalse(button.isVisible(), "offered to commit while an older version is chosen")
+        versions.setCurrentItem(versions.topLevelItem(0))
+        self._settle()

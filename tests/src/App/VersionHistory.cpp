@@ -110,6 +110,26 @@ public:
         return text;
     }
 
+    /// Stage `file` without committing it, as `git add` does.
+    void stage(const std::string& file)
+    {
+        git_index* index = nullptr;
+        git_repository_index(&index, _repository);
+        EXPECT_EQ(git_index_add_bypath(index, file.c_str()), 0) << file;
+        git_index_write(index);
+        git_index_free(index);
+    }
+
+    bool isStaged(const std::string& file) const
+    {
+        git_index* index = nullptr;
+        git_repository_index(&index, _repository);
+        git_index_read(index, 1);
+        const bool found = git_index_get_bypath(index, file.c_str(), 0) != nullptr;
+        git_index_free(index);
+        return found;
+    }
+
 private:
     std::vector<std::string> headOrNothing() const
     {
@@ -303,6 +323,118 @@ TEST_F(VersionHistoryTest, twoVersionsOpenSideBySide)
     EXPECT_NE(older, newer);
     ASSERT_EQ(changes.size(), 1u) << formatDocumentChanges(changes);
     EXPECT_EQ(changes[0].text, "Box: Length 10 mm → 40 mm");
+}
+
+namespace
+{
+
+std::string recipeNaming(const std::string& asset, const std::string& label)
+{
+    return "<?xml version='1.0' encoding='utf-8'?>\n<Document>\n  <Objects>\n"
+           "    <Object name=\"Thing\" type=\"Some::TypeThisBuildHasNot\">\n"
+           "      <Properties>\n"
+           "        <Property name=\"Label\" type=\"App::PropertyString\" value=\""
+        + label + "\"/>\n"
+        + (asset.empty() ? std::string {}
+                         : "        <Property name=\"Body\" type=\"Some::PropertyThisBuildHasNot\" "
+                           "asset=\""
+                   + asset + "\"/>\n")
+        + "      </Properties>\n    </Object>\n  </Objects>\n</Document>\n";
+}
+
+}  // namespace
+
+TEST_F(VersionHistoryTest, startedHistoryRecordsTheDocumentAndIgnoresTheRebuildStore)
+{
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming("", "first"));
+    EXPECT_FALSE(isKeptInHistory(file.string()));
+
+    startHistory(_folder.string());
+    ASSERT_TRUE(isKeptInHistory(file.string()));
+    const std::string id = commitFile(file.string(), "  Start the widget\n\n");
+
+    const std::vector<FileVersion> versions = fileVersions(file.string());
+    ASSERT_EQ(versions.size(), 1u);
+    EXPECT_EQ(versions[0].commit, id);
+    EXPECT_EQ(versions[0].summary, "Start the widget");
+    EXPECT_FALSE(versions[0].author.empty());
+    EXPECT_EQ(fileTextAt(file.string(), "HEAD"), recipeNaming("", "first"));
+
+    std::ifstream ignore(_folder / ".gitignore");
+    const std::string ignored {std::istreambuf_iterator<char>(ignore), std::istreambuf_iterator<char>()};
+    EXPECT_NE(ignored.find(std::string(Document::cacheFolderName) + "/\n"), std::string::npos);
+    startHistory(_folder.string());
+    std::ifstream again(_folder / ".gitignore");
+    EXPECT_EQ(
+        std::string(std::istreambuf_iterator<char>(again), std::istreambuf_iterator<char>()),
+        ignored
+    ) << "starting twice wrote the ignore line twice";
+}
+
+// A commit made from a document must not sweep up what the person has changed or staged
+// elsewhere in the project: they never saw it in this document's list of changes.
+TEST_F(VersionHistoryTest, aCommitHoldsOnlyThisDocument)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming("", "first"));
+    write(_folder / "notes.txt", "old notes");
+    repository.commit({"Widget.cpart", "notes.txt"}, "Start");
+
+    write(_folder / "notes.txt", "new notes");
+    write(_folder / "Other.cpart", recipeNaming("", "other"));
+    repository.stage("Other.cpart");
+    write(file, recipeNaming("", "second"));
+    commitFile(file.string(), "Second");
+
+    EXPECT_EQ(fileTextAt(file.string(), "HEAD"), recipeNaming("", "second"));
+    EXPECT_EQ(fileTextAt((_folder / "notes.txt").string(), "HEAD"), "old notes");
+    EXPECT_THROW(fileTextAt((_folder / "Other.cpart").string(), "HEAD"), Base::Exception)
+        << "another document's staged change went into this document's version";
+    EXPECT_TRUE(repository.isStaged("Other.cpart")) << "the person's staging was undone";
+    EXPECT_EQ(fileVersions(file.string()).size(), 2u);
+}
+
+TEST_F(VersionHistoryTest, aCommitCarriesTheSourceMaterialItNames)
+{
+    ScratchRepository repository(_folder);
+    const std::string named = "0000000000000000000000000000000000000001";
+    const std::string unnamed = "0000000000000000000000000000000000000002";
+    const fs::path assets(Document::assetDirectoryFor((_folder / "Widget.cpart").string()));
+    write(assets / named / "content.xml", "<Value/>");
+    write(assets / named / "Shape.brp", "bulk");
+    write(assets / unnamed / "content.xml", "<Value/>");
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming(named, "first"));
+
+    commitFile(file.string(), "With its body");
+
+    EXPECT_EQ(fileTextAt((assets / named / "Shape.brp").string(), "HEAD"), "bulk");
+    EXPECT_EQ(fileTextAt((assets / named / "content.xml").string(), "HEAD"), "<Value/>");
+    EXPECT_THROW(fileTextAt((assets / unnamed / "content.xml").string(), "HEAD"), Base::Exception)
+        << "material the document does not name went in";
+}
+
+TEST_F(VersionHistoryTest, aCommitNeedsAMessageAndAChange)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming("", "first"));
+
+    EXPECT_THROW(commitFile(file.string(), " \n "), Base::Exception);
+    EXPECT_TRUE(fileVersions(file.string()).empty());
+
+    commitFile(file.string(), "First");
+    EXPECT_THROW(commitFile(file.string(), "Again"), Base::Exception);
+    EXPECT_EQ(fileVersions(file.string()).size(), 1u);
+}
+
+TEST_F(VersionHistoryTest, aFileOutsideAnyRepositoryCannotBeCommitted)
+{
+    const fs::path file = _folder / "Loose.cpart";
+    write(file, recipeNaming("", "first"));
+    EXPECT_THROW(commitFile(file.string(), "First"), Base::Exception);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

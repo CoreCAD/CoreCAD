@@ -3,6 +3,8 @@
 
 #include "PreCompiled.h"
 
+#include <filesystem>
+
 #ifndef _PreComp_
 # include <QApplication>
 # include <QCheckBox>
@@ -12,6 +14,7 @@
 # include <QHeaderView>
 # include <QLabel>
 # include <QLocale>
+# include <QPlainTextEdit>
 # include <QPushButton>
 # include <QSplitter>
 # include <QTimer>
@@ -110,6 +113,7 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     auto* versionsLayout = new QVBoxLayout(versionsPane);
     versionsLayout->setContentsMargins(0, 0, 0, 0);
     versionList = new QTreeWidget(versionsPane);
+    versionList->setObjectName(QStringLiteral("HistoryVersions"));
     versionsLayout->addWidget(versionList);
     versionList->setColumnCount(2);
     versionList->setHeaderHidden(true);
@@ -118,7 +122,39 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     versionList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     versionList->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 
-    changeList = new QTreeWidget(splitter);
+    auto* changesPane = new QWidget(splitter);
+    auto* changesLayout = new QVBoxLayout(changesPane);
+    changesLayout->setContentsMargins(0, 0, 0, 0);
+    changeList = new QTreeWidget(changesPane);
+    changesLayout->addWidget(changeList);
+
+    commitArea = new QWidget(changesPane);
+    auto* commitLayout = new QVBoxLayout(commitArea);
+    commitLayout->setContentsMargins(0, 0, 0, 0);
+    messageBox = new QPlainTextEdit(commitArea);
+    messageBox->setObjectName(QStringLiteral("HistoryCommitMessage"));
+    messageBox->setPlaceholderText(tr("Say what changed"));
+    messageBox->setTabChangesFocus(true);
+    messageBox->setFixedHeight(messageBox->fontMetrics().lineSpacing() * 4);
+    commitLayout->addWidget(messageBox);
+    commitButton = new QPushButton(tr("Commit"), commitArea);
+    commitButton->setObjectName(QStringLiteral("HistoryCommitButton"));
+    commitButton->setToolTip(tr("Save the part and keep it as a new version."));
+    commitButton->setEnabled(false);
+    commitLayout->addWidget(commitButton, 0, Qt::AlignRight);
+    commitProblem = new QLabel(commitArea);
+    commitProblem->setObjectName(QStringLiteral("HistoryCommitProblem"));
+    commitProblem->setWordWrap(true);
+    commitProblem->hide();
+    commitLayout->addWidget(commitProblem);
+    changesLayout->addWidget(commitArea);
+    commitArea->hide();
+    connect(messageBox, &QPlainTextEdit::textChanged, this, [this]() {
+        commitButton->setEnabled(!messageBox->toPlainText().trimmed().isEmpty());
+        commitProblem->hide();
+    });
+    connect(commitButton, &QPushButton::clicked, this, &HistoryPanel::commit);
+
     changeList->setHeaderHidden(true);
     changeList->setRootIsDecorated(false);
     changeList->setMouseTracking(true);
@@ -320,13 +356,20 @@ void HistoryPanel::readVersions()
         emptyLine(versionList, tr("Save this part to start its history."));
         return;
     }
-    if (versions.empty()) {
-        emptyLine(
-            versionList,
-            tr("This part has no committed versions. Commit it to a git repository to start its "
-               "history.")
-        );
-        versionList->setWordWrap(true);
+    if (versions.empty() && !App::isKeptInHistory(documentFile)) {
+        emptyLine(versionList, tr("This part has no history yet."));
+        // A row of the list, so the offer sits under the sentence it answers.
+        auto* row = emptyLine(versionList, QString());
+        auto* holder = new QWidget();
+        auto* holderLayout = new QHBoxLayout(holder);
+        holderLayout->setContentsMargins(0, 2, 0, 2);
+        auto* start = new QPushButton(tr("Start history here"), holder);
+        start->setObjectName(QStringLiteral("HistoryStartButton"));
+        start->setToolTip(tr("Keep versions of the parts in this folder."));
+        holderLayout->addWidget(start);
+        holderLayout->addStretch();
+        versionList->setItemWidget(row, 0, holder);
+        connect(start, &QPushButton::clicked, this, &HistoryPanel::startHistoryHere);
         return;
     }
 
@@ -360,7 +403,7 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
 {
     auto* item = versionList->currentItem();
     const QVariant index = item ? item->data(0, VersionRole) : QVariant();
-    if (!document || !index.isValid() || versions.empty()
+    if (!document || !index.isValid()
         || (index.toInt() != NotYetCommitted
             && static_cast<std::size_t>(index.toInt()) >= versions.size())) {
         return std::nullopt;
@@ -368,8 +411,10 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
     Comparison comparison;
     if (index.toInt() == NotYetCommitted) {
         comparison.heading = tr("Not yet committed");
-        comparison.emptyText = tr("Nothing has changed since the last commit.");
-        comparison.before = versionDocument(versions.front().commit);
+        comparison.emptyText = versions.empty() ? tr("The part is empty.")
+                                                : tr("Nothing has changed since the last commit.");
+        comparison.before = versions.empty() ? emptyDocument()
+                                             : versionDocument(versions.front().commit);
         comparison.after = document;
     }
     else {
@@ -388,6 +433,7 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
 void HistoryPanel::showChanges()
 {
     changeList->clear();
+    showCommitArea(false);
     auto* item = versionList->currentItem();
     const QVariant index = item ? item->data(0, VersionRole) : QVariant();
 
@@ -409,6 +455,7 @@ void HistoryPanel::showChanges()
 
     if (index.toInt() == NotYetCommitted) {
         item->setText(0, tr("Not yet committed (%1)").arg(changes.size()));
+        showCommitArea(!changes.empty());
     }
 
     auto* header = new QTreeWidgetItem(changeList, {tr("%1 (%2)").arg(heading).arg(changes.size())});
@@ -426,6 +473,53 @@ void HistoryPanel::showChanges()
         line->setData(0, ObjectRole, QString::fromStdString(change.objectId));
     }
     changeList->expandAll();
+}
+
+void HistoryPanel::showCommitArea(bool shown)
+{
+    commitArea->setVisible(shown);
+    if (!shown) {
+        commitProblem->hide();
+    }
+}
+
+void HistoryPanel::commit()
+{
+    const std::string message = messageBox->toPlainText().trimmed().toStdString();
+    if (!document || documentFile.empty() || message.empty()) {
+        return;
+    }
+    auto* guiDocument = Application::Instance->getDocument(document);
+    if (guiDocument && guiDocument->isModified() && !guiDocument->save()) {
+        return;
+    }
+    try {
+        App::commitFile(documentFile, message);
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
+        commitProblem->setText(tr("The version was not kept: %1").arg(QString::fromUtf8(e.what())));
+        commitProblem->show();
+        return;
+    }
+    messageBox->clear();
+    scheduleRefresh(true);
+}
+
+void HistoryPanel::startHistoryHere()
+{
+    if (documentFile.empty()) {
+        return;
+    }
+    try {
+        App::startHistory(std::filesystem::path(documentFile).parent_path().string());
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
+        emptyLine(versionList, tr("History was not started: %1").arg(QString::fromUtf8(e.what())));
+        return;
+    }
+    scheduleRefresh(true);
 }
 
 void HistoryPanel::scheduleVersionView()

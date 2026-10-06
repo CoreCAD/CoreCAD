@@ -20,6 +20,9 @@
 
 class QDockWidget;
 class QTimer;
+class QLabel;
+class QPlainTextEdit;
+class QPushButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -43,7 +46,8 @@ GuiExport void registerVersionLayers(VersionLayers layers);
 /// The History side panel (UI_GUIDE §2.2.1): the active document's committed versions, newest
 /// first, under a "Not yet committed" entry, and what the chosen one changed. Choosing an older
 /// entry shows that version in the model view, which cannot be edited until the view returns to
-/// now. It follows the active document.
+/// now. "Not yet committed" offers to commit the document; a document with no history is offered
+/// one. It follows the active document.
 class GuiExport HistoryPanel: public QWidget
 {
     Q_OBJECT
@@ -71,6 +75,9 @@ private:
     void restoreModelView();
     void returnToNow();
     void returnIfShowingPast(const App::Document* changed);
+    void showCommitArea(bool shown);
+    void commit();
+    void startHistoryHere();
 
     /// The two documents the chosen entry compares, and how to speak of it.
     struct Comparison
@@ -99,6 +106,10 @@ private:
     QDockWidget* dock = nullptr;
     QTreeWidget* versionList;
     QTreeWidget* changeList;
+    QWidget* commitArea;
+    QPlainTextEdit* messageBox;
+    QPushButton* commitButton;
+    QLabel* commitProblem;
     QTimer* versionViewTimer;
     std::map<std::pair<App::Document*, bool>, App::Document*> layerDocuments;
     std::vector<QPointer<View3DInventor>> standInViews;

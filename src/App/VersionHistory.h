@@ -36,7 +36,8 @@ namespace App
 
 class Document;
 
-/** Reading a document's past versions out of the git repository its file is kept in.
+/** A document's versions in the git repository its file is kept in: reading past ones, and
+ *  recording a new one.
  *
  *  Versions are a file-system concern, not part of the document model: nothing here is known to
  *  a document, and a past version arrives the way any file does — as a stored recipe, read into
@@ -69,5 +70,21 @@ AppExport std::string fileTextAt(const std::string& path, const std::string& rev
  *  keep theirs, which is what lets a comparison line them up with the open one.
  */
 AppExport Document* openFileVersion(const std::string& path, const std::string& revision);
+
+/// Whether the file at `path` lies in the working folder of a git repository.
+AppExport bool isKeptInHistory(const std::string& path);
+
+/// Start a git repository in `folder`, with the rebuild store ignored. Throws when it cannot.
+AppExport void startHistory(const std::string& folder);
+
+/** Record the file at `path`, as it is on disk, as a new version on top of the current one;
+ *  returns the commit id.
+ *
+ *  Only this document goes in: the file and the source material it names. Whatever else has
+ *  changed in the repository, staged or not, is left as it was. The author is the repository's
+ *  configured one, or the person logged in when none is set. Throws when the message is empty
+ *  or nothing has changed since the current version.
+ */
+AppExport std::string commitFile(const std::string& path, const std::string& message);
 
 }  // namespace App
