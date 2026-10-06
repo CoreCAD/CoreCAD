@@ -78,6 +78,9 @@ public:
     static PyObject* sDiffDocuments          (PyObject *self,PyObject *args);
     static PyObject* sFileVersions           (PyObject *self,PyObject *args);
     static PyObject* sOpenFileVersion        (PyObject *self,PyObject *args);
+    static PyObject* sIsKeptInHistory        (PyObject *self,PyObject *args);
+    static PyObject* sStartHistory           (PyObject *self,PyObject *args);
+    static PyObject* sCommitFile             (PyObject *self,PyObject *args);
     static PyObject* sListDocuments          (PyObject *self,PyObject *args);
     static PyObject* sAddDocObserver         (PyObject *self,PyObject *args);
     static PyObject* sRemoveDocObserver      (PyObject *self,PyObject *args);

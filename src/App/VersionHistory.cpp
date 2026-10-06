@@ -26,7 +26,9 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -44,6 +46,7 @@
 #include "Application.h"
 #include "Document.h"
 #include "StoredRecipe.h"
+#include "UnreferencedFiles.h"
 
 using namespace App;
 namespace fs = std::filesystem;
@@ -82,6 +85,8 @@ using TreeEntry = std::unique_ptr<git_tree_entry, Freer<git_tree_entry, git_tree
 using RevWalk = std::unique_ptr<git_revwalk, Freer<git_revwalk, git_revwalk_free>>;
 using Object = std::unique_ptr<git_object, Freer<git_object, git_object_free>>;
 using Blob = std::unique_ptr<git_blob, Freer<git_blob, git_blob_free>>;
+using Index = std::unique_ptr<git_index, Freer<git_index, git_index_free>>;
+using Signature = std::unique_ptr<git_signature, Freer<git_signature, git_signature_free>>;
 
 [[noreturn]] void fail(const std::string& what)
 {
@@ -142,6 +147,47 @@ std::string commitId(const git_oid& id)
     char text[GIT_OID_MAX_HEXSIZE + 1] {};
     git_oid_tostr(text, sizeof(text), &id);
     return text;
+}
+
+/// The document file and every file of the source material it names, as paths in the repository.
+std::vector<std::string> filesOfDocument(const std::string& path, const Located& located)
+{
+    std::vector<std::string> files {located.pathInRepository};
+    const fs::path workdir =
+        fs::weakly_canonical(fs::path(git_repository_workdir(located.repository.get())));
+    const fs::path assets(Document::assetDirectoryFor(path));
+    std::error_code failed;
+    for (const std::string& id : sourceMaterialNamedBy(path)) {
+        // Material the folder does not hold is already missing; the version records the folder
+        // as it is, and the document says what it lacks when it is opened.
+        const fs::path folder = fs::weakly_canonical(assets / id);
+        for (const auto& entry : fs::recursive_directory_iterator(folder, failed)) {
+            if (!entry.is_regular_file(failed)) {
+                continue;
+            }
+            const fs::path inside = entry.path().lexically_relative(workdir);
+            if (!inside.empty() && *inside.begin() != "..") {
+                files.push_back(inside.generic_string());
+            }
+        }
+    }
+    return files;
+}
+
+Signature author(git_repository* repository)
+{
+    git_signature* raw = nullptr;
+    if (git_signature_default(&raw, repository) == 0) {
+        return Signature(raw);
+    }
+    const char* login = std::getenv("USER");
+    if (login == nullptr || *login == '\0') {
+        login = std::getenv("USERNAME");
+    }
+    if (git_signature_now(&raw, login != nullptr && *login != '\0' ? login : "Unknown", "") != 0) {
+        fail("Could not name the author");
+    }
+    return Signature(raw);
 }
 
 }  // namespace
@@ -258,4 +304,140 @@ Document* App::openFileVersion(const std::string& path, const std::string& revis
         throw;
     }
     return version;
+}
+
+bool App::isKeptInHistory(const std::string& path)
+{
+    const GitSession session;
+    return locate(path).has_value();
+}
+
+void App::startHistory(const std::string& folder)
+{
+    const GitSession session;
+    git_repository* raw = nullptr;
+    if (git_repository_init(&raw, folder.c_str(), 0) != 0) {
+        fail("Could not start history in '" + folder + "'");
+    }
+    const Repository repository(raw);
+
+    // The rebuild store is disposable by definition; a version never holds it.
+    const fs::path ignore = fs::path(folder) / ".gitignore";
+    const std::string line = std::string(Document::cacheFolderName) + "/";
+    std::string existing;
+    {
+        std::ifstream in(ignore);
+        existing.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    if (("\n" + existing).find("\n" + line + "\n") == std::string::npos) {
+        std::ofstream out(ignore, std::ios::app);
+        if (!existing.empty() && existing.back() != '\n') {
+            out << '\n';
+        }
+        out << line << '\n';
+    }
+}
+
+std::string App::commitFile(const std::string& path, const std::string& message)
+{
+    const GitSession session;
+    std::optional<Located> located = locate(path);
+    if (!located) {
+        throw Base::FileException("The file is not kept in a git repository", path.c_str());
+    }
+    git_repository* repository = located->repository.get();
+
+    const std::size_t start = message.find_first_not_of(" \t\r\n");
+    const std::string trimmed = start == std::string::npos ? std::string {} : message.substr(start);
+    git_buf cleaned = GIT_BUF_INIT;
+    git_message_prettify(&cleaned, trimmed.c_str(), 0, 0);
+    const std::string text = cleaned.ptr != nullptr ? cleaned.ptr : "";
+    git_buf_dispose(&cleaned);
+    if (text.empty()) {
+        throw Base::ValueError("A version needs a message saying what changed");
+    }
+
+    Commit parent;
+    git_oid headId;
+    if (git_reference_name_to_id(&headId, repository, "HEAD") == 0) {
+        git_commit* raw = nullptr;
+        if (git_commit_lookup(&raw, repository, &headId) != 0) {
+            fail("Could not read the current version");
+        }
+        parent.reset(raw);
+    }
+
+    // Built from the current version rather than the repository's staging area, so only this
+    // document's files differ from it.
+    git_index* rawIndex = nullptr;
+    if (git_index_new(&rawIndex) != 0) {
+        fail("Could not prepare the version");
+    }
+    const Index index(rawIndex);
+    std::optional<git_oid> parentTreeId;
+    if (parent) {
+        git_tree* rawTree = nullptr;
+        if (git_commit_tree(&rawTree, parent.get()) != 0) {
+            fail("Could not read the current version's files");
+        }
+        const Tree tree(rawTree);
+        parentTreeId = *git_tree_id(rawTree);
+        if (git_index_read_tree(rawIndex, rawTree) != 0) {
+            fail("Could not read the current version's files");
+        }
+    }
+
+    const std::vector<std::string> files = filesOfDocument(path, *located);
+    for (const std::string& file : files) {
+        git_index_entry entry {};
+        if (git_blob_create_from_workdir(&entry.id, repository, file.c_str()) != 0) {
+            fail("Could not read '" + file + "'");
+        }
+        entry.mode = GIT_FILEMODE_BLOB;
+        entry.path = file.c_str();
+        if (git_index_add(rawIndex, &entry) != 0) {
+            fail("Could not add '" + file + "'");
+        }
+    }
+
+    git_oid treeId;
+    if (git_index_write_tree_to(&treeId, rawIndex, repository) != 0) {
+        fail("Could not write the version's files");
+    }
+    if (parentTreeId && git_oid_equal(&treeId, &*parentTreeId) != 0) {
+        throw Base::RuntimeError("Nothing has changed since the last version");
+    }
+    git_tree* rawTree = nullptr;
+    if (git_tree_lookup(&rawTree, repository, &treeId) != 0) {
+        fail("Could not write the version's files");
+    }
+    const Tree tree(rawTree);
+
+    const Signature signature = author(repository);
+    const git_commit* parents[] = {parent.get()};
+    git_oid id;
+    if (git_commit_create(&id,
+                          repository,
+                          "HEAD",
+                          signature.get(),
+                          signature.get(),
+                          nullptr,
+                          text.c_str(),
+                          rawTree,
+                          parent ? 1 : 0,
+                          parents)
+        != 0) {
+        fail("Could not record the version");
+    }
+
+    // The staging area now matches the new version for these files, as after `git commit <file>`.
+    git_index* rawStaging = nullptr;
+    if (git_repository_index(&rawStaging, repository) == 0) {
+        const Index staging(rawStaging);
+        for (const std::string& file : files) {
+            git_index_add_bypath(rawStaging, file.c_str());
+        }
+        git_index_write(rawStaging);
+    }
+    return commitId(id);
 }

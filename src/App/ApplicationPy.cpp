@@ -287,6 +287,23 @@ PyMethodDef ApplicationPy::Methods[] = {
      "openFileVersion(path, revision) -> Document\n\n"
      "The file as committed at a revision (a commit id, or a name such as 'HEAD'), read\n"
      "into a new hidden, temporary document for reading and comparing. Close it after."},
+    {"isKeptInHistory",
+     (PyCFunction)ApplicationPy::sIsKeptInHistory,
+     METH_VARARGS,
+     "isKeptInHistory(path) -> bool\n\n"
+     "Whether a file lies in the working folder of a git repository."},
+    {"startHistory",
+     (PyCFunction)ApplicationPy::sStartHistory,
+     METH_VARARGS,
+     "startHistory(folder) -> None\n\n"
+     "Start a git repository in a folder, with the rebuild store ignored."},
+    {"commitFile",
+     (PyCFunction)ApplicationPy::sCommitFile,
+     METH_VARARGS,
+     "commitFile(path, message) -> str\n\n"
+     "Record a document file as it is on disk as a new version and return the commit id.\n"
+     "Only the file and the source material it names go in; anything else changed or\n"
+     "staged in the repository is left as it was. Save the document first."},
     {"listDocuments",
      (PyCFunction)ApplicationPy::sListDocuments,
      METH_VARARGS,
@@ -963,6 +980,58 @@ PyObject* ApplicationPy::sOpenFileVersion(PyObject* /*self*/, PyObject* args)
     PY_TRY
     {
         return openFileVersion(file, at)->getPyObject();
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sIsKeptInHistory(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string file(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::Boolean(isKeptInHistory(file)));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sStartHistory(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string folder(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        startHistory(folder);
+        Py_Return;
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sCommitFile(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    char* message = nullptr;
+    if (!PyArg_ParseTuple(args, "etet", "utf-8", &path, "utf-8", &message)) {
+        return nullptr;
+    }
+    const std::string file(path);
+    const std::string text(message);
+    PyMem_Free(path);
+    PyMem_Free(message);
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(commitFile(file, text)));
     }
     PY_CATCH;
 }
