@@ -49,7 +49,11 @@ def findDockWidget(name):
 """
 from parttests.ColorPerFaceTest import ColorPerFaceTest
 from parttests.ColorTransparencyTest import ColorTransparencyTest
-from parttests.VersionComparisonTest import VersionComparisonTest, HistoryModelViewTest
+from parttests.VersionComparisonTest import (
+    VersionComparisonTest,
+    HistoryModelViewTest,
+    HistoryCommitTest,
+)
 
 
 # class PartGuiTestCases(unittest.TestCase):
