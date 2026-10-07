@@ -37,6 +37,10 @@ namespace Dialog
 
 class DocumentRecoveryPrivate;
 
+/// Whether the file a recovery file was taken from still reads as a document in any shape this
+/// build opens: the plain-text recipe, a sealed archive, or a legacy container.
+GuiExport bool originalDocumentIsIntact(const QFileInfo& file);
+
 /*!
  @author Werner Mayer
  */

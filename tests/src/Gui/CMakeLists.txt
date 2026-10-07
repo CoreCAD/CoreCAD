@@ -19,6 +19,7 @@ add_executable(Gui_tests_run
 setup_qt_test(QuantitySpinBox)
 setup_qt_test(Selection)
 setup_qt_test(Document)
+setup_qt_test(DocumentRecovery)
 setup_qt_test(Transaction)
 setup_qt_test(Tree)
 setup_qt_test(SelectionFilter)
