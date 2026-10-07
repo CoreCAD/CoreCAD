@@ -442,3 +442,179 @@ class HistoryCommitTest(unittest.TestCase):
         self.assertFalse(button.isVisible(), "offered to commit while an older version is chosen")
         versions.setCurrentItem(versions.topLevelItem(0))
         self._settle()
+
+
+class ProjectPanelTest(unittest.TestCase):
+    """The Project panel (UI_GUIDE §2.2.2): the open project's documents in two headed groups,
+    outside ones held at a version and updated only by Update."""
+
+    _settle = HistoryCommitTest._settle
+    _widget = HistoryCommitTest._widget
+    _in_dialog = HistoryCommitTest._in_dialog
+    _button = HistoryCommitTest._button
+
+    def setUp(self):
+        HistoryCommitTest.setUp(self)
+        self._project = App.createProject(os.path.join(self._dir, "Gearbox"), "Gearbox")
+        self._library = os.path.join(self._dir, "Library")
+        os.makedirs(self._library)
+        self._bolt_path = os.path.join(self._library, "Bolt.cpart")
+        self._bolt = App.newDocument("Bolt", type="Part")
+        self._bolt.addObject("Part::Box", "Head")
+        self._bolt.recompute()
+        self._bolt.saveAs(self._bolt_path)
+        App.startHistory(self._library)
+        self._first = App.commitFile(self._bolt_path, "Bolt")
+        App.setActiveDocument(self._doc.Name)
+
+    def tearDown(self):
+        if "Bolt" in App.listDocuments():
+            App.closeDocument("Bolt")
+        HistoryCommitTest.tearDown(self)
+
+    def _list(self):
+        return self._widget("QTreeWidget", "ProjectDocuments")
+
+    def _rows(self):
+        """Each heading with the rows under it, as the panel shows them."""
+        found = []
+        tree = self._list()
+        for i in range(tree.topLevelItemCount()):
+            group = tree.topLevelItem(i)
+            found.append(
+                (
+                    group.text(0),
+                    [group.child(j).text(0) for j in range(group.childCount())],
+                )
+            )
+        return found
+
+    def _dock_title(self):
+        from PySide import QtWidgets
+
+        return self._list().parent().parent().windowTitle()
+
+    def _choose_file(self, path, then=None):
+        from PySide import QtWidgets
+
+        def choose(dialog):
+            dialog.findChild(QtWidgets.QLineEdit, "fileNameEdit").setText(path)
+            if then:
+                then()
+            dialog.accept()
+
+        self._in_dialog(choose)
+
+    def _open_project(self, project):
+        self._choose_file(project)
+        Gui.runCommand("Std_OpenProject")
+        self._settle()
+        if self._dialog_failure:
+            raise self._dialog_failure
+
+    def test_a_new_project_opens_in_the_panel_empty(self):
+        from PySide import QtWidgets
+
+        def create(dialog):
+            dialog.findChild(QtWidgets.QLineEdit, "ProjectName").setText("Empty")
+            folder = dialog.findChild(QtWidgets.QLineEdit, "ProjectFolder")
+            folder.setText(os.path.join(self._dir, "Empty"))
+            folder.textEdited.emit(folder.text())
+            self._button(dialog, "Create project").click()
+
+        self._in_dialog(create)
+        Gui.runCommand("Std_NewProject")
+        self._settle()
+        if self._dialog_failure:
+            raise self._dialog_failure
+
+        self.assertEqual(self._dock_title(), "Project — Empty")
+        self.assertEqual(self._rows(), [("This project has no documents yet.", [])])
+
+    def test_the_panel_lists_documents_in_the_project_and_from_outside(self):
+        self._doc.saveAs(os.path.join(self._dir, "Gearbox", "Housing.cpart"))
+        App.addOutsideDocument(self._project, self._bolt_path)
+
+        self._open_project(self._project)
+
+        self.assertEqual(self._dock_title(), "Project — Gearbox")
+        self.assertEqual(
+            self._rows(),
+            [
+                ("In this project (1)", ["Housing.cpart"]),
+                (
+                    "From outside (1)",
+                    ["Bolt.cpart\n%s · Bolt · just now" % os.path.join("..", "Library")],
+                ),
+            ],
+        )
+
+    def test_a_newer_version_is_offered_and_taken_only_by_update(self):
+        from PySide import QtWidgets
+
+        App.addOutsideDocument(self._project, self._bolt_path)
+        self._bolt.addObject("Part::Box", "Thread")
+        self._bolt.recompute()
+        self._bolt.save()
+        second = App.commitFile(self._bolt_path, "Thread")
+
+        self._open_project(self._project)
+
+        row = self._rows()[1][1][0]
+        self.assertTrue(row.endswith("Bolt · just now · newer version available"), row)
+        self.assertEqual(App.outsideDocuments(self._project)[0]["version"], self._first)
+        update = self._list().findChild(QtWidgets.QPushButton, "ProjectUpdate")
+        self.assertIsNotNone(update, "no Update offered")
+        update.click()
+        self._settle()
+
+        self.assertEqual(App.outsideDocuments(self._project)[0]["version"], second)
+        self.assertTrue(self._rows()[1][1][0].endswith("Thread · just now"), self._rows())
+        from PySide import QtCore
+
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.assertIsNone(
+            self._list().findChild(QtWidgets.QPushButton, "ProjectUpdate"), "Update still offered"
+        )
+
+    def test_add_from_outside_lists_a_document_where_it_is(self):
+        self._open_project(self._project)
+
+        self._choose_file(self._bolt_path)
+        self._widget("QPushButton", "ProjectAddFromOutside").click()
+        self._settle()
+        if self._dialog_failure:
+            raise self._dialog_failure
+
+        self.assertTrue(os.path.exists(self._bolt_path), "listing a document moved it")
+        self.assertEqual(self._rows()[1][0], "From outside (1)")
+        self.assertEqual(App.outsideDocuments(self._project)[0]["version"], self._first)
+
+        self._choose_file(self._bolt_path)
+        self._widget("QPushButton", "ProjectAddFromOutside").click()
+        self._settle()
+        problem = self._widget("QLabel", "ProjectProblem")
+        self.assertTrue(problem.isVisible())
+        self.assertEqual(
+            problem.text(), "Bolt.cpart was not added. The project lists this document already."
+        )
+
+    def test_opening_another_project_replaces_the_one_shown(self):
+        other = App.createProject(os.path.join(self._dir, "Motor"), "Motor")
+        self._open_project(self._project)
+        self._open_project(other)
+
+        self.assertEqual(self._dock_title(), "Project — Motor")
+
+    def test_double_click_opens_a_document(self):
+        App.closeDocument("Bolt")
+        App.addOutsideDocument(self._project, self._bolt_path)
+        self._open_project(self._project)
+
+        row = self._list().topLevelItem(1).child(0)
+        self._list().itemDoubleClicked.emit(row, 0)
+        self._settle()
+
+        opened = [d for d in App.listDocuments().values() if d.FileName == self._bolt_path]
+        self.assertEqual(len(opened), 1, "the document was not opened")
+        App.closeDocument(opened[0].Name)

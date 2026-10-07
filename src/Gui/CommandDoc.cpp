@@ -43,6 +43,7 @@
 
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
+#include <App/Project.h>
 #include <App/DocumentObject.h>
 #include <App/Expression.h>
 #include <App/GeoFeature.h>
@@ -70,6 +71,7 @@
 #include "GraphvizView.h"
 #include "HistoryPanel.h"
 #include "ProjectDialogs.h"
+#include "ProjectPanel.h"
 #include "ManualAlignment.h"
 #include "MergeDocuments.h"
 #include "Navigation/NavigationStyle.h"
@@ -828,6 +830,53 @@ void StdCmdNewProject::activated(int iMsg)
             5000
         );
     }
+}
+
+//===========================================================================
+// Std_OpenProject
+//===========================================================================
+
+DEF_STD_CMD(StdCmdOpenProject)
+
+StdCmdOpenProject::StdCmdOpenProject()
+    : Command("Std_OpenProject")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Open projec&t…");
+    sToolTipText = QT_TR_NOOP("Opens a project and lists its documents");
+    sStatusTip = sToolTipText;
+    sWhatsThis = "Std_OpenProject";
+    eType = NoTransaction;
+}
+
+void StdCmdOpenProject::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const QString chosen = FileDialog::getOpenFileName(
+        getMainWindow(),
+        QObject::tr("Open project"),
+        QString(),
+        {FileDialog::Filter(
+            QObject::tr("Projects"),
+            {QStringLiteral("*") + QLatin1String(App::projectFileExtension)}
+        )}
+    );
+    if (chosen.isEmpty()) {
+        return;
+    }
+    try {
+        App::projectName(chosen.toStdString());
+    }
+    catch (const Base::Exception&) {
+        QMessageBox::warning(
+            getMainWindow(),
+            QObject::tr("Open project"),
+            QObject::tr("%1 is not a project file, so it was not opened.")
+                .arg(QFileInfo(chosen).fileName())
+        );
+        return;
+    }
+    ProjectPanel::openProject(chosen);
 }
 
 //===========================================================================
@@ -2703,6 +2752,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdMergeDocumentVersions());
     rcCmdMgr.addCommand(new StdCmdShowHistory());
     rcCmdMgr.addCommand(new StdCmdNewProject());
+    rcCmdMgr.addCommand(new StdCmdOpenProject());
     rcCmdMgr.addCommand(new StdCmdDependencyGraph());
     rcCmdMgr.addCommand(new StdCmdExportDependencyGraph());
 
