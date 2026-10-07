@@ -48,6 +48,7 @@
 #include "Document.h"
 #include "FileDialog.h"
 #include "MainWindow.h"
+#include "ProjectPanel.h"
 #include "WaitCursor.h"
 
 using namespace Gui;
@@ -196,7 +197,9 @@ void NewProjectDialog::accept()
         problem->show();
         return;
     }
-    if (part && !movePartIntoProject(part, created)) {
+    const bool moved = !part || movePartIntoProject(part, created);
+    ProjectPanel::openProject(created);
+    if (!moved) {
         problem->setText(tr("The project was made, but %1 was not moved into it.")
                              .arg(QFileInfo(partFile(part)).fileName()));
         problem->show();
@@ -279,5 +282,9 @@ bool Gui::addToProject(App::Document* part, QWidget* parent)
     if (dialog.exec() != QDialog::Accepted) {
         return false;
     }
-    return movePartIntoProject(part, chosen);
+    if (!movePartIntoProject(part, chosen)) {
+        return false;
+    }
+    ProjectPanel::openProject(chosen);
+    return true;
 }

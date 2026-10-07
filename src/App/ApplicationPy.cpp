@@ -327,6 +327,29 @@ PyMethodDef ApplicationPy::Methods[] = {
      "moveIntoProject(document, projectFile) -> str\n\n"
      "Move a saved document into the project's folder, with its source material, and\n"
      "return its new path. The old file is removed."},
+    {"projectDocuments",
+     (PyCFunction)ApplicationPy::sProjectDocuments,
+     METH_VARARGS,
+     "projectDocuments(projectFile) -> list\n\n"
+     "The paths of the documents in the project's folder that are in this project."},
+    {"outsideDocuments",
+     (PyCFunction)ApplicationPy::sOutsideDocuments,
+     METH_VARARGS,
+     "outsideDocuments(projectFile) -> list\n\n"
+     "The documents the project uses from outside its folder, each a dict of path, uuid,\n"
+     "version (the commit it is held at, '' when not versioned) and newer (the commit of a\n"
+     "newer version, or '')."},
+    {"addOutsideDocument",
+     (PyCFunction)ApplicationPy::sAddOutsideDocument,
+     METH_VARARGS,
+     "addOutsideDocument(projectFile, path) -> str\n\n"
+     "List a document in the project where it is, without moving it, held at its newest\n"
+     "committed version; return that commit, or '' when it is not versioned."},
+    {"updateOutsideDocument",
+     (PyCFunction)ApplicationPy::sUpdateOutsideDocument,
+     METH_VARARGS,
+     "updateOutsideDocument(projectFile, path) -> str\n\n"
+     "Hold an outside document at its newest version and return that commit."},
     {"listDocuments",
      (PyCFunction)ApplicationPy::sListDocuments,
      METH_VARARGS,
@@ -1124,6 +1147,89 @@ PyObject* ApplicationPy::sMoveIntoProject(PyObject* /*self*/, PyObject* args)
     {
         auto* doc = static_cast<App::DocumentPy*>(document)->getDocumentPtr();
         return Py::new_reference_to(Py::String(moveIntoProject(*doc, projectFile)));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sProjectDocuments(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string projectFile(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        Py::List list;
+        for (const std::string& document : projectDocuments(projectFile)) {
+            list.append(Py::String(document));
+        }
+        return Py::new_reference_to(list);
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sOutsideDocuments(PyObject* /*self*/, PyObject* args)
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string projectFile(path);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        Py::List list;
+        for (const OutsideDocument& outside : outsideDocuments(projectFile)) {
+            Py::Dict entry;
+            entry.setItem("path", Py::String(outside.path));
+            entry.setItem("uuid", Py::String(outside.uuid));
+            entry.setItem("version", Py::String(outside.version));
+            entry.setItem("newer", Py::String(newerVersionOf(outside)));
+            list.append(entry);
+        }
+        return Py::new_reference_to(list);
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sAddOutsideDocument(PyObject* /*self*/, PyObject* args)
+{
+    char* project = nullptr;
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "etet", "utf-8", &project, "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string projectFile(project);
+    const std::string document(path);
+    PyMem_Free(project);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(addOutsideDocument(projectFile, document).version));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sUpdateOutsideDocument(PyObject* /*self*/, PyObject* args)
+{
+    char* project = nullptr;
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "etet", "utf-8", &project, "utf-8", &path)) {
+        return nullptr;
+    }
+    const std::string projectFile(project);
+    const std::string document(path);
+    PyMem_Free(project);
+    PyMem_Free(path);
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(updateOutsideDocument(projectFile, document)));
     }
     PY_CATCH;
 }

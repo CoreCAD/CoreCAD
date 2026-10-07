@@ -66,13 +66,7 @@ void Gui::registerVersionLayers(VersionLayers layers)
     versionLayers() = std::move(layers);
 }
 
-namespace
-{
-constexpr int VersionRole = Qt::UserRole;
-constexpr int ObjectRole = Qt::UserRole + 1;
-constexpr int NotYetCommitted = -1;
-
-QString ago(std::int64_t time)
+QString Gui::timeAgo(std::int64_t time)
 {
     const QDateTime then = QDateTime::fromSecsSinceEpoch(time);
     const qint64 seconds = then.secsTo(QDateTime::currentDateTime());
@@ -93,6 +87,12 @@ QString ago(std::int64_t time)
     }
     return QLocale().toString(then.date(), QLocale::ShortFormat);
 }
+
+namespace
+{
+constexpr int VersionRole = Qt::UserRole;
+constexpr int ObjectRole = Qt::UserRole + 1;
+constexpr int NotYetCommitted = -1;
 
 QTreeWidgetItem* emptyLine(QTreeWidget* list, const QString& text)
 {
@@ -402,7 +402,7 @@ void HistoryPanel::readVersions()
         auto* item = new QTreeWidgetItem(
             versionList,
             {QString::fromStdString(version.summary),
-             tr("%1 · %2").arg(QString::fromStdString(version.author), ago(version.time))}
+             tr("%1 · %2").arg(QString::fromStdString(version.author), timeAgo(version.time))}
         );
         item->setData(0, VersionRole, static_cast<int>(i));
         const QString when
@@ -442,7 +442,7 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
         comparison.before = at + 1 < versions.size() ? versionDocument(versions[at + 1].commit)
                                                      : emptyDocument();
         comparison.after = versionDocument(versions[at].commit);
-        comparison.barText = tr("Viewing “%1”, %2").arg(summary, ago(versions[at].time));
+        comparison.barText = tr("Viewing “%1”, %2").arg(summary, timeAgo(versions[at].time));
     }
     return comparison;
 }

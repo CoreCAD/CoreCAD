@@ -207,3 +207,121 @@ TEST_F(ProjectTest, aDocumentNeverSavedCannotBeMoved)
 
     EXPECT_THROW(moveIntoProject(*doc, project), Base::Exception);
 }
+
+namespace
+{
+
+std::string textOf(const fs::path& file)
+{
+    std::ifstream in(file, std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+}  // namespace
+
+// The folder decides membership: a folder holding its own project or its own repository is
+// someone else's, and source material and hidden folders hold no documents.
+TEST_F(ProjectTest, aProjectsDocumentsAreTheOnesInItsFolder)
+{
+    const std::string project = createProject((_folder / "Gearbox").string(), "Gearbox");
+    const fs::path top = _folder / "Gearbox";
+    write(top / "Housing.cpart", "text");
+    write(top / "shafts" / "Shaft.cpart", "text");
+    write(top / "notes.txt", "not a document");
+    write(top / "assets" / "abc" / "Handed.FCStd", "source material");
+    write(top / ".cruth" / "Cached.cpart", "rebuild store");
+    createProject((top / "motor").string(), "Motor");
+    write(top / "motor" / "Rotor.cpart", "text");
+    startHistory((top / "vendor").string());
+    write(top / "vendor" / "Bearing.cpart", "text");
+
+    const std::vector<std::string> expected {
+        resolved(top / "Housing.cpart"),
+        resolved(top / "shafts" / "Shaft.cpart")
+    };
+    EXPECT_EQ(projectDocuments(project), expected);
+}
+
+TEST_F(ProjectTest, anOutsideDocumentIsListedWhereItIsAndHeldAtItsNewestVersion)
+{
+    const std::string project = createProject((_folder / "Gearbox").string(), "Gearbox");
+    const fs::path bolt = _folder / "Library" / "Bolt.cpart";
+    Document* doc = aSavedPart(bolt);
+    startHistory((_folder / "Library").string());
+    const std::string committed = commitFile(bolt.string(), "Bolt");
+
+    const OutsideDocument added = addOutsideDocument(project, bolt.string());
+
+    EXPECT_TRUE(fs::exists(bolt)) << "listing a document moved it";
+    EXPECT_EQ(added.version, committed);
+    EXPECT_EQ(added.uuid, doc->Uid.getValueStr());
+    const std::vector<OutsideDocument> listed = outsideDocuments(project);
+    ASSERT_EQ(listed.size(), 1U);
+    EXPECT_EQ(listed[0].path, resolved(bolt));
+    EXPECT_EQ(listed[0].uuid, added.uuid);
+    EXPECT_EQ(listed[0].version, committed);
+    EXPECT_NE(textOf(project).find("path=\"../Library/Bolt.cpart\""), std::string::npos)
+        << "the project file names the document by where this machine keeps it:\n"
+        << textOf(project);
+    EXPECT_EQ(projectName(project), "Gearbox");
+}
+
+TEST_F(ProjectTest, aDocumentNotVersionedIsHeldAtNoVersion)
+{
+    const std::string project = createProject((_folder / "Gearbox").string(), "Gearbox");
+    const fs::path loose = _folder / "Desktop" / "Washer.cpart";
+    aSavedPart(loose);
+
+    const OutsideDocument added = addOutsideDocument(project, loose.string());
+
+    EXPECT_EQ(added.version, "");
+    EXPECT_EQ(newerVersionOf(added), "");
+    EXPECT_EQ(textOf(project).find("\" version=\""), std::string::npos) << textOf(project);
+}
+
+// A newer version is reported and never taken on its own; Update takes it.
+TEST_F(ProjectTest, aNewerVersionWaitsForUpdate)
+{
+    const std::string project = createProject((_folder / "Gearbox").string(), "Gearbox");
+    const fs::path bolt = _folder / "Library" / "Bolt.cpart";
+    Document* doc = aSavedPart(bolt);
+    startHistory((_folder / "Library").string());
+    const std::string first = commitFile(bolt.string(), "Bolt");
+    addOutsideDocument(project, bolt.string());
+
+    doc->addObject("App::DocumentObjectGroup", "Thread");
+    ASSERT_TRUE(doc->save());
+    const std::string second = commitFile(bolt.string(), "Thread");
+
+    std::vector<OutsideDocument> listed = outsideDocuments(project);
+    ASSERT_EQ(listed.size(), 1U);
+    EXPECT_EQ(listed[0].version, first) << "the newer version was taken without Update";
+    EXPECT_EQ(newerVersionOf(listed[0]), second);
+
+    EXPECT_EQ(updateOutsideDocument(project, bolt.string()), second);
+    listed = outsideDocuments(project);
+    EXPECT_EQ(listed[0].version, second);
+    EXPECT_EQ(newerVersionOf(listed[0]), "");
+}
+
+TEST_F(ProjectTest, onlyADocumentFromOutsideCanBeListedOnce)
+{
+    const std::string project = createProject((_folder / "Gearbox").string(), "Gearbox");
+    const fs::path inside = _folder / "Gearbox" / "Housing.cpart";
+    write(inside, "text");
+    const fs::path outside = _folder / "Desktop" / "Washer.cpart";
+    write(outside, "text");
+    write(_folder / "Desktop" / "notes.txt", "text");
+    addOutsideDocument(project, outside.string());
+    const std::string before = textOf(project);
+
+    EXPECT_THROW(addOutsideDocument(project, inside.string()), Base::Exception);
+    EXPECT_THROW(addOutsideDocument(project, outside.string()), Base::Exception);
+    EXPECT_THROW(
+        addOutsideDocument(project, (_folder / "Desktop" / "notes.txt").string()),
+        Base::Exception
+    );
+    EXPECT_THROW(addOutsideDocument(project, (_folder / "Missing.cpart").string()), Base::Exception);
+    EXPECT_THROW(updateOutsideDocument(project, inside.string()), Base::Exception);
+    EXPECT_EQ(textOf(project), before);
+}

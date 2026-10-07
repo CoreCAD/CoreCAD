@@ -28,6 +28,7 @@
 #include <FCGlobal.h>
 
 #include <string>
+#include <vector>
 
 namespace App
 {
@@ -38,8 +39,9 @@ class Document;
  *
  *  A document is in the project whose file sits in its own folder or the nearest folder above
  *  it, inside the same repository; a project is what gives a document its history. The project
- *  file names the project, and will list the documents it uses from outside its folder. Nothing
- *  here is known to a document: a project tracks files, the files do not know their project.
+ *  file names the project and lists the documents it uses from outside its folder, each held at
+ *  a version. Nothing here is known to a document: a project tracks files, the files do not know
+ *  their project.
  */
 
 /// The extension of a project file, with its dot.
@@ -65,5 +67,37 @@ AppExport std::string createProject(const std::string& folder, const std::string
  *  a file of that name is already there.
  */
 AppExport std::string moveIntoProject(Document& doc, const std::string& projectFile);
+
+/// The documents in the project's folder that are in this project, by path. A folder holding
+/// a project or a repository of its own is another project's, and source material is not a
+/// document.
+AppExport std::vector<std::string> projectDocuments(const std::string& projectFile);
+
+/// A document the project uses from outside its folder.
+struct OutsideDocument
+{
+    std::string path;     ///< absolute
+    std::string uuid;     ///< the document's identity, empty when its file does not state one
+    std::string version;  ///< the commit it is held at, empty when it is not versioned
+};
+
+/// The documents the project file lists from outside the project, by path.
+AppExport std::vector<OutsideDocument> outsideDocuments(const std::string& projectFile);
+
+/** List the document at `path` in the project where it is; it is never moved. It is held at its
+ *  newest committed version, or at none when it is not versioned. Throws when the file is
+ *  missing, is not a document, is in this project already, or is listed already.
+ */
+AppExport OutsideDocument addOutsideDocument(const std::string& projectFile,
+                                             const std::string& path);
+
+/// The commit of a newer version of an outside document than the one it is held at, or empty
+/// when there is none or it is not versioned.
+AppExport std::string newerVersionOf(const OutsideDocument& outside);
+
+/// Hold the outside document at `path` at its newest version; returns that commit. Throws when
+/// the project does not list it.
+AppExport std::string updateOutsideDocument(const std::string& projectFile,
+                                            const std::string& path);
 
 }  // namespace App

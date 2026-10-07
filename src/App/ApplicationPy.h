@@ -85,6 +85,10 @@ public:
     static PyObject* sProjectName            (PyObject *self,PyObject *args);
     static PyObject* sCreateProject          (PyObject *self,PyObject *args);
     static PyObject* sMoveIntoProject        (PyObject *self,PyObject *args);
+    static PyObject* sProjectDocuments(PyObject* self, PyObject* args);
+    static PyObject* sOutsideDocuments(PyObject* self, PyObject* args);
+    static PyObject* sAddOutsideDocument(PyObject* self, PyObject* args);
+    static PyObject* sUpdateOutsideDocument(PyObject* self, PyObject* args);
     static PyObject* sListDocuments          (PyObject *self,PyObject *args);
     static PyObject* sAddDocObserver         (PyObject *self,PyObject *args);
     static PyObject* sRemoveDocObserver      (PyObject *self,PyObject *args);

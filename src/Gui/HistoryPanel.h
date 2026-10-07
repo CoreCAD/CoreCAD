@@ -43,6 +43,9 @@ using VersionLayers
     = std::function<App::Document*(App::Document& before, App::Document& after, bool showChanges)>;
 GuiExport void registerVersionLayers(VersionLayers layers);
 
+/// How long ago `time` (seconds since the epoch) was, in words; a date once it is over a week.
+GuiExport QString timeAgo(std::int64_t time);
+
 /// The History side panel (UI_GUIDE §2.2.1): the active document's committed versions, newest
 /// first, under a "Not yet committed" entry, and what the chosen one changed. Choosing an older
 /// entry shows that version in the model view, which cannot be edited until the view returns to

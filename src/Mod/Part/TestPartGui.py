@@ -53,6 +53,7 @@ from parttests.VersionComparisonTest import (
     VersionComparisonTest,
     HistoryModelViewTest,
     HistoryCommitTest,
+    ProjectPanelTest,
 )
 
 
