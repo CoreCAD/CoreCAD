@@ -50,6 +50,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/ProjectFile.h>
+#include <App/SealedArchive.h>
 #include <Base/Exception.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
@@ -468,22 +469,60 @@ bool xmlFilesAreValid(const QString& fcstdFile)
     }
 }
 
-bool DocumentRecoveryPrivate::isValidProject(const QFileInfo& fi) const
+static bool recipeTextIsWellFormed(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QFile::ReadOnly)) {
+        return false;
+    }
+    QXmlStreamReader xr(&file);
+    bool hasElement = false;
+    while (!xr.atEnd()) {
+        if (xr.readNext() == QXmlStreamReader::StartElement) {
+            hasElement = true;
+        }
+    }
+    return hasElement && !xr.hasError();
+}
+
+bool Gui::Dialog::originalDocumentIsIntact(const QFileInfo& fi)
 {
     if (!fi.exists()) {
         return false;
     }
 
-    if (!zipDataIsValid(fi.fileName())) {
+    const QString path = fi.absoluteFilePath();
+    QFile file(path);
+    char first = 0;
+    if (!file.open(QFile::ReadOnly) || !file.getChar(&first)) {
+        return false;
+    }
+    file.close();
+
+    // The same test the document reader makes: a zip container starts with 'P'.
+    if (first != 'P') {
+        return recipeTextIsWellFormed(path);
+    }
+
+    if (!zipDataIsValid(path)) {
         return false;
     }
 
-    if (!xmlFilesAreValid(fi.fileName())) {
+    if (App::holdsSealedRecipe(path.toStdString())) {
+        return true;
+    }
+
+    if (!xmlFilesAreValid(path)) {
         return false;
     }
 
-    App::ProjectFile project(fi.absoluteFilePath().toStdString());
+    App::ProjectFile project(path.toStdString());
     return project.loadDocument();
+}
+
+bool DocumentRecoveryPrivate::isValidProject(const QFileInfo& fi) const
+{
+    return originalDocumentIsIntact(fi);
 }
 
 DocumentRecoveryPrivate::XmlConfig DocumentRecoveryPrivate::readXmlFile(const QString& fn) const
