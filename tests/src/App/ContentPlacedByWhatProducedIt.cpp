@@ -180,8 +180,12 @@ protected:
     std::string theBlockFor(const std::string& name) const
     {
         const std::string recipe = theRecipe();
-        const std::string opening = "name=\"" + name + "\">";
-        const std::string::size_type at = recipe.find(opening);
+        const std::string opening = "name=\"" + name + "\"";
+        std::string::size_type at = recipe.find(opening);
+        while (at != std::string::npos && recipe[at + opening.size()] != '>'
+               && recipe[at + opening.size()] != ' ') {
+            at = recipe.find(opening, at + 1);
+        }
         if (at == std::string::npos) {
             return {};
         }

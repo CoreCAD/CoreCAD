@@ -765,6 +765,17 @@ const std::vector<DocumentObject*>& Document::getObjects() const
     return d->objectArray;
 }
 
+void Document::arrangeObjects(const std::vector<DocumentObject*>& order)
+{
+    const std::set<DocumentObject*> moving(order.begin(), order.end());
+    auto next = order.begin();
+    for (DocumentObject*& slot : d->objectArray) {
+        if (moving.contains(slot) && next != order.end()) {
+            slot = *next++;
+        }
+    }
+}
+
 std::vector<DocumentObject*> Document::getObjectsOfType(const Base::Type& typeId) const
 {
     std::vector<DocumentObject*> Objects;

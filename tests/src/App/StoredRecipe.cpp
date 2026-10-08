@@ -28,11 +28,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <regex>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <numbers>
+#include <regex>
 #include <sstream>
 #include <string>
 
@@ -401,10 +403,10 @@ TEST_F(StoredRecipeTest, theDocumentsOwnFactsAreCarried)
     EXPECT_EQ(_rebuilt->Uid.getValueStr(), identity);
 }
 
-// Objects are written in durable-id order, so the file does not depend on the order they were
-// created in. Two documents holding the same design must produce the same file whichever object
-// was made first -- otherwise a reordered session reads as a rewritten document.
-TEST_F(StoredRecipeTest, theFileDoesNotDependOnCreationOrder)
+// Blocks are written in durable-id order, so where a block sits in the file does not depend on
+// the order the objects were made in. The order itself is stated by each block naming the step it
+// comes after, so a reordered session changes those links and nothing else.
+TEST_F(StoredRecipeTest, blocksSitInIdOrderWhateverTheCreationOrder)
 {
     // Arrange: the same two objects, created in opposite orders, given matching identities.
     auto* first = _source->addObject("Part::Box", "First");
@@ -420,11 +422,83 @@ TEST_F(StoredRecipeTest, theFileDoesNotDependOnCreationOrder)
     laterSecond->Uid.setValue(second->Uid.getValueStr());
 
     // Act
-    const std::string written = formatStoredRecipe(*_source);
-    const std::string writtenInReverse = formatStoredRecipe(*_rebuilt);
+    std::string written = objectsSection(formatStoredRecipe(*_source));
+    std::string writtenInReverse = objectsSection(formatStoredRecipe(*_rebuilt));
 
     // Assert
-    EXPECT_EQ(objectsSection(written), objectsSection(writtenInReverse));
+    const auto withoutLinks = [](std::string text) {
+        static const std::regex link(R"( after="[^"]*")");
+        return std::regex_replace(text, link, "");
+    };
+    EXPECT_NE(written, writtenInReverse) << "the file does not state which step came first";
+    EXPECT_EQ(withoutLinks(written), withoutLinks(writtenInReverse));
+}
+
+namespace
+{
+std::vector<std::string> namesInOrder(const App::Document& doc)
+{
+    std::vector<std::string> names;
+    for (const DocumentObject* obj : doc.getObjects()) {
+        names.emplace_back(obj->getNameInDocument());
+    }
+    return names;
+}
+}  // namespace
+
+// The order steps were made in is part of the design: a cut shown above the sketch it cuts with
+// reads as nonsense. Measured before this: the reader built in file order, which is id order, so
+// every reopen shuffled the steps.
+TEST_F(StoredRecipeTest, stepsComeBackInTheOrderTheyWereMade)
+{
+    // Arrange -- ids chosen to run against the creation order.
+    const std::vector<std::pair<const char*, const char*>> steps {
+        {"Sketch", "ffffffff-0000-4000-8000-000000000001"},
+        {"Pad", "88888888-0000-4000-8000-000000000002"},
+        {"Pocket", "00000000-0000-4000-8000-000000000003"},
+    };
+    for (const auto& [name, uid] : steps) {
+        auto* obj = _source->addObject("App::VarSet", name);
+        ASSERT_NE(obj, nullptr);
+        obj->Uid.setValue(uid);
+    }
+
+    // Act
+    roundTrip();
+
+    // Assert
+    EXPECT_EQ(namesInOrder(*_rebuilt), (std::vector<std::string> {"Sketch", "Pad", "Pocket"}));
+}
+
+// Two sides of a merge that each inserted a step after the same one leave two blocks naming the
+// same predecessor. Both steps come back, each before what follows it, in a settled order.
+TEST_F(StoredRecipeTest, twoStepsInsertedAfterTheSameStepBothComeBackInASettledOrder)
+{
+    // Arrange
+    for (const char* name : {"Base", "Mine", "Theirs"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    const std::string baseUid = _source->getObject("Base")->Uid.getValueStr();
+    const std::string mineUid = _source->getObject("Mine")->Uid.getValueStr();
+    std::string written = formatStoredRecipe(*_source);
+    const std::string theirsAfterMine = "name=\"Theirs\" after=\"" + mineUid + "\"";
+    const std::string::size_type at = written.find(theirsAfterMine);
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, theirsAfterMine.size(), "name=\"Theirs\" after=\"" + baseUid + "\"");
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    const std::vector<std::string> order = namesInOrder(*_rebuilt);
+    ASSERT_EQ(order.size(), 3U);
+    EXPECT_EQ(order.front(), "Base");
+    const std::string mineFirst = _source->getObject("Mine")->Uid.getValueStr()
+            < _source->getObject("Theirs")->Uid.getValueStr()
+        ? "Mine"
+        : "Theirs";
+    EXPECT_EQ(order[1], mineFirst) << "the step stated first in the file did not go first";
 }
 
 // A reference that leaves the document is carried by the durable pair the link property already
