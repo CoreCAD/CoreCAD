@@ -154,6 +154,12 @@ void Feature::updateSuppressedShape()
     SuppressedShape.setValue(res);
 }
 
+bool Feature::producesContentOf(const App::Property& prop) const
+{
+    // A copy of the shape this step built before it was suppressed: made here, never authored.
+    return &prop == &SuppressedShape || Part::ShapeFeature::producesContentOf(prop);
+}
+
 short Feature::mustExecute() const
 {
     if (BaseFeature.isTouched() || BaseInstance.isTouched()) {

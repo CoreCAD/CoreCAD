@@ -58,6 +58,7 @@ public:
 
     Part::PropertyPartShape AddSubShape;
 
+    bool producesContentOf(const App::Property& prop) const override;
 
 protected:
     Type addSubType {Additive};
