@@ -1546,6 +1546,7 @@ bool Document::afterRestore(const bool checkPartial)
                                     e.what());
             toBuild.insert(d->objectArray.begin(), d->objectArray.end());
         }
+        Base::ObjectStatusLocker<Status, Document> building(BuildingOnOpen, this);
         for (DocumentObject* obj : toBuild) {
             obj->enforceRecompute();
         }

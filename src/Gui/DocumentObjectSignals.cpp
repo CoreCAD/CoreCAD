@@ -239,7 +239,8 @@ void Document::slotChangedObject(const App::DocumentObject& Obj, const App::Prop
     }
 
     // a property of an object has changed
-    if (!Prop.testStatus(App::Property::NoModify) && !isModified()) {
+    if (!Prop.testStatus(App::Property::NoModify) && !isModified()
+        && !d->_pcDocument->testStatus(App::Document::BuildingOnOpen)) {
         FC_LOG(Prop.getFullName() << " modified");
         setModified(true);
     }
@@ -373,7 +374,7 @@ void Document::slotSkipRecompute(const App::Document& doc, const std::vector<App
 void Document::slotTouchedObject(const App::DocumentObject& Obj)
 {
     getMainWindow()->updateActions(true);
-    if (!isModified()) {
+    if (!isModified() && !d->_pcDocument->testStatus(App::Document::BuildingOnOpen)) {
         FC_LOG(Obj.getFullName() << " touched");
         setModified(true);
     }
