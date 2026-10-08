@@ -38,6 +38,7 @@
 # include <map>
 # include <memory>
 # include <optional>
+# include <set>
 # include <sstream>
 # include <string>
 # include <vector>
@@ -693,6 +694,8 @@ struct RecipeRead
     std::vector<DocumentObject*> restored;
     /// By the Uid the file stated; see restoreReference.
     std::map<std::string, DocumentObject*> arrived;
+    /// Every block's Uid and the Uid of the step it states it comes after, in file order.
+    std::vector<std::pair<std::string, std::string>> stepAfter;
 };
 
 /// The optional `<Document>` block, leaving the reader on `<Objects>`. A copy states none, so
@@ -807,6 +810,7 @@ void readObject(RecipeRead& read)
     const std::string name = reader.getAttribute<const char*>("name");
     const bool display = reader.getAttribute<long>("display", 0) == 1;
     const bool asked = reader.getAttribute<long>("extensions", 0) == 1;
+    read.stepAfter.emplace_back(uuid, reader.getAttribute<const char*>("after", ""));
 
     DocumentObject* obj = constructObject(read, uuid, type, name);
     if (obj != nullptr) {
@@ -858,6 +862,78 @@ void bindReferences(RecipeRead& read)
             "pointed is kept as written and the document is not whole.\n",
             name != nullptr ? name : "");
     }
+}
+
+/// Put the steps back in the order they were made, which the file states as a chain of "comes
+/// after" links rather than by position. A step whose predecessor this build could not construct
+/// follows that step's own predecessor. Where two steps name the same predecessor -- each side of
+/// a merge inserted one -- the one stated first in the file goes first, with everything after it.
+void arrangeInStepOrder(RecipeRead& read)
+{
+    const std::map<std::string, std::string> afterOf(read.stepAfter.begin(), read.stepAfter.end());
+
+    const auto builtPredecessor = [&](const std::string& uuid) {
+        std::set<std::string> passed {uuid};
+        auto found = afterOf.find(uuid);
+        while (found != afterOf.end() && !found->second.empty()) {
+            const std::string& before = found->second;
+            if (read.arrived.contains(before)) {
+                return before;
+            }
+            if (!passed.insert(before).second) {
+                break;
+            }
+            found = afterOf.find(before);
+        }
+        return std::string {};
+    };
+
+    std::vector<std::string> first;
+    std::map<std::string, std::vector<std::string>> followers;
+    for (const auto& [uuid, after] : read.stepAfter) {
+        if (!read.arrived.contains(uuid)) {
+            continue;
+        }
+        const std::string before = builtPredecessor(uuid);
+        if (before != after) {
+            read.doc.keepStatedPredecessor(uuid, after, before);
+        }
+        if (before.empty()) {
+            first.push_back(uuid);
+        }
+        else {
+            followers[before].push_back(uuid);
+        }
+    }
+
+    std::vector<DocumentObject*> order;
+    std::set<std::string> placed;
+    const auto placeChain = [&](const std::string& start) {
+        std::vector<std::string> pending {start};
+        while (!pending.empty()) {
+            const std::string uuid = pending.back();
+            pending.pop_back();
+            if (!placed.insert(uuid).second) {
+                continue;
+            }
+            order.push_back(read.arrived.at(uuid));
+            const auto next = followers.find(uuid);
+            if (next != followers.end()) {
+                pending.insert(pending.end(), next->second.rbegin(), next->second.rend());
+            }
+        }
+    };
+    for (const std::string& uuid : first) {
+        placeChain(uuid);
+    }
+    // Steps caught in a loop of links reach no first step; they keep the file's order, last.
+    for (const auto& [uuid, after] : read.stepAfter) {
+        if (read.arrived.contains(uuid)) {
+            placeChain(uuid);
+        }
+    }
+
+    read.doc.arrangeObjects(order);
 }
 
 /// What follows the read: the formula pass, and marking everything for a rebuild.
@@ -930,5 +1006,6 @@ void App::restoreStoredRecipe(Document& doc, std::istream& source, const RecipeA
     reader.readEndElement("Recipe");
 
     bindReferences(read);
+    arrangeInStepOrder(read);
     finishRead(read);
 }

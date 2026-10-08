@@ -103,6 +103,22 @@ using namespace boost;
 
 namespace fs = std::filesystem;
 
+void Document::keepStatedPredecessor(const std::string& uuid,
+                                     std::string stated,
+                                     std::string built)
+{
+    _statedPredecessors[uuid] = {std::move(stated), std::move(built)};
+}
+
+std::string Document::predecessorToState(const std::string& uuid, const std::string& built) const
+{
+    const auto found = _statedPredecessors.find(uuid);
+    if (found != _statedPredecessors.end() && found->second.second == built) {
+        return found->second.first;
+    }
+    return built;
+}
+
 void Document::keepUnreadObject(std::string uuid, std::string type, std::string text)
 {
     // Kept in durable-id order, which is the order the file states objects in, so a block goes

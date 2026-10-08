@@ -548,7 +548,8 @@ void writeProperties(Base::Writer& writer,
 void writeObject(Base::Writer& writer,
                  const DocumentObject& obj,
                  const std::string& assetDirectory,
-                 bool withAppearance)
+                 bool withAppearance,
+                 const std::string& after = {})
 {
     const PropertyContainer* appearance = withAppearance ? appearanceOf(obj) : nullptr;
     // Appearance this session had nowhere to put, given back only when nothing live replaces it.
@@ -569,6 +570,9 @@ void writeObject(Base::Writer& writer,
     writer.Stream() << writer.ind() << "<Object" << attribute("uuid", obj.Uid.getValueStr())
                     << attribute("type", obj.getTypeId().getName())
                     << attribute("name", obj.getNameInDocument());
+    if (!after.empty()) {
+        writer.Stream() << attribute("after", after);
+    }
     if (!asked.empty()) {
         // Marked so a reader knows to expect the block without looking ahead.
         writer.Stream() << attribute("extensions", "1");
@@ -627,22 +631,44 @@ std::string App::formatStoredRecipe(const Document& doc,
         writer.Stream() << writer.ind() << "</Document>\n";
     }
 
-    // Uid order, not creation order, so an inserted feature reads as one added block.
+    // Uid order, not creation order, so an inserted feature reads as one added block. The
+    // creation order is stated instead by each block naming the step it comes after: inserting a
+    // step changes its own block and the one block that now follows it.
     const bool wholeDocument = scope.objects.empty();
     std::vector<const DocumentObject*> objects;
     if (wholeDocument) {
-        for (const DocumentObject* obj : doc.getObjects()) {
-            if (obj != nullptr) {
-                objects.push_back(obj);
-            }
-        }
+        objects.assign(doc.getObjects().begin(), doc.getObjects().end());
     }
     else {
-        for (const DocumentObject* obj : scope.objects) {
-            if (obj != nullptr) {
-                objects.push_back(obj);
+        objects = scope.objects;
+    }
+    std::erase(objects, nullptr);
+    // A copy may carry objects from more than one document; each keeps its own document's order.
+    if (!wholeDocument) {
+        std::map<const Document*, std::size_t> documentRank;
+        std::map<const DocumentObject*, std::pair<std::size_t, std::size_t>> made;
+        for (const DocumentObject* obj : objects) {
+            const Document* owner = obj->getDocument();
+            if (owner == nullptr || documentRank.contains(owner)) {
+                continue;
+            }
+            const std::size_t rank = documentRank.size();
+            documentRank[owner] = rank;
+            const auto& all = owner->getObjects();
+            for (std::size_t i = 0; i < all.size(); ++i) {
+                made[all[i]] = {rank, i};
             }
         }
+        std::stable_sort(objects.begin(),
+                         objects.end(),
+                         [&made](const DocumentObject* left, const DocumentObject* right) {
+                             return made[left] < made[right];
+                         });
+    }
+    std::map<const DocumentObject*, std::string> after;
+    for (std::size_t i = 0; i < objects.size(); ++i) {
+        const std::string built = i == 0 ? std::string {} : objects[i - 1]->Uid.getValueStr();
+        after[objects[i]] = doc.predecessorToState(objects[i]->Uid.getValueStr(), built);
     }
     std::sort(objects.begin(),
               objects.end(),
@@ -674,7 +700,7 @@ std::string App::formatStoredRecipe(const Document& doc,
     };
     for (const DocumentObject* obj : objects) {
         writeKeptUpTo(obj->Uid.getValueStr(), false);
-        writeObject(writer, *obj, assetDirectory, /*withAppearance=*/true);
+        writeObject(writer, *obj, assetDirectory, /*withAppearance=*/true, after[obj]);
     }
     writeKeptUpTo(std::string {}, true);
     writer.decInd();

@@ -637,6 +637,11 @@ public:
     {
         return _unreadObjects;
     }
+    /// A step whose stated predecessor is a kept block follows the nearest step that was built.
+    /// The file's own words are given back for as long as that is still the step it follows.
+    void keepStatedPredecessor(const std::string& uuid, std::string stated, std::string built);
+    /// What to write as the step `uuid` comes after, given the step it follows here.
+    std::string predecessorToState(const std::string& uuid, const std::string& built) const;
     /// True while this document holds a statement its file made and this session could not honour.
     bool holdsUnreadContent() const;
 
@@ -1037,6 +1042,9 @@ public:
 
     /// Get a list of all document objects.
     const std::vector<DocumentObject*>& getObjects() const;
+    /// Put these objects, in this order, into the places they already hold in the list; every
+    /// other object keeps its place. The order is the order steps were made in (the tree shows it).
+    void arrangeObjects(const std::vector<DocumentObject*>& order);
 
     /**
      * @brief Get all objects of a given type.
@@ -1853,6 +1861,8 @@ private:
 
     /// uuid, type, and the block's own text -- see keepUnreadObject().
     std::vector<std::array<std::string, 3>> _unreadObjects;
+    /// By step: the predecessor its file stated, and the built step that stood in for it.
+    std::map<std::string, std::pair<std::string, std::string>> _statedPredecessors;
     /// What the file states and this session neither honoured nor kept -- recordUnkeptStatement().
     std::vector<std::string> _unkeptStatements;
     /// The file those losses were measured against: the one that still holds what is missing here.
