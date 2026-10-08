@@ -401,13 +401,16 @@ void HistoryPanel::readVersions()
         const App::FileVersion& version = versions[i];
         auto* item = new QTreeWidgetItem(
             versionList,
-            {QString::fromStdString(version.summary),
-             tr("%1 · %2").arg(QString::fromStdString(version.author), timeAgo(version.time))}
+            {QString::fromStdString(version.summary), timeAgo(version.time)}
         );
         item->setData(0, VersionRole, static_cast<int>(i));
         const QString when
             = QLocale().toString(QDateTime::fromSecsSinceEpoch(version.time), QLocale::LongFormat);
-        item->setToolTip(0, tr("%1, %2").arg(QString::fromStdString(version.commit), when));
+        item->setToolTip(
+            0,
+            tr("%1, %2\n%3")
+                .arg(QString::fromStdString(version.author), when, QString::fromStdString(version.commit))
+        );
         item->setToolTip(1, item->toolTip(0));
         if (version.commit == chosen) {
             current = item;

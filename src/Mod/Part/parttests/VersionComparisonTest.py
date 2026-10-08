@@ -428,6 +428,12 @@ class HistoryCommitTest(unittest.TestCase):
     def test_nothing_to_commit_and_older_versions_offer_no_commit(self):
         self._start_and_commit_first()
         self._open_panel()
+        row = self._versions().topLevelItem(1)
+        self.assertEqual(
+            (row.text(0), row.text(1)), ("Ten", "just now"), "the row names its author"
+        )
+        author = App.fileVersions(self._path)[0]["author"]
+        self.assertTrue(row.toolTip(0).startswith(author + ", "), row.toolTip(0))
         button = self._widget("QPushButton", "HistoryCommitButton")
         self.assertFalse(button.isVisible(), "offered to commit with nothing changed")
 
