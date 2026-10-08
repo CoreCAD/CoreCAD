@@ -225,7 +225,10 @@ public:
          */
         Relocating = 15,
         /// Whether opening gave this copy a fresh identity, so it now differs from its file.
-        GivenNewIdentity = 16
+        GivenNewIdentity = 16,
+        /// Whether the document is building the geometry its file states the steps for, as part
+        /// of being opened; nothing this build changes differs from the file.
+        BuildingOnOpen = 17
     };
     // clang-format on
 

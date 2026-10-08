@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // SPDX-FileCopyrightText: 2026 Cruth contributors
 
+#include <filesystem>
+
 #include <QTest>
 
 #include <App/Application.h>
@@ -111,6 +113,30 @@ private Q_SLOTS:
 
         viewOf(guiDoc, obj)->Visibility.setValue(false);
         QVERIFY(guiDoc->isModified());
+    }
+
+    // Opening a document includes building what its file states the steps for. That build
+    // changes what is held, not what the file says, so a document just opened is not changed.
+    void test_aDocumentJustOpenedIsNotChanged()  // NOLINT
+    {
+        tests::TempDirectory tmp("guidoc");
+        const std::string file = (tmp.path() / "opened.FCStd").string();
+
+        doc->addObject("App::Origin", "Origin");
+        doc->saveAs(file.c_str());
+        const std::string cache = doc->cacheDirectory();
+        App::GetApplication().closeDocument(doc->getName());
+        std::filesystem::remove_all(cache);
+        doc = nullptr;
+
+        doc = tests::openViewlessDocument(file.c_str());
+        QVERIFY(doc != nullptr);
+        Gui::Document* reopened = Gui::Application::Instance->getDocument(doc);
+        QVERIFY(reopened != nullptr);
+        QVERIFY(!reopened->isModified());
+
+        doc->getObject("Origin")->Label.setValue("Moved");
+        QVERIFY(reopened->isModified());
     }
 
     // The same handler read from the other end: a copy is written to a different file and the
