@@ -63,6 +63,8 @@ public:
     /// Keep a copy of suppressed shapes so that we can restore them (and maybe display them)
     Part::PropertyPartShape SuppressedShape;
 
+    bool producesContentOf(const App::Property& prop) const override;
+
     /// Cruth Amendment 5 §5.3 gesture tag. The siblings spawned by one multi-body cut/common
     /// gesture (one per reached Body) all carry the same non-empty GestureId; a feature born of an
     /// ordinary single-body edit leaves it empty. It is inert: nothing reads it during recompute,

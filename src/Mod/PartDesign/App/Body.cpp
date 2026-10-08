@@ -237,6 +237,12 @@ short Body::mustExecute() const
     if (Tip.isTouched() || RollbackMarker.isTouched()) {
         return 1;
     }
+    // A step handed its geometry from the build cache is not recomputed, so nothing else would
+    // fill the mirror of a body whose steps all came back that way.
+    const auto* shown = freecad_cast<Part::ShapeFeature*>(shownStep());
+    if (Shape.getShape().isNull() && shown && !shown->Shape.getShape().isNull()) {
+        return 1;
+    }
     return Part::BodyBase::mustExecute();
 }
 

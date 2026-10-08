@@ -136,4 +136,20 @@ TEST_F(StoredRecipeRoundTripTest, theRebuiltDocumentBuildsTheSameSolid)
     EXPECT_NEAR(built.MaxZ, expected.MaxZ, 1e-7);
 }
 
+// A shape a step builds while it recomputes is not part of the record (Amendment 18 Clause 18.1).
+// Measured before this: a pad's tool shape was written as source material, and since the kernel
+// does not rebuild a shape byte for byte, every save of an unchanged document changed the file.
+TEST_F(StoredRecipeRoundTripTest, theShapesAStepBuildsAreNotWrittenAsSource)
+{
+    // Arrange
+    ASSERT_FALSE(_pad->AddSubShape.getShape().isNull());
+
+    // Act / Assert
+    EXPECT_FALSE(App::theRecipeCarries(_pad->AddSubShape, *_pad))
+        << "the tool shape is stored as though a person had authored it";
+    EXPECT_FALSE(App::theRecipeCarries(_pad->SuppressedShape, *_pad))
+        << "the suppressed copy is stored as though a person had authored it";
+    EXPECT_TRUE(App::theRecipeCarries(_pad->Length, *_pad)) << "the control: a value a person set";
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

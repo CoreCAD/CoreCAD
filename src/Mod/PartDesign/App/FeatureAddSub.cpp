@@ -57,6 +57,13 @@ void FeatureAddSub::onChanged(const App::Property* property)
     Feature::onChanged(property);
 }
 
+bool FeatureAddSub::producesContentOf(const App::Property& prop) const
+{
+    // The tool shape is built from the profile on every recompute; storing it as source would make
+    // each save differ by the kernel's rebuild alone.
+    return &prop == &AddSubShape || PartDesign::Feature::producesContentOf(prop);
+}
+
 FeatureAddSub::Type FeatureAddSub::getAddSubType()
 {
     return addSubType;
