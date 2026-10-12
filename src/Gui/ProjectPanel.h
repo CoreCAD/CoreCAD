@@ -31,11 +31,14 @@ public:
     static void openProject(const QString& projectFile);
     /// The open project's file, or empty when none is open.
     static QString openProjectFile();
+    /// Told when a project is opened or what it lists may have changed.
+    static fastsignals::signal<void()>& projectChanged();
 
 private:
     explicit ProjectPanel(QWidget* parent = nullptr);
 
     void refresh();
+    void fillList();
     void openDocument(QTreeWidgetItem* item);
     void addFromOutside();
     void update(const QString& path);

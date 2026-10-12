@@ -104,6 +104,7 @@ public:
     static const int DocumentType;
     static const int ObjectType;
     static const int StopRowType;
+    static const int ProjectType;
 
     void markItem(const App::DocumentObject* Obj, bool mark);
     void syncView(ViewProviderDocumentObject* vp);
@@ -304,6 +305,7 @@ private:
     DocumentObjectItem* editingItem;
     DocumentItem* currentDocItem;
     QTreeWidgetItem* rootItem;
+    QTreeWidgetItem* projectItem {nullptr};
     QTimer* statusTimer;
     QTimer* selectTimer;
     QTimer* preselectTimer;
@@ -350,6 +352,11 @@ private:
     Connection connectRelDocument;
     Connection connectShowHidden;
     Connection connectChangedViewObj;
+    fastsignals::scoped_connection connectProjectChanged;
+    fastsignals::scoped_connection connectRestoredDocument;
+
+    void placeDocumentsInProject();
+    std::vector<DocumentItem*> documentItemsInOrder() const;
 };
 
 /** The link between the tree and a document.

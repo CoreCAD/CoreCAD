@@ -166,7 +166,19 @@ QString ProjectPanel::openProjectFile()
     return instance ? instance->projectFile : QString();
 }
 
+fastsignals::signal<void()>& ProjectPanel::projectChanged()
+{
+    static fastsignals::signal<void()> changed;
+    return changed;
+}
+
 void ProjectPanel::refresh()
+{
+    fillList();
+    projectChanged()();
+}
+
+void ProjectPanel::fillList()
 {
     documentList->clear();
     if (projectFile.isEmpty()) {

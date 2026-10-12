@@ -545,6 +545,8 @@ class ProjectPanelTest(unittest.TestCase):
         window = Gui.getMainWindow()
         dock = self._list().parent().parent()
         model = window.findChild(QtWidgets.QDockWidget, "Model")
+        model.show()
+        self._settle()
         self.assertEqual(window.dockWidgetArea(dock), QtCore.Qt.LeftDockWidgetArea)
         self.assertIn(model, window.tabifiedDockWidgets(dock))
 
@@ -565,6 +567,46 @@ class ProjectPanelTest(unittest.TestCase):
                 ),
             ],
         )
+
+    def _model_tree(self):
+        """Each top-level row of the model tree, with the rows under a project row."""
+        from PySide import QtWidgets
+
+        for tree in Gui.getMainWindow().findChildren(QtWidgets.QTreeWidget):
+            if tree.columnCount() == 4:
+                rows = []
+                for i in range(tree.topLevelItemCount()):
+                    item = tree.topLevelItem(i)
+                    if item.type() == 1003:
+                        rows.append(
+                            (
+                                item.text(0),
+                                [item.child(j).text(0) for j in range(item.childCount())],
+                            )
+                        )
+                    else:
+                        rows.append(item.text(0))
+                return rows
+        self.fail("model tree not found")
+
+    def test_the_model_tree_groups_the_documents_the_project_lists(self):
+        housing = os.path.join(self._dir, "Gearbox", "Housing.cpart")
+        self._doc.saveAs(housing)
+        App.addOutsideDocument(self._project, self._bolt_path)
+        loose = App.newDocument("Loose", type="Part")
+        loose.saveAs(os.path.join(self._dir, "Loose.cpart"))
+        try:
+            self._open_project(self._project)
+
+            self.assertEqual(
+                self._model_tree(),
+                [
+                    ("Gearbox", [self._doc.Label, "Bolt — from Library"]),
+                    loose.Label,
+                ],
+            )
+        finally:
+            App.closeDocument(loose.Name)
 
     def test_a_newer_version_is_offered_and_taken_only_by_update(self):
         from PySide import QtWidgets
