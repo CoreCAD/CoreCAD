@@ -3737,10 +3737,14 @@ void TreeWidget::placeDocumentsInProject()
         QTreeWidgetItem* wanted = found != listed.end() ? projectItem : rootItem;
 
         QString text = QString::fromUtf8(doc->Label.getValue());
+        QString tip;
         if (found != listed.end() && !found->second.isEmpty()) {
-            text = tr("%1 — from %2").arg(text, found->second);
+            text = tr("%1 (external)").arg(text);
+            tip = tr("From %1\n%2")
+                      .arg(found->second, QDir::toNativeSeparators(QString::fromUtf8(fileName)));
         }
         docItem->setText(0, text);
+        docItem->setToolTip(0, tip);
 
         QTreeWidgetItem* current = docItem->parent() ? docItem->parent() : rootItem;
         if (current == wanted) {

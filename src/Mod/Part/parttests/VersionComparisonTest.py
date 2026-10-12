@@ -534,7 +534,8 @@ class ProjectPanelTest(unittest.TestCase):
         if self._dialog_failure:
             raise self._dialog_failure
 
-        self.assertEqual(self._dock_title(), "Project — Empty")
+        self.assertEqual(self._dock_title(), "Project")
+        self.assertEqual(self._model_tree()[0][0], "Empty")
         self.assertEqual(self._rows(), [("This project has no documents yet.", [])])
 
     def test_the_panel_is_a_tab_beside_model(self):
@@ -556,7 +557,7 @@ class ProjectPanelTest(unittest.TestCase):
 
         self._open_project(self._project)
 
-        self.assertEqual(self._dock_title(), "Project — Gearbox")
+        self.assertEqual(self._dock_title(), "Project")
         self.assertEqual(
             self._rows(),
             [
@@ -589,6 +590,16 @@ class ProjectPanelTest(unittest.TestCase):
                 return rows
         self.fail("model tree not found")
 
+    def _model_tree_item(self, text):
+        from PySide import QtCore, QtWidgets
+
+        for tree in Gui.getMainWindow().findChildren(QtWidgets.QTreeWidget):
+            if tree.columnCount() == 4:
+                found = tree.findItems(text, QtCore.Qt.MatchExactly | QtCore.Qt.MatchRecursive)
+                if found:
+                    return found[0]
+        self.fail("%s not in the model tree" % text)
+
     def test_the_model_tree_groups_the_documents_the_project_lists(self):
         housing = os.path.join(self._dir, "Gearbox", "Housing.cpart")
         self._doc.saveAs(housing)
@@ -601,9 +612,13 @@ class ProjectPanelTest(unittest.TestCase):
             self.assertEqual(
                 self._model_tree(),
                 [
-                    ("Gearbox", [self._doc.Label, "Bolt — from Library"]),
+                    ("Gearbox", [self._doc.Label, "Bolt (external)"]),
                     loose.Label,
                 ],
+            )
+            self.assertEqual(
+                self._model_tree_item("Bolt (external)").toolTip(0),
+                "From Library\n" + self._bolt_path,
             )
         finally:
             App.closeDocument(loose.Name)
@@ -663,7 +678,7 @@ class ProjectPanelTest(unittest.TestCase):
         self._open_project(self._project)
         self._open_project(other)
 
-        self.assertEqual(self._dock_title(), "Project — Motor")
+        self.assertEqual(self._model_tree()[0][0], "Motor")
 
     def test_double_click_opens_a_document(self):
         App.closeDocument("Bolt")

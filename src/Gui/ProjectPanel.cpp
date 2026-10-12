@@ -145,6 +145,7 @@ void ProjectPanel::openProject(const QString& projectFile)
         instance = new ProjectPanel();
         auto* manager = DockWindowManager::instance();
         instance->dock = manager->addDockWindow("Project", instance, Qt::LeftDockWidgetArea);
+        instance->dock->setWindowTitle(tr("Project"));
         if (QDockWidget* model = manager->getDockContainer("Model")) {
             getMainWindow()->tabifyDockWidget(model, instance->dock);
         }
@@ -188,7 +189,6 @@ void ProjectPanel::fillList()
     std::vector<std::string> inside;
     std::vector<App::OutsideDocument> outside;
     try {
-        dock->setWindowTitle(tr("Project — %1").arg(QString::fromStdString(App::projectName(file))));
         inside = App::projectDocuments(file);
         outside = App::outsideDocuments(file);
     }
