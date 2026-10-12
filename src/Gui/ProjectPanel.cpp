@@ -143,8 +143,12 @@ void ProjectPanel::openProject(const QString& projectFile)
 {
     if (!instance) {
         instance = new ProjectPanel();
-        instance->dock = DockWindowManager::instance()
-                             ->addDockWindow("Project", instance, Qt::RightDockWidgetArea);
+        auto* manager = DockWindowManager::instance();
+        instance->dock = manager->addDockWindow("Project", instance, Qt::LeftDockWidgetArea);
+        instance->dock->setWindowTitle(tr("Project"));
+        if (QDockWidget* model = manager->getDockContainer("Model")) {
+            getMainWindow()->tabifyDockWidget(model, instance->dock);
+        }
         instance->dock->setFeatures(
             QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable
             | QDockWidget::DockWidgetFloatable
@@ -163,7 +167,19 @@ QString ProjectPanel::openProjectFile()
     return instance ? instance->projectFile : QString();
 }
 
+fastsignals::signal<void()>& ProjectPanel::projectChanged()
+{
+    static fastsignals::signal<void()> changed;
+    return changed;
+}
+
 void ProjectPanel::refresh()
+{
+    fillList();
+    projectChanged()();
+}
+
+void ProjectPanel::fillList()
 {
     documentList->clear();
     if (projectFile.isEmpty()) {
@@ -173,7 +189,6 @@ void ProjectPanel::refresh()
     std::vector<std::string> inside;
     std::vector<App::OutsideDocument> outside;
     try {
-        dock->setWindowTitle(tr("Project — %1").arg(QString::fromStdString(App::projectName(file))));
         inside = App::projectDocuments(file);
         outside = App::outsideDocuments(file);
     }

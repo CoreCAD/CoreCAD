@@ -57,6 +57,7 @@
 #include <App/AutoTransaction.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Link.h>
+#include <App/Project.h>
 #include <App/Origin.h>
 #include <App/SuppressibleExtension.h>
 
@@ -68,6 +69,7 @@
 #include "Macro.h"
 #include "MainWindow.h"
 #include "MenuManager.h"
+#include "ProjectPanel.h"
 #include "TreeParams.h"
 #include "View3DInventor.h"
 #include "ViewProviderDocumentObject.h"
@@ -98,6 +100,7 @@ static TreeWidget* _LastSelectedTreeWidget;
 const int TreeWidget::DocumentType = 1000;
 const int TreeWidget::ObjectType = 1001;
 const int TreeWidget::StopRowType = 1002;
+const int TreeWidget::ProjectType = 1003;
 static bool _DraggingActive;
 static bool _DragEventFilter;
 
@@ -833,6 +836,13 @@ TreeWidget::TreeWidget(const char* name, QWidget* parent)
     );
     connectShowHidden = Application::Instance->signalShowHidden.connect(
         std::bind(&TreeWidget::slotShowHidden, this, sp::_1)
+    );
+    connectProjectChanged = ProjectPanel::projectChanged().connect([this]() {
+        placeDocumentsInProject();
+    });
+    // A document's file is known only once it has been read.
+    connectRestoredDocument = App::GetApplication().signalFinishRestoreDocument.connect(
+        [this](const App::Document&) { placeDocumentsInProject(); }
     );
 
     // Gui::Document::signalChangedObject informs the App::Document property
@@ -3513,6 +3523,7 @@ void TreeWidget::slotNewDocument(const Gui::Document& Doc, bool isMainDoc)
     item->setIcon(0, *documentPixmap);
     item->setText(0, QString::fromUtf8(Doc.getDocument()->Label.getValue()));
     DocumentMap[&Doc] = item;
+    placeDocumentsInProject();
 }
 
 
@@ -3627,6 +3638,125 @@ void TreeWidget::slotRelabelDocument(const Gui::Document& Doc)
     auto it = DocumentMap.find(&Doc);
     if (it != DocumentMap.end()) {
         it->second->setText(0, QString::fromUtf8(Doc.getDocument()->Label.getValue()));
+        placeDocumentsInProject();
+    }
+}
+
+namespace
+{
+std::string canonicalPath(const std::string& path)
+{
+    const QString canonical = QFileInfo(QString::fromStdString(path)).canonicalFilePath();
+    return canonical.isEmpty() ? path : canonical.toStdString();
+}
+
+/// Where a document from outside the project comes from: its own project, else its folder.
+QString outsideSource(const std::string& path)
+{
+    try {
+        const std::string ownProject = App::projectFileOf(path);
+        if (!ownProject.empty()) {
+            return QString::fromStdString(App::projectName(ownProject));
+        }
+    }
+    catch (const Base::Exception&) {
+    }
+    return QFileInfo(QString::fromStdString(path)).absoluteDir().dirName();
+}
+
+void saveExpansion(QTreeWidgetItem* item, std::vector<QTreeWidgetItem*>& expanded)
+{
+    if (item->isExpanded()) {
+        expanded.push_back(item);
+    }
+    for (int i = 0; i < item->childCount(); ++i) {
+        saveExpansion(item->child(i), expanded);
+    }
+}
+}  // namespace
+
+std::vector<DocumentItem*> TreeWidget::documentItemsInOrder() const
+{
+    std::vector<DocumentItem*> items;
+    for (int i = 0; i < rootItem->childCount(); ++i) {
+        QTreeWidgetItem* child = rootItem->child(i);
+        if (child == projectItem) {
+            for (int j = 0; j < child->childCount(); ++j) {
+                if (auto* docItem = dynamic_cast<DocumentItem*>(child->child(j))) {
+                    items.push_back(docItem);
+                }
+            }
+        }
+        else if (auto* docItem = dynamic_cast<DocumentItem*>(child)) {
+            items.push_back(docItem);
+        }
+    }
+    return items;
+}
+
+/// UI_GUIDE §2.2.2: the open documents the open project lists sit under its row, those from
+/// outside marked with where they come from; any other document sits beside it.
+void TreeWidget::placeDocumentsInProject()
+{
+    const std::string projectFile = ProjectPanel::openProjectFile().toStdString();
+    std::map<std::string, QString> listed;  // canonical path -> where it comes from, if outside
+    QString projectName;
+    if (!projectFile.empty()) {
+        try {
+            projectName = QString::fromStdString(App::projectName(projectFile));
+            for (const std::string& path : App::projectDocuments(projectFile)) {
+                listed[canonicalPath(path)];
+            }
+            for (const App::OutsideDocument& outside : App::outsideDocuments(projectFile)) {
+                listed[canonicalPath(outside.path)] = outsideSource(outside.path);
+            }
+        }
+        catch (const Base::Exception&) {
+            // An unreadable project file is reported by the Project panel; the row stays.
+        }
+    }
+
+    if (!projectFile.empty() && !projectItem) {
+        projectItem = new QTreeWidgetItem(ProjectType);
+        projectItem->setFlags(Qt::ItemIsEnabled);
+        projectItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
+        rootItem->insertChild(0, projectItem);
+        projectItem->setExpanded(true);
+    }
+    if (projectItem) {
+        projectItem->setText(0, projectName);
+        projectItem->setToolTip(0, QDir::toNativeSeparators(QString::fromStdString(projectFile)));
+    }
+
+    for (DocumentItem* docItem : documentItemsInOrder()) {
+        App::Document* doc = docItem->document()->getDocument();
+        const char* fileName = doc->FileName.getValue();
+        const auto found = Base::Tools::isNullOrEmpty(fileName)
+            ? listed.end()
+            : listed.find(canonicalPath(fileName));
+        QTreeWidgetItem* wanted = found != listed.end() ? projectItem : rootItem;
+
+        QString text = QString::fromUtf8(doc->Label.getValue());
+        QString tip;
+        if (found != listed.end() && !found->second.isEmpty()) {
+            text = tr("%1 (external)").arg(text);
+            tip = tr("From %1\n%2")
+                      .arg(found->second, QDir::toNativeSeparators(QString::fromUtf8(fileName)));
+        }
+        docItem->setText(0, text);
+        docItem->setToolTip(0, tip);
+
+        QTreeWidgetItem* current = docItem->parent() ? docItem->parent() : rootItem;
+        if (current == wanted) {
+            continue;
+        }
+        std::vector<QTreeWidgetItem*> expanded;
+        saveExpansion(docItem, expanded);
+        current->takeChild(current->indexOfChild(docItem));
+        wanted->addChild(docItem);
+        for (QTreeWidgetItem* item : expanded) {
+            item->setExpanded(true);
+        }
     }
 }
 
@@ -4013,11 +4143,7 @@ void TreeWidget::scrollItemToTop()
         }
         else {
             tree->blockSelection(true);
-            for (int i = 0; i < tree->rootItem->childCount(); i++) {
-                auto docItem = dynamic_cast<DocumentItem*>(tree->rootItem->child(i));
-                if (!docItem) {
-                    continue;
-                }
+            for (DocumentItem* docItem : tree->documentItemsInOrder()) {
                 auto doc = docItem->document()->getDocument();
                 if (Gui::Selection().hasSelection(doc->getName(), ResolveMode::OldStyleElement)) {
                     tree->currentDocItem = docItem;
@@ -4883,7 +5009,8 @@ void TreeWidget::slotDeleteDocument(const Gui::Document& Doc)
             assert(it->second.size() > 1);
             it->second.erase(v.second);
         }
-        this->rootItem->takeChild(this->rootItem->indexOfChild(docItem));
+        QTreeWidgetItem* parent = docItem->parent() ? docItem->parent() : this->rootItem;
+        parent->takeChild(parent->indexOfChild(docItem));
         delete docItem;
         DocumentMap.erase(it);
     }
