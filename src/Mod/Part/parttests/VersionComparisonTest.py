@@ -537,6 +537,17 @@ class ProjectPanelTest(unittest.TestCase):
         self.assertEqual(self._dock_title(), "Project — Empty")
         self.assertEqual(self._rows(), [("This project has no documents yet.", [])])
 
+    def test_the_panel_is_a_tab_beside_model(self):
+        from PySide import QtCore, QtWidgets
+
+        self._open_project(self._project)
+
+        window = Gui.getMainWindow()
+        dock = self._list().parent().parent()
+        model = window.findChild(QtWidgets.QDockWidget, "Model")
+        self.assertEqual(window.dockWidgetArea(dock), QtCore.Qt.LeftDockWidgetArea)
+        self.assertIn(model, window.tabifiedDockWidgets(dock))
+
     def test_the_panel_lists_documents_in_the_project_and_from_outside(self):
         self._doc.saveAs(os.path.join(self._dir, "Gearbox", "Housing.cpart"))
         App.addOutsideDocument(self._project, self._bolt_path)

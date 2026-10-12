@@ -143,8 +143,11 @@ void ProjectPanel::openProject(const QString& projectFile)
 {
     if (!instance) {
         instance = new ProjectPanel();
-        instance->dock = DockWindowManager::instance()
-                             ->addDockWindow("Project", instance, Qt::RightDockWidgetArea);
+        auto* manager = DockWindowManager::instance();
+        instance->dock = manager->addDockWindow("Project", instance, Qt::LeftDockWidgetArea);
+        if (QDockWidget* model = manager->getDockContainer("Model")) {
+            getMainWindow()->tabifyDockWidget(model, instance->dock);
+        }
         instance->dock->setFeatures(
             QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable
             | QDockWidget::DockWidgetFloatable
