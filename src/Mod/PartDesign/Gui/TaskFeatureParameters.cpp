@@ -127,11 +127,12 @@ TaskMergeResultParameters::TaskMergeResultParameters(ViewProvider* vp, QWidget* 
     auto* feature = vp->getObject<PartDesign::Feature>();
 
     // Add-or-subtract is asked of the feature where the feature can answer, and assumed to be
-    // "subtract" where it cannot. A pattern is the case that forces this: it produces a solid
-    // and extends a Body like any other feature, but it is not a FeatureAddSub and has no
-    // add/subtract nature of its own. Reading the pair off FeatureAddSub alone would leave a
-    // pattern's box blank and unticked -- saying the pattern stands alone, when it does not.
+    // "subtract" where it cannot. A pattern cannot: its piece may both add and cut, so it has
+    // no single add/subtract nature.
     auto* addSub = freecad_cast<PartDesign::FeatureAddSub*>(feature);
+    if (freecad_cast<PartDesign::Transformed*>(feature)) {
+        addSub = nullptr;
+    }
 
     // Cruth §8.5: the feature already has its spawn-vs-extend choice baked in by the
     // creating command — reflect it. BaseFeature set ⇒ extending a Body; null ⇒ own body.

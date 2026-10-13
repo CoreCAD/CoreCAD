@@ -29,7 +29,7 @@
 
 #include <App/DocumentObserver.h>
 #include <App/PropertyStandard.h>
-#include "FeatureRefine.h"
+#include "FeatureAddSub.h"
 
 
 namespace PartDesign
@@ -37,9 +37,12 @@ namespace PartDesign
 
 /**
  * Abstract superclass of all features that are created by transformation of another feature
- * Transformations are translation, rotation and mirroring
+ * Transformations are translation, rotation and mirroring.
+ *
+ * A pattern's piece is every copy it placed, the originals included, so a later pattern can
+ * copy it like any other step.
  */
-class PartDesignExport Transformed: public PartDesign::FeatureRefine
+class PartDesignExport Transformed: public PartDesign::FeatureAddSub
 {
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::Transformed);
 
@@ -56,7 +59,6 @@ public:
      */
     App::PropertyLinkList Originals;
     App::PropertyEnumeration TransformMode;
-    App::PropertyBool Refine;
 
     /// Cruth §5.5: when true, the pattern emits its N copies as disconnected solids
     /// (a compound) instead of fusing them into one. The multi-output reconciler then
@@ -168,6 +170,8 @@ public:
     //@}
 
     App::DocumentObjectExecReturn* recomputePreview() override;
+
+    void getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShape) override;
 
     void onChanged(const App::Property* prop) override;
 

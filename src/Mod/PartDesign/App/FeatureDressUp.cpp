@@ -35,6 +35,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include "FeatureDressUp.h"
+#include "FeatureTransformed.h"
 #include <Base/Console.h>
 #include <App/Document.h>
 #include <Base/Exception.h>
@@ -295,7 +296,8 @@ void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShap
 
     if (res.isNull()) {
         try {
-            std::vector<Part::TopoShape> shapes;
+            Part::TopoShape added;
+            Part::TopoShape cut;
             Part::TopoShape shape = Shape.getShape();
             shape.setPlacement(Base::Placement());
 
@@ -307,7 +309,8 @@ void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShap
                 // any consecutive DressUp in-between.
                 for (Feature* current = this;; current = static_cast<DressUp*>(base)) {
                     base = freecad_cast<FeatureAddSub*>(current->getBaseObject(true));
-                    if (!base) {
+                    // A pattern is not one support: its copies were placed by it, not dressed.
+                    if (!base || base->isDerivedFrom<Transformed>()) {
                         FC_THROWM(
                             Base::CADKernelError,
                             "Cannot find additive or subtractive support for " << getFullName()
@@ -323,38 +326,22 @@ void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShap
             if (base) {
                 baseShape = base->getBaseTopoShape(true);
                 baseShape.move(base->getLocation().Inverted());
+                const bool hasBaseSolid = !baseShape.isNull() && baseShape.hasSubShape(TopAbs_SOLID);
                 if (base->getAddSubType() == Additive) {
-                    if (!baseShape.isNull() && baseShape.hasSubShape(TopAbs_SOLID)) {
-                        shapes.emplace_back(shape.makeElementCut(baseShape.getShape()));
-                    }
-                    else {
-                        shapes.push_back(shape);
-                    }
+                    added = hasBaseSolid ? shape.makeElementCut(baseShape.getShape()) : shape;
                 }
                 else {
-                    BRep_Builder builder;
-                    TopoDS_Compound comp;
-                    builder.MakeCompound(comp);
-                    // push an empty compound to indicate null additive shape
-                    shapes.emplace_back(comp);
-                    if (!baseShape.isNull() && baseShape.hasSubShape(TopAbs_SOLID)) {
-                        shapes.emplace_back(baseShape.makeElementCut(shape.getShape()));
-                    }
-                    else {
-                        shapes.push_back(shape);
-                    }
+                    cut = hasBaseSolid ? baseShape.makeElementCut(shape.getShape()) : shape;
                 }
             }
             else {
                 baseShape = getBaseTopoShape();
-                shapes.emplace_back(shape.makeElementCut(baseShape.getShape()));
-                shapes.emplace_back(baseShape.makeElementCut(shape.getShape()));
+                added = shape.makeElementCut(baseShape.getShape());
+                cut = baseShape.makeElementCut(shape.getShape());
             }
 
-            // Make a compound to contain both additive and subtractive shape,
-            // bceause a dressing (e.g. a fillet) can either be additive or
-            // subtractive. And the dressup feature can contain mixture of both.
-            AddSubShape.setValue(Part::TopoShape().makeElementCompound(shapes));
+            // A dressing (e.g. a fillet) can add, cut, or both.
+            AddSubShape.setValue(makeAddSubHalves(added, cut));
         }
         catch (Standard_Failure& e) {
             FC_THROWM(
@@ -369,27 +356,7 @@ void DressUp::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShap
         throw Part::NullShapeException("Null AddSub shape");
     }
 
-    if (res.getShape().ShapeType() != TopAbs_COMPOUND) {
-        addShape = res;
-    }
-    else {
-        int count = res.countSubShapes(TopAbs_SHAPE);
-        if (!count) {
-            throw Part::NullShapeException("Null AddSub shape");
-        }
-        if (count) {
-            Part::TopoShape s = res.getSubTopoShape(TopAbs_SHAPE, 1);
-            if (!s.isNull() && s.hasSubShape(TopAbs_SOLID)) {
-                addShape = s;
-            }
-        }
-        if (count > 1) {
-            Part::TopoShape s = res.getSubTopoShape(TopAbs_SHAPE, 2);
-            if (!s.isNull() && s.hasSubShape(TopAbs_SOLID)) {
-                subShape = s;
-            }
-        }
-    }
+    splitAddSubHalves(res, addShape, subShape);
 }
 
 void DressUp::updatePreviewShape()

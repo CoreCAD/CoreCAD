@@ -229,7 +229,8 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
 
         PartDesign::Transformed* pcTransformed = getObject();
         App::DocumentObject* selectedObject = pcTransformed->getDocument()->getObject(msg.pObjectName);
-        if (selectedObject->isDerivedFrom<PartDesign::FeatureAddSub>()) {
+        if (selectedObject != pcTransformed
+            && selectedObject->isDerivedFrom<PartDesign::FeatureAddSub>()) {
 
             // Do the same like in TaskDlgTransformedParameters::accept() but without doCommand
             std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();

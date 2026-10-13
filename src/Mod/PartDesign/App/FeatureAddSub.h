@@ -61,6 +61,18 @@ public:
     bool producesContentOf(const App::Property& prop) const override;
 
 protected:
+    /// A piece that both adds and cuts is stored as one compound of two halves, added first.
+    /// Either half may be empty.
+    static Part::TopoShape makeAddSubHalves(
+        const Part::TopoShape& addShape,
+        const Part::TopoShape& subShape
+    );
+    static void splitAddSubHalves(
+        const Part::TopoShape& halves,
+        Part::TopoShape& addShape,
+        Part::TopoShape& subShape
+    );
+
     Type addSubType {Additive};
 };
 
