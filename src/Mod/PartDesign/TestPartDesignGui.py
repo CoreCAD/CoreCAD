@@ -260,8 +260,7 @@ class PartDesignTransformed(unittest.TestCase):
     def tearDown(self):
         App.closeDocument(self.Doc.Name)
 
-    def testMultiTransformCase(self):
-        App.Console.PrintMessage("Testing applying MultiTransform to the Box outside the body\n")
+    def testPatternOfAFeatureOutsideEveryBodyIsRefused(self):
         Gui.Selection.clearSelection()
         Gui.Selection.addSelection(self.BoxObj)
         seen = []
@@ -277,12 +276,12 @@ class PartDesignTransformed(unittest.TestCase):
         timer.setSingleShot(True)
         timer.timeout.connect(dismiss)
         timer.start(500)
-        Gui.runCommand("PartDesign_MultiTransform")
+        Gui.runCommand("PartDesign_LinearPattern")
         timer.stop()
 
         self.assertEqual(seen, ["Wrong selection"])
         self.assertFalse(
-            [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::MultiTransform")]
+            [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::LinearPattern")]
         )
 
     def testPatternGoesToTheSelectedBody(self):

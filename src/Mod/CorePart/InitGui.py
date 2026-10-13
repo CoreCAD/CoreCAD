@@ -146,7 +146,6 @@ class CorePartWorkbench(Gui.Workbench):
                 "PartDesign_Mirrored",
                 "PartDesign_LinearPattern",
                 "PartDesign_PolarPattern",
-                "PartDesign_MultiTransform",
             ],
         )
 
@@ -278,7 +277,6 @@ class CorePartWorkbench(Gui.Workbench):
                 "PartDesign_Mirrored",
                 "PartDesign_LinearPattern",
                 "PartDesign_PolarPattern",
-                "PartDesign_MultiTransform",
             ],
         )
         self.appendMenu(
@@ -479,18 +477,6 @@ class CorePartWorkbench(Gui.Workbench):
                 if add_move_in_tree:
                     self.appendContextMenu("", ["PartDesign_MoveFeatureInTree"])
 
-            # MultiTransform: exactly one Transformed (not MultiTransform) selected
-            transformed_count = sum(
-                1
-                for s in selection
-                if (
-                    s.isDerivedFrom("PartDesign::Transformed")
-                    and not s.isDerivedFrom("PartDesign::MultiTransform")
-                )
-            )
-            if transformed_count == 1:
-                self.appendContextMenu("", ["PartDesign_MultiTransform"])
-
         if len(selection) == 1:
             self.appendContextMenu("", ["PartDesign_ShowDependencies"])
 
@@ -677,10 +663,9 @@ class CorePartWorkbench(Gui.Workbench):
                     "PartDesign_Mirrored",
                     "PartDesign_LinearPattern",
                     "PartDesign_PolarPattern",
-                    "PartDesign_MultiTransform",
                 ],
                 "Transformation Tools",
-                "PartDesign_MultiTransform",
+                "PartDesign_LinearPattern",
             ),
         ]
 

@@ -47,7 +47,6 @@
 #include "FeatureTransformed.h"
 #include "Body.h"
 #include "FeatureAddSub.h"
-#include "FeatureMultiTransform.h"
 #include "FeatureMirrored.h"
 #include "FeatureLinearPattern.h"
 #include "FeaturePolarPattern.h"
@@ -111,13 +110,6 @@ Transformed::Transformed()
         derivedCount,
         "Cruth P7 (#34): how many connected pieces those copies formed among themselves"
     );
-}
-
-void Transformed::purgeTouchedTransformations()
-{
-    // Amendment 4: a pattern produces its geometry directly in the document world frame and holds
-    // no authored position of its own — nothing to set here. This hook survives only so
-    // MultiTransform can override it to purge the touched state of its linked sub-transformations.
 }
 
 int Transformed::solidIndexOfInstance(long ordinal) const
@@ -241,18 +233,6 @@ void Transformed::Restore(Base::XMLReader& reader)
     PartDesign::Feature::Restore(reader);
 }
 
-bool Transformed::isMultiTransformChild() const
-{
-    return std::ranges::any_of(getInList(), [this](const App::DocumentObject* obj) {
-        auto* multi = freecad_cast<const MultiTransform*>(obj);
-        if (!multi) {
-            return false;
-        }
-        const auto& children = multi->Transformations.getValues();
-        return std::ranges::find(children, this) != children.end();
-    });
-}
-
 void Transformed::handleChangedPropertyType(
     Base::XMLReader& reader,
     const char* TypeName,
@@ -363,10 +343,6 @@ void Transformed::onChanged(const App::Property* prop)
 
 App::DocumentObjectExecReturn* Transformed::execute()
 {
-    if (isMultiTransformChild()) {
-        return App::DocumentObject::StdReturn;
-    }
-
     AddSubShape.setValue(Part::TopoShape());
 
     auto const mode = static_cast<Mode>(TransformMode.getValue());
@@ -378,8 +354,6 @@ App::DocumentObjectExecReturn* Transformed::execute()
         return App::DocumentObject::StdReturn;
     }
 
-    this->purgeTouchedTransformations();
-
     // The counts answer for THIS recompute only; a stale pair would have the dialog offering
     // a choice about an overlap that is no longer there.
     InstancesRequested.setValue(0);
@@ -388,7 +362,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
     // get transformations from subclass by calling virtual method
     std::vector<gp_Trsf> transformations;
     try {
-        std::list<gp_Trsf> t_list = getTransformations(originals);
+        std::list<gp_Trsf> t_list = getTransformations();
         transformations.insert(transformations.end(), t_list.begin(), t_list.end());
     }
     catch (Base::Exception& e) {

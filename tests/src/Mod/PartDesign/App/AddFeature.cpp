@@ -9,7 +9,6 @@
 #include <App/DocumentObjectGroup.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
-#include <Mod/PartDesign/App/FeatureMultiTransform.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 
 // Cruth #18: Body::addFeature owns the pipeline wiring (BaseFeature chain + Tip). A caller
@@ -111,43 +110,6 @@ TEST_F(AddFeatureTest, PatternInsertedMidChainKeepsTheTail)
     EXPECT_EQ(lp->BaseFeature.getValue(), _pad1);
     EXPECT_EQ(pad2->BaseFeature.getValue(), lp);
     EXPECT_EQ(_body->Tip.getValue(), lp);
-}
-
-// Cruth #142: the MultiTransform panel adds a child to the Body, then lists it. Listing it
-// takes it off the chain, so the MultiTransform is the Tip again.
-TEST_F(AddFeatureTest, ListingAPatternInAMultiTransformTakesItOffTheChain)
-{
-    auto* multi = _doc->addObject<PartDesign::MultiTransform>("MT");
-    _body->addFeature(multi);
-    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
-    _body->addFeature(lp);
-    ASSERT_EQ(_body->Tip.getValue(), lp);
-
-    multi->Transformations.setValues({lp});
-
-    EXPECT_TRUE(lp->isMultiTransformChild());
-    EXPECT_FALSE(PartDesign::Body::isSolidFeature(lp));
-    EXPECT_EQ(lp->BaseFeature.getValue(), nullptr);
-    EXPECT_EQ(_body->Tip.getValue(), multi);
-}
-
-// Converting a pattern mid-chain: the MultiTransform goes in ahead of it, then lists it. What
-// built on the pattern builds on the MultiTransform.
-TEST_F(AddFeatureTest, ConvertingAPatternMidChainKeepsTheTail)
-{
-    auto* lp = _doc->addObject<PartDesign::LinearPattern>("LP");
-    _body->addFeature(lp);
-    auto* pad2 = _doc->addObject<PartDesign::Pad>("Pad2");
-    _body->addFeature(pad2);
-    _body->Tip.setValue(_pad1);
-
-    auto* multi = _doc->addObject<PartDesign::MultiTransform>("MT");
-    _body->addFeature(multi);
-    multi->Transformations.setValues({lp});
-
-    EXPECT_EQ(multi->BaseFeature.getValue(), _pad1);
-    EXPECT_EQ(pad2->BaseFeature.getValue(), multi);
-    EXPECT_EQ(lp->BaseFeature.getValue(), nullptr);
 }
 
 // Cruth #37: a folder is the user's filing and a body's membership is a reference, so

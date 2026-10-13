@@ -141,7 +141,7 @@ short PolarPattern::mustExecute() const
     return Transformed::mustExecute();
 }
 
-const std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<App::DocumentObject*>)
+std::list<gp_Trsf> PolarPattern::getTransformations()
 {
     int occurrences = Occurrences.getValue();
     if (occurrences < 1) {

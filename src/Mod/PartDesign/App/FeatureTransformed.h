@@ -145,15 +145,10 @@ public:
     /// Return the sketch of the first original
     App::DocumentObject* getSketchObject() const;
 
-    /// True when a MultiTransform lists this in its Transformations. A child is one step of
-    /// its MultiTransform, not a step of any chain.
-    bool isMultiTransformChild() const;
-
     /// Get the list of transformations describing the members of the pattern
-    // Note: Only the Scaled feature requires the originals
-    virtual const std::list<gp_Trsf> getTransformations(const std::vector<App::DocumentObject*> /*originals*/)
+    virtual std::list<gp_Trsf> getTransformations()
     {
-        return std::list<gp_Trsf>();  // Default method
+        return {};
     }
 
     /** @name methods override feature */
@@ -162,8 +157,7 @@ public:
      * Gets the transformations from the virtual getTransformations() method of the sub class
      * and applies them to every member of Originals. The total number of copies including
      * the untransformed Originals will be sizeof(Originals) times sizeof(getTransformations())
-     * With nothing to copy yet, the base passes through unchanged. A MultiTransform child
-     * computes nothing itself; its MultiTransform does.
+     * With nothing to copy yet, the base passes through unchanged.
      */
     App::DocumentObjectExecReturn* execute() override;
     short mustExecute() const override;
@@ -182,11 +176,6 @@ protected:
         const char* TypeName,
         App::Property* prop
     ) override;
-
-    /// Hook run before gathering transformations. The base implementation does
-    /// nothing; MultiTransform overrides it to purge the touched state of its
-    /// linked sub-transformations during a recompute.
-    virtual void purgeTouchedTransformations();
 };
 
 }  // namespace PartDesign

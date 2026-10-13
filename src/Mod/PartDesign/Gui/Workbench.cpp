@@ -31,7 +31,7 @@
 #include <Mod/Sketcher/Gui/Workbench.h>
 #include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/FeatureMultiTransform.h>
+#include <Mod/PartDesign/App/Feature.h>
 
 #include "Utils.h"
 #include "Workbench.h"
@@ -120,11 +120,6 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
                         *item << "PartDesign_MoveFeatureInTree";
                     }
                 }
-            }
-            if (Gui::Selection().countObjectsOfType<PartDesign::Transformed>()
-                    - Gui::Selection().countObjectsOfType<PartDesign::MultiTransform>()
-                == 1) {
-                *item << "PartDesign_MultiTransform";
             }
         }
     }
@@ -303,18 +298,13 @@ void Workbench::activated()
         "PartDesign_Body"
     ));
 
-    const char* Transformed[] = {
-        "PartDesign_Mirrored",
-        "PartDesign_LinearPattern",
-        "PartDesign_PolarPattern",
-        "PartDesign_MultiTransform",
-        nullptr
-    };
+    const char* Transformed[]
+        = {"PartDesign_Mirrored", "PartDesign_LinearPattern", "PartDesign_PolarPattern", nullptr};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
         "SELECT PartDesign::SketchBased",
         Transformed,
         "Transformation Tools",
-        "PartDesign_MultiTransform"
+        "PartDesign_LinearPattern"
     ));
 
     addTaskWatcher(Watcher);
@@ -386,8 +376,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
 
     *transformations << "PartDesign_Mirrored"
                      << "PartDesign_LinearPattern"
-                     << "PartDesign_PolarPattern"
-                     << "PartDesign_MultiTransform";
+                     << "PartDesign_PolarPattern";
 
     // dressups
     Gui::MenuItem* dressups = new Gui::MenuItem;
@@ -479,8 +468,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
 
     *part << "PartDesign_Mirrored"
           << "PartDesign_LinearPattern"
-          << "PartDesign_PolarPattern"
-          << "PartDesign_MultiTransform";
+          << "PartDesign_PolarPattern";
 
     return root;
 }
