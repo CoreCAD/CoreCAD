@@ -47,6 +47,13 @@
 
 #include <FCConfig.h>
 
+#ifdef FC_OS_WIN32
+# include <windows.h>
+#else
+# include <cerrno>
+# include <csignal>
+#endif
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/ProjectFile.h>
@@ -366,7 +373,9 @@ DocumentRecoveryPrivate::Info DocumentRecoveryPrivate::getRecoveryInfo(const QFi
         if (info.status == DocumentRecoveryPrivate::Created) {
             // compare the modification dates
             QFileInfo fileInfo(info.fileName);
-            if (!info.fileName.isEmpty()) {
+            // a deleted original is not a corrupted one: offer the recovery like a never-saved
+            // document
+            if (!info.fileName.isEmpty() && fileInfo.exists()) {
                 if (isValidProject(fileInfo)) {
                     QDateTime dateRecv = QFileInfo(file).lastModified();
                     QDateTime dateProj = fileInfo.lastModified();
@@ -671,7 +680,51 @@ bool DocumentRecoveryFinder::checkForPreviousCrashes()
     );
     // NOLINTEND
 
+    removeEmptyOrphanDirs();
     return showRecoveryDialogIfNeeded();
+}
+
+static bool processIsRunning(qint64 pid)
+{
+#ifdef FC_OS_WIN32
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (!process) {
+        return false;
+    }
+    DWORD exitCode = 0;
+    bool running = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(process);
+    return running;
+#else
+    return kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+#endif
+}
+
+// A session that exits without its normal cleanup leaves an empty transient directory and no
+// lock file; nothing ever revisits it. Only GUI sessions take a lock, so a live process is
+// checked too. Directories with content may hold work and are kept.
+void DocumentRecoveryFinder::removeEmptyOrphanDirs() const
+{
+    QDir tmp = QString::fromUtf8(App::Application::getUserCachePath().c_str());
+    QString exeName = QString::fromStdString(App::Application::getExecutableName());
+
+    tmp.setNameFilters(QStringList() << exeName + QStringLiteral("_*.lock"));
+    tmp.setFilter(QDir::Files);
+    QSet<QString> lockedPids;
+    for (const QFileInfo& lock : tmp.entryInfoList()) {
+        lockedPids.insert(lock.completeBaseName().mid(exeName.length() + 1));
+    }
+
+    tmp.setNameFilters(QStringList() << exeName + QStringLiteral("_Doc_*"));
+    tmp.setFilter(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo& dir : tmp.entryInfoList()) {
+        QString pid = dir.fileName().section(QLatin1Char('_'), -1);
+        bool isNumber = false;
+        qint64 pidNumber = pid.toLongLong(&isNumber);
+        if (isNumber && !lockedPids.contains(pid) && !processIsRunning(pidNumber)) {
+            tmp.rmdir(dir.fileName());
+        }
+    }
 }
 
 void DocumentRecoveryFinder::checkDocumentDirs(QDir& tmp, const QList<QFileInfo>& dirs, const QString& fn)

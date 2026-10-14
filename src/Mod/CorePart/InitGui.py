@@ -45,11 +45,13 @@ class CorePartWorkbench(Gui.Workbench):
         # Python-only PartDesign commands
         from PartDesign.InvoluteGearFeature import CommandInvoluteGear
 
-        Gui.addCommand("PartDesign_InvoluteGear", CommandInvoluteGear())
+        if "PartDesign_InvoluteGear" not in Gui.listCommands():
+            Gui.addCommand("PartDesign_InvoluteGear", CommandInvoluteGear())
 
         from PartDesign.SprocketFeature import CommandSprocket
 
-        Gui.addCommand("PartDesign_Sprocket", CommandSprocket())
+        if "PartDesign_Sprocket" not in Gui.listCommands():
+            Gui.addCommand("PartDesign_Sprocket", CommandSprocket())
 
         # CorePart body-aware boolean commands
         from CorePart.commands.body_boolean import BodyUnion, BodyCut, BodyIntersect
