@@ -53,6 +53,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestKeepCopiesApart.py
     PartDesignTests/TestNoEffect.py
     PartDesignTests/TestPatternCopyBodies.py
+    PartDesignTests/TestFirstBuildElementNames.py
     PartDesignTests/TestReopenElementNames.py
     PartDesignTests/TestMultiOutputDelete.py
     PartDesignTests/TestFillet.py

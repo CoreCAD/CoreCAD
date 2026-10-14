@@ -1445,6 +1445,21 @@ TEST_F(StringHasherTest, getIDFromMappedNameDuplicateWithEncodedPostfix)  // NOL
     EXPECT_EQ(secondIDInserted.dataToText(), mappedNameB.toString());
 }
 
+TEST_F(StringHasherTest, getIDFromMappedNameSameAnswerOnFirstAndLaterLookup)  // NOLINT
+{
+    // Arrange
+    auto mappedName = givenMappedName("#2", ";:H1,V");
+    QVector<App::StringIDRef> sids;
+
+    // Act
+    auto created = Hasher()->getID(mappedName, sids);
+    auto found = Hasher()->getID(mappedName, sids);
+
+    // Assert
+    EXPECT_EQ(created.toString(), found.toString());
+    EXPECT_EQ(created.getIndex(), 0);
+}
+
 TEST_F(StringHasherTest, getIDFromIntegerIDNoSuchID)  // NOLINT
 {
     // Arrange

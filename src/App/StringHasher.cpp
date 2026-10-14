@@ -398,6 +398,10 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
             newStringID._sids.end());
     }
 
+    // A name IndexedName rejects (e.g. "#2") still carries the number it read off its end; the
+    // lookup above ignores it, so creating the entry must too, or the first answer differs.
+    int index = indexed ? indexed.getIndex() : 0;
+
     // If the new StringID has a postfix, but is not indexed, see if the data string itself
     // contains an index.
     if ((newStringID._postfix.size() != 0) && !indexed) {
@@ -405,7 +409,7 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         StringID::IndexID res = StringID::fromString(newStringID._data);
         if (res.id > 0) {  // If the data had an index
             if (res.index != 0) {
-                indexed.setIndex(res.index);
+                index = res.index;
                 newStringID._data.resize(newStringID._data.lastIndexOf(':') + 1);
             }
             int offset = newStringID.isPostfixEncoded() ? 1 : 0;
@@ -429,7 +433,7 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         }
     }
 
-    return {insert(newStringIDRef), indexed.getIndex()};
+    return {insert(newStringIDRef), index};
 }
 
 StringIDRef StringHasher::getID(long id, int index) const
