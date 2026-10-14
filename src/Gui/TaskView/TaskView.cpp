@@ -504,17 +504,15 @@ void TaskView::slotInEdit(const Gui::ViewProviderDocumentObject& vp)
 
 void TaskView::slotDeletedDocument(const App::Document& doc)
 {
+    // A dialog is held per document, so one whose document is gone can never be shown or closed
+    // again, and anything it does on its way out reaches into a deleted document. It closes now,
+    // whether or not it asked to (the request predates dialogs being held per document).
     auto foundTaskInfo = std::ranges::find(taskInfos, &doc, &TaskInfo::Document);
-    bool hasDialog = foundTaskInfo != taskInfos.end();
-    if (hasDialog && foundTaskInfo->ActiveDialog->isAutoCloseOnDeletedDocument()) {
+    if (foundTaskInfo != taskInfos.end()) {
         foundTaskInfo->ActiveDialog->autoClosedOnDeletedDocument();
         removeDialog(foundTaskInfo);
-        hasDialog = false;
     }
-
-    if (!hasDialog) {
-        updateWatcher();
-    }
+    updateWatcher();
 }
 
 void TaskView::slotViewClosed(const Gui::MDIView* view)

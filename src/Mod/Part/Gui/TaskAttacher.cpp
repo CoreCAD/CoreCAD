@@ -138,6 +138,8 @@ TaskAttacher::TaskAttacher(
         throw Base::RuntimeError("Object has no Part::AttachExtension");
     }
 
+    setObjectName(QStringLiteral("TaskAttacher"));
+
     // we need a separate container widget to add all controls to
     proxy = new QWidget(this);
     ui->setupUi(proxy);
@@ -342,6 +344,7 @@ void TaskAttacher::objectDeleted(const Gui::ViewProviderDocumentObject& view)
 void TaskAttacher::documentDeleted(const Gui::Document&)
 {
     ViewProvider = nullptr;
+    overrides.clear();
     this->setDisabled(true);
 }
 
