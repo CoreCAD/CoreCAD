@@ -60,7 +60,10 @@ from PartDesignTests.TestKeepCopiesApart import TestKeepCopiesApart
 from PartDesignTests.TestNoEffect import TestNoEffect
 from PartDesignTests.TestOverlapAccess import TestOverlapAccess
 from PartDesignTests.TestStepDependencies import TestStepDependencies
-from PartDesignTests.TestPatternCopyBodies import TestPatternCopyBodies
+from PartDesignTests.TestPatternCopyBodies import (
+    TestPatternCopyBodies,
+    TestPatternOriginalKeepsBody,
+)
 from PartDesignTests.TestSketch import TestSketch
 from PartDesignTests.TestSuppressed import TestSuppressed
 

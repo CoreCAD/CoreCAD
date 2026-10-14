@@ -185,6 +185,40 @@ std::vector<Body*> matchPatternCopies(
     return owner;
 }
 
+// The original is not changed by its pattern, only copied, so the piece holding it keeps the
+// Body it had: the one that came in whole, else the one already on that piece, else the first
+// in the document, since every copy's Body was made after it.
+void keepOriginalsBody(
+    std::vector<Body*>& owner,
+    const std::vector<Body*>& bodies,
+    const PartDesign::Transformed* pattern,
+    const std::vector<bool>& carried
+)
+{
+    const int original = pattern->solidIndexOfOriginal();
+    if (original <= 0 || original > static_cast<int>(owner.size()) || carried[original - 1]) {
+        return;
+    }
+    Body* keeper = nullptr;
+    const auto cameInWhole = std::ranges::find_if(bodies, [](Body* body) {
+        return body->TipComponentId.getStrValue().empty();
+    });
+    if (cameInWhole != bodies.end()) {
+        keeper = *cameInWhole;
+    }
+    else if (owner[original - 1]) {
+        return;
+    }
+    else {
+        const std::vector<App::DocumentObject*> order = pattern->getDocument()->getObjects();
+        keeper = *std::ranges::min_element(bodies, {}, [&order](Body* body) {
+            return std::ranges::find(order, body) - order.begin();
+        });
+    }
+    std::ranges::replace(owner, keeper, static_cast<Body*>(nullptr));
+    owner[original - 1] = keeper;
+}
+
 // A retiring Body's material, passed on to the new solids that grew from it. A Body that stood
 // for a whole shape passes it on to every piece.
 struct MaterialDonor
@@ -257,9 +291,21 @@ void reconcileTip(App::Document* doc, Part::ShapeFeature* feature, std::vector<B
             Body::provenanceOfSolid(shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true))
         );
     }
-    const bool isPattern = freecad_cast<PartDesign::Transformed*>(feature) != nullptr;
-    const std::vector<Body*> owner = isPattern ? matchPatternCopies(bodies, shape, solidCount)
-                                               : matchByProvenance(bodies, solids);
+    const auto* pattern = freecad_cast<PartDesign::Transformed*>(feature);
+    const std::vector<bool> carried = copiesCarriedDownstream(feature, solidCount);
+    std::vector<Body*> owner = pattern ? matchPatternCopies(bodies, shape, solidCount)
+                                       : matchByProvenance(bodies, solids);
+    if (pattern) {
+        keepOriginalsBody(owner, bodies, pattern, carried);
+        for (std::size_t s = 0; s < owner.size(); ++s) {
+            const std::string key = solidCount > 1
+                ? Body::componentKeyOfSolid(feature, shape, static_cast<int>(s) + 1)
+                : "";
+            if (owner[s] && owner[s]->TipComponentId.getStrValue() != key) {
+                owner[s]->TipComponentId.setValue(key);
+            }
+        }
+    }
 
     // Every other Body retires; new ones are spawned below for the solids left unclaimed.
     std::erase_if(bodies, [&owner](Body* body) {
@@ -282,7 +328,6 @@ void reconcileTip(App::Document* doc, Part::ShapeFeature* feature, std::vector<B
         doc->removeObject(body->getNameInDocument());
     }
 
-    const std::vector<bool> carried = copiesCarriedDownstream(feature, solidCount);
     for (std::size_t s = 0; s < solids.size(); ++s) {
         if (owner[s] || carried[s]) {
             continue;
