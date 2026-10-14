@@ -102,7 +102,7 @@ App::DocumentObjectExecReturn* Fillet::execute()
             //            try {
             //                edge = baseTopoShape.getSubShape(ref.c_str());
             //            }catch(...){}
-            auto id = Data::MappedName(ref.c_str()).toIndexedName().getIndex();
+            auto id = Data::IndexedName(Data::oldElementName(ref.c_str()).c_str()).getIndex();
             const TopoDS_Edge& edge = TopoDS::Edge(mapOfEdges.FindKey(id));
 
             if (edge.IsNull()) {
