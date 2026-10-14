@@ -113,6 +113,33 @@ class PartGuiViewProviderTestCases(unittest.TestCase):
         FreeCAD.closeDocument("PartGuiTest")
 
 
+class AttachmentEditorTestCases(unittest.TestCase):
+    """A task dialog closes with the document it belongs to.
+
+    It is held per document, so one left behind could never be shown or closed again, and its
+    teardown at exit reached into the deleted document and the half-destroyed main window.
+    """
+
+    def testClosingTheDocumentClosesItsAttachmentEditor(self):
+        doc = FreeCAD.newDocument("AttachmentEditor")
+        plane = doc.addObject("Part::DatumPlane", "DatumPlane")
+        doc.recompute()
+        plane.ViewObject.doubleClicked()
+        self.assertTrue(FreeCADGui.Control.activeDialog(), "the attachment editor did not open")
+        self.assertTrue(self.editorIsOpen(), "the attachment editor panel was not found")
+
+        FreeCAD.closeDocument(doc.Name)
+        QtWidgets.QApplication.processEvents()
+
+        self.assertFalse(self.editorIsOpen(), "the editor outlived the document it belongs to")
+
+    @staticmethod
+    def editorIsOpen():
+        # No handle is kept: one held past the panel's deletion crashes the interpreter at exit.
+        mw = FreeCADGui.getMainWindow()
+        return mw.findChild(QtWidgets.QWidget, "TaskAttacher") is not None
+
+
 class SectionCutTestCases(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("SectionCut")

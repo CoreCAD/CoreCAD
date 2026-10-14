@@ -476,6 +476,13 @@ OverlayTabWidget::OverlayTabWidget(QWidget* parent, Qt::DockWidgetArea pos)
     connect(_animator, &QAbstractAnimation::stateChanged, this, &OverlayTabWidget::onAnimationStateChanged);
 }
 
+OverlayTabWidget::~OverlayTabWidget()
+{
+    // A running animation stops when its target is destroyed and reports that to this widget,
+    // which by then is no longer one.
+    disconnect(_animator, nullptr, this, nullptr);
+}
+
 void OverlayTabWidget::refreshIcons()
 {
     auto curStyleSheet = App::GetApplication()
