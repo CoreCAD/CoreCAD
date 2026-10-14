@@ -576,6 +576,9 @@ public:
 
     /// Get program version the project file was created with.
     const char* getProgramVersion() const;
+    /// True when the file was read from a format older than the one a save writes, so the next
+    /// save replaces it with a file older programs may not read.
+    bool isInOlderFormat() const;
 
     /**
      * @brief Get the filename of the document.
