@@ -107,6 +107,9 @@ public:
     /// when that copy is skipped or out of range. Copies are emitted in ordinal order with the
     /// skipped ones left out (§5.6), so the index counts the survivors before it.
     int solidIndexOfInstance(long ordinal) const;
+    /// The 1-based index of the output solid that holds the original, or 0 when no one solid
+    /// does (the original was cut apart, or skipped).
+    int solidIndexOfOriginal() const;
     /// The ordinal of the copy whose solid carries component id @p cid (Body::TipComponentId),
     /// or -1. Read against this pattern's own stored shape, where the ids agree.
     long ordinalOfComponent(const std::string& cid) const;

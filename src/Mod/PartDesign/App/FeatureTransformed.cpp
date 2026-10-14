@@ -29,6 +29,7 @@
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <Precision.hxx>
 #include <TopExp_Explorer.hxx>
 
@@ -122,6 +123,38 @@ int Transformed::solidIndexOfInstance(long ordinal) const
     const long index = ordinal - skippedBefore + 1;
     const auto solidCount = static_cast<long>(Shape.getShape().countSubShapes(TopAbs_SOLID));
     return index <= solidCount ? static_cast<int>(index) : 0;
+}
+
+int Transformed::solidIndexOfOriginal() const
+{
+    // Copies kept apart are emitted after the original.
+    if (MultiBody.getValue()) {
+        return solidIndexOfInstance(0);
+    }
+    const Part::TopoShape shape = Shape.getShape();
+    const auto solidCount = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+    if (solidCount <= 1) {
+        return solidCount;
+    }
+    // Fused copies: the original is the one solid still touching the shape the pattern began
+    // with. A copy that touched it would have been fused into it.
+    App::DocumentObject* base = getBaseObject(/*silent*/ true);
+    const Part::TopoShape original = narrowToBaseInstance(base, Part::getShape(base), true);
+    if (original.isNull()) {
+        return 0;
+    }
+    int found = 0;
+    for (int s = 1; s <= solidCount; ++s) {
+        const Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, s, /*silent*/ true);
+        BRepExtrema_DistShapeShape distance(original.getShape(), solid.getShape());
+        if (distance.IsDone() && distance.Value() <= Precision::Confusion()) {
+            if (found) {
+                return 0;
+            }
+            found = s;
+        }
+    }
+    return found;
 }
 
 long Transformed::ordinalOfComponent(const std::string& cid) const
