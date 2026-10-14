@@ -44,6 +44,7 @@
 #include <Gui/Utilities.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureAddSub.h>
+#include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/Part/Gui/ViewProviderExt.h>
 #include <Mod/Part/Gui/SoBrepEdgeSet.h>
@@ -79,7 +80,9 @@ void ViewProvider::attach(App::DocumentObject* pcObject)
 
     auto* styleParameterManager = Base::provideService<Gui::StyleParameters::ParameterManager>();
 
-    if (auto addSubFeature = getObject<PartDesign::FeatureAddSub>()) {
+    // A pattern's piece may both add and cut, so it has no single colour to take.
+    auto addSubFeature = getObject<PartDesign::FeatureAddSub>();
+    if (addSubFeature && !addSubFeature->isDerivedFrom<PartDesign::Transformed>()) {
         bool isAdditive = addSubFeature->getAddSubType() == PartDesign::FeatureAddSub::Additive;
 
         PreviewColor.setValue(

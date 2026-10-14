@@ -45,7 +45,6 @@
 
 #include "ui_TaskTransformedParameters.h"
 #include "TaskTransformedParameters.h"
-#include "TaskMultiTransformParameters.h"
 #include "ReferenceSelection.h"
 
 
@@ -72,12 +71,6 @@ TaskTransformedParameters::TaskTransformedParameters(
     Gui::Document* doc = TransformedView->getDocument();
     this->attachDocument(doc);
 }
-
-TaskTransformedParameters::TaskTransformedParameters(TaskMultiTransformParameters* parentTask)
-    : TaskBox(QPixmap(), tr(""), true, parentTask)
-    , parentTask(parentTask)
-    , insideMultiTransform(true)
-{}
 
 TaskTransformedParameters::~TaskTransformedParameters()
 {
@@ -186,13 +179,8 @@ void TaskTransformedParameters::onSelectionChanged(const Gui::SelectionChanges& 
 
 void TaskTransformedParameters::clearButtons()
 {
-    if (insideMultiTransform) {
-        parentTask->clearButtons();
-    }
-    else {
-        ui->buttonAddFeature->setChecked(false);
-        ui->buttonRemoveFeature->setChecked(false);
-    }
+    ui->buttonAddFeature->setChecked(false);
+    ui->buttonRemoveFeature->setChecked(false);
 }
 
 int TaskTransformedParameters::getUpdateViewTimeout() const
@@ -229,7 +217,8 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
 
         PartDesign::Transformed* pcTransformed = getObject();
         App::DocumentObject* selectedObject = pcTransformed->getDocument()->getObject(msg.pObjectName);
-        if (selectedObject->isDerivedFrom<PartDesign::FeatureAddSub>()) {
+        if (selectedObject != pcTransformed
+            && selectedObject->isDerivedFrom<PartDesign::FeatureAddSub>()) {
 
             // Do the same like in TaskDlgTransformedParameters::accept() but without doCommand
             std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();
@@ -265,10 +254,6 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
 
 void TaskTransformedParameters::setupTransaction()
 {
-    if (!isEnabledTransaction()) {
-        return;
-    }
-
     auto obj = getObject();
     if (!obj) {
         return;
@@ -284,16 +269,6 @@ void TaskTransformedParameters::setupTransaction()
     std::string name("Edit ");
     name += obj->Label.getValue();
     transactionID = obj->getDocument()->openTransaction(name.c_str());
-}
-
-void TaskTransformedParameters::setEnabledTransaction(bool on)
-{
-    enableTransaction = on;
-}
-
-bool TaskTransformedParameters::isEnabledTransaction() const
-{
-    return enableTransaction;
 }
 
 void TaskTransformedParameters::onModeChanged(int mode_id)
@@ -466,31 +441,11 @@ void TaskTransformedParameters::fillPlanesCombo(Gui::ComboLinks& combolinks, Par
 
 void TaskTransformedParameters::recomputeFeature()
 {
-    getTopTransformedView()->recomputeFeature();
-}
-
-PartDesignGui::ViewProviderTransformed* TaskTransformedParameters::getTopTransformedView() const
-{
-    return insideMultiTransform ? parentTask->TransformedView : TransformedView;
-}
-
-PartDesign::Transformed* TaskTransformedParameters::getTopTransformedObject() const
-{
-    ViewProviderTransformed* vp = getTopTransformedView();
-    if (!vp) {
-        return nullptr;
-    }
-
-    App::DocumentObject* transform = vp->getObject();
-    assert(transform->isDerivedFrom<PartDesign::Transformed>());
-    return static_cast<PartDesign::Transformed*>(transform);
+    TransformedView->recomputeFeature();
 }
 
 PartDesign::Transformed* TaskTransformedParameters::getObject() const
 {
-    if (insideMultiTransform) {
-        return parentTask->getSubFeature();
-    }
     if (TransformedView) {
         return TransformedView->getObject<PartDesign::Transformed>();
     }
@@ -499,7 +454,7 @@ PartDesign::Transformed* TaskTransformedParameters::getObject() const
 
 App::DocumentObject* TaskTransformedParameters::getBaseObject() const
 {
-    PartDesign::Feature* feature = getTopTransformedObject();
+    PartDesign::Feature* feature = getObject();
     if (!feature) {
         return nullptr;
     }
@@ -517,14 +472,14 @@ App::DocumentObject* TaskTransformedParameters::getBaseObject() const
 
 App::DocumentObject* TaskTransformedParameters::getSketchObject() const
 {
-    PartDesign::Transformed* feature = getTopTransformedObject();
+    PartDesign::Transformed* feature = getObject();
     return feature ? feature->getSketchObject() : nullptr;
 }
 
 void TaskTransformedParameters::hideObject()
 {
     try {
-        FCMD_OBJ_HIDE(getTopTransformedObject());
+        FCMD_OBJ_HIDE(getObject());
     }
     catch (const Base::Exception& e) {
         e.reportException();
@@ -534,7 +489,7 @@ void TaskTransformedParameters::hideObject()
 void TaskTransformedParameters::showObject()
 {
     try {
-        FCMD_OBJ_SHOW(getTopTransformedObject());
+        FCMD_OBJ_SHOW(getObject());
     }
     catch (const Base::Exception& e) {
         e.reportException();
@@ -578,9 +533,7 @@ void TaskTransformedParameters::addReferenceSelectionGate(AllowSelectionFlags al
     std::unique_ptr<Gui::SelectionFilterGate> gateRefPtr(
         new ReferenceSelection(getBaseObject(), allow)
     );
-    std::unique_ptr<Gui::SelectionFilterGate> gateDepPtr(
-        new NoDependentsSelection(getTopTransformedObject())
-    );
+    std::unique_ptr<Gui::SelectionFilterGate> gateDepPtr(new NoDependentsSelection(getObject()));
     Gui::Selection().addSelectionGate(new CombineSelectionFilterGates(gateRefPtr, gateDepPtr));
 }
 

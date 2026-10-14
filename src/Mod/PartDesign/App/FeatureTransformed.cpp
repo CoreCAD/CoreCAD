@@ -47,7 +47,6 @@
 #include "FeatureTransformed.h"
 #include "Body.h"
 #include "FeatureAddSub.h"
-#include "FeatureMultiTransform.h"
 #include "FeatureMirrored.h"
 #include "FeatureLinearPattern.h"
 #include "FeaturePolarPattern.h"
@@ -61,7 +60,7 @@ namespace PartDesign
 {
 extern bool getPDRefineModelParameter();
 
-PROPERTY_SOURCE(PartDesign::Transformed, PartDesign::FeatureRefine)
+PROPERTY_SOURCE(PartDesign::Transformed, PartDesign::FeatureAddSub)
 
 std::array<char const*, 3> transformModeEnums = {"Features", "Whole shape", nullptr};
 
@@ -72,6 +71,8 @@ Transformed::Transformed()
 
     ADD_PROPERTY(TransformMode, (static_cast<long>(Mode::Features)));
     TransformMode.setEnums(transformModeEnums.data());
+
+    AddSubShape.setStatus(App::Property::Output, true);
 
     ADD_PROPERTY_TYPE(
         MultiBody,
@@ -109,13 +110,6 @@ Transformed::Transformed()
         derivedCount,
         "Cruth P7 (#34): how many connected pieces those copies formed among themselves"
     );
-}
-
-void Transformed::purgeTouchedTransformations()
-{
-    // Amendment 4: a pattern produces its geometry directly in the document world frame and holds
-    // no authored position of its own — nothing to set here. This hook survives only so
-    // MultiTransform can override it to purge the touched state of its linked sub-transformations.
 }
 
 int Transformed::solidIndexOfInstance(long ordinal) const
@@ -239,18 +233,6 @@ void Transformed::Restore(Base::XMLReader& reader)
     PartDesign::Feature::Restore(reader);
 }
 
-bool Transformed::isMultiTransformChild() const
-{
-    return std::ranges::any_of(getInList(), [this](const App::DocumentObject* obj) {
-        auto* multi = freecad_cast<const MultiTransform*>(obj);
-        if (!multi) {
-            return false;
-        }
-        const auto& children = multi->Transformations.getValues();
-        return std::ranges::find(children, this) != children.end();
-    });
-}
-
 void Transformed::handleChangedPropertyType(
     Base::XMLReader& reader,
     const char* TypeName,
@@ -279,7 +261,15 @@ short Transformed::mustExecute() const
         || SkipInstances.isTouched()) {
         return 1;
     }
-    return PartDesign::Feature::mustExecute();
+    return FeatureAddSub::mustExecute();
+}
+
+void Transformed::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShape)
+{
+    if (AddSubShape.getShape().isNull()) {
+        return;
+    }
+    splitAddSubHalves(AddSubShape.getShape(), addShape, subShape);
 }
 
 App::DocumentObjectExecReturn* Transformed::recomputePreview()
@@ -337,7 +327,7 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
         }
 
         default:
-            return FeatureRefine::recomputePreview();
+            return FeatureAddSub::recomputePreview();
     }
 }
 
@@ -348,14 +338,12 @@ void Transformed::onChanged(const App::Property* prop)
         Originals.setStatus(App::Property::Status::Hidden, mode == Mode::WholeShape);
     }
 
-    FeatureRefine::onChanged(prop);
+    FeatureAddSub::onChanged(prop);
 }
 
 App::DocumentObjectExecReturn* Transformed::execute()
 {
-    if (isMultiTransformChild()) {
-        return App::DocumentObject::StdReturn;
-    }
+    AddSubShape.setValue(Part::TopoShape());
 
     auto const mode = static_cast<Mode>(TransformMode.getValue());
 
@@ -366,8 +354,6 @@ App::DocumentObjectExecReturn* Transformed::execute()
         return App::DocumentObject::StdReturn;
     }
 
-    this->purgeTouchedTransformations();
-
     // The counts answer for THIS recompute only; a stale pair would have the dialog offering
     // a choice about an overlap that is no longer there.
     InstancesRequested.setValue(0);
@@ -376,7 +362,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
     // get transformations from subclass by calling virtual method
     std::vector<gp_Trsf> transformations;
     try {
-        std::list<gp_Trsf> t_list = getTransformations(originals);
+        std::list<gp_Trsf> t_list = getTransformations();
         transformations.insert(transformations.end(), t_list.begin(), t_list.end());
     }
     catch (Base::Exception& e) {
@@ -444,6 +430,16 @@ App::DocumentObjectExecReturn* Transformed::execute()
     const bool keepCopiesApart = MultiBody.getValue();
     std::vector<Part::TopoShape> looseCopies;
 
+    // This pattern's own piece: every copy it added or cut, the untransformed ones included.
+    std::vector<Part::TopoShape> addedCopies;
+    std::vector<Part::TopoShape> cutCopies;
+    const auto recordPiece = [&]() {
+        const auto compoundOf = [](const std::vector<Part::TopoShape>& copies) {
+            return copies.empty() ? Part::TopoShape() : Part::TopoShape().makeElementCompound(copies);
+        };
+        AddSubShape.setValue(makeAddSubHalves(compoundOf(addedCopies), compoundOf(cutCopies)));
+    };
+
     switch (mode) {
         case Mode::Features:
             // NOTE: It would be possible to build a compound from all original addShapes/subShapes
@@ -483,6 +479,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
                     if (Base::Sequencer().wasCanceled()) {
                         return new App::DocumentObjectExecReturn("User aborted");
                     }
+                    addedCopies.push_back(fuseShape);
                     if (keepCopiesApart) {
                         // Hold the transformed copies back. shapes[0] is the support and is
                         // not a copy: the untransformed original was spliced into the chain
@@ -497,6 +494,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
                         for (std::size_t i = 1; i < shapes.size(); ++i) {
                             if (std::ranges::find(skip, static_cast<long>(i)) == skip.end()) {
                                 looseCopies.push_back(shapes[i]);
+                                addedCopies.push_back(shapes[i]);
                             }
                         }
                     }
@@ -508,6 +506,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
                         instances.insert(instances.end(), shapes.begin() + 1, shapes.end());
                         reportCollapsedInstances(instances);
 
+                        addedCopies.insert(addedCopies.end(), shapes.begin() + 1, shapes.end());
                         supportShape.makeElementFuse(shapes);
                     }
                 }
@@ -516,6 +515,8 @@ App::DocumentObjectExecReturn* Transformed::execute()
                     if (Base::Sequencer().wasCanceled()) {
                         return new App::DocumentObjectExecReturn("User aborted");
                     }
+                    cutCopies.push_back(cutShape);
+                    cutCopies.insert(cutCopies.end(), shapes.begin() + 1, shapes.end());
                     supportShape.makeElementCut(shapes);
                 }
             }
@@ -548,16 +549,21 @@ App::DocumentObjectExecReturn* Transformed::execute()
                         QT_TRANSLATE_NOOP("Exception", "Pattern skip-list removed every instance")
                     );
                 }
+                addedCopies = kept;
+                recordPiece();
                 Part::TopoShape compound;
                 compound.makeElementCompound(kept);
                 this->Shape.setValue(compound);
                 return App::DocumentObject::StdReturn;
             }
+            addedCopies = shapes;
             reportCollapsedInstances(shapes);
             supportShape.makeElementFuse(shapes);
             break;
         }
     }
+
+    recordPiece();
 
     if (!looseCopies.empty()) {
         // The copies were kept apart, so the result is several solids: the support, and one

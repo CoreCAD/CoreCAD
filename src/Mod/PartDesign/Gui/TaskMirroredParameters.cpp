@@ -40,7 +40,6 @@
 #include "ui_TaskMirroredParameters.h"
 #include "TaskMirroredParameters.h"
 #include "ReferenceSelection.h"
-#include "TaskMultiTransformParameters.h"
 
 using namespace PartDesignGui;
 using namespace Gui;
@@ -52,16 +51,6 @@ TaskMirroredParameters::TaskMirroredParameters(ViewProviderTransformed* Transfor
     , ui(new Ui_TaskMirroredParameters)
 {
     setupUI();
-}
-
-TaskMirroredParameters::TaskMirroredParameters(
-    TaskMultiTransformParameters* parentTask,
-    QWidget* parameterWidget
-)
-    : TaskTransformedParameters(parentTask)
-    , ui(new Ui_TaskMirroredParameters)
-{
-    setupParameterUI(parameterWidget);
 }
 
 void TaskMirroredParameters::setupParameterUI(QWidget* widget)

@@ -44,7 +44,6 @@
 #include "ui_TaskPatternParameters.h"
 #include "TaskPatternParameters.h"
 #include "ReferenceSelection.h"
-#include "TaskMultiTransformParameters.h"
 
 
 using namespace PartDesignGui;
@@ -57,16 +56,6 @@ TaskPatternParameters::TaskPatternParameters(ViewProviderTransformed* Transforme
     , ui(new Ui_TaskPatternParameters)
 {
     setupUI();
-}
-
-TaskPatternParameters::TaskPatternParameters(
-    TaskMultiTransformParameters* parentTask,
-    QWidget* parameterWidget
-)
-    : TaskTransformedParameters(parentTask)
-    , ui(new Ui::TaskPatternParameters)
-{
-    setupParameterUI(parameterWidget);
 }
 
 void TaskPatternParameters::setupParameterUI(QWidget* widget)

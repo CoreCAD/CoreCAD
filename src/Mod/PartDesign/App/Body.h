@@ -95,9 +95,6 @@ public:
     std::vector<DocumentObject*> removeFeature(DocumentObject* feature);
     void removeFeatures(const std::vector<App::DocumentObject*>& features);
 
-    /// Every Body loses @p feature: what built on it builds on its base, and it keeps no base.
-    static void takeOffChain(PartDesign::Feature* feature);
-
     static bool isSolidFeature(const App::DocumentObject* obj);
     static bool isAllowed(const App::DocumentObject* obj);
     /// Throws unless @p obj can join a body's chain.

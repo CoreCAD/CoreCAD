@@ -49,7 +49,6 @@
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureGroove.h>
-#include <Mod/PartDesign/App/FeatureMultiTransform.h>
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
@@ -246,97 +245,9 @@ bool CmdPartDesignPolarPattern::isActive()
     return hasAnyBody();
 }
 
-//===========================================================================
-// PartDesign_MultiTransform
-//===========================================================================
-DEF_STD_CMD_A(CmdPartDesignMultiTransform)
-
-CmdPartDesignMultiTransform::CmdPartDesignMultiTransform()
-    : Command("PartDesign_MultiTransform")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Multi-Transform");
-    sToolTipText = QT_TR_NOOP(
-        "Applies multiple transformations to the selected features or active body"
-    );
-    sWhatsThis = "PartDesign_MultiTransform";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_MultiTransform";
-}
-
-void CmdPartDesignMultiTransform::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    PartDesign::Body* pcActiveBody = selectedBody(this);
-
-    if (!pcActiveBody) {
-        return;
-    }
-
-    // A selected pattern is converted into a MultiTransform; one is never nested in another.
-    std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        PartDesign::Transformed::getClassTypeId()
-    );
-    std::erase_if(features, [](App::DocumentObject* f) {
-        return f->isDerivedFrom<PartDesign::MultiTransform>();
-    });
-    if (features.empty()) {
-        makeTransformed(this, pcActiveBody, "MultiTransform", [](auto*, const auto&) {});
-        return;
-    }
-
-    // Only the first selected pattern is converted.
-    PartDesign::Transformed* trFeat = static_cast<PartDesign::Transformed*>(features.front());
-
-    // Move the insert point back one feature
-    App::DocumentObject* oldTip = pcActiveBody->shownStep();
-    App::DocumentObject* prevFeature = pcActiveBody->getPrevSolidFeature(trFeat);
-    Gui::Selection().clearSelection();
-    if (prevFeature) {
-        Gui::Selection().addSelection(
-            prevFeature->getDocument()->getName(),
-            prevFeature->getNameInDocument()
-        );
-    }
-
-    openCommand(QT_TRANSLATE_NOOP("Command", "Convert to Multi-Transform feature"));
-
-    Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
-    rcCmdMgr.runCommandByName("PartDesign_MoveTip");
-
-    // Built ahead of the pattern; listing the pattern then takes it off the chain.
-    App::DocumentObject* Feat = startFeature(this, pcActiveBody, "MultiTransform");
-    if (!Feat) {
-        return;
-    }
-    auto objCmd = getObjectCmd(trFeat);
-    FCMD_OBJ_CMD(Feat, "Originals = " << objCmd << ".Originals");
-    FCMD_OBJ_CMD(Feat, "TransformMode = " << objCmd << ".TransformMode");
-    FCMD_OBJ_CMD(Feat, "Transformations = [" << objCmd << "]");
-
-    FCMD_OBJ_CMD(trFeat, "Originals = []");
-
-    finishFeature(this, Feat);
-
-    // Restore the insert point; when the pattern was the Tip, the MultiTransform now is.
-    if (oldTip != trFeat) {
-        Gui::Selection().clearSelection();
-        Gui::Selection().addSelection(oldTip->getDocument()->getName(), oldTip->getNameInDocument());
-        rcCmdMgr.runCommandByName("PartDesign_MoveTip");
-        Gui::Selection().clearSelection();
-    }
-}
-
-bool CmdPartDesignMultiTransform::isActive()
-{
-    return hasAnyBody();
-}
-
 void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
 {
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
     rcCmdMgr.addCommand(new CmdPartDesignLinearPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPolarPattern());
-    rcCmdMgr.addCommand(new CmdPartDesignMultiTransform());
 }

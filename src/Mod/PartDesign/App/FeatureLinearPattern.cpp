@@ -224,7 +224,7 @@ void LinearPattern::setReadWriteStatusForMode(LinearPatternDirection dir)
     }
 }
 
-const std::list<gp_Trsf> LinearPattern::getTransformations(const std::vector<App::DocumentObject*>)
+std::list<gp_Trsf> LinearPattern::getTransformations()
 {
     int occurrences = Occurrences.getValue();
     int occurrences2 = Occurrences2.getValue();

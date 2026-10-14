@@ -992,17 +992,16 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
         if body.Shape.ElementMapVersion == "":  # Skip without element maps.
             return
-        multitransform = self.Doc.addObject("PartDesign::MultiTransform", "MultiTransform")
-        scaled = self.Doc.addObject("PartDesign::Scaled", "Scaled")
-        scaled.Factor = 2
-        scaled.Occurrences = 2
-        multitransform.Transformations = scaled
-        multitransform.Shape = box.Shape
+        pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Originals = [box]
+        pattern.Direction = (self.Doc.getObject("X_Axis"), [""])
+        pattern.Length = 5  # the copies overlap, so the result stays one piece in one body
+        pattern.Occurrences = 2
 
         # Act / Assert
         self.Doc.recompute()
         body.addFeature(box)
-        body.addFeature(multitransform)
+        body.addFeature(pattern)
         self.assertEqual(len(body.Shape.childShapes()), 0)
         self.Doc.recompute()
         self.assertEqual(len(body.Shape.childShapes()), 1)

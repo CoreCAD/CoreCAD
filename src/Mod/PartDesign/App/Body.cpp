@@ -277,9 +277,6 @@ bool Body::isSolidFeature(const App::DocumentObject* obj)
         if (PartDesign::Feature::isDatum(obj)) {
             return false;
         }
-        if (auto* pattern = freecad_cast<const PartDesign::Transformed*>(obj)) {
-            return !pattern->isMultiTransformChild();
-        }
         return true;
     }
     // An import: it stands as a part of its own and can only start a chain.
@@ -331,15 +328,6 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         appendAtTip(static_cast<PartDesign::Feature*>(feature), copy);
     }
     return {feature};
-}
-
-void Body::takeOffChain(PartDesign::Feature* feature)
-{
-    App::DocumentObject* base = feature->BaseFeature.getValue();
-    unsplice(feature);
-    retreatTippedBodies(feature, base);
-    feature->BaseFeature.setValue(nullptr);
-    feature->BaseInstance.setValue(chain::WholeOutput);
 }
 
 long Body::tipCopy() const

@@ -23,7 +23,9 @@
  ***************************************************************************/
 
 
+#include <BRep_Builder.hxx>
 #include <Standard_Failure.hxx>
+#include <TopoDS_Compound.hxx>
 
 
 #include <App/FeaturePythonPyImp.h>
@@ -84,6 +86,49 @@ void FeatureAddSub::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& s
     }
     else if (addSubType == Subtractive) {
         subShape = AddSubShape.getShape();
+    }
+}
+
+Part::TopoShape FeatureAddSub::makeAddSubHalves(
+    const Part::TopoShape& addShape,
+    const Part::TopoShape& subShape
+)
+{
+    const auto orEmpty = [](const Part::TopoShape& half) {
+        if (!half.isNull()) {
+            return half;
+        }
+        BRep_Builder builder;
+        TopoDS_Compound empty;
+        builder.MakeCompound(empty);
+        return Part::TopoShape(empty);
+    };
+    return Part::TopoShape().makeElementCompound({orEmpty(addShape), orEmpty(subShape)});
+}
+
+void FeatureAddSub::splitAddSubHalves(
+    const Part::TopoShape& halves,
+    Part::TopoShape& addShape,
+    Part::TopoShape& subShape
+)
+{
+    if (halves.getShape().ShapeType() != TopAbs_COMPOUND) {
+        addShape = halves;
+        return;
+    }
+    const int count = halves.countSubShapes(TopAbs_SHAPE);
+    if (count == 0) {
+        throw Part::NullShapeException("Null AddSub shape");
+    }
+    Part::TopoShape added = halves.getSubTopoShape(TopAbs_SHAPE, 1);
+    if (!added.isNull() && added.hasSubShape(TopAbs_SOLID)) {
+        addShape = added;
+    }
+    if (count > 1) {
+        Part::TopoShape cut = halves.getSubTopoShape(TopAbs_SHAPE, 2);
+        if (!cut.isNull() && cut.hasSubShape(TopAbs_SOLID)) {
+            subShape = cut;
+        }
     }
 }
 void FeatureAddSub::updatePreviewShape()

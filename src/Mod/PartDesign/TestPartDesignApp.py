@@ -44,7 +44,6 @@ from PartDesignTests.TestHelix import TestHelix
 from PartDesignTests.TestMirrored import TestMirrored
 from PartDesignTests.TestLinearPattern import TestLinearPattern
 from PartDesignTests.TestPolarPattern import TestPolarPattern
-from PartDesignTests.TestMultiTransform import TestMultiTransform
 from PartDesignTests.TestBoolean import TestBoolean
 from PartDesignTests.TestBreakOut import TestBreakOut
 from PartDesignTests.TestMultiOutputDelete import TestMultiOutputDelete
@@ -68,6 +67,7 @@ from PartDesignTests.TestSuppressed import TestSuppressed
 # scriptable body-emergence path (Cruth §4.6/§8.5)
 from PartDesignTests.TestBodyEmergence import TestBodyEmergence
 from PartDesignTests.TestRollbackMarker import TestRollbackMarker
+from PartDesignTests.TestPatternChain import TestPatternChain
 
 # Topological naming problem
 from PartDesignTests.TestTopologicalNamingProblem import TestTopologicalNamingProblem

@@ -64,7 +64,7 @@ short Mirrored::mustExecute() const
     return Transformed::mustExecute();
 }
 
-const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::DocumentObject*>)
+std::list<gp_Trsf> Mirrored::getTransformations()
 {
     using getMirrorAxis = std::function<bool(gp_Pnt&, gp_Dir&)>;
 

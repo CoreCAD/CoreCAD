@@ -48,7 +48,6 @@ set(PartDesign_TestScripts
     PartDesignTests/TestMirrored.py
     PartDesignTests/TestLinearPattern.py
     PartDesignTests/TestPolarPattern.py
-    PartDesignTests/TestMultiTransform.py
     PartDesignTests/TestBoolean.py
     PartDesignTests/TestBreakOut.py
     PartDesignTests/TestKeepCopiesApart.py
@@ -66,6 +65,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestOverlapAccess.py
     PartDesignTests/TestStepDependencies.py
     PartDesignTests/TestRollbackMarker.py
+    PartDesignTests/TestPatternChain.py
 )
 
 if(BUILD_GUI)

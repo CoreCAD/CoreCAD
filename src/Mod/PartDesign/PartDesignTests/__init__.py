@@ -14,7 +14,6 @@ from . import TestLinearPattern
 from . import TestLoft
 from . import TestMirrored
 from . import TestMultiOutputDelete
-from . import TestMultiTransform
 from . import TestPad
 from . import TestPatternCopyBodies
 from . import TestPipe
