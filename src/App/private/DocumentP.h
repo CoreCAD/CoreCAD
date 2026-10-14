@@ -120,6 +120,7 @@ struct DocumentP
     int bookedTransaction { 0 }; 
 
     std::string programVersion;
+    bool inOlderFormat {false};
     mutable HasherMap hashers;
     std::multimap<const App::DocumentObject*, std::unique_ptr<App::DocumentObjectExecReturn>>
         _RecomputeLog;

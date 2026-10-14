@@ -10,6 +10,7 @@
 #include <App/StoredRecipe.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
+#include <Base/Writer.h>
 
 #include <fstream>
 #include <string>
@@ -203,5 +204,49 @@ TEST_F(FormatVersionTest, noVersionOfTheProgramAppearsInTheFile)
         << "the file names the program that wrote it";
     EXPECT_EQ(whole.find("BuildRevision"), std::string::npos)
         << "the file names the build that wrote it";
+    Base::FileInfo(path).deleteFile();
+}
+
+/** Whether a save would replace the file with one older programs may not read.
+ *
+ *  The save warning asked which program version wrote the file, and a recipe states none (the test
+ *  above), so every recipe looked old and the first save of every session warned. The question is
+ *  the format: only a file read from an older format is changed in kind by a save.
+ */
+TEST_F(FormatVersionTest, aFileThisBuildWroteIsNotInAnOlderFormat)
+{
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    writeWholeDocument(path);
+
+    ASSERT_TRUE(refusalFor(path).empty());
+    ASSERT_NE(_doc, nullptr);
+    EXPECT_FALSE(_doc->isInOlderFormat()) << "a file in the current format is called older";
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(FormatVersionTest, aSealedArchiveFromAnOlderVersionIsInAnOlderFormatUntilSaved)
+{
+    const std::string archive = Base::FileInfo::getTempFileName() + ".FCStd";
+    {
+        Base::ZipWriter writer(archive.c_str());
+        writer.putNextEntry("Document.xml");
+        writer.Stream()
+            << "<?xml version='1.0' encoding='utf-8'?>\n"
+               "<Document SchemaVersion=\"4\" ProgramVersion=\"0.21\" FileVersion=\"1\">\n"
+               "  <Properties Count=\"0\">\n  </Properties>\n"
+               "  <Objects Count=\"0\">\n  </Objects>\n"
+               "  <ObjectData Count=\"0\">\n  </ObjectData>\n"
+               "</Document>\n";
+        writer.writeFiles();
+    }
+
+    ASSERT_TRUE(refusalFor(archive).empty());
+    ASSERT_NE(_doc, nullptr);
+    EXPECT_TRUE(_doc->isInOlderFormat()) << "a save would rewrite an older file without warning";
+
+    const std::string path = Base::FileInfo::getTempFileName() + ".cpart";
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));
+    EXPECT_FALSE(_doc->isInOlderFormat()) << "once saved, the file is in the current format";
+    Base::FileInfo(archive).deleteFile();
     Base::FileInfo(path).deleteFile();
 }

@@ -1028,6 +1028,7 @@ bool Document::save()
             d->programVersion = Application::Config()["BuildVersionMajor"] + "."
                 + Application::Config()["BuildVersionMinor"] + "R"
                 + Application::Config()["BuildRevision"];
+            d->inOlderFormat = false;
         }
         return result;
     }
@@ -1398,6 +1399,7 @@ void Document::restore(const char* filename,
         // it is being read into or point it at some other file.
         FileName.setValue(filePath.c_str());
         Label.setValue(docLabel.c_str());
+        d->inOlderFormat = false;
 
         // Whatever this read could not bring back is missing from here and present there. A write
         // over that same file is what would destroy it; a write anywhere else leaves it standing.
@@ -1465,6 +1467,7 @@ void Document::restore(const char* filename,
 
     d->partialLoadObjects.clear();
     d->programVersion = reader.ProgramVersion;
+    d->inOlderFormat = true;
 
     // Special handling for Gui document, the view representations must already
     // exist, what is done in Restore().

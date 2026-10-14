@@ -183,76 +183,52 @@ bool Document::warnIfOlderVersion()
         return true;
     }
 
-    // Get document version info
-    const char* docVersion = d->_pcDocument->getProgramVersion();
-    const bool hasVersionString = !Base::Tools::isNullOrEmpty(docVersion);
-
-    // Parse document version string like "1.0R39319 (Git)" or "0.21R33694 (Git)"
-    // hasVersion is true only if the string is present AND parses as major.minor.
-    // Unrecognised strings like "pre-0.14" still display in the dialog but cannot
-    // be compared numerically, so they are treated as older versions.
-    int docMajor = 0, docMinor = 0;
-    const bool hasVersion = hasVersionString
-        && std::sscanf(docVersion, "%d.%d", &docMajor, &docMinor) == 2;
-
-    // Get current FreeCAD version
-    auto config = App::Application::Config();
-    int currentMajor = 0, currentMinor = 0;
-    if (config.count("BuildVersionMajor") && config.count("BuildVersionMinor")) {
-        currentMajor = std::stoi(config["BuildVersionMajor"]);
-        currentMinor = std::stoi(config["BuildVersionMinor"]);
-    }
-    else {
+    if (!d->_pcDocument->isInOlderFormat()) {
         return true;
     }
 
-    // Warn if the document was created with an older version or has no version info
-    if (!hasVersion || (docMajor < currentMajor)
-        || (docMajor == currentMajor && docMinor < currentMinor)) {
-        QMessageBox msgBox(getMainWindow());
-        msgBox.setWindowTitle(QObject::tr("File Created with Older FreeCAD Version"));
-        msgBox.setIcon(QMessageBox::Warning);
-        msgBox.setText(
-            QObject::tr(
-                "This file was created with %1, but you are using v%2.%3.\n\n"
-                "Saving will upgrade the file format. The file may not be readable "
-                "by older versions of FreeCAD after saving.\n\n"
-                "Use 'Save As…' to preserve the original file."
-                "\n"
+    const char* docVersion = d->_pcDocument->getProgramVersion();
+    QMessageBox msgBox(getMainWindow());
+    msgBox.setWindowTitle(QObject::tr("File in an Older Format"));
+    msgBox.setIcon(QMessageBox::Warning);
+    msgBox.setText(
+        QObject::tr(
+            "This file is in an older format%1.\n\n"
+            "Saving will rewrite it in the current format, which older programs may not "
+            "read.\n\n"
+            "Use 'Save As…' to preserve the original file."
+            "\n"
+        )
+            .arg(
+                Base::Tools::isNullOrEmpty(docVersion)
+                    ? QString()
+                    : QObject::tr(", written by version %1").arg(QString::fromUtf8(docVersion))
             )
-                .arg(
-                    !hasVersionString
-                        ? QObject::tr("an unknown older version of FreeCAD")
-                        : QObject::tr("FreeCAD version %1").arg(QString::fromUtf8(docVersion))
-                )
-                .arg(currentMajor)
-                .arg(currentMinor)
-        );
-        QPushButton* saveButton = msgBox.addButton(QObject::tr("Save"), QMessageBox::AcceptRole);
-        QPushButton* saveAsButton = msgBox.addButton(QObject::tr("Save As…"), QMessageBox::ActionRole);
-        msgBox.addButton(QMessageBox::Cancel);
-        msgBox.setDefaultButton(QMessageBox::Cancel);
+    );
+    QPushButton* saveButton = msgBox.addButton(QObject::tr("Save"), QMessageBox::AcceptRole);
+    QPushButton* saveAsButton = msgBox.addButton(QObject::tr("Save As…"), QMessageBox::ActionRole);
+    msgBox.addButton(QMessageBox::Cancel);
+    msgBox.setDefaultButton(QMessageBox::Cancel);
 
-        QCheckBox dontShowCheckBox(QObject::tr("Do not show this warning again"), &msgBox);
-        msgBox.setCheckBox(&dontShowCheckBox);
+    QCheckBox dontShowCheckBox(QObject::tr("Do not show this warning again"), &msgBox);
+    msgBox.setCheckBox(&dontShowCheckBox);
 
-        int ret = msgBox.exec();
+    int ret = msgBox.exec();
 
-        if (msgBox.clickedButton() == saveButton) {
-            if (dontShowCheckBox.isChecked()) {
-                App::GetApplication()
-                    .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")
-                    ->SetBool("DisableVersionCheckOnSave", true);
-            }
+    if (msgBox.clickedButton() == saveButton) {
+        if (dontShowCheckBox.isChecked()) {
+            App::GetApplication()
+                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")
+                ->SetBool("DisableVersionCheckOnSave", true);
         }
-        else if (msgBox.clickedButton() == saveAsButton) {
-            saveAs();
-            return false;
-        }
+    }
+    else if (msgBox.clickedButton() == saveAsButton) {
+        saveAs();
+        return false;
+    }
 
-        if (ret == QMessageBox::Cancel) {
-            return false;
-        }
+    if (ret == QMessageBox::Cancel) {
+        return false;
     }
     return true;
 }
@@ -261,7 +237,7 @@ bool Document::warnIfOlderVersion()
 bool Document::save()
 {
     if (d->_pcDocument->isSaved()) {
-        // Warn if this document was created with an older FreeCAD version
+        // Warn if saving would replace a file in an older format
         if (!warnIfOlderVersion()) {
             return false;
         }

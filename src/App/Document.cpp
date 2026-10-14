@@ -588,6 +588,11 @@ const char* Document::getProgramVersion() const
     return d->programVersion.c_str();
 }
 
+bool Document::isInOlderFormat() const
+{
+    return d->inOlderFormat;
+}
+
 const char* Document::getFileName() const
 {
     return testStatus(TempDoc) ? TransientDir.getValue() : FileName.getValue();
