@@ -832,6 +832,11 @@ public:
                               bool isNew = true,
                               const char* viewType = nullptr,
                               bool isPartial = false);
+    /// Add an object a file states, with the durable id the file gives it and the integer id
+    /// derived from that at its birth, which its element names carry.
+    DocumentObject* addReadObject(const char* sType,
+                                  const char* pObjectName,
+                                  const std::string& uuid);
 
     /**
      * @brief Add an object of a given type to the document.

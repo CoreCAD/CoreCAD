@@ -1586,3 +1586,69 @@ TEST_F(StringHasherTest, compact)  // NOLINT
     // Assert
     EXPECT_EQ(0, Hasher()->count());
 }
+
+TEST_F(StringHasherTest, adoptTakesEveryStringUnderItsNumber)  // NOLINT
+{
+    // Arrange
+    App::StringHasherRef other(new App::StringHasher);
+    auto first = other->getID("first");
+    auto second = other->getID("second");
+
+    // Act
+    bool adopted = Hasher()->adopt(*other);
+
+    // Assert
+    EXPECT_TRUE(adopted);
+    EXPECT_EQ(Hasher()->getID(first.value()).dataToText(), "first");
+    EXPECT_EQ(Hasher()->getID(second.value()).dataToText(), "second");
+    EXPECT_EQ(Hasher()->getID("second").value(), second.value());
+}
+
+TEST_F(StringHasherTest, adoptAcceptsStringsItAlreadyHolds)  // NOLINT
+{
+    // Arrange
+    App::StringHasherRef other(new App::StringHasher);
+    other->getID("same");
+    Hasher()->getID("same");
+
+    // Act
+    bool adopted = Hasher()->adopt(*other);
+
+    // Assert
+    EXPECT_TRUE(adopted);
+    EXPECT_EQ(Hasher()->size(), 1);
+}
+
+TEST_F(StringHasherTest, adoptRefusesANumberHoldingAnotherString)  // NOLINT
+{
+    // Arrange
+    App::StringHasherRef other(new App::StringHasher);
+    auto theirs = other->getID("theirs");
+    other->getID("more");
+    auto mine = Hasher()->getID("mine");
+    ASSERT_EQ(mine.value(), theirs.value());
+
+    // Act
+    bool adopted = Hasher()->adopt(*other);
+
+    // Assert
+    EXPECT_FALSE(adopted);
+    EXPECT_EQ(Hasher()->size(), 1);
+    EXPECT_EQ(Hasher()->getID(mine.value()).dataToText(), "mine");
+}
+
+TEST_F(StringHasherTest, adoptRefusesAStringHeldUnderAnotherNumber)  // NOLINT
+{
+    // Arrange
+    App::StringHasherRef other(new App::StringHasher);
+    other->getID("filler");
+    other->getID("shared");
+    Hasher()->getID("shared");
+
+    // Act
+    bool adopted = Hasher()->adopt(*other);
+
+    // Assert
+    EXPECT_FALSE(adopted);
+    EXPECT_EQ(Hasher()->size(), 1);
+}

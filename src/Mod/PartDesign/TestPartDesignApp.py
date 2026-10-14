@@ -64,6 +64,7 @@ from PartDesignTests.TestPatternCopyBodies import (
     TestPatternCopyBodies,
     TestPatternOriginalKeepsBody,
 )
+from PartDesignTests.TestReopenElementNames import TestReopenElementNames
 from PartDesignTests.TestSketch import TestSketch
 from PartDesignTests.TestSuppressed import TestSuppressed
 

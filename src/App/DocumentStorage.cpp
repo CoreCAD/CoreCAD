@@ -1538,6 +1538,9 @@ bool Document::afterRestore(const bool checkPartial)
         // its geometry and the wrong one for a file that carried the steps to make it.
         std::set<DocumentObject*> toBuild;
         try {
+            // An entry's shapes name the document's table as table 0, as saving numbered it.
+            d->hashers.clear();
+            addStringHasher(d->Hasher);
             toBuild = restoreBuiltGeometry(*this, cacheDirectory(), assetDirectory());
         }
         catch (const std::exception& e) {

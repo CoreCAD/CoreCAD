@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-FileCopyrightText: 2026 Cruth contributors
+
+# #167: a reopened document gets its shapes back from the project cache, and their element
+# names must mean what they meant before the save.
+
+import os
+import re
+import tempfile
+import unittest
+
+import FreeCAD
+import PartDesign
+from PartDesignTests.TestBodyEmergence import _square
+
+
+class TestReopenElementNames(unittest.TestCase):
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("PartDesignTestReopenElementNames", type="Part")
+        self.pad = PartDesign.makeFeature(_square(self.Doc, "S1"), "Pad")
+        self.pad.Length = 10
+        self.Doc.recompute()
+        body = PartDesign.findBodyOf(self.pad)
+        self.fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
+        self.fillet.Base = (self.pad, ["Edge1"])
+        self.fillet.Radius = 1
+        body.addFeature(self.fillet)
+        self.Doc.recompute()
+        self.assertTrue(self.fillet.isValid(), self.fillet.getStatusString())
+
+    def tearDown(self):
+        FreeCAD.closeDocument(self.Doc.Name)
+
+    def _histories(self):
+        fillet = self.Doc.getObject("Fillet")
+        return {
+            face: [
+                (source.Name, name, list(steps))
+                for source, name, steps in fillet.getElementHistory(fillet.Name + "." + mapped)
+            ]
+            for mapped, face in fillet.Shape.ElementMap.items()
+            if face.startswith("Face")
+        }
+
+    def _reopen(self):
+        path = os.path.join(tempfile.mkdtemp(), "names.cpart")
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+
+    def testEveryFaceTracesTheSameHistoryAfterReopen(self):
+        before = self._histories()
+        self._reopen()
+        self.assertEqual(self._histories(), before)
+
+    def testEveryNumberInANameReadsTheSameStringAfterReopen(self):
+        def strings(obj):
+            numbers = {
+                n for name in obj.Shape.ElementMap for n in re.findall(r"#([0-9a-f]+)", name)
+            }
+            table = obj.Shape.Hasher
+            found = {n: table.getID(int(n, 16)) for n in numbers}
+            return {n: sid.Data if sid else None for n, sid in found.items()}
+
+        before = strings(self.Doc.getObject("Fillet"))
+        self.assertTrue(before and None not in before.values())
+        self._reopen()
+        self.assertEqual(strings(self.Doc.getObject("Fillet")), before)
+
+    def testReopenedShapesShareTheDocumentsStringTable(self):
+        self._reopen()
+        pad2 = PartDesign.makeFeature(_square(self.Doc, "S2", x0=30), "Pad")
+        self.Doc.recompute()
+        self.assertTrue(self.Doc.getObject("Fillet").Shape.Hasher.isSame(pad2.Shape.Hasher))
+
+    def testTheFilletsEdgeIsFoundWithoutARebuild(self):
+        edge = self.pad.Shape.getElementMappedName("Edge1")
+        self._reopen()
+        self.assertEqual(self.Doc.getObject("Pad").Shape.getElementIndexedName(edge), "Edge1")
+        fillet = self.Doc.getObject("Fillet")
+        fillet.enforceRecompute()
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid(), fillet.getStatusString())
+
+    def testARebuildAfterReopenTagsNamesAsBefore(self):
+        # Each name carries the integer id of the object that made it, so a reopened object must
+        # have the id it was born with.
+        def tags(obj):
+            return {t for name in obj.Shape.ElementMap for t in re.findall(r":H([0-9a-f]+)", name)}
+
+        before = tags(self.pad)
+        self._reopen()
+        pad = self.Doc.getObject("Pad")
+        pad.enforceRecompute()
+        self.Doc.recompute()
+        self.assertEqual(tags(pad), before)

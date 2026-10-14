@@ -50,6 +50,7 @@
 #include "GeometryCache.h"
 #include "Property.h"
 #include "StoredRecipe.h"
+#include "StringHasher.h"
 
 using namespace App;
 
@@ -60,7 +61,7 @@ namespace fs = std::filesystem;
 
 /// The shape of a cache entry. Bumped when this file changes how an entry is written, which is
 /// the one thing an entry cannot describe about itself.
-constexpr const char* entryFormat = "1";
+constexpr const char* entryFormat = "2";
 
 /// What the recipe text cannot say: which program built the result.
 ///
@@ -164,6 +165,37 @@ fs::path entryPath(const std::string& cacheDirectory, const std::string& key)
 
 const char* contentFile = "content.xml";
 
+/// Element names are written as numbers into the document's string table, which is not part of
+/// the recipe. So an entry carries the strings its names use, under the numbers they use.
+void saveStringsUsed(Base::Writer& writer,
+                     const Document& doc,
+                     const std::vector<Property*>& rebuilt)
+{
+    StringHasherRef table = doc.getStringHasher();
+    writer.Stream() << writer.ind() << "<Strings>\n";
+    if (table) {
+        table->clearMarks();
+        for (const Property* prop : rebuilt) {
+            prop->beforeSave();
+        }
+        table->setPersistenceFileName(nullptr);
+        table->Save(writer);
+    }
+    writer.Stream() << writer.ind() << "</Strings>\n";
+}
+
+/// False when the entry's strings cannot join the document's table under the numbers its names
+/// use: it was written against a table that gave one of them to a different string.
+bool adoptStringsUsed(Base::XMLReader& reader, const Document& doc)
+{
+    reader.readElement("Strings");
+    StringHasherRef used(new StringHasher);
+    used->Restore(reader);
+    reader.readEndElement("Strings");
+    StringHasherRef table = doc.getStringHasher();
+    return used->size() == 0 || (table && table->adopt(*used));
+}
+
 }  // namespace
 
 std::string App::builtGeometryFolder(const std::string& cacheDirectory)
@@ -238,6 +270,7 @@ void App::storeBuiltGeometry(const Document& doc,
             writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                             << "<Built Count=\"" << rebuilt.size() << "\">\n";
             writer.incInd();
+            saveStringsUsed(writer, doc, rebuilt);
             for (const Property* prop : rebuilt) {
                 writer.Stream() << writer.ind() << "<Property name=\"" << prop->getName()
                                 << "\" type=\"" << prop->getTypeId().getName() << "\">\n";
@@ -300,12 +333,16 @@ std::set<DocumentObject*> App::restoreBuiltGeometry(Document& doc,
                 continue;
             }
 
+            reader.readElement("Built");
+            const int count = reader.getAttribute<long>("Count");
+            if (!adoptStringsUsed(reader, doc)) {
+                toBuild.insert(obj);
+                continue;
+            }
             // Handed its own result, an object must not react by producing it again: some
             // features rebuild themselves whenever a property changes, and one of them is the
             // reason this cache exists.
             obj->setStatus(ObjectStatus::Restore, true);
-            reader.readElement("Built");
-            const int count = reader.getAttribute<long>("Count");
             for (int i = 0; i < count; ++i) {
                 reader.readElement("Property");
                 const std::string name = reader.getAttribute<const char*>("name");
