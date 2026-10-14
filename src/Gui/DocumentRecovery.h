@@ -77,6 +77,7 @@ public:
 
 private:
     void checkDocumentDirs(QDir&, const QList<QFileInfo>&, const QString&);
+    void removeEmptyOrphanDirs() const;
     bool showRecoveryDialogIfNeeded();
 
 private:
