@@ -729,6 +729,15 @@ public:
 
     std::map<long, StringIDRef> getIDMap() const;
 
+    /** Take in every string of @p other under the number it has there.
+     *
+     * Nothing is taken unless all of it fits: a number this table already holds must hold the
+     * same string, and a string this table already holds must hold the same number.
+     *
+     * @return false, with this table unchanged, when any of it does not fit.
+     */
+    bool adopt(const StringHasher& other);
+
     /// Clear all string hashes
     void clear();
 

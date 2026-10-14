@@ -131,6 +131,22 @@ long deriveObjectIdFromUuid(const std::string& uuid)
     return id != 0 ? id : 1;
 }
 
+// Looked up among what is registered, never imported on the strength of the name. A
+// document states the type of each object it holds, so importing from that name made a
+// file decide what code this session ran. Every module the program installed is loaded at
+// startup (FreeCADInit.py), so there is nothing left for a name to have to fetch.
+DocumentObject* instanceOf(const char* sType)
+{
+    const Base::Type type =
+        Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), false);
+    if (type.isBad()) {
+        std::stringstream str;
+        str << "Document::addObject: '" << sType << "' is not a document object type";
+        throw Base::TypeError(str.str());
+    }
+    return static_cast<DocumentObject*>(type.createInstance());
+}
+
 }  // namespace
 
 void Document::renameObjectIdentifiers(
@@ -152,30 +168,39 @@ void Document::renameObjectIdentifiers(
     }
 }
 
+DocumentObject* Document::addReadObject(const char* sType,
+                                        const char* pObjectName,
+                                        const std::string& uuid)
+{
+    DocumentObject* pcObject = instanceOf(sType);
+    if (!pcObject) {
+        return nullptr;
+    }
+    pcObject->setDocument(this);
+    // Before it is announced: whatever files it on arrival files it under this id.
+    long id = deriveObjectIdFromUuid(uuid);
+    while (d->objectIdMap.count(id) != 0) {
+        id = id > 0 ? id + 1 : 1;
+    }
+    pcObject->_Id = id;
+    _addObject(pcObject,
+               pObjectName,
+               AddObjectOption::SetNewStatus | AddObjectOption::UnsetPartialStatus
+                   | AddObjectOption::ActivateObject);
+    pcObject->Uid.setValue(uuid);
+    return pcObject;
+}
+
 DocumentObject* Document::addObject(const char* sType,
                                     const char* pObjectName,
                                     const bool isNew,
                                     const char* viewType,
                                     const bool isPartial)
 {
-    // Looked up among what is registered, never imported on the strength of the name. A
-    // document states the type of each object it holds, so importing from that name made a
-    // file decide what code this session ran. Every module the program installed is loaded at
-    // startup (FreeCADInit.py), so there is nothing left for a name to have to fetch.
-    const Base::Type type =
-        Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), false);
-    if (type.isBad()) {
-        std::stringstream str;
-        str << "Document::addObject: '" << sType << "' is not a document object type";
-        throw Base::TypeError(str.str());
-    }
-
-    void* typeInstance = type.createInstance();
-    if (!typeInstance) {
+    DocumentObject* pcObject = instanceOf(sType);
+    if (!pcObject) {
         return nullptr;
     }
-
-    auto* pcObject = static_cast<DocumentObject*>(typeInstance);
     pcObject->setDocument(this);
 
     _addObject(pcObject,
@@ -760,10 +785,10 @@ DocumentObject* Document::moveObject(DocumentObject* obj, const bool recursive)
     }
     // Some object may delete its children if deleted, so we collect the IDs
     // or all depending objects for safety reason.
-    std::vector<int> ids;
+    std::vector<long> ids;
     ids.reserve(deps.size());
     for (const auto o : deps) {
-        ids.push_back(static_cast<int>(o->getID()));
+        ids.push_back(o->getID());
     }
 
     // We only remove object if it is the moving object or it has no

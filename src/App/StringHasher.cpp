@@ -860,6 +860,63 @@ std::map<long, StringIDRef> StringHasher::getIDMap() const
     return ret;
 }
 
+namespace
+{
+StringID::Flags storedFlags(StringID::Flags flags)
+{
+    flags.setFlag(StringID::Flag::Marked, false);
+    flags.setFlag(StringID::Flag::Persistent, false);
+    return flags;
+}
+}  // namespace
+
+bool StringHasher::adopt(const StringHasher& other)
+{
+    const auto sameString = [](const StringID& a, const StringID& b) {
+        if (a._data != b._data || a._postfix != b._postfix
+            || storedFlags(a._flags).getFlags() != storedFlags(b._flags).getFlags()
+            || a._sids.size() != b._sids.size()) {
+            return false;
+        }
+        for (int i = 0; i < a._sids.size(); ++i) {
+            if (a._sids[i].value() != b._sids[i].value()
+                || a._sids[i].getIndex() != b._sids[i].getIndex()) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    for (const auto& entry : other._hashes->right) {
+        const long id = entry.first;
+        const StringID* theirs = entry.second;
+        if (const StringIDRef mine = getID(id)) {
+            if (!sameString(mine.deref(), *theirs)) {
+                return false;
+            }
+        }
+        else if (_hashes->left.find(const_cast<StringID*>(theirs)) != _hashes->left.end()) {
+            return false;
+        }
+    }
+
+    // In number order: a string refers only to strings numbered before it.
+    for (const auto& entry : other._hashes->right) {
+        const long id = entry.first;
+        const StringID* theirs = entry.second;
+        if (getID(id)) {
+            continue;
+        }
+        StringIDRef copy(new StringID(id, theirs->_data, storedFlags(theirs->_flags)));
+        copy._sid->_postfix = theirs->_postfix;
+        for (const StringIDRef& related : theirs->_sids) {
+            copy._sid->_sids.push_back(getID(related.value(), related.getIndex()));
+        }
+        insert(copy);
+    }
+    return true;
+}
+
 void StringHasher::clearMarks() const
 {
     for (auto& hasher : _hashes->right) {

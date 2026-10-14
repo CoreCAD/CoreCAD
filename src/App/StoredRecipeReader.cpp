@@ -732,7 +732,7 @@ DocumentObject* constructObject(RecipeRead& read,
                                 const std::string& name)
 {
     try {
-        return read.doc.addObject(type.c_str(), name.c_str(), /*isNew=*/false);
+        return read.doc.addReadObject(type.c_str(), name.c_str(), uuid);
     }
     catch (const Base::Exception&) {
         std::string block = read.source.objectBlock(uuid);
@@ -814,7 +814,6 @@ void readObject(RecipeRead& read)
 
     DocumentObject* obj = constructObject(read, uuid, type, name);
     if (obj != nullptr) {
-        obj->Uid.setValue(uuid);
         read.restored.push_back(obj);
         read.arrived.emplace(uuid, obj);
         reader.addName(name.c_str(), obj->getNameInDocument());
