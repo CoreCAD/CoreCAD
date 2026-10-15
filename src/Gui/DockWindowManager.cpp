@@ -284,6 +284,8 @@ QDockWidget* DockWindowManager::addDockWindow(const char* name, QWidget* widget,
 
     // add the widget to the dock widget
     widget->setParent(dw);
+    widget->setAttribute(Qt::WA_StyledBackground);
+    widget->setProperty("class", "sheet");
     dw->setWidget(widget);
 
     // set object name and window title needed for i18n stuff

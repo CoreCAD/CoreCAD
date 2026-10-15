@@ -1010,6 +1010,7 @@ public:
     {
         OverlayTitleBar* widget = new OverlayTitleBar(parent);
         widget->setObjectName(QStringLiteral("OverlayTitle"));
+        widget->setAttribute(Qt::WA_StyledBackground);
 
         QList<QAction*> actions;
         if (auto tabWidget = qobject_cast<OverlayTabWidget*>(parent)) {

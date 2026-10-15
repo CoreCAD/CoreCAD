@@ -120,6 +120,19 @@ QDialog {
   background-color: @DialogBackgroundColor;
 }
 
+/* Every docked panel is a sheet set apart from the window by its surface and edge. */
+QWidget[class="sheet"] {
+  background-color: @PanelBackgroundColor;
+  border: 1px solid @PanelBorderColor;
+}
+
+/* The title bar is the top of the same sheet, so the title never floats apart from its panel. */
+QDockWidget > Gui--OverlayTitleBar {
+  background-color: @PanelBackgroundColor;
+  border: 1px solid @PanelBorderColor;
+  border-bottom: none;
+}
+
 /* QDialog#Gui__Dialog__DlgPreferences { /*Preferences dialog her if you need it*/
   /* background-color: @ButtonTopBackgroundColor;
 }

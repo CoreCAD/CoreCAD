@@ -309,6 +309,7 @@ AppearancePanel::AppearancePanel(QWidget* parent)
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     outer->addWidget(scroll);
     auto* content = new QWidget(scroll);
     scroll->setWidget(content);
