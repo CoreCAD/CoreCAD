@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
+
+#pragma once
+
+#include <App/PropertyLinks.h>
+#include "FeatureTransformed.h"
+
+
+namespace PartDesign
+{
+
+/// One copy on each point of a sketch. Each copy is the original slid across the sketch's
+/// plane until the original's centre sits over the point; a point already under the
+/// original adds nothing. Construction points are helpers and are not used.
+class PartDesignExport PointPattern: public PartDesign::Transformed
+{
+    PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::PointPattern);
+
+public:
+    PointPattern();
+
+    App::PropertyLink Points;
+
+    short mustExecute() const override;
+
+    const char* getViewProviderName() const override
+    {
+        return "PartDesignGui::ViewProviderPointPattern";
+    }
+
+    std::list<gp_Trsf> getTransformations() override;
+
+private:
+    Base::Vector3d centreOfOriginals();
+};
+
+}  // namespace PartDesign
