@@ -100,8 +100,6 @@ public:
     std::vector<std::string> getDisplayModes() const override;
     /// Update the view representation
     void reload();
-    /// If no other task is pending it opens a dialog to allow one to change face colors
-    bool changeFaceAppearances();
 
     void updateData(const App::Property*) override;
 
@@ -176,7 +174,6 @@ public:
 
     /** @name Edit methods */
     //@{
-    void setupContextMenu(QMenu*, QObject*, const char*) override;
 
     /// Get the python wrapper for that ViewProvider
     PyObject* getPyObject() override;

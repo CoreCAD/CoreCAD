@@ -47,6 +47,7 @@ def findDockWidget(name):
 # define the test cases to test the FreeCAD Part module
 #---------------------------------------------------------------------------
 """
+from parttests.AppearancePanelTest import AppearancePanelTest
 from parttests.ColorPerFaceTest import ColorPerFaceTest
 from parttests.ColorTransparencyTest import ColorTransparencyTest
 from parttests.VersionComparisonTest import (

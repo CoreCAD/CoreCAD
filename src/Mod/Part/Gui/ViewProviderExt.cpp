@@ -94,7 +94,7 @@
 #include "SoBrepEdgeSet.h"
 #include "SoBrepFaceSet.h"
 #include "SoBrepPointSet.h"
-#include "TaskFaceAppearances.h"
+#include "AppearancePanel.h"
 
 
 FC_LOG_LEVEL_INIT("Part", true, true)
@@ -1133,38 +1133,13 @@ void ViewProviderPartExt::finishRestoring()
     Gui::ViewProviderGeometryObject::finishRestoring();
 }
 
-void ViewProviderPartExt::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
-{
-    QIcon iconObject = mergeGreyableOverlayIcons(Gui::BitmapFactory().pixmap("Part_ColorFace.svg"));
-    Gui::ViewProviderGeometryObject::setupContextMenu(menu, receiver, member);
-    QAction* act = menu->addAction(iconObject, QObject::tr("Appearance per Face"), receiver, member);
-    act->setData(QVariant((int)ViewProvider::Color));
-}
-
-bool ViewProviderPartExt::changeFaceAppearances()
-{
-    Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
-    if (dlg) {
-        Gui::Control().showDialog(dlg);
-        return false;
-    }
-
-    Gui::Selection().clearSelection();
-    Gui::Control().showDialog(new TaskFaceAppearances(this));
-    return true;
-}
-
 bool ViewProviderPartExt::setEdit(int ModNum)
 {
     if (ModNum == ViewProvider::Color) {
-        // When double-clicking on the item for this pad the
-        // object unsets and sets its edit mode without closing
-        // the task panel
-        return changeFaceAppearances();
+        AppearancePanel::showPanel();
+        return false;
     }
-    else {
-        return Gui::ViewProviderGeometryObject::setEdit(ModNum);
-    }
+    return Gui::ViewProviderGeometryObject::setEdit(ModNum);
 }
 
 void ViewProviderPartExt::unsetEdit(int ModNum)

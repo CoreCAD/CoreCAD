@@ -107,11 +107,6 @@ bool ViewProvider::doubleClicked()
 
 void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
-    QIcon iconObject = mergeGreyableOverlayIcons(Gui::BitmapFactory().pixmap("Part_ColorFace.svg"));
-    QAction* act = menu->addAction(iconObject, QObject::tr("Set Face Colors"), receiver, member);
-
-    act->setData(QVariant((int)ViewProvider::Color));
-
     auto* feature = getObject<PartDesign::Feature>();
     if (feature && feature->hasNoEffect()) {
         const bool accepted = feature->NoEffectAcknowledged.getValue();
