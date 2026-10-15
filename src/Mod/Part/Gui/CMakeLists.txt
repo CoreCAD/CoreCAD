@@ -60,7 +60,6 @@ set(PartGui_UIC_SRCS
     PatternParametersWidget.ui
     SectionCutting.ui
     ShapeFromMesh.ui
-    TaskFaceAppearances.ui
     TaskShapeBuilder.ui
     TaskLoft.ui
     TaskOffset.ui
@@ -81,6 +80,8 @@ SET(PartGui_SRCS
     AppPartGui.cpp
     AttacherTexts.h
     AttacherTexts.cpp
+    AppearancePanel.cpp
+    AppearancePanel.h
     BoxSelection.cpp
     BoxSelection.h
     Command.cpp
@@ -245,9 +246,6 @@ SET(PartGui_SRCS
     SectionCutting.ui
     ShapeFromMesh.cpp
     ShapeFromMesh.h
-    TaskFaceAppearances.cpp
-    TaskFaceAppearances.h
-    TaskFaceAppearances.ui
     TaskShapeBuilder.cpp
     TaskShapeBuilder.h
     TaskShapeBuilder.ui

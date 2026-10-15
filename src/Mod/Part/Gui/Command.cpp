@@ -43,6 +43,7 @@
 #include <Gui/WaitCursor.h>
 #include <Mod/Part/App/Datums.h>
 
+#include "AppearancePanel.h"
 #include "BoxSelection.h"
 #include "CommandSupport.h"
 #include "DlgPrimitives.h"
@@ -499,48 +500,36 @@ bool CmdCheckGeometry::isActive()
 }
 
 //===========================================================================
-// Part_ColorPerFace
+// Part_EditAppearance
 //===========================================================================
 
-DEF_STD_CMD_A(CmdColorPerFace)
+DEF_STD_CMD_A(CmdEditAppearance)
 
-CmdColorPerFace::CmdColorPerFace()
-    : Command("Part_ColorPerFace")
+CmdEditAppearance::CmdEditAppearance()
+    : Command("Part_EditAppearance")
 {
     sAppModule = "Part";
     sGroup = QT_TR_NOOP("Part");
-    sMenuText = QT_TR_NOOP("Appearance per &Face");
-    sToolTipText = QT_TR_NOOP("Sets the appearance of individual faces of the selected object");
+    sMenuText = QT_TR_NOOP("&Appearance and Material");
+    sToolTipText = QT_TR_NOOP(
+        "Changes how the selected parts or faces look, and what parts are made of"
+    );
     sStatusTip = sToolTipText;
-    sWhatsThis = "Part_ColorPerFace";
-    sPixmap = "Part_ColorFace";
+    sWhatsThis = "Part_EditAppearance";
+    sPixmap = "Std_SetAppearance";
+    sAccel = "Ctrl+D";
+    eType = Alter3DView;
 }
 
-void CmdColorPerFace::activated(int iMsg)
+void CmdEditAppearance::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    if (getActiveGuiDocument()->getInEdit()) {
-        getActiveGuiDocument()->resetEdit();
-    }
-    std::vector<App::DocumentObject*> sel = Gui::Selection().getObjectsOfType(
-        App::DocumentObject::getClassTypeId()
-    );
-    std::erase_if(sel, [](App::DocumentObject* o) { return !Part::hasShape(o); });
-    if (sel.empty()) {
-        return;
-    }
-    PartGui::ViewProviderPartExt* vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
-        Gui::Application::Instance->getViewProvider(sel.front())
-    );
-    if (vp) {
-        vp->changeFaceAppearances();
-    }
+    PartGui::AppearancePanel::showPanel();
 }
 
-bool CmdColorPerFace::isActive()
+bool CmdEditAppearance::isActive()
 {
-    bool objectSelected = Gui::Selection().countObjectsOfType<Part::ShapeFeature>() == 1;
-    return (hasActiveDocument() && !Gui::Control().activeDialog(getDocument()) && objectSelected);
+    return hasActiveDocument();
 }
 
 //===========================================================================
@@ -632,7 +621,7 @@ void CreatePartCommands()
     rcCmdMgr.addCommand(new CmdPartPickCurveNet());
     rcCmdMgr.addCommand(new CmdShapeInfo());
     rcCmdMgr.addCommand(new CmdCheckGeometry());
-    rcCmdMgr.addCommand(new CmdColorPerFace());
+    rcCmdMgr.addCommand(new CmdEditAppearance());
     rcCmdMgr.addCommand(new CmdBoxSelection());
     rcCmdMgr.addCommand(new CmdPartSectionCut());
 }

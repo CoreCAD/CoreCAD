@@ -193,7 +193,6 @@ class CorePartWorkbench(Gui.Workbench):
                 "Part_CompOffset",
                 "Part_Thickness",
                 "Part_ProjectionOnSurface",
-                "Part_ColorPerFace",
                 "Part_ShapeFromMesh",
                 "Part_MakeSolid",
                 "Part_RefineShape",
