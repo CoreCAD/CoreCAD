@@ -2110,6 +2110,43 @@ QTabBar QToolButton::right-arrow:disabled, QDockWidget QTabBar QToolButton::righ
   image: url(qss:@IconsLocationFolderName/arrow-right-darkgray.svg);
 }
 
+/* Ribbon -----------------------------------------------------------------
+The ribbon sets only its shape; its colours follow the theme here.
+--------------------------------------------------------------------------- */
+#RibbonBar,
+#RibbonTitleRow,
+#RibbonTabBar,
+#RibbonTabBar::tab,
+#RibbonStack {
+  background-color: @PrimaryColor;
+  color: @TextForegroundColor;
+}
+
+#RibbonBar {
+  border-bottom: 1px solid @PanelBorderColor;
+}
+
+#RibbonTabBar::tab:hover:!selected {
+  background-color: @PanelTitleBackgroundColor;
+}
+
+#RibbonPanel {
+  background-color: @PanelBackgroundColor;
+  border: 1px solid @PanelBorderColor;
+}
+
+#PanelTitle {
+  color: @TextDisabledColor;
+}
+
+#PanelSeparator {
+  color: @PanelBorderColor;
+}
+
+#RibbonPanel QToolButton:checked {
+  background-color: @PanelTitleBackgroundColor;
+}
+
 /* QDockWiget -------------------------------------------------------------
 
 --------------------------------------------------------------------------- */
