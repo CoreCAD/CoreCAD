@@ -3,9 +3,18 @@
 
 #pragma once
 
+#include <vector>
+
+#include <gp_Pnt.hxx>
+
 #include <App/PropertyLinks.h>
 #include "FeatureTransformed.h"
 
+
+namespace Part
+{
+class Part2DObject;
+}
 
 namespace PartDesign
 {
@@ -30,6 +39,9 @@ public:
     }
 
     std::list<gp_Trsf> getTransformations() override;
+
+    /// The points a copy can be placed on, in the world.
+    static std::vector<gp_Pnt> pointsOf(const Part::Part2DObject* sketch);
 
 private:
     Base::Vector3d centreOfOriginals();

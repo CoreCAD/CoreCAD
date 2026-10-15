@@ -298,8 +298,13 @@ void Workbench::activated()
         "PartDesign_Body"
     ));
 
-    const char* Transformed[]
-        = {"PartDesign_Mirrored", "PartDesign_LinearPattern", "PartDesign_PolarPattern", nullptr};
+    const char* Transformed[] = {
+        "PartDesign_Mirrored",
+        "PartDesign_LinearPattern",
+        "PartDesign_PolarPattern",
+        "PartDesign_PointPattern",
+        nullptr
+    };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
         "SELECT PartDesign::SketchBased",
         Transformed,
@@ -376,7 +381,8 @@ Gui::MenuItem* Workbench::setupMenuBar() const
 
     *transformations << "PartDesign_Mirrored"
                      << "PartDesign_LinearPattern"
-                     << "PartDesign_PolarPattern";
+                     << "PartDesign_PolarPattern"
+                     << "PartDesign_PointPattern";
 
     // dressups
     Gui::MenuItem* dressups = new Gui::MenuItem;
@@ -468,7 +474,8 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
 
     *part << "PartDesign_Mirrored"
           << "PartDesign_LinearPattern"
-          << "PartDesign_PolarPattern";
+          << "PartDesign_PolarPattern"
+          << "PartDesign_PointPattern";
 
     return root;
 }

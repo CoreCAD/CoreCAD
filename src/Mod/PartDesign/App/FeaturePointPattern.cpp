@@ -65,6 +65,23 @@ Base::Vector3d PointPattern::centreOfOriginals()
     return centre;
 }
 
+std::vector<gp_Pnt> PointPattern::pointsOf(const Part::Part2DObject* sketch)
+{
+    // A sketch shape is a compound whose loose vertex children are its points; the
+    // vertices of its wires are line ends, not points.
+    std::vector<gp_Pnt> points;
+    const TopoDS_Shape shape = sketch->Shape.getShape().getShape();
+    if (shape.IsNull()) {
+        return points;
+    }
+    for (TopoDS_Iterator it(shape); it.More(); it.Next()) {
+        if (it.Value().ShapeType() == TopAbs_VERTEX) {
+            points.push_back(BRep_Tool::Pnt(TopoDS::Vertex(it.Value())));
+        }
+    }
+    return points;
+}
+
 std::list<gp_Trsf> PointPattern::getTransformations()
 {
     auto* sketch = freecad_cast<Part::Part2DObject*>(Points.getValue());
@@ -72,17 +89,7 @@ std::list<gp_Trsf> PointPattern::getTransformations()
         throw Base::ValueError("No sketch of points specified");
     }
 
-    // A sketch shape is a compound whose loose vertex children are its points; the
-    // vertices of its wires are line ends, not points.
-    std::vector<gp_Pnt> points;
-    const TopoDS_Shape shape = sketch->Shape.getShape().getShape();
-    if (!shape.IsNull()) {
-        for (TopoDS_Iterator it(shape); it.More(); it.Next()) {
-            if (it.Value().ShapeType() == TopAbs_VERTEX) {
-                points.push_back(BRep_Tool::Pnt(TopoDS::Vertex(it.Value())));
-            }
-        }
-    }
+    const std::vector<gp_Pnt> points = pointsOf(sketch);
     if (points.empty()) {
         throw Base::ValueError("The sketch has no points to place copies on");
     }
