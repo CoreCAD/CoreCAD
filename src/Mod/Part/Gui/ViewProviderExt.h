@@ -257,4 +257,8 @@ private:
     TopoDS_Shape lastRenderedShape;
 };
 
+/// The tree's Body column (§8.7) for any object: the bodies it builds, and in brackets the bodies
+/// it references that it does not feed.
+PartGuiExport Gui::ViewProvider::TreeBodyColumn treeBodyColumnOf(const App::DocumentObject* obj);
+
 }  // namespace PartGui

@@ -619,6 +619,43 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(plain(texts["S2"][1]), "Uses:\n■ Housing")
         self.assertEqual(swatchColours(texts["Pad"][1]), [colourName(body)])
 
+    def testDatumShowsOnlyTheBodyItReferences(self):
+        # §8.7: a datum builds nothing; it shows a body only when attached to that body's geometry.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        body.Label = "Housing"
+        attached = {}
+        for kind in ("DatumPlane", "DatumLine", "DatumPoint", "LocalCoordinateSystem"):
+            datum = self.Doc.addObject("Part::" + kind, "Attached" + kind)
+            datum.AttachmentSupport = (pad, [""])
+            datum.MapMode = "ObjectXY" if kind != "DatumPoint" else "ObjectOrigin"
+            attached[kind] = datum
+        loose = self.Doc.addObject("Part::DatumPlane", "LoosePlane")
+        self.Doc.recompute()
+        texts = self.columnTexts()
+        for kind, datum in attached.items():
+            self.assertEqual(plain(texts[datum.Label][1]), "Uses:\n■ Housing", kind)
+            self.assertTrue(texts[datum.Label][2], kind)
+        self.assertEqual(texts[loose.Label], ("", "", False))
+
+    def testDatumFeedingItsOwnBodyShowsNothing(self):
+        # A datum on a body's face, carrying the sketch of that same body's next step, is not a
+        # reference to a foreign body: like the sketch it carries, it shows nothing.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        plane = self.Doc.addObject("Part::DatumPlane", "TopPlane")
+        plane.AttachmentSupport = (pad, [""])
+        plane.MapMode = "ObjectXY"
+        sketch = self.square("S2", 2)
+        sketch.AttachmentSupport = (plane, [""])
+        sketch.MapMode = "ObjectXY"
+        pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
+        pocket.Profile = sketch
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        body.addFeature(pocket)
+        self.Doc.recompute()
+        texts = self.columnTexts()
+        self.assertEqual(texts[plane.Label], ("", "", False))
+
     def pattern(self, occurrences):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]

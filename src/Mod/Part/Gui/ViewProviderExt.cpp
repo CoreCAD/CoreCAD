@@ -51,6 +51,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QStringList>
+#include <set>
 #include <sstream>
 
 #include <Inventor/SoPickedPoint.h>
@@ -598,10 +599,9 @@ QString listBodies(const QString& heading, const std::vector<std::vector<Part::B
 }
 }  // namespace
 
-Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
+Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentObject* obj)
 {
-    TreeBodyColumn column;
-    App::DocumentObject* obj = getObject();
+    Gui::ViewProvider::TreeBodyColumn column;
     if (!obj || !obj->isAttachedToDocument()) {
         return column;
     }
@@ -616,15 +616,27 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
     // The bodies this object builds: every body whose chain holds it.
     std::vector<Part::BodyBase*> built = Part::BodyBase::findBodiesBuiltBy(obj);
 
-    // What counts as foreign. For a solid feature, any body it does not build. A sketch or other
-    // input builds nothing itself; a body it feeds (through the feature that consumes it) is not
-    // foreign either, so only a reference beyond those shows.
+    // What counts as foreign. For a solid feature, any body it does not build. A sketch, datum or
+    // other input builds nothing itself; a body it feeds (through the first steps downstream that
+    // build one, past any datum or sketch between) is not foreign either.
     std::vector<Part::BodyBase*> own = built;
     if (built.empty()) {
-        for (auto* consumer : obj->getInList()) {
-            for (auto* body : Part::BodyBase::findBodiesBuiltBy(consumer)) {
+        std::vector<App::DocumentObject*> pending = obj->getInList();
+        std::set<App::DocumentObject*> seen(pending.begin(), pending.end());
+        while (!pending.empty()) {
+            App::DocumentObject* consumer = pending.back();
+            pending.pop_back();
+            auto feeds = Part::BodyBase::findBodiesBuiltBy(consumer);
+            for (auto* body : feeds) {
                 if (std::ranges::find(own, body) == own.end()) {
                     own.push_back(body);
+                }
+            }
+            if (feeds.empty() && !freecad_cast<Part::BodyBase*>(consumer)) {
+                for (auto* next : consumer->getInList()) {
+                    if (seen.insert(next).second) {
+                        pending.push_back(next);
+                    }
                 }
             }
         }
@@ -663,6 +675,11 @@ Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
     }
     column.tooltip = tooltip.join(QStringLiteral("<br>"));
     return column;
+}
+
+Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
+{
+    return treeBodyColumnOf(getObject());
 }
 
 void ViewProviderPartExt::setDisplayMode(const char* ModeName)
