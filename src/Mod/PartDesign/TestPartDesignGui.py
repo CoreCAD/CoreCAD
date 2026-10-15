@@ -553,6 +553,29 @@ def colourName(body):
     return QtGui.QColor.fromRgbF(*body.Color[:3]).name()
 
 
+def click(widget, point, kind=QtCore.QEvent.MouseButtonPress):
+    """A left click at @p point, or with @p kind a double-click, delivered as a person's would."""
+    for event_type in (kind, QtCore.QEvent.MouseButtonRelease):
+        buttons = (
+            QtCore.Qt.NoButton
+            if event_type == QtCore.QEvent.MouseButtonRelease
+            else (QtCore.Qt.LeftButton)
+        )
+        event = QtGui.QMouseEvent(
+            event_type,
+            QtCore.QPointF(point),
+            QtCore.QPointF(widget.mapToGlobal(point)),
+            QtCore.Qt.LeftButton,
+            buttons,
+            QtCore.Qt.NoModifier,
+        )
+        QApplication.sendEvent(widget, event)
+    # The tree passes its selection on after a short timer; let it run, as it would for a person.
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(20, loop.quit)
+    loop.exec_()
+
+
 class TestBodyColumn(unittest.TestCase):
     """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch, and in
     brackets the bodies a step only references. A profile sketch builds nothing and shows
@@ -781,6 +804,85 @@ class TestBodyColumn(unittest.TestCase):
                     rows.append(item.text(0))
             stack.extend(item.child(i) for i in range(item.childCount()))
         return sorted(rows)
+
+    def rowCell(self, label):
+        """The tree and the index of @p label's Bodies cell, scrolled into view."""
+        tree = self.tree()
+        item = tree.findItems(label, QtCore.Qt.MatchExactly | QtCore.Qt.MatchRecursive, 0)[0]
+        tree.scrollToItem(item)
+        return tree, tree.indexFromItem(item, 3)
+
+    def selectionsAcross(self, label):
+        """Click along the middle of @p label's Bodies cell, one pixel at a time, and return each
+        distinct selection a click made, as sorted names, in the order first seen."""
+        tree, index = self.rowCell(label)
+        cell = tree.visualRect(index)
+        seen = []
+        for x in range(cell.left(), cell.right()):
+            Gui.Selection.clearSelection()
+            click(tree.viewport(), QtCore.QPoint(x, cell.center().y()))
+            names = sorted(o.Name for o in Gui.Selection.getSelection())
+            if names not in seen:
+                seen.append(names)
+        Gui.Selection.clearSelection()
+        return seen
+
+    def testClickingASwatchSelectsItsBody(self):
+        # The swatch is the handle for its body: a click on it selects the body; a click past
+        # it in the same cell does not.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        seen = self.selectionsAcross(pad.Label)
+        self.assertIn([body.Name], seen)
+        self.assertEqual([names for names in seen if body.Name in names], [[body.Name]])
+
+    def testSelectingABodyKeepsItsRowOutOfTheTree(self):
+        # A body has no row (§8.1). Selecting it must not reveal one, or every row under the
+        # pointer shifts.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        before = self.rootRows()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body.Name)
+        self.assertEqual(self.rootRows(), before)
+        Gui.Selection.clearSelection()
+
+    def testClickingAReferencedSwatchSelectsThatBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        s2 = self.square("S2", 50)
+        s2.AttachmentSupport = (pad, [""])
+        s2.MapMode = "ObjectXY"
+        self.Doc.recompute()
+        self.assertIn([body.Name], self.selectionsAcross(s2.Label))
+
+    def testClickingAPatternCountSelectsEveryCopy(self):
+        # Each of the three squares drawn is one body; the count after them stands for them all.
+        _, pattern, bodies = self.pattern(4)
+        seen = [names for names in self.selectionsAcross(pattern.Label) if names != [pattern.Name]]
+        singles = [names for names in seen if len(names) == 1]
+        self.assertEqual(len(singles), 3, seen)
+        self.assertIn(sorted(b.Name for b in bodies), seen)
+
+    def testDoubleClickingASwatchDoesNotEditTheStep(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        self.Doc.recompute()
+        tree, index = self.rowCell(pad.Label)
+        cell = tree.visualRect(index)
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        for x in range(cell.left(), cell.right()):
+            Gui.Selection.clearSelection()
+            point = QtCore.QPoint(x, cell.center().y())
+            click(tree.viewport(), point)
+            if [o.Name for o in Gui.Selection.getSelection()] == [body.Name]:
+                click(tree.viewport(), point, QtCore.QEvent.MouseButtonDblClick)
+                break
+        else:
+            self.fail("no swatch found in the Bodies cell")
+        self.assertIsNone(Gui.ActiveDocument.getInEdit())
+        Gui.Selection.clearSelection()
 
     def testSelectingAStepTintsWhatItCameFrom(self):
         # §8.2: selecting a step tints the steps it came from, and nothing that merely shares

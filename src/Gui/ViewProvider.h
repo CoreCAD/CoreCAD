@@ -531,10 +531,12 @@ public:
      *  shows nothing.
      */
     /// One swatch, or for the bodies one pattern emits, all their colours: drawn as a stack
-    /// with a count when there are more than three.
+    /// with a count when there are more than three. @c bodies runs alongside @c colors, so a
+    /// click on a square finds the body it stands for.
     struct BodySwatch
     {
         std::vector<QColor> colors;
+        std::vector<App::DocumentObject*> bodies;
         bool operator==(const BodySwatch&) const = default;
     };
     struct TreeBodyColumn

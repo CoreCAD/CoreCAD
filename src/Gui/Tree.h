@@ -208,6 +208,9 @@ private:
     void _updateStatus(bool delay = true);
     /// Tint the row of every step the selected steps came from (ARCHITECTURE §8.2).
     void updateLineage();
+    /// The bodies whose swatch is under @p pos in the Bodies column: one for a square, all of a
+    /// pattern's for its count. Empty when @p pos is on no swatch.
+    std::vector<App::DocumentObject*> bodiesAtSwatch(const QPoint& pos) const;
     std::map<App::DocumentObject*, QColor> lineageTints;
     std::set<App::DocumentObject*> lineageSelected;
 

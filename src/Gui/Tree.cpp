@@ -150,7 +150,17 @@ constexpr int BodyColumn = 3;
 /// there are three or fewer; past that, the first three are followed by an ellipsis and the
 /// count, so "12" reads as twelve different bodies (§5.5). At most three groups of each
 /// are drawn, with an ellipsis when there are more; the tooltip names them all.
-QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
+/// Where each square lands, and the bodies a click there means.
+struct SwatchHit
+{
+    QRect rect;
+    std::vector<App::DocumentObject*> bodies;
+};
+
+QPixmap paintBodySwatches(
+    const Gui::ViewProvider::TreeBodyColumn& column,
+    std::vector<SwatchHit>* hits = nullptr
+)
 {
     if (column.builds.empty() && column.references.empty()) {
         return {};
@@ -215,11 +225,15 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         const std::size_t count = std::min<std::size_t>(swatch.colors.size(), maxShown);
         for (std::size_t i = 0; i < count; ++i) {
             drawSquare(x, swatch.colors[i]);
+            if (hits && i < swatch.bodies.size()) {
+                hits->push_back({QRect(x, 0, side, side), {swatch.bodies[i]}});
+            }
             x += side + (i + 1 < count ? gap : 0);
         }
         if (!truncated(swatch)) {
             return;
         }
+        const int tailStart = x;
         x += gap;
         drawEllipsis();
         x += gap;
@@ -228,6 +242,9 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         painter.setPen(ink);
         painter.drawText(QRect(x, 0, textWidth, side), Qt::AlignLeft | Qt::AlignVCenter, text);
         x += textWidth;
+        if (hits) {
+            hits->push_back({QRect(tailStart, 0, x - tailStart, side), swatch.bodies});
+        }
     };
     auto drawGroup = [&](const std::vector<Gui::ViewProvider::BodySwatch>& swatches) {
         const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
@@ -258,7 +275,15 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
     }
     painter.end();
+    return pixmap;
+}
 
+QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
+{
+    QPixmap pixmap = paintBodySwatches(column);
+    if (pixmap.isNull()) {
+        return {};
+    }
     // A hidden object's row is drawn greyed out; its swatch must keep its colour, or the column
     // stops matching the body it names.
     QIcon icon;
@@ -2135,6 +2160,18 @@ void TreeWidget::keyPressEvent(QKeyEvent* event)
 
 void TreeWidget::mousePressEvent(QMouseEvent* event)
 {
+    // A swatch is the handle for its body: clicking it selects the body, not the step's row.
+    if (event->button() == Qt::LeftButton) {
+        auto bodies = bodiesAtSwatch(event->pos());
+        if (!bodies.empty()) {
+            Selection().clearSelection();
+            for (auto* body : bodies) {
+                Selection().addSelection(body->getDocument()->getName(), body->getNameInDocument());
+            }
+            event->accept();
+            return;
+        }
+    }
     QTreeWidgetItem* pressed = itemAt(event->pos());
     if (pressed && pressed->type() == StopRowType && event->button() == Qt::LeftButton) {
         draggedStopRow = pressed;
@@ -2203,8 +2240,61 @@ void TreeWidget::mousePressEvent(QMouseEvent* event)
     QTreeWidget::mousePressEvent(event);
 }
 
+std::vector<App::DocumentObject*> TreeWidget::bodiesAtSwatch(const QPoint& pos) const
+{
+    QModelIndex index = indexAt(pos);
+    if (!index.isValid() || index.column() != BodyColumn) {
+        return {};
+    }
+    auto item = itemFromIndex(index);
+    if (!item || item->type() != ObjectType) {
+        return {};
+    }
+    auto objItem = static_cast<DocumentObjectItem*>(item);
+    if (!objItem->object() || !objItem->object()->getObject()) {
+        return {};
+    }
+    std::vector<SwatchHit> hits;
+    QPixmap pixmap = paintBodySwatches(objItem->object()->getTreeBodyColumn(), &hits);
+    if (pixmap.isNull()) {
+        return {};
+    }
+
+    // Find where the delegate drew the swatches, then map the click back onto the pixmap.
+    QStyleOptionViewItem option;
+    initViewItemOption(&option);
+    option.rect = visualRect(index);
+    option.index = index;
+    option.features |= QStyleOptionViewItem::HasDecoration;
+    option.icon = item->icon(BodyColumn);
+    option.decorationAlignment = Qt::AlignLeft | Qt::AlignVCenter;
+    option.decorationSize = QSize(pixmap.width() * iconSize() / pixmap.height(), iconSize());
+    QRect decoration = style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, this);
+    QSize drawn = option.icon.actualSize(decoration.size());
+    QRect drawnRect
+        = QStyle::alignedRect(layoutDirection(), option.decorationAlignment, drawn, decoration);
+    if (!drawnRect.contains(pos) || drawn.isEmpty()) {
+        return {};
+    }
+    QPoint onPixmap(
+        (pos.x() - drawnRect.left()) * pixmap.width() / drawn.width(),
+        (pos.y() - drawnRect.top()) * pixmap.height() / drawn.height()
+    );
+    for (const auto& hit : hits) {
+        if (hit.rect.contains(onPixmap)) {
+            return hit.bodies;
+        }
+    }
+    return {};
+}
+
 void TreeWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
+    // The swatch's double-click is kept for the body panel; it must not open the step for editing.
+    if (!bodiesAtSwatch(event->pos()).empty()) {
+        event->accept();
+        return;
+    }
     QTreeWidgetItem* item = itemAt(event->pos());
     if (!item) {
         return;
@@ -6317,7 +6407,9 @@ DocumentObjectItem* DocumentItem::findItem(
     bool select
 )
 {
-    if (item->isHidden()) {
+    // A row kept out of the tree on purpose (a body, whose steps carry it) stays out when its
+    // object is selected; revealing it would shift every row under the user's pointer.
+    if (item->isHidden() && (showHidden() || item->object()->showInTree())) {
         item->setHidden(false);
     }
 
