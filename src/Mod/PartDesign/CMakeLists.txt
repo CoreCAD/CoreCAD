@@ -68,6 +68,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestStepDependencies.py
     PartDesignTests/TestRollbackMarker.py
     PartDesignTests/TestPatternChain.py
+    PartDesignTests/TestPointPattern.py
 )
 
 if(BUILD_GUI)

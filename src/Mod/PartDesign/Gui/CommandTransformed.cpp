@@ -52,6 +52,7 @@
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
+#include <Mod/PartDesign/App/FeaturePointPattern.h>
 
 #include "ReferenceSelection.h"
 #include "SketchPickDialog.h"
@@ -245,9 +246,68 @@ bool CmdPartDesignPolarPattern::isActive()
     return hasAnyBody();
 }
 
+//===========================================================================
+// PartDesign_PointPattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignPointPattern)
+
+CmdPartDesignPointPattern::CmdPartDesignPointPattern()
+    : Command("PartDesign_PointPattern")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Point Pattern");
+    sToolTipText = QT_TR_NOOP(
+        "Duplicates the selected features or the active body onto each point of a sketch"
+    );
+    sWhatsThis = "PartDesign_PointPattern";
+    sStatusTip = sToolTipText;
+    sPixmap = "PartDesign_PointPattern";
+}
+
+// A sketch selected with the features places the copies; without one, the newest sketch
+// that has points does.
+static App::DocumentObject* sketchOfPoints(Gui::Command* cmd, App::Document* doc)
+{
+    for (auto* obj : cmd->getSelection().getObjectsOfType(Part::Part2DObject::getClassTypeId())) {
+        if (!PartDesign::PointPattern::pointsOf(static_cast<Part::Part2DObject*>(obj)).empty()) {
+            return obj;
+        }
+    }
+    const std::vector<App::DocumentObject*> objects = doc->getObjects();
+    for (auto it = objects.rbegin(); it != objects.rend(); ++it) {
+        auto* sketch = freecad_cast<Part::Part2DObject*>(*it);
+        if (sketch && !PartDesign::PointPattern::pointsOf(sketch).empty()) {
+            return sketch;
+        }
+    }
+    return nullptr;
+}
+
+void CmdPartDesignPointPattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
+        return;
+    }
+    App::DocumentObject* points = sketchOfPoints(this, body->getDocument());
+    makeTransformed(this, body, "PointPattern", [points](auto* feature, const auto&) {
+        if (points) {
+            FCMD_OBJ_CMD(feature, "Points = " << getObjectCmd(points));
+        }
+    });
+}
+
+bool CmdPartDesignPointPattern::isActive()
+{
+    return hasAnyBody();
+}
+
 void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
 {
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
     rcCmdMgr.addCommand(new CmdPartDesignLinearPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPolarPattern());
+    rcCmdMgr.addCommand(new CmdPartDesignPointPattern());
 }

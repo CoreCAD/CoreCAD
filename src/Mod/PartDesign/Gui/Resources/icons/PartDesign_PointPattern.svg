@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later -->
+<!-- Placeholder until the pattern icon family is redrawn (#166). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <g stroke="#0b1521" stroke-width="2" stroke-linejoin="round">
+    <path d="M6 16 l8 -6 h14 l-8 6 z" fill="#729fcf"/>
+    <path d="M6 16 h14 v14 h-14 z" fill="#3465a4"/>
+    <path d="M20 16 l8 -6 v14 l-8 6 z" fill="#204a87"/>
+    <path d="M36 32 l8 -6 h14 l-8 6 z" fill="#729fcf"/>
+    <path d="M36 32 h14 v14 h-14 z" fill="#3465a4"/>
+    <path d="M50 32 l8 -6 v14 l-8 6 z" fill="#204a87"/>
+    <path d="M10 46 l8 -6 h14 l-8 6 z" fill="#729fcf"/>
+    <path d="M10 46 h14 v14 h-14 z" fill="#3465a4"/>
+    <path d="M24 46 l8 -6 v14 l-8 6 z" fill="#204a87"/>
+  </g>
+  <g fill="#fcc217" stroke="#0b1521" stroke-width="1.5">
+    <circle cx="13" cy="23" r="3"/>
+    <circle cx="43" cy="39" r="3"/>
+    <circle cx="17" cy="53" r="3"/>
+  </g>
+</svg>
