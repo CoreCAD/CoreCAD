@@ -87,3 +87,6 @@ tsupdate_stdout.log
 
 # Recipe views written beside saved documents (a view, regenerated on every save)
 *.recipe
+
+# Geometry cache written next to a document saved at the repo root
+/assets/
