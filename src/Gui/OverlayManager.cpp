@@ -1033,6 +1033,9 @@ public:
         }
 
         widget->setTitleItem(OverlayTabWidget::prepareTitleWidget(widget, actions));
+        if (qobject_cast<QDockWidget*>(parent)) {
+            widget->layout()->setContentsMargins(8, 3, 4, 3);
+        }
         return widget;
     }
 

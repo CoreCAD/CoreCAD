@@ -128,9 +128,11 @@ QWidget[class="sheet"] {
 
 /* The title bar is the top of the same sheet, so the title never floats apart from its panel. */
 QDockWidget > Gui--OverlayTitleBar {
-  background-color: @PanelBackgroundColor;
+  background-color: @PanelTitleBackgroundColor;
+  color: @PanelTitleTextColor;
   border: 1px solid @PanelBorderColor;
   border-bottom: none;
+  font-weight: 600;
 }
 
 /* QDialog#Gui__Dialog__DlgPreferences { /*Preferences dialog her if you need it*/

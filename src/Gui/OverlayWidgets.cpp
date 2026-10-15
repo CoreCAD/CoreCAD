@@ -2161,7 +2161,7 @@ void OverlayTitleBar::paintEvent(QPaintEvent*)
 
     QDockWidget* dock = qobject_cast<QDockWidget*>(parentWidget());
     int vertical = false;
-    int flags = Qt::AlignCenter;
+    int flags = dock ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignCenter;
     if (!dock) {
         OverlayTabWidget* tabWidget = qobject_cast<OverlayTabWidget*>(parentWidget());
         if (tabWidget) {
