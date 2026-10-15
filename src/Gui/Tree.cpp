@@ -31,6 +31,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
@@ -1371,6 +1373,12 @@ void TreeWidget::_updateStatus(bool delay)
 
 void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
 {
+    auto swatchBodies = bodiesAtSwatch(e->pos());
+    if (!swatchBodies.empty()) {
+        showSwatchMenu(swatchBodies, e->globalPos());
+        return;
+    }
+
     // ask workbenches and view provider, ...
     MenuItem view;
     Gui::Application::Instance->setupContextMenu("Tree", &view);
@@ -2161,7 +2169,7 @@ void TreeWidget::keyPressEvent(QKeyEvent* event)
 void TreeWidget::mousePressEvent(QMouseEvent* event)
 {
     // A swatch is the handle for its body: clicking it selects the body, not the step's row.
-    if (event->button() == Qt::LeftButton) {
+    if (event->button() == Qt::LeftButton || event->button() == Qt::RightButton) {
         auto bodies = bodiesAtSwatch(event->pos());
         if (!bodies.empty()) {
             Selection().clearSelection();
@@ -2286,6 +2294,92 @@ std::vector<App::DocumentObject*> TreeWidget::bodiesAtSwatch(const QPoint& pos) 
         }
     }
     return {};
+}
+
+std::vector<App::DocumentObject*> TreeWidget::stepsUsingBody(App::DocumentObject* body)
+{
+    // The steps whose swatch brackets this body, so the list never disagrees with the column.
+    std::vector<App::DocumentObject*> steps;
+    auto* guiDoc = Application::Instance->getDocument(body->getDocument());
+    if (!guiDoc) {
+        return steps;
+    }
+    for (auto* obj : body->getDocument()->getObjects()) {
+        auto* vp = guiDoc->getViewProvider(obj);
+        if (!vp) {
+            continue;
+        }
+        for (const auto& swatch : vp->getTreeBodyColumn().references) {
+            if (std::ranges::find(swatch.bodies, body) != swatch.bodies.end()) {
+                steps.push_back(obj);
+                break;
+            }
+        }
+    }
+    return steps;
+}
+
+void TreeWidget::showSwatchMenu(const std::vector<App::DocumentObject*>& bodies, const QPoint& at)
+{
+    QMenu menu;
+    App::DocumentObject* single = bodies.size() == 1 ? bodies.front() : nullptr;
+    if (single) {
+        menu.addAction(tr("Rename..."), this, [this, single]() {
+            bool ok = false;
+            QString label = QInputDialog::getText(
+                this,
+                tr("Rename body"),
+                tr("Name:"),
+                QLineEdit::Normal,
+                QString::fromUtf8(single->Label.getValue()),
+                &ok
+            );
+            label = label.trimmed();
+            if (!ok || label.isEmpty() || label == QString::fromUtf8(single->Label.getValue())) {
+                return;
+            }
+            App::AutoTransaction committer(
+                single->getDocument(),
+                QT_TRANSLATE_NOOP("Command", "Rename")
+            );
+            single->Label.setValue(label.toUtf8().constData());
+        });
+    }
+
+    const bool anyShown = std::ranges::any_of(bodies, [](App::DocumentObject* body) {
+        return body->Visibility.getValue();
+    });
+    menu.addAction(anyShown ? tr("Hide") : tr("Show"), this, [anyShown]() {
+        Application::Instance->commandManager().runCommandByName(
+            anyShown ? "Std_HideSelection" : "Std_ShowSelection"
+        );
+    });
+
+    std::vector<App::DocumentObject*> users;
+    for (auto* body : bodies) {
+        for (auto* step : stepsUsingBody(body)) {
+            if (std::ranges::find(users, step) == users.end()) {
+                users.push_back(step);
+            }
+        }
+    }
+    if (!users.empty()) {
+        menu.addSeparator();
+        QMenu* usedBy = menu.addMenu(tr("Used by"));
+        for (auto* step : users) {
+            QIcon icon;
+            if (auto* vp = Application::Instance->getViewProvider(step)) {
+                icon = vp->getIcon();
+            }
+            std::string docName = step->getDocument()->getName();
+            std::string objName = step->getNameInDocument();
+            usedBy->addAction(icon, QString::fromUtf8(step->Label.getValue()), this, [docName, objName]() {
+                Selection().clearSelection();
+                Selection().addSelection(docName.c_str(), objName.c_str());
+            });
+        }
+    }
+    menu.exec(at);
 }
 
 void TreeWidget::mouseDoubleClickEvent(QMouseEvent* event)

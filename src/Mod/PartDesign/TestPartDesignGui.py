@@ -866,6 +866,119 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(len(singles), 3, seen)
         self.assertIn(sorted(b.Name for b in bodies), seen)
 
+    def swatchPoint(self, label, body):
+        """A point in @p label's Bodies cell where a click selects @p body alone."""
+        tree, index = self.rowCell(label)
+        cell = tree.visualRect(index)
+        for x in range(cell.left(), cell.right()):
+            Gui.Selection.clearSelection()
+            point = QtCore.QPoint(x, cell.center().y())
+            click(tree.viewport(), point)
+            if [o.Name for o in Gui.Selection.getSelection()] == [body.Name]:
+                Gui.Selection.clearSelection()
+                return tree, point
+        self.fail("no swatch for %s in %s's Bodies cell" % (body.Label, label))
+
+    def swatchMenu(self, label, body, choose=None, answer=None):
+        """Right-click @p body's swatch on @p label's row and return the menu as
+        [(text, [submenu texts])]. With @p choose, trigger that entry (a "Used by/<name>" path
+        reaches into the submenu); a rename dialog it opens is answered with @p answer."""
+        tree, point = self.swatchPoint(label, body)
+        viewport = tree.viewport()
+        QApplication.sendEvent(
+            viewport,
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(point),
+                QtCore.QPointF(viewport.mapToGlobal(point)),
+                QtCore.Qt.RightButton,
+                QtCore.Qt.RightButton,
+                QtCore.Qt.NoModifier,
+            ),
+        )
+        self.selectedOnPress = [o.Name for o in Gui.Selection.getSelection()]
+        seen = []
+
+        def answerDialog():
+            dialog = QApplication.activeModalWidget()
+            if isinstance(dialog, QtGui.QInputDialog):
+                dialog.setTextValue(answer)
+                dialog.accept()
+
+        def readMenu():
+            menu = QApplication.activePopupWidget()
+            target = None
+            for action in menu.actions():
+                if action.isSeparator():
+                    continue
+                sub = [a.text() for a in action.menu().actions()] if action.menu() else []
+                seen.append((action.text(), sub))
+                if choose == action.text():
+                    target = action
+                elif choose and action.menu() and choose.startswith(action.text() + "/"):
+                    name = choose.split("/", 1)[1]
+                    target = [a for a in action.menu().actions() if a.text() == name][0]
+            menu.close()
+            if target:
+                if answer is not None:
+                    QtCore.QTimer.singleShot(0, answerDialog)
+                target.trigger()
+
+        QtCore.QTimer.singleShot(0, readMenu)
+        QApplication.sendEvent(
+            viewport,
+            QtGui.QContextMenuEvent(
+                QtGui.QContextMenuEvent.Mouse, point, viewport.mapToGlobal(point)
+            ),
+        )
+        return seen
+
+    def testRightClickingASwatchSelectsItsBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.swatchMenu(pad.Label, body)
+        self.assertEqual(self.selectedOnPress, [body.Name])
+
+    def testSwatchMenuOffersRenameAndHide(self):
+        # Nothing in another body uses this body, so the menu has no Used by entry.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.assertEqual(self.swatchMenu(pad.Label, body), [("Rename...", []), ("Hide", [])])
+
+    def testSwatchMenuHidesAndShowsTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.swatchMenu(pad.Label, body, choose="Hide")
+        self.assertFalse(body.Visibility)
+        self.assertEqual(self.swatchMenu(pad.Label, body, choose="Show")[1], ("Show", []))
+        self.assertTrue(body.Visibility)
+
+    def testSwatchMenuRenamesTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.swatchMenu(pad.Label, body, choose="Rename...", answer="Bracket")
+        self.assertEqual(body.Label, "Bracket")
+        self.Doc.undo()
+        self.assertNotEqual(body.Label, "Bracket")
+
+    def testSwatchMenuListsTheStepsThatUseTheBody(self):
+        # The steps listed are the ones whose own swatch brackets this body; choosing one
+        # selects it.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        s2 = self.square("S2", 50)
+        s2.AttachmentSupport = (pad, [""])
+        s2.MapMode = "ObjectXY"
+        self.Doc.recompute()
+        menu = self.swatchMenu(pad.Label, body, choose="Used by/" + s2.Label)
+        self.assertIn(("Used by", [s2.Label]), menu)
+        self.assertEqual([o.Name for o in Gui.Selection.getSelection()], [s2.Name])
+        Gui.Selection.clearSelection()
+
     def testDoubleClickingASwatchDoesNotEditTheStep(self):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         self.Doc.recompute()
