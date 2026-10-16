@@ -997,6 +997,98 @@ class TestBodyColumn(unittest.TestCase):
         self.assertIsNone(Gui.ActiveDocument.getInEdit())
         Gui.Selection.clearSelection()
 
+    def bodyPanel(self):
+        """The Body panel's dock, or None when it was never opened."""
+        return Gui.getMainWindow().findChild(QtGui.QDockWidget, "Body")
+
+    def openBodyPanel(self, label, body):
+        tree, point = self.swatchPoint(label, body)
+        click(tree.viewport(), point)
+        click(tree.viewport(), point, QtCore.QEvent.MouseButtonDblClick)
+        dock = self.bodyPanel()
+        self.assertIsNotNone(dock)
+        self.assertTrue(dock.isVisible())
+        return dock
+
+    def settle(self):
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(20, loop.quit)
+        loop.exec_()
+
+    def tearDownPanel(self):
+        dock = self.bodyPanel()
+        if dock:
+            dock.hide()
+
+    def testDoubleClickingASwatchOpensItsBodyPanel(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        self.assertEqual(dock.windowTitle(), "Body \u2014 " + body.Label)
+        name = dock.findChild(QtGui.QLineEdit)
+        self.assertEqual(name.text(), body.Label)
+        self.tearDownPanel()
+
+    def testBodyPanelListsTheStepsThatUseTheBody(self):
+        # A pad in a second body that reaches up to a face of the first uses the first.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        user = PartDesign.makeFeature(self.square("S2", 50), "Pad")
+        self.Doc.recompute()
+        user.Type = "UpToFace"
+        user.UpToFace = (pad, ["Face6"])
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        usedBy = dock.findChild(QtGui.QTreeWidget)
+        entries = [usedBy.topLevelItem(i) for i in range(usedBy.topLevelItemCount())]
+        self.assertEqual([e.text(0) for e in entries], [user.Label])
+        # An entry is a link: clicking it selects that step, and the panel stays on the body
+        # rather than following the step to the body it builds.
+        usedBy.itemClicked.emit(entries[0], 0)
+        self.assertEqual([o.Name for o in Gui.Selection.getSelection()], [user.Name])
+        self.settle()
+        self.assertEqual(dock.windowTitle(), "Body \u2014 " + body.Label)
+        Gui.Selection.clearSelection()
+        self.tearDownPanel()
+
+    def testBodyPanelRenamesAndHidesTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        name = dock.findChild(QtGui.QLineEdit)
+        name.setText("Bracket")
+        name.editingFinished.emit()
+        self.assertEqual(body.Label, "Bracket")
+        shown = dock.findChild(QtGui.QCheckBox)
+        self.assertTrue(shown.isChecked())
+        shown.setChecked(False)
+        self.assertFalse(body.Visibility)
+        # Live: a change made elsewhere shows in the panel.
+        body.Visibility = True
+        body.Label = "Plate"
+        self.settle()
+        self.assertTrue(shown.isChecked())
+        self.assertEqual(name.text(), "Plate")
+        self.tearDownPanel()
+
+    def testBodyPanelFollowsTheSelectedStepsBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        first = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        pad2 = PartDesign.makeFeature(self.square("S2", 100), "Pad")
+        self.Doc.recompute()
+        second = [
+            o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body") and o != first
+        ][0]
+        dock = self.openBodyPanel(pad.Label, first)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, pad2.Name)
+        self.settle()
+        self.assertEqual(dock.windowTitle(), "Body \u2014 " + second.Label)
+        Gui.Selection.clearSelection()
+        self.tearDownPanel()
+
     def testSelectingAStepTintsWhatItCameFrom(self):
         # §8.2: selecting a step tints the steps it came from, and nothing that merely shares
         # an input with it.

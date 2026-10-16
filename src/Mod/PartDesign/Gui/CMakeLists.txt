@@ -192,6 +192,8 @@ SET(PartDesignGuiModule_SRCS
     CommandTransformed.cpp
     CommandPrimitive.cpp
     CommandBody.cpp
+    BodyPanel.cpp
+    BodyPanel.h
     DependenciesPanel.cpp
     DependenciesPanel.h
     EnumFlags.h

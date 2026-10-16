@@ -2296,7 +2296,7 @@ std::vector<App::DocumentObject*> TreeWidget::bodiesAtSwatch(const QPoint& pos) 
     return {};
 }
 
-std::vector<App::DocumentObject*> TreeWidget::stepsUsingBody(App::DocumentObject* body)
+std::vector<App::DocumentObject*> Gui::stepsUsingBody(App::DocumentObject* body)
 {
     // The steps whose swatch brackets this body, so the list never disagrees with the column.
     std::vector<App::DocumentObject*> steps;
@@ -2384,9 +2384,19 @@ void TreeWidget::showSwatchMenu(const std::vector<App::DocumentObject*>& bodies,
 
 void TreeWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
-    // The swatch's double-click is kept for the body panel; it must not open the step for editing.
-    if (!bodiesAtSwatch(event->pos()).empty()) {
+    // A swatch's double-click opens its body's panel, not the step for editing.
+    auto swatchBodies = bodiesAtSwatch(event->pos());
+    if (!swatchBodies.empty()) {
         event->accept();
+        if (swatchBodies.size() == 1) {
+            auto* body = swatchBodies.front();
+            Selection().clearSelection();
+            Selection().addSelection(body->getDocument()->getName(), body->getNameInDocument());
+            auto& commands = Application::Instance->commandManager();
+            if (commands.getCommandByName("PartDesign_BodyInfo")) {
+                commands.runCommandByName("PartDesign_BodyInfo");
+            }
+        }
         return;
     }
     QTreeWidgetItem* item = itemAt(event->pos());
