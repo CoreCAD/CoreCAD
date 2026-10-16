@@ -265,16 +265,15 @@ QPixmap paintBodySwatches(
             x += 2 * gap;
         }
         painter.setPen(ink);
-        painter.drawLine(x, 0, x, side - 1);
-        painter.drawLine(x, 0, x + bracket - 1, 0);
-        painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.drawArc(QRectF(x + 0.5, 0.5, 2 * bracket - 1, side - 1), 90 * 16, 180 * 16);
+        painter.setRenderHint(QPainter::Antialiasing, false);
         x += bracket + gap;
         drawGroup(column.references);
         x += gap;
         painter.setPen(ink);
-        painter.drawLine(x + bracket - 1, 0, x + bracket - 1, side - 1);
-        painter.drawLine(x, 0, x + bracket - 1, 0);
-        painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.drawArc(QRectF(x - bracket + 0.5, 0.5, 2 * bracket - 1, side - 1), -90 * 16, 180 * 16);
     }
     painter.end();
     return pixmap;
