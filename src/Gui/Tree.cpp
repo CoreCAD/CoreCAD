@@ -147,8 +147,8 @@ namespace
 {
 constexpr int BodyColumn = 3;
 
-/// The Bodies column (Cruth ARCHITECTURE §8.7): a swatch per body the object builds, then the
-/// bodies it only references, in brackets. The bodies one pattern emits sit side by side when
+/// The Bodies column (Cruth ARCHITECTURE §8.7): a swatch per body the object builds. The bodies
+/// it only references are not drawn. The bodies one pattern emits sit side by side when
 /// there are three or fewer; past that, the first three are followed by an ellipsis and the
 /// count, so "12" reads as twelve different bodies (§5.5). At most three groups of each
 /// are drawn, with an ellipsis when there are more; the tooltip names them all.
@@ -164,12 +164,11 @@ QPixmap paintBodySwatches(
     std::vector<SwatchHit>* hits = nullptr
 )
 {
-    if (column.builds.empty() && column.references.empty()) {
+    if (column.builds.empty()) {
         return {};
     }
     constexpr int side = 10;
     constexpr int gap = 2;
-    constexpr int bracket = 3;
     constexpr int ellipsis = 8;
     constexpr int maxShown = 3;
     QFont font;
@@ -200,11 +199,7 @@ QPixmap paintBodySwatches(
         }
         return width;
     };
-    int width = groupWidth(column.builds);
-    if (!column.references.empty()) {
-        width += (column.builds.empty() ? 0 : 2 * gap) + 2 * (bracket + gap)
-            + groupWidth(column.references);
-    }
+    const int width = groupWidth(column.builds);
 
     QPixmap pixmap(width, side);
     pixmap.fill(Qt::transparent);
@@ -260,21 +255,6 @@ QPixmap paintBodySwatches(
         }
     };
     drawGroup(column.builds);
-    if (!column.references.empty()) {
-        if (!column.builds.empty()) {
-            x += 2 * gap;
-        }
-        painter.setPen(ink);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.drawArc(QRectF(x + 0.5, 0.5, 2 * bracket - 1, side - 1), 90 * 16, 180 * 16);
-        painter.setRenderHint(QPainter::Antialiasing, false);
-        x += bracket + gap;
-        drawGroup(column.references);
-        x += gap;
-        painter.setPen(ink);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.drawArc(QRectF(x - bracket + 0.5, 0.5, 2 * bracket - 1, side - 1), -90 * 16, 180 * 16);
-    }
     painter.end();
     return pixmap;
 }
@@ -2297,7 +2277,6 @@ std::vector<App::DocumentObject*> TreeWidget::bodiesAtSwatch(const QPoint& pos) 
 
 std::vector<App::DocumentObject*> Gui::stepsUsingBody(App::DocumentObject* body)
 {
-    // The steps whose swatch brackets this body, so the list never disagrees with the column.
     std::vector<App::DocumentObject*> steps;
     auto* guiDoc = Application::Instance->getDocument(body->getDocument());
     if (!guiDoc) {

@@ -577,9 +577,9 @@ def click(widget, point, kind=QtCore.QEvent.MouseButtonPress):
 
 
 class TestBodyColumn(unittest.TestCase):
-    """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch, and in
-    brackets the bodies a step only references. A profile sketch builds nothing and shows
-    nothing."""
+    """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch. A body
+    a step only references is not shown; a row may already hold several swatches. A profile
+    sketch builds nothing and shows nothing."""
 
     def setUp(self):
         self.Doc = App.newDocument("BodyColumn", type="Part")
@@ -637,16 +637,14 @@ class TestBodyColumn(unittest.TestCase):
         self.assertIn("Pad", texts, sorted(texts))
         # Swatches only; the names are in the tooltip, each after a square of its colour.
         self.assertEqual(texts["Pad"][0::2], ("", True))
-        self.assertEqual(plain(texts["Pad"][1]), "Builds:\n■ Housing")
+        self.assertEqual(plain(texts["Pad"][1]), "■ Housing")
         self.assertEqual(texts["S1"], ("", "", False))
-        self.assertEqual(plain(texts["S2"][1]), "Uses:\n■ Housing")
+        self.assertEqual(texts["S2"], ("", "", False))
         self.assertEqual(swatchColours(texts["Pad"][1]), [colourName(body)])
 
-    def testDatumShowsOnlyTheBodyItReferences(self):
-        # §8.7: a datum builds nothing; it shows a body only when attached to that body's geometry.
+    def testDatumShowsNoBody(self):
+        # A datum builds nothing; attached to a body's geometry or not, its row shows no swatch.
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
-        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
-        body.Label = "Housing"
         attached = {}
         for kind in ("DatumPlane", "DatumLine", "DatumPoint", "LocalCoordinateSystem"):
             datum = self.Doc.addObject("Part::" + kind, "Attached" + kind)
@@ -657,8 +655,7 @@ class TestBodyColumn(unittest.TestCase):
         self.Doc.recompute()
         texts = self.columnTexts()
         for kind, datum in attached.items():
-            self.assertEqual(plain(texts[datum.Label][1]), "Uses:\n■ Housing", kind)
-            self.assertTrue(texts[datum.Label][2], kind)
+            self.assertEqual(texts[datum.Label], ("", "", False), kind)
         self.assertEqual(texts[loose.Label], ("", "", False))
 
     def testDatumFeedingItsOwnBodyShowsNothing(self):
@@ -702,8 +699,7 @@ class TestBodyColumn(unittest.TestCase):
         pad, pattern, bodies = self.pattern(4)
         texts = self.columnTexts()
         tip = texts[pattern.Label][1]
-        self.assertEqual(plain(tip).splitlines()[0], "Builds:")
-        self.assertEqual(len(plain(tip).splitlines()), 5)
+        self.assertEqual(len(plain(tip).splitlines()), 4)
         self.assertEqual(sorted(swatchColours(tip)), sorted(colourName(b) for b in bodies))
         self.assertEqual(len(set(swatchColours(tip))), 4)
         # The pad feeds every copy, so its row is the same aggregate.
@@ -856,15 +852,6 @@ class TestBodyColumn(unittest.TestCase):
         Gui.Selection.addSelection(self.Doc.Name, body.Name)
         self.assertEqual(self.rootRows(), before)
         Gui.Selection.clearSelection()
-
-    def testClickingAReferencedSwatchSelectsThatBody(self):
-        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
-        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
-        s2 = self.square("S2", 50)
-        s2.AttachmentSupport = (pad, [""])
-        s2.MapMode = "ObjectXY"
-        self.Doc.recompute()
-        self.assertIn([body.Name], self.selectionsAcross(s2.Label))
 
     def testClickingAPatternCountSelectsEveryCopy(self):
         # Each of the three squares drawn is one body; the count after them stands for them all.
