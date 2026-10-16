@@ -1073,6 +1073,24 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(name.text(), "Plate")
         self.tearDownPanel()
 
+    def testBodyPanelRecoloursTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        colour = dock.findChild(QtGui.QPushButton, "BodyColour")
+        before = body.Color
+        colour.setProperty("color", "#ff0000")
+        QtCore.QMetaObject.invokeMethod(colour, "changed")
+        self.assertEqual(body.Color[:3], (1.0, 0.0, 0.0))
+        # One undo step puts the old colour back, and the panel shows it.
+        self.Doc.undo()
+        self.settle()
+        self.assertEqual(body.Color, before)
+        shown = colour.property("color")
+        self.assertAlmostEqual(shown.redF(), before[0], places=2)
+        self.tearDownPanel()
+
     def testBodyPanelFollowsTheSelectedStepsBody(self):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         first = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]

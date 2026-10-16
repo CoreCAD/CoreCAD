@@ -7,7 +7,6 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QPixmap>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -25,9 +24,11 @@
 #include <Gui/OverlayManager.h>
 #include <Gui/Tree.h>
 #include <Gui/ViewProviderDocumentObject.h>
+#include <Gui/Widgets.h>
 #include <Mod/Material/App/Materials.h>
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/MaterialExtension.h>
+#include <Mod/PartDesign/App/Body.h>
 
 #include "BodyPanel.h"
 
@@ -70,7 +71,8 @@ BodyPanel::BodyPanel(QWidget* parent)
     auto* form = new QFormLayout();
     name = new QLineEdit(details);
     form->addRow(tr("Name"), name);
-    colour = new QLabel(details);
+    colour = new Gui::ColorButton(details);
+    colour->setObjectName(QStringLiteral("BodyColour"));
     form->addRow(tr("Colour"), colour);
     material = new QLabel(details);
     form->addRow(tr("Made of"), material);
@@ -95,6 +97,7 @@ BodyPanel::BodyPanel(QWidget* parent)
 
     connect(name, &QLineEdit::editingFinished, this, &BodyPanel::rename);
     connect(shown, &QCheckBox::toggled, this, &BodyPanel::setShown);
+    connect(colour, &Gui::ColorButton::changed, this, &BodyPanel::recolour);
     connect(appearance, &QPushButton::clicked, this, [this]() {
         if (auto* current = body.get<App::DocumentObject>()) {
             selecting = true;
@@ -220,13 +223,14 @@ void BodyPanel::refresh()
         name->setText(label);
     }
 
-    const Base::Color identity = current->getIdentityColor();
-    const QColor swatchColour = QColor::fromRgbF(identity.r, identity.g, identity.b);
-    const int side = name->fontMetrics().height();
-    QPixmap swatch(side, side);
-    swatch.fill(swatchColour);
-    colour->setPixmap(swatch);
-    colour->setToolTip(swatchColour.name());
+    {
+        const Base::Color identity = current->getIdentityColor();
+        const QColor swatchColour = QColor::fromRgbF(identity.r, identity.g, identity.b);
+        const QSignalBlocker block(colour);
+        colour->setColor(swatchColour);
+        colour->setToolTip(swatchColour.name());
+        colour->setAllowChangeColor(freecad_cast<PartDesign::Body*>(current) != nullptr);
+    }
 
     const Materials::Material* madeOf = Part::materialOfPart(current);
     material->setText(madeOf ? madeOf->getName() : tr("Nothing chosen"));
@@ -273,6 +277,28 @@ void BodyPanel::setShown(bool show)
     if (auto* current = body.get<App::DocumentObject>()) {
         current->Visibility.setValue(show);
     }
+}
+
+void BodyPanel::recolour()
+{
+    auto* current = freecad_cast<PartDesign::Body*>(body.get<App::DocumentObject>());
+    if (!current) {
+        return;
+    }
+    const QColor chosen = colour->color();
+    const Base::Color identity(
+        static_cast<float>(chosen.redF()),
+        static_cast<float>(chosen.greenF()),
+        static_cast<float>(chosen.blueF())
+    );
+    if (identity == current->Color.getValue()) {
+        return;
+    }
+    App::AutoTransaction committer(
+        current->getDocument(),
+        QT_TRANSLATE_NOOP("Command", "Change body colour")
+    );
+    current->Color.setValue(identity);
 }
 
 App::DocumentObject* BodyPanel::objectAt(QTreeWidgetItem* item) const

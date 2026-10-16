@@ -22,6 +22,11 @@ class QLineEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 
+namespace Gui
+{
+class ColorButton;
+}
+
 namespace PartDesignGui
 {
 
@@ -47,6 +52,7 @@ private:
     void refresh();
     void rename();
     void setShown(bool shown);
+    void recolour();
     App::DocumentObject* objectAt(QTreeWidgetItem* item) const;
     void selectEntry(QTreeWidgetItem* item);
     void preselectEntry(QTreeWidgetItem* item);
@@ -59,7 +65,7 @@ private:
     QWidget* details;
     QLabel* emptyState;
     QLineEdit* name;
-    QLabel* colour;
+    Gui::ColorButton* colour;
     QLabel* material;
     QCheckBox* shown;
     QLabel* usedByHeading;
