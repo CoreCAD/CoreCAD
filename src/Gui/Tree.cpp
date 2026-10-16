@@ -3679,10 +3679,13 @@ void TreeWidget::drawRowBody(
         QTreeWidget::drawRow(painter, options, index);
         return;
     }
-    const bool selected = item->isSelected();
+    bool selected = item->isSelected();
     auto found = lineageTints.end();
     if (item->type() == ObjectType) {
-        found = lineageTints.find(static_cast<DocumentObjectItem*>(item)->object()->getObject());
+        auto* obj = static_cast<DocumentObjectItem*>(item)->object()->getObject();
+        found = lineageTints.find(obj);
+        // The list's own row selection can lag the real one; the real one decides.
+        selected = lineageSelected.count(obj) > 0;
     }
     if (found == lineageTints.end() && !selected) {
         QTreeWidget::drawRow(painter, options, index);
@@ -4733,7 +4736,7 @@ void TreeWidget::updateLineage()
     }
 
     // The tint is the colour of the body a row builds; a row that builds none (a sketch) takes
-    // the colour of the selected step's body.
+    // the colour of a step it feeds, else of the selected step's body.
     auto bodyColor = [](App::DocumentObject* obj) -> std::optional<QColor> {
         auto vp = Application::Instance->getViewProvider(obj);
         if (!vp) {
@@ -4752,9 +4755,22 @@ void TreeWidget::updateLineage()
         }
     }
     std::map<App::DocumentObject*, QColor> tints;
+    auto fedColor = [&](App::DocumentObject* obj) -> std::optional<QColor> {
+        for (auto* user : obj->getInList()) {
+            if ((lineage.count(user) || selected.count(user)) && !isOrigin(user)) {
+                if (auto color = bodyColor(user)) {
+                    return color;
+                }
+            }
+        }
+        return std::nullopt;
+    };
     for (auto* obj : lineage) {
         if (auto color = bodyColor(obj)) {
             tints[obj] = *color;
+        }
+        else if (auto fed = fedColor(obj)) {
+            tints[obj] = *fed;
         }
         else if (selectedColor) {
             tints[obj] = *selectedColor;
