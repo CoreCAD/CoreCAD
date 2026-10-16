@@ -31,6 +31,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
@@ -150,7 +152,17 @@ constexpr int BodyColumn = 3;
 /// there are three or fewer; past that, the first three are followed by an ellipsis and the
 /// count, so "12" reads as twelve different bodies (§5.5). At most three groups of each
 /// are drawn, with an ellipsis when there are more; the tooltip names them all.
-QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
+/// Where each square lands, and the bodies a click there means.
+struct SwatchHit
+{
+    QRect rect;
+    std::vector<App::DocumentObject*> bodies;
+};
+
+QPixmap paintBodySwatches(
+    const Gui::ViewProvider::TreeBodyColumn& column,
+    std::vector<SwatchHit>* hits = nullptr
+)
 {
     if (column.builds.empty() && column.references.empty()) {
         return {};
@@ -215,11 +227,15 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         const std::size_t count = std::min<std::size_t>(swatch.colors.size(), maxShown);
         for (std::size_t i = 0; i < count; ++i) {
             drawSquare(x, swatch.colors[i]);
+            if (hits && i < swatch.bodies.size()) {
+                hits->push_back({QRect(x, 0, side, side), {swatch.bodies[i]}});
+            }
             x += side + (i + 1 < count ? gap : 0);
         }
         if (!truncated(swatch)) {
             return;
         }
+        const int tailStart = x;
         x += gap;
         drawEllipsis();
         x += gap;
@@ -228,6 +244,9 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         painter.setPen(ink);
         painter.drawText(QRect(x, 0, textWidth, side), Qt::AlignLeft | Qt::AlignVCenter, text);
         x += textWidth;
+        if (hits) {
+            hits->push_back({QRect(tailStart, 0, x - tailStart, side), swatch.bodies});
+        }
     };
     auto drawGroup = [&](const std::vector<Gui::ViewProvider::BodySwatch>& swatches) {
         const int count = std::min<int>(static_cast<int>(swatches.size()), maxShown);
@@ -258,7 +277,15 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
         painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
     }
     painter.end();
+    return pixmap;
+}
 
+QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
+{
+    QPixmap pixmap = paintBodySwatches(column);
+    if (pixmap.isNull()) {
+        return {};
+    }
     // A hidden object's row is drawn greyed out; its swatch must keep its colour, or the column
     // stops matching the body it names.
     QIcon icon;
@@ -1346,6 +1373,12 @@ void TreeWidget::_updateStatus(bool delay)
 
 void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
 {
+    auto swatchBodies = bodiesAtSwatch(e->pos());
+    if (!swatchBodies.empty()) {
+        showSwatchMenu(swatchBodies, e->globalPos());
+        return;
+    }
+
     // ask workbenches and view provider, ...
     MenuItem view;
     Gui::Application::Instance->setupContextMenu("Tree", &view);
@@ -2135,6 +2168,18 @@ void TreeWidget::keyPressEvent(QKeyEvent* event)
 
 void TreeWidget::mousePressEvent(QMouseEvent* event)
 {
+    // A swatch is the handle for its body: clicking it selects the body, not the step's row.
+    if (event->button() == Qt::LeftButton || event->button() == Qt::RightButton) {
+        auto bodies = bodiesAtSwatch(event->pos());
+        if (!bodies.empty()) {
+            Selection().clearSelection();
+            for (auto* body : bodies) {
+                Selection().addSelection(body->getDocument()->getName(), body->getNameInDocument());
+            }
+            event->accept();
+            return;
+        }
+    }
     QTreeWidgetItem* pressed = itemAt(event->pos());
     if (pressed && pressed->type() == StopRowType && event->button() == Qt::LeftButton) {
         draggedStopRow = pressed;
@@ -2203,8 +2248,157 @@ void TreeWidget::mousePressEvent(QMouseEvent* event)
     QTreeWidget::mousePressEvent(event);
 }
 
+std::vector<App::DocumentObject*> TreeWidget::bodiesAtSwatch(const QPoint& pos) const
+{
+    QModelIndex index = indexAt(pos);
+    if (!index.isValid() || index.column() != BodyColumn) {
+        return {};
+    }
+    auto item = itemFromIndex(index);
+    if (!item || item->type() != ObjectType) {
+        return {};
+    }
+    auto objItem = static_cast<DocumentObjectItem*>(item);
+    if (!objItem->object() || !objItem->object()->getObject()) {
+        return {};
+    }
+    std::vector<SwatchHit> hits;
+    QPixmap pixmap = paintBodySwatches(objItem->object()->getTreeBodyColumn(), &hits);
+    if (pixmap.isNull()) {
+        return {};
+    }
+
+    // Find where the delegate drew the swatches, then map the click back onto the pixmap.
+    QStyleOptionViewItem option;
+    initViewItemOption(&option);
+    option.rect = visualRect(index);
+    option.index = index;
+    option.features |= QStyleOptionViewItem::HasDecoration;
+    option.icon = item->icon(BodyColumn);
+    option.decorationAlignment = Qt::AlignLeft | Qt::AlignVCenter;
+    option.decorationSize = QSize(pixmap.width() * iconSize() / pixmap.height(), iconSize());
+    QRect decoration = style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, this);
+    QSize drawn = option.icon.actualSize(decoration.size());
+    QRect drawnRect
+        = QStyle::alignedRect(layoutDirection(), option.decorationAlignment, drawn, decoration);
+    if (!drawnRect.contains(pos) || drawn.isEmpty()) {
+        return {};
+    }
+    QPoint onPixmap(
+        (pos.x() - drawnRect.left()) * pixmap.width() / drawn.width(),
+        (pos.y() - drawnRect.top()) * pixmap.height() / drawn.height()
+    );
+    for (const auto& hit : hits) {
+        if (hit.rect.contains(onPixmap)) {
+            return hit.bodies;
+        }
+    }
+    return {};
+}
+
+std::vector<App::DocumentObject*> Gui::stepsUsingBody(App::DocumentObject* body)
+{
+    // The steps whose swatch brackets this body, so the list never disagrees with the column.
+    std::vector<App::DocumentObject*> steps;
+    auto* guiDoc = Application::Instance->getDocument(body->getDocument());
+    if (!guiDoc) {
+        return steps;
+    }
+    for (auto* obj : body->getDocument()->getObjects()) {
+        auto* vp = guiDoc->getViewProvider(obj);
+        if (!vp) {
+            continue;
+        }
+        for (const auto& swatch : vp->getTreeBodyColumn().references) {
+            if (std::ranges::find(swatch.bodies, body) != swatch.bodies.end()) {
+                steps.push_back(obj);
+                break;
+            }
+        }
+    }
+    return steps;
+}
+
+void TreeWidget::showSwatchMenu(const std::vector<App::DocumentObject*>& bodies, const QPoint& at)
+{
+    QMenu menu;
+    App::DocumentObject* single = bodies.size() == 1 ? bodies.front() : nullptr;
+    if (single) {
+        menu.addAction(tr("Rename..."), this, [this, single]() {
+            bool ok = false;
+            QString label = QInputDialog::getText(
+                this,
+                tr("Rename body"),
+                tr("Name:"),
+                QLineEdit::Normal,
+                QString::fromUtf8(single->Label.getValue()),
+                &ok
+            );
+            label = label.trimmed();
+            if (!ok || label.isEmpty() || label == QString::fromUtf8(single->Label.getValue())) {
+                return;
+            }
+            App::AutoTransaction committer(
+                single->getDocument(),
+                QT_TRANSLATE_NOOP("Command", "Rename")
+            );
+            single->Label.setValue(label.toUtf8().constData());
+        });
+    }
+
+    const bool anyShown = std::ranges::any_of(bodies, [](App::DocumentObject* body) {
+        return body->Visibility.getValue();
+    });
+    menu.addAction(anyShown ? tr("Hide") : tr("Show"), this, [anyShown]() {
+        Application::Instance->commandManager().runCommandByName(
+            anyShown ? "Std_HideSelection" : "Std_ShowSelection"
+        );
+    });
+
+    std::vector<App::DocumentObject*> users;
+    for (auto* body : bodies) {
+        for (auto* step : stepsUsingBody(body)) {
+            if (std::ranges::find(users, step) == users.end()) {
+                users.push_back(step);
+            }
+        }
+    }
+    if (!users.empty()) {
+        menu.addSeparator();
+        QMenu* usedBy = menu.addMenu(tr("Used by"));
+        for (auto* step : users) {
+            QIcon icon;
+            if (auto* vp = Application::Instance->getViewProvider(step)) {
+                icon = vp->getIcon();
+            }
+            std::string docName = step->getDocument()->getName();
+            std::string objName = step->getNameInDocument();
+            usedBy->addAction(icon, QString::fromUtf8(step->Label.getValue()), this, [docName, objName]() {
+                Selection().clearSelection();
+                Selection().addSelection(docName.c_str(), objName.c_str());
+            });
+        }
+    }
+    menu.exec(at);
+}
+
 void TreeWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
+    // A swatch's double-click opens its body's panel, not the step for editing.
+    auto swatchBodies = bodiesAtSwatch(event->pos());
+    if (!swatchBodies.empty()) {
+        event->accept();
+        if (swatchBodies.size() == 1) {
+            auto* body = swatchBodies.front();
+            Selection().clearSelection();
+            Selection().addSelection(body->getDocument()->getName(), body->getNameInDocument());
+            auto& commands = Application::Instance->commandManager();
+            if (commands.getCommandByName("PartDesign_BodyInfo")) {
+                commands.runCommandByName("PartDesign_BodyInfo");
+            }
+        }
+        return;
+    }
     QTreeWidgetItem* item = itemAt(event->pos());
     if (!item) {
         return;
@@ -6317,7 +6511,9 @@ DocumentObjectItem* DocumentItem::findItem(
     bool select
 )
 {
-    if (item->isHidden()) {
+    // A row kept out of the tree on purpose (a body, whose steps carry it) stays out when its
+    // object is selected; revealing it would shift every row under the user's pointer.
+    if (item->isHidden() && (showHidden() || item->object()->showInTree())) {
         item->setHidden(false);
     }
 

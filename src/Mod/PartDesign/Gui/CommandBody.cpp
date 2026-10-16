@@ -51,6 +51,7 @@
 #include <Mod/PartDesign/App/FeatureBase.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 
+#include "BodyPanel.h"
 #include "DependenciesPanel.h"
 #include "Utils.h"
 
@@ -767,6 +768,38 @@ bool CmdPartDesignShowDependencies::isActive()
 }
 
 //===========================================================================
+// PartDesign_BodyInfo
+//===========================================================================
+
+DEF_STD_CMD_A(CmdPartDesignBodyInfo)
+
+CmdPartDesignBodyInfo::CmdPartDesignBodyInfo()
+    : Command("PartDesign_BodyInfo")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Body information");
+    sToolTipText = QT_TR_NOOP("Shows the selected body's name, colour, material and what uses it");
+    sWhatsThis = "PartDesign_BodyInfo";
+    sStatusTip = sToolTipText;
+}
+
+void CmdPartDesignBodyInfo::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const auto selection = Gui::Selection().getSelection();
+    if (selection.size() == 1) {
+        PartDesignGui::BodyPanel::showFor(selection.front().pObject);
+    }
+}
+
+bool CmdPartDesignBodyInfo::isActive()
+{
+    const auto selection = Gui::Selection().getSelection();
+    return selection.size() == 1 && freecad_cast<Part::BodyBase*>(selection.front().pObject);
+}
+
+//===========================================================================
 // Initialization
 //===========================================================================
 
@@ -781,4 +814,5 @@ void CreatePartDesignBodyCommands()
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeatureInTree());
     rcCmdMgr.addCommand(new CmdPartDesignCheckInterference());
     rcCmdMgr.addCommand(new CmdPartDesignShowDependencies());
+    rcCmdMgr.addCommand(new CmdPartDesignBodyInfo());
 }

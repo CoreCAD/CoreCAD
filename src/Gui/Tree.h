@@ -60,6 +60,10 @@ GuiExport bool isTreeViewDragging();
 /** Tree view that allows drag & drop of document objects.
  * @author Werner Mayer
  */
+/// The steps whose Bodies column names @p body as referenced, in timeline order: what the swatch
+/// menu and the Body panel list as "Used by".
+GuiExport std::vector<App::DocumentObject*> stepsUsingBody(App::DocumentObject* body);
+
 class TreeWidget: public QTreeWidget, public SelectionObserver
 {
     Q_OBJECT
@@ -208,6 +212,11 @@ private:
     void _updateStatus(bool delay = true);
     /// Tint the row of every step the selected steps came from (ARCHITECTURE §8.2).
     void updateLineage();
+    /// The bodies whose swatch is under @p pos in the Bodies column: one for a square, all of a
+    /// pattern's for its count. Empty when @p pos is on no swatch.
+    std::vector<App::DocumentObject*> bodiesAtSwatch(const QPoint& pos) const;
+    /// The menu a body's swatch offers (DESIGN_ui-surfaces §1): Rename, Hide or Show, Used by.
+    void showSwatchMenu(const std::vector<App::DocumentObject*>& bodies, const QPoint& at);
     std::map<App::DocumentObject*, QColor> lineageTints;
     std::set<App::DocumentObject*> lineageSelected;
 

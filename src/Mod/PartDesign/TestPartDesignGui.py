@@ -553,6 +553,29 @@ def colourName(body):
     return QtGui.QColor.fromRgbF(*body.Color[:3]).name()
 
 
+def click(widget, point, kind=QtCore.QEvent.MouseButtonPress):
+    """A left click at @p point, or with @p kind a double-click, delivered as a person's would."""
+    for event_type in (kind, QtCore.QEvent.MouseButtonRelease):
+        buttons = (
+            QtCore.Qt.NoButton
+            if event_type == QtCore.QEvent.MouseButtonRelease
+            else (QtCore.Qt.LeftButton)
+        )
+        event = QtGui.QMouseEvent(
+            event_type,
+            QtCore.QPointF(point),
+            QtCore.QPointF(widget.mapToGlobal(point)),
+            QtCore.Qt.LeftButton,
+            buttons,
+            QtCore.Qt.NoModifier,
+        )
+        QApplication.sendEvent(widget, event)
+    # The tree passes its selection on after a short timer; let it run, as it would for a person.
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(20, loop.quit)
+    loop.exec_()
+
+
 class TestBodyColumn(unittest.TestCase):
     """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch, and in
     brackets the bodies a step only references. A profile sketch builds nothing and shows
@@ -781,6 +804,308 @@ class TestBodyColumn(unittest.TestCase):
                     rows.append(item.text(0))
             stack.extend(item.child(i) for i in range(item.childCount()))
         return sorted(rows)
+
+    def rowCell(self, label):
+        """The tree and the index of @p label's Bodies cell, scrolled into view."""
+        tree = self.tree()
+        item = tree.findItems(label, QtCore.Qt.MatchExactly | QtCore.Qt.MatchRecursive, 0)[0]
+        tree.scrollToItem(item)
+        return tree, tree.indexFromItem(item, 3)
+
+    def selectionsAcross(self, label):
+        """Click along the middle of @p label's Bodies cell, one pixel at a time, and return each
+        distinct selection a click made, as sorted names, in the order first seen."""
+        tree, index = self.rowCell(label)
+        cell = tree.visualRect(index)
+        seen = []
+        for x in range(cell.left(), cell.right()):
+            Gui.Selection.clearSelection()
+            click(tree.viewport(), QtCore.QPoint(x, cell.center().y()))
+            names = sorted(o.Name for o in Gui.Selection.getSelection())
+            if names not in seen:
+                seen.append(names)
+        Gui.Selection.clearSelection()
+        return seen
+
+    def testClickingASwatchSelectsItsBody(self):
+        # The swatch is the handle for its body: a click on it selects the body; a click past
+        # it in the same cell does not.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        seen = self.selectionsAcross(pad.Label)
+        self.assertIn([body.Name], seen)
+        self.assertEqual([names for names in seen if body.Name in names], [[body.Name]])
+
+    def testSelectingABodyKeepsItsRowOutOfTheTree(self):
+        # A body has no row (§8.1). Selecting it must not reveal one, or every row under the
+        # pointer shifts.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        before = self.rootRows()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body.Name)
+        self.assertEqual(self.rootRows(), before)
+        Gui.Selection.clearSelection()
+
+    def testClickingAReferencedSwatchSelectsThatBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        s2 = self.square("S2", 50)
+        s2.AttachmentSupport = (pad, [""])
+        s2.MapMode = "ObjectXY"
+        self.Doc.recompute()
+        self.assertIn([body.Name], self.selectionsAcross(s2.Label))
+
+    def testClickingAPatternCountSelectsEveryCopy(self):
+        # Each of the three squares drawn is one body; the count after them stands for them all.
+        _, pattern, bodies = self.pattern(4)
+        seen = [names for names in self.selectionsAcross(pattern.Label) if names != [pattern.Name]]
+        singles = [names for names in seen if len(names) == 1]
+        self.assertEqual(len(singles), 3, seen)
+        self.assertIn(sorted(b.Name for b in bodies), seen)
+
+    def swatchPoint(self, label, body):
+        """A point in @p label's Bodies cell where a click selects @p body alone."""
+        tree, index = self.rowCell(label)
+        cell = tree.visualRect(index)
+        for x in range(cell.left(), cell.right()):
+            Gui.Selection.clearSelection()
+            point = QtCore.QPoint(x, cell.center().y())
+            click(tree.viewport(), point)
+            if [o.Name for o in Gui.Selection.getSelection()] == [body.Name]:
+                Gui.Selection.clearSelection()
+                return tree, point
+        self.fail("no swatch for %s in %s's Bodies cell" % (body.Label, label))
+
+    def swatchMenu(self, label, body, choose=None, answer=None):
+        """Right-click @p body's swatch on @p label's row and return the menu as
+        [(text, [submenu texts])]. With @p choose, trigger that entry (a "Used by/<name>" path
+        reaches into the submenu); a rename dialog it opens is answered with @p answer."""
+        tree, point = self.swatchPoint(label, body)
+        viewport = tree.viewport()
+        QApplication.sendEvent(
+            viewport,
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(point),
+                QtCore.QPointF(viewport.mapToGlobal(point)),
+                QtCore.Qt.RightButton,
+                QtCore.Qt.RightButton,
+                QtCore.Qt.NoModifier,
+            ),
+        )
+        self.selectedOnPress = [o.Name for o in Gui.Selection.getSelection()]
+        seen = []
+
+        def answerDialog():
+            dialog = QApplication.activeModalWidget()
+            if isinstance(dialog, QtGui.QInputDialog):
+                dialog.setTextValue(answer)
+                dialog.accept()
+
+        def readMenu():
+            menu = QApplication.activePopupWidget()
+            target = None
+            for action in menu.actions():
+                if action.isSeparator():
+                    continue
+                sub = [a.text() for a in action.menu().actions()] if action.menu() else []
+                seen.append((action.text(), sub))
+                if choose == action.text():
+                    target = action
+                elif choose and action.menu() and choose.startswith(action.text() + "/"):
+                    name = choose.split("/", 1)[1]
+                    target = [a for a in action.menu().actions() if a.text() == name][0]
+            menu.close()
+            if target:
+                if answer is not None:
+                    QtCore.QTimer.singleShot(0, answerDialog)
+                target.trigger()
+
+        QtCore.QTimer.singleShot(0, readMenu)
+        QApplication.sendEvent(
+            viewport,
+            QtGui.QContextMenuEvent(
+                QtGui.QContextMenuEvent.Mouse, point, viewport.mapToGlobal(point)
+            ),
+        )
+        return seen
+
+    def testRightClickingASwatchSelectsItsBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.swatchMenu(pad.Label, body)
+        self.assertEqual(self.selectedOnPress, [body.Name])
+
+    def testSwatchMenuOffersRenameAndHide(self):
+        # Nothing in another body uses this body, so the menu has no Used by entry.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.assertEqual(self.swatchMenu(pad.Label, body), [("Rename...", []), ("Hide", [])])
+
+    def testSwatchMenuHidesAndShowsTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.swatchMenu(pad.Label, body, choose="Hide")
+        self.assertFalse(body.Visibility)
+        self.assertEqual(self.swatchMenu(pad.Label, body, choose="Show")[1], ("Show", []))
+        self.assertTrue(body.Visibility)
+
+    def testSwatchMenuRenamesTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        self.swatchMenu(pad.Label, body, choose="Rename...", answer="Bracket")
+        self.assertEqual(body.Label, "Bracket")
+        self.Doc.undo()
+        self.assertNotEqual(body.Label, "Bracket")
+
+    def testSwatchMenuListsTheStepsThatUseTheBody(self):
+        # The steps listed are the ones whose own swatch brackets this body; choosing one
+        # selects it.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        s2 = self.square("S2", 50)
+        s2.AttachmentSupport = (pad, [""])
+        s2.MapMode = "ObjectXY"
+        self.Doc.recompute()
+        menu = self.swatchMenu(pad.Label, body, choose="Used by/" + s2.Label)
+        self.assertIn(("Used by", [s2.Label]), menu)
+        self.assertEqual([o.Name for o in Gui.Selection.getSelection()], [s2.Name])
+        Gui.Selection.clearSelection()
+
+    def testDoubleClickingASwatchDoesNotEditTheStep(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        self.Doc.recompute()
+        tree, index = self.rowCell(pad.Label)
+        cell = tree.visualRect(index)
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        for x in range(cell.left(), cell.right()):
+            Gui.Selection.clearSelection()
+            point = QtCore.QPoint(x, cell.center().y())
+            click(tree.viewport(), point)
+            if [o.Name for o in Gui.Selection.getSelection()] == [body.Name]:
+                click(tree.viewport(), point, QtCore.QEvent.MouseButtonDblClick)
+                break
+        else:
+            self.fail("no swatch found in the Bodies cell")
+        self.assertIsNone(Gui.ActiveDocument.getInEdit())
+        Gui.Selection.clearSelection()
+
+    def bodyPanel(self):
+        """The Body panel's dock, or None when it was never opened."""
+        return Gui.getMainWindow().findChild(QtGui.QDockWidget, "Body")
+
+    def openBodyPanel(self, label, body):
+        tree, point = self.swatchPoint(label, body)
+        click(tree.viewport(), point)
+        click(tree.viewport(), point, QtCore.QEvent.MouseButtonDblClick)
+        dock = self.bodyPanel()
+        self.assertIsNotNone(dock)
+        self.assertTrue(dock.isVisible())
+        return dock
+
+    def settle(self):
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(20, loop.quit)
+        loop.exec_()
+
+    def tearDownPanel(self):
+        dock = self.bodyPanel()
+        if dock:
+            dock.hide()
+
+    def testDoubleClickingASwatchOpensItsBodyPanel(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        self.assertEqual(dock.windowTitle(), "Body \u2014 " + body.Label)
+        name = dock.findChild(QtGui.QLineEdit)
+        self.assertEqual(name.text(), body.Label)
+        self.tearDownPanel()
+
+    def testBodyPanelListsTheStepsThatUseTheBody(self):
+        # A pad in a second body that reaches up to a face of the first uses the first.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        user = PartDesign.makeFeature(self.square("S2", 50), "Pad")
+        self.Doc.recompute()
+        user.Type = "UpToFace"
+        user.UpToFace = (pad, ["Face6"])
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        usedBy = dock.findChild(QtGui.QTreeWidget)
+        entries = [usedBy.topLevelItem(i) for i in range(usedBy.topLevelItemCount())]
+        self.assertEqual([e.text(0) for e in entries], [user.Label])
+        # An entry is a link: clicking it selects that step, and the panel stays on the body
+        # rather than following the step to the body it builds.
+        usedBy.itemClicked.emit(entries[0], 0)
+        self.assertEqual([o.Name for o in Gui.Selection.getSelection()], [user.Name])
+        self.settle()
+        self.assertEqual(dock.windowTitle(), "Body \u2014 " + body.Label)
+        Gui.Selection.clearSelection()
+        self.tearDownPanel()
+
+    def testBodyPanelRenamesAndHidesTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        name = dock.findChild(QtGui.QLineEdit)
+        name.setText("Bracket")
+        name.editingFinished.emit()
+        self.assertEqual(body.Label, "Bracket")
+        shown = dock.findChild(QtGui.QCheckBox)
+        self.assertTrue(shown.isChecked())
+        shown.setChecked(False)
+        self.assertFalse(body.Visibility)
+        # Live: a change made elsewhere shows in the panel.
+        body.Visibility = True
+        body.Label = "Plate"
+        self.settle()
+        self.assertTrue(shown.isChecked())
+        self.assertEqual(name.text(), "Plate")
+        self.tearDownPanel()
+
+    def testBodyPanelRecoloursTheBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        dock = self.openBodyPanel(pad.Label, body)
+        colour = dock.findChild(QtGui.QPushButton, "BodyColour")
+        before = body.Color
+        colour.setProperty("color", "#ff0000")
+        QtCore.QMetaObject.invokeMethod(colour, "changed")
+        self.assertEqual(body.Color[:3], (1.0, 0.0, 0.0))
+        # One undo step puts the old colour back, and the panel shows it.
+        self.Doc.undo()
+        self.settle()
+        self.assertEqual(body.Color, before)
+        shown = colour.property("color")
+        self.assertAlmostEqual(shown.redF(), before[0], places=2)
+        self.tearDownPanel()
+
+    def testBodyPanelFollowsTheSelectedStepsBody(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        first = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        pad2 = PartDesign.makeFeature(self.square("S2", 100), "Pad")
+        self.Doc.recompute()
+        second = [
+            o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body") and o != first
+        ][0]
+        dock = self.openBodyPanel(pad.Label, first)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, pad2.Name)
+        self.settle()
+        self.assertEqual(dock.windowTitle(), "Body \u2014 " + second.Label)
+        Gui.Selection.clearSelection()
+        self.tearDownPanel()
 
     def testSelectingAStepTintsWhatItCameFrom(self):
         # §8.2: selecting a step tints the steps it came from, and nothing that merely shares
