@@ -196,6 +196,16 @@ private:
         App::DocumentObject* target
     );
     void sortDroppedObjects(TargetItemInfo& targetInfo, std::vector<App::DocumentObject*> draggedObjects);
+    /// The document's top-level rows in the order a drop at @p targetInfo would leave them.
+    std::vector<App::DocumentObject*> rootOrderAfterDrop(
+        const TargetItemInfo& targetInfo,
+        const std::vector<App::DocumentObject*>& draggedObjects
+    ) const;
+    /// False when the drop would put a step above a step it is built from.
+    bool dropKeepsInputsFirst(
+        const TargetItemInfo& targetInfo,
+        const std::vector<App::DocumentObject*>& draggedObjects
+    ) const;
     //@}
 
 protected:
@@ -400,6 +410,8 @@ public:
     void updateBodyColumn();
     /// Put the stop row just after the document's roll-back marker, or remove it.
     void updateStopRows();
+    /// Draw, grey and name bodies for each row by whether it stands past the roll-back marker.
+    void updateHeldBack();
     void setData(int column, int role, const QVariant& value) override;
     void populateItem(DocumentObjectItem* item, bool refresh = false, bool delayUpdate = true);
     bool populateObject(App::DocumentObject* obj);
