@@ -159,6 +159,17 @@ int Transformed::solidIndexOfOriginal() const
 
 bool Transformed::leavesOriginalAsIs() const
 {
+    if (!originalAsIs) {
+        originalAsIs = checkOriginalAsIs();
+    }
+    return *originalAsIs;
+}
+
+bool Transformed::checkOriginalAsIs() const
+{
+    if (AddSubShape.getShape().isNull()) {
+        return false;
+    }
     Part::TopoShape added;
     Part::TopoShape cut;
     splitAddSubHalves(AddSubShape.getShape(), added, cut);
@@ -396,6 +407,9 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
 
 void Transformed::onChanged(const App::Property* prop)
 {
+    if (prop == &Shape || prop == &AddSubShape || prop == &BaseFeature) {
+        originalAsIs.reset();
+    }
     if (prop == &TransformMode) {
         auto const mode = static_cast<Mode>(TransformMode.getValue());
         Originals.setStatus(App::Property::Status::Hidden, mode == Mode::WholeShape);

@@ -2332,28 +2332,6 @@ std::vector<App::DocumentObject*> Gui::stepsUsingBody(App::DocumentObject* body)
     return steps;
 }
 
-std::vector<App::DocumentObject*> Gui::stepsBuildingBody(App::DocumentObject* body)
-{
-    std::vector<App::DocumentObject*> steps;
-    auto* guiDoc = Application::Instance->getDocument(body->getDocument());
-    if (!guiDoc) {
-        return steps;
-    }
-    for (auto* obj : body->getDocument()->getObjects()) {
-        auto* vp = guiDoc->getViewProvider(obj);
-        if (!vp) {
-            continue;
-        }
-        for (const auto& swatch : vp->getTreeBodyColumn().builds) {
-            if (std::ranges::find(swatch.bodies, body) != swatch.bodies.end()) {
-                steps.push_back(obj);
-                break;
-            }
-        }
-    }
-    return steps;
-}
-
 void TreeWidget::showSwatchMenu(const std::vector<App::DocumentObject*>& bodies, const QPoint& at)
 {
     QMenu menu;
@@ -4842,48 +4820,77 @@ void TreeWidget::updateLineage()
         auto datum = freecad_cast<App::DatumElement*>(obj);
         return datum && datum->isOriginFeature();
     };
-    // A selection asks what made it: for a step, the earlier steps of its own body; for a body
-    // (its swatch was clicked), every step that builds it. Their sketches come too, and so does
-    // the step of another body it was built on, in this body's colour, but not what went into
-    // that step: the other body is not part of this family.
-    auto bodiesBuilt = [](App::DocumentObject* obj) {
-        std::set<App::DocumentObject*> bodies;
-        if (auto vp = Application::Instance->getViewProvider(obj)) {
-            for (const auto& swatch : vp->getTreeBodyColumn().builds) {
-                bodies.insert(swatch.bodies.begin(), swatch.bodies.end());
+    // A selection asks what made it, back from where it stands, never forward: for a step, its
+    // inputs; for a body (its swatch was clicked), the row its swatch stands on and that row's
+    // inputs. Their sketches come too, and so does the step of another body it was built on,
+    // in this body's colour, but not what went into that step: that is another body's lineage.
+    //
+    // A row's bodies take real work to find, so each row is asked once per selection.
+    std::map<App::DocumentObject*, ViewProvider::TreeBodyColumn> columns;
+    auto columnOf = [&columns](App::DocumentObject* obj) -> const ViewProvider::TreeBodyColumn& {
+        auto [it, added] = columns.try_emplace(obj);
+        if (added) {
+            if (auto vp = Application::Instance->getViewProvider(obj)) {
+                it->second = vp->getTreeBodyColumn();
             }
         }
-        return bodies;
+        return it->second;
     };
-    auto colorOfBody = [](App::DocumentObject* step, App::DocumentObject* body) {
-        auto vp = Application::Instance->getViewProvider(step);
-        for (const auto& swatch : vp->getTreeBodyColumn().builds) {
+    auto colorIn = [](const std::vector<ViewProvider::BodySwatch>& swatches,
+                      App::DocumentObject* body) -> std::optional<QColor> {
+        for (const auto& swatch : swatches) {
             for (std::size_t i = 0; i < swatch.bodies.size() && i < swatch.colors.size(); ++i) {
                 if (swatch.bodies[i] == body) {
-                    return std::optional<QColor>(swatch.colors[i]);
+                    return swatch.colors[i];
                 }
             }
         }
-        return std::optional<QColor>();
+        return std::nullopt;
     };
-    std::set<App::DocumentObject*> lineage;
-    std::map<App::DocumentObject*, QColor> borrowed;
-    for (auto* obj : selected) {
-        std::vector<App::DocumentObject*> pending = stepsBuildingBody(obj);
-        std::set<App::DocumentObject*> ownBodies;
-        std::optional<QColor> ownColor;
-        if (!pending.empty()) {
-            ownBodies.insert(obj);
-            ownColor = colorOfBody(pending.front(), obj);
-            lineage.insert(pending.begin(), pending.end());
+    auto bodiesBuilt = [&](App::DocumentObject* obj) {
+        std::set<App::DocumentObject*> bodies;
+        for (const auto& swatch : columnOf(obj).partOf) {
+            bodies.insert(swatch.bodies.begin(), swatch.bodies.end());
         }
-        else {
-            pending.push_back(obj);
-            ownBodies = bodiesBuilt(obj);
-            if (!ownBodies.empty()) {
-                ownColor = colorOfBody(obj, *ownBodies.begin());
+        return bodies;
+    };
+    // The tint of a row that builds a body is that body's colour.
+    auto bodyColor = [&](App::DocumentObject* obj) -> std::optional<QColor> {
+        const auto& partOf = columnOf(obj).partOf;
+        if (partOf.empty()) {
+            return std::nullopt;
+        }
+        return partOf.front().colors.front();
+    };
+    auto swatchRowOf = [&](App::DocumentObject* body) -> App::DocumentObject* {
+        for (auto* obj : body->getDocument()->getObjects()) {
+            if (obj != body && colorIn(columnOf(obj).builds, body)) {
+                return obj;
             }
         }
+        return nullptr;
+    };
+
+    std::set<App::DocumentObject*> lineage;
+    std::map<App::DocumentObject*, QColor> familyTint;
+    std::map<App::DocumentObject*, QColor> borrowed;
+    for (auto* obj : selected) {
+        App::DocumentObject* start = obj;
+        std::set<App::DocumentObject*> ownBodies;
+        std::optional<QColor> ownColor;
+        if (App::DocumentObject* row = swatchRowOf(obj)) {
+            start = row;
+            ownBodies.insert(obj);
+            ownColor = colorIn(columnOf(row).builds, obj);
+            lineage.insert(row);
+            familyTint[row] = *ownColor;
+        }
+        else {
+            ownBodies = bodiesBuilt(obj);
+            ownColor = bodyColor(obj);
+        }
+        const bool bodySelected = start != obj;
+        std::vector<App::DocumentObject*> pending {start};
         while (!pending.empty()) {
             auto* step = pending.back();
             pending.pop_back();
@@ -4899,6 +4906,9 @@ void TreeWidget::updateLineage()
                                   });
                 if (sameFamily) {
                     pending.push_back(input);
+                    if (bodySelected) {
+                        familyTint[input] = *ownColor;
+                    }
                 }
                 else if (ownColor) {
                     borrowed[input] = *ownColor;
@@ -4907,19 +4917,17 @@ void TreeWidget::updateLineage()
         }
     }
 
-    // The tint is the colour of the body a row builds; a row that builds none (a sketch) takes
-    // the colour of a step it feeds, else of the selected step's body.
-    auto bodyColor = [](App::DocumentObject* obj) -> std::optional<QColor> {
-        auto vp = Application::Instance->getViewProvider(obj);
-        if (!vp) {
-            return std::nullopt;
-        }
-        auto column = vp->getTreeBodyColumn();
-        if (column.builds.empty()) {
-            return std::nullopt;
-        }
-        return column.builds.front().colors.front();
-    };
+    // What went into a step of another body stays out, even when the selection also uses it
+    // directly: a pattern's copy names the step it copied, not that step's sketch.
+    for (auto it = lineage.begin(); it != lineage.end();) {
+        const auto inList = (*it)->getInList();
+        const bool othersInput = !borrowed.count(*it) && bodiesBuilt(*it).empty()
+            && std::ranges::any_of(inList, [&](auto* user) { return borrowed.count(user) > 0; });
+        it = othersInput ? lineage.erase(it) : std::next(it);
+    }
+
+    // A row that builds no body (a sketch) takes the colour of a step it feeds, else of the
+    // selected step's body.
     std::optional<QColor> selectedColor;
     for (auto* step : selected) {
         if ((selectedColor = bodyColor(step))) {
@@ -4940,6 +4948,9 @@ void TreeWidget::updateLineage()
     for (auto* obj : lineage) {
         if (auto it = borrowed.find(obj); it != borrowed.end()) {
             tints[obj] = it->second;
+        }
+        else if (auto family = familyTint.find(obj); family != familyTint.end()) {
+            tints[obj] = family->second;
         }
         else if (auto color = bodyColor(obj)) {
             tints[obj] = *color;

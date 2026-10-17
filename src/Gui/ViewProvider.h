@@ -541,7 +541,10 @@ public:
     };
     struct TreeBodyColumn
     {
+        /// The swatches drawn on this row.
         std::vector<BodySwatch> builds;
+        /// Every body this object builds, whether or not its swatch stands on this row.
+        std::vector<BodySwatch> partOf;
         std::vector<BodySwatch> references;
         QString tooltip;
         bool operator==(const TreeBodyColumn&) const = default;

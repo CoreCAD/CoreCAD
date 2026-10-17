@@ -761,6 +761,57 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(swatchColours(texts[pattern.Label][1]), [colourName(bodies[0])])
         self.assertEqual(texts[pad.Label], ("", "", False))
 
+    def featurePattern(self, pad):
+        # As the pattern command makes it: the pad copied along its own sketch's H axis.
+        body = next(
+            b for b in self.Doc.Objects if b.isDerivedFrom("PartDesign::Body") and b.Tip == pad
+        )
+        pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Originals = [pad]
+        pattern.Direction = (pad.Profile[0], ["H_Axis"])
+        pattern.Length = 60.0
+        pattern.Occurrences = 2
+        pattern.MultiBody = True
+        body.addFeature(pattern)
+        self.Doc.recompute()
+        copy = next(
+            b
+            for b in self.Doc.Objects
+            if b.isDerivedFrom("PartDesign::Body") and b != body and b.Tip == pattern
+        )
+        return pattern, body, copy
+
+    def testAPatternLeavesAStepItOnlyReferencesShown(self):
+        # A pad told to pad up to another body's face references that body; patterning it hides
+        # only the pattern's own chain.
+        other = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        pad = PartDesign.makeFeature(self.square("S2", 100), "Pad")
+        pad.UpToFace = (other, ["Face3"])
+        self.Doc.recompute()
+        self.featurePattern(pad)
+        self.tree()
+        self.assertTrue(other.Visibility)
+        self.assertTrue(other.ViewObject.isVisible())
+
+    def testSelectingACopyWashesTheStepItCopiedButNotItsSketch(self):
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        pattern, _, copy = self.featurePattern(pad)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, copy.Name)
+        self.assertEqual(self.tintedRows(), sorted([pattern.Label, pad.Label]))
+        self.assertEqual(self.rowTint(pad.Label), self.rowTint(pattern.Label))
+        Gui.Selection.clearSelection()
+
+    def testSelectingAnOriginalWashesWhatMadeItNotWhatCameAfter(self):
+        # The pattern left the original as it was, so its swatch stays on the pad, and the
+        # pattern, made from the pad, is not part of what made it.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        _, body, _ = self.featurePattern(pad)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body.Name)
+        self.assertEqual(self.tintedRows(), sorted([pad.Label, pad.Profile[0].Label]))
+        Gui.Selection.clearSelection()
+
     def testAPatternsEyeShowsItsBodiesAndDrawsNothingItself(self):
         # Its pieces are drawn once, by their bodies; the pattern's eye shows and hides them.
         _, pattern, bodies = self.pattern(3)

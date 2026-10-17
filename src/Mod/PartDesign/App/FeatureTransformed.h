@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <optional>
 #include <gp_Trsf.hxx>
 
 #include <App/DocumentObserver.h>
@@ -182,6 +183,11 @@ protected:
         const char* TypeName,
         App::Property* prop
     ) override;
+
+private:
+    /// leavesOriginalAsIs(), kept until the pattern's shape or its base changes.
+    mutable std::optional<bool> originalAsIs;
+    bool checkOriginalAsIs() const;
 };
 
 }  // namespace PartDesign

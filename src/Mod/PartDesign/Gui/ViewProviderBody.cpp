@@ -324,37 +324,30 @@ void ViewProviderBody::finishRestoring()
 
 namespace
 {
-// A multi-output Body IS the representation of its Tip, so no feature feeding that Tip
-// may draw independently; the Tip itself draws nothing (ViewProvider::drawnByItsBodies) and keeps
-// its eye for its bodies. Walk the Tip's dependency chain (backward via getOutList) and
-// hide every body-content feature in it — solid features (the shared pattern and its
-// upstream Pad/base features) and their profile sketches — so only the Bodies' own
-// component shapes show. Datums/origins are left alone: they are reference geometry the
-// user may want visible. Without this, e.g. the base Pad of a multi-output pattern keeps
-// drawing at instance 0's location, leaving a phantom solid with no Body (Cruth: a Body
-// is the representation of its Tip, §4.6/§5.5).
-void hideTipChain(App::DocumentObject* tip)
+// A multi-output Body IS the representation of its Tip, so no step that builds it may draw
+// independently; the Tip itself draws nothing (ViewProvider::drawnByItsBodies) and keeps its eye
+// for its bodies. Hide the Body's earlier steps and the sketches they consume, so only the
+// Bodies' own component shapes show. Only the Body's own chain is followed: a step it merely
+// references (a face another body's step was told to pad up to) keeps its visibility.
+void hideTipChain(PartDesign::Body* body)
 {
-    if (!tip) {
-        return;
-    }
+    App::DocumentObject* tip = body->Tip.getValue();
     const Base::Type sketchType = Base::Type::fromName("Sketcher::SketchObject");
-    std::set<App::DocumentObject*> seen;
-    std::vector<App::DocumentObject*> stack {tip};
-    while (!stack.empty()) {
-        App::DocumentObject* obj = stack.back();
-        stack.pop_back();
-        if (!obj || !seen.insert(obj).second) {
+    auto hide = [](App::DocumentObject* obj) {
+        if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj)) {
+            vp->setVisible(false);
+        }
+    };
+    for (App::DocumentObject* step : body->ownSolids()) {
+        if (step == tip) {
             continue;
         }
-        const bool isSketch = !sketchType.isBad() && obj->isDerivedFrom(sketchType);
-        if (obj != tip && (PartDesign::Body::isSolidFeature(obj) || isSketch)) {
-            if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj)) {
-                vp->setVisible(false);
+        hide(step);
+        if (auto* profileBased = freecad_cast<PartDesign::ProfileBased*>(step)) {
+            App::DocumentObject* profile = profileBased->Profile.getValue();
+            if (profile && !sketchType.isBad() && profile->isDerivedFrom(sketchType)) {
+                hide(profile);
             }
-        }
-        for (App::DocumentObject* dep : obj->getOutList()) {
-            stack.push_back(dep);
         }
     }
 }
@@ -374,7 +367,7 @@ void ViewProviderBody::applyMultiOutputDisplay()
             DisplayModeBody.setValue(static_cast<long>(1));
         }
         if (!isRestoring()) {
-            hideTipChain(body->Tip.getValue());
+            hideTipChain(body);
         }
         syncTipEye();
         return;
