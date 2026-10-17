@@ -22,6 +22,7 @@
 import unittest
 
 import FreeCAD
+import PartDesign
 
 
 def _origin_feature(doc, role):
@@ -85,6 +86,20 @@ class TestKeepCopiesApart(unittest.TestCase):
                 self.setUp()
                 lp = self._pattern(keep_apart=keep_apart, length=90.0)
                 self.assertEqual(len(lp.Shape.Solids), 4)
+
+    # --- a copy's Body begins at the pattern (§5.5, §5.6) --------------------------
+
+    def _box(self):
+        return self.Doc.getObject("Box")
+
+    def testAStepBeforeThePatternBuildsOnlyTheOriginalsBody(self):
+        for keep_apart in (False, True):
+            with self.subTest(keep_apart=keep_apart):
+                self.setUp()
+                lp = self._pattern(keep_apart=keep_apart, length=90.0)
+                original = self.Doc.getObject("Body")
+                self.assertEqual(PartDesign.bodiesOf(self._box()), [original])
+                self.assertEqual(len(PartDesign.bodiesOf(lp)), 4)
 
     # --- the counts the dialog reads ------------------------------------------------
 

@@ -211,6 +211,9 @@ public:
     std::vector<App::DocumentObject*> getFullModel() override;
     /// This Body's solid steps in build order.
     std::vector<App::DocumentObject*> ownSolids() const;
+    /// The pattern that made this Body's solid as a copy, where its chain begins; null when the
+    /// solid comes from the start of the chain.
+    App::DocumentObject* copiedBy() const;
     /// Only a solid step builds the Body; its sketches and datums are inputs.
     bool isBuiltBy(const App::DocumentObject* f) override
     {

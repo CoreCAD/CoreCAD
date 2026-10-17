@@ -727,8 +727,8 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(len(plain(tip).splitlines()), 4)
         self.assertEqual(sorted(swatchColours(tip)), sorted(colourName(b) for b in bodies))
         self.assertEqual(len(set(swatchColours(tip))), 4)
-        # The pad feeds every copy, so its row is the same aggregate.
-        self.assertEqual(texts[pad.Label][1], tip)
+        # The copies are made by the pattern, so the pad's row names only the original's body.
+        self.assertEqual(swatchColours(texts[pad.Label][1]), [colourName(bodies[0])])
         # Three swatches, then the ellipsis and count after them.
         self.assertGreater(self.columnIconWidth(pattern.Label), 3 * 10 + 2 * 2)
 
