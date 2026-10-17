@@ -6267,6 +6267,7 @@ void DocumentItem::updateHeldBack()
         data->viewObject->updateShowable();
         for (auto* item : data->items) {
             applyBodyColumn(item, *data->viewObject);
+            item->testStatus(false);
         }
     }
 }

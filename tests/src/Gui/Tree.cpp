@@ -232,6 +232,11 @@ private Q_SLOTS:
         doc->setRollbackMarker(nullptr);
         settle();
         QVERIFY(drawn());
+        // Its row reads as shown again too, not left greyed from the roll-back.
+        auto* row = tree->findItems(QStringLiteral("Second"), Qt::MatchExactly | Qt::MatchRecursive)
+                        .value(0);
+        QVERIFY(row);
+        QVERIFY(!row->data(0, Qt::ForegroundRole).isValid());
     }
 
     // The list is the timeline: dropping a row moves the step in the document's history.
