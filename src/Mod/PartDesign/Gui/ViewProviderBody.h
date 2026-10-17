@@ -171,6 +171,7 @@ private:
      * single-component Bodies, which already sit in "Through" mode.
      */
     void applyMultiOutputDisplay();
+    void syncTipEye();
     void showShownStep();
     void hideHeldBack();
 

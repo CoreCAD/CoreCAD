@@ -325,7 +325,8 @@ void ViewProviderBody::finishRestoring()
 namespace
 {
 // A multi-output Body IS the representation of its Tip, so no feature feeding that Tip
-// may draw independently. Walk the Tip's dependency chain (backward via getOutList) and
+// may draw independently; the Tip itself draws nothing (ViewProvider::drawnByItsBodies) and keeps
+// its eye for its bodies. Walk the Tip's dependency chain (backward via getOutList) and
 // hide every body-content feature in it — solid features (the shared pattern and its
 // upstream Pad/base features) and their profile sketches — so only the Bodies' own
 // component shapes show. Datums/origins are left alone: they are reference geometry the
@@ -347,7 +348,7 @@ void hideTipChain(App::DocumentObject* tip)
             continue;
         }
         const bool isSketch = !sketchType.isBad() && obj->isDerivedFrom(sketchType);
-        if (PartDesign::Body::isSolidFeature(obj) || isSketch) {
+        if (obj != tip && (PartDesign::Body::isSolidFeature(obj) || isSketch)) {
             if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(obj)) {
                 vp->setVisible(false);
             }
@@ -375,6 +376,7 @@ void ViewProviderBody::applyMultiOutputDisplay()
         if (!isRestoring()) {
             hideTipChain(body->Tip.getValue());
         }
+        syncTipEye();
         return;
     }
 
@@ -385,16 +387,47 @@ void ViewProviderBody::applyMultiOutputDisplay()
         DisplayModeBody.setValue(static_cast<long>(0));  // back to "Through"
         if (!isRestoring()) {
             if (App::DocumentObject* tip = body->Tip.getValue()) {
-                if (Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(tip)) {
+                if (auto* vp = dynamic_cast<PartDesignGui::ViewProvider*>(
+                        Gui::Application::Instance->getViewProvider(tip)
+                    )) {
                     vp->setVisible(true);  // re-show the previously hidden shared feature
+                    vp->refreshDrawing();
                 }
             }
         }
     }
 }
 
+// The Tip's eye is on while any of the bodies it draws through is shown.
+void ViewProviderBody::syncTipEye()
+{
+    auto* body = getObject<PartDesign::Body>();
+    App::DocumentObject* tip = body ? body->Tip.getValue() : nullptr;
+    auto* vp = tip
+        ? dynamic_cast<PartDesignGui::ViewProvider*>(Gui::Application::Instance->getViewProvider(tip))
+        : nullptr;
+    if (!vp || vp->isShowingBodies() || !PartDesignGui::ViewProvider::drawnByItsBodies(tip)) {
+        return;
+    }
+    const auto bodies = PartDesign::Body::bodiesTippedAt(tip);
+    const bool anyShown = std::ranges::any_of(bodies, [](PartDesign::Body* each) {
+        auto* view = freecad_cast<Gui::ViewProviderDocumentObject*>(
+            Gui::Application::Instance->getViewProvider(each)
+        );
+        return view && view->Visibility.getValue();
+    });
+    if (vp->Visibility.getValue() != anyShown) {
+        vp->Visibility.setValue(anyShown);
+    }
+    vp->refreshDrawing();
+}
+
 void ViewProviderBody::onChanged(const App::Property* prop)
 {
+    if (prop == &Visibility && !isRestoring() && getObject()
+        && !getObject<PartDesign::Body>()->TipComponentId.getStrValue().empty()) {
+        syncTipEye();
+    }
 
     if (prop == &DisplayModeBody) {
         auto body = getObject<PartDesign::Body>();
@@ -722,6 +755,10 @@ void ViewProviderBody::show()
     PartGui::ViewProviderPart::show();
 
     auto* body = static_cast<PartDesign::Body*>(getObject());
+    // A multi-output Body draws its own copy; its Tip's eye follows it (syncTipEye).
+    if (!body->TipComponentId.getStrValue().empty()) {
+        return;
+    }
 
     auto tip = body->shownStep();
     if (!tip || tip->Visibility.getValue()) {

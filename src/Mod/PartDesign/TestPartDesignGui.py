@@ -732,6 +732,28 @@ class TestBodyColumn(unittest.TestCase):
         # Three swatches, then the ellipsis and count after them.
         self.assertGreater(self.columnIconWidth(pattern.Label), 3 * 10 + 2 * 2)
 
+    def testAPatternsEyeShowsItsBodiesAndDrawsNothingItself(self):
+        # Its pieces are drawn once, by their bodies; the pattern's eye shows and hides them.
+        _, pattern, bodies = self.pattern(3)
+        self.tree()
+        self.assertTrue(pattern.Visibility)
+        self.assertFalse(pattern.ViewObject.isVisible())
+        self.assertTrue(all(b.ViewObject.isVisible() for b in bodies))
+
+        pattern.ViewObject.Visibility = False
+        self.assertFalse(any(b.Visibility for b in bodies))
+        pattern.ViewObject.Visibility = True
+        self.assertTrue(all(b.Visibility for b in bodies))
+        self.assertFalse(pattern.ViewObject.isVisible())
+
+    def testHidingEveryPieceTurnsThePatternsEyeOff(self):
+        _, pattern, bodies = self.pattern(3)
+        bodies[0].ViewObject.Visibility = False
+        self.assertTrue(pattern.Visibility)
+        for body in bodies[1:]:
+            body.ViewObject.Visibility = False
+        self.assertFalse(pattern.Visibility)
+
     def testThreePatternBodiesSitSideBySide(self):
         _, pattern, _ = self.pattern(3)
         self.assertEqual(self.columnIconWidth(pattern.Label), 3 * 10 + 2 * 2)
