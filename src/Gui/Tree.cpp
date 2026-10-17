@@ -3679,8 +3679,8 @@ void TreeWidget::drawRowBody(
 ) const
 {
     // Cruth #3 (ARCHITECTURE §8.2): the rows a selected step came from are tinted with their
-    // body's colour across the whole row, and the selected row gets the same tint a step stronger,
-    // in place of the default selection highlight, so the two read as one family.
+    // body's colour across the whole row, and the selected row gets the same tint in place of the
+    // default selection highlight, so they read as one family.
     auto item = itemFromIndex(index);
     if (!item) {
         QTreeWidget::drawRow(painter, options, index);
@@ -3700,11 +3700,9 @@ void TreeWidget::drawRowBody(
     }
 
     // The body colour is laid over the row as a see-through wash, so it reads on any theme; the
-    // palette cannot be trusted for the background, which the stylesheet paints. The selected
-    // row's wash is stronger, which for a mid-tone swatch is darker on a light background and
-    // lighter on a dark one.
+    // palette cannot be trusted for the background, which the stylesheet paints.
     QColor tint = found != lineageTints.end() ? found->second : palette().color(QPalette::Highlight);
-    tint.setAlpha(selected ? 110 : 60);
+    tint.setAlpha(60);
     // The whole width, margin included: the row rectangle starts after the indentation.
     painter->fillRect(QRect(0, options.rect.top(), viewport()->width(), options.rect.height()), tint);
 
@@ -4733,12 +4731,18 @@ void TreeWidget::updateLineage()
         auto datum = freecad_cast<App::DatumElement*>(obj);
         return datum && datum->isOriginFeature();
     };
-    // A body selected on its own (its swatch was clicked) asks which steps made it: the steps
-    // that build it, their sketches, and the step of another body it was built on, in this
-    // body's colour, but not what went into that step.
-    auto buildsABody = [](App::DocumentObject* obj) {
-        auto vp = Application::Instance->getViewProvider(obj);
-        return vp && !vp->getTreeBodyColumn().builds.empty();
+    // A selection asks what made it: for a step, the earlier steps of its own body; for a body
+    // (its swatch was clicked), every step that builds it. Their sketches come too, and so does
+    // the step of another body it was built on, in this body's colour, but not what went into
+    // that step: the other body is not part of this family.
+    auto bodiesBuilt = [](App::DocumentObject* obj) {
+        std::set<App::DocumentObject*> bodies;
+        if (auto vp = Application::Instance->getViewProvider(obj)) {
+            for (const auto& swatch : vp->getTreeBodyColumn().builds) {
+                bodies.insert(swatch.bodies.begin(), swatch.bodies.end());
+            }
+        }
+        return bodies;
     };
     auto colorOfBody = [](App::DocumentObject* step, App::DocumentObject* body) {
         auto vp = Application::Instance->getViewProvider(step);
@@ -4752,41 +4756,42 @@ void TreeWidget::updateLineage()
         return std::optional<QColor>();
     };
     std::set<App::DocumentObject*> lineage;
-    std::set<App::DocumentObject*> selectedBodies;
     std::map<App::DocumentObject*, QColor> borrowed;
     for (auto* obj : selected) {
-        auto steps = stepsBuildingBody(obj);
-        if (steps.empty()) {
-            continue;
+        std::vector<App::DocumentObject*> pending = stepsBuildingBody(obj);
+        std::set<App::DocumentObject*> ownBodies;
+        std::optional<QColor> ownColor;
+        if (!pending.empty()) {
+            ownBodies.insert(obj);
+            ownColor = colorOfBody(pending.front(), obj);
+            lineage.insert(pending.begin(), pending.end());
         }
-        selectedBodies.insert(obj);
-        auto ownColor = colorOfBody(steps.front(), obj);
-        std::vector<App::DocumentObject*> pending(steps.begin(), steps.end());
-        lineage.insert(steps.begin(), steps.end());
+        else {
+            pending.push_back(obj);
+            ownBodies = bodiesBuilt(obj);
+            if (!ownBodies.empty()) {
+                ownColor = colorOfBody(obj, *ownBodies.begin());
+            }
+        }
         while (!pending.empty()) {
             auto* step = pending.back();
             pending.pop_back();
             for (auto* input : step->getOutList()) {
-                if (lineage.count(input) || isOrigin(input)) {
+                if (lineage.count(input) || selected.count(input) || isOrigin(input)) {
                     continue;
                 }
                 lineage.insert(input);
-                if (!buildsABody(input)) {
+                auto inputBodies = bodiesBuilt(input);
+                bool sameFamily = inputBodies.empty()
+                    || std::ranges::any_of(inputBodies, [&](auto* body) {
+                                      return ownBodies.count(body) > 0;
+                                  });
+                if (sameFamily) {
                     pending.push_back(input);
                 }
                 else if (ownColor) {
                     borrowed[input] = *ownColor;
                 }
-            }
-        }
-    }
-    for (auto* step : selected) {
-        if (selectedBodies.count(step)) {
-            continue;
-        }
-        for (auto* input : step->getOutListRecursive()) {
-            if (!selected.count(input) && !isOrigin(input)) {
-                lineage.insert(input);
             }
         }
     }

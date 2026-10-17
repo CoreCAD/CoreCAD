@@ -1144,9 +1144,9 @@ class TestBodyColumn(unittest.TestCase):
         Gui.Selection.clearSelection()
         self.assertEqual(self.tintedRows(), [])
 
-    def testASketchIsTintedWithTheBodyItFeeds(self):
-        # Selecting a step that reaches into another body: the other body's sketch takes that
-        # body's colour, not the selected step's.
+    def testAStepOfAnotherBodyIsTintedInTheSelectedStepsColour(self):
+        # Selecting a step that reaches into another body: that body's step shows, in the
+        # selected step's colour, and what went into it does not.
         first = self.square("S1", 0)
         pad = PartDesign.makeFeature(first, "Pad")
         second = self.square("S2", 50)
@@ -1157,8 +1157,8 @@ class TestBodyColumn(unittest.TestCase):
         self.Doc.recompute()
         Gui.Selection.clearSelection()
         Gui.Selection.addSelection(self.Doc.Name, user.Name)
-        self.assertEqual(self.rowTint(first.Label), self.rowTint(pad.Label))
-        self.assertNotEqual(self.rowTint(second.Label), self.rowTint(pad.Label))
+        self.assertEqual(self.tintedRows(), sorted([second.Label, pad.Label]))
+        self.assertEqual(self.rowTint(pad.Label), self.rowTint(second.Label))
         Gui.Selection.clearSelection()
 
     def testSelectingABodyTintsOnlyTheStepsThatMadeIt(self):
@@ -1181,8 +1181,9 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(self.rowTint(pad.Label), self.rowTint(user.Label))
         Gui.Selection.clearSelection()
 
-    def testTheSelectedStepIsTintedMoreStrongly(self):
-        # The selected row's tint is stronger than its sketch's, however it was selected.
+    def testTheSelectedStepIsTintedLikeItsFamily(self):
+        # The body marker shows the tip, so the selected row needs no stronger tint than its
+        # sketch's, however it was selected.
         sketch = self.square("S1", 0)
         pad = PartDesign.makeFeature(sketch, "Pad")
         self.Doc.recompute()
@@ -1190,7 +1191,7 @@ class TestBodyColumn(unittest.TestCase):
         Gui.Selection.addSelection(self.Doc.Name, pad.Name)
         for item in self.tree().selectedItems():
             item.setSelected(False)
-        self.assertNotEqual(self.rowTint(pad.Label), self.rowTint(sketch.Label))
+        self.assertEqual(self.rowTint(pad.Label), self.rowTint(sketch.Label))
         Gui.Selection.clearSelection()
 
     def testTheOriginIsNotTinted(self):
