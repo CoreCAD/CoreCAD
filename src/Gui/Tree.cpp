@@ -6233,6 +6233,9 @@ void DocumentItem::updateStopRows()
 
     for (const auto& [obj, data] : ObjectMap) {
         data->viewObject->updateShowable();
+        for (auto* item : data->items) {
+            applyBodyColumn(item, *data->viewObject);
+        }
     }
 
     QSignalBlocker guard(treeWidget());
