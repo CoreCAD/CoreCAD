@@ -365,6 +365,14 @@ void ViewProvider::setModeSwitch()
     }
 }
 
+bool ViewProvider::isShow() const
+{
+    if (!temporarilyVisible && drawnByItsBodies(getObject())) {
+        return Visibility.getValue();
+    }
+    return ViewProviderPart::isShow();
+}
+
 void ViewProvider::refreshDrawing()
 {
     if (drawnByItsBodies(getObject()) && !temporarilyVisible) {

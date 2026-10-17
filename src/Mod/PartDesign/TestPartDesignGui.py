@@ -736,15 +736,18 @@ class TestBodyColumn(unittest.TestCase):
         # Its pieces are drawn once, by their bodies; the pattern's eye shows and hides them.
         _, pattern, bodies = self.pattern(3)
         self.tree()
-        self.assertTrue(pattern.Visibility)
-        self.assertFalse(pattern.ViewObject.isVisible())
+        self.assertTrue(pattern.ViewObject.isVisible())
+        self.assertEqual(pattern.ViewObject.SwitchNode.whichChild.getValue(), -1)
         self.assertTrue(all(b.ViewObject.isVisible() for b in bodies))
 
-        pattern.ViewObject.Visibility = False
-        self.assertFalse(any(b.Visibility for b in bodies))
-        pattern.ViewObject.Visibility = True
-        self.assertTrue(all(b.Visibility for b in bodies))
+        # The tree's eye toggles the object, and reads back what it set.
+        pattern.Visibility = False
         self.assertFalse(pattern.ViewObject.isVisible())
+        self.assertFalse(any(b.Visibility for b in bodies))
+        pattern.Visibility = True
+        self.assertTrue(pattern.ViewObject.isVisible())
+        self.assertTrue(all(b.Visibility for b in bodies))
+        self.assertEqual(pattern.ViewObject.SwitchNode.whichChild.getValue(), -1)
 
     def testHidingEveryPieceTurnsThePatternsEyeOff(self):
         _, pattern, bodies = self.pattern(3)

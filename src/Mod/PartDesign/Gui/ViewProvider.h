@@ -87,6 +87,8 @@ public:
     {
         return showingBodies;
     }
+    /// A feature drawn by its bodies reads as shown while its eye is on.
+    bool isShow() const override;
 
     // Returns the ViewProvider of the body the feature belongs to, or NULL, if not in a body
     ViewProviderBody* getBodyViewProvider();
