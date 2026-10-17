@@ -6231,6 +6231,10 @@ void DocumentItem::updateStopRows()
         return;
     }
 
+    for (const auto& [obj, data] : ObjectMap) {
+        data->viewObject->updateShowable();
+    }
+
     QSignalBlocker guard(treeWidget());
     if (existing) {
         if (getTree()->draggedStopRow == existing) {

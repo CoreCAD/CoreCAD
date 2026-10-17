@@ -198,6 +198,8 @@ public:
 
     void setShowable(bool enable);
     bool isShowable() const;
+    /// Draw or stop drawing this object after what isShowable() reads has changed.
+    void updateShowable();
 
     /** Start the edit mode with ViewProvider::Default */
     void startDefaultEditMode();

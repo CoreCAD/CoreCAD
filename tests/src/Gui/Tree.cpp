@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Cruth contributors
 
 #include <QTest>
+#include <Inventor/nodes/SoSwitch.h>
 #include <QTreeWidgetItem>
 
 #include <App/Application.h>
@@ -162,6 +163,29 @@ private Q_SLOTS:
             QStringLiteral("Third")
         };
         QCOMPARE(outline(), built);
+    }
+
+    // A step past the stop row is not drawn, and keeps its own visibility so that rolling
+    // forward brings it back as it was.
+    void test_aStepPastTheStopRowIsNotDrawnUntilRolledForward()  // NOLINT
+    {
+        auto* first = doc->addObject("App::DocumentObjectGroup", "First");
+        auto* second = doc->addObject("App::Plane", "Second");
+        auto* view = guiDoc->getViewProvider(second);
+        view->show();
+        auto drawn = [view] {
+            return view->getModeSwitch()->whichChild.getValue() >= 0;
+        };
+        QVERIFY(drawn());
+
+        doc->setRollbackMarker(first);
+        settle();
+        QVERIFY(!drawn());
+        QVERIFY(second->Visibility.getValue());
+
+        doc->setRollbackMarker(nullptr);
+        settle();
+        QVERIFY(drawn());
     }
 };
 
