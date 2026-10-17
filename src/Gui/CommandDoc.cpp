@@ -1785,6 +1785,49 @@ bool StdCmdDuplicateSelection::isActive()
 }
 
 //===========================================================================
+// Std_RollBackHere
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdRollBackHere)
+
+StdCmdRollBackHere::StdCmdRollBackHere()
+    : Command("Std_RollBackHere")
+{
+    sGroup = "Edit";
+    sMenuText = QT_TR_NOOP("Roll Back to Here");
+    sToolTipText = QT_TR_NOOP(
+        "Stops building the model after the selected step; select the last step to build it all"
+    );
+    sWhatsThis = "Std_RollBackHere";
+    sStatusTip = sToolTipText;
+    sPixmap = "PartDesign_MoveTip";
+}
+
+void StdCmdRollBackHere::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    if (selected.size() != 1 || !selected.front()->isTimelineStep()) {
+        return;
+    }
+    App::DocumentObject* step = selected.front();
+    // Moving the marker is not an undo step, as in most CAD tools.
+    doCommand(
+        Doc,
+        "App.getDocument('%s').rollBackTo(%s)",
+        step->getDocument()->getName(),
+        getObjectCmd(step).c_str()
+    );
+    updateActive();
+}
+
+bool StdCmdRollBackHere::isActive()
+{
+    const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    return selected.size() == 1 && selected.front()->isTimelineStep();
+}
+
+//===========================================================================
 // Std_SelectAll
 //===========================================================================
 
@@ -2784,6 +2827,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdAlignment());
     rcCmdMgr.addCommand(new StdCmdEdit());
     rcCmdMgr.addCommand(new StdCmdProperties());
+    rcCmdMgr.addCommand(new StdCmdRollBackHere());
     rcCmdMgr.addCommand(new StdCmdExpression());
 }
 

@@ -35,6 +35,7 @@
 #include <vector>
 #include <list>
 #include <algorithm>
+#include <ranges>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -187,6 +188,9 @@ void Document::onBeforeChange(const Property* prop)
     if (prop == &Label) {
         oldLabel = Label.getValue();
     }
+    else if (prop == &RollbackMarker) {
+        rollbackMarkerBeforeChange = RollbackMarker.getValue();
+    }
     // Content-scope marker is set-once (ARCHITECTURE §7.1, Amendment 8 Clause 8.2):
     // writable while the document is untyped (empty marker), frozen the moment it is
     // stamped. onBeforeChange still sees the pre-change value, so a non-empty current
@@ -217,6 +221,9 @@ void Document::onChanged(const Property* prop)
     }
     else if (prop == &ShowHidden) {
         GetApplication().signalShowHidden(*this);
+    }
+    else if (prop == &RollbackMarker && !testStatus(Restoring)) {
+        touchAcrossRollbackMove();
     }
     else if (prop == &Uid) {
         std::string new_dir =
@@ -424,6 +431,12 @@ Document::Document(const char* documentName)
                       0,
                       PropertyType(Prop_Transient),
                       "Link of the tip object of the document");
+    ADD_PROPERTY_TYPE(RollbackMarker,
+                      (""),
+                      0,
+                      Prop_None,
+                      "The durable id of the step the document stops building after; empty "
+                      "builds every step");
     ADD_PROPERTY_TYPE(TipName,
                       (""),
                       0,
@@ -768,6 +781,113 @@ std::vector<DocumentObject*> Document::getDependingObjects() const
 const std::vector<DocumentObject*>& Document::getObjects() const
 {
     return d->objectArray;
+}
+
+DocumentObject* Document::objectByUid(const std::string& uid) const
+{
+    try {
+        Base::Uuid id;
+        id.setValue(uid);
+        return getObjectByUuid(id);
+    }
+    catch (const Base::Exception&) {
+        return nullptr;
+    }
+}
+
+DocumentObject* Document::getRollbackMarker() const
+{
+    const std::string uid = RollbackMarker.getValue();
+    if (uid.empty()) {
+        return nullptr;
+    }
+    return objectByUid(uid);
+}
+
+void Document::setRollbackMarker(DocumentObject* step)
+{
+    auto last = std::ranges::find_if(d->objectArray | std::views::reverse,
+                                     [](DocumentObject* obj) { return obj->isTimelineStep(); });
+    const bool buildsEverything =
+        !step || last == (d->objectArray | std::views::reverse).end() || *last == step;
+    const std::string uid = buildsEverything ? std::string() : step->Uid.getValueStr();
+    if (uid != RollbackMarker.getValue()) {
+        RollbackMarker.setValue(uid);
+    }
+}
+
+bool Document::isRolledBackPast(const DocumentObject* obj) const
+{
+    if (!obj || !obj->isTimelineStep() || RollbackMarker.getStrValue().empty()) {
+        return false;
+    }
+    const DocumentObject* marker = getRollbackMarker();
+    if (!marker || marker == obj) {
+        return false;
+    }
+    for (const DocumentObject* each : d->objectArray) {
+        if (each == marker) {
+            return true;
+        }
+        if (each == obj) {
+            return false;
+        }
+    }
+    return false;
+}
+
+// The steps between the old and new marker change between built and held back, and every
+// object that stands for steps (a body) shows a different one.
+void Document::touchAcrossRollbackMove()
+{
+    const std::string before = rollbackMarkerBeforeChange;
+    rollbackMarkerBeforeChange.clear();
+    auto positionOf = [this](const std::string& uid) -> std::size_t {
+        if (uid.empty()) {
+            return d->objectArray.size();
+        }
+        DocumentObject* obj = objectByUid(uid);
+        auto found = std::ranges::find(d->objectArray, obj);
+        return found == d->objectArray.end() ? d->objectArray.size()
+                                             : std::distance(d->objectArray.begin(), found);
+    };
+    const auto [low, high] =
+        std::minmax(positionOf(before), positionOf(RollbackMarker.getValue()));
+    for (std::size_t i = 0; i < d->objectArray.size(); ++i) {
+        DocumentObject* obj = d->objectArray[i];
+        if (!obj->isTimelineStep() || (i > low && i <= high)) {
+            obj->touch();
+        }
+    }
+}
+
+void Document::placeAtRollbackMarker(DocumentObject* obj)
+{
+    DocumentObject* marker = getRollbackMarker();
+    if (!marker || !obj->isTimelineStep()) {
+        return;
+    }
+    auto at = std::ranges::find(d->objectArray, marker);
+    auto self = std::ranges::find(d->objectArray, obj);
+    if (at == d->objectArray.end() || self == d->objectArray.end() || self < at) {
+        return;
+    }
+    std::vector<DocumentObject*> order(at + 1, self);
+    order.insert(order.begin(), obj);
+    arrangeObjects(order);
+    RollbackMarker.setValue(obj->Uid.getValueStr());
+}
+
+void Document::retreatRollbackMarkerFrom(const DocumentObject* obj)
+{
+    if (RollbackMarker.getStrValue().empty() || getRollbackMarker() != obj) {
+        return;
+    }
+    auto self = std::ranges::find(d->objectArray, obj);
+    auto before = std::find_if(std::make_reverse_iterator(self),
+                               d->objectArray.rend(),
+                               [](DocumentObject* each) { return each->isTimelineStep(); });
+    setRollbackMarker(before == d->objectArray.rend() ? nullptr : *before);
 }
 
 void Document::arrangeObjects(const std::vector<DocumentObject*>& order)

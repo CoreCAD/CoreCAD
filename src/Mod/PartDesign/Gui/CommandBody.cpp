@@ -57,81 +57,6 @@
 
 
 //===========================================================================
-// PartDesign_MoveTip
-//===========================================================================
-DEF_STD_CMD_A(CmdPartDesignMoveTip)
-
-CmdPartDesignMoveTip::CmdPartDesignMoveTip()
-    : Command("PartDesign_MoveTip")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Roll Back to Here");
-    sToolTipText = QT_TR_NOOP(
-        "Stops the body at the selected step; select its last step or the body to compute it all"
-    );
-    sWhatsThis = "PartDesign_MoveTip";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_MoveTip";
-}
-
-void CmdPartDesignMoveTip::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        App::DocumentObject::getClassTypeId()
-    );
-    std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
-    if (features.size() != 1) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Select exactly one Part Design feature or a body.")
-        );
-        return;
-    }
-    App::DocumentObject* selFeature = features.front();
-    auto* body = freecad_cast<PartDesign::Body*>(selFeature);
-    if (!body) {
-        body = PartDesignGui::getBodyFor(selFeature, /* messageIfNot =*/false);
-    }
-    if (!body) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Could not determine a body for the selected feature '%1'.")
-                .arg(QString::fromUtf8(selFeature->Label.getValue()))
-        );
-        return;
-    }
-    // Selecting the Body or its Tip rolls the marker to the end.
-    App::DocumentObject* marker = selFeature == body || selFeature == body->Tip.getValue()
-        ? nullptr
-        : selFeature;
-    const auto solids = body->ownSolids();
-    if (marker && std::ranges::find(solids, marker) == solids.end()) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Only a solid step of the body can hold the roll-back marker.")
-        );
-        return;
-    }
-    if (body->RollbackMarker.getValue() == marker) {
-        return;
-    }
-
-    openCommand(QT_TRANSLATE_NOOP("Command", "Roll back to selected step"));
-    FCMD_OBJ_CMD(body, "RollbackMarker = " << (marker ? getObjectCmd(marker) : std::string("None")));
-    updateActive();
-}
-
-bool CmdPartDesignMoveTip::isActive()
-{
-    return hasActiveDocument();
-}
-
-//===========================================================================
 // PartDesign_DuplicateSelection
 //===========================================================================
 
@@ -807,7 +732,6 @@ void CreatePartDesignBodyCommands()
 {
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
-    rcCmdMgr.addCommand(new CmdPartDesignMoveTip());
 
     rcCmdMgr.addCommand(new CmdPartDesignDuplicateSelection());
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeature());

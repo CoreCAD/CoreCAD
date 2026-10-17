@@ -606,6 +606,10 @@ Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentO
     if (!obj || !obj->isAttachedToDocument()) {
         return column;
     }
+    // A step past the roll-back marker does not exist yet, so it builds and uses no body.
+    if (obj->getDocument()->isRolledBackPast(obj)) {
+        return column;
+    }
 
     // A body's own row (shown only with hidden rows revealed) carries its swatch.
     if (auto* body = freecad_cast<Part::BodyBase*>(obj)) {

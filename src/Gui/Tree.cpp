@@ -1362,6 +1362,11 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
     MenuItem view;
     Gui::Application::Instance->setupContextMenu("Tree", &view);
 
+    // Every workbench works on the same history, so every workbench can roll it back.
+    const auto picked = Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    if (picked.size() == 1 && picked.front()->isTimelineStep()) {
+        view << "Std_RollBackHere";
+    }
     view << "Std_Properties";
     Workbench::createLinkMenu(&view);
 
@@ -2480,7 +2485,8 @@ QTreeWidgetItem* TreeWidget::stopRowTargetAt(const QPoint& pos) const
 {
     QTreeWidgetItem* item = itemAt(pos);
     if (!draggedStopRow || !item || item->type() != ObjectType
-        || item->parent() != draggedStopRow->parent()) {
+        || item->parent() != draggedStopRow->parent()
+        || !static_cast<DocumentObjectItem*>(item)->object()->getObject()->isTimelineStep()) {
         return nullptr;
     }
     return item;
@@ -2515,10 +2521,19 @@ void TreeWidget::mouseReleaseEvent(QMouseEvent* event)
     event->accept();
 
     auto* docItem = dynamic_cast<DocumentItem*>(row->parent());
-    ViewProviderDocumentObject* owner = docItem ? docItem->stopRowOwner(row) : nullptr;
-    if (owner && target) {
-        owner->moveTreeStopRow(static_cast<DocumentObjectItem*>(target)->object()->getObject());
+    if (!docItem || !target) {
+        return;
     }
+    App::DocumentObject* step = static_cast<DocumentObjectItem*>(target)->object()->getObject();
+    App::Document* doc = docItem->document()->getDocument();
+    // Moving the marker is not an undo step, as in most CAD tools.
+    Command::doCommand(
+        Command::Doc,
+        "App.getDocument('%s').rollBackTo(%s)",
+        doc->getName(),
+        Command::getObjectCmd(step).c_str()
+    );
+    Command::updateActive();
 }
 
 void TreeWidget::startDragging()
@@ -2693,6 +2708,20 @@ Qt::DropAction getDropAction(int size, const int type)
 }
 }
 
+namespace
+{
+std::vector<App::DocumentObject*> draggedObjectsOf(const QList<QTreeWidgetItem*>& items)
+{
+    std::vector<App::DocumentObject*> objects;
+    for (auto* item : items) {
+        if (item->type() == TreeWidget::ObjectType) {
+            objects.push_back(static_cast<DocumentObjectItem*>(item)->object()->getObject());
+        }
+    }
+    return objects;
+}
+}  // namespace
+
 void TreeWidget::dragMoveEvent(QDragMoveEvent* event)
 {
     // Qt5 does not change drag cursor in response to modifier key press,
@@ -2746,6 +2775,9 @@ void TreeWidget::dragMoveEvent(QDragMoveEvent* event)
             targetInfo.targetItem = targetInfo.targetItem->parent();
             if (targetInfo.targetItem->type() == TreeWidget::DocumentType) {
                 leaveEvent(nullptr);
+                if (!dropKeepsInputsFirst(targetInfo, draggedObjectsOf(items))) {
+                    event->ignore();
+                }
                 return;
             }
 
@@ -3567,6 +3599,91 @@ void TreeWidget::dropEvent(QDropEvent* event)
     }
 }
 
+namespace
+{
+// @p objects with @p dragged taken out and put back just above or below @p underMouse.
+std::vector<App::DocumentObject*> placeDropped(
+    const std::vector<App::DocumentObject*>& objects,
+    const std::vector<App::DocumentObject*>& dragged,
+    const App::DocumentObject* underMouse,
+    bool inBottomHalf
+)
+{
+    std::vector<App::DocumentObject*> placed;
+    for (auto* obj : objects) {
+        if (obj == underMouse) {
+            if (inBottomHalf) {
+                placed.push_back(obj);
+            }
+            placed.insert(placed.end(), dragged.begin(), dragged.end());
+            if (!inBottomHalf) {
+                placed.push_back(obj);
+            }
+        }
+        else if (std::ranges::find(dragged, obj) == dragged.end()) {
+            placed.push_back(obj);
+        }
+    }
+    return placed;
+}
+
+// Whether every step in @p order comes after the steps it is built from, as a timeline must.
+bool keepsInputsFirst(const std::vector<App::DocumentObject*>& order)
+{
+    std::map<const App::DocumentObject*, std::size_t> position;
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        position[order[i]] = i;
+    }
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        if (!order[i]->isTimelineStep()) {
+            continue;
+        }
+        for (auto* input : order[i]->getOutList()) {
+            auto found = position.find(input);
+            if (found != position.end() && input->isTimelineStep() && found->second > i) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+}  // namespace
+
+std::vector<App::DocumentObject*> TreeWidget::rootOrderAfterDrop(
+    const TargetItemInfo& targetInfo,
+    const std::vector<App::DocumentObject*>& draggedObjects
+) const
+{
+    Gui::Document* guiDoc = Gui::Application::Instance->getDocument(targetInfo.targetDoc);
+    std::vector<App::DocumentObject*> objList = guiDoc->getTreeRootObjects();
+    std::ranges::stable_sort(objList, [](App::DocumentObject* a, App::DocumentObject* b) {
+        auto vpA = dynamic_cast<Gui::ViewProviderDocumentObject*>(
+            Gui::Application::Instance->getViewProvider(a)
+        );
+        auto vpB = dynamic_cast<Gui::ViewProviderDocumentObject*>(
+            Gui::Application::Instance->getViewProvider(b)
+        );
+        if (vpA && vpB) {
+            return vpA->getTreeRank() < vpB->getTreeRank();
+        }
+        return false;
+    });
+    auto underMouse = static_cast<DocumentObjectItem*>(targetInfo.underMouseItem);
+    return placeDropped(objList, draggedObjects, underMouse->object()->getObject(), targetInfo.inBottomHalf);
+}
+
+bool TreeWidget::dropKeepsInputsFirst(
+    const TargetItemInfo& targetInfo,
+    const std::vector<App::DocumentObject*>& draggedObjects
+) const
+{
+    if (!targetInfo.targetDoc || !targetInfo.underMouseItem
+        || targetInfo.underMouseItem->type() != ObjectType) {
+        return true;
+    }
+    return keepsInputsFirst(rootOrderAfterDrop(targetInfo, draggedObjects));
+}
+
 void TreeWidget::sortDroppedObjects(
     TargetItemInfo& targetInfo,
     std::vector<App::DocumentObject*> draggedObjects
@@ -3577,33 +3694,6 @@ void TreeWidget::sortDroppedObjects(
     }
     auto underMouseItemObj = static_cast<DocumentObjectItem*>(targetInfo.underMouseItem);
     auto underMouseObj = underMouseItemObj->object()->getObject();
-    std::vector<App::DocumentObject*> sortedObjList;
-    std::vector<App::DocumentObject*> objList;
-
-    auto sortIntoList = [&sortedObjList, &draggedObjects, underMouseObj, &targetInfo](
-                            const std::vector<App::DocumentObject*>& objects
-                        ) {
-        for (auto* obj : objects) {
-            if (obj == underMouseObj) {
-                if (targetInfo.inBottomHalf) {
-                    sortedObjList.push_back(obj);
-                }
-
-                for (auto* draggedObj : draggedObjects) {
-                    sortedObjList.push_back(draggedObj);
-                }
-
-                if (!targetInfo.inBottomHalf) {
-                    sortedObjList.push_back(obj);
-                }
-            }
-            else {
-                if (std::ranges::find(draggedObjects, obj) == draggedObjects.end()) {
-                    sortedObjList.push_back(obj);
-                }
-            }
-        }
-    };
 
     if (targetInfo.targetItem->type() == TreeWidget::ObjectType) {
         // To update the order of items of groups such as App::Part, we just need to change the
@@ -3615,43 +3705,31 @@ void TreeWidget::sortDroppedObjects(
         if (!propGroup) {
             return;
         }
-
-        objList = propGroup->getValue();
-        sortIntoList(objList);  // Move dropped objects to correct position
-        propGroup->setValue(sortedObjList);
+        propGroup->setValue(
+            placeDropped(propGroup->getValue(), draggedObjects, underMouseObj, targetInfo.inBottomHalf)
+        );
     }
     else if (targetInfo.targetItem->type() == TreeWidget::DocumentType) {
-        Gui::Document* guiDoc = Gui::Application::Instance->getDocument(
-            targetInfo.targetDoc->getName()
-        );
-        objList = guiDoc->getTreeRootObjects();
-        // First we need to sort objList by treeRank.
-        std::sort(objList.begin(), objList.end(), [](App::DocumentObject* a, App::DocumentObject* b) {
-            auto vpA = dynamic_cast<Gui::ViewProviderDocumentObject*>(
-                Gui::Application::Instance->getViewProvider(a)
-            );
-            auto vpB = dynamic_cast<Gui::ViewProviderDocumentObject*>(
-                Gui::Application::Instance->getViewProvider(b)
-            );
-            if (vpA && vpB) {
-                return vpA->getTreeRank() < vpB->getTreeRank();
-            }
-            return false;  // Keep the original order if either vpA or vpB is nullptr
-        });
-
-        // Then we move dropped objects to their correct position
-        sortIntoList(objList);
-
-        // Then we set the tree rank
+        const auto sortedObjList = rootOrderAfterDrop(targetInfo, draggedObjects);
+        if (!keepsInputsFirst(sortedObjList)) {
+            return;
+        }
+        // The tree is the timeline: the drop moves the steps in the document's history itself,
+        // which is what the roll-back marker and the saved file read.
+        targetInfo.targetDoc->arrangeObjects(sortedObjList);
         for (size_t i = 0; i < sortedObjList.size(); ++i) {
             auto vp = freecad_cast<ViewProviderDocumentObject*>(
                 Application::Instance->getViewProvider(sortedObjList[i])
             );
             vp->setTreeRank(i);
         }
+        for (auto* obj : draggedObjects) {
+            obj->touch();
+        }
 
-        // Lastly we refresh the tree
-        static_cast<DocumentItem*>(targetInfo.targetItem)->sortObjectItems();
+        auto* docItem = static_cast<DocumentItem*>(targetInfo.targetItem);
+        docItem->sortObjectItems();
+        docItem->updateHeldBack();
     }
 }
 
@@ -6190,77 +6268,60 @@ bool standsAfter(const QTreeWidgetItem* row, const QTreeWidgetItem* step)
 }
 }  // namespace
 
-// Stop rows sit only among the document's own rows, never inside an object's children.
+void DocumentItem::updateHeldBack()
+{
+    for (const auto& [obj, data] : ObjectMap) {
+        data->viewObject->updateShowable();
+        for (auto* item : data->items) {
+            applyBodyColumn(item, *data->viewObject);
+        }
+    }
+}
+
+// The stop row sits only among the document's own rows, never inside an object's children.
 void DocumentItem::updateStopRows()
 {
-    struct Wanted
-    {
-        QString owner;
-        ViewProvider::TreeStopRow row;
-        QTreeWidgetItem* step;
-    };
-    std::vector<Wanted> wanted;
-    for (const auto& [obj, data] : ObjectMap) {
-        ViewProvider::TreeStopRow row = data->viewObject->getTreeStopRow();
-        auto found = row.after ? ObjectMap.find(row.after) : ObjectMap.end();
-        if (found == ObjectMap.end()) {
-            continue;
-        }
-        for (auto* item : found->second->items) {
-            if (item->parent() == this) {
-                wanted.push_back({QString::fromLatin1(obj->getNameInDocument()), std::move(row), item});
-                break;
+    QTreeWidgetItem* step = nullptr;
+    if (App::DocumentObject* marker = document()->getDocument()->getRollbackMarker()) {
+        auto found = ObjectMap.find(marker);
+        if (found != ObjectMap.end()) {
+            for (auto* item : found->second->items) {
+                if (item->parent() == this) {
+                    step = item;
+                    break;
+                }
             }
         }
     }
 
-    std::vector<QTreeWidgetItem*> existing;
-    for (int i = 0; i < childCount(); ++i) {
+    QTreeWidgetItem* existing = nullptr;
+    for (int i = 0; i < childCount() && !existing; ++i) {
         if (child(i)->type() == TreeWidget::StopRowType) {
-            existing.push_back(child(i));
+            existing = child(i);
         }
     }
-    const bool inPlace = existing.size() == wanted.size()
-        && std::ranges::all_of(wanted, [&existing](const Wanted& w) {
-                             return std::ranges::any_of(existing, [&w](QTreeWidgetItem* row) {
-                                 return row->data(0, Qt::UserRole).toString() == w.owner
-                                     && row->text(0) == w.row.text && standsAfter(row, w.step);
-                             });
-                         });
-    if (inPlace) {
+    if (existing ? step && standsAfter(existing, step) : !step) {
         return;
     }
 
+    updateHeldBack();
+
     QSignalBlocker guard(treeWidget());
-    for (auto* row : existing) {
-        if (getTree()->draggedStopRow == row) {
+    if (existing) {
+        if (getTree()->draggedStopRow == existing) {
             getTree()->draggedStopRow = nullptr;
             getTree()->stopRowTarget = nullptr;
         }
-        delete row;
+        delete existing;
     }
-    for (auto& w : wanted) {
-        auto* row = new QTreeWidgetItem(TreeWidget::StopRowType);
-        row->setText(0, w.row.text);
-        row->setIcon(0, w.row.icon);
-        row->setToolTip(0, w.row.tooltip);
-        row->setData(0, Qt::UserRole, w.owner);
-        row->setFlags(Qt::ItemIsEnabled);
-        int index = indexOfChild(w.step) + 1;
-        while (index < childCount() && child(index)->type() == TreeWidget::StopRowType) {
-            ++index;
-        }
-        insertChild(index, row);
+    if (!step) {
+        return;
     }
-}
-
-ViewProviderDocumentObject* DocumentItem::stopRowOwner(const QTreeWidgetItem* row) const
-{
-    const QByteArray name = row->data(0, Qt::UserRole).toString().toLatin1();
-    App::DocumentObject* obj = document()->getDocument()->getObject(name.constData());
-    return obj
-        ? dynamic_cast<ViewProviderDocumentObject*>(Application::Instance->getViewProvider(obj))
-        : nullptr;
+    auto* row = new QTreeWidgetItem(TreeWidget::StopRowType);
+    row->setText(0, QObject::tr("Model stops here"));
+    row->setIcon(0, BitmapFactory().iconFromTheme("PartDesign_MoveTip"));
+    row->setFlags(Qt::ItemIsEnabled);
+    insertChild(indexOfChild(step) + 1, row);
 }
 
 void DocumentItem::testStatus()

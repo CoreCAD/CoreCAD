@@ -29,9 +29,7 @@
 #include <Gui/Control.h>
 #include <Gui/MDIView.h>
 #include <Mod/Sketcher/Gui/Workbench.h>
-#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/Feature.h>
 
 #include "Utils.h"
 #include "Workbench.h"
@@ -77,18 +75,9 @@ Workbench::~Workbench()
 void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) const
 {
     auto selection = Gui::Selection().getSelection();
-    // Add move Tip Command
     if (!selection.empty()) {
         App::DocumentObject* feature = selection.front().pObject;
-        PartDesign::Body* body = nullptr;
-
-        body = PartDesignGui::getBodyFor(feature, false);
-        // lote of assertion so feature should be marked as a tip
-        if (selection.size() == 1 && feature && body
-            && (feature->isDerivedFrom<PartDesign::Feature>()
-                || (Part::hasShape(feature) && body->BaseFeature.getValue() == feature))) {
-            *item << "PartDesign_MoveTip";
-        }
+        PartDesign::Body* body = PartDesignGui::getBodyFor(feature, false);
 
         if (strcmp(recipient, "Tree") == 0) {
             Gui::MDIView* activeView = Gui::Application::Instance->activeView();

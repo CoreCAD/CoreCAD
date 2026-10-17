@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // SPDX-FileCopyrightText: 2026 Cruth contributors
 
+#include <QMimeData>
 #include <QTest>
+#include <Inventor/nodes/SoSwitch.h>
 #include <QTreeWidgetItem>
 
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectGroup.h>
+#include <App/FeatureTest.h>
 
 #include <Gui/Application.h>
 #include <Gui/Document.h>
@@ -22,6 +25,13 @@
  * from what the objects say about each other, and this list is one reading of that answer. When
  * it disagrees with the document, the document is right and a person is misinformed.
  */
+/// Reaches the tree's own drag handlers; a synthetic drag event is not delivered without a real drag.
+struct DragAccess: Gui::TreeWidget  // NOLINT
+{
+    using Gui::TreeWidget::dragMoveEvent;
+    using Gui::TreeWidget::dropEvent;
+};
+
 class TestTree: public QObject  // NOLINT
 {
     Q_OBJECT
@@ -59,6 +69,43 @@ private:
             walk(tree->topLevelItem(i), 0);
         }
         return lines;
+    }
+
+    /// Drag the row named @p dragged and drop it just above the row named @p target, as a
+    /// person does with the mouse. False when the tree refuses the drop while it is dragged.
+    bool dropAbove(const QString& dragged, const QString& target)
+    {
+        settle();
+        tree->resize(400, 400);
+        tree->show();
+        tree->expandAll();
+        auto* from = tree->findItems(dragged, Qt::MatchExactly | Qt::MatchRecursive).value(0);
+        auto* onto = tree->findItems(target, Qt::MatchExactly | Qt::MatchRecursive).value(0);
+        if (!from || !onto) {
+            return false;
+        }
+        tree->clearSelection();
+        from->setSelected(true);
+        const QRect rect = tree->visualItemRect(onto);
+        const QPointF above(rect.center().x(), rect.top() + 1);
+        QMimeData mime;
+        QDragMoveEvent move(above.toPoint(), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        (tree->*(&DragAccess::dragMoveEvent))(&move);
+        if (!move.isAccepted()) {
+            return false;
+        }
+        QDropEvent drop(above, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        (tree->*(&DragAccess::dropEvent))(&drop);
+        return true;
+    }
+
+    QStringList documentOrder() const
+    {
+        QStringList names;
+        for (auto* obj : doc->getObjects()) {
+            names << QString::fromLatin1(obj->getNameInDocument());
+        }
+        return names;
     }
 
 private Q_SLOTS:
@@ -136,6 +183,74 @@ private Q_SLOTS:
 
         QCOMPARE(outline(), QStringList {QStringLiteral("Shown")});
         QVERIFY(doc->getObject("Hidden") != nullptr);
+    }
+
+    // Rolling back shows one stop row just after the row the model stops at; building to the
+    // end takes it away.
+    void test_theStopRowStandsAfterTheRowTheModelStopsAt()  // NOLINT
+    {
+        auto* first = doc->addObject("App::DocumentObjectGroup", "First");
+        doc->addObject("App::DocumentObjectGroup", "Second");
+        doc->addObject("App::DocumentObjectGroup", "Third");
+
+        doc->setRollbackMarker(first);
+        const QStringList rolledBack {
+            QStringLiteral("First"),
+            QStringLiteral("Model stops here"),
+            QStringLiteral("Second"),
+            QStringLiteral("Third")
+        };
+        QCOMPARE(outline(), rolledBack);
+
+        doc->setRollbackMarker(nullptr);
+        const QStringList built {
+            QStringLiteral("First"),
+            QStringLiteral("Second"),
+            QStringLiteral("Third")
+        };
+        QCOMPARE(outline(), built);
+    }
+
+    // A step past the stop row is not drawn, and keeps its own visibility so that rolling
+    // forward brings it back as it was.
+    void test_aStepPastTheStopRowIsNotDrawnUntilRolledForward()  // NOLINT
+    {
+        auto* first = doc->addObject("App::DocumentObjectGroup", "First");
+        auto* second = doc->addObject("App::Plane", "Second");
+        auto* view = guiDoc->getViewProvider(second);
+        view->show();
+        auto drawn = [view] {
+            return view->getModeSwitch()->whichChild.getValue() >= 0;
+        };
+        QVERIFY(drawn());
+
+        doc->setRollbackMarker(first);
+        settle();
+        QVERIFY(!drawn());
+        QVERIFY(second->Visibility.getValue());
+
+        doc->setRollbackMarker(nullptr);
+        settle();
+        QVERIFY(drawn());
+    }
+
+    // The list is the timeline: dropping a row moves the step in the document's history.
+    void test_droppingARowMovesTheStepInTheHistory()  // NOLINT
+    {
+        doc->addObject("App::FeatureTest", "First");
+        doc->addObject("App::FeatureTest", "Second");
+        QVERIFY(dropAbove(QStringLiteral("Second"), QStringLiteral("First")));
+        QCOMPARE(documentOrder(), (QStringList {QStringLiteral("Second"), QStringLiteral("First")}));
+    }
+
+    // A step cannot be dropped above a step it is built from.
+    void test_aStepCannotBeDroppedAboveWhatItIsBuiltFrom()  // NOLINT
+    {
+        auto* source = doc->addObject("App::FeatureTest", "Source");
+        auto* user = doc->addObject("App::FeatureTest", "User");
+        static_cast<App::FeatureTest*>(user)->Link.setValue(source);
+        QVERIFY(!dropAbove(QStringLiteral("User"), QStringLiteral("Source")));
+        QCOMPARE(documentOrder(), (QStringList {QStringLiteral("Source"), QStringLiteral("User")}));
     }
 };
 

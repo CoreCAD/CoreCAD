@@ -262,7 +262,11 @@ void ViewProviderDocumentObject::hide()
 
 bool ViewProviderDocumentObject::isShowable() const
 {
-    return _Showable;
+    // A step past the document's roll-back marker is not drawn; its own Visibility is kept, so it
+    // comes back as it was when the marker moves past it again.
+    const App::DocumentObject* obj = getObject();
+    const bool heldBack = obj && obj->getDocument() && obj->getDocument()->isRolledBackPast(obj);
+    return _Showable && !heldBack;
 }
 
 void ViewProviderDocumentObject::setShowable(bool enable)
@@ -272,11 +276,16 @@ void ViewProviderDocumentObject::setShowable(bool enable)
     }
 
     _Showable = enable;
+    updateShowable();
+}
+
+void ViewProviderDocumentObject::updateShowable()
+{
     int which = getModeSwitch()->whichChild.getValue();
-    if (_Showable && which == -1 && Visibility.getValue()) {
+    if (isShowable() && which == -1 && Visibility.getValue()) {
         setModeSwitch();
     }
-    else if (!_Showable) {
+    else if (!isShowable()) {
         if (which >= 0) {
             ViewProvider::hide();
         }

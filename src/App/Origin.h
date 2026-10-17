@@ -51,6 +51,11 @@ public:
         return "Gui::ViewProviderCoordinateSystem";
     }
 
+    bool isTimelineStep() const override
+    {
+        return false;
+    }
+
     bool isOrigin() const override
     {
         return true;

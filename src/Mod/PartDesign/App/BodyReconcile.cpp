@@ -456,11 +456,6 @@ void Body::reconcileMultiOutput(App::Document* doc, const std::vector<App::Docum
 
 void Body::retreatTippedBodies(App::DocumentObject* feature, App::DocumentObject* retreatTo)
 {
-    for (auto* body : feature->getDocument()->getObjectsOfType<Body>()) {
-        if (body->RollbackMarker.getValue() == feature) {
-            body->RollbackMarker.setValue(retreatTo);
-        }
-    }
     const std::vector<Body*> tipped = bodiesTippedAt(feature);
     for (auto* body : tipped) {
         body->Tip.setValue(retreatTo);
@@ -481,11 +476,6 @@ void Body::retireOrRetreatTippedBodies(App::Document* doc, App::DocumentObject* 
     if (App::DocumentObject* base = pd->BaseFeature.getValue()) {
         retreatTippedBodies(feature, base);
         return;
-    }
-    for (auto* body : doc->getObjectsOfType<Body>()) {
-        if (body->RollbackMarker.getValue() == feature) {
-            body->RollbackMarker.setValue(nullptr);
-        }
     }
     for (auto* body : bodiesTippedAt(feature)) {
         doc->removeObject(body->getNameInDocument());

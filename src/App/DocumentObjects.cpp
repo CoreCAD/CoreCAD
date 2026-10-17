@@ -407,6 +407,9 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName, Add
 
     if (!testStatus(Restoring)) {
         d->movedOnFromItsFile = true;
+        if (!d->rollback && !isPerformingTransaction()) {
+            placeAtRollbackMarker(pcObject);
+        }
     }
     signalNewObject(*pcObject);
 
@@ -508,6 +511,8 @@ void Document::_removeObject(DocumentObject* pcObject, RemoveObjectOptions optio
     if (d->activeObject == pcObject) {
         d->activeObject = nullptr;
     }
+
+    retreatRollbackMarkerFrom(pcObject);
 
     // Mark the object as about to be removed
     pcObject->setStatus(ObjectStatus::Remove, true);

@@ -645,6 +645,28 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(texts["S2"], ("", "", False))
         self.assertEqual(swatchColours(texts["Pad"][1]), [colourName(body)])
 
+    def testAStepPastTheStopRowShowsNoBodyAndIsNotDrawn(self):
+        # Past the stop row nothing exists yet: the second body's pad shows no swatch and is not
+        # drawn, though it keeps its own visibility for when the model is rolled forward.
+        PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        s2 = self.square("S2", 50)
+        pad2 = PartDesign.makeFeature(s2, "Pad")
+        self.Doc.recompute()
+        self.assertTrue(self.columnTexts()[pad2.Label][2])
+
+        self.Doc.rollBackTo(s2)
+        self.Doc.recompute()
+        texts = self.columnTexts()
+        self.assertEqual(texts[pad2.Label], ("", "", False))
+        self.assertTrue(texts[[o for o in self.Doc.Objects if o.Name == "Pad"][0].Label][2])
+        self.assertFalse(pad2.ViewObject.isVisible())
+        self.assertTrue(pad2.ViewObject.Visibility)
+
+        self.Doc.rollBackTo(None)
+        self.Doc.recompute()
+        self.assertTrue(self.columnTexts()[pad2.Label][2])
+        self.assertTrue(pad2.ViewObject.isVisible())
+
     def testDatumShowsNoBody(self):
         # A datum builds nothing; attached to a body's geometry or not, its row shows no swatch.
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")

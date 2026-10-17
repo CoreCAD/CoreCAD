@@ -450,15 +450,6 @@ class CorePartWorkbench(Gui.Workbench):
         except Exception:
             body = None
 
-        # MoveTip: single feature that lives inside a body
-        if len(selection) == 1 and body is not None:
-            is_pd_feature = feature.isDerivedFrom("PartDesign::Feature")
-            is_base_feature = feature.isDerivedFrom("Part::Feature") and (
-                hasattr(body, "BaseFeature") and body.BaseFeature == feature
-            )
-            if is_pd_feature or is_base_feature:
-                self.appendContextMenu("", ["PartDesign_MoveTip"])
-
         if recipient == "Tree":
             if bodies:
                 add_move_feature = True

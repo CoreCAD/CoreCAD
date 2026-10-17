@@ -65,9 +65,6 @@ public:
     App::PropertyUUID Uid;
     /// Uids of Bodies whose overlap with this one the user acknowledged.
     App::PropertyStringList AcknowledgedOverlaps;
-    /// The step the Body stops computing at; empty computes the whole chain. The steps past it
-    /// keep their place and are skipped.
-    App::PropertyLink RollbackMarker;
 
     Body();
 
@@ -80,6 +77,10 @@ public:
     App::DocumentObject::ContentScope getContentScope() const override
     {
         return App::DocumentObject::ContentScope::Body;
+    }
+    bool isTimelineStep() const override
+    {
+        return false;
     }
 
     // Editing the chain (Body.cpp). None of these create or destroy the feature.
@@ -239,14 +240,13 @@ public:
 
     // Shape and selection (Body.cpp).
 
-    /// The step the Body shows and new steps build on: the marker, or the Tip.
+    /// The step the Body shows and new steps build on: its last step before the document's
+    /// roll-back marker, or the Tip. Null when every step of it lies past the marker.
     App::DocumentObject* shownStep() const;
-    /// True when @p step lies past this Body's marker.
-    bool stopsBefore(const App::DocumentObject* step) const;
-    /// True when every Body @p step feeds stops before it, so computing it is wasted.
+    /// True when @p step lies past the document's roll-back marker, so it is not computed.
     static bool isRolledBackPast(const App::DocumentObject* step);
-    /// True for a step rolled back past, and for anything whose every user is held back, such as
-    /// the sketch of such a step: none of it is computed, so none of it may be shown.
+    /// True for a step rolled back past, and for a Body whose every step is: none of it is
+    /// computed, so none of it may be shown.
     static bool isHeldBack(const App::DocumentObject* obj);
     /// The Tip's shape, or the one copy of it this Body stands for, placed in the world. Null
     /// when there is no such shape.
@@ -286,7 +286,6 @@ public:
     }
 
 protected:
-    void onBeforeChange(const App::Property* prop) override;
     /// Keeps a FeatureBase at the start of the chain carrying this Body's BaseFeature.
     void onChanged(const App::Property* prop) override;
     void setupObject() override;
@@ -297,7 +296,9 @@ private:
     long tipCopy() const;
     void appendAtTip(PartDesign::Feature* feature, long copy);
     void insertAtMarker(PartDesign::Feature* feature);
-    /// The step after the marker on the way to the Tip, or null.
+    /// The step this Body stops at when the roll-back marker holds some of its steps back, or null.
+    App::DocumentObject* stopStep() const;
+    /// The step after the stop on the way to the Tip, or null.
     PartDesign::Feature* stepAfterMarker() const;
     /// The solid of @p step's @p shape this Body stands for; sets @p whole instead when it
     /// stands for all of it.
@@ -307,13 +308,10 @@ private:
         bool& whole
     ) const;
     Part::TopoShape placedShapeOf(const App::DocumentObject* step) const;
-    /// Touches every step past @p marker, which were skipped while it stood there.
-    void touchStepsPast(const App::DocumentObject* marker);
     /// Moves every Body tipped at @p feature back to @p retreatTo.
     static void retreatTippedBodies(App::DocumentObject* feature, App::DocumentObject* retreatTo);
 
     bool showTip = false;
-    App::DocumentObject* markerBeforeChange = nullptr;
 };
 
 }  // namespace PartDesign

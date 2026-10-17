@@ -278,6 +278,8 @@ public:
     PropertyLink Tip;
     /// Tip object name of the document (if any).
     PropertyString TipName;
+    /// The durable id of the step the document stops building after; empty builds every step.
+    PropertyString RollbackMarker;
     /// Whether to show hidden items in TreeView.
     PropertyBool ShowHidden;
     /// Whether to use hasher on topological naming.
@@ -1056,6 +1058,13 @@ public:
     /// Put these objects, in this order, into the places they already hold in the list; every
     /// other object keeps its place. The order is the order steps were made in (the tree shows it).
     void arrangeObjects(const std::vector<DocumentObject*>& order);
+
+    /// The step the document stops building after, or `nullptr` when every step is built.
+    DocumentObject* getRollbackMarker() const;
+    /// Stop building after @p step; `nullptr`, or the last step, builds every step.
+    void setRollbackMarker(DocumentObject* step);
+    /// Whether @p obj is a step that comes after the roll-back marker, so it is not built.
+    bool isRolledBackPast(const DocumentObject* obj) const;
 
     /**
      * @brief Get all objects of a given type.
@@ -1881,6 +1890,13 @@ private:
     bool _acceptedLoss {false};
 
     std::string oldLabel;
+    std::string rollbackMarkerBeforeChange;
+    void touchAcrossRollbackMove();
+    DocumentObject* objectByUid(const std::string& uid) const;
+    /// A step made while rolled back goes in at the marker, and the marker moves onto it.
+    void placeAtRollbackMarker(DocumentObject* obj);
+    /// A removed marker step hands the marker to the step before it.
+    void retreatRollbackMarkerFrom(const DocumentObject* obj);
     std::string myName;
     bool autoCreated;    // Flag to know if the document was automatically created at startup
 };
