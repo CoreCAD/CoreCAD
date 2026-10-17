@@ -459,6 +459,7 @@ void Body::removeFeatures(const std::vector<App::DocumentObject*>& features)
 
 App::DocumentObjectExecReturn* Body::execute()
 {
+    copier.reset();
     Part::BodyBase::execute();
 
     App::DocumentObject* tip = Tip.getValue();
@@ -493,6 +494,9 @@ App::DocumentObjectExecReturn* Body::execute()
 
 void Body::onChanged(const App::Property* prop)
 {
+    if (prop == &Tip || prop == &TipComponentId || prop == &Shape) {
+        copier.reset();
+    }
     const bool userEdit = !isRestoring() && getDocument()
         && !getDocument()->isPerformingTransaction();
     if (userEdit && prop == &BaseFeature) {

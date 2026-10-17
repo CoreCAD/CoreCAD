@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -297,6 +298,9 @@ protected:
     void onDocumentRestored() override;
 
 private:
+    /// copiedBy(), kept until this Body's Tip, its component or its shape changes.
+    mutable std::optional<App::DocumentObject*> copier;
+    App::DocumentObject* findCopier() const;
     /// The pattern copy this Body stands for, or chain::WholeOutput.
     long tipCopy() const;
     void appendAtTip(PartDesign::Feature* feature, long copy);

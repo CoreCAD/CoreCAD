@@ -281,6 +281,14 @@ std::vector<App::DocumentObject*> Body::ownSolids() const
 
 App::DocumentObject* Body::copiedBy() const
 {
+    if (!copier) {
+        copier = findCopier();
+    }
+    return *copier;
+}
+
+App::DocumentObject* Body::findCopier() const
+{
     auto* tip = freecad_cast<PartDesign::Feature*>(Tip.getValue());
     const std::string cid = TipComponentId.getStrValue();
     if (!tip || cid.empty()) {
