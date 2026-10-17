@@ -24,8 +24,11 @@
 
 import FreeCAD
 import FreeCADGui
+import os
 import re
+import shutil
 import sys
+import tempfile
 import unittest
 import Sketcher
 import Part
@@ -1278,3 +1281,55 @@ class TestNoEffectNotice(unittest.TestCase):
         Gui.updateGui()
         self.assertFalse(self.Pocket.hasNoEffect())
         self.assertEqual(self.rowToolTip(self.Pocket), "")
+
+
+class TestSelectingAStepShowsItsSolid(unittest.TestCase):
+    """A body draws its steps' solids under its own node; selecting a step by itself, as the tree
+    does, still lights that solid in the 3D view."""
+
+    def setUp(self):
+        self.Doc = App.newDocument("SelectionIn3D", type="Part")
+        self.First = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        self.Second = PartDesign.makeFeature(self.square("S2", 30), "Pad")
+        self.Doc.recompute()
+        self.View = Gui.ActiveDocument.ActiveView
+        self.View.viewIsometric()
+        self.View.fitAll()
+        self.Folder = tempfile.mkdtemp()
+
+    def tearDown(self):
+        Gui.Selection.clearSelection()
+        App.closeDocument(self.Doc.Name)
+        shutil.rmtree(self.Folder, ignore_errors=True)
+
+    def square(self, name, x):
+        sketch = self.Doc.addObject("Sketcher::SketchObject", name)
+        sketch.Placement.Base = App.Vector(x, 0, 0)
+        pts = [(0, 0), (10, 0), (10, 10), (0, 10)]
+        for i in range(4):
+            a, b = pts[i], pts[(i + 1) % 4]
+            sketch.addGeometry(Part.LineSegment(App.Vector(*a, 0), App.Vector(*b, 0)))
+        return sketch
+
+    def picture(self, name):
+        path = os.path.join(self.Folder, name + ".png")
+        self.View.saveImage(path, 200, 150, "White")
+        return QtGui.QImage(path)
+
+    def changedPixels(self, before, after):
+        return sum(
+            before.pixel(x, y) != after.pixel(x, y)
+            for x in range(0, before.width(), 2)
+            for y in range(0, before.height(), 2)
+        )
+
+    def testEachStepLightsUpWhenSelected(self):
+        # The navigation cube is missing from the view's first picture; compare later ones only.
+        self.picture("first")
+        plain = self.picture("plain")
+        for step in (self.First, self.Second):
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(self.Doc.Name, step.Name)
+            self.assertGreater(self.changedPixels(plain, self.picture(step.Name)), 100, step.Name)
+        Gui.Selection.clearSelection()
+        self.assertEqual(self.changedPixels(plain, self.picture("cleared")), 0)

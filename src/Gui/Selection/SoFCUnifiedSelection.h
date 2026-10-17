@@ -98,6 +98,7 @@ protected:
 
 private:
     static int getPriority(const SoPickedPoint* p);
+    void applyWhereDrawn(SoAction& action, SoNode* root);
 
     struct PickedInfo
     {

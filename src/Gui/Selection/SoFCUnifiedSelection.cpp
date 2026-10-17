@@ -32,6 +32,7 @@
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoHandleEventAction.h>
+#include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/actions/SoWriteAction.h>
 #include <Inventor/bundles/SoMaterialBundle.h>
 #include <Inventor/details/SoFaceDetail.h>
@@ -339,6 +340,24 @@ std::vector<SoFCUnifiedSelection::PickedInfo> SoFCUnifiedSelection::getPickedLis
     return ret;
 }
 
+void SoFCUnifiedSelection::applyWhereDrawn(SoAction& action, SoNode* root)
+{
+    // A solid a body draws sits under the body's node, not at the top of the scene. The
+    // highlight is kept per path, so it must reach the node by the path it is drawn on.
+    SoSearchAction search;
+    search.setNode(root);
+    search.setInterest(SoSearchAction::ALL);
+    search.apply(this);
+    const SoPathList& paths = search.getPaths();
+    if (paths.getLength() == 0) {
+        action.apply(root);
+        return;
+    }
+    for (int i = 0; i < paths.getLength(); ++i) {
+        action.apply(paths[i]);
+    }
+}
+
 void SoFCUnifiedSelection::doAction(SoAction* action)
 {
     if (action->getTypeId() == SoFCEnablePreselectionAction::getClassTypeId()) {
@@ -520,7 +539,7 @@ void SoFCUnifiedSelection::doAction(SoAction* action)
                         selectionAction.apply(detailPath);
                     }
                     else {
-                        selectionAction.apply(vp->getRoot());
+                        applyWhereDrawn(selectionAction, vp->getRoot());
                     }
                 }
                 detailPath->truncate(0);
