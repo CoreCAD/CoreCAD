@@ -110,8 +110,8 @@ public:
     /// The 1-based index of the output solid that holds the original, or 0 when no one solid
     /// does (the original was cut apart, or skipped).
     int solidIndexOfOriginal() const;
-    /// True when the original comes out of this pattern as it went in: no copy fused into it
-    /// and none cut from it. The copies are then all this pattern makes.
+    /// True when the original comes out of this pattern as it went in: its copies are kept apart
+    /// or touch nothing they would fuse with, and none are cut. The copies are then all it makes.
     bool leavesOriginalAsIs() const;
     /// The ordinal of the copy whose solid carries component id @p cid (Body::TipComponentId),
     /// or -1. Read against this pattern's own stored shape, where the ids agree.
