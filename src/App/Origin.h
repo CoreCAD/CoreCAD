@@ -56,6 +56,12 @@ public:
         return false;
     }
 
+    /// The marker stands here to build no step at all.
+    bool isRollbackStop() const override
+    {
+        return true;
+    }
+
     bool isOrigin() const override
     {
         return true;

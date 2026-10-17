@@ -296,6 +296,7 @@ private:
     long tipCopy() const;
     void appendAtTip(PartDesign::Feature* feature, long copy);
     void insertAtMarker(PartDesign::Feature* feature);
+    void insertAtStart(PartDesign::Feature* feature, App::DocumentObject* from);
     /// The step this Body stops at when the roll-back marker holds some of its steps back, or null.
     App::DocumentObject* stopStep() const;
     /// The step after the stop on the way to the Tip, or null.

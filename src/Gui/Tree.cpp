@@ -1370,6 +1370,12 @@ void TreeWidget::_updateStatus(bool delay)
 
 void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
 {
+    QTreeWidgetItem* pressed = itemAt(e->pos());
+    if (pressed && pressed->type() == StopRowType) {
+        showStopRowMenu(pressed, e->globalPos());
+        return;
+    }
+
     auto swatchBodies = bodiesAtSwatch(e->pos());
     if (!swatchBodies.empty()) {
         showSwatchMenu(swatchBodies, e->globalPos());
@@ -1382,7 +1388,7 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
 
     // Every workbench works on the same history, so every workbench can roll it back.
     const auto picked = Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
-    if (picked.size() == 1 && picked.front()->isTimelineStep()) {
+    if (picked.size() == 1 && picked.front()->isRollbackStop()) {
         view << "Std_RollBackHere";
     }
     view << "Std_Properties";
@@ -2499,12 +2505,29 @@ void TreeWidget::mouseDoubleClickEvent(QMouseEvent* event)
     }
 }
 
+void TreeWidget::showStopRowMenu(QTreeWidgetItem* row, const QPoint& globalPos)
+{
+    auto* docItem = dynamic_cast<DocumentItem*>(row->parent());
+    if (!docItem) {
+        return;
+    }
+    App::Document* doc = docItem->document()->getDocument();
+    QMenu menu;
+    QAction* toEnd = menu.addAction(tr("Roll to End"));
+    toEnd->setEnabled(doc->getRollbackMarker() != nullptr);
+    if (menu.exec(globalPos) != toEnd) {
+        return;
+    }
+    Command::doCommand(Command::Doc, "App.getDocument('%s').rollBackTo(None)", doc->getName());
+    Command::updateActive();
+}
+
 QTreeWidgetItem* TreeWidget::stopRowTargetAt(const QPoint& pos) const
 {
     QTreeWidgetItem* item = itemAt(pos);
     if (!draggedStopRow || !item || item->type() != ObjectType
         || item->parent() != draggedStopRow->parent()
-        || !static_cast<DocumentObjectItem*>(item)->object()->getObject()->isTimelineStep()) {
+        || !static_cast<DocumentObjectItem*>(item)->object()->getObject()->isRollbackStop()) {
         return nullptr;
     }
     return item;
@@ -3645,17 +3668,23 @@ std::vector<App::DocumentObject*> placeDropped(
     return placed;
 }
 
-// Whether every step in @p order comes after the steps it is built from, as a timeline must.
+// Whether every step in @p order comes after the steps it is built from, and after the world
+// frame, as a timeline must.
 bool keepsInputsFirst(const std::vector<App::DocumentObject*>& order)
 {
     std::map<const App::DocumentObject*, std::size_t> position;
     for (std::size_t i = 0; i < order.size(); ++i) {
         position[order[i]] = i;
     }
+    bool stepSeen = false;
     for (std::size_t i = 0; i < order.size(); ++i) {
         if (!order[i]->isTimelineStep()) {
+            if (stepSeen && order[i]->isRollbackStop()) {
+                return false;
+            }
             continue;
         }
+        stepSeen = true;
         for (auto* input : order[i]->getOutList()) {
             auto found = position.find(input);
             if (found != position.end() && input->isTimelineStep() && found->second > i) {

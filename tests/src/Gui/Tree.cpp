@@ -265,6 +265,39 @@ private Q_SLOTS:
         QCOMPARE(documentOrder(), (QStringList {QStringLiteral("Source"), QStringLiteral("User")}));
     }
 
+    // The world frame stays above every step, as in most CAD tools; no drop moves it below one.
+    void test_theOriginStaysAboveEveryStep()  // NOLINT
+    {
+        doc->addObject("App::Origin", "Origin");
+        doc->addObject("App::FeatureTest", "First");
+        doc->addObject("App::FeatureTest", "Second");
+        const bool originDown = dropAbove(QStringLiteral("Origin"), QStringLiteral("Second"));
+        const bool stepUp = dropAbove(QStringLiteral("Second"), QStringLiteral("Origin"));
+        QVERIFY(!originDown);
+        QVERIFY(!stepUp);
+        QCOMPARE(documentOrder().indexOf(QStringLiteral("Origin")), 0);
+    }
+
+    // Standing on the world frame, the model builds no step at all.
+    void test_endOfModelCanStandRightBelowTheOrigin()  // NOLINT
+    {
+        auto* origin = doc->addObject("App::Origin", "Origin");
+        auto* first = doc->addObject("App::FeatureTest", "First");
+        doc->setRollbackMarker(origin);
+        settle();
+        QVERIFY(doc->isRolledBackPast(first));
+        QStringList rows;
+        for (const QString& line : outline(true)) {
+            if (!line.startsWith(QLatin1Char(' '))) {
+                rows << line;
+            }
+        }
+        QCOMPARE(
+            rows.indexOf(QStringLiteral("End of Model")),
+            rows.indexOf(QStringLiteral("Origin")) + 1
+        );
+    }
+
     // A step made while rolled back goes in just after the row the model stopped at, and the
     // stop row moves on to stand after it -- in the list as in the history.
     void test_aStepMadeWhileRolledBackIsListedAtTheStopRow()  // NOLINT

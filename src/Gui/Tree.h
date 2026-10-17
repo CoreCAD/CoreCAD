@@ -236,6 +236,7 @@ private:
     QTreeWidgetItem* draggedStopRow = nullptr;
     QTreeWidgetItem* stopRowTarget = nullptr;
     QTreeWidgetItem* stopRowTargetAt(const QPoint& pos) const;
+    void showStopRowMenu(QTreeWidgetItem* row, const QPoint& globalPos);
 
     // Helpers for the two-stage "Select All" feature
     void selectGroupItems(const QTreeWidgetItem* group, bool recursive);

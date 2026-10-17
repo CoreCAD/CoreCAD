@@ -139,6 +139,36 @@ class TestRollbackMarker(unittest.TestCase):
         self._rollBackTo(None)
         self.assertEqual(len(sketch.Shape.Edges), 3)
 
+    def _origin(self):
+        return next(o for o in self.Doc.Objects if o.TypeId == "App::Origin")
+
+    def testTheMarkerCanStandOnTheOriginToBuildNothing(self):
+        self._rollBackTo(self._origin())
+        self.assertEqual(self._marker(), self._origin())
+        for held in (self.Doc.getObject("S1"), self.pad, self.Doc.getObject("S2"), self.pocket):
+            self.assertTrue(self.Doc.isRolledBackPast(held), held.Name)
+        self._rollBackTo(None)
+        self.assertAlmostEqual(self.body.Shape.Volume, POCKET_2, places=3)
+
+    def testANewStepAtTheOriginStartsTheBody(self):
+        self._rollBackTo(self._origin())
+        boss = PartDesign.makeFeature(
+            _square(self.Doc, "S3", x0=-2, y0=-2, side=1), "Pad", body=self.body
+        )
+        boss.Length = 1
+        self.Doc.recompute()
+        self.assertIsNone(boss.BaseFeature)
+        self.assertEqual(self.pad.BaseFeature, boss)
+        self.assertEqual(self.body.Tip, self.pocket)
+        self.assertEqual(self._marker(), boss)
+
+    def testDeletingTheFirstStepUnderTheMarkerLeavesItAtTheOrigin(self):
+        sketch = self.Doc.getObject("S1")
+        self._rollBackTo(sketch)
+        self.Doc.removeObject(sketch.Name)
+        self.assertEqual(self._marker(), self._origin())
+        self.assertTrue(self.Doc.isRolledBackPast(self.pad))
+
     def testTheMarkerSurvivesReopen(self):
         path = os.path.join(tempfile.mkdtemp(), "rolled.FCStd")
         self._rollBackTo(self.pad)

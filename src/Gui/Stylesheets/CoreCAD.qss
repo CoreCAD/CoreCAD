@@ -2359,8 +2359,7 @@ Gui--TreeWidget {
   show-decoration-selected: 0;
 }
 
-Gui--TreeWidget::item:selected,
-Gui--TreeWidget::branch:selected {
+Gui--TreeWidget::item:selected {
   background-color: transparent;
 }
 

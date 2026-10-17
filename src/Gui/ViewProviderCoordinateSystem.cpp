@@ -84,6 +84,13 @@ std::vector<App::DocumentObject*> ViewProviderCoordinateSystem::claimChildren() 
     return childs;
 }
 
+// The world frame holds only its own axes, planes and point.
+bool ViewProviderCoordinateSystem::canDropObjects() const
+{
+    auto* frame = freecad_cast<App::LocalCoordinateSystem*>(getObject());
+    return !(frame && frame->isOrigin()) && ViewProviderGeoFeatureGroup::canDropObjects();
+}
+
 std::vector<App::DocumentObject*> ViewProviderCoordinateSystem::claimChildren3D() const
 {
     return claimChildren();

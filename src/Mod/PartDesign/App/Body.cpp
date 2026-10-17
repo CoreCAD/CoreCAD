@@ -314,6 +314,9 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         }
         Tip.setValue(feature);
     }
+    else if (isSolidFeature(feature) && Tip.getValue() && !shownStep()) {
+        insertAtStart(static_cast<PartDesign::Feature*>(feature), Tip.getValue());
+    }
     else if (isSolidFeature(feature) && stopStep()) {
         insertAtMarker(static_cast<PartDesign::Feature*>(feature));
     }
@@ -351,6 +354,26 @@ PartDesign::Feature* Body::stepAfterMarker() const
         return nullptr;
     }
     return freecad_cast<PartDesign::Feature*>(*(marker + 1));
+}
+
+// The feature becomes the root that the old root of @p from's chain builds on.
+void Body::insertAtStart(PartDesign::Feature* feature, App::DocumentObject* from)
+{
+    App::DocumentObject* root = from;
+    std::set<App::DocumentObject*> seen;
+    for (auto* cur = freecad_cast<PartDesign::Feature*>(root);
+         cur && cur->BaseFeature.getValue() && seen.insert(cur).second;
+         cur = freecad_cast<PartDesign::Feature*>(root)) {
+        root = cur->BaseFeature.getValue();
+    }
+    feature->BaseFeature.setValue(nullptr);
+    feature->BaseInstance.setValue(chain::WholeOutput);
+    if (auto* rootPd = freecad_cast<PartDesign::Feature*>(root)) {
+        rootPd->BaseFeature.setValue(feature);
+    }
+    else {
+        Tip.setValue(feature);
+    }
 }
 
 // Only the step on this Body's way moves: another Body may fork from the marker too.
@@ -395,23 +418,8 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
         // On the target's own base and copy, so the target builds on it.
         spliceAfter(pd, targetPd->BaseFeature.getValue(), targetPd->BaseInstance.getValue());
     }
-    else if (target || after) {
-        // At the start: the feature becomes the root the old root builds on.
-        App::DocumentObject* root = target ? target : Tip.getValue();
-        std::set<App::DocumentObject*> seen;
-        for (auto* cur = freecad_cast<PartDesign::Feature*>(root);
-             cur && cur->BaseFeature.getValue() && seen.insert(cur).second;
-             cur = freecad_cast<PartDesign::Feature*>(root)) {
-            root = cur->BaseFeature.getValue();
-        }
-        pd->BaseFeature.setValue(nullptr);
-        pd->BaseInstance.setValue(chain::WholeOutput);
-        if (auto* rootPd = freecad_cast<PartDesign::Feature*>(root)) {
-            rootPd->BaseFeature.setValue(feature);
-        }
-        else {
-            Tip.setValue(feature);
-        }
+    else if (target || after || (Tip.getValue() && !shownStep())) {
+        insertAtStart(pd, target ? target : Tip.getValue());
     }
     else if (stopStep()) {
         insertAtMarker(pd);
