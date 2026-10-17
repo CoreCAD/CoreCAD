@@ -68,7 +68,7 @@ CmdPartDesignMoveTip::CmdPartDesignMoveTip()
     sGroup = QT_TR_NOOP("PartDesign");
     sMenuText = QT_TR_NOOP("Roll Back to Here");
     sToolTipText = QT_TR_NOOP(
-        "Stops the body at the selected step; select its last step or the body to compute it all"
+        "Stops building the model after the selected step; select the last step to build it all"
     );
     sWhatsThis = "PartDesign_MoveTip";
     sStatusTip = sToolTipText;
@@ -78,52 +78,28 @@ CmdPartDesignMoveTip::CmdPartDesignMoveTip()
 void CmdPartDesignMoveTip::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        App::DocumentObject::getClassTypeId()
-    );
-    std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
-    if (features.size() != 1) {
+    const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    if (selected.size() != 1) {
         QMessageBox::warning(
             nullptr,
             QObject::tr("Selection error"),
-            QObject::tr("Select exactly one Part Design feature or a body.")
+            QObject::tr("Select exactly one step to roll back to.")
         );
         return;
     }
-    App::DocumentObject* selFeature = features.front();
-    auto* body = freecad_cast<PartDesign::Body*>(selFeature);
-    if (!body) {
-        body = PartDesignGui::getBodyFor(selFeature, /* messageIfNot =*/false);
+    App::DocumentObject* step = selected.front();
+    // A body stands for its steps: rolling back to it means its last built step.
+    if (auto* body = freecad_cast<PartDesign::Body*>(step)) {
+        step = body->Tip.getValue();
     }
-    if (!body) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Could not determine a body for the selected feature '%1'.")
-                .arg(QString::fromUtf8(selFeature->Label.getValue()))
-        );
+    if (!step || !step->isTimelineStep()) {
         return;
     }
-    // Selecting the Body or its Tip rolls the marker to the end.
-    App::DocumentObject* marker = selFeature == body || selFeature == body->Tip.getValue()
-        ? nullptr
-        : selFeature;
-    const auto solids = body->ownSolids();
-    if (marker && std::ranges::find(solids, marker) == solids.end()) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Only a solid step of the body can hold the roll-back marker.")
-        );
-        return;
-    }
-    if (body->RollbackMarker.getValue() == marker) {
-        return;
-    }
-
+    App::Document* doc = step->getDocument();
     openCommand(QT_TRANSLATE_NOOP("Command", "Roll back to selected step"));
-    FCMD_OBJ_CMD(body, "RollbackMarker = " << (marker ? getObjectCmd(marker) : std::string("None")));
+    doCommand(Doc, "App.getDocument('%s').rollBackTo(%s)", doc->getName(), getObjectCmd(step).c_str());
     updateActive();
+    commitCommand();
 }
 
 bool CmdPartDesignMoveTip::isActive()

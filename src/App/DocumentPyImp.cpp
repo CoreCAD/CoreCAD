@@ -958,6 +958,42 @@ PyObject* DocumentPy::purgeTouched(PyObject* args)
     Py_Return;
 }
 
+PyObject* DocumentPy::rollBackTo(PyObject* args)
+{
+    PyObject* object = Py_None;
+    if (!PyArg_ParseTuple(args, "O", &object)) {
+        return nullptr;
+    }
+    DocumentObject* step = nullptr;
+    if (object != Py_None) {
+        if (!PyObject_TypeCheck(object, &DocumentObjectPy::Type)) {
+            PyErr_SetString(PyExc_TypeError, "Expected a document object or None");
+            return nullptr;
+        }
+        step = static_cast<DocumentObjectPy*>(object)->getDocumentObjectPtr();
+        if (step->getDocument() != getDocumentPtr()) {
+            PyErr_SetString(PyExc_ValueError, "The object belongs to another document");
+            return nullptr;
+        }
+    }
+    PY_TRY
+    {
+        getDocumentPtr()->setRollbackMarker(step);
+        Py_Return;
+    }
+    PY_CATCH;
+}
+
+PyObject* DocumentPy::isRolledBackPast(PyObject* args)
+{
+    PyObject* object = nullptr;
+    if (!PyArg_ParseTuple(args, "O!", &DocumentObjectPy::Type, &object)) {
+        return nullptr;
+    }
+    auto* obj = static_cast<DocumentObjectPy*>(object)->getDocumentObjectPtr();
+    return Py::new_reference_to(Py::Boolean(getDocumentPtr()->isRolledBackPast(obj)));
+}
+
 PyObject* DocumentPy::getObject(PyObject* args)
 {
     DocumentObject* obj = nullptr;

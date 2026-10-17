@@ -483,6 +483,18 @@ class Document(PropertyContainer):
         """
         ...
 
+    def rollBackTo(self, step: DocumentObject | None, /) -> None:
+        """
+        Stop building after the given step; None, or the last step, builds every step.
+        """
+        ...
+
+    def isRolledBackPast(self, obj: DocumentObject, /) -> bool:
+        """
+        Whether the object is a step after the roll-back marker, so it is not built.
+        """
+        ...
+
     def getObjectsByLabel(self, label: str, /) -> list[DocumentObject]:
         """
         Return the objects with the given label name.

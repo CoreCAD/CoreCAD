@@ -293,6 +293,13 @@ public:
         return ContentScope::Generic;
     }
 
+    /// Whether this object is a step of the document's history, a row the roll-back marker can
+    /// stand on or hold back. A body or the world frame is not: it stands for steps, it is not one.
+    virtual bool isTimelineStep() const
+    {
+        return true;
+    }
+
     DocumentObject();
 
     ~DocumentObject() override;

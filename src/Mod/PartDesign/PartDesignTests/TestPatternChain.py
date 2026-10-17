@@ -73,7 +73,7 @@ class TestPatternChain(unittest.TestCase):
         self._row([mirror])
         self.assertAlmostEqual(self.body.Shape.Volume, 2 * 3 * CUBE)
 
-        self.body.RollbackMarker = mirror
+        self.Doc.rollBackTo(mirror)
         self.Doc.recompute()
         self.assertAlmostEqual(self.body.Shape.Volume, 2 * CUBE)
 

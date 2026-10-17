@@ -219,13 +219,6 @@ Body::Body()
         static_cast<App::PropertyType>(App::Prop_Hidden | App::Prop_NoRecompute),
         "Uids of Bodies whose overlap with this one the user acknowledged"
     );
-    ADD_PROPERTY_TYPE(
-        RollbackMarker,
-        (nullptr),
-        "Base",
-        App::Prop_None,
-        "The step the Body stops computing at; empty computes the whole chain"
-    );
 
     // Derived from the Tip on every recompute and on load, never authored or saved.
     Shape.setStatus(App::Property::Transient, true);
@@ -234,7 +227,7 @@ Body::Body()
 
 short Body::mustExecute() const
 {
-    if (Tip.isTouched() || RollbackMarker.isTouched()) {
+    if (Tip.isTouched()) {
         return 1;
     }
     // A step handed its geometry from the build cache is not recomputed, so nothing else would
@@ -321,7 +314,7 @@ std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
         }
         Tip.setValue(feature);
     }
-    else if (isSolidFeature(feature) && RollbackMarker.getValue()) {
+    else if (isSolidFeature(feature) && stopStep()) {
         insertAtMarker(static_cast<PartDesign::Feature*>(feature));
     }
     else if (isSolidFeature(feature)) {
@@ -353,7 +346,7 @@ void Body::appendAtTip(PartDesign::Feature* feature, long copy)
 PartDesign::Feature* Body::stepAfterMarker() const
 {
     const auto solids = ownSolids();
-    const auto marker = std::ranges::find(solids, RollbackMarker.getValue());
+    const auto marker = std::ranges::find(solids, stopStep());
     if (marker == solids.end() || marker + 1 == solids.end()) {
         return nullptr;
     }
@@ -367,11 +360,10 @@ void Body::insertAtMarker(PartDesign::Feature* feature)
     if (!next) {
         throw Base::RuntimeError("Body: the roll-back marker is not on this body's chain");
     }
-    feature->BaseFeature.setValue(RollbackMarker.getValue());
+    feature->BaseFeature.setValue(stopStep());
     feature->BaseInstance.setValue(next->BaseInstance.getValue());
     next->BaseFeature.setValue(feature);
     next->BaseInstance.setValue(chain::WholeOutput);
-    RollbackMarker.setValue(feature);
 }
 
 std::vector<App::DocumentObject*> Body::addFeatures(std::vector<App::DocumentObject*> features)
@@ -421,7 +413,7 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
             Tip.setValue(feature);
         }
     }
-    else if (RollbackMarker.getValue()) {
+    else if (stopStep()) {
         insertAtMarker(pd);
     }
     else {
@@ -473,13 +465,12 @@ App::DocumentObjectExecReturn* Body::execute()
             QT_TRANSLATE_NOOP("Exception", "Linked object is not a solid feature")
         );
     }
-    if (RollbackMarker.getValue() && !stepAfterMarker()) {
-        return new App::DocumentObjectExecReturn(
-            QT_TRANSLATE_NOOP("Exception", "The roll-back marker is not on this body's chain")
-        );
+    // Every step past the marker: the Body is not made yet, so there is nothing to show.
+    auto* shown = static_cast<Part::ShapeFeature*>(shownStep());
+    if (!shown) {
+        return App::DocumentObject::StdReturn;
     }
     // Only the shown step must have a shape; steps past the marker may not have one yet.
-    auto* shown = static_cast<Part::ShapeFeature*>(shownStep());
     if (shown->Shape.getShape().isNull()) {
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Tip shape is empty"));
     }
@@ -492,40 +483,8 @@ App::DocumentObjectExecReturn* Body::execute()
     return App::DocumentObject::StdReturn;
 }
 
-void Body::onBeforeChange(const App::Property* prop)
-{
-    if (prop == &RollbackMarker) {
-        markerBeforeChange = RollbackMarker.getValue();
-    }
-    Part::BodyBase::onBeforeChange(prop);
-}
-
-void Body::touchStepsPast(const App::DocumentObject* marker)
-{
-    const auto solids = ownSolids();
-    auto step = std::ranges::find(solids, marker);
-    if (step == solids.end()) {
-        return;
-    }
-    for (++step; step != solids.end(); ++step) {
-        (*step)->touch();
-    }
-}
-
 void Body::onChanged(const App::Property* prop)
 {
-    if (prop == &RollbackMarker) {
-        if (!isRestoring()) {
-            touchStepsPast(markerBeforeChange);
-        }
-        markerBeforeChange = nullptr;
-    }
-    // A marker at the Tip holds nothing back.
-    if ((prop == &RollbackMarker || prop == &Tip) && RollbackMarker.getValue()
-        && RollbackMarker.getValue() == Tip.getValue() && !isRestoring()) {
-        RollbackMarker.setValue(nullptr);
-    }
-
     const bool userEdit = !isRestoring() && getDocument()
         && !getDocument()->isPerformingTransaction();
     if (userEdit && prop == &BaseFeature) {
@@ -621,65 +580,37 @@ PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
 
 App::DocumentObject* Body::shownStep() const
 {
-    return RollbackMarker.getValue() ? RollbackMarker.getValue() : Tip.getValue();
+    App::Document* doc = getDocument();
+    if (!doc || doc->RollbackMarker.getStrValue().empty()) {
+        return Tip.getValue();
+    }
+    App::DocumentObject* shown = nullptr;
+    for (auto* step : ownSolids()) {
+        if (doc->isRolledBackPast(step)) {
+            break;
+        }
+        shown = step;
+    }
+    return shown;
 }
 
-bool Body::stopsBefore(const App::DocumentObject* step) const
+App::DocumentObject* Body::stopStep() const
 {
-    if (!RollbackMarker.getValue() || !step) {
-        return false;
-    }
-    const auto solids = ownSolids();
-    const auto marker = std::ranges::find(solids, RollbackMarker.getValue());
-    return marker != solids.end() && std::find(marker + 1, solids.end(), step) != solids.end();
+    App::DocumentObject* shown = shownStep();
+    return shown != Tip.getValue() ? shown : nullptr;
 }
 
 bool Body::isRolledBackPast(const App::DocumentObject* step)
 {
-    App::Document* doc = step ? step->getDocument() : nullptr;
-    if (!doc || std::ranges::none_of(doc->getObjectsOfType<Body>(), [](Body* body) {
-            return body->RollbackMarker.getValue() != nullptr;
-        })) {
-        return false;
-    }
-    const auto bodies = bodiesOf(step);
-    return !bodies.empty()
-        && std::ranges::all_of(bodies, [step](Body* body) { return body->stopsBefore(step); });
+    return step && step->getDocument() && step->getDocument()->isRolledBackPast(step);
 }
-
-namespace
-{
-bool heldBack(const App::DocumentObject* obj, std::map<const App::DocumentObject*, bool>& known)
-{
-    if (auto found = known.find(obj); found != known.end()) {
-        return found->second;
-    }
-    known[obj] = false;  // a cycle holds nothing back
-    bool result = false;
-    if (Body::isSolidFeature(obj)) {
-        result = Body::isRolledBackPast(obj);
-    }
-    else {
-        const auto users = obj->getInList();
-        result = !users.empty() && std::ranges::all_of(users, [&known](App::DocumentObject* user) {
-            return heldBack(user, known);
-        });
-    }
-    known[obj] = result;
-    return result;
-}
-}  // namespace
 
 bool Body::isHeldBack(const App::DocumentObject* obj)
 {
-    App::Document* doc = obj ? obj->getDocument() : nullptr;
-    if (!doc || std::ranges::none_of(doc->getObjectsOfType<Body>(), [](Body* body) {
-            return body->RollbackMarker.getValue() != nullptr;
-        })) {
-        return false;
+    if (const auto* body = freecad_cast<const Body*>(obj)) {
+        return body->Tip.getValue() && !body->shownStep();
     }
-    std::map<const App::DocumentObject*, bool> known;
-    return heldBack(obj, known);
+    return isRolledBackPast(obj);
 }
 
 // The marker stands for the copy the next step builds on; the Tip for its component id.
@@ -689,7 +620,7 @@ Part::TopoShape Body::standInSolid(
     bool& whole
 ) const
 {
-    if (step == RollbackMarker.getValue()) {
+    if (step && step == stopStep()) {
         const PartDesign::Feature* next = stepAfterMarker();
         const long copy = next ? next->BaseInstance.getValue() : chain::WholeOutput;
         whole = copy < 0;

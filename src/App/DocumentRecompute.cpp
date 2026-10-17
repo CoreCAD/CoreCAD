@@ -869,6 +869,12 @@ int Document::_recomputeFeature(DocumentObject* Feat) // NOLINT
 {
     FC_LOG("Recomputing " << Feat->getFullName());
 
+    // Past the roll-back marker: not built, and it keeps its last result until the marker moves
+    // past it again.
+    if (isRolledBackPast(Feat)) {
+        return 0;
+    }
+
     if (Feat->isBlockedByAStatement()) {
         // Cruth (Amendment 19): something this session could not honour states a value here --
         // this object's own file, or another object setting a value on it (Clause 19.6) -- so
