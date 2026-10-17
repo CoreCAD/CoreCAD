@@ -1144,6 +1144,25 @@ class TestBodyColumn(unittest.TestCase):
         self.assertNotEqual(self.rowTint(second.Label), self.rowTint(pad.Label))
         Gui.Selection.clearSelection()
 
+    def testSelectingABodyTintsOnlyTheStepsThatMadeIt(self):
+        # A body's swatch asks which steps made that body: a step of another body it was built
+        # on is not one of them.
+        first = self.square("S1", 0)
+        pad = PartDesign.makeFeature(first, "Pad")
+        second = self.square("S2", 50)
+        user = PartDesign.makeFeature(second, "Pad")
+        self.Doc.recompute()
+        user.Type = "UpToFace"
+        user.UpToFace = (pad, ["Face6"])
+        self.Doc.recompute()
+        body = [
+            o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body") and o.Tip == user
+        ]
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body[0].Name)
+        self.assertEqual(self.tintedRows(), sorted([second.Label, user.Label]))
+        Gui.Selection.clearSelection()
+
     def testTheSelectedStepIsTintedMoreStrongly(self):
         # The selected row's tint is stronger than its sketch's, however it was selected.
         sketch = self.square("S1", 0)

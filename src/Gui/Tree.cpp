@@ -2297,6 +2297,28 @@ std::vector<App::DocumentObject*> Gui::stepsUsingBody(App::DocumentObject* body)
     return steps;
 }
 
+std::vector<App::DocumentObject*> Gui::stepsBuildingBody(App::DocumentObject* body)
+{
+    std::vector<App::DocumentObject*> steps;
+    auto* guiDoc = Application::Instance->getDocument(body->getDocument());
+    if (!guiDoc) {
+        return steps;
+    }
+    for (auto* obj : body->getDocument()->getObjects()) {
+        auto* vp = guiDoc->getViewProvider(obj);
+        if (!vp) {
+            continue;
+        }
+        for (const auto& swatch : vp->getTreeBodyColumn().builds) {
+            if (std::ranges::find(swatch.bodies, body) != swatch.bodies.end()) {
+                steps.push_back(obj);
+                break;
+            }
+        }
+    }
+    return steps;
+}
+
 void TreeWidget::showSwatchMenu(const std::vector<App::DocumentObject*>& bodies, const QPoint& at)
 {
     QMenu menu;
@@ -4705,8 +4727,37 @@ void TreeWidget::updateLineage()
         auto datum = freecad_cast<App::DatumElement*>(obj);
         return datum && datum->isOriginFeature();
     };
+    // A body selected on its own (its swatch was clicked) asks which steps made it: the steps
+    // that build it and their sketches, not the steps of other bodies it was built on.
+    auto buildsABody = [](App::DocumentObject* obj) {
+        auto vp = Application::Instance->getViewProvider(obj);
+        return vp && !vp->getTreeBodyColumn().builds.empty();
+    };
     std::set<App::DocumentObject*> lineage;
+    std::set<App::DocumentObject*> selectedBodies;
+    for (auto* obj : selected) {
+        auto steps = stepsBuildingBody(obj);
+        if (steps.empty()) {
+            continue;
+        }
+        selectedBodies.insert(obj);
+        std::vector<App::DocumentObject*> pending(steps.begin(), steps.end());
+        lineage.insert(steps.begin(), steps.end());
+        while (!pending.empty()) {
+            auto* step = pending.back();
+            pending.pop_back();
+            for (auto* input : step->getOutList()) {
+                if (!lineage.count(input) && !isOrigin(input) && !buildsABody(input)) {
+                    lineage.insert(input);
+                    pending.push_back(input);
+                }
+            }
+        }
+    }
     for (auto* step : selected) {
+        if (selectedBodies.count(step)) {
+            continue;
+        }
         for (auto* input : step->getOutListRecursive()) {
             if (!selected.count(input) && !isOrigin(input)) {
                 lineage.insert(input);
