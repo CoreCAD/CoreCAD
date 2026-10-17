@@ -252,6 +252,25 @@ private Q_SLOTS:
         QVERIFY(!dropAbove(QStringLiteral("User"), QStringLiteral("Source")));
         QCOMPARE(documentOrder(), (QStringList {QStringLiteral("Source"), QStringLiteral("User")}));
     }
+
+    // A step made while rolled back goes in just after the row the model stopped at, and the
+    // stop row moves on to stand after it -- in the list as in the history.
+    void test_aStepMadeWhileRolledBackIsListedAtTheStopRow()  // NOLINT
+    {
+        auto* first = doc->addObject("App::FeatureTest", "First");
+        doc->addObject("App::FeatureTest", "Second");
+        doc->setRollbackMarker(first);
+        QCOMPARE(outline().size(), 3);
+
+        doc->addObject("App::FeatureTest", "Third");
+        const QStringList expected {
+            QStringLiteral("First"),
+            QStringLiteral("Third"),
+            QStringLiteral("Model stops here"),
+            QStringLiteral("Second")
+        };
+        QCOMPARE(outline(), expected);
+    }
 };
 
 QTEST_MAIN(TestTree)

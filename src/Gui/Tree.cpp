@@ -274,6 +274,24 @@ QIcon bodySwatchIcon(const Gui::ViewProvider::TreeBodyColumn& column)
     return icon;
 }
 
+// Each object's place in @p doc's history, which is the order the tree lists its root rows in.
+std::map<const App::DocumentObject*, int> historyPositions(const App::Document* doc)
+{
+    std::map<const App::DocumentObject*, int> position;
+    int index = 0;
+    for (auto* obj : doc->getObjects()) {
+        position[obj] = index++;
+    }
+    return position;
+}
+
+// An object no longer in the history (being removed) sorts last.
+int positionIn(const std::map<const App::DocumentObject*, int>& position, const App::DocumentObject* obj)
+{
+    auto found = position.find(obj);
+    return found == position.end() ? std::numeric_limits<int>::max() : found->second;
+}
+
 void applyBodyColumn(QTreeWidgetItem* item, const Gui::ViewProviderDocumentObject& vp)
 {
     auto column = vp.getTreeBodyColumn();
@@ -3656,17 +3674,9 @@ std::vector<App::DocumentObject*> TreeWidget::rootOrderAfterDrop(
 {
     Gui::Document* guiDoc = Gui::Application::Instance->getDocument(targetInfo.targetDoc);
     std::vector<App::DocumentObject*> objList = guiDoc->getTreeRootObjects();
-    std::ranges::stable_sort(objList, [](App::DocumentObject* a, App::DocumentObject* b) {
-        auto vpA = dynamic_cast<Gui::ViewProviderDocumentObject*>(
-            Gui::Application::Instance->getViewProvider(a)
-        );
-        auto vpB = dynamic_cast<Gui::ViewProviderDocumentObject*>(
-            Gui::Application::Instance->getViewProvider(b)
-        );
-        if (vpA && vpB) {
-            return vpA->getTreeRank() < vpB->getTreeRank();
-        }
-        return false;
+    const auto position = historyPositions(targetInfo.targetDoc);
+    std::ranges::stable_sort(objList, [&position](App::DocumentObject* a, App::DocumentObject* b) {
+        return positionIn(position, a) < positionIn(position, b);
     });
     auto underMouse = static_cast<DocumentObjectItem*>(targetInfo.underMouseItem);
     return placeDropped(objList, draggedObjects, underMouse->object()->getObject(), targetInfo.inBottomHalf);
@@ -3717,12 +3727,6 @@ void TreeWidget::sortDroppedObjects(
         // The tree is the timeline: the drop moves the steps in the document's history itself,
         // which is what the roll-back marker and the saved file read.
         targetInfo.targetDoc->arrangeObjects(sortedObjList);
-        for (size_t i = 0; i < sortedObjList.size(); ++i) {
-            auto vp = freecad_cast<ViewProviderDocumentObject*>(
-                Application::Instance->getViewProvider(sortedObjList[i])
-            );
-            vp->setTreeRank(i);
-        }
         for (auto* obj : draggedObjects) {
             obj->touch();
         }
@@ -5698,8 +5702,6 @@ int DocumentItem::findRootIndex(App::DocumentObject* childObj)
         return -1;
     }
 
-    // Use view provider's tree rank to find correct place at the root level.
-
     int count = this->childCount();
     if (!count) {
         return -1;
@@ -5707,30 +5709,23 @@ int DocumentItem::findRootIndex(App::DocumentObject* childObj)
 
     int first, last;
 
-    // An unranked object takes its place in the document's object list, which is the order the
-    // objects were made. (The object ID used to serve, but a Cruth ID is a durable random
-    // identifier, not a counter, so ordering by it scrambled the root.)
-    auto getTreeRank = [](Gui::ViewProviderDocumentObject* vp) -> int {
-        if (vp->getTreeRank() == -1) {
-            App::DocumentObject* obj = vp->getObject();
-            const auto& objs = obj->getDocument()->getObjects();
-            auto it = std::find(objs.begin(), objs.end(), obj);
-            vp->setTreeRank(static_cast<int>(std::distance(objs.begin(), it)));
-        }
-        return vp->getTreeRank();
+    // The root is the timeline: a row stands where its step stands in the document's history.
+    const auto position = historyPositions(document()->getDocument());
+    auto positionOf = [&position](Gui::ViewProviderDocumentObject* vp) -> int {
+        return positionIn(position, vp->getObject());
     };
 
     auto vpc = freecad_cast<ViewProviderDocumentObject*>(
         Application::Instance->getViewProvider(childObj)
     );
-    int childTreeRank = getTreeRank(vpc);
+    int childPosition = positionOf(vpc);
 
     // find the last item
     for (last = count - 1; last >= 0; --last) {
         auto citem = this->child(last);
         if (citem->type() == TreeWidget::ObjectType) {
             auto vp = static_cast<DocumentObjectItem*>(citem)->object();
-            if (getTreeRank(vp) <= childTreeRank) {
+            if (positionOf(vp) <= childPosition) {
                 return last + 1;
             }
             break;
@@ -5742,7 +5737,7 @@ int DocumentItem::findRootIndex(App::DocumentObject* childObj)
         auto citem = this->child(first);
         if (citem->type() == TreeWidget::ObjectType) {
             auto vp = static_cast<DocumentObjectItem*>(citem)->object();
-            if (getTreeRank(vp) > childTreeRank) {
+            if (positionOf(vp) > childPosition) {
                 return first;
             }
             break;
@@ -5762,7 +5757,7 @@ int DocumentItem::findRootIndex(App::DocumentObject* childObj)
                 continue;
             }
             auto vp = static_cast<DocumentObjectItem*>(citem)->object();
-            if (vp->getTreeRank() < childTreeRank) {
+            if (positionOf(vp) < childPosition) {
                 first = ++pos;
                 count -= step + 1;
             }
@@ -5795,13 +5790,11 @@ void DocumentItem::sortObjectItems()
         }
     }
 
-    std::stable_sort(
-        sortedItems.begin(),
-        sortedItems.end(),
-        [](DocumentObjectItem* a, DocumentObjectItem* b) {
-            return a->object()->getTreeRank() < b->object()->getTreeRank();
-        }
-    );
+    const auto position = historyPositions(document()->getDocument());
+    std::ranges::stable_sort(sortedItems, [&position](DocumentObjectItem* a, DocumentObjectItem* b) {
+        return positionIn(position, a->object()->getObject())
+            < positionIn(position, b->object()->getObject());
+    });
 
     int sortedIndex = 0;
     std::vector<bool> expansion;
