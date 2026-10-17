@@ -4734,28 +4734,48 @@ void TreeWidget::updateLineage()
         return datum && datum->isOriginFeature();
     };
     // A body selected on its own (its swatch was clicked) asks which steps made it: the steps
-    // that build it and their sketches, not the steps of other bodies it was built on.
+    // that build it, their sketches, and the step of another body it was built on, in this
+    // body's colour, but not what went into that step.
     auto buildsABody = [](App::DocumentObject* obj) {
         auto vp = Application::Instance->getViewProvider(obj);
         return vp && !vp->getTreeBodyColumn().builds.empty();
     };
+    auto colorOfBody = [](App::DocumentObject* step, App::DocumentObject* body) {
+        auto vp = Application::Instance->getViewProvider(step);
+        for (const auto& swatch : vp->getTreeBodyColumn().builds) {
+            for (std::size_t i = 0; i < swatch.bodies.size() && i < swatch.colors.size(); ++i) {
+                if (swatch.bodies[i] == body) {
+                    return std::optional<QColor>(swatch.colors[i]);
+                }
+            }
+        }
+        return std::optional<QColor>();
+    };
     std::set<App::DocumentObject*> lineage;
     std::set<App::DocumentObject*> selectedBodies;
+    std::map<App::DocumentObject*, QColor> borrowed;
     for (auto* obj : selected) {
         auto steps = stepsBuildingBody(obj);
         if (steps.empty()) {
             continue;
         }
         selectedBodies.insert(obj);
+        auto ownColor = colorOfBody(steps.front(), obj);
         std::vector<App::DocumentObject*> pending(steps.begin(), steps.end());
         lineage.insert(steps.begin(), steps.end());
         while (!pending.empty()) {
             auto* step = pending.back();
             pending.pop_back();
             for (auto* input : step->getOutList()) {
-                if (!lineage.count(input) && !isOrigin(input) && !buildsABody(input)) {
-                    lineage.insert(input);
+                if (lineage.count(input) || isOrigin(input)) {
+                    continue;
+                }
+                lineage.insert(input);
+                if (!buildsABody(input)) {
                     pending.push_back(input);
+                }
+                else if (ownColor) {
+                    borrowed[input] = *ownColor;
                 }
             }
         }
@@ -4802,7 +4822,10 @@ void TreeWidget::updateLineage()
         return std::nullopt;
     };
     for (auto* obj : lineage) {
-        if (auto color = bodyColor(obj)) {
+        if (auto it = borrowed.find(obj); it != borrowed.end()) {
+            tints[obj] = it->second;
+        }
+        else if (auto color = bodyColor(obj)) {
             tints[obj] = *color;
         }
         else if (auto fed = fedColor(obj)) {

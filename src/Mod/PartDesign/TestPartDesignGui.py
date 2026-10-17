@@ -1162,8 +1162,8 @@ class TestBodyColumn(unittest.TestCase):
         Gui.Selection.clearSelection()
 
     def testSelectingABodyTintsOnlyTheStepsThatMadeIt(self):
-        # A body's swatch asks which steps made that body: a step of another body it was built
-        # on is not one of them.
+        # A body's swatch asks which steps made that body: the step of another body it was
+        # built on is one, in this body's colour; what went into that step is not.
         first = self.square("S1", 0)
         pad = PartDesign.makeFeature(first, "Pad")
         second = self.square("S2", 50)
@@ -1177,7 +1177,8 @@ class TestBodyColumn(unittest.TestCase):
         ]
         Gui.Selection.clearSelection()
         Gui.Selection.addSelection(self.Doc.Name, body[0].Name)
-        self.assertEqual(self.tintedRows(), sorted([second.Label, user.Label]))
+        self.assertEqual(self.tintedRows(), sorted([second.Label, user.Label, pad.Label]))
+        self.assertEqual(self.rowTint(pad.Label), self.rowTint(user.Label))
         Gui.Selection.clearSelection()
 
     def testTheSelectedStepIsTintedMoreStrongly(self):
