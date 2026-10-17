@@ -618,6 +618,7 @@ Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentO
         swatch.bodies.push_back(const_cast<Part::BodyBase*>(body));
         column.partOf.push_back(swatch);
         column.builds.push_back(std::move(swatch));
+        column.swatchRow = body->lastShapedBy();
         column.tooltip = QString::fromUtf8(body->Label.getValue());
         return column;
     }

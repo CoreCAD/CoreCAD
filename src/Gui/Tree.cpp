@@ -4863,12 +4863,8 @@ void TreeWidget::updateLineage()
         return partOf.front().colors.front();
     };
     auto swatchRowOf = [&](App::DocumentObject* body) -> App::DocumentObject* {
-        for (auto* obj : body->getDocument()->getObjects()) {
-            if (obj != body && colorIn(columnOf(obj).builds, body)) {
-                return obj;
-            }
-        }
-        return nullptr;
+        App::DocumentObject* row = columnOf(body).swatchRow;
+        return row && colorIn(columnOf(row).builds, body) ? row : nullptr;
     };
 
     std::set<App::DocumentObject*> lineage;
