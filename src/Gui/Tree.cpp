@@ -1362,6 +1362,11 @@ void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
     MenuItem view;
     Gui::Application::Instance->setupContextMenu("Tree", &view);
 
+    // Every workbench works on the same history, so every workbench can roll it back.
+    const auto picked = Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    if (picked.size() == 1 && picked.front()->isTimelineStep()) {
+        view << "Std_RollBackHere";
+    }
     view << "Std_Properties";
     Workbench::createLinkMenu(&view);
 

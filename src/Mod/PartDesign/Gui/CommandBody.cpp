@@ -57,56 +57,6 @@
 
 
 //===========================================================================
-// PartDesign_MoveTip
-//===========================================================================
-DEF_STD_CMD_A(CmdPartDesignMoveTip)
-
-CmdPartDesignMoveTip::CmdPartDesignMoveTip()
-    : Command("PartDesign_MoveTip")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Roll Back to Here");
-    sToolTipText = QT_TR_NOOP(
-        "Stops building the model after the selected step; select the last step to build it all"
-    );
-    sWhatsThis = "PartDesign_MoveTip";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_MoveTip";
-}
-
-void CmdPartDesignMoveTip::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
-    if (selected.size() != 1) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Select exactly one step to roll back to.")
-        );
-        return;
-    }
-    App::DocumentObject* step = selected.front();
-    // A body stands for its steps: rolling back to it means its last built step.
-    if (auto* body = freecad_cast<PartDesign::Body*>(step)) {
-        step = body->Tip.getValue();
-    }
-    if (!step || !step->isTimelineStep()) {
-        return;
-    }
-    App::Document* doc = step->getDocument();
-    // Moving the marker is not an undo step, as in most CAD tools.
-    doCommand(Doc, "App.getDocument('%s').rollBackTo(%s)", doc->getName(), getObjectCmd(step).c_str());
-    updateActive();
-}
-
-bool CmdPartDesignMoveTip::isActive()
-{
-    return hasActiveDocument();
-}
-
-//===========================================================================
 // PartDesign_DuplicateSelection
 //===========================================================================
 
@@ -782,7 +732,6 @@ void CreatePartDesignBodyCommands()
 {
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
-    rcCmdMgr.addCommand(new CmdPartDesignMoveTip());
 
     rcCmdMgr.addCommand(new CmdPartDesignDuplicateSelection());
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeature());
