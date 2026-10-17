@@ -2160,6 +2160,12 @@ void TreeWidget::mousePressEvent(QMouseEvent* event)
         }
     }
     QTreeWidgetItem* pressed = itemAt(event->pos());
+    // A body selected by its swatch has no row, so Qt sees nothing to deselect on a click in
+    // the empty space below the rows; clear it here, as a click on empty 3D space does.
+    if (!pressed && event->button() == Qt::LeftButton
+        && !(event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))) {
+        Selection().clearSelection();
+    }
     if (pressed && pressed->type() == StopRowType && event->button() == Qt::LeftButton) {
         draggedStopRow = pressed;
         stopRowTarget = nullptr;

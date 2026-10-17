@@ -856,6 +856,23 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(self.rootRows(), before)
         Gui.Selection.clearSelection()
 
+    def testClickingEmptyTreeSpaceClearsASelectedBody(self):
+        # A body picked by its swatch has no row; a click below the rows still lets it go,
+        # and its family's tint with it.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        self.Doc.recompute()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body.Name)
+        self.assertNotEqual(self.tintedRows(), [])
+        tree = self.tree()
+        empty = QtCore.QPoint(tree.viewport().width() // 2, tree.viewport().height() - 3)
+        self.assertIsNone(tree.itemAt(empty))
+        click(tree.viewport(), empty)
+        self.settle()
+        self.assertEqual(Gui.Selection.getSelection(), [])
+        self.assertEqual(self.tintedRows(), [])
+
     def testClickingAPatternCountSelectsEveryCopy(self):
         # Each of the three squares drawn is one body; the count after them stands for them all.
         _, pattern, bodies = self.pattern(4)
