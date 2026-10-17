@@ -398,10 +398,8 @@ public:
     void testStatus();
     /// Refresh the Body column (§8.7) of every item; bodies are derived, so any change can move it.
     void updateBodyColumn();
-    /// Put each view provider's stop row just after its step; see ViewProvider::getTreeStopRow.
+    /// Put the stop row just after the document's roll-back marker, or remove it.
     void updateStopRows();
-    /// The object whose stop row @p row is, or null.
-    ViewProviderDocumentObject* stopRowOwner(const QTreeWidgetItem* row) const;
     void setData(int column, int role, const QVariant& value) override;
     void populateItem(DocumentObjectItem* item, bool refresh = false, bool delayUpdate = true);
     bool populateObject(App::DocumentObject* obj);

@@ -137,6 +137,32 @@ private Q_SLOTS:
         QCOMPARE(outline(), QStringList {QStringLiteral("Shown")});
         QVERIFY(doc->getObject("Hidden") != nullptr);
     }
+
+    // Rolling back shows one stop row just after the row the model stops at; building to the
+    // end takes it away.
+    void test_theStopRowStandsAfterTheRowTheModelStopsAt()  // NOLINT
+    {
+        auto* first = doc->addObject("App::DocumentObjectGroup", "First");
+        doc->addObject("App::DocumentObjectGroup", "Second");
+        doc->addObject("App::DocumentObjectGroup", "Third");
+
+        doc->setRollbackMarker(first);
+        const QStringList rolledBack {
+            QStringLiteral("First"),
+            QStringLiteral("Model stops here"),
+            QStringLiteral("Second"),
+            QStringLiteral("Third")
+        };
+        QCOMPARE(outline(), rolledBack);
+
+        doc->setRollbackMarker(nullptr);
+        const QStringList built {
+            QStringLiteral("First"),
+            QStringLiteral("Second"),
+            QStringLiteral("Third")
+        };
+        QCOMPARE(outline(), built);
+    }
 };
 
 QTEST_MAIN(TestTree)

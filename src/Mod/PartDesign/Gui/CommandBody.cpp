@@ -96,10 +96,9 @@ void CmdPartDesignMoveTip::activated(int iMsg)
         return;
     }
     App::Document* doc = step->getDocument();
-    openCommand(QT_TRANSLATE_NOOP("Command", "Roll back to selected step"));
+    // Moving the marker is not an undo step, as in most CAD tools.
     doCommand(Doc, "App.getDocument('%s').rollBackTo(%s)", doc->getName(), getObjectCmd(step).c_str());
     updateActive();
-    commitCommand();
 }
 
 bool CmdPartDesignMoveTip::isActive()
