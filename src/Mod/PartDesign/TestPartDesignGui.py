@@ -701,36 +701,65 @@ class TestBodyColumn(unittest.TestCase):
         texts = self.columnTexts()
         self.assertEqual(texts[plane.Label], ("", "", False))
 
-    def pattern(self, occurrences):
+    def pattern(self, occurrences, length=60.0, apart=True):
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
         origin = next(o for o in self.Doc.Objects if o.isDerivedFrom("App::Origin"))
         y_axis = next(f for f in origin.OriginFeatures if getattr(f, "Role", "") == "Y_Axis")
         pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
         pattern.TransformMode = "Whole shape"
-        pattern.MultiBody = True
+        pattern.MultiBody = apart
         pattern.Direction = (y_axis, [""])
-        pattern.Length = 60.0
+        pattern.Length = length
         pattern.Occurrences = occurrences
         body.addFeature(pattern)
         self.Doc.recompute()
         bodies = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")]
-        self.assertEqual(len(bodies), occurrences)
+        if apart:
+            self.assertEqual(len(bodies), occurrences)
         return pad, pattern, bodies
 
     def testPatternBodiesShowThreeAndACount(self):
         # §5.5 / §8.7: past three, a pattern's bodies are three swatches, an ellipsis and a count, and
         # the tooltip lists every body in its own colour.
-        pad, pattern, bodies = self.pattern(4)
+        pad, pattern, bodies = self.pattern(5)
+        copies = bodies[1:]
         texts = self.columnTexts()
         tip = texts[pattern.Label][1]
         self.assertEqual(len(plain(tip).splitlines()), 4)
-        self.assertEqual(sorted(swatchColours(tip)), sorted(colourName(b) for b in bodies))
+        self.assertEqual(sorted(swatchColours(tip)), sorted(colourName(b) for b in copies))
         self.assertEqual(len(set(swatchColours(tip))), 4)
-        # The copies are made by the pattern, so the pad's row names only the original's body.
+        # The pattern left the original as it was, so its swatch stays on the pad.
         self.assertEqual(swatchColours(texts[pad.Label][1]), [colourName(bodies[0])])
         # Three swatches, then the ellipsis and count after them.
         self.assertGreater(self.columnIconWidth(pattern.Label), 3 * 10 + 2 * 2)
+
+    def testABodysSwatchStandsOnTheStepThatLastShapedIt(self):
+        # The rows that build a body are washed when it is selected; its swatch is on one row.
+        pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        sketch = self.square("S2", 2)
+        pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
+        pocket.Profile = sketch
+        pocket.Type = "ThroughAll"
+        body.addFeature(pocket)
+        self.Doc.recompute()
+        texts = self.columnTexts()
+        self.assertEqual(swatchColours(texts[pocket.Label][1]), [colourName(body)])
+        self.assertEqual(texts[pad.Label], ("", "", False))
+
+        self.Doc.rollBackTo(pad)
+        self.Doc.recompute()
+        self.assertEqual(swatchColours(self.columnTexts()[pad.Label][1]), [colourName(body)])
+        self.Doc.rollBackTo(None)
+        self.Doc.recompute()
+
+    def testAPatternFusedIntoTheOriginalTakesItsSwatch(self):
+        pad, pattern, bodies = self.pattern(3, length=10.0, apart=False)
+        self.assertEqual(len(bodies), 1)
+        texts = self.columnTexts()
+        self.assertEqual(swatchColours(texts[pattern.Label][1]), [colourName(bodies[0])])
+        self.assertEqual(texts[pad.Label], ("", "", False))
 
     def testAPatternsEyeShowsItsBodiesAndDrawsNothingItself(self):
         # Its pieces are drawn once, by their bodies; the pattern's eye shows and hides them.
@@ -758,7 +787,7 @@ class TestBodyColumn(unittest.TestCase):
         self.assertFalse(pattern.Visibility)
 
     def testThreePatternBodiesSitSideBySide(self):
-        _, pattern, _ = self.pattern(3)
+        _, pattern, _ = self.pattern(4)
         self.assertEqual(self.columnIconWidth(pattern.Label), 3 * 10 + 2 * 2)
 
     def columnIconWidth(self, label):
@@ -922,11 +951,11 @@ class TestBodyColumn(unittest.TestCase):
 
     def testClickingAPatternCountSelectsEveryCopy(self):
         # Each of the three squares drawn is one body; the count after them stands for them all.
-        _, pattern, bodies = self.pattern(4)
+        _, pattern, bodies = self.pattern(5)
         seen = [names for names in self.selectionsAcross(pattern.Label) if names != [pattern.Name]]
         singles = [names for names in seen if len(names) == 1]
         self.assertEqual(len(singles), 3, seen)
-        self.assertIn(sorted(b.Name for b in bodies), seen)
+        self.assertIn(sorted(b.Name for b in bodies[1:]), seen)
 
     def swatchPoint(self, label, body):
         """A point in @p label's Bodies cell where a click selects @p body alone."""

@@ -669,6 +669,9 @@ Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentO
         }
     }
 
+    // A body's swatch stands only on the step that last shaped it; the rows that build it are
+    // washed when it is selected.
+    std::erase_if(built, [obj](Part::BodyBase* body) { return body->lastShapedBy() != obj; });
     const auto builtGroups = groupByPattern(built);
     column.builds = swatches(builtGroups);
     column.tooltip = listBodies(builtGroups);

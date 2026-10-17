@@ -214,6 +214,8 @@ public:
     /// The pattern that made this Body's solid as a copy, where its chain begins; null when the
     /// solid comes from the start of the chain.
     App::DocumentObject* copiedBy() const;
+    /// The last shown step, passing back over a pattern that left this Body's solid as it was.
+    App::DocumentObject* lastShapedBy() const override;
     /// Only a solid step builds the Body; its sketches and datums are inputs.
     bool isBuiltBy(const App::DocumentObject* f) override
     {

@@ -27,6 +27,8 @@
 #include <Mod/Part/App/FCBRepAlgoAPI_Cut.h>
 #include <Mod/Part/App/FCBRepAlgoAPI_Fuse.h>
 #include <BRepBndLib.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -155,6 +157,48 @@ int Transformed::solidIndexOfOriginal() const
         }
     }
     return found;
+}
+
+bool Transformed::leavesOriginalAsIs() const
+{
+    const int index = solidIndexOfOriginal();
+    const Part::TopoShape shape = Shape.getShape();
+    if (index <= 0 || shape.countSubShapes(TopAbs_SOLID) <= 1) {
+        return false;
+    }
+    App::DocumentObject* base = getBaseObject(/*silent*/ true);
+    const Part::TopoShape before = narrowToBaseInstance(base, Part::getShape(base), true);
+    const Part::TopoShape after = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
+    if (before.isNull() || after.isNull()) {
+        return false;
+    }
+    const auto volumeOf = [](const TopoDS_Shape& solid) {
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(solid, props);
+        return props.Mass();
+    };
+    const auto boxOf = [](const TopoDS_Shape& solid) {
+        Bnd_Box box;
+        BRepBndLib::Add(solid, box);
+        return box;
+    };
+    // A fuse can rebuild an untouched solid, so the two are compared by what they measure.
+    constexpr double relativeVolume = 1e-6;
+    constexpr double boxTolerance = 1e-4;
+    const double volume = volumeOf(before.getShape());
+    if (std::abs(volumeOf(after.getShape()) - volume) > relativeVolume * std::max(1.0, volume)) {
+        return false;
+    }
+    std::array<double, 6> a {};
+    std::array<double, 6> b {};
+    boxOf(before.getShape()).Get(a[0], a[1], a[2], a[3], a[4], a[5]);
+    boxOf(after.getShape()).Get(b[0], b[1], b[2], b[3], b[4], b[5]);
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::abs(a[i] - b[i]) > boxTolerance) {
+            return false;
+        }
+    }
+    return true;
 }
 
 long Transformed::ordinalOfComponent(const std::string& cid) const

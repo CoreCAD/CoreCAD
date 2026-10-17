@@ -311,6 +311,23 @@ App::DocumentObject* Body::copiedBy() const
     return nullptr;
 }
 
+App::DocumentObject* Body::lastShapedBy() const
+{
+    const std::vector<App::DocumentObject*> steps = ownSolids();
+    App::DocumentObject* shown = shownStep();
+    auto at = std::ranges::find(steps, shown);
+    if (at == steps.end()) {
+        return shown;
+    }
+    App::DocumentObject* copier = copiedBy();
+    for (;; --at) {
+        auto* pattern = freecad_cast<PartDesign::Transformed*>(*at);
+        if (!pattern || pattern == copier || at == steps.begin() || !pattern->leavesOriginalAsIs()) {
+            return *at;
+        }
+    }
+}
+
 std::vector<App::DocumentObject*> Body::getFullModel()
 {
     std::vector<App::DocumentObject*> model = ownSolids();
