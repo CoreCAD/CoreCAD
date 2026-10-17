@@ -63,6 +63,8 @@ GuiExport bool isTreeViewDragging();
 /// The steps whose Bodies column names @p body as referenced, in timeline order: what the swatch
 /// menu and the Body panel list as "Used by".
 GuiExport std::vector<App::DocumentObject*> stepsUsingBody(App::DocumentObject* body);
+/// The steps whose Bodies column names @p body as built: the steps that made it.
+GuiExport std::vector<App::DocumentObject*> stepsBuildingBody(App::DocumentObject* body);
 
 class TreeWidget: public QTreeWidget, public SelectionObserver
 {

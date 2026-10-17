@@ -525,10 +525,10 @@ public:
     //@}
 
     /** What the tree's Bodies column shows for this object (Cruth ARCHITECTURE §8.7): a colour
-     *  swatch for each body it builds and, in brackets, one for each body it only references.
-     *  The bodies one pattern emits are a single swatch with their count (§5.5). The names are
-     *  in the tooltip. The core knows nothing of bodies; a module that has them answers. Empty
-     *  shows nothing.
+     *  swatch for each body it builds. The bodies one pattern emits are a single swatch with
+     *  their count (§5.5). The names are in the tooltip. @c references, the bodies it only uses,
+     *  is not drawn: a row can already hold several swatches; it feeds a body's *Used by* list. The
+     * core knows nothing of bodies; a module that has them answers. Empty shows nothing.
      */
     /// One swatch, or for the bodies one pattern emits, all their colours: drawn as a stack
     /// with a count when there are more than three. @c bodies runs alongside @c colors, so a

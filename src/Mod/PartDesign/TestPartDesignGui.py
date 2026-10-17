@@ -24,8 +24,11 @@
 
 import FreeCAD
 import FreeCADGui
+import os
 import re
+import shutil
 import sys
+import tempfile
 import unittest
 import Sketcher
 import Part
@@ -577,9 +580,9 @@ def click(widget, point, kind=QtCore.QEvent.MouseButtonPress):
 
 
 class TestBodyColumn(unittest.TestCase):
-    """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch, and in
-    brackets the bodies a step only references. A profile sketch builds nothing and shows
-    nothing."""
+    """Cruth ARCHITECTURE §8.7: the tree names the body each step builds, with its swatch. A body
+    a step only references is not shown; a row may already hold several swatches. A profile
+    sketch builds nothing and shows nothing."""
 
     def setUp(self):
         self.Doc = App.newDocument("BodyColumn", type="Part")
@@ -637,16 +640,14 @@ class TestBodyColumn(unittest.TestCase):
         self.assertIn("Pad", texts, sorted(texts))
         # Swatches only; the names are in the tooltip, each after a square of its colour.
         self.assertEqual(texts["Pad"][0::2], ("", True))
-        self.assertEqual(plain(texts["Pad"][1]), "Builds:\n■ Housing")
+        self.assertEqual(plain(texts["Pad"][1]), "■ Housing")
         self.assertEqual(texts["S1"], ("", "", False))
-        self.assertEqual(plain(texts["S2"][1]), "Uses:\n■ Housing")
+        self.assertEqual(texts["S2"], ("", "", False))
         self.assertEqual(swatchColours(texts["Pad"][1]), [colourName(body)])
 
-    def testDatumShowsOnlyTheBodyItReferences(self):
-        # §8.7: a datum builds nothing; it shows a body only when attached to that body's geometry.
+    def testDatumShowsNoBody(self):
+        # A datum builds nothing; attached to a body's geometry or not, its row shows no swatch.
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
-        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
-        body.Label = "Housing"
         attached = {}
         for kind in ("DatumPlane", "DatumLine", "DatumPoint", "LocalCoordinateSystem"):
             datum = self.Doc.addObject("Part::" + kind, "Attached" + kind)
@@ -657,8 +658,7 @@ class TestBodyColumn(unittest.TestCase):
         self.Doc.recompute()
         texts = self.columnTexts()
         for kind, datum in attached.items():
-            self.assertEqual(plain(texts[datum.Label][1]), "Uses:\n■ Housing", kind)
-            self.assertTrue(texts[datum.Label][2], kind)
+            self.assertEqual(texts[datum.Label], ("", "", False), kind)
         self.assertEqual(texts[loose.Label], ("", "", False))
 
     def testDatumFeedingItsOwnBodyShowsNothing(self):
@@ -702,8 +702,7 @@ class TestBodyColumn(unittest.TestCase):
         pad, pattern, bodies = self.pattern(4)
         texts = self.columnTexts()
         tip = texts[pattern.Label][1]
-        self.assertEqual(plain(tip).splitlines()[0], "Builds:")
-        self.assertEqual(len(plain(tip).splitlines()), 5)
+        self.assertEqual(len(plain(tip).splitlines()), 4)
         self.assertEqual(sorted(swatchColours(tip)), sorted(colourName(b) for b in bodies))
         self.assertEqual(len(set(swatchColours(tip))), 4)
         # The pad feeds every copy, so its row is the same aggregate.
@@ -805,6 +804,14 @@ class TestBodyColumn(unittest.TestCase):
             stack.extend(item.child(i) for i in range(item.childCount()))
         return sorted(rows)
 
+    def rowTint(self, label):
+        """The colour at the far right of @p label's row, where only the row tint paints."""
+        tree = self.tree()
+        tree.viewport().repaint()
+        image = tree.viewport().grab().toImage()
+        item = tree.findItems(label, QtCore.Qt.MatchExactly | QtCore.Qt.MatchRecursive)[0]
+        return image.pixel(image.width() - 3, tree.visualItemRect(item).center().y())
+
     def rowCell(self, label):
         """The tree and the index of @p label's Bodies cell, scrolled into view."""
         tree = self.tree()
@@ -849,14 +856,22 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(self.rootRows(), before)
         Gui.Selection.clearSelection()
 
-    def testClickingAReferencedSwatchSelectsThatBody(self):
+    def testClickingEmptyTreeSpaceClearsASelectedBody(self):
+        # A body picked by its swatch has no row; a click below the rows still lets it go,
+        # and its family's tint with it.
         pad = PartDesign.makeFeature(self.square("S1", 0), "Pad")
         body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
-        s2 = self.square("S2", 50)
-        s2.AttachmentSupport = (pad, [""])
-        s2.MapMode = "ObjectXY"
         self.Doc.recompute()
-        self.assertIn([body.Name], self.selectionsAcross(s2.Label))
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body.Name)
+        self.assertNotEqual(self.tintedRows(), [])
+        tree = self.tree()
+        empty = QtCore.QPoint(tree.viewport().width() // 2, tree.viewport().height() - 3)
+        self.assertIsNone(tree.itemAt(empty))
+        click(tree.viewport(), empty)
+        self.settle()
+        self.assertEqual(Gui.Selection.getSelection(), [])
+        self.assertEqual(self.tintedRows(), [])
 
     def testClickingAPatternCountSelectsEveryCopy(self):
         # Each of the three squares drawn is one body; the count after them stands for them all.
@@ -1129,6 +1144,56 @@ class TestBodyColumn(unittest.TestCase):
         Gui.Selection.clearSelection()
         self.assertEqual(self.tintedRows(), [])
 
+    def testAStepOfAnotherBodyIsTintedInTheSelectedStepsColour(self):
+        # Selecting a step that reaches into another body: that body's step shows, in the
+        # selected step's colour, and what went into it does not.
+        first = self.square("S1", 0)
+        pad = PartDesign.makeFeature(first, "Pad")
+        second = self.square("S2", 50)
+        user = PartDesign.makeFeature(second, "Pad")
+        self.Doc.recompute()
+        user.Type = "UpToFace"
+        user.UpToFace = (pad, ["Face6"])
+        self.Doc.recompute()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, user.Name)
+        self.assertEqual(self.tintedRows(), sorted([second.Label, pad.Label]))
+        self.assertEqual(self.rowTint(pad.Label), self.rowTint(second.Label))
+        Gui.Selection.clearSelection()
+
+    def testSelectingABodyTintsOnlyTheStepsThatMadeIt(self):
+        # A body's swatch asks which steps made that body: the step of another body it was
+        # built on is one, in this body's colour; what went into that step is not.
+        first = self.square("S1", 0)
+        pad = PartDesign.makeFeature(first, "Pad")
+        second = self.square("S2", 50)
+        user = PartDesign.makeFeature(second, "Pad")
+        self.Doc.recompute()
+        user.Type = "UpToFace"
+        user.UpToFace = (pad, ["Face6"])
+        self.Doc.recompute()
+        body = [
+            o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body") and o.Tip == user
+        ]
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, body[0].Name)
+        self.assertEqual(self.tintedRows(), sorted([second.Label, user.Label, pad.Label]))
+        self.assertEqual(self.rowTint(pad.Label), self.rowTint(user.Label))
+        Gui.Selection.clearSelection()
+
+    def testTheSelectedStepIsTintedLikeItsFamily(self):
+        # The body marker shows the tip, so the selected row needs no stronger tint than its
+        # sketch's, however it was selected.
+        sketch = self.square("S1", 0)
+        pad = PartDesign.makeFeature(sketch, "Pad")
+        self.Doc.recompute()
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(self.Doc.Name, pad.Name)
+        for item in self.tree().selectedItems():
+            item.setSelected(False)
+        self.assertEqual(self.rowTint(pad.Label), self.rowTint(sketch.Label))
+        Gui.Selection.clearSelection()
+
     def testTheOriginIsNotTinted(self):
         # Every step comes from the origin, so tinting it says nothing.
         sketch = self.square("S1", 0)
@@ -1254,3 +1319,55 @@ class TestNoEffectNotice(unittest.TestCase):
         Gui.updateGui()
         self.assertFalse(self.Pocket.hasNoEffect())
         self.assertEqual(self.rowToolTip(self.Pocket), "")
+
+
+class TestSelectingAStepShowsItsSolid(unittest.TestCase):
+    """A body draws its steps' solids under its own node; selecting a step by itself, as the tree
+    does, still lights that solid in the 3D view."""
+
+    def setUp(self):
+        self.Doc = App.newDocument("SelectionIn3D", type="Part")
+        self.First = PartDesign.makeFeature(self.square("S1", 0), "Pad")
+        self.Second = PartDesign.makeFeature(self.square("S2", 30), "Pad")
+        self.Doc.recompute()
+        self.View = Gui.ActiveDocument.ActiveView
+        self.View.viewIsometric()
+        self.View.fitAll()
+        self.Folder = tempfile.mkdtemp()
+
+    def tearDown(self):
+        Gui.Selection.clearSelection()
+        App.closeDocument(self.Doc.Name)
+        shutil.rmtree(self.Folder, ignore_errors=True)
+
+    def square(self, name, x):
+        sketch = self.Doc.addObject("Sketcher::SketchObject", name)
+        sketch.Placement.Base = App.Vector(x, 0, 0)
+        pts = [(0, 0), (10, 0), (10, 10), (0, 10)]
+        for i in range(4):
+            a, b = pts[i], pts[(i + 1) % 4]
+            sketch.addGeometry(Part.LineSegment(App.Vector(*a, 0), App.Vector(*b, 0)))
+        return sketch
+
+    def picture(self, name):
+        path = os.path.join(self.Folder, name + ".png")
+        self.View.saveImage(path, 200, 150, "White")
+        return QtGui.QImage(path)
+
+    def changedPixels(self, before, after):
+        return sum(
+            before.pixel(x, y) != after.pixel(x, y)
+            for x in range(0, before.width(), 2)
+            for y in range(0, before.height(), 2)
+        )
+
+    def testEachStepLightsUpWhenSelected(self):
+        # The navigation cube is missing from the view's first picture; compare later ones only.
+        self.picture("first")
+        plain = self.picture("plain")
+        for step in (self.First, self.Second):
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(self.Doc.Name, step.Name)
+            self.assertGreater(self.changedPixels(plain, self.picture(step.Name)), 100, step.Name)
+        Gui.Selection.clearSelection()
+        self.assertEqual(self.changedPixels(plain, self.picture("cleared")), 0)

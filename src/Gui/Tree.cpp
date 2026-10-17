@@ -147,8 +147,8 @@ namespace
 {
 constexpr int BodyColumn = 3;
 
-/// The Bodies column (Cruth ARCHITECTURE §8.7): a swatch per body the object builds, then the
-/// bodies it only references, in brackets. The bodies one pattern emits sit side by side when
+/// The Bodies column (Cruth ARCHITECTURE §8.7): a swatch per body the object builds. The bodies
+/// it only references are not drawn. The bodies one pattern emits sit side by side when
 /// there are three or fewer; past that, the first three are followed by an ellipsis and the
 /// count, so "12" reads as twelve different bodies (§5.5). At most three groups of each
 /// are drawn, with an ellipsis when there are more; the tooltip names them all.
@@ -164,12 +164,11 @@ QPixmap paintBodySwatches(
     std::vector<SwatchHit>* hits = nullptr
 )
 {
-    if (column.builds.empty() && column.references.empty()) {
+    if (column.builds.empty()) {
         return {};
     }
     constexpr int side = 10;
     constexpr int gap = 2;
-    constexpr int bracket = 3;
     constexpr int ellipsis = 8;
     constexpr int maxShown = 3;
     QFont font;
@@ -200,11 +199,7 @@ QPixmap paintBodySwatches(
         }
         return width;
     };
-    int width = groupWidth(column.builds);
-    if (!column.references.empty()) {
-        width += (column.builds.empty() ? 0 : 2 * gap) + 2 * (bracket + gap)
-            + groupWidth(column.references);
-    }
+    const int width = groupWidth(column.builds);
 
     QPixmap pixmap(width, side);
     pixmap.fill(Qt::transparent);
@@ -260,22 +255,6 @@ QPixmap paintBodySwatches(
         }
     };
     drawGroup(column.builds);
-    if (!column.references.empty()) {
-        if (!column.builds.empty()) {
-            x += 2 * gap;
-        }
-        painter.setPen(ink);
-        painter.drawLine(x, 0, x, side - 1);
-        painter.drawLine(x, 0, x + bracket - 1, 0);
-        painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
-        x += bracket + gap;
-        drawGroup(column.references);
-        x += gap;
-        painter.setPen(ink);
-        painter.drawLine(x + bracket - 1, 0, x + bracket - 1, side - 1);
-        painter.drawLine(x, 0, x + bracket - 1, 0);
-        painter.drawLine(x, side - 1, x + bracket - 1, side - 1);
-    }
     painter.end();
     return pixmap;
 }
@@ -2181,6 +2160,12 @@ void TreeWidget::mousePressEvent(QMouseEvent* event)
         }
     }
     QTreeWidgetItem* pressed = itemAt(event->pos());
+    // A body selected by its swatch has no row, so Qt sees nothing to deselect on a click in
+    // the empty space below the rows; clear it here, as a click on empty 3D space does.
+    if (!pressed && event->button() == Qt::LeftButton
+        && !(event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))) {
+        Selection().clearSelection();
+    }
     if (pressed && pressed->type() == StopRowType && event->button() == Qt::LeftButton) {
         draggedStopRow = pressed;
         stopRowTarget = nullptr;
@@ -2298,7 +2283,6 @@ std::vector<App::DocumentObject*> TreeWidget::bodiesAtSwatch(const QPoint& pos) 
 
 std::vector<App::DocumentObject*> Gui::stepsUsingBody(App::DocumentObject* body)
 {
-    // The steps whose swatch brackets this body, so the list never disagrees with the column.
     std::vector<App::DocumentObject*> steps;
     auto* guiDoc = Application::Instance->getDocument(body->getDocument());
     if (!guiDoc) {
@@ -2310,6 +2294,28 @@ std::vector<App::DocumentObject*> Gui::stepsUsingBody(App::DocumentObject* body)
             continue;
         }
         for (const auto& swatch : vp->getTreeBodyColumn().references) {
+            if (std::ranges::find(swatch.bodies, body) != swatch.bodies.end()) {
+                steps.push_back(obj);
+                break;
+            }
+        }
+    }
+    return steps;
+}
+
+std::vector<App::DocumentObject*> Gui::stepsBuildingBody(App::DocumentObject* body)
+{
+    std::vector<App::DocumentObject*> steps;
+    auto* guiDoc = Application::Instance->getDocument(body->getDocument());
+    if (!guiDoc) {
+        return steps;
+    }
+    for (auto* obj : body->getDocument()->getObjects()) {
+        auto* vp = guiDoc->getViewProvider(obj);
+        if (!vp) {
+            continue;
+        }
+        for (const auto& swatch : vp->getTreeBodyColumn().builds) {
             if (std::ranges::find(swatch.bodies, body) != swatch.bodies.end()) {
                 steps.push_back(obj);
                 break;
@@ -3673,17 +3679,20 @@ void TreeWidget::drawRowBody(
 ) const
 {
     // Cruth #3 (ARCHITECTURE §8.2): the rows a selected step came from are tinted with their
-    // body's colour across the whole row, and the selected row gets the same tint a step stronger,
-    // in place of the default selection highlight, so the two read as one family.
+    // body's colour across the whole row, and the selected row gets the same tint in place of the
+    // default selection highlight, so they read as one family.
     auto item = itemFromIndex(index);
     if (!item) {
         QTreeWidget::drawRow(painter, options, index);
         return;
     }
-    const bool selected = item->isSelected();
+    bool selected = item->isSelected();
     auto found = lineageTints.end();
     if (item->type() == ObjectType) {
-        found = lineageTints.find(static_cast<DocumentObjectItem*>(item)->object()->getObject());
+        auto* obj = static_cast<DocumentObjectItem*>(item)->object()->getObject();
+        found = lineageTints.find(obj);
+        // The list's own row selection can lag the real one; the real one decides.
+        selected = lineageSelected.count(obj) > 0;
     }
     if (found == lineageTints.end() && !selected) {
         QTreeWidget::drawRow(painter, options, index);
@@ -3691,11 +3700,9 @@ void TreeWidget::drawRowBody(
     }
 
     // The body colour is laid over the row as a see-through wash, so it reads on any theme; the
-    // palette cannot be trusted for the background, which the stylesheet paints. The selected
-    // row's wash is stronger, which for a mid-tone swatch is darker on a light background and
-    // lighter on a dark one.
+    // palette cannot be trusted for the background, which the stylesheet paints.
     QColor tint = found != lineageTints.end() ? found->second : palette().color(QPalette::Highlight);
-    tint.setAlpha(selected ? 110 : 60);
+    tint.setAlpha(60);
     // The whole width, margin included: the row rectangle starts after the indentation.
     painter->fillRect(QRect(0, options.rect.top(), viewport()->width(), options.rect.height()), tint);
 
@@ -4724,17 +4731,73 @@ void TreeWidget::updateLineage()
         auto datum = freecad_cast<App::DatumElement*>(obj);
         return datum && datum->isOriginFeature();
     };
+    // A selection asks what made it: for a step, the earlier steps of its own body; for a body
+    // (its swatch was clicked), every step that builds it. Their sketches come too, and so does
+    // the step of another body it was built on, in this body's colour, but not what went into
+    // that step: the other body is not part of this family.
+    auto bodiesBuilt = [](App::DocumentObject* obj) {
+        std::set<App::DocumentObject*> bodies;
+        if (auto vp = Application::Instance->getViewProvider(obj)) {
+            for (const auto& swatch : vp->getTreeBodyColumn().builds) {
+                bodies.insert(swatch.bodies.begin(), swatch.bodies.end());
+            }
+        }
+        return bodies;
+    };
+    auto colorOfBody = [](App::DocumentObject* step, App::DocumentObject* body) {
+        auto vp = Application::Instance->getViewProvider(step);
+        for (const auto& swatch : vp->getTreeBodyColumn().builds) {
+            for (std::size_t i = 0; i < swatch.bodies.size() && i < swatch.colors.size(); ++i) {
+                if (swatch.bodies[i] == body) {
+                    return std::optional<QColor>(swatch.colors[i]);
+                }
+            }
+        }
+        return std::optional<QColor>();
+    };
     std::set<App::DocumentObject*> lineage;
-    for (auto* step : selected) {
-        for (auto* input : step->getOutListRecursive()) {
-            if (!selected.count(input) && !isOrigin(input)) {
+    std::map<App::DocumentObject*, QColor> borrowed;
+    for (auto* obj : selected) {
+        std::vector<App::DocumentObject*> pending = stepsBuildingBody(obj);
+        std::set<App::DocumentObject*> ownBodies;
+        std::optional<QColor> ownColor;
+        if (!pending.empty()) {
+            ownBodies.insert(obj);
+            ownColor = colorOfBody(pending.front(), obj);
+            lineage.insert(pending.begin(), pending.end());
+        }
+        else {
+            pending.push_back(obj);
+            ownBodies = bodiesBuilt(obj);
+            if (!ownBodies.empty()) {
+                ownColor = colorOfBody(obj, *ownBodies.begin());
+            }
+        }
+        while (!pending.empty()) {
+            auto* step = pending.back();
+            pending.pop_back();
+            for (auto* input : step->getOutList()) {
+                if (lineage.count(input) || selected.count(input) || isOrigin(input)) {
+                    continue;
+                }
                 lineage.insert(input);
+                auto inputBodies = bodiesBuilt(input);
+                bool sameFamily = inputBodies.empty()
+                    || std::ranges::any_of(inputBodies, [&](auto* body) {
+                                      return ownBodies.count(body) > 0;
+                                  });
+                if (sameFamily) {
+                    pending.push_back(input);
+                }
+                else if (ownColor) {
+                    borrowed[input] = *ownColor;
+                }
             }
         }
     }
 
     // The tint is the colour of the body a row builds; a row that builds none (a sketch) takes
-    // the colour of the selected step's body.
+    // the colour of a step it feeds, else of the selected step's body.
     auto bodyColor = [](App::DocumentObject* obj) -> std::optional<QColor> {
         auto vp = Application::Instance->getViewProvider(obj);
         if (!vp) {
@@ -4753,9 +4816,25 @@ void TreeWidget::updateLineage()
         }
     }
     std::map<App::DocumentObject*, QColor> tints;
+    auto fedColor = [&](App::DocumentObject* obj) -> std::optional<QColor> {
+        for (auto* user : obj->getInList()) {
+            if ((lineage.count(user) || selected.count(user)) && !isOrigin(user)) {
+                if (auto color = bodyColor(user)) {
+                    return color;
+                }
+            }
+        }
+        return std::nullopt;
+    };
     for (auto* obj : lineage) {
-        if (auto color = bodyColor(obj)) {
+        if (auto it = borrowed.find(obj); it != borrowed.end()) {
+            tints[obj] = it->second;
+        }
+        else if (auto color = bodyColor(obj)) {
             tints[obj] = *color;
+        }
+        else if (auto fed = fedColor(obj)) {
+            tints[obj] = *fed;
         }
         else if (selectedColor) {
             tints[obj] = *selectedColor;

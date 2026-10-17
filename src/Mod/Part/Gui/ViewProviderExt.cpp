@@ -584,9 +584,9 @@ std::vector<Gui::ViewProvider::BodySwatch> swatches(
 
 /// Every body by name, one to a line, each after a square of its own colour (§8.7): the column
 /// draws at most three of a pattern's colours, so this is where each body can be told apart.
-QString listBodies(const QString& heading, const std::vector<std::vector<Part::BodyBase*>>& groups)
+QString listBodies(const std::vector<std::vector<Part::BodyBase*>>& groups)
 {
-    QStringList lines {heading.toHtmlEscaped()};
+    QStringList lines;
     for (const auto& group : groups) {
         for (auto* body : group) {
             lines << QStringLiteral("<span style=\"color:%1\">&#9632;</span> %2")
@@ -647,8 +647,7 @@ Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentO
     }
 
     // A reference counts when it points at a body, or at a step that builds one. A free input
-    // (the profile sketch a pad consumes) builds nothing, so it adds no bracket here; its own row
-    // shows what it references.
+    // (the profile sketch a pad consumes) builds nothing, so it counts on its own row, not here.
     std::vector<Part::BodyBase*> referenced;
     auto addReferenced = [&](Part::BodyBase* body) {
         if (std::ranges::find(own, body) == own.end()
@@ -666,18 +665,10 @@ Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentO
         }
     }
 
-    QStringList tooltip;
     const auto builtGroups = groupByPattern(built);
     column.builds = swatches(builtGroups);
-    if (!built.empty()) {
-        tooltip << listBodies(QObject::tr("Builds:"), builtGroups);
-    }
-    const auto referencedGroups = groupByPattern(referenced);
-    column.references = swatches(referencedGroups);
-    if (!referenced.empty()) {
-        tooltip << listBodies(QObject::tr("Uses:"), referencedGroups);
-    }
-    column.tooltip = tooltip.join(QStringLiteral("<br>"));
+    column.tooltip = listBodies(builtGroups);
+    column.references = swatches(groupByPattern(referenced));
     return column;
 }
 
