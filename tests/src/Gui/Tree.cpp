@@ -47,11 +47,12 @@ private:
         QMetaObject::invokeMethod(tree, "onUpdateStatus", Qt::DirectConnection);
     }
 
-    /// The tree as a person would read it down the page: one name per line, indented by depth.
+    /// The tree as a person would read it down the page: one name per line, indented by depth,
+    /// leaving out the End of Model row, which stands last in every document.
     ///
     /// An item a person asked not to see is still an item -- it is marked hidden rather than
     /// taken out -- so reading the list the way a person reads it means passing those by.
-    QStringList outline()
+    QStringList outline(bool withEndOfModel = false)
     {
         settle();
         QStringList lines;
@@ -59,6 +60,9 @@ private:
             for (int i = 0; i < item->childCount(); ++i) {
                 QTreeWidgetItem* child = item->child(i);
                 if (child->isHidden()) {
+                    continue;
+                }
+                if (child->type() == Gui::TreeWidget::StopRowType && !withEndOfModel) {
                     continue;
                 }
                 lines << QString(depth * 2, QLatin1Char(' ')) + child->text(0);
@@ -185,30 +189,33 @@ private Q_SLOTS:
         QVERIFY(doc->getObject("Hidden") != nullptr);
     }
 
-    // Rolling back shows one stop row just after the row the model stops at; building to the
-    // end takes it away.
-    void test_theStopRowStandsAfterTheRowTheModelStopsAt()  // NOLINT
+    // End of Model stands last while the model is built to the end, and just after the row it
+    // stops at when rolled back.
+    void test_endOfModelStandsLastOrAfterTheRowTheModelStopsAt()  // NOLINT
     {
         auto* first = doc->addObject("App::DocumentObjectGroup", "First");
         doc->addObject("App::DocumentObjectGroup", "Second");
         doc->addObject("App::DocumentObjectGroup", "Third");
 
-        doc->setRollbackMarker(first);
-        const QStringList rolledBack {
-            QStringLiteral("First"),
-            QStringLiteral("Model stops here"),
-            QStringLiteral("Second"),
-            QStringLiteral("Third")
-        };
-        QCOMPARE(outline(), rolledBack);
-
-        doc->setRollbackMarker(nullptr);
         const QStringList built {
             QStringLiteral("First"),
             QStringLiteral("Second"),
+            QStringLiteral("Third"),
+            QStringLiteral("End of Model")
+        };
+        QCOMPARE(outline(true), built);
+
+        doc->setRollbackMarker(first);
+        const QStringList rolledBack {
+            QStringLiteral("First"),
+            QStringLiteral("End of Model"),
+            QStringLiteral("Second"),
             QStringLiteral("Third")
         };
-        QCOMPARE(outline(), built);
+        QCOMPARE(outline(true), rolledBack);
+
+        doc->setRollbackMarker(nullptr);
+        QCOMPARE(outline(true), built);
     }
 
     // A step past the stop row is not drawn, and keeps its own visibility so that rolling
@@ -265,16 +272,16 @@ private Q_SLOTS:
         auto* first = doc->addObject("App::FeatureTest", "First");
         doc->addObject("App::FeatureTest", "Second");
         doc->setRollbackMarker(first);
-        QCOMPARE(outline().size(), 3);
+        settle();
 
         doc->addObject("App::FeatureTest", "Third");
         const QStringList expected {
             QStringLiteral("First"),
             QStringLiteral("Third"),
-            QStringLiteral("Model stops here"),
+            QStringLiteral("End of Model"),
             QStringLiteral("Second")
         };
-        QCOMPARE(outline(), expected);
+        QCOMPARE(outline(true), expected);
     }
 };
 

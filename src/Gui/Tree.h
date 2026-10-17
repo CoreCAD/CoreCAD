@@ -408,7 +408,7 @@ public:
     void testStatus();
     /// Refresh the Body column (§8.7) of every item; bodies are derived, so any change can move it.
     void updateBodyColumn();
-    /// Put the stop row just after the document's roll-back marker, or remove it.
+    /// Put the End of Model row just after the roll-back marker's row, or last.
     void updateStopRows();
     /// Draw, grey and name bodies for each row by whether it stands past the roll-back marker.
     void updateHeldBack();

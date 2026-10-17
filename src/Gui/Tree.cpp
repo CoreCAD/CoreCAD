@@ -6294,7 +6294,10 @@ void DocumentItem::updateStopRows()
             existing = child(i);
         }
     }
-    if (existing ? step && standsAfter(existing, step) : !step) {
+    // With no marker the model is built to the end, and the row stands after the last row.
+    const bool inPlace = existing
+        && (step ? standsAfter(existing, step) : existing == child(childCount() - 1));
+    if (inPlace) {
         return;
     }
 
@@ -6308,14 +6311,11 @@ void DocumentItem::updateStopRows()
         }
         delete existing;
     }
-    if (!step) {
-        return;
-    }
     auto* row = new QTreeWidgetItem(TreeWidget::StopRowType);
-    row->setText(0, QObject::tr("Model stops here"));
+    row->setText(0, QObject::tr("End of Model"));
     row->setIcon(0, BitmapFactory().iconFromTheme("PartDesign_MoveTip"));
     row->setFlags(Qt::ItemIsEnabled);
-    insertChild(indexOfChild(step) + 1, row);
+    insertChild(step ? indexOfChild(step) + 1 : childCount(), row);
 }
 
 void DocumentItem::testStatus()
