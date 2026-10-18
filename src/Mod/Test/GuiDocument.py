@@ -276,3 +276,40 @@ class TestGuiDocument(unittest.TestCase):
 
         self.assertTrue(self._processEventsUntil(lambda: os.path.exists(self._recoveryArchive())))
         self._assertRecoveryArchiveContains(expected_label="AutoSaveBurst7")
+
+
+class _EmptyTask:
+    def __init__(self):
+        self.form = QtWidgets.QWidget()
+
+
+class TestTaskPanel(unittest.TestCase):
+    """The Tasks panel opens for a dialog and is left as it was found when the dialog closes."""
+
+    def setUp(self):
+        self.doc = FreeCAD.newDocument("TaskPanelDoc")
+        self.dock = FreeCADGui.getMainWindow().findChild(QtWidgets.QDockWidget, "Tasks")
+        self.assertIsNotNone(self.dock)
+        self.wasOpen = not self.dock.isHidden()
+
+    def tearDown(self):
+        if FreeCADGui.Control.activeDialog():
+            FreeCADGui.Control.closeDialog()
+        self.dock.setVisible(self.wasOpen)
+        FreeCAD.closeDocument(self.doc.Name)
+
+    def _openAndCloseADialog(self):
+        FreeCADGui.Control.showDialog(_EmptyTask())
+        self.assertFalse(self.dock.isHidden(), "the dialog did not open the panel")
+        FreeCADGui.Control.closeDialog()
+        QtWidgets.QApplication.processEvents()
+
+    def testAPanelOpenedForADialogClosesWithIt(self):
+        self.dock.hide()
+        self._openAndCloseADialog()
+        self.assertTrue(self.dock.isHidden())
+
+    def testAPanelThatWasAlreadyOpenStaysOpen(self):
+        self.dock.show()
+        self._openAndCloseADialog()
+        self.assertFalse(self.dock.isHidden())
