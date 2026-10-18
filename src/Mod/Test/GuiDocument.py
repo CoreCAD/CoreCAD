@@ -304,12 +304,15 @@ class TestTaskPanel(unittest.TestCase):
         FreeCADGui.Control.closeDialog()
         QtWidgets.QApplication.processEvents()
 
+    def testTasksIsADockedPanelNotAnOverlay(self):
+        self.assertIs(self.dock.parentWidget(), FreeCADGui.getMainWindow())
+
     def testAPanelOpenedForADialogClosesWithIt(self):
         self.dock.hide()
         self._openAndCloseADialog()
         self.assertTrue(self.dock.isHidden())
 
-    def testAPanelThatWasAlreadyOpenStaysOpen(self):
+    def testAnEmptyPanelThatWasAlreadyOpenClosesToo(self):
         self.dock.show()
         self._openAndCloseADialog()
-        self.assertFalse(self.dock.isHidden())
+        self.assertTrue(self.dock.isHidden())
