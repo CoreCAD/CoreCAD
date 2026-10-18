@@ -814,8 +814,8 @@ void OverlayTabWidget::restore(ParameterGrp::handle handle)
         handle->SetASCII("Widgets", handle->GetASCII("Widgets", ""));
     }
 
-    std::string widgets
-        = handle->GetASCII("Widgets", getDockArea() == Qt::RightDockWidgetArea ? "Tasks," : "");
+    // No panel starts as an overlay: Tasks docks like every other panel (UI_GUIDE §6, one sheet)
+    std::string widgets = handle->GetASCII("Widgets", "");
 
     for (auto& name : QString::fromUtf8(widgets.c_str()).split(QLatin1Char(','))) {
         if (name.isEmpty()) {
