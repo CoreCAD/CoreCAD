@@ -3,12 +3,15 @@
 
 #include <gtest/gtest.h>
 
+#include <QGuiApplication>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/FeatureTest.h>
 
 #include <Gui/TreeHistory.h>
 #include <Gui/TreeLineage.h>
+#include <Gui/TreeSwatches.h>
 
 #include <src/App/InitApplication.h>
 
@@ -193,4 +196,71 @@ TEST_F(TreeRulesTest, aSelectedBodyStartsFromItsSwatchRow)
     EXPECT_EQ(lineage.tints.at(pad), red);
     EXPECT_EQ(lineage.tints.at(sketch), red);
     EXPECT_FALSE(lineage.tints.count(later));
+}
+
+// --- swatches ---------------------------------------------------------------------------------
+
+/// A click on the Bodies column means the body whose square it lands on; past three bodies from
+/// one step, the ellipsis and count stand for all of them.
+class TreeSwatchesTest: public TreeRulesTest
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        TreeRulesTest::SetUpTestSuite();
+        if (!qApp) {
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+            static int argc = 1;
+            static char name[] = "TreeRules";
+            static char* argv[] = {name, nullptr};
+            new QGuiApplication(argc, argv);  // NOLINT: lives for the whole run
+        }
+    }
+
+    std::vector<App::DocumentObject*> bodiesAt(
+        const Gui::ViewProvider::TreeBodyColumn& column,
+        const QPoint& point
+    )
+    {
+        std::vector<Gui::TreeSwatches::SwatchHit> hits;
+        Gui::TreeSwatches::paintBodySwatches(column, &hits);
+        for (const auto& hit : hits) {
+            if (hit.rect.contains(point)) {
+                return hit.bodies;
+            }
+        }
+        return {};
+    }
+};
+
+TEST_F(TreeSwatchesTest, aRowThatBuildsNoBodyDrawsNothing)
+{
+    EXPECT_TRUE(Gui::TreeSwatches::paintBodySwatches({}).isNull());
+}
+
+TEST_F(TreeSwatchesTest, eachSquareMeansItsOwnBody)
+{
+    auto* first = step("First");
+    auto* second = step("Second");
+    Gui::ViewProvider::TreeBodyColumn column;
+    column.builds.push_back({{red, blue}, {first, second}});
+
+    EXPECT_EQ(bodiesAt(column, {2, 5}), (std::vector<App::DocumentObject*> {first}));
+    EXPECT_EQ(bodiesAt(column, {14, 5}), (std::vector<App::DocumentObject*> {second}));
+}
+
+TEST_F(TreeSwatchesTest, theCountPastThreeMeansEveryBody)
+{
+    std::vector<App::DocumentObject*> bodies;
+    std::vector<QColor> colors;
+    for (const char* name : {"A", "B", "C", "D", "E"}) {
+        bodies.push_back(step(name));
+        colors.push_back(red);
+    }
+    Gui::ViewProvider::TreeBodyColumn column;
+    column.builds.push_back({colors, bodies});
+
+    QPixmap pixmap = Gui::TreeSwatches::paintBodySwatches(column);
+    EXPECT_EQ(bodiesAt(column, {pixmap.width() - 2, 5}), bodies);
+    EXPECT_EQ(bodiesAt(column, {2, 5}), (std::vector<App::DocumentObject*> {bodies.front()}));
 }
