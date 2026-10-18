@@ -754,6 +754,21 @@ class TestBodyColumn(unittest.TestCase):
         self.Doc.rollBackTo(None)
         self.Doc.recompute()
 
+    def testRolledBackToTheOriginAPatternAndItsCopiesDrawNothing(self):
+        # A body none of whose steps is built has nothing to draw, and the pattern's eye reads off.
+        pad, pattern, bodies = self.pattern(3)
+        origin = next(o for o in self.Doc.Objects if o.isDerivedFrom("App::Origin"))
+        self.Doc.rollBackTo(origin)
+        self.Doc.recompute()
+        self.columnTexts()
+        self.assertFalse(pattern.ViewObject.isVisible())
+        self.assertEqual([b.Name for b in bodies if b.ViewObject.isVisible()], [])
+        self.Doc.rollBackTo(None)
+        self.Doc.recompute()
+        self.columnTexts()
+        self.assertTrue(pattern.ViewObject.isVisible())
+        self.assertEqual([b.Name for b in bodies if not b.ViewObject.isVisible()], [])
+
     def testAPatternFusedIntoTheOriginalTakesItsSwatch(self):
         pad, pattern, bodies = self.pattern(3, length=10.0, apart=False)
         self.assertEqual(len(bodies), 1)

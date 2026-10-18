@@ -303,6 +303,11 @@ void ViewProviderBody::showShownStep()
     }
 }
 
+bool ViewProviderBody::isHeldBack() const
+{
+    return PartDesign::Body::isHeldBack(getObject());
+}
+
 void ViewProviderBody::hideHeldBack()
 {
     for (App::DocumentObject* obj : getObject()->getDocument()->getObjects()) {

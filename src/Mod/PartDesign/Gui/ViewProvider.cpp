@@ -368,7 +368,7 @@ void ViewProvider::setModeSwitch()
 bool ViewProvider::isShow() const
 {
     if (!temporarilyVisible && drawnByItsBodies(getObject())) {
-        return Visibility.getValue();
+        return Visibility.getValue() && isShowable();
     }
     return ViewProviderPart::isShow();
 }
