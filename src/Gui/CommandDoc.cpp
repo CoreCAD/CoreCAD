@@ -1800,7 +1800,7 @@ StdCmdRollBackHere::StdCmdRollBackHere()
     );
     sWhatsThis = "Std_RollBackHere";
     sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_MoveTip";
+    sPixmap = "Std_RollBackHere";
 }
 
 void StdCmdRollBackHere::activated(int iMsg)
