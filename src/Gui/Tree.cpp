@@ -812,8 +812,19 @@ void TreeWidget::keyPressEvent(QKeyEvent* event)
     QTreeWidget::keyPressEvent(event);
 }
 
+bool TreeWidget::isHeldBackRowAt(const QPoint& pos) const
+{
+    QTreeWidgetItem* item = itemAt(pos);
+    return item && item->type() == ObjectType
+        && static_cast<DocumentObjectItem*>(item)->object()->isHeldBack();
+}
+
 void TreeWidget::mousePressEvent(QMouseEvent* event)
 {
+    if (isHeldBackRowAt(event->pos())) {
+        event->accept();
+        return;
+    }
     // A swatch is the handle for its body: clicking it selects the body, not the step's row.
     if (event->button() == Qt::LeftButton || event->button() == Qt::RightButton) {
         auto bodies = bodiesAtSwatch(event->pos());
@@ -902,6 +913,10 @@ void TreeWidget::mousePressEvent(QMouseEvent* event)
 
 void TreeWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
+    if (isHeldBackRowAt(event->pos())) {
+        event->accept();
+        return;
+    }
     // A swatch's double-click opens its body's panel, not the step for editing.
     auto swatchBodies = bodiesAtSwatch(event->pos());
     if (!swatchBodies.empty()) {
