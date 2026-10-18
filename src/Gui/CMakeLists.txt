@@ -834,6 +834,7 @@ SET(Dock_Windows_CPP_SRCS
     Selection/SelectionView.cpp
     ToolBox.cpp
     Tree.cpp
+    TreeDragDrop.cpp
     TreeHistory.cpp
     TreeLineage.cpp
     TreeSwatches.cpp
@@ -851,6 +852,7 @@ SET(Dock_Windows_HPP_SRCS
     Selection/SelectionView.h
     ToolBox.h
     Tree.h
+    TreeShared.h
     TreeHistory.h
     TreeLineage.h
     TreeSwatches.h
