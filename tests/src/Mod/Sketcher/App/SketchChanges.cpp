@@ -128,4 +128,46 @@ TEST_F(SketchChangesTest, anAddedDimensionIsReportedInTheConstraints)
     EXPECT_EQ(changes[0].change.kind, App::RecipeChange::Kind::Added);
 }
 
+// The solver moves the line to meet the new length; only the length was changed by anyone.
+TEST_F(SketchChangesTest, aChangedDimensionDoesNotReportTheLinesTheSolverMoved)
+{
+    addLine(_sketch, 0, 0, 10, 0);
+    Sketcher::Constraint length;
+    length.Type = Sketcher::DistanceX;
+    length.setElement(0, Sketcher::GeoElementId(0, Sketcher::PointPos::start));
+    length.setElement(1, Sketcher::GeoElementId(0, Sketcher::PointPos::end));
+    length.setValue(10.0);
+    const int lengthId = _sketch->addConstraint(&length);
+    auto* after = nextVersion();
+    after->setDatum(lengthId, 20.0);
+
+    const std::vector<App::DocumentChange> changes = App::diffDocuments(*_before, *_after);
+
+    ASSERT_EQ(changes.size(), 1u) << listed(changes);
+    EXPECT_EQ(changes[0].section, "constraints");
+    EXPECT_EQ(changes[0].change.field, "value");
+}
+
+TEST_F(SketchChangesTest, aLineDraggedAlongsideADimensionChangeIsStillReported)
+{
+    addLine(_sketch, 0, 0, 10, 0);
+    addLine(_sketch, 0, 5, 10, 5);
+    Sketcher::Constraint length;
+    length.Type = Sketcher::DistanceX;
+    length.setElement(0, Sketcher::GeoElementId(0, Sketcher::PointPos::start));
+    length.setElement(1, Sketcher::GeoElementId(0, Sketcher::PointPos::end));
+    length.setValue(10.0);
+    const int lengthId = _sketch->addConstraint(&length);
+    auto* after = nextVersion();
+    after->setDatum(lengthId, 20.0);
+    after->moveGeometry(1, Sketcher::PointPos::end, Base::Vector3d(30, 5, 0));
+
+    const std::vector<App::DocumentChange> changes = App::diffDocuments(*_before, *_after);
+
+    ASSERT_EQ(changes.size(), 2u) << listed(changes);
+    EXPECT_EQ(changes[0].section, "geometry");
+    EXPECT_EQ(changes[0].change.field, "to");
+    EXPECT_EQ(changes[1].section, "constraints");
+}
+
 }  // namespace

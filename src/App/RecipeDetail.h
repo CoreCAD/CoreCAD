@@ -27,7 +27,9 @@
 #include <FCGlobal.h>
 
 #include <functional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <Base/Type.h>
@@ -82,5 +84,24 @@ AppExport void registerRecipeDetail(Base::Type type, RecipeDetailProvider provid
 /// The detail for one object, from the provider registered against the nearest of its types, or
 /// an empty detail when no module has claimed it.
 AppExport RecipeDetail recipeDetail(const DocumentObject& obj);
+
+/** Values in an object's detail that changed only because other edits did, as (node id, field).
+ *
+ *  A sketch's line ends are stored, but when a dimension changes the solver moves them, and
+ *  nobody moved them. A history lists what was done, so these are left out of it; a line end
+ *  someone dragged is not a consequence and stays.
+ */
+using RecipeConsequences = std::set<std::pair<std::string, std::string>>;
+
+using RecipeConsequenceProvider
+    = std::function<RecipeConsequences(const DocumentObject& before, const DocumentObject& after)>;
+
+/// Register a provider for `type` and every type derived from it, as registerRecipeDetail does.
+AppExport void registerRecipeConsequences(Base::Type type, RecipeConsequenceProvider provider);
+
+/// The consequences between two versions of one object, or none when no module has claimed its
+/// type. Neither object is changed.
+AppExport RecipeConsequences recipeConsequences(const DocumentObject& before,
+                                                const DocumentObject& after);
 
 }  // namespace App

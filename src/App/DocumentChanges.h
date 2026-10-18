@@ -57,7 +57,9 @@ struct DocumentChange
 /** Every authored change from `before` to `after`, in the newer document's object order, with
  *  removed objects last. Objects are matched by durable Uid, so the two documents must be
  *  versions of one model, not two models built alike. Reads authored state only: neither
- *  document is recomputed, and a change to built geometry alone is not a change.
+ *  document is recomputed, and a change to built geometry alone is not a change. A stored value
+ *  that moved only because another edit did, as a sketch's solver moves line ends when a
+ *  dimension changes, is not a change either.
  */
 AppExport std::vector<DocumentChange> diffDocuments(const Document& before, const Document& after);
 
