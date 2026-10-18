@@ -4868,8 +4868,15 @@ void TreeWidget::updateLineage()
     };
 
     std::set<App::DocumentObject*> lineage;
-    std::map<App::DocumentObject*, QColor> familyTint;
-    std::map<App::DocumentObject*, QColor> borrowed;
+    // Rows tinted in the selected body's colour rather than their own: its family when its swatch
+    // was clicked, and the steps of other bodies it was built on, which win.
+    std::map<App::DocumentObject*, QColor> ownTint;
+    std::set<App::DocumentObject*> borrowed;
+    auto tintAsFamily = [&](App::DocumentObject* row, const QColor& color) {
+        if (!borrowed.count(row)) {
+            ownTint[row] = color;
+        }
+    };
     for (auto* obj : selected) {
         App::DocumentObject* start = obj;
         std::set<App::DocumentObject*> ownBodies;
@@ -4879,7 +4886,7 @@ void TreeWidget::updateLineage()
             ownBodies.insert(obj);
             ownColor = colorIn(columnOf(row).builds, obj);
             lineage.insert(row);
-            familyTint[row] = *ownColor;
+            tintAsFamily(row, *ownColor);
         }
         else {
             ownBodies = bodiesBuilt(obj);
@@ -4903,11 +4910,12 @@ void TreeWidget::updateLineage()
                 if (sameFamily) {
                     pending.push_back(input);
                     if (bodySelected) {
-                        familyTint[input] = *ownColor;
+                        tintAsFamily(input, *ownColor);
                     }
                 }
                 else if (ownColor) {
-                    borrowed[input] = *ownColor;
+                    borrowed.insert(input);
+                    ownTint[input] = *ownColor;
                 }
             }
         }
@@ -4942,11 +4950,8 @@ void TreeWidget::updateLineage()
         return std::nullopt;
     };
     for (auto* obj : lineage) {
-        if (auto it = borrowed.find(obj); it != borrowed.end()) {
-            tints[obj] = it->second;
-        }
-        else if (auto family = familyTint.find(obj); family != familyTint.end()) {
-            tints[obj] = family->second;
+        if (auto own = ownTint.find(obj); own != ownTint.end()) {
+            tints[obj] = own->second;
         }
         else if (auto color = bodyColor(obj)) {
             tints[obj] = *color;
@@ -4966,11 +4971,9 @@ void TreeWidget::updateLineage()
             selectedColor.value_or(palette().color(QPalette::Highlight))
         );
     }
-    std::set<App::DocumentObject*> selectedSet(selected.begin(), selected.end());
-
-    if (tints != lineageTints || selectedSet != lineageSelected) {
+    if (tints != lineageTints || selected != lineageSelected) {
         lineageTints = std::move(tints);
-        lineageSelected = std::move(selectedSet);
+        lineageSelected = std::move(selected);
         viewport()->update();
     }
 }
