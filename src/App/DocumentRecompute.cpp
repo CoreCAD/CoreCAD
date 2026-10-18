@@ -875,6 +875,18 @@ int Document::_recomputeFeature(DocumentObject* Feat) // NOLINT
         return 0;
     }
 
+    if (Feat->isTimelineStep()) {
+        for (DocumentObject* input : Feat->getOutList()) {
+            if (isRolledBackPast(input)) {
+                std::string why = "Built from '" + std::string(input->Label.getValue())
+                    + "', which is past the End of Model.";
+                d->addRecomputeLog(why, Feat);
+                FC_LOG("Refused " << Feat->getFullName() << ": " << why);
+                return 1;
+            }
+        }
+    }
+
     if (Feat->isBlockedByAStatement()) {
         // Cruth (Amendment 19): something this session could not honour states a value here --
         // this object's own file, or another object setting a value on it (Clause 19.6) -- so
