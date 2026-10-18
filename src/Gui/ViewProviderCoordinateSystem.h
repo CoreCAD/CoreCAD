@@ -61,6 +61,7 @@ public:
     ///@{
     std::vector<App::DocumentObject*> claimChildren() const override;
     std::vector<App::DocumentObject*> claimChildren3D() const override;
+    bool canDropObjects() const override;
 
     SoGroup* getChildRoot() const override
     {

@@ -24,6 +24,7 @@
 #include "Body.h"
 #include "BodyChain.h"
 #include "FeatureSketchBased.h"
+#include "FeatureTransformed.h"
 
 using namespace PartDesign;
 
@@ -49,7 +50,13 @@ std::vector<Body*> bodiesFedBy(const App::DocumentObject* solid)
             continue;
         }
         const auto tipped = Body::bodiesTippedAt(cursor);
-        found.insert(tipped.begin(), tipped.end());
+        for (auto* body : tipped) {
+            // A copy made further on did not exist yet at this solid.
+            App::DocumentObject* copier = body->copiedBy();
+            if (!copier || copier == solid) {
+                found.insert(body);
+            }
+        }
         for (auto* step : chain::nextSteps(cursor)) {
             if (tipped.empty() || step->BaseInstance.getValue() >= 0) {
                 frontier.push_back(step);
@@ -258,14 +265,75 @@ std::vector<App::DocumentObject*> Body::ownSolids() const
         }
         return solids;
     }
+    App::DocumentObject* copier = copiedBy();
     std::set<App::DocumentObject*> seen;
     for (auto* step = freecad_cast<PartDesign::Feature*>(tip);
          step && seen.insert(step).second && backsBody(step, this);
          step = freecad_cast<PartDesign::Feature*>(step->BaseFeature.getValue())) {
         solids.push_back(step);
+        if (step == copier) {
+            break;
+        }
     }
     std::ranges::reverse(solids);
     return solids;
+}
+
+App::DocumentObject* Body::copiedBy() const
+{
+    if (!copier) {
+        copier = findCopier();
+    }
+    return *copier;
+}
+
+App::DocumentObject* Body::findCopier() const
+{
+    auto* tip = freecad_cast<PartDesign::Feature*>(Tip.getValue());
+    const std::string cid = TipComponentId.getStrValue();
+    if (!tip || cid.empty()) {
+        return nullptr;
+    }
+    // Which of each step's solids this Body stands for, walking back from the Tip; 0 is all.
+    int piece = 0;
+    const Part::TopoShape tipShape = tip->Shape.getShape();
+    const auto tipCount = static_cast<int>(tipShape.countSubShapes(TopAbs_SOLID));
+    for (int i = 1; i <= tipCount && piece == 0; ++i) {
+        if (componentKeyOfSolid(tip, tipShape, i) == cid) {
+            piece = i;
+        }
+    }
+    std::set<const App::DocumentObject*> seen;
+    for (auto* step = tip; step && piece > 0 && seen.insert(step).second;) {
+        auto* pattern = freecad_cast<PartDesign::Transformed*>(step);
+        if (pattern && pattern->Shape.getShape().countSubShapes(TopAbs_SOLID) > 1
+            && piece != pattern->solidIndexOfOriginal()) {
+            return pattern;
+        }
+        auto* base = freecad_cast<PartDesign::Feature*>(step->BaseFeature.getValue());
+        const long copy = step->BaseInstance.getValue();
+        auto* basePattern = freecad_cast<PartDesign::Transformed*>(base);
+        piece = copy >= 0 && basePattern ? basePattern->solidIndexOfInstance(copy) : 0;
+        step = base;
+    }
+    return nullptr;
+}
+
+App::DocumentObject* Body::lastShapedBy() const
+{
+    const std::vector<App::DocumentObject*> steps = ownSolids();
+    App::DocumentObject* shown = shownStep();
+    auto at = std::ranges::find(steps, shown);
+    if (at == steps.end()) {
+        return shown;
+    }
+    App::DocumentObject* copier = copiedBy();
+    for (;; --at) {
+        auto* pattern = freecad_cast<PartDesign::Transformed*>(*at);
+        if (!pattern || pattern == copier || at == steps.begin() || !pattern->leavesOriginalAsIs()) {
+            return *at;
+        }
+    }
 }
 
 std::vector<App::DocumentObject*> Body::getFullModel()

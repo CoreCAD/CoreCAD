@@ -1807,7 +1807,7 @@ void StdCmdRollBackHere::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
-    if (selected.size() != 1 || !selected.front()->isTimelineStep()) {
+    if (selected.size() != 1 || !selected.front()->isRollbackStop()) {
         return;
     }
     App::DocumentObject* step = selected.front();
@@ -1824,7 +1824,7 @@ void StdCmdRollBackHere::activated(int iMsg)
 bool StdCmdRollBackHere::isActive()
 {
     const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
-    return selected.size() == 1 && selected.front()->isTimelineStep();
+    return selected.size() == 1 && selected.front()->isRollbackStop();
 }
 
 //===========================================================================

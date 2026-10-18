@@ -102,6 +102,13 @@ public:
     /// profile sketch, a datum). The base answers by membership; a body with a chain refines it.
     virtual bool isBuiltBy(const App::DocumentObject* f);
 
+    /// The step that last changed this body's shape, where its swatch stands. The base answers
+    /// with the Tip; a body with a chain refines it.
+    virtual App::DocumentObject* lastShapedBy() const
+    {
+        return Tip.getValue();
+    }
+
     /// The body's identity colour (§4.6), shown wherever the body is named. Default grey.
     virtual Base::Color getIdentityColor() const;
 

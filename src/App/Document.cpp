@@ -825,6 +825,9 @@ bool Document::isRolledBackPast(const DocumentObject* obj) const
     if (!marker || marker == obj) {
         return false;
     }
+    if (!marker->isTimelineStep()) {
+        return true;
+    }
     for (const DocumentObject* each : d->objectArray) {
         if (each == marker) {
             return true;
@@ -886,7 +889,7 @@ void Document::retreatRollbackMarkerFrom(const DocumentObject* obj)
     auto self = std::ranges::find(d->objectArray, obj);
     auto before = std::find_if(std::make_reverse_iterator(self),
                                d->objectArray.rend(),
-                               [](DocumentObject* each) { return each->isTimelineStep(); });
+                               [](DocumentObject* each) { return each->isRollbackStop(); });
     setRollbackMarker(before == d->objectArray.rend() ? nullptr : *before);
 }
 

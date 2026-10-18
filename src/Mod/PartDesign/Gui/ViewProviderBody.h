@@ -89,6 +89,8 @@ public:
 
     /** Check whether objects can be added to the view provider by drag and drop */
     bool canDropObjects() const override;
+    /// A body none of whose steps is built yet has nothing to draw.
+    bool isHeldBack() const override;
     /** Check whether the object can be dropped to the view provider by drag and drop */
     bool canDropObject(App::DocumentObject*) const override;
     /** Add an object to the view provider by drag and drop */
@@ -171,6 +173,7 @@ private:
      * single-component Bodies, which already sit in "Through" mode.
      */
     void applyMultiOutputDisplay();
+    void syncTipEye();
     void showShownStep();
     void hideHeldBack();
 

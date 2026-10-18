@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -211,6 +212,11 @@ public:
     std::vector<App::DocumentObject*> getFullModel() override;
     /// This Body's solid steps in build order.
     std::vector<App::DocumentObject*> ownSolids() const;
+    /// The pattern that made this Body's solid as a copy, where its chain begins; null when the
+    /// solid comes from the start of the chain.
+    App::DocumentObject* copiedBy() const;
+    /// The last shown step, passing back over a pattern that left this Body's solid as it was.
+    App::DocumentObject* lastShapedBy() const override;
     /// Only a solid step builds the Body; its sketches and datums are inputs.
     bool isBuiltBy(const App::DocumentObject* f) override
     {
@@ -292,10 +298,14 @@ protected:
     void onDocumentRestored() override;
 
 private:
+    /// copiedBy(), kept until this Body's Tip, its component or its shape changes.
+    mutable std::optional<App::DocumentObject*> copier;
+    App::DocumentObject* findCopier() const;
     /// The pattern copy this Body stands for, or chain::WholeOutput.
     long tipCopy() const;
     void appendAtTip(PartDesign::Feature* feature, long copy);
     void insertAtMarker(PartDesign::Feature* feature);
+    void insertAtStart(PartDesign::Feature* feature, App::DocumentObject* from);
     /// The step this Body stops at when the roll-back marker holds some of its steps back, or null.
     App::DocumentObject* stopStep() const;
     /// The step after the stop on the way to the Tip, or null.

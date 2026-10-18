@@ -616,7 +616,9 @@ Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentO
         Gui::ViewProvider::BodySwatch swatch;
         swatch.colors.push_back(toQColor(body->getIdentityColor()));
         swatch.bodies.push_back(const_cast<Part::BodyBase*>(body));
+        column.partOf.push_back(swatch);
         column.builds.push_back(std::move(swatch));
+        column.swatchRow = body->lastShapedBy();
         column.tooltip = QString::fromUtf8(body->Label.getValue());
         return column;
     }
@@ -669,6 +671,10 @@ Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentO
         }
     }
 
+    // A body's swatch stands only on the step that last shaped it; the rows that build it are
+    // washed when it is selected.
+    column.partOf = swatches(groupByPattern(built));
+    std::erase_if(built, [obj](Part::BodyBase* body) { return body->lastShapedBy() != obj; });
     const auto builtGroups = groupByPattern(built);
     column.builds = swatches(builtGroups);
     column.tooltip = listBodies(builtGroups);

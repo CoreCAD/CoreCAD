@@ -157,6 +157,47 @@ int Transformed::solidIndexOfOriginal() const
     return found;
 }
 
+bool Transformed::leavesOriginalAsIs() const
+{
+    if (!originalAsIs) {
+        originalAsIs = checkOriginalAsIs();
+    }
+    return *originalAsIs;
+}
+
+bool Transformed::checkOriginalAsIs() const
+{
+    if (AddSubShape.getShape().isNull()) {
+        return false;
+    }
+    Part::TopoShape added;
+    Part::TopoShape cut;
+    splitAddSubHalves(AddSubShape.getShape(), added, cut);
+    // Cut copies are cut from the original's own solid.
+    if (!cut.isNull() || added.isNull()) {
+        return false;
+    }
+    // Copies kept apart are held back from the fuse.
+    if (MultiBody.getValue()) {
+        return true;
+    }
+    // Fused, a copy joins the original only where it touches it. The untransformed copy is the
+    // original itself, so one touching copy is that one.
+    App::DocumentObject* base = getBaseObject(/*silent*/ true);
+    const Part::TopoShape original = narrowToBaseInstance(base, Part::getShape(base), true);
+    if (original.isNull()) {
+        return false;
+    }
+    int touching = 0;
+    for (TopExp_Explorer it(added.getShape(), TopAbs_SOLID); it.More(); it.Next()) {
+        BRepExtrema_DistShapeShape distance(original.getShape(), it.Current());
+        if (distance.IsDone() && distance.Value() <= Precision::Confusion() && ++touching > 1) {
+            return false;
+        }
+    }
+    return true;
+}
+
 long Transformed::ordinalOfComponent(const std::string& cid) const
 {
     const Part::TopoShape shape = Shape.getShape();
@@ -366,6 +407,9 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
 
 void Transformed::onChanged(const App::Property* prop)
 {
+    if (prop == &Shape || prop == &AddSubShape || prop == &BaseFeature) {
+        originalAsIs.reset();
+    }
     if (prop == &TransformMode) {
         auto const mode = static_cast<Mode>(TransformMode.getValue());
         Originals.setStatus(App::Property::Status::Hidden, mode == Mode::WholeShape);

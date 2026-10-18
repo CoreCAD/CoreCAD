@@ -321,7 +321,8 @@ void ViewProvider::onChanged(const App::Property* prop)
             // hide all features in the body other than this object
             for (App::DocumentObject* obj : body->getFullModel()) {
 
-                if (obj->isDerivedFrom<PartDesign::Feature>() && obj != getObject()) {
+                if (obj->isDerivedFrom<PartDesign::Feature>() && obj != getObject()
+                    && !drawnByItsBodies(obj)) {
                     auto vpd = freecad_cast<Gui::ViewProviderDocumentObject*>(
                         Gui::Application::Instance->getViewProvider(obj)
                     );
@@ -333,7 +334,53 @@ void ViewProvider::onChanged(const App::Property* prop)
         }
     }
 
+    if (prop == &Visibility && !isRestoring() && !showingBodies && drawnByItsBodies(getObject())) {
+        showingBodies = true;
+        for (auto* body : PartDesign::Body::bodiesTippedAt(getObject())) {
+            auto* vp = freecad_cast<Gui::ViewProviderDocumentObject*>(
+                Gui::Application::Instance->getViewProvider(body)
+            );
+            if (vp && vp->Visibility.getValue() != Visibility.getValue()) {
+                vp->Visibility.setValue(Visibility.getValue());
+            }
+        }
+        showingBodies = false;
+    }
+
     PartGui::ViewProviderPartExt::onChanged(prop);
+}
+
+bool ViewProvider::drawnByItsBodies(const App::DocumentObject* feature)
+{
+    const auto bodies = PartDesign::Body::bodiesTippedAt(feature);
+    return std::ranges::any_of(bodies, [](const PartDesign::Body* body) {
+        return !body->TipComponentId.getStrValue().empty();
+    });
+}
+
+void ViewProvider::setModeSwitch()
+{
+    if (temporarilyVisible || !drawnByItsBodies(getObject())) {
+        ViewProviderPart::setModeSwitch();
+    }
+}
+
+bool ViewProvider::isShow() const
+{
+    if (!temporarilyVisible && drawnByItsBodies(getObject())) {
+        return Visibility.getValue() && isShowable();
+    }
+    return ViewProviderPart::isShow();
+}
+
+void ViewProvider::refreshDrawing()
+{
+    if (drawnByItsBodies(getObject()) && !temporarilyVisible) {
+        Gui::ViewProvider::hide();
+    }
+    else if (Visibility.getValue() && !isShow()) {
+        setModeSwitch();
+    }
 }
 
 Gui::ViewProvider* ViewProvider::startEditing(int ModNum)
@@ -496,6 +543,7 @@ void ViewProvider::setBodyMode(bool bodymode)
 void ViewProvider::makeTemporaryVisible(bool onoff)
 {
     // make sure to not use the overridden versions, as they change properties
+    temporarilyVisible = onoff;
     if (onoff) {
         if (VisualTouched) {
             updateVisual();

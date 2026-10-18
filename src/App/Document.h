@@ -1061,7 +1061,8 @@ public:
 
     /// The step the document stops building after, or `nullptr` when every step is built.
     DocumentObject* getRollbackMarker() const;
-    /// Stop building after @p step; `nullptr`, or the last step, builds every step.
+    /// Stop building after @p step; `nullptr`, or the last step, builds every step, and the
+    /// world frame builds none.
     void setRollbackMarker(DocumentObject* step);
     /// Whether @p obj is a step that comes after the roll-back marker, so it is not built.
     bool isRolledBackPast(const DocumentObject* obj) const;

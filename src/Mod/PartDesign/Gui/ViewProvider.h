@@ -77,6 +77,19 @@ public:
     // document and properties.
     void makeTemporaryVisible(bool);
 
+    /// True when @p feature's solids are drawn by the bodies that stand for them, one each, so
+    /// the feature draws nothing itself and its eye shows and hides those bodies.
+    static bool drawnByItsBodies(const App::DocumentObject* feature);
+    /// Draw this feature, or stop, after drawnByItsBodies() has changed.
+    void refreshDrawing();
+    /// True while this feature's eye is being passed on to its bodies.
+    bool isShowingBodies() const
+    {
+        return showingBodies;
+    }
+    /// A feature drawn by its bodies reads as shown while its eye is on.
+    bool isShow() const override;
+
     // Returns the ViewProvider of the body the feature belongs to, or NULL, if not in a body
     ViewProviderBody* getBodyViewProvider();
 
@@ -137,6 +150,10 @@ protected:
     ViewProvider* previouslyShownViewProvider {nullptr};
 
     bool showsNoEffectNotice {false};
+    bool temporarilyVisible {false};
+    bool showingBodies {false};
+
+    void setModeSwitch() override;
 
 private:
     Gui::CoinPtr<PartGui::SoPreviewShape> pcToolPreview;
