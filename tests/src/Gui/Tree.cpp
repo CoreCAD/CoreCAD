@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Cruth contributors
 
 #include <QMimeData>
+#include <QMouseEvent>
+#include <QStyle>
 #include <QTest>
 #include <Inventor/nodes/SoSwitch.h>
 #include <QTreeWidgetItem>
@@ -30,6 +32,11 @@ struct DragAccess: Gui::TreeWidget  // NOLINT
 {
     using Gui::TreeWidget::dragMoveEvent;
     using Gui::TreeWidget::dropEvent;
+};
+
+struct ClickAccess: Gui::TreeWidget  // NOLINT
+{
+    using Gui::TreeWidget::mousePressEvent;
 };
 
 class TestTree: public QObject  // NOLINT
@@ -101,6 +108,29 @@ private:
         QDropEvent drop(above, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
         (tree->*(&DragAccess::dropEvent))(&drop);
         return true;
+    }
+
+    /// Press the left button on the eye of the row named @p name, as a person does.
+    void clickEye(const QString& name)
+    {
+        settle();
+        tree->resize(400, 400);
+        tree->show();
+        tree->expandAll();
+        auto* row = tree->findItems(name, Qt::MatchExactly | Qt::MatchRecursive).value(0);
+        QVERIFY(row);
+        const QRect rect = tree->visualItemRect(row);
+        const int margin = tree->style()->pixelMetric(QStyle::PM_FocusFrameHMargin) + 1;
+        const QPointF eye(rect.left() + margin + tree->iconSize() / 2, rect.center().y());
+        QMouseEvent press(
+            QEvent::MouseButtonPress,
+            eye,
+            tree->viewport()->mapToGlobal(eye),
+            Qt::LeftButton,
+            Qt::LeftButton,
+            Qt::NoModifier
+        );
+        (tree->*(&ClickAccess::mousePressEvent))(&press);
     }
 
     QStringList documentOrder() const
@@ -244,6 +274,24 @@ private Q_SLOTS:
                         .value(0);
         QVERIFY(row);
         QVERIFY(!row->data(0, Qt::ForegroundRole).isValid());
+    }
+
+    // Past the End of Model nothing on a row answers a click, as in most CAD tools: its eye
+    // does not hide it, and it is not picked.
+    void test_aRowPastTheStopRowIgnoresClicks()  // NOLINT
+    {
+        auto* first = doc->addObject("App::Plane", "First");
+        auto* second = doc->addObject("App::Plane", "Second");
+
+        clickEye(QStringLiteral("First"));
+        QVERIFY(!first->Visibility.getValue());
+
+        doc->setRollbackMarker(first);
+        clickEye(QStringLiteral("Second"));
+        QVERIFY(second->Visibility.getValue());
+        auto* row = tree->findItems(QStringLiteral("Second"), Qt::MatchExactly | Qt::MatchRecursive)
+                        .value(0);
+        QVERIFY(!row->isSelected());
     }
 
     // The list is the timeline: dropping a row moves the step in the document's history.

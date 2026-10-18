@@ -225,6 +225,8 @@ private:
     /// The bodies whose swatch is under @p pos in the Bodies column: one for a square, all of a
     /// pattern's for its count. Empty when @p pos is on no swatch.
     std::vector<App::DocumentObject*> bodiesAtSwatch(const QPoint& pos) const;
+    /// Whether the row under @p pos stands past the End of Model, where clicks do nothing.
+    bool isHeldBackRowAt(const QPoint& pos) const;
     /// The menu a body's swatch offers (DESIGN_ui-surfaces §1): Rename, Hide or Show, Used by.
     void showSwatchMenu(const std::vector<App::DocumentObject*>& bodies, const QPoint& at);
     std::map<App::DocumentObject*, QColor> lineageTints;

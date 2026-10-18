@@ -93,6 +93,9 @@ namespace sp = std::placeholders;
 
 void TreeWidget::contextMenuEvent(QContextMenuEvent* e)
 {
+    if (isHeldBackRowAt(e->pos())) {
+        return;
+    }
     QTreeWidgetItem* pressed = itemAt(e->pos());
     if (pressed && pressed->type() == StopRowType) {
         showStopRowMenu(pressed, e->globalPos());
