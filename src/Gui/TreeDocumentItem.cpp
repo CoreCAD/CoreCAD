@@ -881,7 +881,7 @@ void DocumentItem::updateStopRows()
     }
     auto* row = new QTreeWidgetItem(TreeWidget::StopRowType);
     row->setText(0, QObject::tr("End of Model"));
-    row->setIcon(0, BitmapFactory().iconFromTheme("PartDesign_MoveTip"));
+    row->setIcon(0, BitmapFactory().iconFromTheme("Std_RollBackHere"));
     row->setFlags(Qt::ItemIsEnabled);
     insertChild(step ? indexOfChild(step) + 1 : childCount(), row);
 }
