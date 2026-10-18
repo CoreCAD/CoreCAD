@@ -836,10 +836,12 @@ SET(Dock_Windows_CPP_SRCS
     Tree.cpp
     TreeDragDrop.cpp
     TreeExpansion.cpp
+    TreeContextMenu.cpp
     TreeDocumentItem.cpp
     TreeItemDelegate.cpp
     TreeObjectItem.cpp
     TreePanel.cpp
+    TreeSelection.cpp
     TreeHistory.cpp
     TreeLineage.cpp
     TreeSwatches.cpp
