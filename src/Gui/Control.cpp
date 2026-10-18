@@ -176,10 +176,15 @@ void ControlSingleton::showDialog(Gui::TaskView::TaskDialog* dlg, App::Document*
         return;
     }
 
+    auto dw = qobject_cast<QDockWidget*>(taskView->parentWidget());
+    if (dw && taskView->taskInfos.empty()) {
+        taskViewClosedBeforeDialog = dw->isHidden();
+    }
+
     bool addedDialog = taskView->showDialog(dlg, attachTo);
 
     // make sure that the combo view is shown
-    if (auto dw = qobject_cast<QDockWidget*>(taskView->parentWidget())) {
+    if (dw) {
         aboutToShowDialog(dw);
         dw->setVisible(true);
         dw->toggleViewAction()->setVisible(true);
@@ -268,6 +273,10 @@ void ControlSingleton::closedDialog(App::Document* /*attachedTo*/)
             QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable
             | QDockWidget::DockWidgetFloatable
         );
+        // The panel was opened for the dialog, so it closes with the last one
+        if (taskViewClosedBeforeDialog && taskView->taskInfos.empty()) {
+            dw->hide();
+        }
     }
 }
 
