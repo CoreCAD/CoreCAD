@@ -100,6 +100,15 @@ class TestRollbackMarker(unittest.TestCase):
         self.assertLess(names.index(sketch.Name), names.index(boss.Name))
         self.assertLess(names.index(boss.Name), names.index("S2"))
 
+    def testANewStepCannotBeBuiltFromAStepPastTheMarker(self):
+        self._rollBackTo(self.pad)
+        held = self.Doc.getObject("S2")
+        boss = PartDesign.makeFeature(held, "Pad", body=self.body)
+        self.Doc.recompute()
+        self.assertTrue(boss.isValid() is False, boss.getStatusString())
+        self.assertIn("past the End of Model", boss.getStatusString())
+        self.assertAlmostEqual(self.body.Shape.Volume, PAD, places=3)
+
     def testDeletingTheMarkerStepMovesItBack(self):
         boss = PartDesign.makeFeature(_square(self.Doc, "S3", side=3), "Pad", body=self.body)
         boss.Length = 1
