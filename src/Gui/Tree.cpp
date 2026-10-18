@@ -19,6 +19,8 @@
  *   Suite 330, Boston, MA  02111-1307, USA                                *
  *                                                                         *
  ***************************************************************************/
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
 
 
 #include <optional>
@@ -341,26 +343,6 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-
-class DocumentItem::ExpandInfo: public std::unordered_map<std::string, DocumentItem::ExpandInfoPtr>
-{
-public:
-    void restore(Base::XMLReader& reader)
-    {
-        int level = reader.level();
-        int count = reader.getAttribute<long>("count");
-        for (int i = 0; i < count; ++i) {
-            reader.readElement("Expand");
-            auto& entry = (*this)[reader.getAttribute<const char*>("name")];
-            if (!reader.hasAttribute("count")) {
-                continue;
-            }
-            entry.reset(new ExpandInfo);
-            entry->restore(reader);
-        }
-        reader.readEndElement("Expand", level - 1);
-    }
-};
 
 // ---------------------------------------------------------------------------
 
@@ -4409,109 +4391,6 @@ void DocumentItem::slotHighlightObject(
         return;
     }
     END_FOREACH_ITEM
-}
-
-static unsigned int countExpandedItem(const QTreeWidgetItem* item)
-{
-    unsigned int size = 0;
-    for (int i = 0, count = item->childCount(); i < count; ++i) {
-        auto citem = item->child(i);
-        if (citem->type() != TreeWidget::ObjectType || !citem->isExpanded()) {
-            continue;
-        }
-        auto obj = static_cast<const DocumentObjectItem*>(citem)->object()->getObject();
-        if (obj->isAttachedToDocument()) {
-            size += strlen(obj->getNameInDocument()) + countExpandedItem(citem);
-        }
-    }
-    return size;
-}
-
-unsigned int DocumentItem::getMemSize() const
-{
-    return countExpandedItem(this);
-}
-
-static void saveExpandedItem(Base::Writer& writer, const QTreeWidgetItem* item)
-{
-    int itemCount = 0;
-    for (int i = 0, count = item->childCount(); i < count; ++i) {
-        auto citem = item->child(i);
-        if (citem->type() != TreeWidget::ObjectType || !citem->isExpanded()) {
-            continue;
-        }
-        auto obj = static_cast<const DocumentObjectItem*>(citem)->object()->getObject();
-        if (obj->isAttachedToDocument()) {
-            ++itemCount;
-        }
-    }
-
-    if (!itemCount) {
-        writer.Stream() << "/>" << std::endl;
-        return;
-    }
-
-    writer.Stream() << " count=\"" << itemCount << "\">" << std::endl;
-    writer.incInd();
-    for (int i = 0, count = item->childCount(); i < count; ++i) {
-        auto citem = item->child(i);
-        if (citem->type() != TreeWidget::ObjectType || !citem->isExpanded()) {
-            continue;
-        }
-        auto obj = static_cast<const DocumentObjectItem*>(citem)->object()->getObject();
-        if (obj->isAttachedToDocument()) {
-            writer.Stream() << writer.ind() << "<Expand name=\"" << obj->getNameInDocument() << "\"";
-            saveExpandedItem(writer, static_cast<const DocumentObjectItem*>(citem));
-        }
-    }
-    writer.decInd();
-    writer.Stream() << writer.ind() << "</Expand>" << std::endl;
-}
-
-void DocumentItem::Save(Base::Writer& writer) const
-{
-    writer.Stream() << writer.ind() << "<Expand ";
-    saveExpandedItem(writer, this);
-}
-
-void DocumentItem::Restore(Base::XMLReader& reader)
-{
-    reader.readElement("Expand");
-    if (!reader.hasAttribute("count")) {
-        return;
-    }
-    _ExpandInfo.reset(new ExpandInfo);
-    _ExpandInfo->restore(reader);
-    for (auto inst : TreeWidget::Instances) {
-        if (inst != getTree()) {
-            auto docItem = inst->getDocumentItem(document());
-            if (docItem) {
-                docItem->_ExpandInfo = _ExpandInfo;
-            }
-        }
-    }
-}
-
-void DocumentItem::restoreItemExpansion(const ExpandInfoPtr& info, DocumentObjectItem* item)
-{
-    item->setExpanded(true);
-    if (!info) {
-        return;
-    }
-    for (int i = 0, count = item->childCount(); i < count; ++i) {
-        auto citem = item->child(i);
-        if (citem->type() != TreeWidget::ObjectType) {
-            continue;
-        }
-        auto obj = static_cast<DocumentObjectItem*>(citem)->object()->getObject();
-        if (!obj->isAttachedToDocument()) {
-            continue;
-        }
-        auto it = info->find(obj->getNameInDocument());
-        if (it != info->end()) {
-            restoreItemExpansion(it->second, static_cast<DocumentObjectItem*>(citem));
-        }
-    }
 }
 
 void DocumentItem::slotExpandObject(
