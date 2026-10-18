@@ -836,6 +836,7 @@ SET(Dock_Windows_CPP_SRCS
     Tree.cpp
     TreeHistory.cpp
     TreeLineage.cpp
+    TreeSwatches.cpp
     TreeView.cpp
     DAGView/DAGView.cpp
     DAGView/DAGModel.cpp
@@ -852,6 +853,7 @@ SET(Dock_Windows_HPP_SRCS
     Tree.h
     TreeHistory.h
     TreeLineage.h
+    TreeSwatches.h
     TreeView.h
     DAGView/DAGView.h
     DAGView/DAGModel.h
