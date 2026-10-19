@@ -6,6 +6,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
@@ -57,6 +58,41 @@ size_t statedElements(const std::string& words)
     }
     return count;
 }
+
+/// What the console was told as an error or a warning while this is in scope.
+class CapturedComplaints: public Base::ILogger
+{
+public:
+    CapturedComplaints()
+    {
+        Base::Console().attachObserver(this);
+    }
+    ~CapturedComplaints() override
+    {
+        Base::Console().detachObserver(this);
+    }
+    CapturedComplaints(const CapturedComplaints&) = delete;
+    CapturedComplaints& operator=(const CapturedComplaints&) = delete;
+
+    void sendLog(
+        const std::string&,
+        const std::string& msg,
+        Base::LogStyle level,
+        Base::IntendedRecipient,
+        Base::ContentType
+    ) override
+    {
+        if (level == Base::LogStyle::Warning || level == Base::LogStyle::Error) {
+            said += msg;
+        }
+    }
+    const char* name() override
+    {
+        return "CapturedComplaints";
+    }
+
+    std::string said;
+};
 
 std::string readAll(const std::string& path)
 {
@@ -234,6 +270,31 @@ TEST_F(ConstraintReferenceStatedOnceTest, whatTheFileStatesIsWhatComesBack)
     EXPECT_EQ(constraints[0]->getElement(1), Sketcher::GeoElementId(1, Sketcher::PointPos::start));
     EXPECT_EQ(constraints[1]->getElement(0), Sketcher::GeoElementId(0, Sketcher::PointPos::none));
     EXPECT_EQ(sketch->solve(), 0) << "the reopened sketch does not solve";
+}
+
+// Cancelling a sketch edit reads the sketch back from the copy taken when the edit began. The
+// references in that copy are durable identities, resolved only once the geometry is in, so a
+// sketch that solved itself after each property arrived met references to nothing -- every cancel
+// printed a burst of "partial restore" errors over a sketch that came back whole.
+TEST_F(ConstraintReferenceStatedOnceTest, aSketchReadBackFromItsOwnCopySaysNothingIsWrong)
+{
+    App::Document* doc = App::GetApplication().newDocument("cancelled");
+    Sketcher::SketchObject* sketch = buildSketch(doc);
+    std::stringstream copy;
+    sketch->dumpToStream(copy, 0);
+    copy.seekg(0);
+    sketch->delConstraint(1);
+
+    CapturedComplaints complaints;
+    sketch->restoreFromStream(copy);
+
+    EXPECT_EQ(complaints.said, "");
+    const std::vector<Sketcher::Constraint*>& constraints = sketch->Constraints.getValues();
+    ASSERT_EQ(constraints.size(), 2U);
+    EXPECT_EQ(constraints[0]->getElement(0), Sketcher::GeoElementId(0, Sketcher::PointPos::end));
+    EXPECT_EQ(constraints[0]->getElement(1), Sketcher::GeoElementId(1, Sketcher::PointPos::start));
+    EXPECT_EQ(constraints[1]->getElement(0), Sketcher::GeoElementId(0, Sketcher::PointPos::none));
+    EXPECT_EQ(sketch->solve(), 0) << "the sketch read back does not solve";
 }
 
 // A durable identity this build cannot read is refused, not quietly turned into a reference to

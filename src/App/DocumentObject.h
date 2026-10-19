@@ -437,6 +437,8 @@ public:
         return StatusBits.test(ObjectStatus::Restore);
     }
 
+    void restoreFromStream(std::istream& stream) override;
+
     /// Check whether this document object is being removed.
     bool isRemoving() const
     {
