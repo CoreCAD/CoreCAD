@@ -44,10 +44,12 @@
 #include <Gui/Utilities.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureAddSub.h>
+#include <Mod/PartDesign/App/FeatureSketchBased.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/Part/Gui/ViewProviderExt.h>
 #include <Mod/Part/Gui/SoBrepEdgeSet.h>
+#include <Mod/Sketcher/App/SketchObject.h>
 
 #include "TaskFeatureParameters.h"
 #include "StyleParameters.h"
@@ -107,6 +109,18 @@ bool ViewProvider::doubleClicked()
 
 void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
+    if (auto* profileBased = getObject<PartDesign::ProfileBased>()) {
+        auto* sketch = dynamic_cast<Sketcher::SketchObject*>(profileBased->Profile.getValue());
+        Gui::ViewProvider* sketchView = sketch ? Gui::Application::Instance->getViewProvider(sketch)
+                                               : nullptr;
+        if (sketchView) {
+            QAction* editSketch = menu->addAction(QObject::tr("Edit Sketch"));
+            QObject::connect(editSketch, &QAction::triggered, [sketchView]() {
+                sketchView->doubleClicked();
+            });
+        }
+    }
+
     auto* feature = getObject<PartDesign::Feature>();
     if (feature && feature->hasNoEffect()) {
         const bool accepted = feature->NoEffectAcknowledged.getValue();
