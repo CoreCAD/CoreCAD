@@ -43,6 +43,12 @@ std::map<Base::Type, RecipeDetailProvider>& providers()
     return registry;
 }
 
+std::map<Base::Type, RecipeConsequenceProvider>& consequenceProviders()
+{
+    static std::map<Base::Type, RecipeConsequenceProvider> registry;
+    return registry;
+}
+
 }  // namespace
 
 void App::registerRecipeDetail(Base::Type type, RecipeDetailProvider provider)
@@ -58,6 +64,24 @@ RecipeDetail App::recipeDetail(const DocumentObject& obj)
         const auto found = providers().find(type);
         if (found != providers().end() && found->second) {
             return found->second(obj);
+        }
+    }
+
+    return {};
+}
+
+void App::registerRecipeConsequences(Base::Type type, RecipeConsequenceProvider provider)
+{
+    consequenceProviders()[type] = std::move(provider);
+}
+
+RecipeConsequences App::recipeConsequences(const DocumentObject& before,
+                                           const DocumentObject& after)
+{
+    for (Base::Type type = after.getTypeId(); !type.isBad(); type = type.getParent()) {
+        const auto found = consequenceProviders().find(type);
+        if (found != consequenceProviders().end() && found->second) {
+            return found->second(before, after);
         }
     }
 

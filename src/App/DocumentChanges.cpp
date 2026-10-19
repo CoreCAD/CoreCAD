@@ -188,6 +188,7 @@ void appendInteriorChanges(const DocumentObject& oldObj,
 {
     const RecipeDetail oldDetail = recipeDetail(oldObj);
     const RecipeDetail newDetail = recipeDetail(newObj);
+    const RecipeConsequences consequences = recipeConsequences(oldObj, newObj);
 
     std::vector<std::string> names;
     for (const RecipeDetailSection& section : newDetail.sections) {
@@ -212,6 +213,10 @@ void appendInteriorChanges(const DocumentObject& oldObj,
         std::vector<RecipeChange> changes = RecipeDiff::twoWay(oldNodes, newNodes);
         orderByAuthoring(changes, newOrder, oldOrder);
         for (const RecipeChange& change : changes) {
+            if (change.kind == RecipeChange::Kind::FieldChanged
+                && consequences.count({change.id, change.field}) != 0) {
+                continue;
+            }
             DocumentChange entry = about;
             entry.section = name;
             entry.change = change;

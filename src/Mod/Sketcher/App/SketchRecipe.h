@@ -64,7 +64,17 @@ SketcherExport SketchRecipe emitSketchRecipe(const SketchObject& sketch);
 /// merge recipe deliberately omits — a person asking what moved needs them, a merge does not.
 SketcherExport App::RecipeDetail sketchRecipeDetail(const App::DocumentObject& obj);
 
-/// Register sketchRecipeDetail against Sketcher::SketchObject. Called once, at module init.
+/// The coordinates the solver moved between two versions of a sketch, as opposed to the ones a
+/// person moved: every coordinate of geometry tied, through any chain of constraints, to a
+/// constraint that was added, removed or changed. Geometry no changed constraint reaches was
+/// moved by a person. The solver is not run.
+SketcherExport App::RecipeConsequences sketchConsequences(
+    const App::DocumentObject& before,
+    const App::DocumentObject& after
+);
+
+/// Register sketchRecipeDetail and sketchConsequences against Sketcher::SketchObject. Called once,
+/// at module init.
 SketcherExport void registerSketchRecipeDetail();
 
 /** The outcome of regenerating a recipe onto a live sketch and re-solving with the existing

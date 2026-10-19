@@ -32,6 +32,8 @@
 # include <locale>
 # include <map>
 # include <memory>
+# include <numeric>
+# include <set>
 # include <sstream>
 
 # include <boost/uuid/uuid.hpp>
@@ -946,7 +948,123 @@ App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
     return detail;
 }
 
+namespace
+{
+
+/// The geometry named by a constraint that was added, removed or changed, on either side.
+std::set<std::string> geometryOfChangedConstraints(
+    const SketchObject& oldSketch,
+    const SketchObject& newSketch
+)
+{
+    const SketchRecipe was = emitSketchRecipe(oldSketch);
+    const SketchRecipe now = emitSketchRecipe(newSketch);
+    std::set<std::string> touched;
+    for (const App::RecipeChange& change : App::RecipeDiff::twoWay(was.constraints, now.constraints)) {
+        for (const App::RecipeSection* side : {&was.constraints, &now.constraints}) {
+            const auto found = side->find(change.id);
+            if (found == side->end()) {
+                continue;
+            }
+            for (const App::RecipeRef& ref : found->second.refs) {
+                touched.insert(ref.target);
+            }
+        }
+    }
+    return touched;
+}
+
+/// For each of the sketch's own geometry, by GeoId, one GeoId standing for everything its
+/// constraints tie it to.
+std::vector<int> connectedGroups(const SketchObject& sketch)
+{
+    std::vector<int> group(sketch.getInternalGeometry().size());
+    std::iota(group.begin(), group.end(), 0);
+    const auto root = [&group](int geoId) {
+        while (group[geoId] != geoId) {
+            group[geoId] = group[group[geoId]];
+            geoId = group[geoId];
+        }
+        return geoId;
+    };
+
+    for (const Constraint* constraint : sketch.Constraints.getValues()) {
+        int first = -1;
+        for (size_t i = 0; i < constraint->getElementsSize(); ++i) {
+            const int geoId = constraint->getGeoId(static_cast<int>(i));
+            if (geoId < 0 || geoId >= static_cast<int>(group.size())) {
+                continue;  // an axis or borrowed edge holds things in place; it joins nothing
+            }
+            if (first < 0) {
+                first = geoId;
+            }
+            else {
+                group[root(geoId)] = root(first);
+            }
+        }
+    }
+
+    for (int geoId = 0; geoId < static_cast<int>(group.size()); ++geoId) {
+        group[geoId] = root(geoId);
+    }
+    return group;
+}
+
+}  // namespace
+
+App::RecipeConsequences Sketcher::sketchConsequences(
+    const App::DocumentObject& before,
+    const App::DocumentObject& after
+)
+{
+    App::RecipeConsequences consequences;
+
+    const auto* oldSketch = dynamic_cast<const SketchObject*>(&before);
+    const auto* newSketch = dynamic_cast<const SketchObject*>(&after);
+    if (oldSketch == nullptr || newSketch == nullptr) {
+        return consequences;
+    }
+
+    std::map<std::string, const Part::Geometry*> oldByTag;
+    for (const Part::Geometry* geo : oldSketch->getInternalGeometry()) {
+        oldByTag[tagToString(geo->getTag())] = geo;
+    }
+
+    // Geometry tied to a changed constraint went where the solver put it, so its moves follow
+    // from that change. Replaying the solve to tell a drag from a solver move cannot work: on
+    // geometry the constraints do not fix, the solver lands in a different place from run to run.
+    const std::set<std::string> touched = geometryOfChangedConstraints(*oldSketch, *newSketch);
+    const std::vector<int> group = connectedGroups(*newSketch);
+    const std::vector<Part::Geometry*>& internals = newSketch->getInternalGeometry();
+    std::set<int> resolved;
+    for (size_t i = 0; i < internals.size(); ++i) {
+        if (touched.count(tagToString(internals[i]->getTag())) != 0) {
+            resolved.insert(group[i]);
+        }
+    }
+
+    for (size_t i = 0; i < internals.size(); ++i) {
+        const std::string tag = tagToString(internals[i]->getTag());
+        const auto found = oldByTag.find(tag);
+        if (resolved.count(group[i]) == 0 || found == oldByTag.end()) {
+            continue;
+        }
+        App::RecipeNode was;
+        App::RecipeNode now;
+        addAuthoredCoordinates(found->second, was);
+        addAuthoredCoordinates(internals[i], now);
+        for (const App::RecipeNode* side : {&was, &now}) {
+            for (const auto& entry : side->fields) {
+                consequences.emplace(tag, entry.first);
+            }
+        }
+    }
+
+    return consequences;
+}
+
 void Sketcher::registerSketchRecipeDetail()
 {
     App::registerRecipeDetail(SketchObject::getClassTypeId(), &sketchRecipeDetail);
+    App::registerRecipeConsequences(SketchObject::getClassTypeId(), &sketchConsequences);
 }
