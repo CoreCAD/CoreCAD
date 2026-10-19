@@ -1220,6 +1220,15 @@ void DocumentObject::onDocumentRestored()
     }
 }
 
+void DocumentObject::restoreFromStream(std::istream& stream)
+{
+    // An object read back from its own dump is mid-restore exactly as it is on a file load: its
+    // properties arrive one at a time, and one that reacts to the others before they are all
+    // read sees an object no file describes.
+    Base::ObjectStatusLocker<ObjectStatus, DocumentObject> restoring(ObjectStatus::Restore, this);
+    PropertyContainer::restoreFromStream(stream);
+}
+
 void DocumentObject::restoreFinished()
 {
     // some link type property cannot restore link information until other
