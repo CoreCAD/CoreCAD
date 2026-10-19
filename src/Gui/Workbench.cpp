@@ -789,6 +789,11 @@ MenuItem* StdWorkbench::setupMenuBar() const
               << "Separator";
     }
 #endif
+    // The material library belongs to no document (UI_GUIDE §2.6).
+    if (Application::Instance->commandManager().getCommandByName("Material_Edit")) {
+        *tool << "Material_Edit"
+              << "Separator";
+    }
     *tool << "Std_Measure"
           << "Std_MassProperties"
           << "Std_AnnotationLabel"

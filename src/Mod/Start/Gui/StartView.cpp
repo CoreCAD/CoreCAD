@@ -228,15 +228,24 @@ void StartView::configureNewFileButtons(QLayout* layout) const
              App::Application::getResourceDir() + "Mod/TechDraw/Resources/icons/preferences-techdraw.svg"
          )}
     ));
+    auto materialLibrary = gsl::owner<NewFileButton*>(new NewFileButton(
+        {tr("Material library"),
+         tr("Adds and changes materials in the library"),
+         QLatin1String(":/icons/Material_Edit.svg")}
+    ));
     layout->addWidget(part);
     layout->addWidget(assembly);
     layout->addWidget(drawing);
     layout->addWidget(openFile);
+    layout->addWidget(materialLibrary);
 
     connect(openFile, &QPushButton::clicked, this, &StartView::openExistingFile);
     connect(part, &QPushButton::clicked, this, &StartView::newPartFile);
     connect(assembly, &QPushButton::clicked, this, &StartView::newAssemblyFile);
     connect(drawing, &QPushButton::clicked, this, &StartView::newDrawingFile);
+    connect(materialLibrary, &QPushButton::clicked, this, [] {
+        Gui::Application::Instance->commandManager().runCommandByName("Material_Edit");
+    });
 }
 
 void StartView::configureFileCardWidget(QListView* fileCardWidget)
