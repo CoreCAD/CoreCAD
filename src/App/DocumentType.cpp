@@ -170,6 +170,12 @@ std::string Document::fileExtensionForType(const char* type)
         if (boost::iequals(type, DocTypeAssembly)) {
             return "cassembly";
         }
+        if (boost::iequals(type, DocTypeDrawing)) {
+            return "cdrawing";
+        }
+        if (boost::iequals(type, DocTypeSpreadsheet)) {
+            return "csheet";
+        }
     }
     return "FCStd";
 }

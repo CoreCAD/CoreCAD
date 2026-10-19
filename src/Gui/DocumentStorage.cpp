@@ -347,6 +347,12 @@ FileDialog::FilterList documentSaveFilters(App::Document* doc, const QString& ex
     else if (ext == "cassembly") {
         filters.append({QObject::tr("Assembly document"), {QStringLiteral("*.cassembly")}});
     }
+    else if (ext == "cdrawing") {
+        filters.append({QObject::tr("Drawing document"), {QStringLiteral("*.cdrawing")}});
+    }
+    else if (ext == "csheet") {
+        filters.append({QObject::tr("Spreadsheet document"), {QStringLiteral("*.csheet")}});
+    }
     filters.append({QObject::tr("%1 document").arg(exe), {QStringLiteral("*.FCStd")}});
     return filters;
 }

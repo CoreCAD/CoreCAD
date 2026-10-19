@@ -239,3 +239,19 @@ TEST_F(DocumentTest, distinctObjectsGetDistinctIds)
 }
 
 // NOLINTEND(readability-magic-numbers)
+
+TEST(DocumentFileExtensionTest, eachDocumentTypeSavesUnderItsOwnExtension)
+{
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypePart), "cpart");
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypeAssembly), "cassembly");
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypeDrawing), "cdrawing");
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypeSpreadsheet), "csheet");
+    EXPECT_EQ(App::Document::fileExtensionForType(""), "FCStd");
+}
+
+TEST(DocumentFileExtensionTest, everyTypeExtensionOpensAsADocument)
+{
+    for (const char* ext : {"FCStd", "cpart", "cassembly", "cdrawing", "csheet"}) {
+        EXPECT_TRUE(App::Document::isNativeFormatExtension(ext)) << ext;
+    }
+}

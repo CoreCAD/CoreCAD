@@ -424,6 +424,8 @@ App.__unit_test__ = []
 App.addImportType("FreeCAD document (*.FCStd)", "FreeCAD")
 App.addImportType("Part document (*.cpart)", "FreeCAD")
 App.addImportType("Assembly document (*.cassembly)", "FreeCAD")
+App.addImportType("Drawing document (*.cdrawing)", "FreeCAD")
+App.addImportType("Spreadsheet document (*.csheet)", "FreeCAD")
 
 # set to no gui, is overwritten by InitGui
 App.GuiUp = 0
