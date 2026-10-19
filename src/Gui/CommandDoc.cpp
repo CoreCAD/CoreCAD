@@ -968,8 +968,8 @@ StdCmdNew::StdCmdNew()
     : Command("Std_New")
 {
     sGroup = "File";
-    sMenuText = QT_TR_NOOP("&New Document");
-    sToolTipText = QT_TR_NOOP("Creates a new empty document");
+    sMenuText = QT_TR_NOOP("&New...");
+    sToolTipText = QT_TR_NOOP("Makes a new part, assembly or drawing");
     sWhatsThis = "Std_New";
     sStatusTip = sToolTipText;
     sPixmap = "document-new";
@@ -980,16 +980,24 @@ StdCmdNew::StdCmdNew()
 void StdCmdNew::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    QString cmd;
-    cmd = QStringLiteral("App.newDocument()");
-    runCommand(Command::Doc, cmd.toUtf8());
-    doCommand(Command::Gui, "Gui.activeDocument().activeView().viewDefaultOrientation()");
+    QMessageBox box(getMainWindow());
+    box.setWindowTitle(QObject::tr("New"));
+    box.setText(QObject::tr("What do you want to make?"));
+    auto* part = box.addButton(QObject::tr("New part"), QMessageBox::AcceptRole);
+    auto* assembly = box.addButton(QObject::tr("New assembly"), QMessageBox::AcceptRole);
+    auto* drawing = box.addButton(QObject::tr("New drawing"), QMessageBox::AcceptRole);
+    box.addButton(QMessageBox::Cancel);
+    box.exec();
 
-    ParameterGrp::handle hViewGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/View"
-    );
-    if (hViewGrp->GetBool("ShowAxisCross")) {
-        doCommand(Command::Gui, "Gui.ActiveDocument.ActiveView.setAxisCross(True)");
+    auto& commands = Application::Instance->commandManager();
+    if (box.clickedButton() == part) {
+        commands.runCommandByName("Std_Part");
+    }
+    else if (box.clickedButton() == assembly) {
+        commands.runCommandByName("Std_NewAssembly");
+    }
+    else if (box.clickedButton() == drawing) {
+        commands.runCommandByName("Std_NewDrawing");
     }
 }
 

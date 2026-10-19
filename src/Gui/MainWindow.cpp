@@ -1787,7 +1787,7 @@ void MainWindow::delayedStartup()
     ParameterGrp::handle hGrp = WindowParameter::getDefaultParameter()->GetGroup("Document");
     if (hGrp->GetBool("CreateNewDoc", false)) {
         if (App::GetApplication().getDocuments().empty()) {
-            Application::Instance->commandManager().runCommandByName("Std_New");
+            Application::Instance->commandManager().runCommandByName("Std_Part");
             // This document is autoCreated
             App::Document* newDoc = App::GetApplication().getActiveDocument();
             newDoc->setAutoCreated(true);
