@@ -64,10 +64,10 @@ public:
         return "StartView";
     }
 
-    void newEmptyFile();
-    void newPartDesignFile();
+    void newPartFile();
     void openExistingFile();
     void newAssemblyFile();
+    void newDrawingFile();
     void recentFileAdded(const QString& filename);
 
     bool onHasMsg(const char* pMsg) const override;

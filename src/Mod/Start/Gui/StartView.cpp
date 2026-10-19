@@ -209,28 +209,34 @@ StartView::StartView(QWidget* parent)
 void StartView::configureNewFileButtons(QLayout* layout) const
 {
     auto openFile = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Open File"),
-         tr("Opens an existing CAD file or 3D model"),
-         QLatin1String(":/icons/document-open.svg")}
+        {tr("Open"), tr("Opens an existing file"), QLatin1String(":/icons/document-open.svg")}
     ));
-    auto partDesign = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Parametric Body"),
-         tr("Creates a body with the Part Design workbench"),
+    auto part = gsl::owner<NewFileButton*>(new NewFileButton(
+        {tr("New part"),
+         tr("Makes a new part document"),
          QLatin1String(":/icons/PartDesignWorkbench.svg")}
     ));
     auto assembly = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Assembly"),
-         tr("Creates an assembly project"),
+        {tr("New assembly"),
+         tr("Makes a new assembly document"),
          QLatin1String(":/icons/AssemblyWorkbench.svg")}
     ));
-    // TODO: Ensure all of the required WBs are actually available
-    layout->addWidget(partDesign);
+    auto drawing = gsl::owner<NewFileButton*>(new NewFileButton(
+        {tr("New drawing"),
+         tr("Makes a new drawing document with one sheet"),
+         QString::fromStdString(
+             App::Application::getResourceDir() + "Mod/TechDraw/Resources/icons/preferences-techdraw.svg"
+         )}
+    ));
+    layout->addWidget(part);
     layout->addWidget(assembly);
+    layout->addWidget(drawing);
     layout->addWidget(openFile);
 
     connect(openFile, &QPushButton::clicked, this, &StartView::openExistingFile);
-    connect(partDesign, &QPushButton::clicked, this, &StartView::newPartDesignFile);
+    connect(part, &QPushButton::clicked, this, &StartView::newPartFile);
     connect(assembly, &QPushButton::clicked, this, &StartView::newAssemblyFile);
+    connect(drawing, &QPushButton::clicked, this, &StartView::newDrawingFile);
 }
 
 void StartView::configureFileCardWidget(QListView* fileCardWidget)
@@ -282,17 +288,8 @@ void StartView::configureCustomFolderListWidget(QListView* customFolderListWidge
 }
 
 
-void StartView::newEmptyFile()
+void StartView::newPartFile()
 {
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
-    postStart(PostStartBehavior::switchWorkbench);
-}
-
-void StartView::newPartDesignFile()
-{
-    // Cruth marker model: "New Part" creates a Part-type document (Std_Part mints the
-    // world frame; the document is the container). A body is no longer spawned up front
-    // — it emerges from the first solid-producing feature.
     Gui::Application::Instance->commandManager().runCommandByName("Std_Part");
     Gui::Application::Instance->activateWorkbench("PartDesignWorkbench");
     postStart(PostStartBehavior::doNotSwitchWorkbench);
@@ -312,10 +309,13 @@ void StartView::openExistingFile()
 
 void StartView::newAssemblyFile()
 {
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
-    Gui::Application::Instance->activateWorkbench("AssemblyWorkbench");
-    Gui::Application::Instance->commandManager().runCommandByName("Assembly_CreateAssembly");
-    Gui::Application::Instance->commandManager().runCommandByName("Std_Refresh");
+    Gui::Application::Instance->commandManager().runCommandByName("Std_NewAssembly");
+    postStart(PostStartBehavior::doNotSwitchWorkbench);
+}
+
+void StartView::newDrawingFile()
+{
+    Gui::Application::Instance->commandManager().runCommandByName("Std_NewDrawing");
     postStart(PostStartBehavior::doNotSwitchWorkbench);
 }
 

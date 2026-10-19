@@ -78,6 +78,62 @@ bool StdCmdPart::isActive()
 }
 
 //===========================================================================
+// Std_NewAssembly
+//===========================================================================
+DEF_STD_CMD_A(StdCmdNewAssembly)
+
+StdCmdNewAssembly::StdCmdNewAssembly()
+    : Command("Std_NewAssembly")
+{
+    sGroup = "Structure";
+    sMenuText = QT_TR_NOOP("New Assembly");
+    sToolTipText = QT_TR_NOOP("Makes a new assembly document");
+    sWhatsThis = "Std_NewAssembly";
+    sStatusTip = sToolTipText;
+}
+
+void StdCmdNewAssembly::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    // The assembly commands are registered by its workbench, so load it first.
+    Application::Instance->activateWorkbench("AssemblyWorkbench");
+    Application::Instance->commandManager().runCommandByName("Assembly_CreateAssembly");
+}
+
+bool StdCmdNewAssembly::isActive()
+{
+    return true;
+}
+
+//===========================================================================
+// Std_NewDrawing
+//===========================================================================
+DEF_STD_CMD_A(StdCmdNewDrawing)
+
+StdCmdNewDrawing::StdCmdNewDrawing()
+    : Command("Std_NewDrawing")
+{
+    sGroup = "Structure";
+    sMenuText = QT_TR_NOOP("New Drawing");
+    sToolTipText = QT_TR_NOOP("Makes a new drawing document with one sheet");
+    sWhatsThis = "Std_NewDrawing";
+    sStatusTip = sToolTipText;
+}
+
+void StdCmdNewDrawing::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Application::Instance->activateWorkbench("TechDrawWorkbench");
+    runCommand(Command::Doc, "App.newDocument(type=App.DocTypeDrawing)");
+    Application::Instance->commandManager().runCommandByName("TechDraw_PageDefault");
+}
+
+bool StdCmdNewDrawing::isActive()
+{
+    return true;
+}
+
+//===========================================================================
 // Std_Group
 //===========================================================================
 DEF_STD_CMD_A(StdCmdGroup)
@@ -220,6 +276,8 @@ void CreateStructureCommands()
     CommandManager& rcCmdMgr = Application::Instance->commandManager();
 
     rcCmdMgr.addCommand(new StdCmdPart());
+    rcCmdMgr.addCommand(new StdCmdNewAssembly());
+    rcCmdMgr.addCommand(new StdCmdNewDrawing());
     rcCmdMgr.addCommand(new StdCmdGroup());
     rcCmdMgr.addCommand(new StdCmdVarSet());
 }
