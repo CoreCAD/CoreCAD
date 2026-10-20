@@ -148,7 +148,7 @@ std::string StringID::dataToText(int index) const
 
     std::string res(_data.constData());
     if (index != 0) {
-        res += std::to_string(index);
+        res += QByteArray::number(index, isIndexedReference() ? 16 : 10).constData();
     }
     if (_postfix.size() != 0) {
         res += _postfix.constData();

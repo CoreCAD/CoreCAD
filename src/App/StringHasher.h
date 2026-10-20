@@ -157,6 +157,11 @@ public:
     inline bool isIndexed() const;
     inline bool isPrefixID() const;
     inline bool isPrefixIDIndex() const;
+    /// Data of the form "#<id>:", whose index was read in hex and must be written back in hex.
+    bool isIndexedReference() const
+    {
+        return _data.startsWith('#') && _data.endsWith(':');
+    }
     inline bool isMarked() const;
     inline bool isPersistent() const;
     //@}
@@ -265,7 +270,7 @@ public:
     {
         QByteArray res(_data);
         if (index != 0) {
-            res += QByteArray::number(index);
+            res += QByteArray::number(index, isIndexedReference() ? 16 : 10);
         }
         if (_postfix.size() != 0) {
             res += _postfix;
