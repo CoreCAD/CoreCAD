@@ -1552,7 +1552,11 @@ bool Document::afterRestore(const bool checkPartial)
                                     e.what());
             toBuild.insert(d->objectArray.begin(), d->objectArray.end());
         }
+        // A reference read from the file names its element in full; the shapes just handed back
+        // name theirs through this session's table, so the two are matched before anything that
+        // reads a reference is built.
         Base::ObjectStatusLocker<Status, Document> building(BuildingOnOpen, this);
+        PropertyLinkBase::updateAllElementReferences();
         for (DocumentObject* obj : toBuild) {
             obj->enforceRecompute();
         }

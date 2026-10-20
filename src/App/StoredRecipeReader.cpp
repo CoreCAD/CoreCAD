@@ -112,7 +112,7 @@ bool restoreReference(Property& prop,
         if (target == nullptr) {
             return false;
         }
-        pointing.push_back({target, binding.sub, binding.noPart});
+        pointing.push_back({target, binding.sub, binding.noPart, binding.name});
     }
 
     return link->pointAt(pointing);
@@ -388,7 +388,8 @@ std::vector<Binding> readBindings(Base::XMLReader& reader)
         bindings.push_back({reader.getAttribute<const char*>("uuid"),
                             noPart ? "" : reader.getAttribute<const char*>("sub"),
                             /*external=*/false,
-                            noPart});
+                            noPart,
+                            reader.getAttribute<const char*>("name", "")});
     }
     reader.readEndElement("Reference");
     return bindings;
@@ -852,7 +853,7 @@ void bindReferences(RecipeRead& read)
             std::vector<PropertyContainer::StatedTarget> stated;
             stated.reserve(bindings.size());
             for (const Binding& binding : bindings) {
-                stated.push_back({binding.uuid, binding.sub, binding.noPart});
+                stated.push_back({binding.uuid, binding.sub, binding.noPart, binding.name});
             }
             owner->rememberUnresolvedReference(name, std::move(stated));
         }

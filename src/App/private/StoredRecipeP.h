@@ -53,6 +53,7 @@ struct Binding
     std::string sub;
     bool external {false};  ///< the target lives in another document
     bool noPart {false};    ///< named with no part at all; written with no `sub`, not `sub=""`
+    std::string name;       ///< the element's full name; `sub` is only where it last sat
 };
 
 /// The container holding an object's chosen appearance, or null when this session has none

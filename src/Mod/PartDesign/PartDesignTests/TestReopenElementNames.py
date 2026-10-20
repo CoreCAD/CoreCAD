@@ -82,6 +82,46 @@ class TestReopenElementNames(unittest.TestCase):
         self.Doc.recompute()
         self.assertTrue(fillet.isValid(), fillet.getStatusString())
 
+    def _savedReference(self, path):
+        with open(path, encoding="utf-8") as recipe:
+            text = recipe.read()
+        return text, re.search(r'<Target[^>]* sub="Edge1"(?: name="([^"]*)")?', text)
+
+    def testASavedReferenceNamesItsEdgeInFull(self):
+        # String-table numbers are handed out per session; one in a saved name would point at
+        # whatever the next session gives that number.
+        path = os.path.join(tempfile.mkdtemp(), "names.cpart")
+        self.Doc.saveAs(path)
+        _, reference = self._savedReference(path)
+        self.assertIsNotNone(reference.group(1))
+        self.assertNotRegex(reference.group(1), r"#[0-9a-f]")
+
+    def testAReferenceFollowsItsNameWhenThePositionIsWrong(self):
+        # Two branches that each add an edge can both store the same position for different
+        # edges; after a merge only the name still says which edge was meant.
+        meant = self.pad.Shape.getElement("Edge1").CenterOfMass
+        volume = self.fillet.Shape.Volume
+        path = os.path.join(tempfile.mkdtemp(), "names.cpart")
+        self.Doc.saveAs(path)
+        text, reference = self._savedReference(path)
+        wrong = (
+            text[: reference.start()]
+            + reference.group(0).replace('sub="Edge1"', 'sub="Edge3"')
+            + text[reference.end() :]
+        )
+        with open(path, "w", encoding="utf-8") as recipe:
+            recipe.write(wrong)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+
+        fillet = self.Doc.getObject("Fillet")
+        fillet.enforceRecompute()
+        self.Doc.recompute()
+        base, subs = fillet.Base
+        self.assertTrue(fillet.isValid(), fillet.getStatusString())
+        self.assertLess((base.Shape.getElement(subs[0]).CenterOfMass - meant).Length, 1e-6)
+        self.assertAlmostEqual(fillet.Shape.Volume, volume, places=6)
+
     def testARebuildAfterReopenTagsNamesAsBefore(self):
         # Each name carries the integer id of the object that made it, so a reopened object must
         # have the id it was born with.

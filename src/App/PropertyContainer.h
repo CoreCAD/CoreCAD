@@ -609,6 +609,7 @@ public:
       std::string uuid;  ///< the target object's durable identity
       std::string sub;   ///< the sub-element named within it, empty when the whole object
       bool noPart {false};  ///< named with no part at all, rather than with one empty part
+      std::string name;     ///< the element's full name, empty when the file gave none
   };
 
   /** Remember source material a stored record named and this session could not load.
