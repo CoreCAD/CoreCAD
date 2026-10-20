@@ -212,24 +212,24 @@ void StartView::configureNewFileButtons(QLayout* layout) const
         {tr("Open"), tr("Opens an existing file"), QLatin1String(":/icons/document-open.svg")}
     ));
     auto part = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("New part"),
+        {tr("New Part"),
          tr("Makes a new part document"),
          QLatin1String(":/icons/PartDesignWorkbench.svg")}
     ));
     auto assembly = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("New assembly"),
+        {tr("New Assembly"),
          tr("Makes a new assembly document"),
          QLatin1String(":/icons/AssemblyWorkbench.svg")}
     ));
     auto drawing = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("New drawing"),
+        {tr("New Drawing"),
          tr("Makes a new drawing document with one sheet"),
          QString::fromStdString(
              App::Application::getResourceDir() + "Mod/TechDraw/Resources/icons/preferences-techdraw.svg"
          )}
     ));
     auto materialLibrary = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Material library"),
+        {tr("Material Library"),
          tr("Adds and changes materials in the library"),
          QLatin1String(":/icons/Material_Edit.svg")}
     ));

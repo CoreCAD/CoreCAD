@@ -49,7 +49,7 @@ CmdMaterialEdit::CmdMaterialEdit()
 {
     sAppModule = "Material";
     sGroup = QT_TR_NOOP("Material");
-    sMenuText = QT_TR_NOOP("Material library");
+    sMenuText = QT_TR_NOOP("Material Library");
     sToolTipText = QT_TR_NOOP("Adds and changes materials in the library");
     sWhatsThis = "Material_Edit";
     sStatusTip = sToolTipText;
