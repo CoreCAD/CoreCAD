@@ -2,6 +2,8 @@
 
 #include <FCConfig.h>
 
+#include <iomanip>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/Expression.h>
@@ -868,6 +870,39 @@ TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionFunc
     EXPECT_EQ(std::string("atan(0.03)"), getObject()->getConstraintExpression(id));
 }
 
+// Two copies of one saved sketch stand for two branches. Each adds a different line; the lines
+// must not share an id, or every edge name downstream collides when the branches merge.
+TEST_F(SketchObjectTest, shapesAddedOnTwoBranchesGetDistinctIds)
+{
+    auto line = [](double y) {
+        auto geo = std::make_unique<Part::GeomLineSegment>();
+        geo->setPoints(Base::Vector3d(0.0, y, 0.0), Base::Vector3d(1.0, y, 0.0));
+        return geo;
+    };
+    getObject()->addGeometry(line(0.0).get());
+    auto* branchB = freecad_cast<Sketcher::SketchObject*>(
+        getObject()->getDocument()->addObject("Sketcher::SketchObject", "BranchB")
+    );
+    branchB->Geometry.setValues(getObject()->Geometry.getValues());
+
+    const int onA = getObject()->addGeometry(line(1.0).get());
+    const int onB = branchB->addGeometry(line(2.0).get());
+
+    long shared = 0;
+    long sharedOnB = 0;
+    long addedOnA = 0;
+    long addedOnB = 0;
+    getObject()->getGeometryId(0, shared);
+    branchB->getGeometryId(0, sharedOnB);
+    getObject()->getGeometryId(onA, addedOnA);
+    branchB->getGeometryId(onB, addedOnB);
+    EXPECT_EQ(shared, sharedOnB);
+    EXPECT_NE(addedOnA, addedOnB);
+    // Names compare numerically and a face takes its lowest edge name, so newer must sort later.
+    EXPECT_LT(shared >> 32, addedOnA >> 32);
+    EXPECT_LT(shared >> 32, addedOnB >> 32);
+}
+
 TEST_F(SketchObjectTest, testGetElementName)
 {
     // Arrange
@@ -878,7 +913,8 @@ TEST_F(SketchObjectTest, testGetElementName)
     long tag;
     getObject()->getGeometryId(id, tag);  // We need to look up the tag that got assigned
     std::ostringstream oss;
-    oss << "g" << tag;
+    oss << "g" << (tag >> 32) << 'h' << std::hex << std::setw(8) << std::setfill('0')
+        << (tag & 0xFFFFFFFFL);
     auto tagName = oss.str();
     getObject()->recomputeFeature();  // or ->execute()
     // Act

@@ -1064,6 +1064,7 @@ protected:
 
     void updateGeoHistory();
     void generateId(const Part::Geometry* geo);
+    long mintGeometryId(const Part::Geometry* geo);
 
     /*!
      \brief Transfer constraints on lines being filleted.

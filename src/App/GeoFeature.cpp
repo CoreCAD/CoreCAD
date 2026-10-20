@@ -277,8 +277,9 @@ void GeoFeature::updateElementReference()
 void GeoFeature::onChanged(const Property* prop)
 {
     if (prop == getPropertyOfGeometry()) {
+        // A shape handed back from the cache is still being read, like one read with its file.
         if (getDocument() && !getDocument()->testStatus(Document::Restoring)
-            && !getDocument()->isPerformingTransaction()) {
+            && !testStatus(ObjectStatus::Restore) && !getDocument()->isPerformingTransaction()) {
             updateElementReference();
         }
     }

@@ -63,8 +63,8 @@ int SketchGeometryExtensionPy::PyInit(PyObject* args, PyObject* /*kwd*/)
     }
 
     PyErr_Clear();
-    int Id;
-    if (PyArg_ParseTuple(args, "i", &Id)) {
+    long Id;
+    if (PyArg_ParseTuple(args, "l", &Id)) {
         this->getSketchGeometryExtensionPtr()->setId(Id);
         return 0;
     }

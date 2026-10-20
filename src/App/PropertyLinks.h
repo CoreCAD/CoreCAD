@@ -177,6 +177,9 @@ public:
         /// The target is named with no part at all, which is not the same as naming one empty
         /// part: a link's list of parts can be empty or hold "" and the two mean different things.
         bool noPart {false};
+        /// The element's full name, which is what the reference is to (§4.7); `sub` is only where
+        /// that element sat when last computed. Empty when the target has no name for it.
+        std::string name;
     };
 
     /** Everything this reference points at, target by target.

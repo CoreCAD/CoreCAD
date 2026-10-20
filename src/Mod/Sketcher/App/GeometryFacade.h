@@ -136,8 +136,8 @@ public:  // Utility methods
     static InternalType::InternalType getInternalType(const Part::Geometry* geometry);
     static void setInternalType(Part::Geometry* geometry, InternalType::InternalType type);
     static bool getBlocked(const Part::Geometry* geometry);
-    static int getId(const Part::Geometry* geometry);
-    static void setId(const Part::Geometry* geometry, int id);
+    static long getId(const Part::Geometry* geometry);
+    static void setId(const Part::Geometry* geometry, long id);
 
 public:
     // Explicit deletion to show intent (not that it is needed)

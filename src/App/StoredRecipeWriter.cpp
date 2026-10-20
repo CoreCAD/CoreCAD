@@ -163,6 +163,7 @@ std::optional<std::vector<Binding>> referenceBindings(const Property& prop, cons
         }
         Binding binding {one.target->Uid.getValueStr(), one.sub};
         binding.noPart = one.noPart;
+        binding.name = one.name;
         binding.external = home != nullptr && one.target->getDocument() != home;
         bindings.push_back(std::move(binding));
     }
@@ -311,7 +312,9 @@ void stateReference(StoredProperty& entry,
     // live value (Amendment 19).
     if (const auto* kept = owner.unresolvedReference(name.c_str())) {
         for (const PropertyContainer::StatedTarget& target : *kept) {
-            entry.bindings.push_back({target.uuid, target.sub, /*external=*/false, target.noPart});
+            entry.bindings.push_back(
+                {target.uuid, target.sub, /*external=*/false, target.noPart, target.name}
+            );
         }
         entry.isReference = true;
         return;
@@ -518,6 +521,9 @@ void writeProperties(Base::Writer& writer,
                 writer.Stream() << writer.ind() << "<Target" << attribute("uuid", binding.uuid);
                 if (!binding.noPart) {
                     writer.Stream() << attribute("sub", binding.sub);
+                }
+                if (!binding.name.empty()) {
+                    writer.Stream() << attribute("name", binding.name);
                 }
                 writer.Stream() << "/>\n";
             }

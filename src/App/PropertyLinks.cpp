@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <optional>
 #include <QDir>
 #include <QFileInfo>
 #include <boost/algorithm/string/predicate.hpp>
@@ -54,6 +55,83 @@ using namespace App;
 using namespace Base;
 using namespace std;
 namespace sp = std::placeholders;
+
+namespace
+{
+/// A reference's name split into the path to the object holding the element, and the element's
+/// own name without the leading marker or the trailing position.
+struct ElementNameParts
+{
+    std::string path;
+    Data::MappedName mapped;
+    std::string position;
+};
+
+std::optional<ElementNameParts> splitElementName(const std::string& name)
+{
+    const char* element = Data::findElementName(name.c_str());
+    if (element == nullptr || !Data::isMappedElement(element)) {
+        return std::nullopt;
+    }
+    const std::string tail(element + 1);
+    const std::size_t dot = tail.rfind('.');
+    if (dot == std::string::npos) {
+        return std::nullopt;
+    }
+    return ElementNameParts {std::string(name.c_str(), element - name.c_str()),
+                             Data::MappedName(tail.substr(0, dot)),
+                             tail.substr(dot + 1)};
+}
+
+const Data::ComplexGeoData* elementsOf(DocumentObject* target, const std::string& path)
+{
+    DocumentObject* owner = path.empty() ? target : target->getSubObject(path.c_str());
+    const auto* geo = freecad_cast<GeoFeature*>(owner);
+    const PropertyComplexGeoData* shape = geo != nullptr ? geo->getPropertyOfGeometry() : nullptr;
+    return shape != nullptr ? shape->getComplexData() : nullptr;
+}
+
+/// The name kept beside the part at `index`, written out in full so it means the same thing in
+/// the next session. Empty when there is none, rather than one only this session can read.
+std::string fullNameOf(DocumentObject* target,
+                       const std::vector<PropertyLinkBase::ShadowSub>& shadows,
+                       std::size_t index)
+{
+    if (index >= shadows.size()) {
+        return {};
+    }
+    const auto parts = splitElementName(shadows[index].newName);
+    const Data::ComplexGeoData* elements = parts ? elementsOf(target, parts->path) : nullptr;
+    if (elements == nullptr) {
+        return {};
+    }
+    return parts->path + Data::ELEMENT_MAP_PREFIX
+        + elements->fullElementName(parts->mapped).toString() + '.' + parts->position;
+}
+
+/// A name read from a file is in full; the target's own names may be shortened through this
+/// session's string table, so find the element whose name expands to it and use that. False when
+/// an opening document has not built the target yet, so it has no names to match against; it is
+/// asked again once built. Outside opening, a target with no names is a miss like any other.
+bool shortenToSessionName(DocumentObject* target, std::string& name)
+{
+    const auto parts = splitElementName(name);
+    const Data::ComplexGeoData* elements = parts ? elementsOf(target, parts->path) : nullptr;
+    if (elements == nullptr || elements->getIndexedName(parts->mapped)) {
+        return true;
+    }
+    if (elements->getElementMapSize() == 0 && target->getDocument() != nullptr
+        && target->getDocument()->testStatus(Document::BuildingOnOpen)) {
+        return false;
+    }
+    const Data::IndexedName found = elements->findByFullElementName(parts->mapped);
+    if (found) {
+        name = parts->path + Data::ELEMENT_MAP_PREFIX + elements->getMappedName(found).toString()
+            + '.' + found.toString();
+    }
+    return true;
+}
+}  // namespace
 
 // Resolve a link target the durable way (Amendment 3, Clause 3.2/3.6): by UUID
 // first, falling back to the cached name only when no UUID was stored (forward
@@ -454,6 +532,9 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject* feature,
     }
     ShadowSub elementName;
     const char* subname;
+    if (!shortenToSessionName(obj, shadow.newName)) {
+        return false;
+    }
     if (shadow.newName.size()) {
         subname = shadow.newName.c_str();
     }
@@ -1427,8 +1508,8 @@ bool PropertyLinkSub::statesWhereItPoints(std::vector<Pointing>& pointing) const
         pointing.push_back({_pcLinkSub, {}, /*noPart=*/true});
         return true;
     }
-    for (const std::string& sub : _cSubList) {
-        pointing.push_back({_pcLinkSub, sub});
+    for (std::size_t i = 0; i < _cSubList.size(); ++i) {
+        pointing.push_back({_pcLinkSub, _cSubList[i], false, fullNameOf(_pcLinkSub, _ShadowSubList, i)});
     }
     return true;
 }
@@ -1436,12 +1517,14 @@ bool PropertyLinkSub::statesWhereItPoints(std::vector<Pointing>& pointing) const
 bool PropertyLinkSub::pointAt(const std::vector<Pointing>& pointing)
 {
     std::vector<std::string> subs;
+    std::vector<ShadowSub> shadows;
     for (const Pointing& one : pointing) {
         if (!one.noPart) {
             subs.push_back(one.sub);
+            shadows.push_back({one.name, one.name.empty() ? std::string() : one.sub});
         }
     }
-    setValue(pointing.empty() ? nullptr : pointing.front().target, subs);
+    setValue(pointing.empty() ? nullptr : pointing.front().target, subs, std::move(shadows));
     return true;
 }
 
@@ -2402,7 +2485,10 @@ bool PropertyLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) c
     const std::vector<std::string>& subs = getSubValues();
     for (std::size_t i = 0; i < targets.size(); ++i) {
         if (targets[i] != nullptr) {
-            pointing.push_back({targets[i], i < subs.size() ? subs[i] : std::string()});
+            pointing.push_back({targets[i],
+                                i < subs.size() ? subs[i] : std::string(),
+                                false,
+                                fullNameOf(targets[i], _ShadowSubList, i)});
         }
     }
     return true;
@@ -2414,13 +2500,16 @@ bool PropertyLinkSubList::pointAt(const std::vector<Pointing>& pointing)
     // object by pairing it with an empty part rather than by leaving it out.
     std::vector<DocumentObject*> targets;
     std::vector<std::string> subs;
+    std::vector<ShadowSub> shadows;
     targets.reserve(pointing.size());
     subs.reserve(pointing.size());
+    shadows.reserve(pointing.size());
     for (const Pointing& one : pointing) {
         targets.push_back(one.target);
         subs.push_back(one.sub);
+        shadows.push_back({one.name, one.name.empty() ? std::string() : one.sub});
     }
-    setValues(targets, subs);
+    setValues(targets, subs, std::move(shadows));
     return true;
 }
 
@@ -4008,8 +4097,8 @@ bool PropertyXLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
         pointing.push_back({_pcLink, {}, /*noPart=*/true});
         return true;
     }
-    for (const std::string& sub : _SubList) {
-        pointing.push_back({_pcLink, sub});
+    for (std::size_t i = 0; i < _SubList.size(); ++i) {
+        pointing.push_back({_pcLink, _SubList[i], false, fullNameOf(_pcLink, _ShadowSubList, i)});
     }
     return true;
 }
@@ -4017,12 +4106,16 @@ bool PropertyXLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
 bool PropertyXLink::pointAt(const std::vector<Pointing>& pointing)
 {
     std::vector<std::string> subs;
+    std::vector<ShadowSub> shadows;
     for (const Pointing& one : pointing) {
         if (!one.noPart) {
             subs.push_back(one.sub);
+            shadows.push_back({one.name, one.name.empty() ? std::string() : one.sub});
         }
     }
-    setValue(pointing.empty() ? nullptr : pointing.front().target, std::move(subs));
+    setValue(pointing.empty() ? nullptr : pointing.front().target,
+             std::move(subs),
+             std::move(shadows));
     return true;
 }
 
