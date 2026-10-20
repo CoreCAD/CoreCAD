@@ -536,9 +536,19 @@ corecad_stage_resources(
     OUTPUT_QRC    _CorePart_Icons_QRC
 )
 
+# The drawing page icon, for Std_NewDrawing before the TechDraw module loads.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_SOURCE_DIR}/src/Mod/TechDraw/Gui/Resources"
+    ASSETS_SUBDIR "src/Mod/TechDraw"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_SOURCE_DIR}/src/Mod/TechDraw/Gui/Resources/TechDraw_NewDrawing.qrc"
+    OUTPUT_QRC    _NewDrawing_Icon_QRC
+)
+
 set(Gui_RES_SRCS
     ${_CoreCAD_Icons_QRC}
     ${_CorePart_Icons_QRC}
+    ${_NewDrawing_Icon_QRC}
     Language/translation.qrc
     ${FreeCAD_TR_QRC}
 )

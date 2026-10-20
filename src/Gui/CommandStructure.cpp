@@ -90,6 +90,7 @@ StdCmdNewAssembly::StdCmdNewAssembly()
     sToolTipText = QT_TR_NOOP("Makes a new assembly document");
     sWhatsThis = "Std_NewAssembly";
     sStatusTip = sToolTipText;
+    sPixmap = "Geoassembly";
 }
 
 void StdCmdNewAssembly::activated(int iMsg)
@@ -118,6 +119,7 @@ StdCmdNewDrawing::StdCmdNewDrawing()
     sToolTipText = QT_TR_NOOP("Makes a new drawing document with one sheet");
     sWhatsThis = "Std_NewDrawing";
     sStatusTip = sToolTipText;
+    sPixmap = "actions/TechDraw_PageDefault";
 }
 
 void StdCmdNewDrawing::activated(int iMsg)

@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/actions/TechDraw_PageDefault.svg</file>
+    </qresource>
+</RCC>
