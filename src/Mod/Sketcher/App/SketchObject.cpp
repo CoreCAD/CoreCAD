@@ -1214,9 +1214,9 @@ void SketchObject::onExternalGeoChanged()
             geoLastId = egf->getId();
         }
         if (!externalGeoMap.emplace(egf->getId(), i).second) {
-            FC_WARN("duplicate geometry id " << egf->getId() << " -> "
-                    << geoLastId + 1);  // NOLINT
-            egf->setId(++geoLastId);
+            const long id = mintGeometryId(geo);
+            FC_WARN("duplicate geometry id " << egf->getId() << " -> " << id);  // NOLINT
+            egf->setId(id);
             externalGeoMap[egf->getId()] = i;
         }
         if (!egf->getRef().empty()) {

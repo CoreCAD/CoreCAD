@@ -8,6 +8,7 @@
 #include <App/Document.h>
 #include <App/Expression.h>
 #include <App/ObjectIdentifier.h>
+#include <Mod/Sketcher/App/ExternalGeometryFacade.h>
 #include <Mod/Sketcher/App/GeoEnum.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include "SketcherTestHelpers.h"
@@ -901,6 +902,34 @@ TEST_F(SketchObjectTest, shapesAddedOnTwoBranchesGetDistinctIds)
     // Names compare numerically and a face takes its lowest edge name, so newer must sort later.
     EXPECT_LT(shared >> 32, addedOnA >> 32);
     EXPECT_LT(shared >> 32, addedOnB >> 32);
+}
+
+// Projected geometry is named downstream like drawn geometry, so the same holds: two branches
+// projecting different edges must not mint the same id.
+TEST_F(SketchObjectTest, projectionsAddedOnTwoBranchesGetDistinctIds)
+{
+    auto* source = freecad_cast<Sketcher::SketchObject*>(
+        getObject()->getDocument()->addObject("Sketcher::SketchObject", "Source")
+    );
+    for (double y : {0.0, 1.0}) {
+        Part::GeomLineSegment line;
+        line.setPoints(Base::Vector3d(0.0, y, 0.0), Base::Vector3d(1.0, y, 0.0));
+        source->addGeometry(&line);
+    }
+    getObject()->getDocument()->recompute();
+    auto* branchB = freecad_cast<Sketcher::SketchObject*>(
+        getObject()->getDocument()->addObject("Sketcher::SketchObject", "BranchB")
+    );
+
+    ASSERT_EQ(getObject()->addExternal(source, "Edge1"), 0);
+    ASSERT_EQ(branchB->addExternal(source, "Edge2"), 0);
+
+    const auto projectedId = [](const Sketcher::SketchObject* sketch) {
+        return Sketcher::ExternalGeometryFacade::getFacade(sketch->ExternalGeo[2])->getId();
+    };
+    ASSERT_EQ(getObject()->ExternalGeo.getSize(), 3);
+    ASSERT_EQ(branchB->ExternalGeo.getSize(), 3);
+    EXPECT_NE(projectedId(getObject()), projectedId(branchB));
 }
 
 TEST_F(SketchObjectTest, testGetElementName)
