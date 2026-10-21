@@ -91,21 +91,33 @@ struct RegenResult
     bool hasMalformed = false;     ///< last solve reported malformed constraints
     int dof = -1;                  ///< remaining degrees of freedom after the solve
     bool fullyRealized = true;  ///< every node materialized (false if a seed/type/ref was missing)
+    std::map<std::string, int> placed;  ///< each realized entity's durable tag -> its GeoId
 };
 
 /// Slice 5: regenerate. Materialize a (typically merged) recipe as live geometry and constraints
 /// on `target`, then run the existing solver. Coordinates are not in the recipe (they are
-/// regenerable seeds, §4): each surviving entity's seed geometry is pulled from `seedSources` by
-/// durable tag, so the merged constraint set is re-solved against real starting coordinates.
-/// Constraint values are taken as literal datums (a bound expression is not re-evaluated here —
-/// a named deferral); refs with no durable identity (axes/external) were never emitted and so are
-/// absent. Returns the solver's verdict: a clean merge that regenerates with hasConflicts is the
-/// "merged but does not compile" case.
+/// regenerable seeds, §4): each surviving entity's seed geometry is pulled by durable tag from the
+/// sketch `seedFor` names for it, else from the first of `seedSources` that holds it, so the merged
+/// constraint set is re-solved against real starting coordinates. Constraint values are taken as
+/// literal datums (a bound expression is not re-evaluated here — a named deferral); refs with no
+/// durable identity (axes/external) were never emitted and so are absent. Returns the solver's
+/// verdict: a clean merge that regenerates with hasConflicts is the "merged but does not compile"
+/// case.
 SketcherExport RegenResult regenerateSketch(
     SketchObject& target,
     const SketchRecipe& recipe,
-    const std::vector<const SketchObject*>& seedSources
+    const std::vector<const SketchObject*>& seedSources,
+    const std::map<std::string, const SketchObject*>& seedFor = {}
 );
+
+/// A position a person chose on one side that the re-solved merge no longer holds: the rest of
+/// the merge now puts it elsewhere.
+struct OverriddenChoice
+{
+    std::string id;     ///< the geometry's durable tag
+    std::string type;   ///< its authored type token
+    std::string field;  ///< which of its coordinates
+};
 
 /** The user-facing outcome of merging three sketches — a common ancestor and two edited copies —
  *  the whole recipe-merge pipeline (emit → three-way merge → reference resolution → regenerate)
@@ -122,6 +134,7 @@ struct MergeReport
     std::vector<App::MergeConflict> conflicts;  ///< value conflicts (both edits changed one thing)
     std::vector<App::RefResolution> resolutions;  ///< dropped-with-disclosure + stop-and-ask
     RegenResult regen;                            ///< does the merged sketch still compile?
+    std::vector<OverriddenChoice> overridden;     ///< chosen positions the re-solve moved
 };
 
 /// Run the whole recipe-merge pipeline over three sketches and collect the outcome (§7). Emits the
