@@ -25,6 +25,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <cctype>
 # include <cstdlib>
 # include <iomanip>
@@ -441,7 +442,8 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
 RegenResult Sketcher::regenerateSketch(
     SketchObject& target,
     const SketchRecipe& recipe,
-    const std::vector<const SketchObject*>& seedSources
+    const std::vector<const SketchObject*>& seedSources,
+    const std::map<std::string, const SketchObject*>& seedFor
 )
 {
     RegenResult result;
@@ -450,7 +452,10 @@ RegenResult Sketcher::regenerateSketch(
     // the recipe's durable tag to the fresh GeoId so constraints can rebind by identity.
     std::map<std::string, int> tagToGeoId;
     for (const auto& [tag, node] : recipe.geometry) {
-        const Part::Geometry* seed = findSeedGeometry(tag, seedSources);
+        const auto chosen = seedFor.find(tag);
+        const Part::Geometry* seed = chosen != seedFor.end()
+            ? findSeedGeometry(tag, {chosen->second})
+            : findSeedGeometry(tag, seedSources);
         if (seed == nullptr) {
             result.fullyRealized = false;  // no seed for a surviving entity — cannot place it
             continue;
@@ -459,6 +464,7 @@ RegenResult Sketcher::regenerateSketch(
         const bool construction = it != node.fields.end() && it->second == "true";
         tagToGeoId[tag] = target.addGeometry(seed, construction);
     }
+    result.placed = tagToGeoId;
 
     // Constraints: rebuild each from its authored type, literal datum, and refs-by-tag. A ref to
     // an entity no seed supplied (dropped by the merge, or an un-emitted axis/external) means the
@@ -515,6 +521,67 @@ RegenResult Sketcher::regenerateSketch(
     return result;
 }
 
+namespace
+{
+
+/// A side's geometry with each entity's coordinates where a person on that side chose them.
+/// Coordinates its solver moved since the ancestor stand at the ancestor's, so they never count as
+/// that side's change.
+App::RecipeSection chosenGeometry(
+    const SketchObject& ancestor,
+    const SketchObject& side,
+    const App::RecipeSection& geometry
+)
+{
+    std::map<std::string, const Part::Geometry*> sideByTag;
+    for (const Part::Geometry* geo : side.getInternalGeometry()) {
+        sideByTag[tagToString(geo->getTag())] = geo;
+    }
+    std::map<std::string, const Part::Geometry*> ancestorByTag;
+    for (const Part::Geometry* geo : ancestor.getInternalGeometry()) {
+        ancestorByTag[tagToString(geo->getTag())] = geo;
+    }
+
+    App::RecipeSection chosen = geometry;
+    const App::RecipeConsequences solverMoved = sketchConsequences(ancestor, side);
+    for (auto& [tag, node] : chosen) {
+        const auto was = ancestorByTag.find(tag);
+        const bool moved = std::any_of(solverMoved.begin(), solverMoved.end(), [&](const auto& c) {
+            return c.first == tag;
+        });
+        addAuthoredCoordinates(moved && was != ancestorByTag.end() ? was->second : sideByTag[tag], node);
+    }
+    return chosen;
+}
+
+/// The coordinates of `tag` a side chose differently from the ancestor; all of them for an entity
+/// the side added. Empty where the side removed it or left its position alone.
+std::vector<std::string> choiceOf(
+    const std::string& tag,
+    const App::RecipeSection& ancestor,
+    const App::RecipeSection& side
+)
+{
+    std::vector<std::string> fields;
+    const auto now = side.find(tag);
+    if (now == side.end()) {
+        return fields;
+    }
+    const auto was = ancestor.find(tag);
+    for (const auto& [field, value] : now->second.fields) {
+        if (field == "construction") {
+            continue;
+        }
+        if (was == ancestor.end() || was->second.fields.count(field) == 0
+            || was->second.fields.at(field) != value) {
+            fields.push_back(field);
+        }
+    }
+    return fields;
+}
+
+}  // namespace
+
 MergeReport Sketcher::mergeSketches(
     const SketchObject& ancestor,
     const SketchObject& branchA,
@@ -527,9 +594,14 @@ MergeReport Sketcher::mergeSketches(
     const SketchRecipe a = emitSketchRecipe(branchA);
     const SketchRecipe b = emitSketchRecipe(branchB);
 
+    // Positions are merged too, but only where a person chose them: a side's change is what it
+    // moved by hand, never where its solver carried the geometry.
+    const App::RecipeSection baseChosen = chosenGeometry(ancestor, ancestor, base.geometry);
+    const App::RecipeSection aChosen = chosenGeometry(ancestor, branchA, a.geometry);
+    const App::RecipeSection bChosen = chosenGeometry(ancestor, branchB, b.geometry);
+
     // Merge each section by durable identity (renumber-invisible); value conflicts accumulate.
-    report.mergedGeometry
-        = App::RecipeMerge::threeWay(base.geometry, a.geometry, b.geometry, report.conflicts);
+    report.mergedGeometry = App::RecipeMerge::threeWay(baseChosen, aChosen, bChosen, report.conflicts);
     report.mergedConstraints
         = App::RecipeMerge::threeWay(base.constraints, a.constraints, b.constraints, report.conflicts);
 
@@ -537,6 +609,17 @@ MergeReport Sketcher::mergeSketches(
     // StopAsk keeps it for the user; Carry is not reported).
     report.resolutions
         = App::RecipeMerge::resolveReferences(report.mergedConstraints, report.mergedGeometry);
+
+    // Each entity starts the solve where the side that chose its position left it.
+    std::map<std::string, const SketchObject*> seedFor;
+    for (const auto& [tag, node] : report.mergedGeometry) {
+        if (choiceOf(tag, baseChosen, bChosen).empty()) {
+            continue;
+        }
+        if (choiceOf(tag, baseChosen, aChosen).empty()) {
+            seedFor[tag] = &branchB;
+        }
+    }
 
     // Regenerate onto a hidden, throwaway scratch sketch and re-solve: the merge is text until the
     // kernel runs, and only the solver reveals a clean merge that does not compile.
@@ -548,7 +631,28 @@ MergeReport Sketcher::mergeSketches(
         scratch->addObject("Sketcher::SketchObject", "MergeScratch")
     );
     const SketchRecipe merged {report.mergedGeometry, report.mergedConstraints};
-    report.regen = regenerateSketch(*target, merged, {&branchA, &branchB});
+    report.regen = regenerateSketch(*target, merged, {&branchA, &branchB}, seedFor);
+
+    // A position a side chose that the re-solve moved: the rest of the merge overrode it.
+    const std::vector<Part::Geometry*>& solved = target->getInternalGeometry();
+    for (const auto& [tag, geoId] : report.regen.placed) {
+        App::RecipeNode now;
+        addAuthoredCoordinates(solved[geoId], now);
+        for (const App::RecipeSection* side : {&aChosen, &bChosen}) {
+            for (const std::string& field : choiceOf(tag, baseChosen, *side)) {
+                const std::string& choice = side->at(tag).fields.at(field);
+                const bool reported = std::any_of(
+                    report.overridden.begin(),
+                    report.overridden.end(),
+                    [&](const OverriddenChoice& o) { return o.id == tag && o.field == field; }
+                );
+                if (!reported && report.mergedGeometry.at(tag).fields.at(field) == choice
+                    && now.fields[field] != choice) {
+                    report.overridden.push_back({tag, side->at(tag).type, field});
+                }
+            }
+        }
+    }
     App::GetApplication().closeDocument(scratch);
 
     return report;
@@ -673,6 +777,16 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
                "must choose:\n";
         for (const App::MergeConflict& c : report.conflicts) {
             out << "  - " << nounFor(c.type) << describeTargets(c.id, report) << "\n";
+        }
+        out << "\n";
+    }
+
+    if (!report.overridden.empty()) {
+        out << report.overridden.size()
+            << " position(s) one version moved by hand that the merged sketch no longer holds — "
+               "the other version's changes now put them elsewhere, so you must choose:\n";
+        for (const OverriddenChoice& o : report.overridden) {
+            out << "  - " << nounFor(o.type) << " (" << o.field << ")\n";
         }
         out << "\n";
     }

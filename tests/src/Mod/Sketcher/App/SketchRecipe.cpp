@@ -510,4 +510,112 @@ TEST_F(SketchRecipeMergeTest, cleanMergeRegeneratesValid)
     EXPECT_EQ(r.dof, 2) << "distance and horizontal both applied on regenerate";
 }
 
+// --- only a person's choices are merged ------------------------------------------------
+
+int addPoint(Sketcher::SketchObject* sketch, double x, double y)
+{
+    Part::GeomPoint g(Base::Vector3d(x, y, 0));
+    return sketch->addGeometry(&g);
+}
+
+void addConstraintOn(
+    Sketcher::SketchObject* sketch,
+    Sketcher::ConstraintType type,
+    const std::vector<std::pair<int, Sketcher::PointPos>>& elements,
+    double value = 0.0
+)
+{
+    Sketcher::Constraint c;
+    c.Type = type;
+    for (size_t i = 0; i < elements.size(); ++i) {
+        c.setElement(static_cast<int>(i), Sketcher::GeoElementId(elements[i].first, elements[i].second));
+    }
+    c.setValue(value);
+    sketch->addConstraint(&c);
+    sketch->getDocument()->recompute();
+}
+
+/// The ancestor as saved, reopened beside its two branches as the same part.
+Sketcher::SketchObject* reopenAncestor(const std::string& path)
+{
+    App::DocumentInitFlags branch;
+    branch.duplicate = App::DuplicateAnswer::SamePart;
+    return static_cast<Sketcher::SketchObject*>(
+        App::GetApplication().openDocument(path.c_str(), branch)->getObject("S")
+    );
+}
+
+std::string tagOf(const Sketcher::SketchObject* sketch, int geoId)
+{
+    return boost::uuids::to_string(sketch->getInternalGeometry()[geoId]->getTag());
+}
+
+// A post pinned to the origin by its length, and an arm from its top whose far end is free. A
+// lengthens the post, so its solver carries the arm's near end up; B drags the arm's far end. Only
+// B chose a position on the arm, so B's arm is merged and the re-solve keeps B's far end. Seeding
+// the arm from A instead would put the far end back where A's copy left it.
+TEST_F(SketchRecipeMergeTest, aPositionTheSolverMovedIsNotAChange)
+{
+    // Pinned by its own dimensions, not to the origin: a constraint on an axis does not
+    // regenerate yet (CoreCAD #181).
+    Branches br = makeBranches([&](Sketcher::SketchObject* s) {
+        const int post = addLine(s, 0, 0, 0, 5);
+        const int arm = addLine(s, 0, 5, 10, 5);
+        addConstraintOn(s, Sketcher::DistanceX, {{post, Sketcher::PointPos::start}}, 0.0);
+        addConstraintOn(s, Sketcher::Vertical, {{post, Sketcher::PointPos::none}});
+        addConstraintOn(s, Sketcher::DistanceY, {{post, Sketcher::PointPos::start}}, 0.0);
+        addDistance(s, post, 5.0);
+        addConstraintOn(
+            s,
+            Sketcher::Coincident,
+            {{arm, Sketcher::PointPos::start}, {post, Sketcher::PointPos::end}}
+        );
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->setDatum(3, 8.0), 0);
+    br.a->getDocument()->recompute();
+    br.b->moveGeometry(1, Sketcher::PointPos::end, Base::Vector3d(12, 3, 0));
+    br.b->getDocument()->recompute();
+
+    const std::string arm = tagOf(br.b, 1);
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    EXPECT_TRUE(report.conflicts.empty()) << "the solver's move on A is not A's change";
+    EXPECT_TRUE(report.overridden.empty()) << "the re-solve kept B's far end";
+    EXPECT_EQ(report.regen.solverStatus, 0);
+    EXPECT_NE(report.mergedGeometry.at(arm).fields.at("to").find("12"), std::string::npos)
+        << "B's dragged far end is the merged arm's";
+}
+
+// A free point: one side drags it, the other pins it with two dimensions. The drag is merged, then
+// the re-solve puts the point where the dimensions say, so the drag is lost: a conflict, either
+// way round. The test above is the control: there the re-solve keeps every chosen position.
+TEST_F(SketchRecipeMergeTest, aChosenPositionTheMergeOverridesIsReported)
+{
+    for (const bool aDrags : {true, false}) {
+        Branches br = makeBranches([](Sketcher::SketchObject* s) { addPoint(s, 3, 3); });
+        ASSERT_NE(br.a, nullptr);
+        ASSERT_NE(br.b, nullptr);
+        Sketcher::SketchObject* drags = aDrags ? br.a : br.b;
+        Sketcher::SketchObject* pins = aDrags ? br.b : br.a;
+
+        drags->moveGeometry(0, Sketcher::PointPos::start, Base::Vector3d(5, 5, 0));
+        drags->getDocument()->recompute();
+        addConstraintOn(pins, Sketcher::DistanceX, {{0, Sketcher::PointPos::start}}, 1.0);
+        addConstraintOn(pins, Sketcher::DistanceY, {{0, Sketcher::PointPos::start}}, 1.0);
+
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+        ASSERT_NE(ancestor, nullptr);
+        const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+        EXPECT_TRUE(report.conflicts.empty()) << "only one side chose the point's position";
+        ASSERT_EQ(report.overridden.size(), 1U) << (aDrags ? "A drags" : "B drags");
+        EXPECT_EQ(report.overridden.front().id, tagOf(drags, 0));
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
 }  // namespace
