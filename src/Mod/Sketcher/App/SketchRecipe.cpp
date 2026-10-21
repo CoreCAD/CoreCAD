@@ -55,6 +55,7 @@
 #include "ExternalGeometryFacade.h"
 #include "GeoEnum.h"
 #include "GeometryFacade.h"
+#include "SolverGeometryExtension.h"
 
 using namespace Sketcher;
 
@@ -524,9 +525,32 @@ RegenResult Sketcher::regenerateSketch(
 namespace
 {
 
+/// Whether the side's own solve fixed this coordinate, so its constraints produced it. A coordinate
+/// the solve left free, or one it cannot speak for, counts as a person's choice: where the sketch
+/// cannot tell, a drag must never be lost to it.
+bool fixedBySolver(const Part::Geometry* geo, const std::string& field)
+{
+    if (!geo->hasExtension(SolverGeometryExtension::getClassTypeId())) {
+        return false;
+    }
+    const auto solved = std::static_pointer_cast<const SolverGeometryExtension>(
+        geo->getExtension(SolverGeometryExtension::getClassTypeId()).lock()
+    );
+    if (solved->getGeometry() == SolverGeometryExtension::FullyConstraint) {
+        return true;
+    }
+    const bool line = geo->is<Part::GeomLineSegment>();
+    if ((line && field == "from") || (geo->is<Part::GeomPoint>() && field == "at")) {
+        return solved->getStart() == SolverGeometryExtension::Independent;
+    }
+    if (line && field == "to") {
+        return solved->getEnd() == SolverGeometryExtension::Independent;
+    }
+    return false;
+}
+
 /// A side's geometry with each entity's coordinates where a person on that side chose them.
-/// Coordinates its solver moved since the ancestor stand at the ancestor's, so they never count as
-/// that side's change.
+/// Coordinates its solve fixed stand at the ancestor's, so they never count as that side's change.
 App::RecipeSection chosenGeometry(
     const SketchObject& ancestor,
     const SketchObject& side,
@@ -543,13 +567,20 @@ App::RecipeSection chosenGeometry(
     }
 
     App::RecipeSection chosen = geometry;
-    const App::RecipeConsequences solverMoved = sketchConsequences(ancestor, side);
     for (auto& [tag, node] : chosen) {
+        const Part::Geometry* geo = sideByTag[tag];
+        addAuthoredCoordinates(geo, node);
         const auto was = ancestorByTag.find(tag);
-        const bool moved = std::any_of(solverMoved.begin(), solverMoved.end(), [&](const auto& c) {
-            return c.first == tag;
-        });
-        addAuthoredCoordinates(moved && was != ancestorByTag.end() ? was->second : sideByTag[tag], node);
+        if (was == ancestorByTag.end()) {
+            continue;
+        }
+        App::RecipeNode before;
+        addAuthoredCoordinates(was->second, before);
+        for (auto& [field, value] : node.fields) {
+            if (before.fields.count(field) != 0 && fixedBySolver(geo, field)) {
+                value = before.fields.at(field);
+            }
+        }
     }
     return chosen;
 }
