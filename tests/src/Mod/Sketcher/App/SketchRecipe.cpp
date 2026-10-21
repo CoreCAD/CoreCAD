@@ -550,27 +550,30 @@ std::string tagOf(const Sketcher::SketchObject* sketch, int geoId)
     return boost::uuids::to_string(sketch->getInternalGeometry()[geoId]->getTag());
 }
 
-// A post pinned to the origin by its length, and an arm from its top whose far end is free. A
-// lengthens the post, so its solver carries the arm's near end up; B drags the arm's far end. Only
-// B chose a position on the arm, so B's arm is merged and the re-solve keeps B's far end. Seeding
-// the arm from A instead would put the far end back where A's copy left it.
+// A post pinned by its own dimensions, not to the origin (a constraint on an axis does not
+// regenerate yet, CoreCAD #181), and an arm from its top whose far end is free. Constraint 3 is the
+// post's length.
+void postAndArm(Sketcher::SketchObject* s)
+{
+    const int post = addLine(s, 0, 0, 0, 5);
+    const int arm = addLine(s, 0, 5, 10, 5);
+    addConstraintOn(s, Sketcher::DistanceX, {{post, Sketcher::PointPos::start}}, 0.0);
+    addConstraintOn(s, Sketcher::Vertical, {{post, Sketcher::PointPos::none}});
+    addConstraintOn(s, Sketcher::DistanceY, {{post, Sketcher::PointPos::start}}, 0.0);
+    addDistance(s, post, 5.0);
+    addConstraintOn(
+        s,
+        Sketcher::Coincident,
+        {{arm, Sketcher::PointPos::start}, {post, Sketcher::PointPos::end}}
+    );
+}
+
+// A lengthens the post, so its solver carries the arm's near end up; B drags the arm's far end.
+// Only B chose a position on the arm, so B's arm is merged and the re-solve keeps B's far end.
+// Seeding the arm from A instead would put the far end back where A's copy left it.
 TEST_F(SketchRecipeMergeTest, aPositionTheSolverMovedIsNotAChange)
 {
-    // Pinned by its own dimensions, not to the origin: a constraint on an axis does not
-    // regenerate yet (CoreCAD #181).
-    Branches br = makeBranches([&](Sketcher::SketchObject* s) {
-        const int post = addLine(s, 0, 0, 0, 5);
-        const int arm = addLine(s, 0, 5, 10, 5);
-        addConstraintOn(s, Sketcher::DistanceX, {{post, Sketcher::PointPos::start}}, 0.0);
-        addConstraintOn(s, Sketcher::Vertical, {{post, Sketcher::PointPos::none}});
-        addConstraintOn(s, Sketcher::DistanceY, {{post, Sketcher::PointPos::start}}, 0.0);
-        addDistance(s, post, 5.0);
-        addConstraintOn(
-            s,
-            Sketcher::Coincident,
-            {{arm, Sketcher::PointPos::start}, {post, Sketcher::PointPos::end}}
-        );
-    });
+    Branches br = makeBranches(postAndArm);
     ASSERT_NE(br.a, nullptr);
     ASSERT_NE(br.b, nullptr);
     ASSERT_EQ(br.a->setDatum(3, 8.0), 0);
@@ -590,9 +593,32 @@ TEST_F(SketchRecipeMergeTest, aPositionTheSolverMovedIsNotAChange)
         << "B's dragged far end is the merged arm's";
 }
 
+// A side that changes a dimension and also drags a free end the dimension's solve reaches: the
+// drag is still that side's choice. Both sides dragging the end differently is a conflict; had the
+// drag been taken for the solver's work, B's end would have won and A's drag been lost unreported.
+TEST_F(SketchRecipeMergeTest, aDragBesideAChangedDimensionIsStillAChoice)
+{
+    Branches br = makeBranches(postAndArm);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->setDatum(3, 8.0), 0);
+    br.a->moveGeometry(1, Sketcher::PointPos::end, Base::Vector3d(15, 1, 0));
+    br.a->getDocument()->recompute();
+    br.b->moveGeometry(1, Sketcher::PointPos::end, Base::Vector3d(12, 3, 0));
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U) << "both sides chose the arm's far end";
+    EXPECT_EQ(report.conflicts.front().id, tagOf(br.a, 1));
+}
+
 // A free point: one side drags it, the other pins it with two dimensions. The drag is merged, then
 // the re-solve puts the point where the dimensions say, so the drag is lost: a conflict, either
-// way round. The test above is the control: there the re-solve keeps every chosen position.
+// way round. aPositionTheSolverMovedIsNotAChange is the control: there the re-solve keeps every
+// chosen position.
 TEST_F(SketchRecipeMergeTest, aChosenPositionTheMergeOverridesIsReported)
 {
     for (const bool aDrags : {true, false}) {
