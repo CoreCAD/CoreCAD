@@ -77,6 +77,34 @@ std::string canonicalNumber(double value)
     return oss.str();
 }
 
+/// The sketch's own frame -- the origin and the two axes. Every sketch has them, so a reference to
+/// one is carried by name and can never dangle.
+const std::map<std::string, int>& frameGeoIds()
+{
+    static const std::map<std::string, int> frame {
+        {"RootPoint", GeoEnum::RtPnt},
+        {"H_Axis", GeoEnum::HAxis},
+        {"V_Axis", GeoEnum::VAxis},
+    };
+    return frame;
+}
+
+/// The frame name of a constraint element, or empty when it is not part of the frame. The origin
+/// and the horizontal axis share a GeoId; only the point selector tells them apart.
+std::string frameName(int geoId, int pos)
+{
+    if (geoId == GeoEnum::RtPnt && pos != static_cast<int>(PointPos::none)) {
+        return "RootPoint";
+    }
+    if (geoId == GeoEnum::HAxis) {
+        return "H_Axis";
+    }
+    if (geoId == GeoEnum::VAxis) {
+        return "V_Axis";
+    }
+    return {};
+}
+
 /// The live geometry carrying `tag` among the seed sources, or nullptr. The recipe holds no
 /// coordinates (§4); a surviving entity's starting coordinates are pulled from a branch that
 /// still has it, keyed by the same durable tag the merge reasoned over.
@@ -396,8 +424,8 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
     }
 
     // Constraints: one node per constraint, keyed by its own durable Tag. References address
-    // geometry by the geometry's durable Tag (never positional GeoId); refs to sentinels with
-    // no durable identity (axes, external geometry) are simply not emitted.
+    // geometry by the geometry's durable Tag (never positional GeoId), and the sketch's frame by
+    // name; refs to external geometry, which has no durable identity yet, are not emitted.
     const std::vector<Constraint*>& constraints = sketch.Constraints.getValues();
     for (int constNum = 0; constNum < static_cast<int>(constraints.size()); ++constNum) {
         const Constraint* constraint = constraints[constNum];
@@ -424,13 +452,14 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
 
         for (size_t i = 0; i < constraint->getElementsSize(); ++i) {
             const int geoId = constraint->getGeoId(static_cast<int>(i));
+            const int pos = constraint->getPosIdAsInt(static_cast<int>(i));
             const auto it = geoIdToTag.find(geoId);
-            if (it == geoIdToTag.end()) {
-                continue;  // axis / external / undefined — no durable identity to reference
-            }
             App::RecipeRef ref;
-            ref.target = it->second;
-            ref.pos = constraint->getPosIdAsInt(static_cast<int>(i));
+            ref.target = it != geoIdToTag.end() ? it->second : frameName(geoId, pos);
+            if (ref.target.empty()) {
+                continue;  // external / undefined — no durable identity to reference
+            }
+            ref.pos = pos;
             node.refs.push_back(ref);
         }
 
@@ -468,8 +497,8 @@ RegenResult Sketcher::regenerateSketch(
     result.placed = tagToGeoId;
 
     // Constraints: rebuild each from its authored type, literal datum, and refs-by-tag. A ref to
-    // an entity no seed supplied (dropped by the merge, or an un-emitted axis/external) means the
-    // constraint cannot be placed honestly, so it is skipped and the result flagged.
+    // an entity no seed supplied (dropped by the merge) means the constraint cannot be placed
+    // honestly, so it is skipped and the result flagged.
     for (const auto& [tag, node] : recipe.constraints) {
         const ConstraintType type = constraintTypeFromString(node.type);
         if (type == ConstraintType::None) {
@@ -495,14 +524,17 @@ RegenResult Sketcher::regenerateSketch(
 
         bool placeable = true;
         for (size_t i = 0; i < node.refs.size(); ++i) {
-            const auto geoIt = tagToGeoId.find(node.refs[i].target);
-            if (geoIt == tagToGeoId.end()) {
+            const std::string& target = node.refs[i].target;
+            const auto geoIt = tagToGeoId.find(target);
+            const auto frameIt = frameGeoIds().find(target);
+            if (geoIt == tagToGeoId.end() && frameIt == frameGeoIds().end()) {
                 placeable = false;
                 break;
             }
+            const int geoId = geoIt != tagToGeoId.end() ? geoIt->second : frameIt->second;
             constraint->setElement(
                 static_cast<int>(i),
-                GeoElementId(geoIt->second, static_cast<PointPos>(node.refs[i].pos))
+                GeoElementId(geoId, static_cast<PointPos>(node.refs[i].pos))
             );
         }
         if (!placeable) {
@@ -638,8 +670,11 @@ MergeReport Sketcher::mergeSketches(
 
     // Turn any dangling reference into a §4.7 honest-retirement outcome (Drop erases the node;
     // StopAsk keeps it for the user; Carry is not reported).
-    report.resolutions
-        = App::RecipeMerge::resolveReferences(report.mergedConstraints, report.mergedGeometry);
+    App::RecipeSection liveTargets = report.mergedGeometry;
+    for (const auto& [name, geoId] : frameGeoIds()) {
+        liveTargets[name].id = name;
+    }
+    report.resolutions = App::RecipeMerge::resolveReferences(report.mergedConstraints, liveTargets);
 
     // Each entity starts the solve where the side that chose its position left it.
     std::map<std::string, const SketchObject*> seedFor;
