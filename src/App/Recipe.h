@@ -28,6 +28,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -56,10 +57,11 @@ struct RecipeRef
     std::string element;       ///< durable name of the picked element, empty = whole target
     std::string elementLabel;  ///< its current readable name ("Edge3"), for people; not
                                ///< compared, since it shifts when the shape renumbers
+    std::string link;          ///< the link it belongs to on its node; empty where a node has one
 
     bool operator==(const RecipeRef& o) const
     {
-        return target == o.target && pos == o.pos && element == o.element;
+        return link == o.link && target == o.target && pos == o.pos && element == o.element;
     }
     bool operator!=(const RecipeRef& o) const
     {
@@ -77,10 +79,13 @@ struct RecipeNode
     std::string type;                           ///< authored kind, e.g. "LineSegment"
     std::map<std::string, std::string> fields;  ///< authored name -> value/expression
     std::vector<RecipeRef> refs;                ///< references to other entities, by id
+    std::set<std::string> unorderedLinks;       ///< links whose order the object says means
+                                                ///< nothing, merged one reference at a time
 
     bool operator==(const RecipeNode& o) const
     {
-        return id == o.id && type == o.type && fields == o.fields && refs == o.refs;
+        return id == o.id && type == o.type && fields == o.fields && refs == o.refs
+            && unorderedLinks == o.unorderedLinks;
     }
     bool operator!=(const RecipeNode& o) const
     {

@@ -26,6 +26,7 @@
 
 #ifndef _PreComp_
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <string>
@@ -375,6 +376,37 @@ std::string linksKey(const std::vector<RecipeRef>& refs)
     return key;
 }
 
+std::vector<RecipeRef> refsOfLink(const RecipeNode& node, const std::string& link)
+{
+    std::vector<RecipeRef> refs;
+    std::copy_if(node.refs.begin(), node.refs.end(), std::back_inserter(refs),
+                 [&](const RecipeRef& ref) { return ref.link == link; });
+    return refs;
+}
+
+/// A link whose order means nothing, merged one reference at a time: a reference stays unless a
+/// side removed it, and one either side added joins it. Membership cannot clash.
+std::vector<RecipeRef> mergeAsSet(const std::vector<RecipeRef>& base,
+                                  const std::vector<RecipeRef>& a,
+                                  const std::vector<RecipeRef>& b)
+{
+    const auto holds = [](const std::vector<RecipeRef>& refs, const RecipeRef& ref) {
+        return std::find(refs.begin(), refs.end(), ref) != refs.end();
+    };
+    std::vector<RecipeRef> merged;
+    for (const RecipeRef& ref : a) {
+        if (holds(b, ref) || !holds(base, ref)) {
+            merged.push_back(ref);
+        }
+    }
+    for (const RecipeRef& ref : b) {
+        if (!holds(a, ref) && !holds(base, ref)) {
+            merged.push_back(ref);
+        }
+    }
+    return merged;
+}
+
 /// A readable stand-in for an optional dimension value in a conflict line.
 std::string describeValue(const std::optional<std::string>& value)
 {
@@ -440,21 +472,40 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
                                               + nodeB.type});
         }
 
-        // Links dimension — the whole set of refs, reconciled as one value.
-        bool linksConflict = false;
-        const std::string keyO = linksKey(nodeO.refs);
-        const std::string keyA = linksKey(nodeA.refs);
-        const std::string keyB = linksKey(nodeB.refs);
-        const std::optional<std::string> resolvedLinks =
-            resolveDimension(keyO, keyA, keyB, linksConflict);
-        result.refs = (resolvedLinks == keyB) ? nodeB.refs : nodeA.refs;
-        if (linksConflict) {
-            dimensionConflicts.push_back({MergeConflict::Kind::Value,
-                                          conflict.id,
-                                          nodeA.type,
-                                          "references: both branches changed the links "
-                                          "differently"});
+        // Links dimension — each link on its own. A link whose order means nothing takes each
+        // side's added and removed references; any other link is one value.
+        std::set<std::string> linkNames;
+        for (const RecipeNode* node : {&nodeO, &nodeA, &nodeB}) {
+            for (const RecipeRef& ref : node->refs) {
+                linkNames.insert(ref.link);
+            }
         }
+        for (const std::string& link : linkNames) {
+            const std::vector<RecipeRef> refsO = refsOfLink(nodeO, link);
+            const std::vector<RecipeRef> refsA = refsOfLink(nodeA, link);
+            const std::vector<RecipeRef> refsB = refsOfLink(nodeB, link);
+            std::vector<RecipeRef> resolvedRefs;
+            if (nodeA.unorderedLinks.count(link) != 0 && nodeB.unorderedLinks.count(link) != 0) {
+                resolvedRefs = mergeAsSet(refsO, refsA, refsB);
+            }
+            else {
+                bool linksConflict = false;
+                const std::string keyB = linksKey(refsB);
+                const std::optional<std::string> resolvedLinks =
+                    resolveDimension(linksKey(refsO), linksKey(refsA), keyB, linksConflict);
+                resolvedRefs = (resolvedLinks == keyB) ? refsB : refsA;
+                if (linksConflict) {
+                    dimensionConflicts.push_back(
+                        {MergeConflict::Kind::Value,
+                         conflict.id,
+                         nodeA.type,
+                         "references" + (link.empty() ? std::string() : " in " + link)
+                             + ": both branches changed the links differently"});
+                }
+            }
+            result.refs.insert(result.refs.end(), resolvedRefs.begin(), resolvedRefs.end());
+        }
+        result.unorderedLinks = nodeA.unorderedLinks;
 
         // Field dimensions — every authored field present on any of the three sides.
         std::set<std::string> fieldNames;

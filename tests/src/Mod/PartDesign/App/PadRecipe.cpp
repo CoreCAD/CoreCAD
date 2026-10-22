@@ -10,6 +10,7 @@
 #include <App/Recipe.h>
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureFillet.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
@@ -170,6 +171,45 @@ TEST_F(PadRecipeTest, sameFieldEditsOnOnePadStayAConflict)
     ASSERT_EQ(refined.size(), 1u);
     EXPECT_EQ(refined.front().id, node.id);
     EXPECT_NE(refined.front().detail.find("Length"), std::string::npos);  // names the field
+}
+
+// Each branch rounds one more edge of the pad. The order of a fillet's edges means nothing, so
+// both new edges join the merged fillet rather than clashing as one changed list. Control: a link
+// whose order may matter still conflicts when both sides change it (ObjectRecipe's re-chosen-face
+// test).
+TEST_F(PadRecipeTest, eachBranchsNewFilletEdgeJoinsTheMergedFillet)
+{
+    auto* fillet = _doc->addObject<PartDesign::Fillet>("Fillet");
+    _body->addFeature(fillet);
+    fillet->Radius.setValue(1.0);
+    const auto filletOn = [&](const std::vector<std::string>& edges) {
+        fillet->Base.setValue(_pad, edges);
+        _doc->recompute();
+        return App::emitObjectRecipe(*fillet);
+    };
+
+    App::RecipeSection base;
+    App::RecipeSection branchA;
+    App::RecipeSection branchB;
+    const App::RecipeNode node = filletOn({"Edge1"});
+    base[node.id] = node;
+    branchA[node.id] = filletOn({"Edge1", "Edge3"});
+    branchB[node.id] = filletOn({"Edge1", "Edge2"});
+    ASSERT_EQ(node.unorderedLinks.count("Base"), 1u);
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection merged = App::RecipeMerge::threeWay(base, branchA, branchB, conflicts);
+    const std::vector<App::MergeConflict> refined
+        = App::RecipeMerge::refineConflicts(conflicts, base, branchA, branchB, merged);
+
+    EXPECT_TRUE(refined.empty());
+    std::set<std::string> edges;
+    for (const App::RecipeRef& ref : merged.at(node.id).refs) {
+        if (ref.link == "Base" && !ref.elementLabel.empty()) {
+            edges.insert(ref.elementLabel);
+        }
+    }
+    EXPECT_EQ(edges, (std::set<std::string> {"Edge1", "Edge2", "Edge3"}));
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
