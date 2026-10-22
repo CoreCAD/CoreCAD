@@ -664,14 +664,22 @@ bool fixedBySolver(const Part::Geometry* geo, const std::string& field)
     return false;
 }
 
+/// A coordinate a side's solve may have moved, as (tag, field), with where that side left it.
+using HeldBack = std::map<std::pair<std::string, std::string>, std::string>;
+
 /// A side's geometry with each entity's coordinates where a person on that side chose them.
 /// Coordinates its solve fixed stand at the ancestor's, so they never count as that side's change.
+/// So do coordinates tied to a constraint the side changed, which the history also reads as the
+/// solver's work; those are kept in `heldBack`, since a drag among them cannot be told apart.
 App::RecipeSection chosenGeometry(
     const SketchObject& ancestor,
     const SketchObject& side,
-    const App::RecipeSection& geometry
+    const App::RecipeSection& geometry,
+    HeldBack* heldBack = nullptr
 )
 {
+    const App::RecipeConsequences consequences = sketchConsequences(ancestor, side);
+
     std::map<std::string, const Part::Geometry*> sideByTag;
     for (const Part::Geometry* geo : side.getInternalGeometry()) {
         sideByTag[tagToString(geo->getTag())] = geo;
@@ -692,12 +700,44 @@ App::RecipeSection chosenGeometry(
         App::RecipeNode before;
         addAuthoredCoordinates(was->second, before);
         for (auto& [field, value] : node.fields) {
-            if (before.fields.count(field) != 0 && fixedBySolver(geo, field)) {
+            if (before.fields.count(field) == 0) {
+                continue;
+            }
+            if (fixedBySolver(geo, field)) {
+                value = before.fields.at(field);
+            }
+            else if (consequences.count({tag, field}) != 0 && value != before.fields.at(field)) {
+                if (heldBack != nullptr) {
+                    (*heldBack)[{tag, field}] = value;
+                }
                 value = before.fields.at(field);
             }
         }
     }
     return chosen;
+}
+
+/// Put back a held-back coordinate wherever the other side chose that same coordinate: it may
+/// have been dragged, and taking the other side's choice would lose the drag without a word.
+void restoreContested(
+    App::RecipeSection& chosen,
+    const HeldBack& heldBack,
+    const App::RecipeSection& ancestor,
+    const App::RecipeSection& otherChosen
+)
+{
+    for (const auto& [where, value] : heldBack) {
+        const auto& [tag, field] = where;
+        const auto other = otherChosen.find(tag);
+        const auto was = ancestor.find(tag);
+        if (other == otherChosen.end() || was == ancestor.end()
+            || other->second.fields.count(field) == 0 || was->second.fields.count(field) == 0) {
+            continue;
+        }
+        if (other->second.fields.at(field) != was->second.fields.at(field)) {
+            chosen[tag].fields[field] = value;
+        }
+    }
 }
 
 /// The coordinates of `tag` a side chose differently from the ancestor; all of them for an entity
@@ -743,8 +783,13 @@ MergeReport Sketcher::mergeSketches(
     // Positions are merged too, but only where a person chose them: a side's change is what it
     // moved by hand, never where its solver carried the geometry.
     const App::RecipeSection baseChosen = chosenGeometry(ancestor, ancestor, base.geometry);
-    const App::RecipeSection aChosen = chosenGeometry(ancestor, branchA, a.geometry);
-    const App::RecipeSection bChosen = chosenGeometry(ancestor, branchB, b.geometry);
+    HeldBack aHeldBack;
+    HeldBack bHeldBack;
+    App::RecipeSection aChosen = chosenGeometry(ancestor, branchA, a.geometry, &aHeldBack);
+    App::RecipeSection bChosen = chosenGeometry(ancestor, branchB, b.geometry, &bHeldBack);
+    const App::RecipeSection aFirm = aChosen;
+    restoreContested(aChosen, aHeldBack, baseChosen, bChosen);
+    restoreContested(bChosen, bHeldBack, baseChosen, aFirm);
 
     // Merge each section by durable identity (renumber-invisible); value conflicts accumulate.
     report.mergedGeometry = App::RecipeMerge::threeWay(baseChosen, aChosen, bChosen, report.conflicts);
