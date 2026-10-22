@@ -535,3 +535,72 @@ TEST(RecipeDiff, aMovedReferenceIsOneLinksChangeWithBothSets)
     EXPECT_EQ(changes[0].refsBefore, baseConstraints().at("c0").refs);
     EXPECT_EQ(changes[0].refsAfter, after.at("c0").refs);
 }
+
+namespace
+{
+
+RecipeRef section(const std::string& target)
+{
+    RecipeRef ref;
+    ref.target = target;
+    ref.link = "Sections";
+    return ref;
+}
+
+// A loft-like node whose Sections link is ordered, merged from the ancestor s1 s2 s3.
+std::optional<std::vector<std::string>> mergedSections(
+    const std::vector<std::string>& a,
+    const std::vector<std::string>& b
+)
+{
+    const auto node = [](const std::vector<std::string>& targets) {
+        std::vector<RecipeRef> refs;
+        for (const std::string& target : targets) {
+            refs.push_back(section(target));
+        }
+        return RecipeNode {"loft", "Loft", {}, refs};
+    };
+    const RecipeSection base {{"loft", node({"s1", "s2", "s3"})}};
+    const RecipeSection sideA {{"loft", node(a)}};
+    const RecipeSection sideB {{"loft", node(b)}};
+    std::vector<MergeConflict> conflicts;
+    RecipeSection merged = RecipeMerge::threeWay(base, sideA, sideB, conflicts);
+    if (!RecipeMerge::refineConflicts(conflicts, base, sideA, sideB, merged).empty()) {
+        return std::nullopt;
+    }
+    std::vector<std::string> order;
+    for (const RecipeRef& ref : merged.at("loft").refs) {
+        order.push_back(ref.target);
+    }
+    return order;
+}
+
+}  // namespace
+
+// Both sides change an ordered list: the one sequence that keeps both sides' changes is taken,
+// and a conflict stands where there is none or more than one.
+TEST(RecipeMerge, anOrderedLinkTakesTheOneSequenceThatKeepsBothSidesChanges)
+{
+    using Order = std::vector<std::string>;
+    EXPECT_EQ(
+        mergedSections({"s1", "x", "s2", "s3"}, {"s1", "s2", "s3", "y"}),
+        (Order {"s1", "x", "s2", "s3", "y"})
+    ) << "inserts at different places both land";
+    EXPECT_EQ(mergedSections({"s3", "s1", "s2"}, {"s1", "s3"}), (Order {"s3", "s1"}))
+        << "a move on one side and a delete on the other";
+    EXPECT_EQ(mergedSections({"s1", "x", "s2", "s3"}, {"s1", "y", "s2", "s3"}), std::nullopt)
+        << "two inserts at one place: more than one sequence";
+    EXPECT_EQ(mergedSections({"s2", "s1", "s3"}, {"s1", "s3", "s2"}), std::nullopt)
+        << "the sides' moves contradict: no sequence";
+}
+
+// A constraint's element places are slots, not a collection: two changes stay one conflict.
+TEST(RecipeMerge, aConstraintsReferencesStayOneValue)
+{
+    const RecipeSection base {{"c", con("c", "Coincident", {{"p", 1}, {"q", 1}})}};
+    const RecipeSection sideA {{"c", con("c", "Coincident", {{"q", 1}, {"p", 1}})}};
+    const RecipeSection sideB {{"c", con("c", "Coincident", {{"p", 1}, {"r", 1}})}};
+    std::vector<MergeConflict> conflicts;
+    RecipeSection merged = RecipeMerge::threeWay(base, sideA, sideB, conflicts);
+    EXPECT_EQ(RecipeMerge::refineConflicts(conflicts, base, sideA, sideB, merged).size(), 1U);
+}

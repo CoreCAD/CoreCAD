@@ -407,6 +407,84 @@ std::vector<RecipeRef> mergeAsSet(const std::vector<RecipeRef>& base,
     return merged;
 }
 
+/// A link whose order may mean something, both sides having changed it. Membership is merged as
+/// for a set; each pair of references keeps the order a side that changed it gave them, the
+/// ancestor's where neither did. The result stands only where exactly one sequence keeps every
+/// such order: none (the sides contradict) or several (nothing places two references against
+/// each other, as two inserted at one place) is a conflict, nullopt.
+std::optional<std::vector<RecipeRef>> mergeAsSequence(const std::vector<RecipeRef>& base,
+                                                      const std::vector<RecipeRef>& a,
+                                                      const std::vector<RecipeRef>& b)
+{
+    const std::vector<RecipeRef> members = mergeAsSet(base, a, b);
+    const std::size_t count = members.size();
+
+    // Whether `first` comes before `second` in a sequence, or nullopt where it lacks either.
+    const auto precedes = [](const std::vector<RecipeRef>& sequence,
+                             const RecipeRef& first,
+                             const RecipeRef& second) -> std::optional<bool> {
+        const auto x = std::find(sequence.begin(), sequence.end(), first);
+        const auto y = std::find(sequence.begin(), sequence.end(), second);
+        if (x == sequence.end() || y == sequence.end()) {
+            return std::nullopt;
+        }
+        return x < y;
+    };
+
+    std::vector<std::vector<bool>> mustPrecede(count, std::vector<bool>(count, false));
+    for (std::size_t i = 0; i < count; ++i) {
+        for (std::size_t j = i + 1; j < count; ++j) {
+            const std::optional<bool> inBase = precedes(base, members[i], members[j]);
+            const std::optional<bool> inA = precedes(a, members[i], members[j]);
+            const std::optional<bool> inB = precedes(b, members[i], members[j]);
+            const bool aChanged = inA && inA != inBase;
+            const bool bChanged = inB && inB != inBase;
+            std::optional<bool> order = inBase;
+            if (aChanged && bChanged && inA != inB) {
+                return std::nullopt;
+            }
+            if (aChanged) {
+                order = inA;
+            }
+            else if (bChanged) {
+                order = inB;
+            }
+            if (order) {
+                mustPrecede[*order ? i : j][*order ? j : i] = true;
+            }
+        }
+    }
+
+    std::vector<std::size_t> waitingOn(count, 0);
+    for (std::size_t i = 0; i < count; ++i) {
+        for (std::size_t j = 0; j < count; ++j) {
+            waitingOn[j] += mustPrecede[i][j] ? 1 : 0;
+        }
+    }
+    std::vector<RecipeRef> sequence;
+    std::vector<bool> placed(count, false);
+    while (sequence.size() < count) {
+        std::optional<std::size_t> next;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!placed[i] && waitingOn[i] == 0) {
+                if (next) {
+                    return std::nullopt;  // two could come next: more than one sequence
+                }
+                next = i;
+            }
+        }
+        if (!next) {
+            return std::nullopt;  // every one waits on another: no sequence
+        }
+        placed[*next] = true;
+        sequence.push_back(members[*next]);
+        for (std::size_t j = 0; j < count; ++j) {
+            waitingOn[j] -= mustPrecede[*next][j] ? 1 : 0;
+        }
+    }
+    return sequence;
+}
+
 /// A readable stand-in for an optional dimension value in a conflict line.
 std::string describeValue(const std::optional<std::string>& value)
 {
@@ -494,7 +572,16 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
                 const std::optional<std::string> resolvedLinks =
                     resolveDimension(linksKey(refsO), linksKey(refsA), keyB, linksConflict);
                 resolvedRefs = (resolvedLinks == keyB) ? refsB : refsA;
-                if (linksConflict) {
+                // A named link's references each carry an identity; a node's unnamed list (a
+                // constraint's element places) is one value.
+                std::optional<std::vector<RecipeRef>> sequence;
+                if (linksConflict && !link.empty()) {
+                    sequence = mergeAsSequence(refsO, refsA, refsB);
+                }
+                if (sequence) {
+                    resolvedRefs = *sequence;
+                }
+                else if (linksConflict) {
                     dimensionConflicts.push_back(
                         {MergeConflict::Kind::Value,
                          conflict.id,
