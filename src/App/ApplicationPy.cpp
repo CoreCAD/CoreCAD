@@ -261,12 +261,13 @@ PyMethodDef ApplicationPy::Methods[] = {
     {"mergeDocuments",
      (PyCFunction)ApplicationPy::sMergeDocuments,
      METH_VARARGS,
-     "mergeDocuments(ancestor, branchA, branchB) -> str\n\n"
+     "mergeDocuments(ancestor, branchA, branchB) -> dict\n\n"
      "Three-way merge of a model's authored recipe. The three documents must share a\n"
      "common ancestor's durable identities (branches reloaded/copied from one origin,\n"
      "not independently rebuilt). Only authored state is reconciled -- no recompute is\n"
-     "run and emergent geometry is never matched. Returns a plain-language report of\n"
-     "what merged cleanly, what conflicts, and any references left dangling."},
+     "run and emergent geometry is never matched. Returns 'text', a plain-language\n"
+     "report, and 'conflicts', each with what the ancestor, branchA and branchB stated\n"
+     "for the object (None where that version has none)."},
     {"diffDocuments",
      (PyCFunction)ApplicationPy::sDiffDocuments,
      METH_VARARGS,
@@ -493,6 +494,31 @@ PyObject* ApplicationPy::sIsRestoring(PyObject* /*self*/, PyObject* args)
 
 namespace
 {
+/// One version's statement of a merged node, or None where that version has none.
+Py::Object asSaid(const std::optional<RecipeNode>& node)
+{
+    if (!node) {
+        return Py::None();
+    }
+    Py::Dict fields;
+    for (const auto& [name, value] : node->fields) {
+        fields.setItem(name, Py::String(value));
+    }
+    Py::List refs;
+    for (const RecipeRef& ref : node->refs) {
+        Py::Dict entry;
+        entry.setItem("target", Py::String(ref.target));
+        entry.setItem("element", Py::String(ref.element));
+        entry.setItem("label", Py::String(ref.elementLabel));
+        refs.append(entry);
+    }
+    Py::Dict said;
+    said.setItem("type", Py::String(node->type));
+    said.setItem("fields", fields);
+    said.setItem("refs", refs);
+    return said;
+}
+
 /// One survey, said the way a script reads it. Both halves answer the same shape of question, so
 /// they answer in the same shape.
 Py::Dict asSaid(const ProjectSurvey& found)
@@ -917,8 +943,25 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
 
     PY_TRY
     {
-        DocumentMergeReport report = mergeDocuments(*ancestor, *branchA, *branchB);
-        return Py::new_reference_to(Py::String(formatDocumentReport(report)));
+        const DocumentMergeReport report = mergeDocuments(*ancestor, *branchA, *branchB);
+        Py::List conflicts;
+        for (const MergeConflict& conflict : report.conflicts) {
+            Py::Dict entry;
+            entry.setItem("kind",
+                          Py::String(conflict.kind == MergeConflict::Kind::Value ? "value"
+                                                                                 : "reference"));
+            entry.setItem("object", Py::String(conflict.id));
+            entry.setItem("type", Py::String(conflict.type));
+            entry.setItem("detail", Py::String(conflict.detail));
+            entry.setItem("ancestor", asSaid(conflict.ancestor));
+            entry.setItem("branchA", asSaid(conflict.branchA));
+            entry.setItem("branchB", asSaid(conflict.branchB));
+            conflicts.append(entry);
+        }
+        Py::Dict answer;
+        answer.setItem("text", Py::String(formatDocumentReport(report)));
+        answer.setItem("conflicts", conflicts);
+        return Py::new_reference_to(answer);
     }
     PY_CATCH;
 }
