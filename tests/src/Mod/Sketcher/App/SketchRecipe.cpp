@@ -550,9 +550,8 @@ std::string tagOf(const Sketcher::SketchObject* sketch, int geoId)
     return boost::uuids::to_string(sketch->getInternalGeometry()[geoId]->getTag());
 }
 
-// A post pinned by its own dimensions, not to the origin (a constraint on an axis does not
-// regenerate yet, CoreCAD #181), and an arm from its top whose far end is free. Constraint 3 is the
-// post's length.
+// A post pinned by its own dimensions, and an arm from its top whose far end is free. Constraint 3
+// is the post's length.
 void postAndArm(Sketcher::SketchObject* s)
 {
     const int post = addLine(s, 0, 0, 0, 5);
@@ -642,6 +641,45 @@ TEST_F(SketchRecipeMergeTest, aChosenPositionTheMergeOverridesIsReported)
         EXPECT_EQ(report.overridden.front().id, tagOf(drags, 0));
         App::GetApplication().closeAllDocuments();
     }
+}
+
+// A line from the origin to a point on the horizontal axis, its length dimensioned: fully
+// constrained only while both ties to the sketch's own frame survive the merge. The origin sits in
+// the constraint's first place, so a tie that was left out would also shift the line into the
+// wrong place. Each side makes an unrelated edit, so the merge itself is clean.
+TEST_F(SketchRecipeMergeTest, tiesToTheAxesSurviveTheMerge)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        const int line = addLine(s, 0, 0, 5, 0);
+        addConstraintOn(
+            s,
+            Sketcher::Coincident,
+            {{Sketcher::GeoEnum::RtPnt, Sketcher::PointPos::start}, {line, Sketcher::PointPos::start}}
+        );
+        addConstraintOn(
+            s,
+            Sketcher::PointOnObject,
+            {{line, Sketcher::PointPos::end}, {Sketcher::GeoEnum::HAxis, Sketcher::PointPos::none}}
+        );
+        addDistance(s, line, 5.0);
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->setDatum(2, 7.0), 0);
+    br.a->getDocument()->recompute();
+    addPoint(br.b, 3, 3);
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    Sketcher::MergeReport report;
+    ASSERT_NO_THROW(report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b));
+
+    EXPECT_TRUE(report.conflicts.empty());
+    EXPECT_TRUE(report.resolutions.empty()) << "a tie to an axis never dangles";
+    EXPECT_TRUE(report.regen.fullyRealized);
+    EXPECT_EQ(report.regen.solverStatus, 0);
+    EXPECT_EQ(report.regen.dof, 2) << "only B's free point can move";
 }
 
 }  // namespace

@@ -45,9 +45,8 @@ namespace Sketcher
  *   - constraints: one node per constraint, keyed by its own Tag, carrying type, the authored
  *     value (an expression if one is bound, else a unit-typed literal; omitted for derived,
  *     non-driving reference dimensions), and references to geometry by the geometry's durable
- *     Tag — never by positional GeoId. Refs to sentinels with no durable identity (axes,
- *     external geometry) are not emitted, so App::RecipeMerge::checkReferences stays a pure
- *     "target exists" test.
+ *     Tag — never by positional GeoId. The sketch's frame (origin, axes) is referenced by name.
+ *     Refs to external geometry, which has no durable identity yet, are not emitted.
  */
 struct SketchRecipe
 {
@@ -99,8 +98,8 @@ struct RegenResult
 /// regenerable seeds, §4): each surviving entity's seed geometry is pulled by durable tag from the
 /// sketch `seedFor` names for it, else from the first of `seedSources` that holds it, so the merged
 /// constraint set is re-solved against real starting coordinates. Constraint values are taken as
-/// literal datums (a bound expression is not re-evaluated here — a named deferral); refs with no
-/// durable identity (axes/external) were never emitted and so are absent. Returns the solver's
+/// literal datums (a bound expression is not re-evaluated here — a named deferral); refs to
+/// external geometry were never emitted and so are absent. Returns the solver's
 /// verdict: a clean merge that regenerates with hasConflicts is the "merged but does not compile"
 /// case.
 SketcherExport RegenResult regenerateSketch(
