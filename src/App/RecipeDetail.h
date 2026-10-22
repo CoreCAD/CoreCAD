@@ -104,4 +104,34 @@ AppExport void registerRecipeConsequences(Base::Type type, RecipeConsequenceProv
 AppExport RecipeConsequences recipeConsequences(const DocumentObject& before,
                                                 const DocumentObject& after);
 
+/** What a module's own merge found inside one object both sides changed.
+ *
+ *  The document merge sees a sketch's lines and dimensions only as two whole values, so two
+ *  people editing different lines of one sketch would conflict, and the same dimension set two
+ *  ways would read as one change. The module that owns the type merges that content by its own
+ *  identities instead.
+ */
+struct RecipeContentMerge
+{
+    std::vector<MergeConflict> conflicts;
+    std::vector<RefResolution> resolutions;
+};
+
+using RecipeContentMerger = std::function<RecipeContentMerge(
+    const DocumentObject& ancestor, const DocumentObject& branchA, const DocumentObject& branchB)>;
+
+struct RegisteredContentMerge
+{
+    std::vector<std::string> coveredProperties;
+    RecipeContentMerger merge;
+};
+
+/// Register a merger for `type` and every type derived from it, for the properties it covers.
+AppExport void registerRecipeMerge(Base::Type type,
+                                   std::vector<std::string> coveredProperties,
+                                   RecipeContentMerger merger);
+
+/// The merger registered against the nearest of the object's types, or null when none is.
+AppExport const RegisteredContentMerge* recipeMerger(const DocumentObject& obj);
+
 }  // namespace App

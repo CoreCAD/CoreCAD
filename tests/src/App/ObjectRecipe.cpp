@@ -722,4 +722,75 @@ TEST_F(ObjectRecipeTest, descriptionIsAUserPreferenceNotRecipeContent)
     EXPECT_EQ(std::find(gaps.begin(), gaps.end(), "Label2"), gaps.end());
 }
 
+// A value with no recipe form was absent from the merge, so two branches setting it differently
+// read as "merged cleanly". It is now compared whole: two different changes conflict, one is taken.
+TEST_F(ObjectRecipeTest, mergeDocumentsComparesAValueItCannotWriteDownWhole)
+{
+    auto& app = App::GetApplication();
+    const auto finishOf = [](App::DocumentObject* obj) {
+        return dynamic_cast<App::PropertyMaterial*>(obj->getPropertyByName("Finish"));
+    };
+    const auto version = [&](App::Document* doc, const Base::Uuid& id) {
+        auto* box = doc->addObject("Part::Box", "Box");
+        box->Uid.setValue(id);
+        box->addDynamicProperty("App::PropertyMaterial", "Finish");
+        return box;
+    };
+    auto* ancestorBox = version(_doc, Base::Uuid());
+    const std::string uid = ancestorBox->Uid.getValueStr();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxA = version(docA, sharedId);
+    auto* boxB = version(docB, sharedId);
+    finishOf(boxA)->setDiffuseColor(1.0F, 0.0F, 0.0F);
+
+    const App::DocumentMergeReport lone = App::mergeDocuments(*_doc, *docA, *docB);
+    EXPECT_TRUE(lone.conflicts.empty()) << "one branch's change is taken";
+
+    finishOf(boxB)->setDiffuseColor(0.0F, 0.0F, 1.0F);
+    const App::DocumentMergeReport both = App::mergeDocuments(*_doc, *docA, *docB);
+    ASSERT_EQ(both.conflicts.size(), 1u);
+    EXPECT_EQ(both.conflicts.front().id, uid);
+    EXPECT_NE(both.conflicts.front().detail.find("Finish"), std::string::npos);
+
+    finishOf(boxB)->setDiffuseColor(1.0F, 0.0F, 0.0F);
+    EXPECT_TRUE(App::mergeDocuments(*_doc, *docA, *docB).conflicts.empty())
+        << "the same change on both branches is one change";
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// An edit to a value with no recipe form, on an object the other branch deleted, was lost with
+// nothing said. It is an edit like any other, so it conflicts with the delete.
+TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAnUnwrittenEditToAnObjectTheOtherBranchDeleted)
+{
+    auto& app = App::GetApplication();
+    auto* ancestorBox = _doc->addObject("Part::Box", "Box");
+    ancestorBox->addDynamicProperty("App::PropertyMaterial", "Finish");
+    const std::string uid = ancestorBox->Uid.getValueStr();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxA = docA->addObject("Part::Box", "Box");
+    boxA->Uid.setValue(sharedId);
+    boxA->addDynamicProperty("App::PropertyMaterial", "Finish");
+    dynamic_cast<App::PropertyMaterial*>(boxA->getPropertyByName("Finish"))
+        ->setDiffuseColor(1.0F, 0.0F, 0.0F);
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    ASSERT_EQ(report.conflicts.size(), 1u);
+    EXPECT_EQ(report.conflicts.front().id, uid);
+    EXPECT_EQ(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

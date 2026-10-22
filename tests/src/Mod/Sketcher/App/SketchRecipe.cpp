@@ -18,12 +18,14 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/ObjectRecipe.h>
 #include <App/Recipe.h>
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/Sketcher/App/Constraint.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/Sketcher/App/SketchRecipe.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 
@@ -283,6 +285,59 @@ TEST_F(SketchRecipeMergeTest, divergingValueIsAConflict)
     EXPECT_TRUE(controlConflicts.empty()) << "a single-sided edit is not a conflict";
     ASSERT_EQ(merged.count(ctag), 1U);
     EXPECT_EQ(merged.at(ctag).fields.at("value"), a.constraints.at(ctag).fields.at("value"));
+}
+
+// The document merge saw a sketch's lines and dimensions not at all, so one dimension set two ways
+// read as "merged cleanly". It now hands a sketch both branches changed to the sketch merge.
+TEST_F(SketchRecipeMergeTest, aDocumentMergeSeesADimensionSetTwoWays)
+{
+    int constrId = -1;
+    Branches br = makeBranches([&constrId](Sketcher::SketchObject* s) {
+        addLine(s, 0, 0, 40, 0);
+        constrId = addDistance(s, 0, 40.0);
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    const std::string ctag = br.base.constraints.begin()->first;
+    App::Document* ancestor = App::GetApplication().getDocument("recipeAncestor");
+    ASSERT_NE(ancestor, nullptr);
+
+    br.a->setDatum(constrId, 50.0);
+    br.b->setDatum(constrId, 60.0);
+    br.a->getDocument()->recompute();
+    br.b->getDocument()->recompute();
+
+    const App::DocumentMergeReport report
+        = App::mergeDocuments(*ancestor, *br.a->getDocument(), *br.b->getDocument());
+
+    const bool dimensionConflicts
+        = std::any_of(report.conflicts.begin(), report.conflicts.end(), [&](const auto& c) {
+              return c.id == ctag;
+          });
+    EXPECT_TRUE(dimensionConflicts);
+    EXPECT_EQ(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
+}
+
+// Two branches drawing different lines into one sketch is two changes, not one clash: the sketch
+// merge takes both, so the document merge reports no conflict.
+TEST_F(SketchRecipeMergeTest, aDocumentMergeTakesALineDrawnOnEachBranch)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) { addLine(s, 0, 0, 40, 0); });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    App::Document* ancestor = App::GetApplication().getDocument("recipeAncestor");
+    ASSERT_NE(ancestor, nullptr);
+
+    addLine(br.a, 0, 10, 40, 10);
+    addLine(br.b, 0, 20, 40, 20);
+    br.a->getDocument()->recompute();
+    br.b->getDocument()->recompute();
+
+    const App::DocumentMergeReport report
+        = App::mergeDocuments(*ancestor, *br.a->getDocument(), *br.b->getDocument());
+
+    EXPECT_TRUE(report.conflicts.empty());
+    EXPECT_TRUE(report.resolutions.empty());
 }
 
 // The CAD-specific conflict with no text analogy: A deletes geometry that B constrains. The
