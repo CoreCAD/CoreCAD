@@ -135,6 +135,7 @@ struct MergeReport
     std::vector<App::RefResolution> resolutions;  ///< dropped-with-disclosure + stop-and-ask
     RegenResult regen;                            ///< does the merged sketch still compile?
     std::vector<OverriddenChoice> overridden;     ///< chosen positions the re-solve moved
+    App::RecipeSection solvedPositions;           ///< where the re-solve put each entity
 };
 
 /// Run the whole recipe-merge pipeline over three sketches and collect the outcome (§7). Emits the

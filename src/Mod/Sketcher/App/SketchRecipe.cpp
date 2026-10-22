@@ -836,11 +836,21 @@ MergeReport Sketcher::mergeSketches(
 
     // Each entity starts the solve where the side that chose its position left it.
     std::map<std::string, const SketchObject*> seedFor;
+    // Where neither side chose it, it starts where B's solve alone moved it, since that may be a
+    // drag the merge cannot tell apart; otherwise A's copy seeds it.
+    const auto movedBySolveOnly = [](const HeldBack& heldBack, const std::string& tag) {
+        const auto first = heldBack.lower_bound({tag, std::string()});
+        return first != heldBack.end() && first->first.first == tag;
+    };
     for (const auto& [tag, node] : report.mergedGeometry) {
-        if (choiceOf(tag, baseChosen, bChosen).empty()) {
-            continue;
+        const bool aChose = !choiceOf(tag, baseChosen, aChosen).empty();
+        const bool bChose = !choiceOf(tag, baseChosen, bChosen).empty();
+        if (bChose && !aChose) {
+            seedFor[tag] = &branchB;
         }
-        if (choiceOf(tag, baseChosen, aChosen).empty()) {
+        else if (
+            !aChose && !bChose && movedBySolveOnly(bHeldBack, tag) && !movedBySolveOnly(aHeldBack, tag)
+        ) {
             seedFor[tag] = &branchB;
         }
     }
@@ -860,7 +870,8 @@ MergeReport Sketcher::mergeSketches(
     // A position a side chose that the re-solve moved: the rest of the merge overrode it.
     const std::vector<Part::Geometry*>& solved = target->getInternalGeometry();
     for (const auto& [tag, geoId] : report.regen.placed) {
-        App::RecipeNode now;
+        App::RecipeNode& now = report.solvedPositions[tag];
+        now.id = tag;
         addAuthoredCoordinates(solved[geoId], now);
         for (const App::RecipeSection* side : {&aChosen, &bChosen}) {
             for (const std::string& field : choiceOf(tag, baseChosen, *side)) {

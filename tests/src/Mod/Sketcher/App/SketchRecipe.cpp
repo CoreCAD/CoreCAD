@@ -667,6 +667,35 @@ TEST_F(SketchRecipeMergeTest, aDifferentDimensionOnEachSideMovesNothingByHand)
     EXPECT_EQ(report.regen.solverStatus, 0);
 }
 
+// One side changes a dimension and drags the arm's far end in the same edit; the other leaves the
+// arm alone. The merge cannot tell that drag from the solver's work, so the arm starts the merged
+// solve where that side left it, and the drag survives whichever side made it.
+TEST_F(SketchRecipeMergeTest, aDragBesideAChangedDimensionSurvivesOnEitherSide)
+{
+    for (const bool aEdits : {true, false}) {
+        Branches br = makeBranches(postAndArm);
+        ASSERT_NE(br.a, nullptr);
+        ASSERT_NE(br.b, nullptr);
+        Sketcher::SketchObject* edits = aEdits ? br.a : br.b;
+        Sketcher::SketchObject* other = aEdits ? br.b : br.a;
+        ASSERT_EQ(edits->setDatum(3, 8.0), 0);
+        edits->moveGeometry(1, Sketcher::PointPos::end, Base::Vector3d(15, 1, 0));
+        edits->getDocument()->recompute();
+        addPoint(other, 20, 20);
+        other->getDocument()->recompute();
+
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+        ASSERT_NE(ancestor, nullptr);
+        const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+        EXPECT_TRUE(report.conflicts.empty()) << (aEdits ? "A edits" : "B edits");
+        EXPECT_TRUE(report.overridden.empty());
+        const std::string& armEnd = report.solvedPositions.at(tagOf(edits, 1)).fields.at("to");
+        EXPECT_EQ(armEnd.rfind("15", 0), 0u) << armEnd << " is not where the drag left it";
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
 // A side that changes a dimension and also drags a free end the dimension's solve reaches: the
 // drag is still that side's choice. Both sides dragging the end differently is a conflict; had the
 // drag been taken for the solver's work, B's end would have won and A's drag been lost unreported.
