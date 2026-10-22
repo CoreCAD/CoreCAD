@@ -280,6 +280,10 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
         if ((obj.getPropertyType(prop) & excludedPropertyFlags) != 0) {
             continue;
         }
+        if (obj.producesContentOf(*prop)) {
+            // Produced again from the merged result, never merged (an attached placement).
+            continue;
+        }
         if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
             // A link addresses another object; the recipe references it by the target's durable
             // Uid, never by name, and a picked face or edge by its durable name. The readable
@@ -339,7 +343,7 @@ std::vector<std::string> App::unrecordedProperties(const DocumentObject& obj)
         if ((obj.getPropertyType(prop) & excludedPropertyFlags) != 0) {
             continue;
         }
-        if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
+        if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId()) || obj.producesContentOf(*prop)) {
             continue;
         }
         if (!authoredFieldValue(prop).has_value() && !authoredMapEntries(prop).has_value()) {

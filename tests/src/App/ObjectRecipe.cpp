@@ -246,6 +246,8 @@ TEST_F(ObjectRecipeTest, mergeDocumentsTakesAReChosenFaceAndConflictsOnTwo)
 
         const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
 
+        EXPECT_EQ(report.merged.at(topUid).fields.count("Placement"), 0U)
+            << "the attachment produces the placement; it is not merged";
         if (otherFace == "Face6") {
             EXPECT_TRUE(report.conflicts.empty());
             EXPECT_EQ(pickedLabels(report), std::vector<std::string> {"Face5"})
@@ -253,16 +255,11 @@ TEST_F(ObjectRecipeTest, mergeDocumentsTakesAReChosenFaceAndConflictsOnTwo)
             EXPECT_EQ(report.merged.at(topUid).fields.at("Length"), "20 mm");
         }
         else {
-            // The attached box's Placement conflicts too: the attachment produces it, yet the
-            // merge still treats it as a choice. A separate gap; only the links are tested here.
-            const auto links = std::count_if(
-                report.conflicts.begin(),
-                report.conflicts.end(),
-                [&](const MergeConflict& c) {
-                    return c.id == topUid && c.detail.rfind("references", 0) == 0;
-                }
-            );
-            EXPECT_EQ(links, 1) << "both sides re-chose the face";
+            // One decision, the face; the placement it produces is not a second conflict.
+            ASSERT_EQ(report.conflicts.size(), 1U);
+            EXPECT_EQ(report.conflicts.front().id, topUid);
+            EXPECT_EQ(report.conflicts.front().detail.rfind("references", 0), 0U)
+                << "both sides re-chose the face";
         }
         app.closeDocument(docA->getName());
         app.closeDocument(docB->getName());

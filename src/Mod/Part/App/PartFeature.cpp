@@ -1737,7 +1737,7 @@ bool ShapeFeature::producesContentOf(const App::Property& prop) const
 {
     if (&prop != &Shape) {
         // Whatever else this object carries, the shape-source capability does not speak for it.
-        return false;
+        return App::GeoFeature::producesContentOf(prop);
     }
     // Part::Feature is the plain shape holder -- what an import, a copy or a script leaves
     // behind, and the one type in this family that produces nothing. Every other type computes
