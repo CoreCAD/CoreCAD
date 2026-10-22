@@ -25,6 +25,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <optional>
 #include <set>
 #include <string>
@@ -201,6 +202,55 @@ void RecipeMerge::checkReferences(const RecipeSection& withRefs,
                                      id,
                                      node.type,
                                      "references deleted entity " + ref.target});
+            }
+        }
+    }
+}
+
+void RecipeMerge::presenceConflicts(const RecipeSection& baseRefs,
+                                    const RecipeSection& aRefs,
+                                    const RecipeSection& bRefs,
+                                    const RecipeSection& baseTargets,
+                                    const RecipeSection& aTargets,
+                                    const RecipeSection& bTargets,
+                                    const RecipeSection& merged,
+                                    std::vector<MergeConflict>& conflicts)
+{
+    const struct
+    {
+        const RecipeSection& refs;
+        const RecipeSection& otherTargets;
+    } sides[] {{aRefs, bTargets}, {bRefs, aTargets}};
+
+    for (const auto& [id, node] : merged) {
+        const bool alreadyConflicted =
+            std::any_of(conflicts.begin(), conflicts.end(), [&id = id](const MergeConflict& c) {
+                return c.id == id;
+            });
+        if (alreadyConflicted) {
+            continue;
+        }
+        for (const auto& side : sides) {
+            const auto mine = side.refs.find(id);
+            if (mine == side.refs.end()) {
+                continue;
+            }
+            const auto ancestral = baseRefs.find(id);
+            if (ancestral != baseRefs.end() && ancestral->second == mine->second) {
+                continue;
+            }
+            const auto deleted = std::find_if(
+                mine->second.refs.begin(), mine->second.refs.end(), [&](const RecipeRef& ref) {
+                    return baseTargets.count(ref.target) != 0
+                        && side.otherTargets.count(ref.target) == 0;
+                });
+            if (deleted != mine->second.refs.end()) {
+                conflicts.push_back({MergeConflict::Kind::Referential,
+                                     id,
+                                     node.type,
+                                     "points at " + deleted->target
+                                         + ", which the other version deleted"});
+                break;
             }
         }
     }

@@ -188,6 +188,20 @@ public:
                                 const RecipeSection& liveTargets,
                                 std::vector<MergeConflict>& conflicts);
 
+    /// The presence half of the Amendment 21 proposal (not law), for references: a node a side
+    /// added or changed that points at a target the other side deleted is a Referential
+    /// conflict, never a §4.7 drop -- the deleting side could not see it. A node no side
+    /// touched is left to `resolveReferences`, as is one already in `conflicts`. Appends one
+    /// conflict per node.
+    static void presenceConflicts(const RecipeSection& baseRefs,
+                                  const RecipeSection& aRefs,
+                                  const RecipeSection& bRefs,
+                                  const RecipeSection& baseTargets,
+                                  const RecipeSection& aTargets,
+                                  const RecipeSection& bTargets,
+                                  const RecipeSection& merged,
+                                  std::vector<MergeConflict>& conflicts);
+
     /// Resolve references the merge left dangling, routed through §4.7's three honest-
     /// retirement outcomes rather than a bespoke rule. For each node in `withRefs`, its
     /// authored refs are re-resolved against the merged `liveTargets`:

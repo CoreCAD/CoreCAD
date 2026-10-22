@@ -682,4 +682,35 @@ TEST_F(SketchRecipeMergeTest, tiesToTheAxesSurviveTheMerge)
     EXPECT_EQ(report.regen.dof, 2) << "only B's free point can move";
 }
 
+// A deletes a line; B adds a constraint on it. A never saw B's constraint, so the merge does not
+// drop it: it is a conflict, kept for the person settling it. Control: the ancestor's length on the
+// same line, which B left as it was, is A's to retire and raises nothing.
+TEST_F(SketchRecipeMergeTest, aConstraintAddedOnGeometryTheOtherSideDeletedIsAConflict)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        addLine(s, 0, 0, 10, 0);
+        addLine(s, 0, 5, 10, 5);
+        addDistance(s, 1, 10.0);
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    br.a->delGeometry(1);
+    br.a->getDocument()->recompute();
+    addHorizontal(br.b, 1);
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U);
+    EXPECT_EQ(report.conflicts.front().kind, App::MergeConflict::Kind::Referential);
+    EXPECT_EQ(report.conflicts.front().type, "Horizontal");
+    EXPECT_EQ(report.mergedConstraints.count(report.conflicts.front().id), 1U)
+        << "the conflicted constraint is kept, not dropped";
+    EXPECT_TRUE(report.resolutions.empty());
+    for (const auto& [id, node] : report.mergedConstraints) {
+        EXPECT_NE(node.type, "Distance") << "A's delete retired the ancestor's length";
+    }
+}
+
 }  // namespace

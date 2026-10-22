@@ -197,6 +197,55 @@ TEST(RecipeMergeTest, liveReferenceIsNotFlagged)
     EXPECT_TRUE(conflicts.empty());
 }
 
+// The presence half of the Amendment 21 proposal: A deletes g2, B adds a Vertical on it. A could
+// not see B's constraint, so it is a conflict, not a drop. Control: the coincidences on g2 that B
+// left as they were in the ancestor are A's to retire, and raise nothing.
+TEST(RecipeMergeTest, aReferenceOneSideAddedToWhatTheOtherDeletedIsAConflict)
+{
+    RecipeSection baseGeo = baseGeometry();
+    RecipeSection baseCon = baseConstraints();
+    RecipeSection aGeo = baseGeo;
+    aGeo.erase("g2");
+    RecipeSection aCon = baseCon;
+    RecipeSection bCon = baseCon;
+    bCon["cV"] = con("cV", "Vertical", {{"g2", 0}});
+
+    std::vector<MergeConflict> conflicts;
+    RecipeSection mergedGeo = RecipeMerge::threeWay(baseGeo, aGeo, baseGeo, conflicts);
+    RecipeSection mergedCon = RecipeMerge::threeWay(baseCon, aCon, bCon, conflicts);
+    RecipeMerge::presenceConflicts(baseCon, aCon, bCon, baseGeo, aGeo, baseGeo, mergedCon, conflicts);
+
+    ASSERT_EQ(conflicts.size(), 1u);
+    EXPECT_EQ(conflicts[0].kind, MergeConflict::Kind::Referential);
+    EXPECT_EQ(conflicts[0].id, "cV");
+}
+
+// Changing a constraint counts as much as adding one, from either side: B retargets c3 onto g2
+// while A deletes g2, and the same with the sides swapped.
+TEST(RecipeMergeTest, aReferenceOneSideChangedToWhatTheOtherDeletedIsAConflict)
+{
+    RecipeSection baseGeo = baseGeometry();
+    RecipeSection baseCon = baseConstraints();
+    RecipeSection deleting = baseGeo;
+    deleting.erase("g2");
+    RecipeSection changed = baseCon;
+    changed["c3"] = con("c3", "DistanceX", {{"g2", 1}, {"g2", 2}}, "10");
+
+    for (const bool aDeletes : {true, false}) {
+        const RecipeSection& aGeo = aDeletes ? deleting : baseGeo;
+        const RecipeSection& bGeo = aDeletes ? baseGeo : deleting;
+        const RecipeSection& aCon = aDeletes ? baseCon : changed;
+        const RecipeSection& bCon = aDeletes ? changed : baseCon;
+
+        std::vector<MergeConflict> conflicts;
+        RecipeSection mergedCon = RecipeMerge::threeWay(baseCon, aCon, bCon, conflicts);
+        RecipeMerge::presenceConflicts(baseCon, aCon, bCon, baseGeo, aGeo, bGeo, mergedCon, conflicts);
+
+        ASSERT_EQ(conflicts.size(), 1u) << (aDeletes ? "A deletes" : "B deletes");
+        EXPECT_EQ(conflicts[0].id, "c3");
+    }
+}
+
 // Slice 4 — referential resolution routed through §4.7's three honest-retirement
 // outcomes (Amendment 15), not a bespoke flag.
 

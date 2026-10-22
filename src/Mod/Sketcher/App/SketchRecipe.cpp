@@ -668,13 +668,35 @@ MergeReport Sketcher::mergeSketches(
     report.mergedConstraints
         = App::RecipeMerge::threeWay(base.constraints, a.constraints, b.constraints, report.conflicts);
 
-    // Turn any dangling reference into a §4.7 honest-retirement outcome (Drop erases the node;
-    // StopAsk keeps it for the user; Carry is not reported).
+    // A constraint one side added or changed on geometry the other deleted is a conflict, kept for
+    // the person settling it; §4.7's drop reaches only constraints the deleting side could see.
+    App::RecipeMerge::presenceConflicts(
+        base.constraints,
+        a.constraints,
+        b.constraints,
+        base.geometry,
+        a.geometry,
+        b.geometry,
+        report.mergedConstraints,
+        report.conflicts
+    );
+    App::RecipeSection contested;
+    for (const App::MergeConflict& conflict : report.conflicts) {
+        const auto node = report.mergedConstraints.find(conflict.id);
+        if (conflict.kind == App::MergeConflict::Kind::Referential
+            && node != report.mergedConstraints.end()) {
+            contested.insert(report.mergedConstraints.extract(node));
+        }
+    }
+
+    // Turn any other dangling reference into a §4.7 honest-retirement outcome (Drop erases the
+    // node; StopAsk keeps it for the user; Carry is not reported).
     App::RecipeSection liveTargets = report.mergedGeometry;
     for (const auto& [name, geoId] : frameGeoIds()) {
         liveTargets[name].id = name;
     }
     report.resolutions = App::RecipeMerge::resolveReferences(report.mergedConstraints, liveTargets);
+    report.mergedConstraints.merge(contested);
 
     // Each entity starts the solve where the side that chose its position left it.
     std::map<std::string, const SketchObject*> seedFor;
@@ -834,15 +856,30 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
         << report.mergedConstraints.size() << " constraint(s).\n\n";
 
     // Value conflicts — both edits changed the same authored thing in different ways.
-    if (report.conflicts.empty()) {
+    std::vector<const App::MergeConflict*> values;
+    std::vector<const App::MergeConflict*> onDeleted;
+    for (const App::MergeConflict& c : report.conflicts) {
+        (c.kind == App::MergeConflict::Kind::Value ? values : onDeleted).push_back(&c);
+    }
+    if (values.empty()) {
         out << "No value conflicts: the two edits never changed the same thing differently.\n\n";
     }
     else {
-        out << report.conflicts.size()
+        out << values.size()
             << " value conflict(s) — both versions changed the same thing differently, so you "
                "must choose:\n";
-        for (const App::MergeConflict& c : report.conflicts) {
-            out << "  - " << nounFor(c.type) << describeTargets(c.id, report) << "\n";
+        for (const App::MergeConflict* c : values) {
+            out << "  - " << nounFor(c->type) << describeTargets(c->id, report) << "\n";
+        }
+        out << "\n";
+    }
+
+    if (!onDeleted.empty()) {
+        out << onDeleted.size()
+            << " constraint(s) one version added or changed on geometry the other version "
+               "deleted, so you must choose between them:\n";
+        for (const App::MergeConflict* c : onDeleted) {
+            out << "  - " << nounFor(c->type) << describeTargets(c->id, report) << "\n";
         }
         out << "\n";
     }
