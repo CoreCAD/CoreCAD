@@ -292,6 +292,9 @@ TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAStepBuiltOnAnObjectTheOtherBranchD
     EXPECT_EQ(report.conflicts.front().kind, App::MergeConflict::Kind::Referential);
     EXPECT_EQ(report.conflicts.front().id, mirror);
     EXPECT_EQ(report.merged.count(mirror), 1u) << "the mirror is kept, not dropped";
+    EXPECT_FALSE(report.conflicts.front().ancestor);
+    EXPECT_FALSE(report.conflicts.front().branchA) << "A never had the mirror";
+    EXPECT_TRUE(report.conflicts.front().branchB);
     EXPECT_TRUE(report.resolutions.empty());
     EXPECT_NE(
         App::formatDocumentReport(report).find("built on an object the other branch deleted"),
@@ -364,8 +367,14 @@ TEST_F(ObjectRecipeTest, mergeDocumentsKeepsSameFieldEditAsAFieldConflict)
     const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
 
     ASSERT_EQ(report.conflicts.size(), 1u);
-    EXPECT_EQ(report.conflicts.front().id, uid);
-    EXPECT_NE(report.conflicts.front().detail.find("Length"), std::string::npos);
+    const App::MergeConflict& conflict = report.conflicts.front();
+    EXPECT_EQ(conflict.id, uid);
+    EXPECT_NE(conflict.detail.find("Length"), std::string::npos);
+    // The person settling it sees what each version stated, not only A's.
+    ASSERT_TRUE(conflict.ancestor && conflict.branchA && conflict.branchB);
+    EXPECT_EQ(conflict.ancestor->fields.at("Length"), "10 mm");
+    EXPECT_EQ(conflict.branchA->fields.at("Length"), "25 mm");
+    EXPECT_EQ(conflict.branchB->fields.at("Length"), "30 mm");
 
     app.closeDocument(docA->getName());
     app.closeDocument(docB->getName());
