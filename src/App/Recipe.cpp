@@ -36,6 +36,27 @@
 
 using namespace App;
 
+namespace
+{
+
+std::optional<RecipeNode> statedIn(const RecipeSection& section, const std::string& id)
+{
+    const auto it = section.find(id);
+    return it != section.end() ? std::optional<RecipeNode>(it->second) : std::nullopt;
+}
+
+void recordStatements(MergeConflict& conflict,
+                      const RecipeSection& base,
+                      const RecipeSection& a,
+                      const RecipeSection& b)
+{
+    conflict.ancestor = statedIn(base, conflict.id);
+    conflict.branchA = statedIn(a, conflict.id);
+    conflict.branchB = statedIn(b, conflict.id);
+}
+
+}  // namespace
+
 RecipeSection RecipeMerge::threeWay(const RecipeSection& base,
                                     const RecipeSection& a,
                                     const RecipeSection& b,
@@ -99,6 +120,7 @@ RecipeSection RecipeMerge::threeWay(const RecipeSection& base,
             const std::string type = nA ? nA->type : (nB ? nB->type : std::string {});
             conflicts.push_back(
                 {MergeConflict::Kind::Value, id, type, "diverging edit to the same entity"});
+            recordStatements(conflicts.back(), base, a, b);
             if (inA) {
                 merged[id] = *nA;
             }
@@ -250,6 +272,7 @@ void RecipeMerge::presenceConflicts(const RecipeSection& baseRefs,
                                      node.type,
                                      "points at " + deleted->target
                                          + ", which the other version deleted"});
+                recordStatements(conflicts.back(), baseRefs, aRefs, bRefs);
                 break;
             }
         }
@@ -466,7 +489,8 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
         // had kept only A's whole node); clashing dimensions kept A's side above, as before. If no
         // dimension clashed the conflict has dissolved and nothing is reported for this object.
         merged[conflict.id] = result;
-        for (const MergeConflict& dimensionConflict : dimensionConflicts) {
+        for (MergeConflict& dimensionConflict : dimensionConflicts) {
+            recordStatements(dimensionConflict, base, a, b);
             refined.push_back(dimensionConflict);
         }
     }
