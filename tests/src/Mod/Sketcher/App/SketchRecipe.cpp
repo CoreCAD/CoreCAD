@@ -647,6 +647,26 @@ TEST_F(SketchRecipeMergeTest, aPositionTheSolverMovedIsNotAChange)
         << "B's dragged far end is the merged arm's";
 }
 
+// A changes one dimension and B adds another, and nobody drags anything. Each solver moves the arm,
+// and neither move is a choice, so the merge has nothing to ask.
+TEST_F(SketchRecipeMergeTest, aDifferentDimensionOnEachSideMovesNothingByHand)
+{
+    Branches br = makeBranches(postAndArm);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->setDatum(3, 8.0), 0);
+    br.a->getDocument()->recompute();
+    addDistance(br.b, 1, 12.0);
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    EXPECT_TRUE(report.overridden.empty());
+    EXPECT_EQ(report.regen.solverStatus, 0);
+}
+
 // A side that changes a dimension and also drags a free end the dimension's solve reaches: the
 // drag is still that side's choice. Both sides dragging the end differently is a conflict; had the
 // drag been taken for the solver's work, B's end would have won and A's drag been lost unreported.
