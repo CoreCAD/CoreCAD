@@ -403,6 +403,12 @@ bool AttachExtension::positionBySupport()
     }
 }
 
+bool AttachExtension::extensionProducesContentOf(const App::Property& prop) const
+{
+    return getExtendedContainer() != nullptr && &prop == &getPlacement()
+        && MapMode.getValue() != mmTranslate && isAttacherActive();
+}
+
 bool AttachExtension::isAttacherActive() const
 {
     if (_active < 0) {

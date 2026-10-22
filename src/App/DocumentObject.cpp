@@ -256,10 +256,14 @@ bool DocumentObject::mustRecompute() const
 
 bool DocumentObject::producesContentOf(const Property& prop) const
 {
-    // Nothing, unless the object says so. An object that holds content is far more often handed
-    // it than producing it -- and the one kind that is produced in bulk, a feature's shape, is
-    // declared by the capability that carries it.
-    (void)prop;
+    // Nothing, unless the object or one of its extensions says so. An object that holds content
+    // is far more often handed it than producing it -- and the one kind that is produced in bulk,
+    // a feature's shape, is declared by the capability that carries it.
+    for (const auto* ext : getExtensionsDerivedFromType<App::DocumentObjectExtension>()) {
+        if (ext->extensionProducesContentOf(prop)) {
+            return true;
+        }
+    }
     return false;
 }
 
