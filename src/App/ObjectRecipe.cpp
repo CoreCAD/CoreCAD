@@ -422,11 +422,23 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     // referential pass so that pass resolves against the refined links.
     report.conflicts = RecipeMerge::refineConflicts(report.conflicts, base, a, b, report.merged);
 
+    // A step one branch added or changed on an object the other branch deleted is a conflict, kept
+    // for the person settling it; §4.7's drop reaches only steps the deleting branch could see.
+    RecipeMerge::presenceConflicts(base, a, b, base, a, b, report.merged, report.conflicts);
+    RecipeSection contested;
+    for (const MergeConflict& conflict : report.conflicts) {
+        const auto node = report.merged.find(conflict.id);
+        if (conflict.kind == MergeConflict::Kind::Referential && node != report.merged.end()) {
+            contested.insert(report.merged.extract(node));
+        }
+    }
+
     // Objects reference other objects in the same section, so a reference dangles when the merge
     // kept an object whose referent the other branch deleted. Resolve against a snapshot of the
     // survivors (a copy, so dropping a node cannot perturb the target set mid-pass).
     const RecipeSection survivors = report.merged;
     report.resolutions = RecipeMerge::resolveReferences(report.merged, survivors);
+    report.merged.merge(contested);
 
     return report;
 }
@@ -443,13 +455,24 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
 
     out << "Merged " << objectCount << " objects.\n";
 
-    if (!report.conflicts.empty()) {
-        out << "\nConflicts — both branches changed the same object differently:\n";
+    const auto printConflicts = [&](MergeConflict::Kind kind, const char* heading) {
+        bool headed = false;
         for (const MergeConflict& conflict : report.conflicts) {
+            if (conflict.kind != kind) {
+                continue;
+            }
+            if (!headed) {
+                out << heading;
+                headed = true;
+            }
             out << "  - " << (conflict.type.empty() ? "object" : conflict.type) << " "
                 << shortId(conflict.id) << ": " << conflict.detail << "\n";
         }
-    }
+    };
+    printConflicts(MergeConflict::Kind::Value,
+                   "\nConflicts — both branches changed the same object differently:\n");
+    printConflicts(MergeConflict::Kind::Referential,
+                   "\nConflicts — one branch built on an object the other branch deleted:\n");
 
     if (!report.resolutions.empty()) {
         out << "\nReferences the merge had to settle:\n";

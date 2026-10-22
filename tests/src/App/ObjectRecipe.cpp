@@ -188,6 +188,42 @@ TEST_F(ObjectRecipeTest, mergeDocumentsTakesTheLoneEditAndReadsClean)
     app.closeDocument(docB->getName());
 }
 
+// A deletes a box; B mirrors it. A never saw B's mirror, so the merge does not drop it: it is a
+// conflict, kept for the person settling it, and the report says so.
+TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAStepBuiltOnAnObjectTheOtherBranchDeleted)
+{
+    auto* ancestorBox = _doc->addObject("Part::Box");
+    ASSERT_NE(ancestorBox, nullptr);
+    Base::Uuid sharedId;
+    sharedId.setValue(ancestorBox->Uid.getValueStr());
+
+    auto& app = App::GetApplication();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxB = docB->addObject("Part::Box", "Box");
+    boxB->Uid.setValue(sharedId);
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "doc = App.getDocument('" + std::string(docB->getName()) + "')\n";
+    cmd += "doc.addObject('Part::Mirroring', 'Mirror').Source = doc.getObject('Box')\n";
+    Base::Interpreter().runString(cmd.c_str());
+    const std::string mirror = docB->getObject("Mirror")->Uid.getValueStr();
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    ASSERT_EQ(report.conflicts.size(), 1u);
+    EXPECT_EQ(report.conflicts.front().kind, App::MergeConflict::Kind::Referential);
+    EXPECT_EQ(report.conflicts.front().id, mirror);
+    EXPECT_EQ(report.merged.count(mirror), 1u) << "the mirror is kept, not dropped";
+    EXPECT_TRUE(report.resolutions.empty());
+    EXPECT_NE(
+        App::formatDocumentReport(report).find("built on an object the other branch deleted"),
+        std::string::npos
+    );
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // Two branches edit DIFFERENT fields of the same object (A its length, B its width). Through the
 // full emit -> object-granular merge -> field-granular refinement path, the disjoint edits are
 // auto-merged and the whole-document report reads clean — no conflict is put to the user.
