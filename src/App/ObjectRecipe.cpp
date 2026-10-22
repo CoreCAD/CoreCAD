@@ -43,6 +43,7 @@
 #include "ObjectRecipe.h"
 
 #include "Document.h"
+#include "ElementNamingUtils.h"
 #include "DocumentObject.h"
 #include "Expression.h"
 #include "ObjectIdentifier.h"
@@ -281,19 +282,23 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
         }
         if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())) {
             // A link addresses another object; the recipe references it by the target's durable
-            // Uid, never by name. Whole-object only (pos 0): a link's sub-element string (Face3,
-            // Edge1) names emergent geometry with no durable identity, so it is deliberately not
-            // encoded here.
+            // Uid, never by name, and a picked face or edge by its durable name. The readable
+            // "Edge3" suffix is a position that shifts when the shape renumbers, so it is kept
+            // only as a label.
             std::vector<DocumentObject*> targets;
-            static_cast<const PropertyLinkBase*>(prop)->getLinks(targets, /*all=*/true);
-            for (const DocumentObject* target : targets) {
-                if (target == nullptr) {
+            std::vector<std::string> subs;
+            static_cast<const PropertyLinkBase*>(prop)->getLinks(targets, /*all=*/true, &subs);
+            for (std::size_t i = 0; i < targets.size(); ++i) {
+                if (targets[i] == nullptr) {
                     continue;
                 }
                 RecipeRef ref;
-                ref.target = target->Uid.getValueStr();
-                ref.pos = 0;
-                if (seenRefs.insert(ref.target).second) {
+                ref.target = targets[i]->Uid.getValueStr();
+                if (i < subs.size() && !subs[i].empty()) {
+                    ref.element = Data::newElementName(subs[i].c_str());
+                    ref.elementLabel = Data::oldElementName(subs[i].c_str());
+                }
+                if (seenRefs.insert(ref.target + '\n' + ref.element).second) {
                     node.refs.push_back(ref);
                 }
             }

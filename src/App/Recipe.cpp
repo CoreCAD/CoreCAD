@@ -347,7 +347,7 @@ std::string linksKey(const std::vector<RecipeRef>& refs)
 {
     std::string key;
     for (const RecipeRef& ref : refs) {
-        key += ref.target + "#" + std::to_string(ref.pos) + ";";
+        key += ref.target + "#" + std::to_string(ref.pos) + "#" + ref.element + ";";
     }
     return key;
 }

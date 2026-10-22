@@ -188,6 +188,87 @@ TEST_F(ObjectRecipeTest, mergeDocumentsTakesTheLoneEditAndReadsClean)
     app.closeDocument(docB->getName());
 }
 
+// Two boxes, the second attached to a face of the first, with the given durable ids so three
+// documents can hold the same two objects.
+void attachedBoxes(
+    App::Document* doc,
+    const std::string& baseUid,
+    const std::string& attachedUid,
+    const std::string& face
+)
+{
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "doc = App.getDocument('" + std::string(doc->getName()) + "')\n";
+    cmd += "base = doc.addObject('Part::Box', 'Base')\n";
+    cmd += "top = doc.addObject('Part::Box', 'Top')\n";
+    cmd += "doc.recompute()\n";
+    cmd += "top.AttachmentSupport = [(base, '" + face + "')]\n";
+    cmd += "top.MapMode = 'FlatFace'\n";
+    cmd += "doc.recompute()\n";
+    Base::Interpreter().runString(cmd.c_str());
+    for (const auto& [name, uid] : {std::pair {"Base", baseUid}, std::pair {"Top", attachedUid}}) {
+        if (uid.empty()) {
+            continue;
+        }
+        Base::Uuid shared;
+        shared.setValue(uid);
+        doc->getObject(name)->Uid.setValue(shared);
+    }
+}
+
+// A moves the attachment to another face of the same box; B leaves it and lengthens the box, so
+// the box's links are merged on their own. Before the picked face was part of the recipe, the
+// links read the same on all three sides and A's choice was lost without a word. Control: both
+// sides re-picking different faces is a conflict.
+TEST_F(ObjectRecipeTest, mergeDocumentsTakesAReChosenFaceAndConflictsOnTwo)
+{
+    attachedBoxes(_doc, "", "", "Face6");
+    const std::string baseUid = _doc->getObject("Base")->Uid.getValueStr();
+    const std::string topUid = _doc->getObject("Top")->Uid.getValueStr();
+    const auto pickedLabels = [&](const App::DocumentMergeReport& report) {
+        std::vector<std::string> labels;
+        for (const RecipeRef& ref : report.merged.at(topUid).refs) {
+            if (ref.target == baseUid && !ref.elementLabel.empty()) {
+                labels.push_back(ref.elementLabel);
+            }
+        }
+        return labels;
+    };
+
+    auto& app = App::GetApplication();
+    for (const std::string& otherFace : {std::string("Face6"), std::string("Face4")}) {
+        App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+        App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+        attachedBoxes(docA, baseUid, topUid, "Face5");
+        attachedBoxes(docB, baseUid, topUid, otherFace);
+        dynamic_cast<App::PropertyFloat*>(docB->getObject("Top")->getPropertyByName("Length"))
+            ->setValue(20.0);
+
+        const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+        if (otherFace == "Face6") {
+            EXPECT_TRUE(report.conflicts.empty());
+            EXPECT_EQ(pickedLabels(report), std::vector<std::string> {"Face5"})
+                << "A's re-chosen face is the merged one";
+            EXPECT_EQ(report.merged.at(topUid).fields.at("Length"), "20 mm");
+        }
+        else {
+            // The attached box's Placement conflicts too: the attachment produces it, yet the
+            // merge still treats it as a choice. A separate gap; only the links are tested here.
+            const auto links = std::count_if(
+                report.conflicts.begin(),
+                report.conflicts.end(),
+                [&](const MergeConflict& c) {
+                    return c.id == topUid && c.detail.rfind("references", 0) == 0;
+                }
+            );
+            EXPECT_EQ(links, 1) << "both sides re-chose the face";
+        }
+        app.closeDocument(docA->getName());
+        app.closeDocument(docB->getName());
+    }
+}
+
 // A deletes a box; B mirrors it. A never saw B's mirror, so the merge does not drop it: it is a
 // conflict, kept for the person settling it, and the report says so.
 TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAStepBuiltOnAnObjectTheOtherBranchDeleted)

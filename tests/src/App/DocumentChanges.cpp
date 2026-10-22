@@ -180,6 +180,27 @@ TEST_F(DocumentChangesTest, aRetargetedLinkNamesBothTargetsByLabel)
     EXPECT_NE(changes[0].text.find("Large"), std::string::npos) << changes[0].text;
 }
 
+// Moving an attachment to another face of the same box is a change, and the line says which faces.
+TEST_F(DocumentChangesTest, aRePickedFaceNamesBothFaces)
+{
+    box(_before, "Base", 10.0);
+    auto* top = box(_before, "Top", 5.0);
+    _before->recompute();
+    static_cast<PropertyLinkSubList*>(top->getPropertyByName("AttachmentSupport"))
+        ->setValue(_before->getObject("Base"), "Face6");
+    _before->recompute();
+    auto* after = nextVersion();
+    after->recompute();
+    static_cast<PropertyLinkSubList*>(after->getObject("Top")->getPropertyByName("AttachmentSupport"))
+        ->setValue(after->getObject("Base"), "Face5");
+
+    const std::vector<DocumentChange> changes = diffDocuments(*_before, *after);
+
+    ASSERT_EQ(changes.size(), 1u) << formatDocumentChanges(changes);
+    EXPECT_EQ(changes[0].change.kind, RecipeChange::Kind::LinksChanged);
+    EXPECT_EQ(changes[0].text, "Top: references Base.Face6 → Base.Face5");
+}
+
 // A version read back from its file holds its objects in id order, which is no order a person
 // knows. A chain of steps makes a chance pass unlikely.
 TEST_F(DocumentChangesTest, changesFollowTheOrderTheModelIsBuilt)

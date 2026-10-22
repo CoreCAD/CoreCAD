@@ -46,16 +46,20 @@ namespace App
 
 /// A reference from one node to another authored entity, by durable identity — never
 /// by position. `pos` is an optional sub-part selector (e.g. a constraint's PointPos);
-/// 0 means "the whole entity". Refs to non-authored sentinels (sketch axes) are simply
-/// not emitted, so the referential check stays a pure "target exists" test.
+/// 0 means "the whole entity". `element` names the face, edge or vertex picked on the
+/// target by its durable name, so a re-picked edge is a change; empty means the whole
+/// target.
 struct RecipeRef
 {
-    std::string target;  ///< durable id (UUID) of the referenced node
-    int pos = 0;         ///< sub-part selector, 0 = whole entity
+    std::string target;        ///< durable id (UUID) of the referenced node
+    int pos = 0;               ///< sub-part selector, 0 = whole entity
+    std::string element;       ///< durable name of the picked element, empty = whole target
+    std::string elementLabel;  ///< its current readable name ("Edge3"), for people; not
+                               ///< compared, since it shifts when the shape renumbers
 
     bool operator==(const RecipeRef& o) const
     {
-        return target == o.target && pos == o.pos;
+        return target == o.target && pos == o.pos && element == o.element;
     }
     bool operator!=(const RecipeRef& o) const
     {
