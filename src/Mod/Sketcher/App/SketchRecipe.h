@@ -52,6 +52,7 @@ struct SketchRecipe
 {
     App::RecipeSection geometry;
     App::RecipeSection constraints;
+    App::RecipeSection external;  ///< geometry the sketch borrows, by where it was borrowed from
 };
 
 /// Emit the authored recipe of a sketch (§3). Pure read of authored/stored state; the solver

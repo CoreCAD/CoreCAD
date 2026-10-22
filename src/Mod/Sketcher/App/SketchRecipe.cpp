@@ -400,6 +400,54 @@ void addAuthoredCoordinates(const Part::Geometry* geo, App::RecipeNode& node)
     }
 }
 
+struct Borrowed
+{
+    int geoId;
+    std::string id;
+    const Part::Geometry* geometry;
+};
+
+/// Each piece of geometry the sketch borrows, by an identity that survives a branch: the durable
+/// id of the object it comes from, the picked element's durable name, and which of the curves
+/// that element projects to it is. The sketch's own two axes borrow nothing and are left out.
+std::vector<Borrowed> borrowedGeometry(const SketchObject& sketch)
+{
+    // The sketch stamps each projected curve with the owner's name and the element's mapped
+    // name; a name is not an identity, so it is translated to the owner's durable id here.
+    std::map<std::string, std::string> durableByRef;
+    const std::vector<App::DocumentObject*>& objects = sketch.ExternalGeometry.getValues();
+    const std::vector<std::string>& subs = sketch.ExternalGeometry.getSubValues();
+    const std::vector<App::PropertyLinkBase::ShadowSub>& shadows
+        = sketch.ExternalGeometry.getShadowSubs();
+    for (std::size_t i = 0; i < objects.size() && i < subs.size(); ++i) {
+        if (objects[i] == nullptr || objects[i]->getNameInDocument() == nullptr) {
+            continue;
+        }
+        const bool mapped = i < shadows.size() && !shadows[i].newName.empty();
+        const std::string element = Data::newElementName(
+            (mapped ? shadows[i].newName : subs[i]).c_str()
+        );
+        durableByRef[std::string(objects[i]->getNameInDocument()) + "." + element]
+            = objects[i]->Uid.getValueStr() + "." + element;
+    }
+
+    std::vector<Borrowed> borrowed;
+    std::map<std::string, int> curvesOfRef;
+    const std::vector<Part::Geometry*>& external = sketch.getExternalGeometry();
+    for (int index = 0; index < static_cast<int>(external.size()); ++index) {
+        const std::string ref = ExternalGeometryFacade::getFacade(external[index])->getRef();
+        if (ref.empty()) {
+            continue;
+        }
+        const auto found = durableByRef.find(ref);
+        const std::string owner = found != durableByRef.end() ? found->second : ref;
+        borrowed.push_back(
+            {-index - 1, "borrowed:" + owner + "#" + std::to_string(curvesOfRef[ref]++), external[index]}
+        );
+    }
+    return borrowed;
+}
+
 }  // namespace
 
 SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
@@ -423,9 +471,17 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
         recipe.geometry[id] = std::move(node);
     }
 
+    for (const Borrowed& piece : borrowedGeometry(sketch)) {
+        geoIdToTag[piece.geoId] = piece.id;
+        App::RecipeNode node;
+        node.id = piece.id;
+        node.type = piece.geometry->getTypeId().getName();
+        recipe.external[piece.id] = std::move(node);
+    }
+
     // Constraints: one node per constraint, keyed by its own durable Tag. References address
     // geometry by the geometry's durable Tag (never positional GeoId), and the sketch's frame by
-    // name; refs to external geometry, which has no durable identity yet, are not emitted.
+    // name, and borrowed geometry by where it was borrowed from.
     const std::vector<Constraint*>& constraints = sketch.Constraints.getValues();
     for (int constNum = 0; constNum < static_cast<int>(constraints.size()); ++constNum) {
         const Constraint* constraint = constraints[constNum];
@@ -457,7 +513,7 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
             App::RecipeRef ref;
             ref.target = it != geoIdToTag.end() ? it->second : frameName(geoId, pos);
             if (ref.target.empty()) {
-                continue;  // external / undefined — no durable identity to reference
+                continue;  // an unused element place of the constraint
             }
             ref.pos = pos;
             node.refs.push_back(ref);
@@ -495,6 +551,33 @@ RegenResult Sketcher::regenerateSketch(
         tagToGeoId[tag] = target.addGeometry(seed, construction);
     }
     result.placed = tagToGeoId;
+
+    // Borrowed geometry: the scratch sketch has nothing to borrow through, so each piece stands in
+    // as construction geometry the solver may not move, which is what borrowed geometry is to it.
+    for (const auto& [id, node] : recipe.external) {
+        const Part::Geometry* seed = nullptr;
+        for (const SketchObject* source : seedSources) {
+            for (const Borrowed& piece :
+                 source != nullptr ? borrowedGeometry(*source) : std::vector<Borrowed> {}) {
+                if (piece.id == id) {
+                    seed = piece.geometry;
+                }
+            }
+            if (seed != nullptr) {
+                break;
+            }
+        }
+        if (seed == nullptr) {
+            result.fullyRealized = false;
+            continue;
+        }
+        const int geoId = target.addGeometry(seed, /*construction=*/true);
+        Constraint fixed;
+        fixed.Type = Block;
+        fixed.setElement(0, GeoElementId(geoId, PointPos::none));
+        target.addConstraint(&fixed);
+        tagToGeoId[id] = geoId;
+    }
 
     // Constraints: rebuild each from its authored type, literal datum, and refs-by-tag. A ref to
     // an entity no seed supplied (dropped by the merge) means the constraint cannot be placed
@@ -667,6 +750,13 @@ MergeReport Sketcher::mergeSketches(
     report.mergedGeometry = App::RecipeMerge::threeWay(baseChosen, aChosen, bChosen, report.conflicts);
     report.mergedConstraints
         = App::RecipeMerge::threeWay(base.constraints, a.constraints, b.constraints, report.conflicts);
+    const App::RecipeSection mergedExternal
+        = App::RecipeMerge::threeWay(base.external, a.external, b.external, report.conflicts);
+    const auto drawnAndBorrowed = [](const SketchRecipe& recipe) {
+        App::RecipeSection targets = recipe.geometry;
+        targets.insert(recipe.external.begin(), recipe.external.end());
+        return targets;
+    };
 
     // A constraint one side added or changed on geometry the other deleted is a conflict, kept for
     // the person settling it; §4.7's drop reaches only constraints the deleting side could see.
@@ -674,9 +764,9 @@ MergeReport Sketcher::mergeSketches(
         base.constraints,
         a.constraints,
         b.constraints,
-        base.geometry,
-        a.geometry,
-        b.geometry,
+        drawnAndBorrowed(base),
+        drawnAndBorrowed(a),
+        drawnAndBorrowed(b),
         report.mergedConstraints,
         report.conflicts
     );
@@ -692,6 +782,7 @@ MergeReport Sketcher::mergeSketches(
     // Turn any other dangling reference into a §4.7 honest-retirement outcome (Drop erases the
     // node; StopAsk keeps it for the user; Carry is not reported).
     App::RecipeSection liveTargets = report.mergedGeometry;
+    liveTargets.insert(mergedExternal.begin(), mergedExternal.end());
     for (const auto& [name, geoId] : frameGeoIds()) {
         liveTargets[name].id = name;
     }
@@ -718,7 +809,7 @@ MergeReport Sketcher::mergeSketches(
     auto* target = static_cast<SketchObject*>(
         scratch->addObject("Sketcher::SketchObject", "MergeScratch")
     );
-    const SketchRecipe merged {report.mergedGeometry, report.mergedConstraints};
+    const SketchRecipe merged {report.mergedGeometry, report.mergedConstraints, mergedExternal};
     report.regen = regenerateSketch(*target, merged, {&branchA, &branchB}, seedFor);
 
     // A position a side chose that the re-solve moved: the rest of the merge overrode it.

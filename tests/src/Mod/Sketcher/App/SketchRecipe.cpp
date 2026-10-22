@@ -713,4 +713,66 @@ TEST_F(SketchRecipeMergeTest, aConstraintAddedOnGeometryTheOtherSideDeletedIsACo
     }
 }
 
+// A sketch line beside a point it borrows from a box's corner.
+void lineBesideABorrowedPoint(Sketcher::SketchObject* s)
+{
+    App::Document* doc = s->getDocument();
+    doc->addObject("Part::Box", "Box");
+    doc->recompute();
+    s->addExternal(doc->getObject("Box"), "Vertex1");
+    addLine(s, 2, 2, 8, 2);
+}
+
+constexpr int firstBorrowed = -3;
+
+// A ties the line to the borrowed corner; B adds a point. Before borrowed geometry had an identity,
+// the tie lost its borrowed end in the recipe and the rebuild placed a one-ended constraint.
+TEST_F(SketchRecipeMergeTest, aTieToBorrowedGeometryKeepsBothEnds)
+{
+    Branches br = makeBranches(lineBesideABorrowedPoint);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    addCoincident(br.a, 0, Sketcher::PointPos::start, firstBorrowed, Sketcher::PointPos::start);
+    addPoint(br.b, 3, 3);
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    EXPECT_TRUE(report.resolutions.empty());
+    bool tied = false;
+    for (const auto& [id, node] : report.mergedConstraints) {
+        if (node.type == "Coincident") {
+            tied = true;
+            ASSERT_EQ(node.refs.size(), 2U);
+            EXPECT_EQ(node.refs[1].target.rfind("borrowed:", 0), 0U);
+        }
+    }
+    EXPECT_TRUE(tied);
+    EXPECT_TRUE(report.regen.fullyRealized);
+    EXPECT_EQ(report.regen.solverStatus, 0);
+    EXPECT_FALSE(report.regen.hasMalformed);
+}
+
+// A stops borrowing the corner; B ties the line to it. A never saw B's tie: a conflict, kept.
+TEST_F(SketchRecipeMergeTest, aTieToGeometryTheOtherSideStoppedBorrowingIsAConflict)
+{
+    Branches br = makeBranches(lineBesideABorrowedPoint);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->delExternal(0), 0);
+    br.a->getDocument()->recompute();
+    addCoincident(br.b, 0, Sketcher::PointPos::start, firstBorrowed, Sketcher::PointPos::start);
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U);
+    EXPECT_EQ(report.conflicts.front().kind, App::MergeConflict::Kind::Referential);
+    EXPECT_EQ(report.conflicts.front().type, "Coincident");
+}
+
 }  // namespace
