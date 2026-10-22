@@ -139,6 +139,29 @@ constexpr short excludedPropertyFlags = Prop_Output | Prop_Transient | Prop_NoPe
 /// gated by its own test). A quantity keeps its unit token so a bare-number change and a unit
 /// change are both visible. Most-derived types are matched first (PropertyQuantity derives from
 /// PropertyFloat; PropertyPosition/PropertyVectorDistance derive from PropertyVector).
+/// Each object a link points at, with the element picked on it ("" for the whole object). A link
+/// to one object hands back that object once and all its picked elements, so each element is
+/// paired with it; a list of objects hands back one element per object.
+std::vector<std::pair<DocumentObject*, std::string>> linkedPairs(const PropertyLinkBase& link,
+                                                                 bool newStyle)
+{
+    std::vector<DocumentObject*> targets;
+    std::vector<std::string> subs;
+    link.getLinks(targets, /*all=*/true, &subs, newStyle);
+
+    std::vector<std::pair<DocumentObject*, std::string>> pairs;
+    if (targets.size() == 1 && subs.size() > 1) {
+        for (const std::string& sub : subs) {
+            pairs.emplace_back(targets.front(), sub);
+        }
+        return pairs;
+    }
+    for (std::size_t i = 0; i < targets.size(); ++i) {
+        pairs.emplace_back(targets[i], i < subs.size() ? subs[i] : std::string());
+    }
+    return pairs;
+}
+
 std::optional<std::string> authoredFieldValue(const Property* prop)
 {
     if (const auto* quantity = dynamic_cast<const PropertyQuantity*>(prop)) {
@@ -289,20 +312,22 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
             // Uid, never by name, and a picked face or edge by its durable name. The readable
             // "Edge3" suffix is a position that shifts when the shape renumbers, so it is kept
             // only as a label.
-            std::vector<DocumentObject*> targets;
-            std::vector<std::string> subs;
-            static_cast<const PropertyLinkBase*>(prop)->getLinks(targets, /*all=*/true, &subs);
-            for (std::size_t i = 0; i < targets.size(); ++i) {
-                if (targets[i] == nullptr) {
+            if (!obj.linkOrderMatters(*prop)) {
+                node.unorderedLinks.insert(propName);
+            }
+            for (const auto& [target, sub] :
+                 linkedPairs(*static_cast<const PropertyLinkBase*>(prop), /*newStyle=*/true)) {
+                if (target == nullptr) {
                     continue;
                 }
                 RecipeRef ref;
-                ref.target = targets[i]->Uid.getValueStr();
-                if (i < subs.size() && !subs[i].empty()) {
-                    ref.element = Data::newElementName(subs[i].c_str());
-                    ref.elementLabel = Data::oldElementName(subs[i].c_str());
+                ref.link = propName;
+                ref.target = target->Uid.getValueStr();
+                if (!sub.empty()) {
+                    ref.element = Data::newElementName(sub.c_str());
+                    ref.elementLabel = Data::oldElementName(sub.c_str());
                 }
-                if (seenRefs.insert(ref.target + '\n' + ref.element).second) {
+                if (seenRefs.insert(ref.link + '\n' + ref.target + '\n' + ref.element).second) {
                     node.refs.push_back(ref);
                 }
             }
@@ -374,21 +399,11 @@ std::map<std::string, std::vector<std::string>> App::linkedElements(const Docume
         }
 
         // Old-style names ("Face6"), not the shape's mapped ones: a mapped name is a hash, and
-        // this exists to be read. Paired by hand rather than through the linkedElements helper,
-        // which asserts the two lists are the same length -- a link with no sub-elements at all
-        // returns none, and that is an ordinary link, not a broken one.
-        std::vector<DocumentObject*> targets;
-        std::vector<std::string> subs;
-        static_cast<const PropertyLinkBase*>(prop)->getLinks(targets,
-                                                             /*all=*/true,
-                                                             &subs,
-                                                             /*newStyle=*/false);
-        for (std::size_t i = 0; i < targets.size(); ++i) {
-            if (targets[i] == nullptr) {
-                continue;
-            }
-            if (i < subs.size() && !subs[i].empty()) {
-                picked[targets[i]->Uid.getValueStr()].push_back(subs[i]);
+        // this exists to be read.
+        for (const auto& [target, sub] :
+             linkedPairs(*static_cast<const PropertyLinkBase*>(prop), /*newStyle=*/false)) {
+            if (target != nullptr && !sub.empty()) {
+                picked[target->Uid.getValueStr()].push_back(sub);
             }
         }
     }

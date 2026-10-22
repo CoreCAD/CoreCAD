@@ -826,6 +826,16 @@ public:
     virtual bool producesContentOf(const Property& prop) const;
 
     /**
+     * @brief Whether the order of the references this link holds means anything.
+     *
+     * Asked of the object, as producesContentOf is. A merge takes a reference added on one side
+     * and one added on the other into a link whose order means nothing; where order may mean
+     * something, two changed lists are a conflict. The default is **true**, the answer that
+     * cannot lose a choice.
+     */
+    virtual bool linkOrderMatters(const Property& link) const;
+
+    /**
      * @brief Recompute only this feature.
      *
      * @param recursive: set to true to recompute any dependent objects as well.

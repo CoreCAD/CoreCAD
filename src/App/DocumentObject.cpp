@@ -267,6 +267,12 @@ bool DocumentObject::producesContentOf(const Property& prop) const
     return false;
 }
 
+bool DocumentObject::linkOrderMatters(const Property& link) const
+{
+    (void)link;
+    return true;
+}
+
 short DocumentObject::mustExecute() const
 {
     if (ExpressionEngine.isTouched()) {

@@ -67,6 +67,11 @@ DressUp::DressUp()
     AddSubShape.setStatus(App::Property::Output, true);
 }
 
+bool DressUp::linkOrderMatters(const App::Property& link) const
+{
+    return &link != &Base && FeatureAddSub::linkOrderMatters(link);
+}
+
 short DressUp::mustExecute() const
 {
     if (Base.getValue() && Base.getValue()->isTouched()) {

@@ -43,6 +43,9 @@ public:
      * But for consistency if BaseFeature is nonzero this links to the same body as it.
      */
     App::PropertyLinkSub Base;
+
+    /// The edges or faces a dress-up rounds, cuts or drafts are a set: their order means nothing.
+    bool linkOrderMatters(const App::Property& link) const override;
     App::PropertyBool SupportTransform;
 
     short mustExecute() const override;
