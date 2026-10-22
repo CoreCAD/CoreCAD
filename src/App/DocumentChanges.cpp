@@ -101,6 +101,9 @@ std::string refsText(const std::vector<RecipeRef>& refs,
         else {
             text += shortId(ref.target);
         }
+        if (!ref.elementLabel.empty()) {
+            text += "." + ref.elementLabel;
+        }
         if (ref.pos != 0) {
             text += ":" + std::to_string(ref.pos);
         }
