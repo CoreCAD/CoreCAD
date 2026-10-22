@@ -1375,4 +1375,18 @@ void Sketcher::registerSketchRecipeDetail()
 {
     App::registerRecipeDetail(SketchObject::getClassTypeId(), &sketchRecipeDetail);
     App::registerRecipeConsequences(SketchObject::getClassTypeId(), &sketchConsequences);
+    App::registerRecipeMerge(
+        SketchObject::getClassTypeId(),
+        {"Geometry", "Constraints", "ExternalGeo"},
+        [](const App::DocumentObject& ancestor,
+           const App::DocumentObject& branchA,
+           const App::DocumentObject& branchB) {
+            MergeReport report = mergeSketches(
+                static_cast<const SketchObject&>(ancestor),
+                static_cast<const SketchObject&>(branchA),
+                static_cast<const SketchObject&>(branchB)
+            );
+            return App::RecipeContentMerge {std::move(report.conflicts), std::move(report.resolutions)};
+        }
+    );
 }

@@ -49,6 +49,12 @@ std::map<Base::Type, RecipeConsequenceProvider>& consequenceProviders()
     return registry;
 }
 
+std::map<Base::Type, RegisteredContentMerge>& contentMergers()
+{
+    static std::map<Base::Type, RegisteredContentMerge> registry;
+    return registry;
+}
+
 }  // namespace
 
 void App::registerRecipeDetail(Base::Type type, RecipeDetailProvider provider)
@@ -86,4 +92,23 @@ RecipeConsequences App::recipeConsequences(const DocumentObject& before,
     }
 
     return {};
+}
+
+void App::registerRecipeMerge(Base::Type type,
+                              std::vector<std::string> coveredProperties,
+                              RecipeContentMerger merger)
+{
+    contentMergers()[type] = {std::move(coveredProperties), std::move(merger)};
+}
+
+const RegisteredContentMerge* App::recipeMerger(const DocumentObject& obj)
+{
+    for (Base::Type type = obj.getTypeId(); !type.isBad(); type = type.getParent()) {
+        const auto found = contentMergers().find(type);
+        if (found != contentMergers().end() && found->second.merge) {
+            return &found->second;
+        }
+    }
+
+    return nullptr;
 }

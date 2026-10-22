@@ -51,6 +51,7 @@
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
 #include "PropertyUnits.h"
+#include "RecipeDetail.h"
 
 using namespace App;
 
@@ -259,6 +260,105 @@ std::optional<std::map<std::string, std::string>> authoredMapEntries(const Prope
     return std::nullopt;
 }
 
+/// Each object of a document by its durable Uid.
+std::map<std::string, const DocumentObject*> objectsByUid(const Document& doc)
+{
+    std::map<std::string, const DocumentObject*> found;
+    for (const DocumentObject* obj : doc.getObjects()) {
+        if (obj != nullptr) {
+            found[obj->Uid.getValueStr()] = obj;
+        }
+    }
+    return found;
+}
+
+/** Make a change the emitter cannot write down visible to the merge.
+ *
+ *  A value with no recipe form (a sketch's lines, a spreadsheet's cells) was simply absent, so
+ *  both sides setting it differently read as "merged cleanly", and an edit inside an object the
+ *  other side deleted was lost without a word. Each such value now stands in the recipe as a
+ *  marker saying only whether it changed, compared whole: one side's change is taken, two
+ *  different changes conflict. Where the type's module merges that content by its own
+ *  identities, the module's merge decides instead and its findings are returned.
+ */
+RecipeContentMerge markUncomparedChanges(const Document& ancestor,
+                                         const Document& branchA,
+                                         const Document& branchB,
+                                         RecipeSection& base,
+                                         RecipeSection& a,
+                                         RecipeSection& b)
+{
+    static const std::string unchanged = "unchanged";
+    static const std::string changed = "changed";
+    static const std::string changedAlike = "changed alike";
+    static const std::string changedDifferently = "changed differently";
+    static const std::string mergedByContent = "merged by its own content";
+
+    RecipeContentMerge found;
+    const auto objectsA = objectsByUid(branchA);
+    const auto objectsB = objectsByUid(branchB);
+
+    for (const auto& [id, objO] : objectsByUid(ancestor)) {
+        const auto itA = objectsA.find(id);
+        const auto itB = objectsB.find(id);
+        const DocumentObject* objA = itA != objectsA.end() ? itA->second : nullptr;
+        const DocumentObject* objB = itB != objectsB.end() ? itB->second : nullptr;
+        const RegisteredContentMerge* merger = recipeMerger(*objO);
+        bool contentMerged = false;
+        std::vector<std::string> covered;
+
+        for (const std::string& name : unrecordedProperties(*objO)) {
+            const Property* propO = objO->getPropertyByName(name.c_str());
+            const Property* propA = objA != nullptr ? objA->getPropertyByName(name.c_str()) : nullptr;
+            const Property* propB = objB != nullptr ? objB->getPropertyByName(name.c_str()) : nullptr;
+            const bool changedA = propA != nullptr && !propA->isSame(*propO);
+            const bool changedB = propB != nullptr && !propB->isSame(*propO);
+            const bool alike = changedA && changedB && propA->isSame(*propB);
+
+            base[id].fields[name] = unchanged;
+            if (propA != nullptr) {
+                a[id].fields[name] = alike ? changedAlike : changedA ? changed : unchanged;
+            }
+            if (propB != nullptr) {
+                b[id].fields[name] = alike ? changedAlike
+                    : !changedB            ? unchanged
+                    : changedA             ? changedDifferently
+                                           : changed;
+            }
+
+            const bool coveredByMerger = merger != nullptr
+                && std::find(merger->coveredProperties.begin(),
+                             merger->coveredProperties.end(),
+                             name)
+                    != merger->coveredProperties.end();
+            if (coveredByMerger) {
+                covered.push_back(name);
+                contentMerged = contentMerged || (changedA && changedB && !alike);
+            }
+        }
+
+        if (!contentMerged) {
+            continue;
+        }
+        for (const std::string& name : covered) {
+            a[id].fields[name] = mergedByContent;
+            b[id].fields[name] = mergedByContent;
+        }
+        RecipeContentMerge inside = merger->merge(*objO, *objA, *objB);
+        const std::string where = std::string(objA->Label.getValue()) + ": ";
+        for (MergeConflict& conflict : inside.conflicts) {
+            conflict.detail = where + conflict.detail;
+            found.conflicts.push_back(std::move(conflict));
+        }
+        for (RefResolution& resolution : inside.resolutions) {
+            resolution.detail = where + resolution.detail;
+            found.resolutions.push_back(std::move(resolution));
+        }
+    }
+
+    return found;
+}
+
 /// A short, readable stand-in for a durable Uid in a report line (the full uuid is exact but
 /// unreadable). Never used for identity — only for a person scanning the summary.
 std::string shortId(const std::string& id)
@@ -368,7 +468,11 @@ std::vector<std::string> App::unrecordedProperties(const DocumentObject& obj)
         if ((obj.getPropertyType(prop) & excludedPropertyFlags) != 0) {
             continue;
         }
-        if (prop->isDerivedFrom(PropertyLinkBase::getClassTypeId()) || obj.producesContentOf(*prop)) {
+        // A container of links (a spreadsheet's cells) holds content beyond the links the
+        // emitter takes from it, so it is not recorded by them.
+        const bool linksOnly = prop->isDerivedFrom(PropertyLinkBase::getClassTypeId())
+            && !prop->isDerivedFrom(PropertyXLinkContainer::getClassTypeId());
+        if (linksOnly || obj.producesContentOf(*prop)) {
             continue;
         }
         if (!authoredFieldValue(prop).has_value() && !authoredMapEntries(prop).has_value()) {
@@ -434,9 +538,10 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
 {
     DocumentMergeReport report;
 
-    const RecipeSection base = emitDocumentRecipe(ancestor);
-    const RecipeSection a = emitDocumentRecipe(branchA);
-    const RecipeSection b = emitDocumentRecipe(branchB);
+    RecipeSection base = emitDocumentRecipe(ancestor);
+    RecipeSection a = emitDocumentRecipe(branchA);
+    RecipeSection b = emitDocumentRecipe(branchB);
+    RecipeContentMerge inside = markUncomparedChanges(ancestor, branchA, branchB, base, a, b);
 
     report.merged = RecipeMerge::threeWay(base, a, b, report.conflicts);
 
@@ -463,6 +568,10 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     const RecipeSection survivors = report.merged;
     report.resolutions = RecipeMerge::resolveReferences(report.merged, survivors);
     report.merged.merge(contested);
+
+    report.conflicts.insert(report.conflicts.end(), inside.conflicts.begin(), inside.conflicts.end());
+    report.resolutions.insert(
+        report.resolutions.end(), inside.resolutions.begin(), inside.resolutions.end());
 
     return report;
 }
