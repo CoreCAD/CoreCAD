@@ -380,6 +380,41 @@ TEST_F(ObjectRecipeTest, mergeDocumentsKeepsSameFieldEditAsAFieldConflict)
     app.closeDocument(docB->getName());
 }
 
+// A script settling a conflict reads what each version stated through the model, not only the
+// text report (Clause 21.4 of the merge proposal, "readable through the model").
+TEST_F(ObjectRecipeTest, aScriptReadsEachVersionsStatementOfAConflict)
+{
+    auto* ancestorBox = _doc->addObject("Part::Box");
+    ASSERT_NE(ancestorBox, nullptr);
+    Base::Uuid sharedId;
+    sharedId.setValue(ancestorBox->Uid.getValueStr());
+
+    auto& app = App::GetApplication();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    for (const auto& [doc, length] : {std::pair {docA, 25.0}, std::pair {docB, 30.0}}) {
+        auto* box = doc->addObject("Part::Box");
+        box->Uid.setValue(sharedId);
+        dynamic_cast<App::PropertyFloat*>(box->getPropertyByName("Length"))->setValue(length);
+    }
+
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "r = App.mergeDocuments(App.getDocument('" + std::string(_doc->getName())
+        + "'), App.getDocument('" + docA->getName() + "'), App.getDocument('" + docB->getName()
+        + "'))\n";
+    cmd += "assert 'Length' in r['text']\n";
+    cmd += "c, = r['conflicts']\n";
+    cmd += "assert c['kind'] == 'value' and c['object'] == '" + ancestorBox->Uid.getValueStr()
+        + "'\n";
+    cmd += "assert c['ancestor']['fields']['Length'] == '10 mm'\n";
+    cmd += "assert c['branchA']['fields']['Length'] == '25 mm'\n";
+    cmd += "assert c['branchB']['fields']['Length'] == '30 mm'\n";
+    EXPECT_NO_THROW(Base::Interpreter().runString(cmd.c_str()));
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // A placement is a non-scalar authored value; it is now canonicalized into a field, and the
 // field changes when the placement changes (a metric that reported the same string either way
 // would be blind to exactly the move this closes).
