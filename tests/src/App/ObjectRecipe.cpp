@@ -865,4 +865,35 @@ TEST_F(ObjectRecipeTest, aRenameOnOneBranchIsNotAnEditToTheFormulasThatReadIt)
     app.closeDocument(docB->getName());
 }
 
+// A formula on one part of a placement states that part only: a turn of the rest of the placement
+// still shows, and so does a second formula on another part.
+TEST_F(ObjectRecipeTest, aFormulaOnPartOfAPlacementHidesNoneOfTheRest)
+{
+    _doc->addObject("Part::Box", "Box");
+    auto* user = _doc->addObject("Part::Box", "User");
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "user = App.getDocument('" + _docName + "').getObject('User')\n";
+    cmd += "user.setExpression('Placement.Base.x', 'Box.Length * 2')\n";
+    cmd += "user.setExpression('Placement.Base.y', 'Box.Width + 1')\n";
+    Base::Interpreter().runString(cmd.c_str());
+    _doc->recompute();
+    const std::string before = emitObjectRecipe(*user).fields.at("Placement");
+
+    Base::Interpreter().runString(
+        ("App.getDocument('" + _docName + "').getObject('Box').Length = 40\n").c_str()
+    );
+    _doc->recompute();
+    EXPECT_EQ(emitObjectRecipe(*user).fields.at("Placement"), before);
+
+    auto* placement = static_cast<App::PropertyPlacement*>(user->getPropertyByName("Placement"));
+    Base::Placement turned = placement->getValue();
+    turned.setRotation(Base::Rotation(Base::Vector3d(0, 0, 1), 0.5));
+    placement->setValue(turned);
+    const std::string after = emitObjectRecipe(*user).fields.at("Placement");
+
+    EXPECT_NE(after, before);
+    EXPECT_NE(after.find("* 2"), std::string::npos) << after;
+    EXPECT_NE(after.find("+ 1"), std::string::npos) << after;
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
