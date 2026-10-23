@@ -793,4 +793,76 @@ TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAnUnwrittenEditToAnObjectTheOtherBr
     app.closeDocument(docB->getName());
 }
 
+// A formula binds the object it reads by durable id; the name in its text is display (§4.5). So a
+// rename, which rewrites that text, leaves the recipe's statement of the formula as it was, both
+// for a reference by label and one by name.
+TEST_F(ObjectRecipeTest, aFormulaIsStatedByWhatItReadsNotTheNameItShows)
+{
+    auto* box = _doc->addObject("Part::Box", "Box");
+    box->Label.setValue("Bracket");
+    auto* byLabel = _doc->addObject("Part::Box", "ByLabel");
+    auto* byName = _doc->addObject("Part::Box", "ByName");
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "doc = App.getDocument('" + _docName + "')\n";
+    cmd += "doc.getObject('ByLabel').setExpression('Length', '<<Bracket>>.Length / 4')\n";
+    cmd += "doc.getObject('ByName').setExpression('Width', 'Box.Width * 2')\n";
+    Base::Interpreter().runString(cmd.c_str());
+    const std::string labelBefore = emitObjectRecipe(*byLabel).fields.at("Length");
+    const std::string nameBefore = emitObjectRecipe(*byName).fields.at("Width");
+
+    box->Label.setValue("Plate");
+
+    const std::string uid = box->Uid.getValueStr();
+    EXPECT_EQ(emitObjectRecipe(*byLabel).fields.at("Length"), labelBefore);
+    EXPECT_EQ(emitObjectRecipe(*byName).fields.at("Width"), nameBefore);
+    EXPECT_NE(labelBefore.find(uid), std::string::npos) << labelBefore;
+    EXPECT_NE(nameBefore.find(uid), std::string::npos) << nameBefore;
+    EXPECT_EQ(labelBefore.find("Bracket"), std::string::npos) << labelBefore;
+}
+
+// One branch renames an object; the other edits a formula that reads it. The rename is not an edit
+// to the formula, so the edit is taken and nothing conflicts.
+TEST_F(ObjectRecipeTest, aRenameOnOneBranchIsNotAnEditToTheFormulasThatReadIt)
+{
+    auto& app = App::GetApplication();
+    const auto version = [](App::Document* doc, const Base::Uuid* boxId, const Base::Uuid* userId) {
+        auto* box = doc->addObject("Part::Box", "Box");
+        auto* user = doc->addObject("Part::Box", "User");
+        if (boxId != nullptr) {
+            box->Uid.setValue(*boxId);
+            user->Uid.setValue(*userId);
+        }
+        box->Label.setValue("Bracket");
+        std::string cmd = "import FreeCAD as App\n";
+        cmd += "App.getDocument('" + std::string(doc->getName())
+            + "').getObject('User').setExpression('Length', '<<Bracket>>.Length / 4')\n";
+        Base::Interpreter().runString(cmd.c_str());
+        return std::make_pair(box, user);
+    };
+    const auto [ancestorBox, ancestorUser] = version(_doc, nullptr, nullptr);
+    Base::Uuid boxId;
+    boxId.setValue(ancestorBox->Uid.getValueStr());
+    Base::Uuid userId;
+    userId.setValue(ancestorUser->Uid.getValueStr());
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    const auto [boxA, userA] = version(docA, &boxId, &userId);
+    const auto [boxB, userB] = version(docB, &boxId, &userId);
+    boxA->Label.setValue("Plate");
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "App.getDocument('" + std::string(docB->getName())
+        + "').getObject('User').setExpression('Length', '<<Bracket>>.Length / 5')\n";
+    Base::Interpreter().runString(cmd.c_str());
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    const std::string merged = report.merged.at(userId.getValue()).fields.at("Length");
+    EXPECT_NE(merged.find("/ 5"), std::string::npos) << merged;
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
