@@ -297,6 +297,49 @@ std::string boundFormula(const Expression& expression)
     return copy->toString();
 }
 
+/// A value driven in parts: the parts it can set apart are marked "*" and every part's formula is
+/// listed after it, so neither the formulas nor the rest of the value hide behind each other. A part
+/// it cannot set apart keeps its computed number, which can then change with the formula's inputs:
+/// a louder report, never a hidden one.
+std::string partlyBoundValue(const Property* prop,
+                             const std::string& value,
+                             const std::map<std::string, std::string>& formulaByPart)
+{
+    const auto bound = [&formulaByPart](std::initializer_list<const char*> parts) {
+        return std::any_of(parts.begin(), parts.end(), [&formulaByPart](const char* part) {
+            return formulaByPart.count(part) != 0;
+        });
+    };
+    const auto component = [&bound](double number, std::initializer_list<const char*> parts) {
+        return bound(parts) ? std::string("*") : canonicalNumber(number);
+    };
+
+    std::string out = value;
+    if (const auto* vector = dynamic_cast<const PropertyVector*>(prop)) {
+        const Base::Vector3d& v = vector->getValue();
+        out = component(v.x, {".x"}) + " " + component(v.y, {".y"}) + " "
+            + component(v.z, {".z"});
+    }
+    else if (const auto* placement = dynamic_cast<const PropertyPlacement*>(prop)) {
+        const Base::Vector3d& base = placement->getValue().getPosition();
+        out = component(base.x, {".Base", ".Base.x"}) + " "
+            + component(base.y, {".Base", ".Base.y"}) + " "
+            + component(base.z, {".Base", ".Base.z"});
+        if (bound({".Rotation"})) {
+            out += " * * * *";
+        }
+        else {
+            const std::string whole = canonicalPlacement(placement->getValue());
+            const std::string position = canonicalVector(base);
+            out += whole.substr(position.size());
+        }
+    }
+    for (const auto& [part, formula] : formulaByPart) {
+        out += " | " + part + " = " + formula;
+    }
+    return out;
+}
+
 /// Each object of a document by its durable Uid.
 std::map<std::string, const DocumentObject*> objectsByUid(const Document& doc)
 {
@@ -412,14 +455,15 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
     node.type = obj.getTypeId().getName();
 
     // A property driven by an expression is authored by that expression, not by its resolved
-    // number; index the bindings by property so the field records the expression text.
-    std::map<const Property*, std::string> expressionByProperty;
+    // number; index the bindings by property so the field records the expression text. A formula
+    // can drive one part of a value (a placement's x), so each is kept under the part it drives.
+    std::map<const Property*, std::map<std::string, std::string>> formulasByProperty;
     for (const auto& [identifier, expression] : obj.ExpressionEngine.getExpressions()) {
         if (expression == nullptr) {
             continue;
         }
         if (const Property* bound = identifier.getProperty()) {
-            expressionByProperty.emplace(bound, boundFormula(*expression));
+            formulasByProperty[bound][identifier.getSubPathStr()] = boundFormula(*expression);
         }
     }
 
@@ -480,9 +524,16 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
             continue;
         }
         if (const std::optional<std::string> value = authoredFieldValue(prop)) {
-            const auto bound = expressionByProperty.find(prop);
-            node.fields[propName] =
-                bound != expressionByProperty.end() ? bound->second : *value;
+            const auto bound = formulasByProperty.find(prop);
+            if (bound == formulasByProperty.end()) {
+                node.fields[propName] = *value;
+            }
+            else if (const auto whole = bound->second.find(""); whole != bound->second.end()) {
+                node.fields[propName] = whole->second;
+            }
+            else {
+                node.fields[propName] = partlyBoundValue(prop, *value, bound->second);
+            }
         }
     }
 
