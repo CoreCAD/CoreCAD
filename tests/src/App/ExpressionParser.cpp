@@ -6,6 +6,7 @@
 #include "Base/Console.h"
 #include "Base/Quantity.h"
 #include "Base/Reader.h"
+#include "Base/Uuid.h"
 #include "Base/Writer.h"
 
 #include "App/Application.h"
@@ -452,10 +453,10 @@ TEST_F(ExpressionParserTest, objectIdentifierRendersNameFromUuid)
         << "a later rename shows through the re-render with no rewriting pass";
 }
 
-// Amendment 3, Clause 3.8, Step G: an expression persists its object references as
-// durable UUIDs beside the human formula text, and rebinds by UUID on reload -- so a
-// formula keeps pointing at the object it was authored against even when the NAME it was
-// authored under has since moved to a different object.
+// Amendment 3, Clause 3.8, Step G: a saved formula names each object it reads by its durable
+// UUID, as every other link in the file does, and rebinds by UUID on reload -- so a formula
+// keeps pointing at the object it was authored against even when the NAME it was authored
+// under has since moved to a different object.
 TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
 {
     // Src is the real target, addressed by the label it carries today.
@@ -477,9 +478,9 @@ TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
     std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
     xml += writer.getString();
     xml += "</root>\n";
-    EXPECT_NE(xml.find("<ObjectRef"), std::string::npos) << "engine did not persist an ObjectRef";
-    EXPECT_NE(xml.find(src->Uid.getValueStr()), std::string::npos)
-        << "the durable Src UUID was not written to disk";
+    EXPECT_NE(xml.find("&lt;&lt;" + src->Uid.getValueStr() + "&gt;&gt;.Bar"), std::string::npos)
+        << "the formula does not name Src by its durable UUID: " << xml;
+    EXPECT_EQ(xml.find("Alfa"), std::string::npos) << "the formula was saved by name: " << xml;
 
     // While that file sat on disk the label moved: Src is renamed, and a decoy takes the
     // name the formula was written under. Nothing in the file changed -- only the document
@@ -506,13 +507,11 @@ TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
     EXPECT_NE(ids.begin()->first.getDocumentObject(), dcy);
 }
 
-// A stored reference is matched back to the part of the formula it was written from, never
-// to the position it sat in. The document is a plain-text recipe a person is invited to read
-// and edit (Amendment 18), so a formula gains a term at the front -- by hand, or by a textual
-// merge landing one there -- and every later part shifts along. Bound by position, each stored
-// UUID lands on its neighbour: references NOBODY TOUCHED come back pointing at something
-// nobody chose, while the formula still reads plausibly and the document says nothing.
-TEST_F(ExpressionParserTest, objectRefSurvivesATermAddedAheadOfIt)
+// The document is a plain-text recipe a person is invited to read and edit (Amendment 18), so a
+// formula gains a term at the front -- by hand, or by a textual merge landing one there -- and
+// every later part shifts along. The references nobody touched must still read the objects they
+// read before.
+TEST_F(ExpressionParserTest, aTermAddedAheadOfAReferenceLeavesItBound)
 {
     auto valued = [&](const char* name, double value) {
         auto* obj = this_doc()->addObject("App::DocumentObjectGroup", name);
@@ -540,7 +539,7 @@ TEST_F(ExpressionParserTest, objectRefSurvivesATermAddedAheadOfIt)
 
     // The edit: a term added at the FRONT of the formula, the way anyone would edit a text
     // file. No bookkeeping is written by hand, so the stored references stand as they were.
-    auto pos = xml.find("Alfa.Bar");
+    auto pos = xml.find("&lt;&lt;" + alfa->Uid.getValueStr());
     ASSERT_NE(pos, std::string::npos);
     xml.insert(pos, "Extra.Bar + ");
 
@@ -566,10 +565,9 @@ TEST_F(ExpressionParserTest, objectRefSurvivesATermAddedAheadOfIt)
         << "the formula computed from objects nobody chose";
 }
 
-// A formula may name the same thing twice, and then the stored references and the parts of
-// the formula stop being interchangeable: each stored reference claims one part, so the
-// second naming is superseded too. Left unclaimed it keeps whatever the stale name happens
-// to resolve to in this document -- the wrong object, in the same formula as the right one.
+// A formula may name the same thing twice. Each naming must come back bound to that object; one
+// left to its stale name picks up whatever holds that name now -- the wrong object, in the same
+// formula as the right one.
 TEST_F(ExpressionParserTest, aPathNamedTwiceIsBoundTwice)
 {
     auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
@@ -610,11 +608,8 @@ TEST_F(ExpressionParserTest, aPathNamedTwiceIsBoundTwice)
         << "a repeated naming was left bound to whatever the stale label now resolves to";
 }
 
-// The other side of the same rule. Where the FILE's own two statements about a reference
-// disagree -- the formula text says one object, the stored reference was written from
-// another -- the text is the one a person reads and edits (Amendment 18), so their edit
-// stands rather than being reverted to the stored binding without a word. What this
-// session could not place is said, not dropped (Amendment 19, Clause 19.1).
+// A person opens the file and retargets a formula by typing a name in place of what it read. The
+// text is what they read and edit (Amendment 18), so their edit stands.
 TEST_F(ExpressionParserTest, handRetargetedFormulaKeepsThePersonsEdit)
 {
     auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
@@ -633,12 +628,11 @@ TEST_F(ExpressionParserTest, handRetargetedFormulaKeepsThePersonsEdit)
     xml += writer.getString();
     xml += "</root>\n";
 
-    // A person opens the file and retargets the formula, editing only the text they can read.
-    auto pos = xml.find("Src.Bar");
-    ASSERT_NE(pos, std::string::npos);
-    xml.replace(pos, std::string("Src.Bar").size(), "Dcy.Bar");
+    const std::string stated = "&lt;&lt;" + src->Uid.getValueStr() + "&gt;&gt;.Bar";
+    auto pos = xml.find(stated);
+    ASSERT_NE(pos, std::string::npos) << xml;
+    xml.replace(pos, stated.size(), "Dcy.Bar");
 
-    CapturedWarnings warnings;
     std::stringstream data(xml);
     Base::XMLReader reader("Document.xml", data);
     reader.readElement("root");
@@ -650,12 +644,78 @@ TEST_F(ExpressionParserTest, handRetargetedFormulaKeepsThePersonsEdit)
     auto ids = info.expression->getIdentifiers();
     ASSERT_EQ(ids.size(), 1U);
     EXPECT_EQ(ids.begin()->first.getDocumentObject(), dcy)
-        << "the edit a person made in the file was reverted to the stored binding";
-    EXPECT_NE(ids.begin()->first.getDocumentObject(), src);
+        << "the edit a person made in the file did not stand";
+}
 
-    // And it is reported, naming the binding that could not be placed.
-    EXPECT_THAT(warnings.text(), HasSubstr(src->Uid.getValueStr()))
-        << "a stored binding this session could not place went unreported";
+// A formula that reads an object the document no longer holds -- deleted on another branch, or
+// mistyped by hand -- is said, never dropped (Amendment 19, Clause 19.1).
+TEST_F(ExpressionParserTest, aFormulaReadingAnObjectNotInTheDocumentSaysSo)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(resultPath, std::shared_ptr<Expression>(parse(this_obj(), "Src.Bar * 2")));
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    const std::string gone = Base::Uuid::createUuid();
+    auto pos = xml.find(src->Uid.getValueStr());
+    ASSERT_NE(pos, std::string::npos) << xml;
+    xml.replace(pos, src->Uid.getValueStr().size(), gone);
+
+    CapturedWarnings warnings;
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    EXPECT_THAT(warnings.text(), HasSubstr(gone)) << "a formula reading nothing went unreported";
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the formula was dropped";
+    EXPECT_THAT(info.expression->toString(), HasSubstr(gone));
+}
+
+// The saved formula names what it reads by UUID, so a rename leaves it word for word as it was:
+// the name is only what a person sees, and the app shows the current one.
+TEST_F(ExpressionParserTest, aRenameLeavesTheSavedFormulaUnchanged)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    src->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alfa>>.Bar * 2"))
+    );
+    const auto saved = [this]() {
+        Base::StringWriter writer;
+        this_obj()->ExpressionEngine.Save(writer);
+        return writer.getString();
+    };
+    const std::string before = saved();
+
+    src->Label.setValue("Gamma");
+
+    EXPECT_EQ(saved(), before);
+
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n" + before + "</root>\n";
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+    EXPECT_EQ(this_obj()->getExpression(resultPath).expression->toString(), "<<Gamma>>.Bar * 2");
 }
 
 // Amendment 3, Clause 3.8, Step H: object references no longer depend on the
