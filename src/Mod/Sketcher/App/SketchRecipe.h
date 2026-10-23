@@ -107,7 +107,8 @@ SketcherExport RegenResult regenerateSketch(
     SketchObject& target,
     const SketchRecipe& recipe,
     const std::vector<const SketchObject*>& seedSources,
-    const std::map<std::string, const SketchObject*>& seedFor = {}
+    const std::map<std::string, const SketchObject*>& seedFor = {},
+    const std::map<std::string, const Part::Geometry*>& seedGeometry = {}
 );
 
 /// A position a person chose on one side that the re-solved merge no longer holds: the rest of

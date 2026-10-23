@@ -529,7 +529,8 @@ RegenResult Sketcher::regenerateSketch(
     SketchObject& target,
     const SketchRecipe& recipe,
     const std::vector<const SketchObject*>& seedSources,
-    const std::map<std::string, const SketchObject*>& seedFor
+    const std::map<std::string, const SketchObject*>& seedFor,
+    const std::map<std::string, const Part::Geometry*>& seedGeometry
 )
 {
     RegenResult result;
@@ -539,9 +540,10 @@ RegenResult Sketcher::regenerateSketch(
     std::map<std::string, int> tagToGeoId;
     for (const auto& [tag, node] : recipe.geometry) {
         const auto chosen = seedFor.find(tag);
-        const Part::Geometry* seed = chosen != seedFor.end()
-            ? findSeedGeometry(tag, {chosen->second})
-            : findSeedGeometry(tag, seedSources);
+        const auto given = seedGeometry.find(tag);
+        const Part::Geometry* seed = given != seedGeometry.end() ? given->second
+            : chosen != seedFor.end() ? findSeedGeometry(tag, {chosen->second})
+                                      : findSeedGeometry(tag, seedSources);
         if (seed == nullptr) {
             result.fullyRealized = false;  // no seed for a surviving entity — cannot place it
             continue;
@@ -740,6 +742,55 @@ void restoreContested(
     }
 }
 
+/// A copy of `geo` with the coordinates named in `fields` taken from `other`, or null where its
+/// type's coordinates cannot be taken one at a time.
+std::unique_ptr<Part::Geometry> composeCoordinates(
+    const Part::Geometry* geo,
+    const Part::Geometry* other,
+    const std::vector<std::string>& fields
+)
+{
+    const auto takes = [&fields](const char* field) {
+        return std::find(fields.begin(), fields.end(), field) != fields.end();
+    };
+    std::unique_ptr<Part::Geometry> composed(geo->copy());
+    if (auto* line = dynamic_cast<Part::GeomLineSegment*>(composed.get())) {
+        const auto* from = dynamic_cast<const Part::GeomLineSegment*>(other);
+        line->setPoints(
+            takes("from") ? from->getStartPoint() : line->getStartPoint(),
+            takes("to") ? from->getEndPoint() : line->getEndPoint()
+        );
+        return composed;
+    }
+    if (auto* arc = dynamic_cast<Part::GeomArcOfCircle*>(composed.get())) {
+        const auto* from = dynamic_cast<const Part::GeomArcOfCircle*>(other);
+        if (takes("center")) {
+            arc->setCenter(from->getCenter());
+        }
+        if (takes("radius")) {
+            arc->setRadius(from->getRadius());
+        }
+        if (takes("range")) {
+            double first = 0.0;
+            double last = 0.0;
+            from->getRange(first, last, true);
+            arc->setRange(first, last, true);
+        }
+        return composed;
+    }
+    if (auto* circle = dynamic_cast<Part::GeomCircle*>(composed.get())) {
+        const auto* from = dynamic_cast<const Part::GeomCircle*>(other);
+        if (takes("center")) {
+            circle->setCenter(from->getCenter());
+        }
+        if (takes("radius")) {
+            circle->setRadius(from->getRadius());
+        }
+        return composed;
+    }
+    return nullptr;
+}
+
 /// The coordinates of `tag` a side chose differently from the ancestor; all of them for an entity
 /// the side added. Empty where the side removed it or left its position alone.
 std::vector<std::string> choiceOf(
@@ -791,12 +842,23 @@ MergeReport Sketcher::mergeSketches(
     restoreContested(aChosen, aHeldBack, baseChosen, bChosen);
     restoreContested(bChosen, bHeldBack, baseChosen, aFirm);
 
-    // Merge each section by durable identity (renumber-invisible); value conflicts accumulate.
-    report.mergedGeometry = App::RecipeMerge::threeWay(baseChosen, aChosen, bChosen, report.conflicts);
-    report.mergedConstraints
-        = App::RecipeMerge::threeWay(base.constraints, a.constraints, b.constraints, report.conflicts);
-    const App::RecipeSection mergedExternal
-        = App::RecipeMerge::threeWay(base.external, a.external, b.external, report.conflicts);
+    // Merge each section by durable identity (renumber-invisible), then each element both sides
+    // changed by its values, as the document merge does an object.
+    const auto mergeByValue = [&report](
+                                  const App::RecipeSection& o,
+                                  const App::RecipeSection& x,
+                                  const App::RecipeSection& y
+                              ) {
+        std::vector<App::MergeConflict> whole;
+        App::RecipeSection merged = App::RecipeMerge::threeWay(o, x, y, whole);
+        const std::vector<App::MergeConflict> refined
+            = App::RecipeMerge::refineConflicts(whole, o, x, y, merged);
+        report.conflicts.insert(report.conflicts.end(), refined.begin(), refined.end());
+        return merged;
+    };
+    report.mergedGeometry = mergeByValue(baseChosen, aChosen, bChosen);
+    report.mergedConstraints = mergeByValue(base.constraints, a.constraints, b.constraints);
+    const App::RecipeSection mergedExternal = mergeByValue(base.external, a.external, b.external);
     const auto drawnAndBorrowed = [](const SketchRecipe& recipe) {
         App::RecipeSection targets = recipe.geometry;
         targets.insert(recipe.external.begin(), recipe.external.end());
@@ -842,9 +904,46 @@ MergeReport Sketcher::mergeSketches(
         const auto first = heldBack.lower_bound({tag, std::string()});
         return first != heldBack.end() && first->first.first == tag;
     };
+    // Where both sides chose different coordinates of one entity, it starts from both.
+    std::vector<std::unique_ptr<Part::Geometry>> composed;
+    std::map<std::string, const Part::Geometry*> seedGeometry;
     for (const auto& [tag, node] : report.mergedGeometry) {
-        const bool aChose = !choiceOf(tag, baseChosen, aChosen).empty();
-        const bool bChose = !choiceOf(tag, baseChosen, bChosen).empty();
+        const std::vector<std::string> aFields = choiceOf(tag, baseChosen, aChosen);
+        const std::vector<std::string> bFields = choiceOf(tag, baseChosen, bChosen);
+        const bool aChose = !aFields.empty();
+        const bool bChose = !bFields.empty();
+        std::vector<std::string> bOnly;
+        for (const std::string& field : bFields) {
+            if (std::find(aFields.begin(), aFields.end(), field) == aFields.end()) {
+                bOnly.push_back(field);
+            }
+        }
+        if (aChose && !bOnly.empty()) {
+            const Part::Geometry* fromA = findSeedGeometry(tag, {&branchA});
+            const Part::Geometry* fromB = findSeedGeometry(tag, {&branchB});
+            std::unique_ptr<Part::Geometry> both = fromA != nullptr && fromB != nullptr
+                ? composeCoordinates(fromA, fromB, bOnly)
+                : nullptr;
+            if (both) {
+                seedGeometry[tag] = both.get();
+                composed.push_back(std::move(both));
+            }
+            else {
+                App::MergeConflict conflict {
+                    App::MergeConflict::Kind::Value,
+                    tag,
+                    node.type,
+                    "both sides moved different parts of a curve that moves as one"
+                };
+                conflict.ancestor = baseChosen.count(tag) != 0
+                    ? std::optional<App::RecipeNode>(baseChosen.at(tag))
+                    : std::nullopt;
+                conflict.branchA = aChosen.at(tag);
+                conflict.branchB = bChosen.at(tag);
+                report.conflicts.push_back(std::move(conflict));
+            }
+            continue;
+        }
         if (bChose && !aChose) {
             seedFor[tag] = &branchB;
         }
@@ -865,7 +964,7 @@ MergeReport Sketcher::mergeSketches(
         scratch->addObject("Sketcher::SketchObject", "MergeScratch")
     );
     const SketchRecipe merged {report.mergedGeometry, report.mergedConstraints, mergedExternal};
-    report.regen = regenerateSketch(*target, merged, {&branchA, &branchB}, seedFor);
+    report.regen = regenerateSketch(*target, merged, {&branchA, &branchB}, seedFor, seedGeometry);
 
     // A position a side chose that the re-solve moved: the rest of the merge overrode it.
     const std::vector<Part::Geometry*>& solved = target->getInternalGeometry();

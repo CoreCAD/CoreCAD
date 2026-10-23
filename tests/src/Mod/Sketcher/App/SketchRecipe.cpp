@@ -696,6 +696,50 @@ TEST_F(SketchRecipeMergeTest, aDragBesideAChangedDimensionSurvivesOnEitherSide)
     }
 }
 
+// One side moves a free line's start, the other its end: two changes to two values, so both land,
+// in the merged record and in the rebuilt sketch.
+TEST_F(SketchRecipeMergeTest, aLinesStartAndEndMovedOnDifferentSidesBothLand)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) { addLine(s, 0, 0, 10, 0); });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    br.a->moveGeometry(0, Sketcher::PointPos::start, Base::Vector3d(-3, 2, 0));
+    br.a->getDocument()->recompute();
+    br.b->moveGeometry(0, Sketcher::PointPos::end, Base::Vector3d(14, 6, 0));
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    EXPECT_TRUE(report.overridden.empty());
+    const App::RecipeNode& line = report.solvedPositions.at(tagOf(br.a, 0));
+    EXPECT_EQ(line.fields.at("from"), "-3 2");
+    EXPECT_EQ(line.fields.at("to"), "14 6");
+}
+
+// One side makes a line construction geometry, the other drags its end: both land.
+TEST_F(SketchRecipeMergeTest, aConstructionToggleAndADragOnDifferentSidesBothLand)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) { addLine(s, 0, 0, 10, 0); });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->toggleConstruction(0), 0);
+    br.a->getDocument()->recompute();
+    br.b->moveGeometry(0, Sketcher::PointPos::end, Base::Vector3d(14, 6, 0));
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    const std::string line = tagOf(br.a, 0);
+    EXPECT_EQ(report.mergedGeometry.at(line).fields.at("construction"), "true");
+    EXPECT_EQ(report.solvedPositions.at(line).fields.at("to"), "14 6");
+}
+
 // A side that changes a dimension and also drags a free end the dimension's solve reaches: the
 // drag is still that side's choice. Both sides dragging the end differently is a conflict; had the
 // drag been taken for the solver's work, B's end would have won and A's drag been lost unreported.
