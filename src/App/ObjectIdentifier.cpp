@@ -515,7 +515,10 @@ bool ObjectIdentifier::updateLabelReference(const App::DocumentObject* obj,
             return false;
         }
 
+        // A rename changes the name shown, never what the reference is bound to.
+        const std::string uuid = documentObjectName.getUuid();
         documentObjectName = ObjectIdentifier::String(newLabel, true);
+        documentObjectName.setUuid(uuid);
 
         _cache.clear();
         return true;
@@ -524,7 +527,9 @@ bool ObjectIdentifier::updateLabelReference(const App::DocumentObject* obj,
     if (result.resolvedDocumentObject == obj && result.propertyIndex == 1
         && result.resolvedDocumentObjectName.isRealString()
         && result.resolvedDocumentObjectName.getString() == obj->Label.getValue()) {
+        const std::string uuid = components[0].name.getUuid();
         components[0].name = ObjectIdentifier::String(newLabel, true);
+        components[0].name.setUuid(uuid);
         _cache.clear();
         return true;
     }

@@ -30,6 +30,7 @@
 # include <limits>
 # include <locale>
 # include <map>
+# include <memory>
 # include <optional>
 # include <set>
 # include <sstream>
@@ -46,6 +47,7 @@
 #include "ElementNamingUtils.h"
 #include "DocumentObject.h"
 #include "Expression.h"
+#include "ExpressionParser.h"
 #include "ObjectIdentifier.h"
 #include "PropertyGeo.h"
 #include "PropertyLinks.h"
@@ -260,6 +262,41 @@ std::optional<std::map<std::string, std::string>> authoredMapEntries(const Prope
     return std::nullopt;
 }
 
+/** A formula as the recipe states it: each object it reads named by its durable Uid.
+ *
+ *  The text a person sees names objects by label or name, and a rename rewrites that text. Compared
+ *  as text, a rename on one branch read as an edit to every formula naming the object, and two
+ *  people renaming it differently made every such formula conflict, though no formula changed.
+ */
+std::string boundFormula(const Expression& expression)
+{
+    struct NameByUid: ExpressionVisitor
+    {
+        void visit(Expression& e) override
+        {
+            auto* variable = dynamic_cast<VariableExpression*>(&e);
+            if (variable == nullptr) {
+                return;
+            }
+            ObjectIdentifier path = variable->getPath();
+            const std::string uuid = path.getBoundObjectUuid();
+            if (uuid.empty()) {
+                return;
+            }
+            ObjectIdentifier bound = path.canonicalPath();
+            bound.setDocumentObjectName(ObjectIdentifier::String(uuid, true),
+                                        true,
+                                        ObjectIdentifier::String(path.getSubObjectName()));
+            variable->setPath(bound);
+        }
+    };
+
+    std::unique_ptr<Expression> copy(expression.copy());
+    NameByUid byUid;
+    copy->visit(byUid);
+    return copy->toString();
+}
+
 /// Each object of a document by its durable Uid.
 std::map<std::string, const DocumentObject*> objectsByUid(const Document& doc)
 {
@@ -382,7 +419,7 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
             continue;
         }
         if (const Property* bound = identifier.getProperty()) {
-            expressionByProperty.emplace(bound, expression->toString());
+            expressionByProperty.emplace(bound, boundFormula(*expression));
         }
     }
 
