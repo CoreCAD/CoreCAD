@@ -857,6 +857,21 @@ App::DocumentObject* ObjectIdentifier::getDocumentObject(const App::Document* do
         }
     }
 
+    if (name.isRealString()) {
+        // A saved formula names each object by its UUID where a label goes (formulaStatedByUid).
+        Base::Uuid stated;
+        try {
+            stated.setValue(name.getString());
+            if (DocumentObject* objectByUuid = doc->getObjectByUuid(stated)) {
+                flags.set(ResolveByLabel);
+                return objectByUuid;
+            }
+        }
+        catch (const std::exception&) {
+            // A label, not a UUID.
+        }
+    }
+
     std::vector<DocumentObject*> docObjects = doc->getObjects();
     for (auto docObject : docObjects) {
         if (strcmp(docObject->Label.getValue(), static_cast<const char*>(name)) == 0) {
@@ -1470,6 +1485,17 @@ void ObjectIdentifier::setBoundObjectUuid(const std::string& uuid)
         components[0].name.setUuid(uuid);
     }
     _cache.clear();
+}
+
+std::pair<std::string, bool> ObjectIdentifier::getStatedObjectName() const
+{
+    if (documentObjectNameSet && !documentObjectName.getString().empty()) {
+        return {documentObjectName.getString(), documentObjectName.isRealString()};
+    }
+    if (!components.empty()) {
+        return {components[0].name.getString(), components[0].name.isRealString()};
+    }
+    return {};
 }
 
 bool ObjectIdentifier::hasDocumentObjectName(bool forced) const

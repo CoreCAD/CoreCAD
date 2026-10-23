@@ -31,6 +31,7 @@
 #include <limits>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 #include <boost/any.hpp>
 #include <FCConfig.h>
@@ -1140,6 +1141,14 @@ public:
      * @see getBoundObjectUuid
      */
     void setBoundObjectUuid(const std::string& uuid);
+
+    /**
+     * @brief The object component as written, before anything resolves it.
+     *
+     * @return Its text, and whether it was written as a label (`<<...>>`); empty text when the
+     * identifier names no object.
+     */
+    std::pair<std::string, bool> getStatedObjectName() const;
 
     /**
      * @brief Get the subobject name.

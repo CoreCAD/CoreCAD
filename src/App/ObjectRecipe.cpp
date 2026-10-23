@@ -47,8 +47,8 @@
 #include "ElementNamingUtils.h"
 #include "DocumentObject.h"
 #include "Expression.h"
-#include "ExpressionParser.h"
 #include "ObjectIdentifier.h"
+#include "PropertyExpressionEngine.h"
 #include "PropertyGeo.h"
 #include "PropertyLinks.h"
 #include "PropertyStandard.h"
@@ -262,41 +262,6 @@ std::optional<std::map<std::string, std::string>> authoredMapEntries(const Prope
     return std::nullopt;
 }
 
-/** A formula as the recipe states it: each object it reads named by its durable Uid.
- *
- *  The text a person sees names objects by label or name, and a rename rewrites that text. Compared
- *  as text, a rename on one branch read as an edit to every formula naming the object, and two
- *  people renaming it differently made every such formula conflict, though no formula changed.
- */
-std::string boundFormula(const Expression& expression)
-{
-    struct NameByUid: ExpressionVisitor
-    {
-        void visit(Expression& e) override
-        {
-            auto* variable = dynamic_cast<VariableExpression*>(&e);
-            if (variable == nullptr) {
-                return;
-            }
-            ObjectIdentifier path = variable->getPath();
-            const std::string uuid = path.getBoundObjectUuid();
-            if (uuid.empty()) {
-                return;
-            }
-            ObjectIdentifier bound = path.canonicalPath();
-            bound.setDocumentObjectName(ObjectIdentifier::String(uuid, true),
-                                        true,
-                                        ObjectIdentifier::String(path.getSubObjectName()));
-            variable->setPath(bound);
-        }
-    };
-
-    std::unique_ptr<Expression> copy(expression.copy());
-    NameByUid byUid;
-    copy->visit(byUid);
-    return copy->toString();
-}
-
 /// A value driven in parts: the parts it can set apart are marked "*" and every part's formula is
 /// listed after it, so neither the formulas nor the rest of the value hide behind each other. A part
 /// it cannot set apart keeps its computed number, which can then change with the formula's inputs:
@@ -463,7 +428,7 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
             continue;
         }
         if (const Property* bound = identifier.getProperty()) {
-            formulasByProperty[bound][identifier.getSubPathStr()] = boundFormula(*expression);
+            formulasByProperty[bound][identifier.getSubPathStr()] = formulaStatedByUid(*expression);
         }
     }
 

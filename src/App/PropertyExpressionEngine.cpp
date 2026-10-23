@@ -35,6 +35,7 @@
 
 #include <Base/Quantity.h>
 #include <Base/Unit.h>
+#include <Base/Uuid.h>
 #include <Base/Tools.h>
 #include <Base/Writer.h>
 #include <CXX/Objects.hxx>
@@ -42,6 +43,7 @@
 #include "PropertyExpressionEngine.h"
 #include "ExpressionVisitors.h"
 #include "ExpressionParser.h"
+#include "Document.h"
 #include "DocumentObject.h"
 
 
@@ -54,9 +56,8 @@ namespace sp = std::placeholders;
 
 namespace
 {
-// Collects the object-referencing variable nodes of an expression, so a saved
-// reference can be matched back to the node it was written from (Amendment 3,
-// Clause 3.8). Read-only visitor; it never mutates the tree.
+// Collects the object-referencing variable nodes of an expression. Read-only visitor; it never
+// mutates the tree.
 class VariableNodeCollector: public App::ExpressionVisitor
 {
 public:
@@ -68,6 +69,53 @@ public:
     }
     std::vector<App::VariableExpression*> nodes;
 };
+
+/// Binds each object a restored formula states by UUID (formulaStatedByUid). The name it then
+/// shows is the object's current label. A UUID no object in this document carries is said, never
+/// dropped (Amendment 19, Clause 19.1): the formula keeps it as written and fails when computed.
+void bindObjectsStatedByUid(const DocumentObject& owner,
+                            const std::string& property,
+                            Expression& expression)
+{
+    VariableNodeCollector collector;
+    expression.visit(collector);
+    for (auto* variable : collector.nodes) {
+        ObjectIdentifier path = variable->getPath();
+        // A UUID the parser did not find is still the text; one it found it has already bound,
+        // and shows the object's label in its place.
+        std::string stated = path.getStatedObjectName().first;
+        Base::Uuid uuid;
+        try {
+            uuid.setValue(stated);
+        }
+        catch (const std::exception&) {
+            stated = path.getBoundObjectUuid();
+            if (stated.empty()) {
+                continue;
+            }
+            uuid.setValue(stated);
+        }
+        const DocumentObject* object = owner.getDocument()->getObjectByUuid(uuid);
+        if (object == nullptr) {
+            FC_WARN("Formula reference not found: " << owner.getFullName() << '.' << property
+                                                    << " reads object " << stated
+                                                    << ", which is not in this document.");
+            continue;
+        }
+        path.setBoundObjectUuid(stated);
+        if (std::string(object->Label.getValue()) == object->getNameInDocument()) {
+            // Shown as a plain name, not <<label>>, while the two are the same.
+            ObjectIdentifier plain = path.canonicalPath();
+            ObjectIdentifier::String name(object->getNameInDocument(), false, true);
+            name.setUuid(stated);
+            plain.setDocumentObjectName(std::move(name),
+                                        true,
+                                        ObjectIdentifier::String(path.getSubObjectName()));
+            path = plain;
+        }
+        variable->setPath(path);
+    }
+}
 
 /// P7 (Robustness Through Honesty): a plain number arriving at a property that carries a
 /// dimension is ambiguous -- two of *what*? The engine used to settle that silently by reading
@@ -524,46 +572,8 @@ void PropertyExpressionEngine::Save(Base::Writer& writer) const
     for (const auto& it : expressions) {
         std::string expression, comment;
         if (it.second.expression) {
-            expression = it.second.expression->toString(true);
+            expression = formulaStatedByUid(*it.second.expression);
             comment = it.second.expression->comment;
-        }
-
-        // Durable UUID bindings for the object references (Amendment 3, Clause 3.8).
-        // The UUID is the binding; the formula text is what a person reads and edits.
-        // Each reference states WHICH part of the formula it belongs to -- the path it
-        // was written from, as it appears in the text -- and never its position in the
-        // order the parser happens to produce: a formula that gains a term ahead of a
-        // reference shifts every later position, and stamping by position would then
-        // bind each reference to its neighbour without anything noticing. Cross-document
-        // references are left name-based (reserved for the PropertyXLink step).
-        struct ObjectRefOut
-        {
-            std::string path;
-            std::string uuid;
-        };
-        std::vector<ObjectRefOut> refs;
-        if (it.second.expression) {
-            DocumentObject* ownerObj = freecad_cast<DocumentObject*>(getContainer());
-            Document* ownerDoc = ownerObj ? ownerObj->getDocument() : nullptr;
-            VariableNodeCollector collector;
-            it.second.expression->visit(collector);
-            for (auto* var : collector.nodes) {
-                ObjectIdentifier oid = var->getPath();
-                std::string uuid = oid.getBoundObjectUuid();
-                if (DocumentObject* obj = oid.getDocumentObject()) {
-                    // Cross-document references stay name-based (reserved for the
-                    // PropertyXLink step); persist a UUID only for intra-document refs.
-                    if (ownerDoc && obj->getDocument() != ownerDoc) {
-                        continue;
-                    }
-                    if (uuid.empty()) {
-                        uuid = obj->Uid.getValueStr();
-                    }
-                }
-                if (!uuid.empty()) {
-                    refs.push_back({oid.toPersistentString(), uuid});
-                }
-            }
         }
 
         writer.Stream() << writer.ind() << "<Expression path=\""
@@ -572,20 +582,7 @@ void PropertyExpressionEngine::Save(Base::Writer& writer) const
         if (!comment.empty()) {
             writer.Stream() << " comment=\"" << Property::encodeAttribute(comment) << "\"";
         }
-        if (refs.empty()) {
-            writer.Stream() << "/>" << std::endl;
-        }
-        else {
-            writer.Stream() << ">" << std::endl;
-            writer.incInd();
-            for (const auto& ref : refs) {
-                writer.Stream() << writer.ind() << "<ObjectRef path=\""
-                                << Property::encodeAttribute(ref.path) << "\" uuid=\""
-                                << ref.uuid << "\"/>" << std::endl;
-            }
-            writer.decInd();
-            writer.Stream() << writer.ind() << "</Expression>" << std::endl;
-        }
+        writer.Stream() << "/>" << std::endl;
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</ExpressionEngine>" << std::endl;
@@ -603,7 +600,6 @@ void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
     restoredExpressions = std::make_unique<std::vector<RestoredExpression>>();
     while (nextChildElement(reader, engine)) {
         expectElement(reader, "Expression");
-        const int expression = reader.level();
         restoredExpressions->emplace_back();
         auto& info = restoredExpressions->back();
         info.path = reader.getAttribute<const char*>("path");
@@ -611,19 +607,32 @@ void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
         if (reader.hasAttribute("comment")) {
             info.comment = reader.getAttribute<const char*>("comment");
         }
-        // A formula that binds nothing is written self-closing, and a self-closing element
-        // has already ended by the time it is read: its level is the level of the list, not a
-        // level inside it. Asking for children without that test hands back the NEXT formula
-        // as if it were a reference belonging to this one, and the file is refused for stating
-        // something it does not state. The level says whether this formula was opened at all.
-        if (expression > engine) {
-            while (nextChildElement(reader, expression)) {
-                expectElement(reader, "ObjectRef");
-                info.refs.push_back({reader.getAttribute<const char*>("path"),
-                                     reader.getAttribute<const char*>("uuid")});
-            }
-        }
     }
+}
+
+std::string App::formulaStatedByUid(const Expression& expression)
+{
+    std::unique_ptr<Expression> copy(expression.copy());
+    const DocumentObject* owner = expression.getOwner();
+    VariableNodeCollector collector;
+    copy->visit(collector);
+    for (auto* variable : collector.nodes) {
+        const ObjectIdentifier path = variable->getPath();
+        const DocumentObject* object = path.getDocumentObject();
+        if (object == nullptr || owner == nullptr || object->getDocument() != owner->getDocument()) {
+            continue;
+        }
+        std::string uuid = path.getBoundObjectUuid();
+        if (uuid.empty()) {
+            uuid = object->Uid.getValueStr();
+        }
+        ObjectIdentifier stated = path.canonicalPath();
+        stated.setDocumentObjectName(ObjectIdentifier::String(uuid, true),
+                                     true,
+                                     ObjectIdentifier::String(path.getSubObjectName()));
+        variable->setPath(stated);
+    }
+    return copy->toString(true);
 }
 
 ObjectIdentifier PropertyExpressionEngine::canonicalPath(const ObjectIdentifier& oid) const
@@ -690,68 +699,7 @@ void PropertyExpressionEngine::tryRestoreExpression(DocumentObject* docObj,
             if (expression) {
                 expression->comment = info.comment;
 
-                // Re-bind each object reference to its durable UUID (Amendment 3,
-                // Clause 3.8), matching each stored reference to the part of the formula
-                // it was written from. A document is a plain-text recipe a person may
-                // edit (Amendment 18), and an edit moves the parts around: matching on
-                // what a reference NAMES holds across that, where matching on where it
-                // sat would hand each stored UUID to its neighbour.
-                if (!info.refs.empty()) {
-                    VariableNodeCollector collector;
-                    expression->visit(collector);
-                    // One node is claimed by one stored reference, so a formula naming the
-                    // same path twice gets its two references back in the order they were
-                    // written rather than both landing on the first node. This holds no test
-                    // on its own: a node re-renders under the name of the object just stamped
-                    // on it, so it stops matching by itself wherever the two differ, and
-                    // where they do not differ both nodes name the same object anyway. The
-                    // claim is kept because matching must not rest on a re-render happening
-                    // to move the text -- an accident, not a rule.
-                    std::vector<bool> claimed(collector.nodes.size(), false);
-                    for (const auto& ref : info.refs) {
-                        if (ref.uuid.empty() || ref.path.empty()) {
-                            continue;
-                        }
-                        VariableExpression* match = nullptr;
-                        for (std::size_t i = 0; i < collector.nodes.size(); ++i) {
-                            if (claimed[i]) {
-                                continue;
-                            }
-                            // Parsing has already bound each node to whatever its name
-                            // resolves to in this document, which is exactly the binding a
-                            // stale name gets wrong; the stored UUID is what supersedes it.
-                            if (collector.nodes[i]->getPath().toPersistentString() == ref.path) {
-                                match = collector.nodes[i];
-                                claimed[i] = true;
-                                break;
-                            }
-                        }
-                        if (!match) {
-                            // The file's two statements about this reference disagree: the
-                            // formula no longer says what the stored reference was written
-                            // from. That is what a person retargeting a formula by hand
-                            // looks like, so the text they wrote stands and binds by name
-                            // -- but a durable binding this session could not place is a
-                            // fact about the document, said rather than dropped
-                            // (Amendment 19, Clause 19.1).
-                            FC_WARN("Formula reference not placed: "
-                                    << docObj->getFullName() << '.' << info.path
-                                    << " states a binding to " << ref.uuid
-                                    << " written from '" << ref.path
-                                    << "', which the formula no longer says. The formula's "
-                                       "own text stands and the document is not whole.");
-                            continue;
-                        }
-                        ObjectIdentifier oid = match->getPath();
-                        // Bind by UUID, then canonicalize to the same
-                        // forced-document-object-name form authoring produces, so
-                        // resolution, display re-render and dependency tracking all
-                        // agree (Amendment 3, Clause 3.8). A dead UUID leaves the
-                        // parsed name in place as the P7 diagnostic.
-                        oid.setBoundObjectUuid(ref.uuid);
-                        match->setPath(oid);
-                    }
-                }
+                bindObjectsStatedByUid(*docObj, info.path, *expression);
             }
             setValue(path, expression);
         }
