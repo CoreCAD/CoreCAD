@@ -874,6 +874,53 @@ std::vector<std::string> choiceOf(
     return fields;
 }
 
+/// Whether two readings of one entity's coordinates agree. Each number is rounded for reading, so
+/// two solves a hair apart can round one step apart; that much is the same position.
+bool samePosition(const App::RecipeNode& one, const App::RecipeNode& other)
+{
+    if (one.fields.size() != other.fields.size()) {
+        return false;
+    }
+    constexpr double roundingStep = 2e-4;
+    for (const auto& [field, text] : one.fields) {
+        const auto it = other.fields.find(field);
+        if (it == other.fields.end()) {
+            return false;
+        }
+        std::istringstream left(text);
+        std::istringstream right(it->second);
+        std::string a;
+        std::string b;
+        while (left >> a) {
+            if (!(right >> b)) {
+                return false;
+            }
+            if (a == b) {
+                continue;
+            }
+            const auto number = [](std::string token) {
+                std::erase(token, '(');
+                std::erase(token, ')');
+                std::istringstream in(token);
+                in.imbue(std::locale::classic());
+                double value = 0.0;
+                in >> value;
+                return in && in.peek() == std::char_traits<char>::eof() ? std::optional(value)
+                                                                        : std::nullopt;
+            };
+            const std::optional<double> x = number(a);
+            const std::optional<double> y = number(b);
+            if (!x || !y || std::abs(*x - *y) > roundingStep) {
+                return false;
+            }
+        }
+        if (right >> b) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Whether a side left an entity somewhere other than the ancestor did, or added it.
 bool movedFromAncestor(const std::string& tag, const SketchObject& ancestor, const SketchObject& side)
 {
@@ -889,7 +936,7 @@ bool movedFromAncestor(const std::string& tag, const SketchObject& ancestor, con
     App::RecipeNode now;
     addAuthoredCoordinates(before, was);
     addAuthoredCoordinates(there, now);
-    return was.fields != now.fields;
+    return !samePosition(was, now);
 }
 
 }  // namespace
@@ -971,6 +1018,9 @@ MergeReport Sketcher::mergeSketches(
         const std::vector<std::string> bFields = choiceOf(tag, baseChosen, bChosen);
         const bool aChose = !aFields.empty();
         const bool bChose = !bFields.empty();
+        if (aChose || bChose) {
+            chosenSeedFor[tag] = aChose ? &branchA : &branchB;
+        }
         std::vector<std::string> bOnly;
         for (const std::string& field : bFields) {
             if (std::find(aFields.begin(), aFields.end(), field) == aFields.end()) {
@@ -1003,12 +1053,8 @@ MergeReport Sketcher::mergeSketches(
             }
             continue;
         }
-        if (aChose) {
-            chosenSeedFor[tag] = &branchA;
-        }
         if (bChose && !aChose) {
             seedFor[tag] = &branchB;
-            chosenSeedFor[tag] = &branchB;
         }
         else if (
             !aChose && !bChose && movedBySolveOnly(bHeldBack, tag) && !movedBySolveOnly(aHeldBack, tag)
@@ -1096,7 +1142,7 @@ MergeReport Sketcher::mergeSketches(
             );
             const auto solved = report.solvedPositions.find(tag);
             if (!reported && solved != report.solvedPositions.end()
-                && there.fields != solved->second.fields) {
+                && !samePosition(there, solved->second)) {
                 report.undetermined.push_back({tag, report.mergedGeometry.at(tag).type});
             }
         }

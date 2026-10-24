@@ -900,6 +900,37 @@ TEST_F(SketchRecipeMergeTest, aShapeTheValuesDecideIsNotReported)
     EXPECT_TRUE(report.undetermined.empty());
 }
 
+// A free ellipse: A moves its centre, B widens it. An ellipse cannot be started from both sides'
+// coordinates at once, so this is a value conflict, and only that: not also a shape the starting
+// point decides.
+TEST_F(SketchRecipeMergeTest, aCurveBothSidesMovedIsOneConflict)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        Part::GeomEllipse ellipse;
+        ellipse.setCenter(Base::Vector3d(0, 0, 0));
+        ellipse.setMajorRadius(4);
+        ellipse.setMinorRadius(2);
+        s->addGeometry(&ellipse);
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    std::vector<Part::Geometry*> moved {br.a->getInternalGeometry()[0]->clone()};
+    static_cast<Part::GeomEllipse*>(moved[0])->setCenter(Base::Vector3d(3, 3, 0));
+    br.a->Geometry.setValues(std::move(moved));
+    br.a->getDocument()->recompute();
+    std::vector<Part::Geometry*> widened {br.b->getInternalGeometry()[0]->clone()};
+    static_cast<Part::GeomEllipse*>(widened[0])->setMajorRadius(6);
+    br.b->Geometry.setValues(std::move(widened));
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U);
+    EXPECT_TRUE(report.undetermined.empty());
+}
+
 // The flipped triangle merged as part of the whole document: its report names the sketch and does
 // not call the merge clean.
 TEST_F(SketchRecipeMergeTest, aDocumentMergeReportsAShapeTheValuesDoNotDecide)
