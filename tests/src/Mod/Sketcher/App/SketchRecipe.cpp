@@ -955,6 +955,86 @@ TEST_F(SketchRecipeMergeTest, aDocumentMergeReportsAShapeTheValuesDoNotDecide)
     EXPECT_NE(text.find(report.undetermined.front()), std::string::npos) << text;
 }
 
+// The same merge read as a sketch on its own: its report asks for the shape to be decided.
+TEST_F(SketchRecipeMergeTest, aSketchMergeReportAsksForTheShapeToBeDecided)
+{
+    Branches br = makeBranches(triangleOnItsBase);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    flipTop(br.a);
+    ASSERT_EQ(br.b->setDatum(3, 7.0), 0);
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const std::string text = Sketcher::formatMergeReport(
+        Sketcher::mergeSketches(*ancestor, *br.a, *br.b)
+    );
+    EXPECT_NE(text.find("you must decide the shape"), std::string::npos) << text;
+}
+
+// A shape the merged values leave open keeps the merge incomplete. It is settled by a change that
+// decides the shape: here the side that flipped the triangle fixes its top point by both
+// coordinates in place of the two side lengths.
+TEST_F(SketchRecipeMergeTest, aMergeIsCompleteOnlyOnceTheValuesDecideTheShape)
+{
+    for (const bool decided : {false, true}) {
+        Branches br = makeBranches(triangleOnItsBase);
+        ASSERT_NE(br.a, nullptr);
+        ASSERT_NE(br.b, nullptr);
+        flipTop(br.a);
+        ASSERT_LT(topOf(br.a), 0.0);
+        if (decided) {
+            ASSERT_EQ(br.a->delConstraints({4, 5}), 0);
+            addConstraintOn(br.a, Sketcher::DistanceX, {{1, Sketcher::PointPos::end}}, 3.0);
+            addConstraintOn(br.a, Sketcher::DistanceY, {{1, Sketcher::PointPos::end}}, -4.0);
+            br.a->getDocument()->recompute();
+            ASSERT_LT(topOf(br.a), 0.0);
+        }
+        ASSERT_EQ(br.b->setDatum(3, 7.0), 0);
+        br.b->getDocument()->recompute();
+
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+        ASSERT_NE(ancestor, nullptr);
+        const App::DocumentMergeReport report = App::mergeDocuments(
+            *ancestor->getDocument(),
+            *br.a->getDocument(),
+            *br.b->getDocument()
+        );
+
+        EXPECT_TRUE(report.conflicts.empty()) << App::formatDocumentReport(report);
+        EXPECT_EQ(report.complete(), decided) << App::formatDocumentReport(report);
+
+        const App::MergedDocument made = App::buildMergedDocument(
+            *ancestor->getDocument(),
+            *br.a->getDocument(),
+            *br.b->getDocument()
+        );
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        Sketcher::SketchObject* merged = nullptr;
+        for (App::DocumentObject* obj : made.document->getObjects()) {
+            if (obj->Uid.getValueStr() == br.a->Uid.getValueStr()) {
+                merged = dynamic_cast<Sketcher::SketchObject*>(obj);
+            }
+        }
+        ASSERT_NE(merged, nullptr);
+        const auto holdsPoint = [&](double x, double y) {
+            for (const Part::Geometry* geo : merged->getInternalGeometry()) {
+                const auto* line = static_cast<const Part::GeomLineSegment*>(geo);
+                if (line->getEndPoint().IsEqual(Base::Vector3d(x, y, 0), 1e-6)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        EXPECT_TRUE(holdsPoint(7.0, 0.0)) << "B's base";
+        if (decided) {
+            EXPECT_TRUE(holdsPoint(3.0, -4.0)) << "A's top point";
+        }
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
 // A line from the origin to a point on the horizontal axis, its length dimensioned: fully
 // constrained only while both ties to the sketch's own frame survive the merge. The origin sits in
 // the constraint's first place, so a tie that was left out would also shift the line into the

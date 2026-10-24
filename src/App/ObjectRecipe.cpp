@@ -682,7 +682,7 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
     std::ostringstream out;
     const std::size_t objectCount = report.merged.size();
 
-    if (report.conflicts.empty() && report.overridden.empty() && report.undetermined.empty()) {
+    if (report.complete()) {
         out << "Merged cleanly: " << objectCount << " objects, no conflicts.\n";
         return out.str();
     }
