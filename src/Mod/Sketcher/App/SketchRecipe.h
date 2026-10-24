@@ -99,7 +99,7 @@ struct RegenResult
 /// regenerable seeds, §4): each surviving entity's seed geometry is pulled by durable tag from the
 /// sketch `seedFor` names for it, else from the first of `seedSources` that holds it, so the merged
 /// constraint set is re-solved against real starting coordinates. Constraint values are taken as
-/// literal datums (a bound expression is not re-evaluated here — a named deferral); refs to
+/// literal datums, a formula as the datum it gave on the sides that state it; refs to
 /// external geometry were never emitted and so are absent. Returns the solver's
 /// verdict: a clean merge that regenerates with hasConflicts is the "merged but does not compile"
 /// case.
