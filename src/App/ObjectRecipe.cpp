@@ -574,6 +574,31 @@ RecipeSection App::emitDocumentRecipe(const Document& doc)
     return section;
 }
 
+RecipeNode App::emitDocumentValues(const Document& doc, const std::string& id)
+{
+    RecipeNode node;
+    node.id = id;
+    node.type = Document::getClassTypeId().getName();
+    std::map<std::string, Property*> properties;
+    doc.getPropertyMap(properties);
+    for (const auto& [name, prop] : properties) {
+        if (prop == nullptr || isNonRecipeProperty(name) || name == "Label"
+            || name == "LastModifiedBy" || name == "CreationDate"
+            || !theRecipeCarries(*prop, doc)) {
+            continue;
+        }
+        if (const auto entries = authoredMapEntries(prop)) {
+            for (const auto& [key, value] : *entries) {
+                node.fields[name + "." + key] = value;
+            }
+        }
+        else if (const std::optional<std::string> value = authoredFieldValue(prop)) {
+            node.fields[name] = *value;
+        }
+    }
+    return node;
+}
+
 namespace
 {
 
@@ -613,6 +638,18 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     RecipeSection b = emitDocumentRecipe(branchB);
     RecipeContentMerge inside = markUncomparedChanges(ancestor, branchA, branchB, base, a, b);
 
+    // The document's own values merge as one more object's do, under the ancestor's id.
+    const std::string documentId = ancestor.Uid.getValueStr();
+    const RecipeSection documentBase {{documentId, emitDocumentValues(ancestor, documentId)}};
+    const RecipeSection documentA {{documentId, emitDocumentValues(branchA, documentId)}};
+    const RecipeSection documentB {{documentId, emitDocumentValues(branchB, documentId)}};
+    std::vector<MergeConflict> documentConflicts;
+    RecipeSection document =
+        RecipeMerge::threeWay(documentBase, documentA, documentB, documentConflicts);
+    documentConflicts = RecipeMerge::refineConflicts(
+        documentConflicts, documentBase, documentA, documentB, document);
+    report.document = document.at(documentId);
+
     report.merged = RecipeMerge::threeWay(base, a, b, report.conflicts);
 
     // Refine each whole-object conflict to field granularity: where the two branches touched
@@ -626,6 +663,8 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     // judges whether it still holds.
     RecipeMerge::presenceConflicts(base, a, b, base, a, b, report.merged, report.conflicts);
     report.conflicts.insert(report.conflicts.end(), inside.conflicts.begin(), inside.conflicts.end());
+    report.conflicts.insert(
+        report.conflicts.end(), documentConflicts.begin(), documentConflicts.end());
 
     return report;
 }

@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -1079,6 +1080,62 @@ TEST_F(ObjectRecipeTest, buildMergedDocumentJudgesEachVersionRebuilt)
     EXPECT_TRUE(boxB->isValid()) << "B itself is not rebuilt by the merge";
 
     app.closeDocument(made.document->getName());
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// The document's own values merge as an object's do: B's comment is taken whichever version is
+// named first, and a material entry each side added is kept from both.
+TEST_F(ObjectRecipeTest, buildMergedDocumentTakesTheDocumentsOwnValuesFromEitherSide)
+{
+    auto& app = App::GetApplication();
+    const std::string boxId = _doc->addObject("Part::Box", "Box")->Uid.getValueStr();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    for (App::Document* doc : {docA, docB}) {
+        Base::Uuid id;
+        id.setValue(boxId);
+        doc->addObject("Part::Box", "Box")->Uid.setValue(id);
+    }
+    docA->getObject("Box")->Label.setValue("Plate");
+    const auto addEntry = [](App::Document* doc, const std::string& key, const std::string& value) {
+        std::map<std::string, std::string> entries = doc->Material.getValues();
+        entries[key] = value;
+        doc->Material.setValues(entries);
+    };
+    addEntry(docA, "Density", "7.85");
+    addEntry(docB, "Name", "Steel");
+    docB->Comment.setValue("checked by B");
+
+    for (const auto& [first, second] : {std::make_pair(docA, docB), std::make_pair(docB, docA)}) {
+        const App::MergedDocument made = App::buildMergedDocument(*_doc, *first, *second);
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        EXPECT_STREQ(made.document->Comment.getValue(), "checked by B");
+        EXPECT_STREQ(made.document->Material.getValue("Density"), "7.85");
+        EXPECT_STREQ(made.document->Material.getValue("Name"), "Steel");
+        app.closeDocument(made.document->getName());
+    }
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// Each version gives the document a different comment: one decision, a conflict.
+TEST_F(ObjectRecipeTest, mergeDocumentsConflictsOnTwoDifferentDocumentComments)
+{
+    auto& app = App::GetApplication();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    docA->Comment.setValue("from A");
+    docB->Comment.setValue("from B");
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    ASSERT_EQ(report.conflicts.size(), 1u);
+    EXPECT_EQ(report.conflicts.front().id, _doc->Uid.getValueStr());
+    EXPECT_NE(report.conflicts.front().detail.find("Comment"), std::string::npos)
+        << report.conflicts.front().detail;
+
     app.closeDocument(docA->getName());
     app.closeDocument(docB->getName());
 }

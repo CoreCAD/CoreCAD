@@ -65,6 +65,11 @@ AppExport RecipeNode emitObjectRecipe(const DocumentObject& obj);
  */
 AppExport RecipeSection emitDocumentRecipe(const Document& doc);
 
+/// The document's own authored values -- its licence, material, comment and the rest -- as one
+/// node keyed by `id`, rendered as an object's are. Its name, when it was made and who last saved
+/// it are left out: the name follows the file, and the system writes the other two.
+AppExport RecipeNode emitDocumentValues(const Document& doc, const std::string& id);
+
 /** The properties emitObjectRecipe walked and could not record — those that survived the emit
  *  filter (so they are neither derived, transient, hidden, nor a link) but whose value type the
  *  emitter has no canonical rendering for. Names come back sorted.
@@ -103,6 +108,7 @@ AppExport std::map<std::string, std::vector<std::string>> linkedElements(const D
 struct DocumentMergeReport
 {
     RecipeSection merged;
+    RecipeNode document;  ///< the document's own values, merged
     std::vector<MergeConflict> conflicts;
 };
 
