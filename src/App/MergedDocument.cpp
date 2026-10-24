@@ -204,6 +204,27 @@ std::optional<std::string> applyMergedLink(DocumentObject& into,
     return std::nullopt;
 }
 
+/// The ids of the steps that fail when a version is rebuilt from its recipe, as the merged part is.
+/// What a version shows in this session may predate its last edit, so it is not asked.
+std::set<std::string> failingWhenRebuilt(const Document& version)
+{
+    DocumentInitFlags flags;
+    flags.createView = false;
+    flags.temporary = true;
+    Document* copy = GetApplication().newDocument("Rebuilt", nullptr, flags);
+    std::istringstream recipe(formatStoredRecipe(version));
+    restoreStoredRecipe(*copy, recipe);
+    copy->recompute();
+    std::set<std::string> failing;
+    for (const DocumentObject* obj : copy->getObjects()) {
+        if (obj != nullptr && !obj->isValid()) {
+            failing.insert(obj->Uid.getValueStr());
+        }
+    }
+    GetApplication().closeDocument(copy->getName());
+    return failing;
+}
+
 }  // namespace
 
 MergedDocument App::buildMergedDocument(const Document& ancestor,
@@ -254,6 +275,9 @@ MergedDocument App::buildMergedDocument(const Document& ancestor,
         }
     }
     std::erase(scope.objects, nullptr);
+
+    const std::set<std::string> failingA = failingWhenRebuilt(branchA);
+    const std::set<std::string> failingB = failingWhenRebuilt(branchB);
 
     DocumentInitFlags flags;
     flags.createView = createView;
@@ -318,11 +342,7 @@ MergedDocument App::buildMergedDocument(const Document& ancestor,
             continue;
         }
         const std::string id = obj->Uid.getValueStr();
-        const DocumentObject* objA = find(objectsA, id);
-        const DocumentObject* objB = find(objectsB, id);
-        const bool failedBefore =
-            (objA != nullptr && !objA->isValid()) || (objB != nullptr && !objB->isValid());
-        if (!failedBefore) {
+        if (failingA.count(id) == 0 && failingB.count(id) == 0) {
             result.newlyFailing.push_back(obj->Label.getValue());
         }
     }
