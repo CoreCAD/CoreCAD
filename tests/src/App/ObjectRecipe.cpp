@@ -270,7 +270,7 @@ TEST_F(ObjectRecipeTest, mergeDocumentsTakesAReChosenFaceAndConflictsOnTwo)
 // conflict, kept for the person settling it, and the report says so.
 TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAStepBuiltOnAnObjectTheOtherBranchDeleted)
 {
-    auto* ancestorBox = _doc->addObject("Part::Box");
+    auto* ancestorBox = _doc->addObject("Part::Box", "Box");
     ASSERT_NE(ancestorBox, nullptr);
     Base::Uuid sharedId;
     sharedId.setValue(ancestorBox->Uid.getValueStr());
@@ -704,22 +704,45 @@ TEST_F(ObjectRecipeTest, anEmptyTitleBlockIsNotReportedAsMissingContent)
     EXPECT_EQ(std::find(gaps.begin(), gaps.end(), "EditableTexts"), gaps.end());
 }
 
-// Label2 is the tree's description column -- a human annotation like Label, not authored design.
-// It is hidden, so walking hidden properties would otherwise have put it on every single object.
-TEST_F(ObjectRecipeTest, descriptionIsAUserPreferenceNotRecipeContent)
+// A name and a description are what a person typed, so the recipe states them like any value.
+TEST_F(ObjectRecipeTest, aNameAndADescriptionAreRecipeContent)
 {
-    // Arrange
     auto* box = _doc->addObject("Part::Box");
     ASSERT_NE(box, nullptr);
-    box->Label2.setValue("a note to myself");
+    box->Label.setValue("Bracket");
+    box->Label2.setValue("holds the shelf");
 
-    // Act
     const RecipeNode node = emitObjectRecipe(*box);
-    const std::vector<std::string> gaps = unrecordedProperties(*box);
 
-    // Assert: neither recorded as content nor reported as a gap -- it is simply out of scope.
-    EXPECT_EQ(node.fields.count("Label2"), 0u);
-    EXPECT_EQ(std::find(gaps.begin(), gaps.end(), "Label2"), gaps.end());
+    EXPECT_EQ(node.fields.at("Label"), "Bracket");
+    EXPECT_EQ(node.fields.at("Label2"), "holds the shelf");
+}
+
+// Two branches rename the same object differently: two people meant different things, so the
+// merge asks rather than keeping one name without a word.
+TEST_F(ObjectRecipeTest, mergeDocumentsConflictsOnTwoDifferentRenames)
+{
+    auto& app = App::GetApplication();
+    auto* ancestorBox = _doc->addObject("Part::Box", "Box");
+    const std::string uid = ancestorBox->Uid.getValueStr();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxA = docA->addObject("Part::Box", "Box");
+    boxA->Uid.setValue(sharedId);
+    boxA->Label.setValue("Bracket");
+    auto* boxB = docB->addObject("Part::Box", "Box");
+    boxB->Uid.setValue(sharedId);
+    boxB->Label.setValue("Plate");
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    ASSERT_EQ(report.conflicts.size(), 1u);
+    EXPECT_EQ(report.conflicts.front().id, uid);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
 }
 
 // A value with no recipe form was absent from the merge, so two branches setting it differently
@@ -864,7 +887,7 @@ TEST_F(ObjectRecipeTest, aFormulaIsStatedByWhatItReadsNotTheNameItShows)
 }
 
 // One branch renames an object; the other edits a formula that reads it. The rename is not an edit
-// to the formula, so the edit is taken and nothing conflicts.
+// to the formula, so both are taken and nothing conflicts.
 TEST_F(ObjectRecipeTest, aRenameOnOneBranchIsNotAnEditToTheFormulasThatReadIt)
 {
     auto& app = App::GetApplication();
@@ -903,6 +926,7 @@ TEST_F(ObjectRecipeTest, aRenameOnOneBranchIsNotAnEditToTheFormulasThatReadIt)
     EXPECT_TRUE(report.conflicts.empty());
     const std::string merged = report.merged.at(userId.getValue()).fields.at("Length");
     EXPECT_NE(merged.find("/ 5"), std::string::npos) << merged;
+    EXPECT_EQ(report.merged.at(boxId.getValue()).fields.at("Label"), "Plate");
 
     app.closeDocument(docA->getName());
     app.closeDocument(docB->getName());
