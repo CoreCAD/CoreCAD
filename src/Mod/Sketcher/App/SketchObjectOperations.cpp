@@ -2944,11 +2944,19 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
         return false;
     }
 
-    // The re-fit has new poles and knots, so most helpers no longer align to anything; the curve
-    // itself is edited in place and keeps its ids and the constraints on it.
+    // The re-fit is a new curve with its own poles, knots and weights, so every helper is replaced:
+    // one kept by a chance match would carry an old weight onto it. The curve itself is edited in
+    // place and keeps its ids and the constraints on it.
     std::vector<int> delGeoId;
-    std::vector<Constraint*> newcVals
-        = realignBSplineHelpers(Constraints.getValues(), GeoId, *bsp, *bspline, delGeoId);
+    std::vector<Constraint*> newcVals;
+    for (Constraint* constr : Constraints.getValues()) {
+        if (constr->Type == Sketcher::InternalAlignment && constr->Second == GeoId) {
+            delGeoId.push_back(constr->First);
+        }
+        else {
+            newcVals.push_back(constr);
+        }
+    }
 
     std::vector<Part::Geometry*> newVals(getInternalGeometry());
 
