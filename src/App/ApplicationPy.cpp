@@ -267,7 +267,8 @@ PyMethodDef ApplicationPy::Methods[] = {
      "not independently rebuilt). Only authored state is reconciled -- no recompute is\n"
      "run and emergent geometry is never matched. Returns 'text', a plain-language\n"
      "report, and 'conflicts', each with what the ancestor, branchA and branchB stated\n"
-     "for the object (None where that version has none). With build, also makes the\n"
+     "for the object (None where that version has none), and 'overridden', each choice a\n"
+     "side made that the rebuilt result no longer holds. With build, also makes the\n"
      "merged part as a new document: 'document' (None when refused), 'refusal' and\n"
      "'newlyFailing', the steps that fail merged and failed on neither side."},
     {"diffDocuments",
@@ -972,6 +973,11 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
         Py::Dict answer;
         answer.setItem("text", Py::String(formatDocumentReport(report)));
         answer.setItem("conflicts", conflicts);
+        Py::List overridden;
+        for (const std::string& lost : report.overridden) {
+            overridden.append(Py::String(lost));
+        }
+        answer.setItem("overridden", overridden);
         if (build != 0) {
             answer.setItem("document",
                            made.document != nullptr ? Py::asObject(made.document->getPyObject())

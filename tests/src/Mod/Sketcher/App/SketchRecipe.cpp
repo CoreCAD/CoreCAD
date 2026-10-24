@@ -771,6 +771,38 @@ TEST_F(SketchRecipeMergeTest, aChosenPositionTheMergeOverridesIsReported)
     }
 }
 
+// The same drag and pins, merged as part of the whole document: the lost drag reaches the
+// document's report, which does not call the merge clean.
+TEST_F(SketchRecipeMergeTest, aDocumentMergeReportsAChosenPositionTheMergeOverrides)
+{
+    for (const bool aDrags : {true, false}) {
+        Branches br = makeBranches([](Sketcher::SketchObject* s) { addPoint(s, 3, 3); });
+        ASSERT_NE(br.a, nullptr);
+        ASSERT_NE(br.b, nullptr);
+        Sketcher::SketchObject* drags = aDrags ? br.a : br.b;
+        Sketcher::SketchObject* pins = aDrags ? br.b : br.a;
+
+        drags->moveGeometry(0, Sketcher::PointPos::start, Base::Vector3d(5, 5, 0));
+        drags->getDocument()->recompute();
+        addConstraintOn(pins, Sketcher::DistanceX, {{0, Sketcher::PointPos::start}}, 1.0);
+        addConstraintOn(pins, Sketcher::DistanceY, {{0, Sketcher::PointPos::start}}, 1.0);
+        pins->getDocument()->recompute();
+
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+        ASSERT_NE(ancestor, nullptr);
+        const App::DocumentMergeReport report = App::mergeDocuments(
+            *ancestor->getDocument(),
+            *br.a->getDocument(),
+            *br.b->getDocument()
+        );
+
+        EXPECT_TRUE(report.conflicts.empty());
+        ASSERT_EQ(report.overridden.size(), 1U) << (aDrags ? "A drags" : "B drags");
+        EXPECT_EQ(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
 // A line from the origin to a point on the horizontal axis, its length dimensioned: fully
 // constrained only while both ties to the sketch's own frame survive the merge. The origin sits in
 // the constraint's first place, so a tie that was left out would also shift the line into the

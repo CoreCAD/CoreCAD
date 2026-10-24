@@ -110,6 +110,8 @@ struct DocumentMergeReport
     RecipeSection merged;
     RecipeNode document;  ///< the document's own values, merged
     std::vector<MergeConflict> conflicts;
+    /// Each value a side chose that the rebuilt result no longer holds (Clause 21.3, item 4).
+    std::vector<std::string> overridden;
 };
 
 /// Merge three versions of a model — a common ancestor and two edited copies of it — into a
