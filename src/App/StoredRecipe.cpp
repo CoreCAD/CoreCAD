@@ -80,8 +80,12 @@ namespace fs = std::filesystem;
 namespace
 {
 
-/// Derived and non-persisted state is never authored source. Shared with the readable view
-/// (ObjectRecipe.cpp) so the two agree on what counts as authored.
+/// Derived and non-persisted state is never authored source. The readable view (ObjectRecipe.cpp)
+/// asks theRecipeCarries too, so the two agree on what counts as authored.
+///
+/// Prop_Hidden is deliberately NOT among them: it means "do not clutter the property editor",
+/// never "not authored". A spreadsheet's cells, a text document's text and the link placing a
+/// drawing view on its page are all hidden, and excluding them once dropped load-bearing content.
 constexpr short excludedPropertyFlags = Prop_Output | Prop_Transient | Prop_NoPersist;
 
 /// Authored despite its flags. `Label` is `Prop_Output` only in the sense "changing it needs no

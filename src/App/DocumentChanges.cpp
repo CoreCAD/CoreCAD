@@ -314,18 +314,6 @@ std::vector<DocumentChange> App::diffDocuments(const Document& before, const Doc
         about.label = inNew ? newLabels.at(id) : oldLabels.at(id);
         about.objectType = (inNew ? itNew->second : itOld->second)->getTypeId().getName();
 
-        if (inOld && inNew && oldLabels.at(id) != newLabels.at(id)) {
-            DocumentChange entry = about;
-            entry.change = {RecipeChange::Kind::FieldChanged,
-                            id,
-                            about.objectType,
-                            "Label",
-                            oldLabels.at(id),
-                            newLabels.at(id)};
-            entry.text = oldLabels.at(id) + " renamed to " + newLabels.at(id);
-            changes.push_back(entry);
-        }
-
         const DocumentObject& object = inNew ? *itNew->second : *itOld->second;
         for (const RecipeChange& change : nodeChanges[id]) {
             const bool arrivedOrWent = change.kind == RecipeChange::Kind::Added
@@ -335,7 +323,9 @@ std::vector<DocumentChange> App::diffDocuments(const Document& before, const Doc
             }
             DocumentChange entry = about;
             entry.change = change;
-            entry.text = describe(change, about.label, newLabels, oldLabels);
+            entry.text = change.field == "Label" && inOld && inNew
+                ? oldLabels.at(id) + " renamed to " + newLabels.at(id)
+                : describe(change, about.label, newLabels, oldLabels);
             changes.push_back(entry);
         }
 
