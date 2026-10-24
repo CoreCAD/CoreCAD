@@ -338,7 +338,6 @@ TEST_F(SketchRecipeMergeTest, aDocumentMergeTakesALineDrawnOnEachBranch)
         = App::mergeDocuments(*ancestor, *br.a->getDocument(), *br.b->getDocument());
 
     EXPECT_TRUE(report.conflicts.empty());
-    EXPECT_TRUE(report.resolutions.empty());
 }
 
 // The CAD-specific conflict with no text analogy: A deletes geometry that B constrains. The
@@ -380,52 +379,6 @@ TEST_F(SketchRecipeMergeTest, danglingReferenceIsReferentialConflict)
     std::vector<App::MergeConflict> liveConflicts;
     App::RecipeMerge::checkReferences(mergedCons, br.base.geometry, liveConflicts);
     EXPECT_TRUE(liveConflicts.empty()) << "a reference to a live target is not a conflict";
-}
-
-// Slice 4, end-to-end on real sketches: the dangling reference is not merely flagged but
-// RESOLVED through §4.7's honest-retirement outcomes.
-
-// Drop-with-disclosure: A retires L1; B adds a Horizontal whose ONLY subject is L1. After the
-// merge nothing the constraint depends on survives, so it resolves to Drop and is erased from
-// the merged recipe — the whole-subject case. Control: against geometry where L1 still lives,
-// the same constraint carries and nothing is reported.
-TEST_F(SketchRecipeMergeTest, danglingWholeSubjectResolvesToDrop)
-{
-    Branches br = makeBranches([](Sketcher::SketchObject* s) {
-        addLine(s, 0, 0, 10, 0);
-        addLine(s, 0, 5, 10, 5);
-    });
-    ASSERT_NE(br.a, nullptr);
-    ASSERT_NE(br.b, nullptr);
-
-    br.a->delGeometry(1);  // A retires L1
-    br.a->getDocument()->recompute();
-    addHorizontal(br.b, 1);  // B constrains L1 — its only reference
-
-    SketchRecipe a = Sketcher::emitSketchRecipe(*br.a);
-    SketchRecipe b = Sketcher::emitSketchRecipe(*br.b);
-
-    std::vector<App::MergeConflict> conflicts;
-    App::RecipeSection mergedGeom
-        = App::RecipeMerge::threeWay(br.base.geometry, a.geometry, b.geometry, conflicts);
-    App::RecipeSection mergedCons
-        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
-    ASSERT_EQ(mergedCons.size(), 1U);
-    const std::string ctag = mergedCons.begin()->first;
-
-    std::vector<App::RefResolution> res = App::RecipeMerge::resolveReferences(mergedCons, mergedGeom);
-    ASSERT_EQ(res.size(), 1U);
-    EXPECT_EQ(res.front().outcome, App::RefResolution::Outcome::Drop);
-    EXPECT_EQ(res.front().id, ctag);
-    EXPECT_EQ(mergedCons.count(ctag), 0U) << "the whole-subject constraint was dropped";
-
-    // Control: re-merge (the first pass mutated mergedCons) and resolve against LIVE geometry.
-    App::RecipeSection consAgain
-        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
-    std::vector<App::RefResolution> live
-        = App::RecipeMerge::resolveReferences(consAgain, br.base.geometry);
-    EXPECT_TRUE(live.empty()) << "with its target alive the constraint carries, nothing to resolve";
-    EXPECT_EQ(consAgain.count(ctag), 1U);
 }
 
 // Slice 5, end-to-end on real sketches: regenerate. The recipe layer merges with nothing running;
@@ -851,7 +804,6 @@ TEST_F(SketchRecipeMergeTest, tiesToTheAxesSurviveTheMerge)
     ASSERT_NO_THROW(report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b));
 
     EXPECT_TRUE(report.conflicts.empty());
-    EXPECT_TRUE(report.resolutions.empty()) << "a tie to an axis never dangles";
     EXPECT_TRUE(report.regen.fullyRealized);
     EXPECT_EQ(report.regen.solverStatus, 0);
     EXPECT_EQ(report.regen.dof, 2) << "only B's free point can move";
@@ -882,7 +834,6 @@ TEST_F(SketchRecipeMergeTest, aConstraintAddedOnGeometryTheOtherSideDeletedIsACo
     EXPECT_EQ(report.conflicts.front().type, "Horizontal");
     EXPECT_EQ(report.mergedConstraints.count(report.conflicts.front().id), 1U)
         << "the conflicted constraint is kept, not dropped";
-    EXPECT_TRUE(report.resolutions.empty());
     for (const auto& [id, node] : report.mergedConstraints) {
         EXPECT_NE(node.type, "Distance") << "A's delete retired the ancestor's length";
     }
@@ -912,7 +863,6 @@ TEST_F(SketchRecipeMergeTest, aDimensionChangedOnOneSideAndDeletedOnTheOtherIsHe
     ASSERT_EQ(report.conflicts.size(), 1U);
     EXPECT_EQ(report.conflicts.front().type, "Distance");
     EXPECT_EQ(report.mergedConstraints.count(report.conflicts.front().id), 1U);
-    EXPECT_TRUE(report.resolutions.empty());
 }
 
 // A sketch line beside a point it borrows from a box's corner.
@@ -943,7 +893,6 @@ TEST_F(SketchRecipeMergeTest, aTieToBorrowedGeometryKeepsBothEnds)
     const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
 
     EXPECT_TRUE(report.conflicts.empty());
-    EXPECT_TRUE(report.resolutions.empty());
     bool tied = false;
     for (const auto& [id, node] : report.mergedConstraints) {
         if (node.type == "Coincident") {

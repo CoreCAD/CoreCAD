@@ -280,35 +280,6 @@ void RecipeMerge::presenceConflicts(const RecipeSection& baseRefs,
     }
 }
 
-std::vector<RefResolution> RecipeMerge::resolveReferences(RecipeSection& withRefs,
-                                                          const RecipeSection& liveTargets)
-{
-    std::vector<RefResolution> resolutions;
-    std::vector<std::string> toDrop;
-
-    for (const auto& [id, node] : withRefs) {
-        const auto dangling =
-            std::find_if(node.refs.begin(), node.refs.end(), [&](const RecipeRef& ref) {
-                // An empty target is a sentinel (sketch axis/external), not an authored target.
-                return !ref.target.empty() && liveTargets.find(ref.target) == liveTargets.end();
-            });
-        if (dangling == node.refs.end()) {
-            continue;
-        }
-        resolutions.push_back({RefResolution::Outcome::Drop,
-                               id,
-                               node.type,
-                               "pointed at " + dangling->target + ", which one version deleted"});
-        toDrop.push_back(id);
-    }
-
-    for (const std::string& id : toDrop) {
-        withRefs.erase(id);
-    }
-
-    return resolutions;
-}
-
 namespace
 {
 

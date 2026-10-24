@@ -91,9 +91,7 @@ AppExport std::map<std::string, std::vector<std::string>> linkedElements(const D
 
 
 /** The outcome of merging three versions of a model — a common ancestor and two edited copies —
- *  `merged` is the reconciled section; `resolutions` lists objects whose references the merge
- *  left dangling (an object kept on one branch whose referent was deleted on the other), routed
- *  through §4.7's honest-retirement outcomes.
+ *  `merged` is the reconciled section.
  *
  *  `conflicts` is field-granular: object-granular reconciliation runs first, then the refinement
  *  pass takes each object both branches changed and either dissolves it (they touched disjoint
@@ -106,7 +104,6 @@ struct DocumentMergeReport
 {
     RecipeSection merged;
     std::vector<MergeConflict> conflicts;
-    std::vector<RefResolution> resolutions;
 };
 
 /// Merge three versions of a model — a common ancestor and two edited copies of it — into a

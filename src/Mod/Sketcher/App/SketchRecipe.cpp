@@ -924,7 +924,7 @@ MergeReport Sketcher::mergeSketches(
     };
 
     // A constraint one side added or changed on geometry the other deleted is a conflict, kept for
-    // the person settling it; §4.7's drop reaches only constraints the deleting side could see.
+    // the person settling it. One neither side touched is kept as it was; the solve judges it.
     App::RecipeMerge::presenceConflicts(
         base.constraints,
         a.constraints,
@@ -935,24 +935,6 @@ MergeReport Sketcher::mergeSketches(
         report.mergedConstraints,
         report.conflicts
     );
-    // An open conflict is held for the person settling it; the reference pass never drops it.
-    App::RecipeSection contested;
-    for (const App::MergeConflict& conflict : report.conflicts) {
-        if (const auto node = report.mergedConstraints.find(conflict.id);
-            node != report.mergedConstraints.end()) {
-            contested.insert(report.mergedConstraints.extract(node));
-        }
-    }
-
-    // Any other dangling reference goes with what one side deleted (§4.7's explicit delete).
-    App::RecipeSection liveTargets = report.mergedGeometry;
-    liveTargets.insert(mergedExternal.begin(), mergedExternal.end());
-    for (const auto& [name, geoId] : frameGeoIds()) {
-        liveTargets[name].id = name;
-    }
-    report.resolutions = App::RecipeMerge::resolveReferences(report.mergedConstraints, liveTargets);
-    report.mergedConstraints.merge(contested);
-
     // Each entity starts the solve where the side that chose its position left it.
     std::map<std::string, const SketchObject*> seedFor;
     // Where neither side chose it, it starts where B's solve alone moved it, since that may be a
@@ -1203,19 +1185,6 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
                "the other version's changes now put them elsewhere, so you must choose:\n";
         for (const OverriddenChoice& o : report.overridden) {
             out << "  - " << nounFor(o.type) << " (" << o.field << ")\n";
-        }
-        out << "\n";
-    }
-
-    if (report.resolutions.empty()) {
-        out << "No dangling references: every constraint still points at geometry that "
-               "survived.\n\n";
-    }
-    else {
-        out << report.resolutions.size()
-            << " constraint(s) removed with the geometry one version deleted:\n";
-        for (const App::RefResolution& r : report.resolutions) {
-            out << "  - " << nounFor(r.type) << "\n";
         }
         out << "\n";
     }
@@ -1587,7 +1556,7 @@ void Sketcher::registerSketchRecipeDetail()
                 static_cast<const SketchObject&>(branchA),
                 static_cast<const SketchObject&>(branchB)
             );
-            return App::RecipeContentMerge {std::move(report.conflicts), std::move(report.resolutions)};
+            return App::RecipeContentMerge {std::move(report.conflicts)};
         },
         [](App::DocumentObject& into,
            const App::DocumentObject& ancestor,

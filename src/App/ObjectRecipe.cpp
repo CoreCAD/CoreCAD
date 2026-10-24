@@ -380,10 +380,6 @@ RecipeContentMerge markUncomparedChanges(const Document& ancestor,
             conflict.detail = where + conflict.detail;
             found.conflicts.push_back(std::move(conflict));
         }
-        for (RefResolution& resolution : inside.resolutions) {
-            resolution.detail = where + resolution.detail;
-            found.resolutions.push_back(std::move(resolution));
-        }
     }
 
     return found;
@@ -597,29 +593,10 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     report.conflicts = RecipeMerge::refineConflicts(report.conflicts, base, a, b, report.merged);
 
     // A step one branch added or changed on an object the other branch deleted is a conflict, kept
-    // for the person settling it; §4.7's drop reaches only steps the deleting branch could see.
+    // for the person settling it. A step neither branch touched is kept as it was; the rebuild
+    // judges whether it still holds.
     RecipeMerge::presenceConflicts(base, a, b, base, a, b, report.merged, report.conflicts);
     report.conflicts.insert(report.conflicts.end(), inside.conflicts.begin(), inside.conflicts.end());
-
-    // An open conflict is held for the person settling it; the reference pass never drops it.
-    RecipeSection contested;
-    for (const MergeConflict& conflict : report.conflicts) {
-        if (const auto node = report.merged.find(conflict.id); node != report.merged.end()) {
-            contested.insert(report.merged.extract(node));
-        }
-    }
-
-    // Objects reference other objects in the same section, so a reference dangles when the merge
-    // kept an object whose referent the other branch deleted. Resolve against a snapshot of the
-    // survivors (a copy, so dropping a node cannot perturb the target set mid-pass); a held object
-    // is still there.
-    RecipeSection survivors = report.merged;
-    survivors.insert(contested.begin(), contested.end());
-    report.resolutions = RecipeMerge::resolveReferences(report.merged, survivors);
-    report.merged.merge(contested);
-
-    report.resolutions.insert(
-        report.resolutions.end(), inside.resolutions.begin(), inside.resolutions.end());
 
     return report;
 }
@@ -629,7 +606,7 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
     std::ostringstream out;
     const std::size_t objectCount = report.merged.size();
 
-    if (report.conflicts.empty() && report.resolutions.empty()) {
+    if (report.conflicts.empty()) {
         out << "Merged cleanly: " << objectCount << " objects, no conflicts.\n";
         return out.str();
     }
@@ -654,14 +631,6 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
                    "\nConflicts — both branches changed the same object differently:\n");
     printConflicts(MergeConflict::Kind::Referential,
                    "\nConflicts — one branch built on an object the other branch deleted:\n");
-
-    if (!report.resolutions.empty()) {
-        out << "\nRemoved with what they pointed at:\n";
-        for (const RefResolution& resolution : report.resolutions) {
-            out << "  - " << (resolution.type.empty() ? "object" : resolution.type) << " "
-                << shortId(resolution.id) << ": " << resolution.detail << "\n";
-        }
-    }
 
     return out.str();
 }
