@@ -1495,8 +1495,13 @@ void SketchObject::onSketchRestore()
         // this may happen when saving a sketch directly in edit mode
         // but never performed a recompute before
         if (Shape.getValue().IsNull() && hasConflicts() == 0) {
-            if (this->solve(true) == 0)
-                Shape.setValue(solvedSketch.toShape());
+            if (this->solve(true) == 0) {
+                // Setting the shape sets the placement from it, and an unattached sketch's
+                // placement is the person's: the shape carries it rather than overwrite it.
+                Part::TopoShape solved = solvedSketch.toShape();
+                solved.setTransform(Placement.getValue().toMatrix());
+                Shape.setValue(solved);
+            }
         }
 
         // Sanity check on constraints with expression. It is added because the
