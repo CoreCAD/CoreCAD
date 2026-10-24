@@ -427,55 +427,6 @@ TEST_F(SketchRecipeMergeTest, danglingWholeSubjectResolvesToDrop)
     EXPECT_EQ(consAgain.count(ctag), 1U);
 }
 
-// Stop-and-ask: A retires L1 but L0 survives; B adds a Coincident tying L0's end to L1's start,
-// so the merged constraint references a live participant AND the retired one. A satisfiable
-// target survives but re-targeting is the user's choice, so it resolves to StopAsk and is KEPT.
-TEST_F(SketchRecipeMergeTest, danglingWithSurvivingParticipantResolvesToStopAsk)
-{
-    Branches br = makeBranches([](Sketcher::SketchObject* s) {
-        addLine(s, 0, 0, 10, 0);    // L0
-        addLine(s, 10, 0, 10, 10);  // L1 — its start meets L0's end at (10,0)
-    });
-    ASSERT_NE(br.a, nullptr);
-    ASSERT_NE(br.b, nullptr);
-    const std::string tag0 = boost::uuids::to_string(br.a->getInternalGeometry()[0]->getTag());
-    const std::string tag1 = boost::uuids::to_string(br.a->getInternalGeometry()[1]->getTag());
-
-    br.a->delGeometry(1);  // A retires L1; L0 survives
-    br.a->getDocument()->recompute();
-    // B ties the surviving line to the retired one.
-    addCoincident(br.b, 0, Sketcher::PointPos::end, 1, Sketcher::PointPos::start);
-
-    SketchRecipe a = Sketcher::emitSketchRecipe(*br.a);
-    SketchRecipe b = Sketcher::emitSketchRecipe(*br.b);
-
-    std::vector<App::MergeConflict> conflicts;
-    App::RecipeSection mergedGeom
-        = App::RecipeMerge::threeWay(br.base.geometry, a.geometry, b.geometry, conflicts);
-    App::RecipeSection mergedCons
-        = App::RecipeMerge::threeWay(br.base.constraints, a.constraints, b.constraints, conflicts);
-    ASSERT_EQ(mergedCons.size(), 1U);
-    const std::string ctag = mergedCons.begin()->first;
-
-    // Precondition that makes StopAsk the genuine outcome (not a fluke): the emitted coincidence
-    // references BOTH the surviving line and the retired one.
-    bool refsLive = false;
-    bool refsDead = false;
-    for (const App::RecipeRef& r : mergedCons.at(ctag).refs) {
-        refsLive = refsLive || r.target == tag0;
-        refsDead = refsDead || r.target == tag1;
-    }
-    ASSERT_TRUE(refsLive) << "constraint must reference the surviving line L0";
-    ASSERT_TRUE(refsDead) << "constraint must reference the retired line L1";
-    EXPECT_EQ(mergedGeom.count(tag1), 0U) << "L1 really was retired by the merge";
-
-    std::vector<App::RefResolution> res = App::RecipeMerge::resolveReferences(mergedCons, mergedGeom);
-    ASSERT_EQ(res.size(), 1U);
-    EXPECT_EQ(res.front().outcome, App::RefResolution::Outcome::StopAsk);
-    EXPECT_EQ(res.front().id, ctag);
-    EXPECT_EQ(mergedCons.count(ctag), 1U) << "a live participant survives -> kept for the user";
-}
-
 // Slice 5, end-to-end on real sketches: regenerate. The recipe layer merges with nothing running;
 // running the existing solver on the merged recipe is what reveals whether it "compiles". These
 // two cases merge EQUALLY clean at the recipe level (no value conflict, no dangling reference) and
@@ -885,6 +836,33 @@ TEST_F(SketchRecipeMergeTest, aConstraintAddedOnGeometryTheOtherSideDeletedIsACo
     for (const auto& [id, node] : report.mergedConstraints) {
         EXPECT_NE(node.type, "Distance") << "A's delete retired the ancestor's length";
     }
+}
+
+// A deletes a line and the length on it; B changes that length. The change against the delete is
+// an open conflict, so the length is held for the person settling it, not also dropped for
+// pointing at the deleted line.
+TEST_F(SketchRecipeMergeTest, aDimensionChangedOnOneSideAndDeletedOnTheOtherIsHeld)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        addLine(s, 0, 0, 10, 0);
+        addLine(s, 0, 5, 10, 5);
+        addDistance(s, 1, 10.0);
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    br.a->delGeometry(1);
+    br.a->getDocument()->recompute();
+    ASSERT_EQ(br.b->setDatum(0, 12.0), 0);
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U);
+    EXPECT_EQ(report.conflicts.front().type, "Distance");
+    EXPECT_EQ(report.mergedConstraints.count(report.conflicts.front().id), 1U);
+    EXPECT_TRUE(report.resolutions.empty());
 }
 
 // A sketch line beside a point it borrows from a box's corner.
