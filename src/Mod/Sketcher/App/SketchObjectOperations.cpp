@@ -2805,6 +2805,66 @@ bool SketchObject::convertToNURBS(int GeoId)
     return true;
 }
 
+namespace
+{
+/// The constraints once the B-spline at `GeoId` becomes `newCurve`. A pole or knot helper stays
+/// aligned, re-indexed, where `newCurve` has the same pole or knot; `stale` gets the helpers that
+/// align to one it no longer has.
+std::vector<Constraint*> realignBSplineHelpers(const std::vector<Constraint*>& constraints,
+                                               int GeoId,
+                                               const Part::GeomBSplineCurve& oldCurve,
+                                               const Part::GeomBSplineCurve& newCurve,
+                                               std::vector<int>& stale)
+{
+    std::vector<Base::Vector3d> poles = oldCurve.getPoles();
+    std::vector<Base::Vector3d> newPoles = newCurve.getPoles();
+
+    // on fully removing a knot the knot geometry changes
+    std::vector<double> knots = oldCurve.getKnots();
+    std::vector<double> newKnots = newCurve.getKnots();
+
+    std::map<Sketcher::InternalAlignmentType, std::vector<int>> indexInNew {
+        {Sketcher::BSplineControlPoint, {}},
+        {Sketcher::BSplineKnotPoint, {}}
+    };
+    indexInNew[Sketcher::BSplineControlPoint].reserve(poles.size());
+    indexInNew[Sketcher::BSplineKnotPoint].reserve(knots.size());
+
+    for (const auto& pole : poles) {
+        const auto it = std::ranges::find(newPoles, pole);
+        indexInNew[Sketcher::BSplineControlPoint].emplace_back(it - newPoles.begin());
+    }
+    std::ranges::replace(indexInNew[Sketcher::BSplineControlPoint], int(newPoles.size()), -1);
+
+    for (const auto& knot : knots) {
+        const auto it = std::ranges::find(newKnots, knot);
+        indexInNew[Sketcher::BSplineKnotPoint].emplace_back(it - newKnots.begin());
+    }
+    std::ranges::replace(indexInNew[Sketcher::BSplineKnotPoint], int(newKnots.size()), -1);
+
+    std::vector<Constraint*> newcVals(0);
+
+    for (const auto& constr : constraints) {
+        if (!(constr->Type == Sketcher::InternalAlignment && constr->Second == GeoId)) {
+            newcVals.push_back(constr);
+            continue;
+        }
+
+        int index = indexInNew.at(constr->AlignmentType).at(constr->InternalAlignmentIndex);
+
+        if (index == -1) {
+            stale.push_back(constr->First);
+            continue;
+        }
+
+        Constraint* newConstr = constr->clone();
+        newConstr->InternalAlignmentIndex = index;
+        newcVals.push_back(newConstr);
+    }
+    return newcVals;
+}
+}  // namespace
+
 bool SketchObject::increaseBSplineDegree(int GeoId, int degreeincrement /*= 1*/)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
@@ -2884,28 +2944,33 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
         return false;
     }
 
-    // FIXME: Avoid to delete the whole geometry but only delete invalid constraints
-    // and unused construction geometries
-#if 0
-    const std::vector< Part::Geometry * > &vals = getInternalGeometry();
+    // The re-fit has new poles and knots, so most helpers no longer align to anything; the curve
+    // itself is edited in place and keeps its ids and the constraints on it.
+    std::vector<int> delGeoId;
+    std::vector<Constraint*> newcVals
+        = realignBSplineHelpers(Constraints.getValues(), GeoId, *bsp, *bspline, delGeoId);
 
-    std::vector< Part::Geometry * > newVals(vals);
+    std::vector<Part::Geometry*> newVals(getInternalGeometry());
 
+    GeometryFacade::copyId(geo, bspline.get());
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
-    // AcceptGeometry called from onChanged
-    Geometry.setValues(newVals);
-#else
-    // Decrease-degree re-fits the curve and (unlike the sibling ops) rebuilds via delete + re-add,
-    // so carry the durable tag onto the new curve before the old one is destroyed (Amendment 6,
-    // Clause 6.3: a 1->1 edit keeps its id). Hand the curve to the unique_ptr overload of
-    // addGeometry so the stamped tag is stored as-is; the raw-pointer overload would copy() it to a
-    // fresh tag. (The local integer id and constraints are still dropped here — see #54.)
-    bspline->copyTagFrom(geo);
-    delGeometry(GeoId);
-    int newId = addGeometry(std::move(bspline));
-    exposeInternalGeometry(newId);
-#endif
+    {
+        Base::StateLocker preventUpdate(internaltransaction, true);
+        Geometry.setValues(std::move(newVals));
+        Constraints.setValues(std::move(newcVals));
+    }
+
+    if (!delGeoId.empty()) {
+        delGeometriesExclusiveList(delGeoId);
+    }
+    else {
+        Geometry.touch();
+    }
+    const auto removedBefore = std::ranges::count_if(delGeoId, [&](int id) { return id < GeoId; });
+    exposeInternalGeometry(GeoId - static_cast<int>(removedBefore));
 
     return true;
 }
@@ -3008,57 +3073,8 @@ bool SketchObject::modifyBSplineKnotMultiplicity(int GeoId, int knotIndex, int m
     // we succeeded with the multiplicity modification, so alignment geometry may be
     // invalid/inconsistent for the new bspline
     std::vector<int> delGeoId;
-
-    std::vector<Base::Vector3d> poles = bsp->getPoles();
-    std::vector<Base::Vector3d> newPoles = bspline->getPoles();
-
-    // on fully removing a knot the knot geometry changes
-    std::vector<double> knots = bsp->getKnots();
-    std::vector<double> newKnots = bspline->getKnots();
-
-    std::map<Sketcher::InternalAlignmentType, std::vector<int>> indexInNew {
-        {Sketcher::BSplineControlPoint, {}},
-        {Sketcher::BSplineKnotPoint, {}}
-    };
-    indexInNew[Sketcher::BSplineControlPoint].reserve(poles.size());
-    indexInNew[Sketcher::BSplineKnotPoint].reserve(knots.size());
-
-    for (const auto& pole : poles) {
-        const auto it = std::ranges::find(newPoles, pole);
-        indexInNew[Sketcher::BSplineControlPoint].emplace_back(it - newPoles.begin());
-    }
-    std::ranges::replace(indexInNew[Sketcher::BSplineControlPoint], int(newPoles.size()), -1);
-
-    for (const auto& knot : knots) {
-        const auto it = std::ranges::find(newKnots, knot);
-        indexInNew[Sketcher::BSplineKnotPoint].emplace_back(it - newKnots.begin());
-    }
-    std::ranges::replace(indexInNew[Sketcher::BSplineKnotPoint], int(newKnots.size()), -1);
-
-    const std::vector<Sketcher::Constraint*>& cvals = Constraints.getValues();
-
-    std::vector<Constraint*> newcVals(0);
-
-    // modify pole and knot constraints
-    for (const auto& constr : cvals) {
-        if (!(constr->Type == Sketcher::InternalAlignment && constr->Second == GeoId)) {
-            newcVals.push_back(constr);
-            continue;
-        }
-
-        int index = indexInNew.at(constr->AlignmentType).at(constr->InternalAlignmentIndex);
-
-        if (index == -1) {
-            // it is an internal alignment geometry that is no longer valid
-            // => delete it and the geometry
-            delGeoId.push_back(constr->First);
-            continue;
-        }
-
-        Constraint* newConstr = constr->clone();
-        newConstr->InternalAlignmentIndex = index;
-        newcVals.push_back(newConstr);
-    }
+    std::vector<Constraint*> newcVals
+        = realignBSplineHelpers(Constraints.getValues(), GeoId, *bsp, *bspline, delGeoId);
 
     const std::vector<Part::Geometry*>& vals = getInternalGeometry();
 
