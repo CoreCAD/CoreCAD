@@ -153,12 +153,33 @@ InternalAlignmentType alignmentTypeFromString(const std::string& name)
     return InternalAlignmentType::Undef;
 }
 
-/// Parse a recipe value field ("40 mm", "40") to a literal datum. A bound expression is not
-/// re-evaluated here (a named deferral, §4); it parses to 0 and the constraint regenerates with
-/// a placeholder datum.
-double parseDatum(const std::string& value)
+/// The datum a constraint's recipe value gives. A formula is taken as what it gave in the sides
+/// that state it, each read in its own document; nullopt when two disagree, since the merged
+/// document they would agree in does not exist yet. Anything else is a literal ("40 mm").
+std::optional<double> datumFor(
+    const std::string& tag,
+    const std::string& value,
+    const std::vector<const SketchObject*>& seedSources
+)
 {
-    return std::strtod(value.c_str(), nullptr);
+    std::optional<double> given;
+    for (const SketchObject* source : seedSources) {
+        if (source == nullptr) {
+            continue;
+        }
+        const std::vector<Constraint*>& constraints = source->Constraints.getValues();
+        for (std::size_t i = 0; i < constraints.size(); ++i) {
+            if (tagToString(constraints[i]->getTag()) != tag
+                || source->getConstraintExpression(static_cast<int>(i)) != value) {
+                continue;
+            }
+            if (given && *given != constraints[i]->getValue()) {
+                return std::nullopt;
+            }
+            given = constraints[i]->getValue();
+        }
+    }
+    return given ? given : std::strtod(value.c_str(), nullptr);
 }
 
 /// The authored value of a constraint, or empty if the constraint carries no authored value
@@ -595,7 +616,11 @@ RegenResult Sketcher::regenerateSketch(
         constraint->Type = type;
         const auto valueIt = node.fields.find("value");
         if (valueIt != node.fields.end()) {
-            constraint->setValue(parseDatum(valueIt->second));
+            const std::optional<double> datum = datumFor(tag, valueIt->second, seedSources);
+            if (!datum) {
+                result.fullyRealized = false;
+            }
+            constraint->setValue(datum.value_or(0.0));
         }
 
         const auto roleIt = node.fields.find("role");

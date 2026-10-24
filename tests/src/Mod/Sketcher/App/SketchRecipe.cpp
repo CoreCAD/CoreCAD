@@ -647,6 +647,32 @@ TEST_F(SketchRecipeMergeTest, aPositionTheSolverMovedIsNotAChange)
         << "B's dragged far end is the merged arm's";
 }
 
+// A drives the post's length by a formula. The rebuilt sketch is judged at the length the formula
+// gives, never at a zero standing in for a number nobody wrote.
+TEST_F(SketchRecipeMergeTest, aDimensionSetByAFormulaRebuildsAtWhatTheFormulaGives)
+{
+    Branches br = makeBranches(postAndArm);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "App.getDocument('" + std::string(br.a->getDocument()->getName()) + "').getObject('"
+        + br.a->getNameInDocument() + "').setExpression('Constraints[3]', '4 mm * 2')\n";
+    Base::Interpreter().runString(cmd.c_str());
+    br.a->getDocument()->recompute();
+    ASSERT_DOUBLE_EQ(br.a->Constraints.getValues()[3]->getValue(), 8.0);
+
+    const std::string post = tagOf(br.a, 0);
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    EXPECT_TRUE(report.regen.fullyRealized);
+    EXPECT_EQ(report.regen.solverStatus, 0);
+    const std::string top = report.solvedPositions.at(post).fields.at("to");
+    EXPECT_NE(top.find("8"), std::string::npos) << top;
+}
+
 // A changes one dimension and B adds another, and nobody drags anything. Each solver moves the arm,
 // and neither move is a choice, so the merge has nothing to ask.
 TEST_F(SketchRecipeMergeTest, aDifferentDimensionOnEachSideMovesNothingByHand)
