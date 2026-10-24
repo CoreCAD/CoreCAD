@@ -81,11 +81,13 @@ struct RecipeNode
     std::vector<RecipeRef> refs;                ///< references to other entities, by id
     std::set<std::string> unorderedLinks;       ///< links whose order the object says means
                                                 ///< nothing, merged one reference at a time
+    std::set<std::string> oneObjectLinks;       ///< links that point at one object, whatever
+                                                ///< elements of it they pick
 
     bool operator==(const RecipeNode& o) const
     {
         return id == o.id && type == o.type && fields == o.fields && refs == o.refs
-            && unorderedLinks == o.unorderedLinks;
+            && unorderedLinks == o.unorderedLinks && oneObjectLinks == o.oneObjectLinks;
     }
     bool operator!=(const RecipeNode& o) const
     {

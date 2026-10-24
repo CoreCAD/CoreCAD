@@ -212,4 +212,34 @@ TEST_F(PadRecipeTest, eachBranchsNewFilletEdgeJoinsTheMergedFillet)
     EXPECT_EQ(edges, (std::set<std::string> {"Edge1", "Edge2", "Edge3"}));
 }
 
+// A moves the fillet onto another solid; B rounds one more edge of the old one. A fillet rounds
+// edges of one solid, so the merge cannot keep both: it asks, rather than leaving edges of two
+// solids in a link that holds one.
+TEST_F(PadRecipeTest, aFilletMovedOnOneBranchAndGivenAnEdgeOnTheOtherConflicts)
+{
+    auto* fillet = _doc->addObject<PartDesign::Fillet>("Fillet");
+    _body->addFeature(fillet);
+    auto* other = _doc->addObject("Part::Box", "Other");
+    const auto filletOn = [&](App::DocumentObject* solid, const std::vector<std::string>& edges) {
+        fillet->Base.setValue(solid, edges);
+        return App::emitObjectRecipe(*fillet);
+    };
+
+    App::RecipeSection base;
+    App::RecipeSection branchA;
+    App::RecipeSection branchB;
+    const App::RecipeNode node = filletOn(_pad, {"Edge1"});
+    base[node.id] = node;
+    branchA[node.id] = filletOn(other, {"Edge1"});
+    branchB[node.id] = filletOn(_pad, {"Edge1", "Edge2"});
+
+    std::vector<App::MergeConflict> conflicts;
+    App::RecipeSection merged = App::RecipeMerge::threeWay(base, branchA, branchB, conflicts);
+    const std::vector<App::MergeConflict> refined
+        = App::RecipeMerge::refineConflicts(conflicts, base, branchA, branchB, merged);
+
+    ASSERT_EQ(refined.size(), 1u);
+    EXPECT_NE(refined.front().detail.find("Base"), std::string::npos) << refined.front().detail;
+}
+
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
