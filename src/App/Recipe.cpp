@@ -565,6 +565,21 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
             std::vector<RecipeRef> resolvedRefs;
             if (nodeA.unorderedLinks.count(link) != 0 && nodeB.unorderedLinks.count(link) != 0) {
                 resolvedRefs = mergeAsSet(refsO, refsA, refsB);
+                std::set<std::string> targets;
+                for (const RecipeRef& ref : resolvedRefs) {
+                    targets.insert(ref.target);
+                }
+                if (targets.size() > 1 && nodeA.oneObjectLinks.count(link) != 0) {
+                    // One side moved the link to another object while the other changed its picks
+                    // on the first; the link holds one object, so both cannot stand.
+                    resolvedRefs = refsA;
+                    dimensionConflicts.push_back(
+                        {MergeConflict::Kind::Value,
+                         conflict.id,
+                         nodeA.type,
+                         "references in " + link
+                             + ": one branch moved it to another object, the other changed it"});
+                }
             }
             else {
                 bool linksConflict = false;
@@ -593,6 +608,7 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
             result.refs.insert(result.refs.end(), resolvedRefs.begin(), resolvedRefs.end());
         }
         result.unorderedLinks = nodeA.unorderedLinks;
+        result.oneObjectLinks = nodeA.oneObjectLinks;
 
         // Field dimensions — every authored field present on any of the three sides.
         std::set<std::string> fieldNames;

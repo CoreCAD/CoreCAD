@@ -446,6 +446,10 @@ RecipeNode App::emitObjectRecipe(const DocumentObject& obj)
             if (!obj.linkOrderMatters(*prop)) {
                 node.unorderedLinks.insert(propName);
             }
+            if (prop->isDerivedFrom(PropertyLink::getClassTypeId())
+                || prop->isDerivedFrom(PropertyLinkSub::getClassTypeId())) {
+                node.oneObjectLinks.insert(propName);
+            }
             for (const auto& [target, sub] :
                  linkedPairs(*static_cast<const PropertyLinkBase*>(prop), /*newStyle=*/true)) {
                 if (target == nullptr) {
