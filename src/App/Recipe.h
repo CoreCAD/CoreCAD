@@ -124,26 +124,6 @@ struct MergeConflict
     std::optional<RecipeNode> branchB;
 };
 
-/// The outcome for one node the merge left with a dangling reference. Only §4.7's explicit
-/// delete reaches a merge (a node the deleting side could not see is a conflict instead), so a
-/// dangling node goes with what was deleted.
-struct RefResolution
-{
-    enum class Outcome
-    {
-        Carry,    ///< target still present — geometry determines it; no decision needed
-        Drop,     ///< a target was deleted by a side that could see this reference, so
-                  ///< the node goes with it and is disclosed
-    };
-
-    Outcome outcome;
-    std::string id;       ///< the referencing node's id
-    std::string type;     ///< the node's authored type token, opaque here — a driver turns it
-                          ///< into a readable label; carried so a dropped node (erased from the
-                          ///< merged section) can still be described without its id
-    std::string detail;   ///< which target dangled / what survives
-};
-
 /// One difference between two versions of a section, at the grain a person reads: a node
 /// arrived, a node went, or one dimension of a node changed — a single field, the node's links
 /// taken as one set, or its type.
@@ -196,8 +176,7 @@ public:
     /// The CAD-specific check with no text analogy: every ref in `withRefs` must point at
     /// an id present in `liveTargets`. A ref left dangling by the merge (one branch kept a
     /// constraint, the other deleted its target) is a Referential conflict — "merges clean,
-    /// regenerates broken". Appends any to `conflicts`. This is the low-level detector;
-    /// `resolveReferences` turns each dangling node into a §4.7 honest-retirement outcome.
+    /// regenerates broken". Appends any to `conflicts`.
     static void checkReferences(const RecipeSection& withRefs,
                                 const RecipeSection& liveTargets,
                                 std::vector<MergeConflict>& conflicts);
@@ -205,8 +184,8 @@ public:
     /// The presence half of the Amendment 21 proposal (not law), for references: a node a side
     /// added or changed that points at a target the other side deleted is a Referential
     /// conflict, never a §4.7 drop -- the deleting side could not see it. A node no side
-    /// touched is left to `resolveReferences`, as is one already in `conflicts`. Appends one
-    /// conflict per node.
+    /// touched is kept as it was, for the rebuild to judge; one already in `conflicts` is
+    /// skipped. Appends one conflict per node.
     static void presenceConflicts(const RecipeSection& baseRefs,
                                   const RecipeSection& aRefs,
                                   const RecipeSection& bRefs,
@@ -215,15 +194,6 @@ public:
                                   const RecipeSection& bTargets,
                                   const RecipeSection& merged,
                                   std::vector<MergeConflict>& conflicts);
-
-    /// Resolve references the merge left dangling. Every one reaching here was left alone by
-    /// the side that kept it (presenceConflicts holds the rest), so the deleting side could see
-    /// it: §4.7's explicit delete, where retiring the target is the request. A node with any
-    /// ref dangling is dropped (ERASED from `withRefs`) and disclosed; one whose refs all live
-    /// carries and is not reported. Sentinel refs (empty target — sketch axes/external) are
-    /// not authored targets and never dangle.
-    static std::vector<RefResolution> resolveReferences(RecipeSection& withRefs,
-                                                        const RecipeSection& liveTargets);
 
     /// Refine object-granular Value conflicts to field granularity — the layered pass that
     /// makes `threeWay`'s results finer without changing them. For each Value conflict, the

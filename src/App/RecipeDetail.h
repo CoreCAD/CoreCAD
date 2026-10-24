@@ -115,7 +115,6 @@ AppExport RecipeConsequences recipeConsequences(const DocumentObject& before,
 struct RecipeContentMerge
 {
     std::vector<MergeConflict> conflicts;
-    std::vector<RefResolution> resolutions;
 };
 
 using RecipeContentMerger = std::function<RecipeContentMerge(

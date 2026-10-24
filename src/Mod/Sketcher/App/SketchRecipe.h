@@ -130,13 +130,12 @@ struct OverriddenChoice
  */
 struct MergeReport
 {
-    App::RecipeSection mergedGeometry;     ///< geometry after the three-way merge
-    App::RecipeSection mergedConstraints;  ///< constraints after the merge + reference resolution
+    App::RecipeSection mergedGeometry;          ///< geometry after the three-way merge
+    App::RecipeSection mergedConstraints;       ///< constraints after the three-way merge
     std::vector<App::MergeConflict> conflicts;  ///< value conflicts (both edits changed one thing)
-    std::vector<App::RefResolution> resolutions;  ///< constraints dropped with deleted geometry
-    RegenResult regen;                            ///< does the merged sketch still compile?
-    std::vector<OverriddenChoice> overridden;     ///< chosen positions the re-solve moved
-    App::RecipeSection solvedPositions;           ///< where the re-solve put each entity
+    RegenResult regen;                          ///< does the merged sketch still compile?
+    std::vector<OverriddenChoice> overridden;   ///< chosen positions the re-solve moved
+    App::RecipeSection solvedPositions;         ///< where the re-solve put each entity
 };
 
 /// Run the whole recipe-merge pipeline over three sketches and collect the outcome (§7). Emits the

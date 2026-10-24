@@ -8,6 +8,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/Link.h>
 #include <App/ObjectRecipe.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyLinks.h>
@@ -21,6 +22,7 @@
 #include <Base/Vector3D.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <set>
 #include <string>
 #include <vector>
@@ -295,7 +297,6 @@ TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAStepBuiltOnAnObjectTheOtherBranchD
     EXPECT_FALSE(report.conflicts.front().ancestor);
     EXPECT_FALSE(report.conflicts.front().branchA) << "A never had the mirror";
     EXPECT_TRUE(report.conflicts.front().branchB);
-    EXPECT_TRUE(report.resolutions.empty());
     EXPECT_NE(
         App::formatDocumentReport(report).find("built on an object the other branch deleted"),
         std::string::npos
@@ -308,6 +309,49 @@ TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAStepBuiltOnAnObjectTheOtherBranchD
 // Two branches edit DIFFERENT fields of the same object (A its length, B its width). Through the
 // full emit -> object-granular merge -> field-granular refinement path, the disjoint edits are
 // auto-merged and the whole-document report reads clean — no conflict is put to the user.
+// A link into another document points at nothing in this one. Both branches keep it, so the
+// merge keeps it and reads clean.
+TEST_F(ObjectRecipeTest, mergeDocumentsKeepsALinkIntoAnotherDocument)
+{
+    auto& app = App::GetApplication();
+    App::Document* library = app.newDocument(app.getUniqueDocumentName("library").c_str(), "u");
+    auto* part = library->addObject("Part::Box", "Box");
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    // A link into another document is refused until both are saved.
+    std::vector<std::string> saved;
+    for (App::Document* doc : {library, _doc, docA, docB}) {
+        saved.push_back(App::Application::getTempPath() + doc->getName() + ".FCStd");
+        ASSERT_TRUE(doc->saveAs(saved.back().c_str()));
+    }
+    Base::Uuid linkId;
+    for (App::Document* doc : {_doc, docA, docB}) {
+        auto* link = static_cast<App::Link*>(doc->addObject("App::Link", "Link"));
+        link->LinkedObject.setValue(part);
+        if (doc == _doc) {
+            linkId.setValue(link->Uid.getValueStr());
+        }
+        else {
+            link->Uid.setValue(linkId);
+        }
+    }
+    docA->getObject("Link")->Label.setValue("Bracket");
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    ASSERT_EQ(report.merged.count(linkId.getValue()), 1u) << "the link is kept, not dropped";
+    EXPECT_EQ(report.merged.at(linkId.getValue()).fields.at("Label"), "Bracket");
+    EXPECT_FALSE(report.merged.at(linkId.getValue()).refs.empty());
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+    app.closeDocument(library->getName());
+    for (const std::string& path : saved) {
+        std::remove(path.c_str());
+    }
+}
+
 TEST_F(ObjectRecipeTest, mergeDocumentsAutoMergesDisjointFieldEdits)
 {
     auto* ancestorBox = _doc->addObject("Part::Box");
@@ -852,7 +896,6 @@ TEST_F(ObjectRecipeTest, mergeDocumentsHoldsAnEditedObjectTheOtherBranchDeletedW
     ASSERT_EQ(report.conflicts.size(), 1u);
     EXPECT_EQ(report.conflicts.front().id, extrusion);
     EXPECT_EQ(report.merged.count(extrusion), 1u) << "held for the person, not dropped";
-    EXPECT_TRUE(report.resolutions.empty());
     EXPECT_EQ(App::formatDocumentReport(report).find("dropped"), std::string::npos);
 
     app.closeDocument(docA->getName());
@@ -892,7 +935,6 @@ TEST_F(ObjectRecipeTest, mergeDocumentsKeepsWhatPointsAtAConflictedObject)
     ASSERT_EQ(report.conflicts.size(), 1u);
     EXPECT_EQ(report.conflicts.front().id, boxId.getValue());
     EXPECT_EQ(report.merged.count(mirrorId.getValue()), 1u);
-    EXPECT_TRUE(report.resolutions.empty());
 
     app.closeDocument(docA->getName());
     app.closeDocument(docB->getName());

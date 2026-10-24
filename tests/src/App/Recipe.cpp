@@ -246,60 +246,6 @@ TEST(RecipeMergeTest, aReferenceOneSideChangedToWhatTheOtherDeletedIsAConflict)
     }
 }
 
-// Slice 4 — referential resolution routed through §4.7's three honest-retirement
-// outcomes (Amendment 15), not a bespoke flag.
-
-// Drop-with-disclosure: a whole-subject dimension whose only target the merge deleted has
-// nothing left to hold it. It resolves to Drop and is ERASED from the merged section (a
-// flag-only implementation would leave it dangling in the result).
-TEST(RecipeMergeTest, danglingWithNoSurvivorDropsWithDisclosure)
-{
-    RecipeSection mergedGeo = baseGeometry();
-    mergedGeo.erase("g0");  // the merge retired g0
-
-    RecipeSection mergedCon;
-    // DistanceX on g0's two endpoints — subject is entirely g0.
-    mergedCon["c3"] = con("c3", "DistanceX", {{"g0", 1}, {"g0", 2}}, "10");
-
-    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
-
-    ASSERT_EQ(resolutions.size(), 1u);
-    EXPECT_EQ(resolutions[0].outcome, RefResolution::Outcome::Drop);
-    EXPECT_EQ(resolutions[0].id, "c3");
-    EXPECT_EQ(mergedCon.count("c3"), 0u);  // dropped — cannot be carried honestly
-}
-
-// A coincidence between a deleted point and a surviving one goes with the deleted one: every
-// reference reaching this pass is one the deleting side could see, so deleting was the request.
-TEST(RecipeMergeTest, danglingWithLiveParticipantDropsWithWhatWasDeleted)
-{
-    RecipeSection mergedGeo = baseGeometry();
-    mergedGeo.erase("g1");  // g0 survives, g1 retired
-
-    RecipeSection mergedCon;
-    mergedCon["c0"] = con("c0", "Coincident", {{"g0", 2}, {"g1", 1}});
-
-    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
-
-    ASSERT_EQ(resolutions.size(), 1u);
-    EXPECT_EQ(resolutions[0].outcome, RefResolution::Outcome::Drop);
-    EXPECT_EQ(resolutions[0].id, "c0");
-    EXPECT_EQ(mergedCon.count("c0"), 0u);
-}
-
-// Carry: every ref still resolves. Nothing is reported and nothing is erased (negative
-// control — the resolver must not report or drop a node whose references are all live).
-TEST(RecipeMergeTest, allLiveReferencesCarryAndAreNotReported)
-{
-    RecipeSection mergedGeo = baseGeometry();
-    RecipeSection mergedCon = baseConstraints();  // all refs point at surviving g0..g3
-
-    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
-
-    EXPECT_TRUE(resolutions.empty());
-    EXPECT_EQ(mergedCon.size(), 4u);  // nothing dropped
-}
-
 // Slice 5 — the field-granular refinement pass layered over the object-granular merge. It
 // takes the SAME base/A/B sections and the object-level conflicts threeWay produced and makes
 // them finer, without re-representing anything.
