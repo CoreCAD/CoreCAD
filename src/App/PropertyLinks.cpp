@@ -5319,7 +5319,7 @@ bool PropertyXLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) 
 {
     for (const PropertyXLinkSub& link : _Links) {
         DocumentObject* target = link.getValue();
-        if (target == nullptr) {
+        if (target == nullptr || !target->isAttachedToDocument()) {
             continue;
         }
         const std::vector<std::string>& subs = link.getSubValues();
