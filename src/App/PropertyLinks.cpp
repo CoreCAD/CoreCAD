@@ -5317,17 +5317,19 @@ void PropertyXLinkSubList::setValue(DocumentObject* lValue, const char* SubName)
 
 bool PropertyXLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) const
 {
-    for (DocumentObject* target : getValues()) {
+    for (const PropertyXLinkSub& link : _Links) {
+        DocumentObject* target = link.getValue();
         if (target == nullptr) {
             continue;
         }
-        const std::vector<std::string> subs = getSubValues(target);
+        const std::vector<std::string>& subs = link.getSubValues();
         if (subs.empty()) {
             pointing.push_back({target, {}, /*noPart=*/true});
             continue;
         }
-        for (const std::string& sub : subs) {
-            pointing.push_back({target, sub});
+        for (std::size_t i = 0; i < subs.size(); ++i) {
+            pointing.push_back(
+                {target, subs[i], false, fullNameOf(target, link.getShadowSubs(), i)});
         }
     }
     return true;
@@ -5336,17 +5338,36 @@ bool PropertyXLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) 
 bool PropertyXLinkSubList::pointAt(const std::vector<Pointing>& pointing)
 {
     // Gathered per target, because this property holds the parts of one object together rather
-    // than as a flat list of pairs.
-    std::map<DocumentObject*, std::vector<std::string>> picked;
+    // than as a flat list of pairs, and in the order the targets were stated.
+    struct Picked
+    {
+        DocumentObject* target;
+        std::vector<std::string> subs;
+        std::vector<ShadowSub> shadows;
+    };
+    std::vector<Picked> picked;
     for (const Pointing& one : pointing) {
-        if (one.noPart) {
-            picked.emplace(one.target, std::vector<std::string> {});
+        if (one.target == nullptr || !one.target->isAttachedToDocument()) {
+            FC_THROWM(Base::ValueError, "invalid document object");
         }
-        else {
-            picked[one.target].push_back(one.sub);
+        auto it = std::find_if(picked.begin(), picked.end(), [&](const Picked& p) {
+            return p.target == one.target;
+        });
+        if (it == picked.end()) {
+            it = picked.insert(picked.end(), {one.target, {}, {}});
+        }
+        if (!one.noPart) {
+            it->subs.push_back(one.sub);
+            it->shadows.push_back({one.name, one.name.empty() ? std::string() : one.sub});
         }
     }
-    setValues(picked);
+    atomic_change guard(*this);
+    _Links.clear();
+    for (Picked& one : picked) {
+        _Links.emplace_back(testFlag(LinkAllowPartial), this);
+        _Links.back().setValue(one.target, std::move(one.subs), std::move(one.shadows));
+    }
+    guard.tryInvoke();
     return true;
 }
 

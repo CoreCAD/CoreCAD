@@ -122,6 +122,42 @@ class TestReopenElementNames(unittest.TestCase):
         self.assertLess((base.Shape.getElement(subs[0]).CenterOfMass - meant).Length, 1e-6)
         self.assertAlmostEqual(fillet.Shape.Volume, volume, places=6)
 
+    def testAReferenceListThatCanCrossFilesFollowsItsName(self):
+        meant = self.pad.Shape.getElement("Edge1").CenterOfMass
+        self.fillet.addProperty("App::PropertyXLinkSubList", "Picked")
+        self.fillet.Picked = [(self.pad, ["Edge1"])]
+        path = os.path.join(tempfile.mkdtemp(), "names.cpart")
+        self.Doc.saveAs(path)
+        with open(path, encoding="utf-8") as recipe:
+            text = recipe.read()
+        picked = re.search(
+            r'(<Property name="Picked".*?<Target[^>]* sub=")Edge1("(?: name="([^"]*)")?)',
+            text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(picked.group(3))
+        with open(path, "w", encoding="utf-8") as recipe:
+            recipe.write(
+                text[: picked.start()] + picked.expand(r"\1Edge3\2") + text[picked.end() :]
+            )
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+
+        (target, subs), *_ = self.Doc.getObject("Fillet").Picked
+        self.assertLess((target.Shape.getElement(subs[0]).CenterOfMass - meant).Length, 1e-6)
+
+    def testAReferenceListThatCanCrossFilesKeepsItsOrder(self):
+        pads = [self.pad] + [
+            PartDesign.makeFeature(_square(self.Doc, "S%d" % i, x0=30 * i), "Pad")
+            for i in range(2, 6)
+        ]
+        self.Doc.recompute()
+        stated = [p.Name for p in reversed(pads)]
+        self.fillet.addProperty("App::PropertyXLinkList", "Sources")
+        self.fillet.Sources = [self.Doc.getObject(n) for n in stated]
+        self._reopen()
+        self.assertEqual([o.Name for o in self.Doc.getObject("Fillet").Sources], stated)
+
     def testARebuildAfterReopenTagsNamesAsBefore(self):
         # Each name carries the integer id of the object that made it, so a reopened object must
         # have the id it was born with.
