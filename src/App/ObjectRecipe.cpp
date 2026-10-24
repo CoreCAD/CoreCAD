@@ -611,8 +611,10 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
 
     // Objects reference other objects in the same section, so a reference dangles when the merge
     // kept an object whose referent the other branch deleted. Resolve against a snapshot of the
-    // survivors (a copy, so dropping a node cannot perturb the target set mid-pass).
-    const RecipeSection survivors = report.merged;
+    // survivors (a copy, so dropping a node cannot perturb the target set mid-pass); a held object
+    // is still there.
+    RecipeSection survivors = report.merged;
+    survivors.insert(contested.begin(), contested.end());
     report.resolutions = RecipeMerge::resolveReferences(report.merged, survivors);
     report.merged.merge(contested);
 
