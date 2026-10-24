@@ -1052,6 +1052,37 @@ TEST_F(ObjectRecipeTest, buildMergedDocumentMakesThePartBothVersionsDescribe)
     app.closeDocument(docB->getName());
 }
 
+// B set the box's length to nothing and was not rebuilt since, so B's box still reads as sound. The
+// merged box fails, but so does B's once rebuilt: the merge did not break it.
+TEST_F(ObjectRecipeTest, buildMergedDocumentJudgesEachVersionRebuilt)
+{
+    auto& app = App::GetApplication();
+    const std::string boxId = _doc->addObject("Part::Box", "Box")->Uid.getValueStr();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    for (App::Document* doc : {docA, docB}) {
+        Base::Uuid id;
+        id.setValue(boxId);
+        doc->addObject("Part::Box", "Box")->Uid.setValue(id);
+        doc->recompute();
+    }
+    docA->getObject("Box")->Label.setValue("Plate");
+    App::DocumentObject* boxB = docB->getObject("Box");
+    static_cast<App::PropertyFloat*>(boxB->getPropertyByName("Length"))->setValue(0.0);
+    ASSERT_TRUE(boxB->isValid()) << "B's box must read as sound until it is rebuilt";
+
+    const App::MergedDocument made = App::buildMergedDocument(*_doc, *docA, *docB);
+
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    ASSERT_FALSE(made.document->getObjects().front()->isValid()) << "the merged box must fail";
+    EXPECT_TRUE(made.newlyFailing.empty()) << made.newlyFailing.front();
+    EXPECT_TRUE(boxB->isValid()) << "B itself is not rebuilt by the merge";
+
+    app.closeDocument(made.document->getName());
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // Both versions set the box's length differently. Nothing is made while that is open.
 TEST_F(ObjectRecipeTest, buildMergedDocumentMakesNothingWhileAConflictIsOpen)
 {
