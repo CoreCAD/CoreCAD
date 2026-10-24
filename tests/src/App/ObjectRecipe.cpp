@@ -14,6 +14,7 @@
 #include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
 #include <App/Recipe.h>
+#include <Base/Exception.h>
 #include <Base/Interpreter.h>
 #include <Base/Matrix.h>
 #include <Base/Placement.h>
@@ -23,6 +24,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <set>
 #include <string>
 #include <vector>
@@ -350,6 +353,51 @@ TEST_F(ObjectRecipeTest, mergeDocumentsKeepsALinkIntoAnotherDocument)
     for (const std::string& path : saved) {
         std::remove(path.c_str());
     }
+}
+
+// A version holding something this build cannot read is refused: the merge cannot see what that
+// statement refers to, so it cannot tell what the other version's changes would break.
+TEST_F(ObjectRecipeTest, mergeDocumentsRefusesAVersionHoldingWhatItCannotHonour)
+{
+    auto& app = App::GetApplication();
+    App::Document* written = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    written->addObject("App::VarSet", "Alpha");
+    const std::string path = App::Application::getTempPath() + written->getName() + ".cpart";
+    ASSERT_TRUE(written->saveAs(path.c_str()));
+    app.closeDocument(written->getName());
+
+    std::string text;
+    {
+        std::ifstream in(path, std::ios::binary);
+        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    const std::string::size_type at = text.find("<Properties>", text.find("name=\"Alpha\""));
+    ASSERT_NE(at, std::string::npos);
+    text.insert(
+        at + std::string("<Properties>").size(),
+        "\n<Property name=\"Sparkle\" type=\"Addon::PropertyGlitter\" dynamic=\"1\">\n"
+        "<Glitter value=\"lots\"/>\n</Property>"
+    );
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << text;
+    }
+    App::Document* docB = app.openDocument(path.c_str());
+    ASSERT_NE(docB, nullptr);
+    ASSERT_FALSE(docB->heldStatements().empty());
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+
+    try {
+        App::mergeDocuments(*_doc, *docA, *docB);
+        ADD_FAILURE() << "the merge went ahead";
+    }
+    catch (const Base::RuntimeError& e) {
+        EXPECT_NE(std::string(e.what()).find("Alpha.Sparkle"), std::string::npos) << e.what();
+    }
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+    std::remove(path.c_str());
 }
 
 TEST_F(ObjectRecipeTest, mergeDocumentsAutoMergesDisjointFieldEdits)
