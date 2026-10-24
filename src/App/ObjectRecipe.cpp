@@ -384,6 +384,9 @@ RecipeContentMerge markUncomparedChanges(const Document& ancestor,
         for (const std::string& lost : inside.overridden) {
             found.overridden.push_back(where + lost);
         }
+        for (const std::string& open : inside.undetermined) {
+            found.undetermined.push_back(where + open);
+        }
     }
 
     return found;
@@ -669,6 +672,7 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     report.conflicts.insert(
         report.conflicts.end(), documentConflicts.begin(), documentConflicts.end());
     report.overridden = std::move(inside.overridden);
+    report.undetermined = std::move(inside.undetermined);
 
     return report;
 }
@@ -678,7 +682,7 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
     std::ostringstream out;
     const std::size_t objectCount = report.merged.size();
 
-    if (report.conflicts.empty() && report.overridden.empty()) {
+    if (report.conflicts.empty() && report.overridden.empty() && report.undetermined.empty()) {
         out << "Merged cleanly: " << objectCount << " objects, no conflicts.\n";
         return out.str();
     }
@@ -708,6 +712,14 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
         out << "\nConflicts — a choice the rest of the merge now decides otherwise:\n";
         for (const std::string& lost : report.overridden) {
             out << "  - " << lost << "\n";
+        }
+    }
+
+    if (!report.undetermined.empty()) {
+        out << "\nConflicts — a result the merged values do not decide; where the rebuild starts "
+               "decides it:\n";
+        for (const std::string& open : report.undetermined) {
+            out << "  - " << open << "\n";
         }
     }
 

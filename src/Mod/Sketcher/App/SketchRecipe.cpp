@@ -874,6 +874,24 @@ std::vector<std::string> choiceOf(
     return fields;
 }
 
+/// Whether a side left an entity somewhere other than the ancestor did, or added it.
+bool movedFromAncestor(const std::string& tag, const SketchObject& ancestor, const SketchObject& side)
+{
+    const Part::Geometry* there = findSeedGeometry(tag, {&side});
+    if (there == nullptr) {
+        return false;
+    }
+    const Part::Geometry* before = findSeedGeometry(tag, {&ancestor});
+    if (before == nullptr) {
+        return true;
+    }
+    App::RecipeNode was;
+    App::RecipeNode now;
+    addAuthoredCoordinates(before, was);
+    addAuthoredCoordinates(there, now);
+    return was.fields != now.fields;
+}
+
 }  // namespace
 
 MergeReport Sketcher::mergeSketches(
@@ -943,6 +961,8 @@ MergeReport Sketcher::mergeSketches(
         const auto first = heldBack.lower_bound({tag, std::string()});
         return first != heldBack.end() && first->first.first == tag;
     };
+    // Where a side chose an entity's position, every solve starts it there.
+    std::map<std::string, const SketchObject*> chosenSeedFor;
     // Where both sides chose different coordinates of one entity, it starts from both.
     std::vector<std::unique_ptr<Part::Geometry>> composed;
     std::map<std::string, const Part::Geometry*> seedGeometry;
@@ -983,8 +1003,12 @@ MergeReport Sketcher::mergeSketches(
             }
             continue;
         }
+        if (aChose) {
+            chosenSeedFor[tag] = &branchA;
+        }
         if (bChose && !aChose) {
             seedFor[tag] = &branchB;
+            chosenSeedFor[tag] = &branchB;
         }
         else if (
             !aChose && !bChose && movedBySolveOnly(bHeldBack, tag) && !movedBySolveOnly(aHeldBack, tag)
@@ -1034,6 +1058,51 @@ MergeReport Sketcher::mergeSketches(
             }
         }
     }
+
+    // Solved again from each side's own positions, wherever that side's differ from the
+    // ancestor's and no side chose them. A position that comes out elsewhere is decided by where
+    // the solve starts, not by the merged values.
+    App::DocumentInitFlags seededFlags;
+    seededFlags.createView = false;
+    seededFlags.temporary = true;
+    App::Document* seededScratch
+        = App::GetApplication().newDocument("recipeMergeSeeded", nullptr, seededFlags);
+    const auto starts = report.regen.solverStatus == 0
+        ? std::vector<const SketchObject*> {&branchA, &branchB}
+        : std::vector<const SketchObject*> {};
+    for (const SketchObject* side : starts) {
+        std::map<std::string, const SketchObject*> startFor = seedFor;
+        for (const auto& [tag, node] : report.mergedGeometry) {
+            if (chosenSeedFor.count(tag) == 0 && movedFromAncestor(tag, ancestor, *side)) {
+                startFor[tag] = side;
+            }
+        }
+        auto* seeded = static_cast<SketchObject*>(
+            seededScratch->addObject("Sketcher::SketchObject", "Seeded")
+        );
+        const RegenResult again
+            = regenerateSketch(*seeded, merged, {&branchA, &branchB}, startFor, seedGeometry);
+        if (again.solverStatus != 0) {
+            continue;
+        }
+        const std::vector<Part::Geometry*>& resolved = seeded->getInternalGeometry();
+        for (const auto& [tag, geoId] : again.placed) {
+            App::RecipeNode there;
+            addAuthoredCoordinates(resolved[geoId], there);
+            const bool reported = std::any_of(
+                report.undetermined.begin(),
+                report.undetermined.end(),
+                [&](const OpenPosition& p) { return p.id == tag; }
+            );
+            const auto solved = report.solvedPositions.find(tag);
+            if (!reported && solved != report.solvedPositions.end()
+                && there.fields != solved->second.fields) {
+                report.undetermined.push_back({tag, report.mergedGeometry.at(tag).type});
+            }
+        }
+    }
+    App::GetApplication().closeDocument(seededScratch->getName());
+
     if (scratch != nullptr) {
         App::GetApplication().closeDocument(scratch->getName());
     }
@@ -1559,6 +1628,9 @@ void Sketcher::registerSketchRecipeDetail()
             App::RecipeContentMerge merged {std::move(report.conflicts), {}};
             for (const OverriddenChoice& lost : report.overridden) {
                 merged.overridden.push_back(nounFor(lost.type) + " (" + lost.field + ")");
+            }
+            for (const OpenPosition& open : report.undetermined) {
+                merged.undetermined.push_back(nounFor(open.type));
             }
             return merged;
         },

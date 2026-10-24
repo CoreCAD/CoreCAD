@@ -268,7 +268,8 @@ PyMethodDef ApplicationPy::Methods[] = {
      "run and emergent geometry is never matched. Returns 'text', a plain-language\n"
      "report, and 'conflicts', each with what the ancestor, branchA and branchB stated\n"
      "for the object (None where that version has none), and 'overridden', each choice a\n"
-     "side made that the rebuilt result no longer holds. With build, also makes the\n"
+     "side made that the rebuilt result no longer holds, and 'undetermined', each result\n"
+     "that lands elsewhere when rebuilt from one version's own state. With build, also makes the\n"
      "merged part as a new document: 'document' (None when refused), 'refusal' and\n"
      "'newlyFailing', the steps that fail merged and failed on neither side, and\n"
      "'identityChanges', the bodies the merged rebuild retired or made where neither\n"
@@ -980,6 +981,11 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
             overridden.append(Py::String(lost));
         }
         answer.setItem("overridden", overridden);
+        Py::List undetermined;
+        for (const std::string& open : report.undetermined) {
+            undetermined.append(Py::String(open));
+        }
+        answer.setItem("undetermined", undetermined);
         if (build != 0) {
             answer.setItem("document",
                            made.document != nullptr ? Py::asObject(made.document->getPyObject())
