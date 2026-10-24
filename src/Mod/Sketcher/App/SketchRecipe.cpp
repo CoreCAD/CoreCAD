@@ -1304,6 +1304,16 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
         out << "\n";
     }
 
+    if (!report.undetermined.empty()) {
+        out << report.undetermined.size()
+            << " element(s) the merged dimensions do not place — started from either version, "
+               "the solve puts them somewhere else, so you must decide the shape:\n";
+        for (const OpenPosition& open : report.undetermined) {
+            out << "  - " << nounFor(open.type) << "\n";
+        }
+        out << "\n";
+    }
+
     // Compile verdict — the CAD-specific outcome with no text analogy.
     out << "Does the merged sketch hold together? ";
     if (report.regen.solverStatus == 0 && !report.regen.hasConflicts) {

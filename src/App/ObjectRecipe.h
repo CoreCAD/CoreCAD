@@ -115,6 +115,12 @@ struct DocumentMergeReport
     /// Each result the merged values do not decide: rebuilt from one version's own state, it lands
     /// elsewhere (Clause 21.3, item 3).
     std::vector<std::string> undetermined;
+
+    /// Nothing is left for a person to choose: no conflict, no lost choice, no undecided result.
+    bool complete() const
+    {
+        return conflicts.empty() && overridden.empty() && undetermined.empty();
+    }
 };
 
 /// Merge three versions of a model — a common ancestor and two edited copies of it — into a
