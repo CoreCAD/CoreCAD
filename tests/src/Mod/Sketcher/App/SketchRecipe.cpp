@@ -670,6 +670,7 @@ TEST_F(SketchRecipeMergeTest, aDragBesideAChangedDimensionSurvivesOnEitherSide)
 
         EXPECT_TRUE(report.conflicts.empty()) << (aEdits ? "A edits" : "B edits");
         EXPECT_TRUE(report.overridden.empty());
+        EXPECT_TRUE(report.undetermined.empty()) << "the drag decides the arm's far end";
         const std::string& armEnd = report.solvedPositions.at(tagOf(edits, 1)).fields.at("to");
         EXPECT_EQ(armEnd.rfind("15", 0), 0u) << armEnd << " is not where the drag left it";
         App::GetApplication().closeAllDocuments();
@@ -801,6 +802,157 @@ TEST_F(SketchRecipeMergeTest, aDocumentMergeReportsAChosenPositionTheMergeOverri
         EXPECT_EQ(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
         App::GetApplication().closeAllDocuments();
     }
+}
+
+// A triangle fixed by its three sides on a base pinned along the horizontal axis. Its top point
+// may stand above the base or below it; every dimension holds either way. Constraint 3 is the
+// base's length.
+void triangleOnItsBase(Sketcher::SketchObject* s)
+{
+    const int base = addLine(s, 0, 0, 6, 0);
+    const int right = addLine(s, 6, 0, 3, 4);
+    const int left = addLine(s, 3, 4, 0, 0);
+    addConstraintOn(s, Sketcher::DistanceX, {{base, Sketcher::PointPos::start}}, 0.0);
+    addConstraintOn(s, Sketcher::DistanceY, {{base, Sketcher::PointPos::start}}, 0.0);
+    addHorizontal(s, base);
+    addDistance(s, base, 6.0);
+    addDistance(s, right, 5.0);
+    addDistance(s, left, 5.0);
+    addCoincident(s, base, Sketcher::PointPos::end, right, Sketcher::PointPos::start);
+    addCoincident(s, right, Sketcher::PointPos::end, left, Sketcher::PointPos::start);
+    addCoincident(s, left, Sketcher::PointPos::end, base, Sketcher::PointPos::start);
+}
+
+/// Turns the triangle's top point below its base. A sketch this fully constrained cannot be
+/// dragged, so the two sides are set where they would stand and the solve keeps them there.
+void flipTop(Sketcher::SketchObject* triangle)
+{
+    std::vector<Part::Geometry*> geometry;
+    for (const Part::Geometry* geo : triangle->getInternalGeometry()) {
+        geometry.push_back(geo->clone());
+    }
+    static_cast<Part::GeomLineSegment*>(geometry[1])
+        ->setPoints(Base::Vector3d(6, 0, 0), Base::Vector3d(3, -4, 0));
+    static_cast<Part::GeomLineSegment*>(geometry[2])
+        ->setPoints(Base::Vector3d(3, -4, 0), Base::Vector3d(0, 0, 0));
+    triangle->Geometry.setValues(std::move(geometry));
+    triangle->getDocument()->recompute();
+}
+
+double topOf(const Sketcher::SketchObject* triangle)
+{
+    return triangle->getPoint(1, Sketcher::PointPos::end).y;
+}
+
+// One side turns the triangle's top point below the base, changing no dimension; the other
+// lengthens the base. The merged dimensions allow both shapes, and only where the solve starts
+// picks one: started from A's positions the top lands below, from B's above.
+TEST_F(SketchRecipeMergeTest, aShapeOnlyTheStartingPositionsDecideIsReported)
+{
+    for (const bool aFlips : {true, false}) {
+        Branches br = makeBranches(triangleOnItsBase);
+        ASSERT_NE(br.a, nullptr);
+        ASSERT_NE(br.b, nullptr);
+        Sketcher::SketchObject* flips = aFlips ? br.a : br.b;
+        Sketcher::SketchObject* lengthens = aFlips ? br.b : br.a;
+        flipTop(flips);
+        ASSERT_LT(topOf(flips), 0.0) << "the flip did not hold";
+        ASSERT_EQ(lengthens->setDatum(3, 7.0), 0);
+        lengthens->getDocument()->recompute();
+        ASSERT_GT(topOf(lengthens), 0.0);
+
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+        ASSERT_NE(ancestor, nullptr);
+        const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+        EXPECT_TRUE(report.conflicts.empty()) << (aFlips ? "A flips" : "B flips");
+        ASSERT_FALSE(report.undetermined.empty()) << (aFlips ? "A flips" : "B flips");
+        const auto& open = report.undetermined;
+        EXPECT_NE(
+            std::find_if(
+                open.begin(),
+                open.end(),
+                [&](const Sketcher::OpenPosition& p) { return p.id == tagOf(flips, 1); }
+            ),
+            open.end()
+        );
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
+// The control: the same base lengthened, and the other side changes nothing about the triangle.
+// Started from any version's positions the top lands in one place.
+TEST_F(SketchRecipeMergeTest, aShapeTheValuesDecideIsNotReported)
+{
+    Branches br = makeBranches(triangleOnItsBase);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->setDatum(3, 7.0), 0);
+    br.a->getDocument()->recompute();
+    addPoint(br.b, 20, 20);
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    EXPECT_TRUE(report.conflicts.empty());
+    EXPECT_TRUE(report.undetermined.empty());
+}
+
+// A free ellipse: A moves its centre, B widens it. An ellipse cannot be started from both sides'
+// coordinates at once, so this is a value conflict, and only that: not also a shape the starting
+// point decides.
+TEST_F(SketchRecipeMergeTest, aCurveBothSidesMovedIsOneConflict)
+{
+    Branches br = makeBranches([](Sketcher::SketchObject* s) {
+        Part::GeomEllipse ellipse;
+        ellipse.setCenter(Base::Vector3d(0, 0, 0));
+        ellipse.setMajorRadius(4);
+        ellipse.setMinorRadius(2);
+        s->addGeometry(&ellipse);
+    });
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    std::vector<Part::Geometry*> moved {br.a->getInternalGeometry()[0]->clone()};
+    static_cast<Part::GeomEllipse*>(moved[0])->setCenter(Base::Vector3d(3, 3, 0));
+    br.a->Geometry.setValues(std::move(moved));
+    br.a->getDocument()->recompute();
+    std::vector<Part::Geometry*> widened {br.b->getInternalGeometry()[0]->clone()};
+    static_cast<Part::GeomEllipse*>(widened[0])->setMajorRadius(6);
+    br.b->Geometry.setValues(std::move(widened));
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport report = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U);
+    EXPECT_TRUE(report.undetermined.empty());
+}
+
+// The flipped triangle merged as part of the whole document: its report names the sketch and does
+// not call the merge clean.
+TEST_F(SketchRecipeMergeTest, aDocumentMergeReportsAShapeTheValuesDoNotDecide)
+{
+    Branches br = makeBranches(triangleOnItsBase);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    flipTop(br.a);
+    ASSERT_LT(topOf(br.a), 0.0);
+    ASSERT_EQ(br.b->setDatum(3, 7.0), 0);
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const App::DocumentMergeReport report
+        = App::mergeDocuments(*ancestor->getDocument(), *br.a->getDocument(), *br.b->getDocument());
+
+    EXPECT_TRUE(report.conflicts.empty());
+    ASSERT_FALSE(report.undetermined.empty());
+    const std::string text = App::formatDocumentReport(report);
+    EXPECT_EQ(text.find("Merged cleanly"), std::string::npos) << text;
+    EXPECT_NE(text.find(report.undetermined.front()), std::string::npos) << text;
 }
 
 // A line from the origin to a point on the horizontal axis, its length dimensioned: fully

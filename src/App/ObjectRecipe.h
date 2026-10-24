@@ -112,6 +112,9 @@ struct DocumentMergeReport
     std::vector<MergeConflict> conflicts;
     /// Each value a side chose that the rebuilt result no longer holds (Clause 21.3, item 4).
     std::vector<std::string> overridden;
+    /// Each result the merged values do not decide: rebuilt from one version's own state, it lands
+    /// elsewhere (Clause 21.3, item 3).
+    std::vector<std::string> undetermined;
 };
 
 /// Merge three versions of a model — a common ancestor and two edited copies of it — into a

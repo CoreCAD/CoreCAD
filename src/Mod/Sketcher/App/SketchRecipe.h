@@ -120,6 +120,13 @@ struct OverriddenChoice
     std::string field;  ///< which of its coordinates
 };
 
+/// Geometry whose solved position depends on where the solve starts, not on the merged values.
+struct OpenPosition
+{
+    std::string id;    ///< the geometry's durable tag
+    std::string type;  ///< its authored type token
+};
+
 /** The user-facing outcome of merging three sketches — a common ancestor and two edited copies —
  *  the whole recipe-merge pipeline (emit → three-way merge → reference resolution → regenerate)
  *  run as one call so the result can be surfaced to a person (DESIGN_recipe-merge.md §7). This is
@@ -136,6 +143,8 @@ struct MergeReport
     RegenResult regen;                          ///< does the merged sketch still compile?
     std::vector<OverriddenChoice> overridden;   ///< chosen positions the re-solve moved
     App::RecipeSection solvedPositions;         ///< where the re-solve put each entity
+    /// Geometry the re-solve puts elsewhere when started from one version's own positions.
+    std::vector<OpenPosition> undetermined;
 };
 
 /// Run the whole recipe-merge pipeline over three sketches and collect the outcome (§7). Emits the

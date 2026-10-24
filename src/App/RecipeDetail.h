@@ -117,6 +117,9 @@ struct RecipeContentMerge
     std::vector<MergeConflict> conflicts;
     /// Each value a side chose that the rebuilt content no longer holds, named for a person.
     std::vector<std::string> overridden;
+    /// Each part of the rebuilt content that lands elsewhere when rebuilt from one version's own
+    /// state, named for a person.
+    std::vector<std::string> undetermined;
 };
 
 using RecipeContentMerger = std::function<RecipeContentMerge(
