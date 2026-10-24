@@ -286,49 +286,20 @@ std::vector<RefResolution> RecipeMerge::resolveReferences(RecipeSection& withRef
     std::vector<RefResolution> resolutions;
     std::vector<std::string> toDrop;
 
-    for (auto& [id, node] : withRefs) {
-        bool anyDangling = false;
-        bool anySurviving = false;
-        std::string danglingTarget;
-
-        for (const RecipeRef& ref : node.refs) {
-            if (ref.target.empty()) {
-                continue;  // sentinel (sketch axis/external) — not an authored target
-            }
-            if (liveTargets.find(ref.target) == liveTargets.end()) {
-                anyDangling = true;
-                if (danglingTarget.empty()) {
-                    danglingTarget = ref.target;
-                }
-            }
-            else {
-                anySurviving = true;
-            }
+    for (const auto& [id, node] : withRefs) {
+        const auto dangling =
+            std::find_if(node.refs.begin(), node.refs.end(), [&](const RecipeRef& ref) {
+                // An empty target is a sentinel (sketch axis/external), not an authored target.
+                return !ref.target.empty() && liveTargets.find(ref.target) == liveTargets.end();
+            });
+        if (dangling == node.refs.end()) {
+            continue;
         }
-
-        if (!anyDangling) {
-            continue;  // Carry: geometry still determines it; nothing to decide.
-        }
-
-        if (anySurviving) {
-            // A live participant survives; a satisfiable target remains but re-targeting
-            // off the retired one is the user's choice.
-            resolutions.push_back({RefResolution::Outcome::StopAsk,
-                                   id,
-                                   node.type,
-                                   "a live reference survives; retargeting from retired "
-                                       + danglingTarget + " is the user's choice"});
-        }
-        else {
-            // No authored ref survives; the subject genuinely ceased to exist and nothing
-            // remains to hold this node. Drop it, disclosing what retired.
-            resolutions.push_back({RefResolution::Outcome::Drop,
-                                   id,
-                                   node.type,
-                                   "no surviving reference; dropped (target " + danglingTarget
-                                       + " retired)"});
-            toDrop.push_back(id);
-        }
+        resolutions.push_back({RefResolution::Outcome::Drop,
+                               id,
+                               node.type,
+                               "pointed at " + dangling->target + ", which one version deleted"});
+        toDrop.push_back(id);
     }
 
     for (const std::string& id : toDrop) {

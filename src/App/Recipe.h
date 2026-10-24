@@ -124,19 +124,16 @@ struct MergeConflict
     std::optional<RecipeNode> branchB;
 };
 
-/// The honest-retirement outcome for one node the merge left with a dangling reference,
-/// decided on §4.7's "who can decide?" axis (ratified as Amendment 15). The engine
-/// applies these three outcomes; it does not invent new ones.
+/// The outcome for one node the merge left with a dangling reference. Only §4.7's explicit
+/// delete reaches a merge (a node the deleting side could not see is a conflict instead), so a
+/// dangling node goes with what was deleted.
 struct RefResolution
 {
     enum class Outcome
     {
         Carry,    ///< target still present — geometry determines it; no decision needed
-        Drop,     ///< no surviving reference remains — the subject genuinely ceased to
-                  ///< exist; nothing survives to hold it, so the node is dropped and
-                  ///< disclosed (the whole-subject-dimension case)
-        StopAsk   ///< a live participant survives — a satisfiable target remains but
-                  ///< re-targeting it is the user's choice, so the node is kept
+        Drop,     ///< a target was deleted by a side that could see this reference, so
+                  ///< the node goes with it and is disclosed
     };
 
     Outcome outcome;
@@ -219,16 +216,11 @@ public:
                                   const RecipeSection& merged,
                                   std::vector<MergeConflict>& conflicts);
 
-    /// Resolve references the merge left dangling, routed through §4.7's three honest-
-    /// retirement outcomes rather than a bespoke rule. For each node in `withRefs`, its
-    /// authored refs are re-resolved against the merged `liveTargets`:
-    ///   - every ref still present            -> Carry (not reported; nothing to decide);
-    ///   - at least one ref dangling, but a
-    ///     live participant survives           -> StopAsk (node KEPT for the user);
-    ///   - every authored ref dangling         -> Drop (node ERASED from `withRefs`, since
-    ///                                            nothing survives to hold it honestly).
-    /// Mutates `withRefs` for the Drop case. Returns one RefResolution per affected node
-    /// (Carry nodes are omitted). Sentinel refs (empty target — sketch axes/external) are
+    /// Resolve references the merge left dangling. Every one reaching here was left alone by
+    /// the side that kept it (presenceConflicts holds the rest), so the deleting side could see
+    /// it: §4.7's explicit delete, where retiring the target is the request. A node with any
+    /// ref dangling is dropped (ERASED from `withRefs`) and disclosed; one whose refs all live
+    /// carries and is not reported. Sentinel refs (empty target — sketch axes/external) are
     /// not authored targets and never dangle.
     static std::vector<RefResolution> resolveReferences(RecipeSection& withRefs,
                                                         const RecipeSection& liveTargets);

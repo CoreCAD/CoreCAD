@@ -902,17 +902,16 @@ MergeReport Sketcher::mergeSketches(
         report.mergedConstraints,
         report.conflicts
     );
+    // An open conflict is held for the person settling it; the reference pass never drops it.
     App::RecipeSection contested;
     for (const App::MergeConflict& conflict : report.conflicts) {
-        const auto node = report.mergedConstraints.find(conflict.id);
-        if (conflict.kind == App::MergeConflict::Kind::Referential
-            && node != report.mergedConstraints.end()) {
+        if (const auto node = report.mergedConstraints.find(conflict.id);
+            node != report.mergedConstraints.end()) {
             contested.insert(report.mergedConstraints.extract(node));
         }
     }
 
-    // Turn any other dangling reference into a §4.7 honest-retirement outcome (Drop erases the
-    // node; StopAsk keeps it for the user; Carry is not reported).
+    // Any other dangling reference goes with what one side deleted (§4.7's explicit delete).
     App::RecipeSection liveTargets = report.mergedGeometry;
     liveTargets.insert(mergedExternal.begin(), mergedExternal.end());
     for (const auto& [name, geoId] : frameGeoIds()) {
@@ -1091,7 +1090,7 @@ std::string nounFor(const std::string& type)
 }
 
 /// " on a line and a circle" — the surviving geometry a still-present constraint attaches to, for
-/// the value-conflict / stop-and-ask lines where the node (and its targets) remain in the merge.
+/// the conflict lines where the node (and its targets) remain in the merge.
 /// Empty when the node was dropped, has no resolvable targets, or is itself geometry.
 std::string describeTargets(const std::string& id, const MergeReport& report)
 {
@@ -1165,36 +1164,15 @@ std::string Sketcher::formatMergeReport(const MergeReport& report)
         out << "\n";
     }
 
-    // Reference resolutions — dropped-with-disclosure and stop-and-ask.
-    std::vector<const App::RefResolution*> drops;
-    std::vector<const App::RefResolution*> asks;
-    for (const App::RefResolution& r : report.resolutions) {
-        if (r.outcome == App::RefResolution::Outcome::Drop) {
-            drops.push_back(&r);
-        }
-        else if (r.outcome == App::RefResolution::Outcome::StopAsk) {
-            asks.push_back(&r);
-        }
-    }
-    if (drops.empty() && asks.empty()) {
+    if (report.resolutions.empty()) {
         out << "No dangling references: every constraint still points at geometry that "
                "survived.\n\n";
     }
-    if (!drops.empty()) {
-        out << drops.size()
-            << " constraint(s) removed — the geometry they described is gone from the merged "
-               "result, so nothing was left to hold them:\n";
-        for (const App::RefResolution* r : drops) {
-            out << "  - " << nounFor(r->type) << "\n";
-        }
-        out << "\n";
-    }
-    if (!asks.empty()) {
-        out << asks.size()
-            << " constraint(s) need your decision — they point at deleted geometry while a related "
-               "element survives, so where they should attach is your call:\n";
-        for (const App::RefResolution* r : asks) {
-            out << "  - " << nounFor(r->type) << describeTargets(r->id, report) << "\n";
+    else {
+        out << report.resolutions.size()
+            << " constraint(s) removed with the geometry one version deleted:\n";
+        for (const App::RefResolution& r : report.resolutions) {
+            out << "  - " << nounFor(r.type) << "\n";
         }
         out << "\n";
     }

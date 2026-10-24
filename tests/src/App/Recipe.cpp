@@ -269,10 +269,9 @@ TEST(RecipeMergeTest, danglingWithNoSurvivorDropsWithDisclosure)
     EXPECT_EQ(mergedCon.count("c3"), 0u);  // dropped — cannot be carried honestly
 }
 
-// Stop-and-ask: a coincidence between a retired point and a surviving one still has a live
-// participant, so re-targeting is the user's call. It resolves to StopAsk and is KEPT (a
-// drop-everything implementation would erase it).
-TEST(RecipeMergeTest, danglingWithLiveParticipantStopsAndAsks)
+// A coincidence between a deleted point and a surviving one goes with the deleted one: every
+// reference reaching this pass is one the deleting side could see, so deleting was the request.
+TEST(RecipeMergeTest, danglingWithLiveParticipantDropsWithWhatWasDeleted)
 {
     RecipeSection mergedGeo = baseGeometry();
     mergedGeo.erase("g1");  // g0 survives, g1 retired
@@ -283,9 +282,9 @@ TEST(RecipeMergeTest, danglingWithLiveParticipantStopsAndAsks)
     std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
 
     ASSERT_EQ(resolutions.size(), 1u);
-    EXPECT_EQ(resolutions[0].outcome, RefResolution::Outcome::StopAsk);
+    EXPECT_EQ(resolutions[0].outcome, RefResolution::Outcome::Drop);
     EXPECT_EQ(resolutions[0].id, "c0");
-    EXPECT_EQ(mergedCon.count("c0"), 1u);  // kept — a live target survives to re-home onto
+    EXPECT_EQ(mergedCon.count("c0"), 0u);
 }
 
 // Carry: every ref still resolves. Nothing is reported and nothing is erased (negative
@@ -299,38 +298,6 @@ TEST(RecipeMergeTest, allLiveReferencesCarryAndAreNotReported)
 
     EXPECT_TRUE(resolutions.empty());
     EXPECT_EQ(mergedCon.size(), 4u);  // nothing dropped
-}
-
-// One resolution pass yields BOTH outcomes at once — the discriminator is whether a live
-// participant survives, per node. Deleting g2 drops the Vertical on g2 (no survivor) while
-// the Coincident g1-g2 stops-and-asks (g1 survives). A blind rule that always dropped, or
-// always asked, would fail one half of this.
-TEST(RecipeMergeTest, mixedDanglingResolvesPerNode)
-{
-    RecipeSection mergedGeo = baseGeometry();
-    mergedGeo.erase("g2");
-
-    RecipeSection mergedCon;
-    mergedCon["cV"] = con("cV", "Vertical", {{"g2", 0}});               // only g2 -> Drop
-    mergedCon["c1"] = con("c1", "Coincident", {{"g1", 2}, {"g2", 1}});  // g1 lives -> StopAsk
-
-    std::vector<RefResolution> resolutions = RecipeMerge::resolveReferences(mergedCon, mergedGeo);
-
-    ASSERT_EQ(resolutions.size(), 2u);
-    // collect by id (map iteration order is by key, but assert explicitly to be safe)
-    RefResolution::Outcome cV {}, c1 {};
-    for (const RefResolution& r : resolutions) {
-        if (r.id == "cV") {
-            cV = r.outcome;
-        }
-        if (r.id == "c1") {
-            c1 = r.outcome;
-        }
-    }
-    EXPECT_EQ(cV, RefResolution::Outcome::Drop);
-    EXPECT_EQ(c1, RefResolution::Outcome::StopAsk);
-    EXPECT_EQ(mergedCon.count("cV"), 0u);  // dropped
-    EXPECT_EQ(mergedCon.count("c1"), 1u);  // kept
 }
 
 // Slice 5 — the field-granular refinement pass layered over the object-granular merge. It

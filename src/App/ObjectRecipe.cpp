@@ -654,17 +654,10 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
                    "\nConflicts — one branch built on an object the other branch deleted:\n");
 
     if (!report.resolutions.empty()) {
-        out << "\nReferences the merge had to settle:\n";
+        out << "\nRemoved with what they pointed at:\n";
         for (const RefResolution& resolution : report.resolutions) {
-            const char* label = "kept";
-            if (resolution.outcome == RefResolution::Outcome::Drop) {
-                label = "dropped";
-            }
-            else if (resolution.outcome == RefResolution::Outcome::StopAsk) {
-                label = "needs a decision";
-            }
             out << "  - " << (resolution.type.empty() ? "object" : resolution.type) << " "
-                << shortId(resolution.id) << " " << label << ": " << resolution.detail << "\n";
+                << shortId(resolution.id) << ": " << resolution.detail << "\n";
         }
     }
 
