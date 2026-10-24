@@ -26,6 +26,7 @@
 #include <Mod/Sketcher/App/SketchRecipe.h>
 
 #include <algorithm>
+#include <set>
 #include <filesystem>
 #include <functional>
 
@@ -622,6 +623,55 @@ TEST_F(SketchRecipeMergeTest, aDimensionSetByAFormulaRebuildsAtWhatTheFormulaGiv
     EXPECT_EQ(report.regen.solverStatus, 0);
     const std::string top = report.solvedPositions.at(post).fields.at("to");
     EXPECT_NE(top.find("8"), std::string::npos) << top;
+}
+
+// A draws a line and B lengthens the post, both in one sketch. The merged part's sketch holds the
+// line and the new length, each element under the id it carried, and solves.
+TEST_F(SketchRecipeMergeTest, aMergedPartHoldsTheSketchBothVersionsDrew)
+{
+    Branches br = makeBranches(postAndArm);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    const int drawn = addLine(br.a, 20, 0, 30, 0);
+    br.a->getDocument()->recompute();
+    ASSERT_EQ(br.b->setDatum(3, 8.0), 0);
+    br.b->getDocument()->recompute();
+    const std::string line = tagOf(br.a, drawn);
+    const std::string length = boost::uuids::to_string(br.b->Constraints.getValues()[3]->getTag());
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const App::MergedDocument made = App::buildMergedDocument(
+        *ancestor->getDocument(),
+        *br.a->getDocument(),
+        *br.b->getDocument()
+    );
+
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    Sketcher::SketchObject* sketch = nullptr;
+    for (App::DocumentObject* obj : made.document->getObjects()) {
+        if (obj->Uid.getValueStr() == br.a->Uid.getValueStr()) {
+            sketch = dynamic_cast<Sketcher::SketchObject*>(obj);
+        }
+    }
+    ASSERT_NE(sketch, nullptr);
+    std::set<std::string> tags;
+    for (const Part::Geometry* geo : sketch->getInternalGeometry()) {
+        tags.insert(boost::uuids::to_string(geo->getTag()));
+    }
+    EXPECT_EQ(tags.count(line), 1u) << "A's line, under its own id";
+    bool lengthFound = false;
+    for (const Sketcher::Constraint* constraint : sketch->Constraints.getValues()) {
+        if (boost::uuids::to_string(constraint->getTag()) == length) {
+            lengthFound = true;
+            EXPECT_DOUBLE_EQ(constraint->getValue(), 8.0);
+        }
+    }
+    EXPECT_TRUE(lengthFound) << "B's length, under its own id";
+    EXPECT_EQ(sketch->solve(), 0);
+    EXPECT_TRUE(made.newlyFailing.empty());
+
+    App::GetApplication().closeDocument(made.document->getName());
 }
 
 // A changes one dimension and B adds another, and nobody drags anything. Each solver moves the arm,

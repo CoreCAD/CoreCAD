@@ -898,6 +898,97 @@ TEST_F(ObjectRecipeTest, mergeDocumentsKeepsWhatPointsAtAConflictedObject)
     app.closeDocument(docB->getName());
 }
 
+// A sets a box's length; B sets its width, renames the mirror of it and adds a cylinder. The merged
+// part holds all of it, each object under the id it carried, and rebuilds.
+TEST_F(ObjectRecipeTest, buildMergedDocumentMakesThePartBothVersionsDescribe)
+{
+    auto& app = App::GetApplication();
+    const auto version = [](App::Document* doc, const Base::Uuid* boxId, const Base::Uuid* mirrorId) {
+        auto* box = doc->addObject("Part::Box", "Box");
+        auto* mirror = doc->addObject("Part::Mirroring", "Mirror");
+        if (boxId != nullptr) {
+            box->Uid.setValue(*boxId);
+            mirror->Uid.setValue(*mirrorId);
+        }
+        static_cast<App::PropertyLink*>(mirror->getPropertyByName("Source"))->setValue(box);
+        return std::make_pair(box, mirror);
+    };
+    const auto [ancestorBox, ancestorMirror] = version(_doc, nullptr, nullptr);
+    Base::Uuid boxId;
+    boxId.setValue(ancestorBox->Uid.getValueStr());
+    Base::Uuid mirrorId;
+    mirrorId.setValue(ancestorMirror->Uid.getValueStr());
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto [boxA, mirrorA] = version(docA, &boxId, &mirrorId);
+    auto [boxB, mirrorB] = version(docB, &boxId, &mirrorId);
+    static_cast<App::PropertyFloat*>(boxA->getPropertyByName("Length"))->setValue(20.0);
+    static_cast<App::PropertyFloat*>(boxB->getPropertyByName("Width"))->setValue(30.0);
+    mirrorB->Label.setValue("Reflection");
+    const std::string cylinder = docB->addObject("Part::Cylinder", "Cylinder")->Uid.getValueStr();
+    for (App::Document* doc : {_doc, docA, docB}) {
+        doc->recompute();
+    }
+
+    const App::MergedDocument made = App::buildMergedDocument(*_doc, *docA, *docB);
+
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    const auto withUid = [&made](const std::string& id) -> App::DocumentObject* {
+        for (App::DocumentObject* obj : made.document->getObjects()) {
+            if (obj->Uid.getValueStr() == id) {
+                return obj;
+            }
+        }
+        return nullptr;
+    };
+    App::DocumentObject* box = withUid(boxId.getValue());
+    ASSERT_NE(box, nullptr);
+    EXPECT_DOUBLE_EQ(
+        static_cast<App::PropertyFloat*>(box->getPropertyByName("Length"))->getValue(),
+        20.0
+    );
+    EXPECT_DOUBLE_EQ(static_cast<App::PropertyFloat*>(box->getPropertyByName("Width"))->getValue(), 30.0);
+    App::DocumentObject* mirror = withUid(mirrorId.getValue());
+    ASSERT_NE(mirror, nullptr);
+    EXPECT_STREQ(mirror->Label.getValue(), "Reflection");
+    EXPECT_EQ(static_cast<App::PropertyLink*>(mirror->getPropertyByName("Source"))->getValue(), box);
+    EXPECT_NE(withUid(cylinder), nullptr);
+    EXPECT_TRUE(made.newlyFailing.empty());
+    EXPECT_TRUE(box->isValid());
+
+    app.closeDocument(made.document->getName());
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// Both versions set the box's length differently. Nothing is made while that is open.
+TEST_F(ObjectRecipeTest, buildMergedDocumentMakesNothingWhileAConflictIsOpen)
+{
+    auto& app = App::GetApplication();
+    const std::string uid = _doc->addObject("Part::Box", "Box")->Uid.getValueStr();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    for (auto [doc, length] : {std::pair {docA, 20.0}, std::pair {docB, 30.0}}) {
+        auto* box = doc->addObject("Part::Box", "Box");
+        box->Uid.setValue(sharedId);
+        static_cast<App::PropertyFloat*>(box->getPropertyByName("Length"))->setValue(length);
+    }
+    const std::size_t open = app.getDocuments().size();
+
+    const App::MergedDocument made = App::buildMergedDocument(*_doc, *docA, *docB);
+
+    EXPECT_EQ(made.document, nullptr);
+    EXPECT_FALSE(made.refusal.empty());
+    EXPECT_EQ(made.report.conflicts.size(), 1u);
+    EXPECT_EQ(app.getDocuments().size(), open);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // A formula binds the object it reads by durable id; the name in its text is display (§4.5). So a
 // rename, which rewrites that text, leaves the recipe's statement of the formula as it was, both
 // for a reference by label and one by name.

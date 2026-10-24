@@ -45,6 +45,7 @@
 #include <App/Document.h>
 #include <Base/Tools.h>
 #include <App/ElementNamingUtils.h>
+#include <App/ObjectIdentifier.h>
 #include <App/PropertyLinks.h>
 #include <App/RecipeDetail.h>
 #include <Mod/Part/App/Geometry.h>
@@ -120,6 +121,25 @@ const Part::Geometry* findSeedGeometry(
         for (const Part::Geometry* geo : source->getInternalGeometry()) {
             if (tagToString(geo->getTag()) == tag) {
                 return geo;
+            }
+        }
+    }
+    return nullptr;
+}
+
+/// The constraint holding `tag` in the first seed source that has one, or null.
+const Constraint* findSeedConstraint(
+    const std::string& tag,
+    const std::vector<const SketchObject*>& seedSources
+)
+{
+    for (const SketchObject* source : seedSources) {
+        if (source == nullptr) {
+            continue;
+        }
+        for (const Constraint* constraint : source->Constraints.getValues()) {
+            if (tagToString(constraint->getTag()) == tag) {
+                return constraint;
             }
         }
     }
@@ -571,7 +591,10 @@ RegenResult Sketcher::regenerateSketch(
         }
         const auto it = node.fields.find("construction");
         const bool construction = it != node.fields.end() && it->second == "true";
-        tagToGeoId[tag] = target.addGeometry(seed, construction);
+        const int geoId = target.addGeometry(seed, construction);
+        // The entity is the one the recipe names, so it keeps that identity (§4.7).
+        target.Geometry.getValues()[geoId]->copyTagFrom(seed);
+        tagToGeoId[tag] = geoId;
     }
     result.placed = tagToGeoId;
 
@@ -612,7 +635,16 @@ RegenResult Sketcher::regenerateSketch(
             continue;
         }
 
-        auto constraint = std::make_unique<Constraint>();
+        // Started from the side's own constraint where one holds this tag, so it keeps its
+        // identity and name; everything the recipe states is then set from the recipe.
+        const Constraint* seedConstraint = findSeedConstraint(tag, seedSources);
+        auto constraint = seedConstraint != nullptr
+            ? std::unique_ptr<Constraint>(seedConstraint->clone())
+            : std::make_unique<Constraint>();
+        for (std::size_t slot = 0; slot < constraint->getElementsSize(); ++slot) {
+            constraint->setElement(slot, GeoElementId());
+        }
+        constraint->truncateElements(0);
         constraint->Type = type;
         const auto valueIt = node.fields.find("value");
         if (valueIt != node.fields.end()) {
@@ -847,7 +879,8 @@ std::vector<std::string> choiceOf(
 MergeReport Sketcher::mergeSketches(
     const SketchObject& ancestor,
     const SketchObject& branchA,
-    const SketchObject& branchB
+    const SketchObject& branchB,
+    SketchObject* into
 )
 {
     MergeReport report;
@@ -980,13 +1013,21 @@ MergeReport Sketcher::mergeSketches(
 
     // Regenerate onto a hidden, throwaway scratch sketch and re-solve: the merge is text until the
     // kernel runs, and only the solver reveals a clean merge that does not compile.
-    App::DocumentInitFlags flags;
-    flags.createView = false;
-    flags.temporary = true;
-    App::Document* scratch = App::GetApplication().newDocument("recipeMergeScratch", nullptr, flags);
-    auto* target = static_cast<SketchObject*>(
-        scratch->addObject("Sketcher::SketchObject", "MergeScratch")
-    );
+    App::Document* scratch = nullptr;
+    SketchObject* target = into;
+    if (target == nullptr) {
+        App::DocumentInitFlags flags;
+        flags.createView = false;
+        flags.temporary = true;
+        scratch = App::GetApplication().newDocument("recipeMergeScratch", nullptr, flags);
+        target = static_cast<SketchObject*>(
+            scratch->addObject("Sketcher::SketchObject", "MergeScratch")
+        );
+    }
+    else {
+        target->deleteAllConstraints();
+        target->deleteAllGeometry();
+    }
     const SketchRecipe merged {report.mergedGeometry, report.mergedConstraints, mergedExternal};
     report.regen = regenerateSketch(*target, merged, {&branchA, &branchB}, seedFor, seedGeometry);
 
@@ -1011,7 +1052,9 @@ MergeReport Sketcher::mergeSketches(
             }
         }
     }
-    App::GetApplication().closeDocument(scratch);
+    if (scratch != nullptr) {
+        App::GetApplication().closeDocument(scratch->getName());
+    }
 
     return report;
 }
@@ -1545,6 +1588,36 @@ void Sketcher::registerSketchRecipeDetail()
                 static_cast<const SketchObject&>(branchB)
             );
             return App::RecipeContentMerge {std::move(report.conflicts), std::move(report.resolutions)};
+        },
+        [](App::DocumentObject& into,
+           const App::DocumentObject& ancestor,
+           const App::DocumentObject& branchA,
+           const App::DocumentObject& branchB) -> std::optional<std::string> {
+            const auto& sketches = {
+                &static_cast<const SketchObject&>(ancestor),
+                &static_cast<const SketchObject&>(branchA),
+                &static_cast<const SketchObject&>(branchB)
+            };
+            for (const SketchObject* sketch : sketches) {
+                // Borrowed geometry rebuilds only as stand-ins, and a formula on a dimension is
+                // bound by the dimension's place in a list the rebuild renumbers.
+                if (!borrowedGeometry(*sketch).empty()) {
+                    return "it borrows geometry from other objects";
+                }
+                if (!sketch->ExpressionEngine.getExpressions().empty()) {
+                    return "a formula drives one of its dimensions";
+                }
+            }
+            const MergeReport report = mergeSketches(
+                static_cast<const SketchObject&>(ancestor),
+                static_cast<const SketchObject&>(branchA),
+                static_cast<const SketchObject&>(branchB),
+                &static_cast<SketchObject&>(into)
+            );
+            if (!report.conflicts.empty() || !report.regen.fullyRealized) {
+                return "it could not be rebuilt from the merged elements";
+            }
+            return std::nullopt;
         }
     );
 }

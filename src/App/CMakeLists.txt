@@ -327,6 +327,7 @@ SET(FreeCADApp_CPP_SRCS
     MetadataPyImp.cpp
     Recipe.cpp
     ObjectRecipe.cpp
+    MergedDocument.cpp
     RecipeText.cpp
     GeometryCache.cpp
     SealedArchive.cpp

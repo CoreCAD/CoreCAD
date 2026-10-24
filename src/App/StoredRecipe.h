@@ -28,6 +28,7 @@
 #include <FCGlobal.h>
 
 #include <iosfwd>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -49,6 +50,10 @@ struct RecipeScope
     std::vector<const DocumentObject*> objects;
     /// Whether the document's own authored properties are part of this rendering.
     bool withDocumentProperties {true};
+    /// For an object stated, the properties whose value is stated from another version of that
+    /// object instead, as a merge takes one side's value. A name the other version lacks is left
+    /// out.
+    std::map<const DocumentObject*, std::map<std::string, const DocumentObject*>> valuesFrom;
 };
 
 /// The version of the recipe format this build writes, and the only one it reads (Amendment 19

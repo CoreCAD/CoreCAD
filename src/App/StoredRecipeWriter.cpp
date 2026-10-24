@@ -431,25 +431,40 @@ std::optional<StoredProperty> storedProperty(const std::string& name,
 }
 
 /// Everything the stored form has to say about one container's properties, in name order.
-std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
-                                            const std::string& assetDirectory)
+std::vector<StoredProperty> storedProperties(
+    const PropertyContainer& owner,
+    const std::string& assetDirectory,
+    const std::map<std::string, const DocumentObject*>& valuesFrom = {})
 {
     std::map<std::string, Property*> properties;
     owner.getPropertyMap(properties);
+    std::map<std::string, const PropertyContainer*> ownerOf;
+    for (const auto& [name, other] : valuesFrom) {
+        properties.erase(name);
+        if (Property* prop = other->getPropertyByName(name.c_str())) {
+            properties[name] = prop;
+            ownerOf[name] = other;
+        }
+    }
 
     std::vector<StoredProperty> stored;
     for (const auto& [name, prop] : properties) {
         if (prop == nullptr) {
             continue;
         }
+        const auto other = ownerOf.find(name);
+        const PropertyContainer& statedBy = other != ownerOf.end() ? *other->second : owner;
         if (std::optional<StoredProperty> entry =
-                storedProperty(name, *prop, owner, assetDirectory)) {
+                storedProperty(name, *prop, statedBy, assetDirectory)) {
             stored.push_back(std::move(*entry));
         }
     }
 
     // Kept words go back in name order, so a save that changed nothing changes nothing.
     for (const auto& [name, stated] : owner.statedProperties()) {
+        if (valuesFrom.contains(name)) {
+            continue;
+        }
         StoredProperty kept;
         kept.name = name;
         kept.verbatim = stated.words;
@@ -467,9 +482,10 @@ std::vector<StoredProperty> storedProperties(const PropertyContainer& owner,
 /// One `<Properties>` block, then `<Unrecorded>`: what could not be carried, with the reason.
 void writeProperties(Base::Writer& writer,
                      const PropertyContainer& owner,
-                     const std::string& assetDirectory)
+                     const std::string& assetDirectory,
+                     const std::map<std::string, const DocumentObject*>& valuesFrom = {})
 {
-    const std::vector<StoredProperty> stored = storedProperties(owner, assetDirectory);
+    const std::vector<StoredProperty> stored = storedProperties(owner, assetDirectory, valuesFrom);
 
     // Missing source material is in both lists: the name is carried and the gap is reported.
     std::vector<const StoredProperty*> recorded;
@@ -555,7 +571,8 @@ void writeObject(Base::Writer& writer,
                  const DocumentObject& obj,
                  const std::string& assetDirectory,
                  bool withAppearance,
-                 const std::string& after = {})
+                 const std::string& after = {},
+                 const std::map<std::string, const DocumentObject*>& valuesFrom = {})
 {
     const PropertyContainer* appearance = withAppearance ? appearanceOf(obj) : nullptr;
     // Appearance this session had nowhere to put, given back only when nothing live replaces it.
@@ -597,7 +614,7 @@ void writeObject(Base::Writer& writer,
         writer.decInd();
         writer.Stream() << writer.ind() << "</Extensions>\n";
     }
-    writeProperties(writer, obj, assetDirectory);
+    writeProperties(writer, obj, assetDirectory, valuesFrom);
     if (appearance != nullptr) {
         writer.Stream() << writer.ind() << "<Display>\n";
         writer.incInd();
@@ -706,7 +723,14 @@ std::string App::formatStoredRecipe(const Document& doc,
     };
     for (const DocumentObject* obj : objects) {
         writeKeptUpTo(obj->Uid.getValueStr(), false);
-        writeObject(writer, *obj, assetDirectory, /*withAppearance=*/true, after[obj]);
+        const auto taken = scope.valuesFrom.find(obj);
+        writeObject(writer,
+                    *obj,
+                    assetDirectory,
+                    /*withAppearance=*/true,
+                    after[obj],
+                    taken != scope.valuesFrom.end() ? taken->second
+                                                    : std::map<std::string, const DocumentObject*> {});
     }
     writeKeptUpTo(std::string {}, true);
     writer.decInd();
