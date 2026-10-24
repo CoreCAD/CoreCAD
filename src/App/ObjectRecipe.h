@@ -110,7 +110,8 @@ struct DocumentMergeReport
 /// DocumentMergeReport. The three documents must share a common ancestor's durable identities
 /// (branches copied/reloaded from one origin, not independently rebuilt), or the merge has no
 /// basis to align their objects. Emergent geometry is never matched: only authored recipes are
-/// reconciled, and a merged model is regenerated afterwards.
+/// reconciled, and a merged model is regenerated afterwards. Throws when any of the three holds a
+/// statement this build cannot honour.
 AppExport DocumentMergeReport
 mergeDocuments(const Document& ancestor, const Document& branchA, const Document& branchB);
 

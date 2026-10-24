@@ -39,6 +39,7 @@
 # include <vector>
 #endif
 
+#include <Base/Exception.h>
 #include <Base/Unit.h>
 
 #include "ObjectRecipe.h"
@@ -573,10 +574,38 @@ RecipeSection App::emitDocumentRecipe(const Document& doc)
     return section;
 }
 
+namespace
+{
+
+/// The merge cannot see what a statement this build cannot honour refers to (Clause 19.1), so a
+/// version holding one is refused rather than merged as if the statement were not there.
+void refuseWhatCannotBeHonoured(const Document& doc, const char* which)
+{
+    const std::vector<std::array<std::string, 3>> held = doc.heldStatements();
+    if (held.empty()) {
+        return;
+    }
+    std::string what;
+    for (const auto& [holder, name, why] : held) {
+        what += "\n  " + (holder.empty() ? name : holder + "." + name) + ": " + why;
+    }
+    throw Base::RuntimeError(std::string("Cannot merge: ") + which + " ("
+                             + doc.Label.getValue()
+                             + ") holds what this build cannot honour, so the merge cannot see "
+                               "what it refers to:"
+                             + what);
+}
+
+}  // namespace
+
 DocumentMergeReport App::mergeDocuments(const Document& ancestor,
                                         const Document& branchA,
                                         const Document& branchB)
 {
+    refuseWhatCannotBeHonoured(ancestor, "the ancestor");
+    refuseWhatCannotBeHonoured(branchA, "the first version");
+    refuseWhatCannotBeHonoured(branchB, "the second version");
+
     DocumentMergeReport report;
 
     RecipeSection base = emitDocumentRecipe(ancestor);
