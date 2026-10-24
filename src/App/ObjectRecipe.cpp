@@ -607,10 +607,12 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     // A step one branch added or changed on an object the other branch deleted is a conflict, kept
     // for the person settling it; §4.7's drop reaches only steps the deleting branch could see.
     RecipeMerge::presenceConflicts(base, a, b, base, a, b, report.merged, report.conflicts);
+    report.conflicts.insert(report.conflicts.end(), inside.conflicts.begin(), inside.conflicts.end());
+
+    // An open conflict is held for the person settling it; the reference pass never drops it.
     RecipeSection contested;
     for (const MergeConflict& conflict : report.conflicts) {
-        const auto node = report.merged.find(conflict.id);
-        if (conflict.kind == MergeConflict::Kind::Referential && node != report.merged.end()) {
+        if (const auto node = report.merged.find(conflict.id); node != report.merged.end()) {
             contested.insert(report.merged.extract(node));
         }
     }
@@ -622,7 +624,6 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     report.resolutions = RecipeMerge::resolveReferences(report.merged, survivors);
     report.merged.merge(contested);
 
-    report.conflicts.insert(report.conflicts.end(), inside.conflicts.begin(), inside.conflicts.end());
     report.resolutions.insert(
         report.resolutions.end(), inside.resolutions.begin(), inside.resolutions.end());
 

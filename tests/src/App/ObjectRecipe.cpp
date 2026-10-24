@@ -793,6 +793,49 @@ TEST_F(ObjectRecipeTest, mergeDocumentsRaisesAnUnwrittenEditToAnObjectTheOtherBr
     app.closeDocument(docB->getName());
 }
 
+// A branch edits an extrusion; the other deletes it with the circle it extrudes. The edit against
+// the delete is an open conflict, so the merge holds the extrusion for the person settling it and
+// does not also drop it for pointing at the deleted circle.
+TEST_F(ObjectRecipeTest, mergeDocumentsHoldsAnEditedObjectTheOtherBranchDeletedWithItsInput)
+{
+    auto& app = App::GetApplication();
+    const auto version =
+        [](App::Document* doc, const Base::Uuid* circleId, const Base::Uuid* extrusionId) {
+            auto* circle = doc->addObject("Part::Circle", "Circle");
+            auto* extrusion = doc->addObject("Part::Extrusion", "Extrusion");
+            if (circleId != nullptr) {
+                circle->Uid.setValue(*circleId);
+                extrusion->Uid.setValue(*extrusionId);
+            }
+            static_cast<App::PropertyLink*>(extrusion->getPropertyByName("Base"))->setValue(circle);
+            return extrusion;
+        };
+    auto* ancestorExtrusion = version(_doc, nullptr, nullptr);
+    const std::string extrusion = ancestorExtrusion->Uid.getValueStr();
+    Base::Uuid circleId;
+    circleId.setValue(_doc->getObject("Circle")->Uid.getValueStr());
+    Base::Uuid extrusionId;
+    extrusionId.setValue(extrusion);
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    static_cast<App::PropertyFloat*>(
+        version(docA, &circleId, &extrusionId)->getPropertyByName("LengthFwd")
+    )
+        ->setValue(25.0);
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    ASSERT_EQ(report.conflicts.size(), 1u);
+    EXPECT_EQ(report.conflicts.front().id, extrusion);
+    EXPECT_EQ(report.merged.count(extrusion), 1u) << "held for the person, not dropped";
+    EXPECT_TRUE(report.resolutions.empty());
+    EXPECT_EQ(App::formatDocumentReport(report).find("dropped"), std::string::npos);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // A formula binds the object it reads by durable id; the name in its text is display (§4.5). So a
 // rename, which rewrites that text, leaves the recipe's statement of the formula as it was, both
 // for a reference by label and one by name.
