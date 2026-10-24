@@ -96,9 +96,10 @@ RecipeConsequences App::recipeConsequences(const DocumentObject& before,
 
 void App::registerRecipeMerge(Base::Type type,
                               std::vector<std::string> coveredProperties,
-                              RecipeContentMerger merger)
+                              RecipeContentMerger merger,
+                              RecipeContentApplier applier)
 {
-    contentMergers()[type] = {std::move(coveredProperties), std::move(merger)};
+    contentMergers()[type] = {std::move(coveredProperties), std::move(merger), std::move(applier)};
 }
 
 const RegisteredContentMerge* App::recipeMerger(const DocumentObject& obj)

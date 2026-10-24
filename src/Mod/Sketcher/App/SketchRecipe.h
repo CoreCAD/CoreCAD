@@ -142,9 +142,14 @@ struct MergeReport
 /// Run the whole recipe-merge pipeline over three sketches and collect the outcome (§7). Emits the
 /// three recipes, merges geometry and constraints, resolves dangling references through §4.7's
 /// honest-retirement outcomes, then regenerates the merged recipe onto a throwaway scratch sketch
-/// and re-solves — so the "does the merge compile?" verdict is included.
-SketcherExport MergeReport
-mergeSketches(const SketchObject& ancestor, const SketchObject& branchA, const SketchObject& branchB);
+/// and re-solves — so the "does the merge compile?" verdict is included. Given `into`, the merged
+/// sketch is regenerated there instead, replacing what it held.
+SketcherExport MergeReport mergeSketches(
+    const SketchObject& ancestor,
+    const SketchObject& branchA,
+    const SketchObject& branchB,
+    SketchObject* into = nullptr
+);
 
 /// Render a MergeReport as plain language a person can read (Report View / Python console).
 SketcherExport std::string formatMergeReport(const MergeReport& report);

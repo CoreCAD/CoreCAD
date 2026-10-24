@@ -117,6 +117,24 @@ struct DocumentMergeReport
 AppExport DocumentMergeReport
 mergeDocuments(const Document& ancestor, const Document& branchA, const Document& branchB);
 
+/// A merge made into a document of its own, or why it was not.
+struct MergedDocument
+{
+    Document* document {nullptr};           ///< the merged part, rebuilt; null when refused
+    DocumentMergeReport report;             ///< the merge it was made from
+    std::string refusal;                    ///< why no document was made, when none was
+    std::vector<std::string> newlyFailing;  ///< steps that fail merged and failed on neither side
+};
+
+/// Merge three versions into a new document. Each object is stated as branch A states it, with
+/// each value only B changed taken from B, and a value both changed set from the merged result,
+/// all by durable id; the document is then rebuilt. Refused while any conflict is open, and where
+/// a combined value cannot yet be written.
+AppExport MergedDocument buildMergedDocument(const Document& ancestor,
+                                             const Document& branchA,
+                                             const Document& branchB,
+                                             bool createView = false);
+
 /// Render a DocumentMergeReport as plain language a person can read (Report View / console).
 AppExport std::string formatDocumentReport(const DocumentMergeReport& report);
 

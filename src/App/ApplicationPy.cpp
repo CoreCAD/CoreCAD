@@ -261,13 +261,15 @@ PyMethodDef ApplicationPy::Methods[] = {
     {"mergeDocuments",
      (PyCFunction)ApplicationPy::sMergeDocuments,
      METH_VARARGS,
-     "mergeDocuments(ancestor, branchA, branchB) -> dict\n\n"
+     "mergeDocuments(ancestor, branchA, branchB, build=False) -> dict\n\n"
      "Three-way merge of a model's authored recipe. The three documents must share a\n"
      "common ancestor's durable identities (branches reloaded/copied from one origin,\n"
      "not independently rebuilt). Only authored state is reconciled -- no recompute is\n"
      "run and emergent geometry is never matched. Returns 'text', a plain-language\n"
      "report, and 'conflicts', each with what the ancestor, branchA and branchB stated\n"
-     "for the object (None where that version has none)."},
+     "for the object (None where that version has none). With build, also makes the\n"
+     "merged part as a new document: 'document' (None when refused), 'refusal' and\n"
+     "'newlyFailing', the steps that fail merged and failed on neither side."},
     {"diffDocuments",
      (PyCFunction)ApplicationPy::sDiffDocuments,
      METH_VARARGS,
@@ -922,14 +924,16 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
     PyObject* ancpy {};
     PyObject* apy {};
     PyObject* bpy {};
+    int build = 0;
     if (!PyArg_ParseTuple(args,
-                          "O!O!O!",
+                          "O!O!O!|p",
                           &App::DocumentPy::Type,
                           &ancpy,
                           &App::DocumentPy::Type,
                           &apy,
                           &App::DocumentPy::Type,
-                          &bpy)) {
+                          &bpy,
+                          &build)) {
         return nullptr;
     }
 
@@ -943,7 +947,14 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
 
     PY_TRY
     {
-        const DocumentMergeReport report = mergeDocuments(*ancestor, *branchA, *branchB);
+        MergedDocument made;
+        if (build != 0) {
+            made = buildMergedDocument(*ancestor, *branchA, *branchB);
+        }
+        else {
+            made.report = mergeDocuments(*ancestor, *branchA, *branchB);
+        }
+        const DocumentMergeReport& report = made.report;
         Py::List conflicts;
         for (const MergeConflict& conflict : report.conflicts) {
             Py::Dict entry;
@@ -961,6 +972,17 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
         Py::Dict answer;
         answer.setItem("text", Py::String(formatDocumentReport(report)));
         answer.setItem("conflicts", conflicts);
+        if (build != 0) {
+            answer.setItem("document",
+                           made.document != nullptr ? Py::asObject(made.document->getPyObject())
+                                                    : Py::None());
+            answer.setItem("refusal", Py::String(made.refusal));
+            Py::List failing;
+            for (const std::string& label : made.newlyFailing) {
+                failing.append(Py::String(label));
+            }
+            answer.setItem("newlyFailing", failing);
+        }
         return Py::new_reference_to(answer);
     }
     PY_CATCH;

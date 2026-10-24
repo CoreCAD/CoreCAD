@@ -27,6 +27,7 @@
 #include <FCGlobal.h>
 
 #include <functional>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -120,16 +121,25 @@ struct RecipeContentMerge
 using RecipeContentMerger = std::function<RecipeContentMerge(
     const DocumentObject& ancestor, const DocumentObject& branchA, const DocumentObject& branchB)>;
 
+/// Writes the merged content into `into`, a copy of the object in the merged document. Returns
+/// why it could not, or nothing when it did.
+using RecipeContentApplier = std::function<std::optional<std::string>(DocumentObject& into,
+                                                                      const DocumentObject& ancestor,
+                                                                      const DocumentObject& branchA,
+                                                                      const DocumentObject& branchB)>;
+
 struct RegisteredContentMerge
 {
     std::vector<std::string> coveredProperties;
     RecipeContentMerger merge;
+    RecipeContentApplier apply;
 };
 
 /// Register a merger for `type` and every type derived from it, for the properties it covers.
 AppExport void registerRecipeMerge(Base::Type type,
                                    std::vector<std::string> coveredProperties,
-                                   RecipeContentMerger merger);
+                                   RecipeContentMerger merger,
+                                   RecipeContentApplier applier = {});
 
 /// The merger registered against the nearest of the object's types, or null when none is.
 AppExport const RegisteredContentMerge* recipeMerger(const DocumentObject& obj);
