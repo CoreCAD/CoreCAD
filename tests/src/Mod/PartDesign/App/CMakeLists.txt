@@ -18,6 +18,7 @@ add_executable(PartDesign_tests_run
         SpawnScopeSiblings.cpp
         ToolReaches.cpp
         WorldFrame.cpp
+        MergedBodyIdentity.cpp
 )
 
 set(PartDesignTestData_Files

@@ -130,6 +130,8 @@ struct MergedDocument
     DocumentMergeReport report;             ///< the merge it was made from
     std::string refusal;                    ///< why no document was made, when none was
     std::vector<std::string> newlyFailing;  ///< steps that fail merged and failed on neither side
+    /// Objects the merged rebuild retired or made where neither version's rebuild did.
+    std::vector<std::string> identityChanges;
 };
 
 /// Merge three versions into a new document. Each object is stated as branch A states it, with

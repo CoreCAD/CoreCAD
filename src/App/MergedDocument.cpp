@@ -26,6 +26,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <iterator>
 # include <map>
 # include <optional>
 # include <set>
@@ -251,9 +252,45 @@ std::optional<std::string> takeDocumentValues(Document& into,
     return std::nullopt;
 }
 
-/// The ids of the steps that fail when a version is rebuilt from its recipe, as the merged part is.
-/// What a version shows in this session may predate its last edit, so it is not asked.
-std::set<std::string> failingWhenRebuilt(const Document& version)
+std::set<std::string> uidsOf(const Document& doc)
+{
+    std::set<std::string> ids;
+    for (const DocumentObject* obj : doc.getObjects()) {
+        if (obj != nullptr) {
+            ids.insert(obj->Uid.getValueStr());
+        }
+    }
+    return ids;
+}
+
+/// What a rebuild did of its own accord, beyond computing what was stated.
+struct Rebuilt
+{
+    std::set<std::string> failing;  ///< steps that fail
+    std::set<std::string> retired;  ///< objects stated and then retired, as a split body is
+    bool minted {false};            ///< whether it made any object nothing stated
+};
+
+Rebuilt rebuild(Document& doc)
+{
+    const std::set<std::string> stated = uidsOf(doc);
+    doc.recompute();
+    Rebuilt done;
+    const std::set<std::string> after = uidsOf(doc);
+    std::set_difference(stated.begin(), stated.end(), after.begin(), after.end(),
+                        std::inserter(done.retired, done.retired.end()));
+    done.minted = !std::includes(stated.begin(), stated.end(), after.begin(), after.end());
+    for (const DocumentObject* obj : doc.getObjects()) {
+        if (obj != nullptr && !obj->isValid()) {
+            done.failing.insert(obj->Uid.getValueStr());
+        }
+    }
+    return done;
+}
+
+/// A version rebuilt from its recipe, as the merged part is. What a version shows in this
+/// session may predate its last edit, so it is not asked.
+Rebuilt rebuildCopyOf(const Document& version)
 {
     DocumentInitFlags flags;
     flags.createView = false;
@@ -261,15 +298,9 @@ std::set<std::string> failingWhenRebuilt(const Document& version)
     Document* copy = GetApplication().newDocument("Rebuilt", nullptr, flags);
     std::istringstream recipe(formatStoredRecipe(version));
     restoreStoredRecipe(*copy, recipe);
-    copy->recompute();
-    std::set<std::string> failing;
-    for (const DocumentObject* obj : copy->getObjects()) {
-        if (obj != nullptr && !obj->isValid()) {
-            failing.insert(obj->Uid.getValueStr());
-        }
-    }
+    Rebuilt done = rebuild(*copy);
     GetApplication().closeDocument(copy->getName());
-    return failing;
+    return done;
 }
 
 }  // namespace
@@ -323,8 +354,8 @@ MergedDocument App::buildMergedDocument(const Document& ancestor,
     }
     std::erase(scope.objects, nullptr);
 
-    const std::set<std::string> failingA = failingWhenRebuilt(branchA);
-    const std::set<std::string> failingB = failingWhenRebuilt(branchB);
+    const Rebuilt rebuiltA = rebuildCopyOf(branchA);
+    const Rebuilt rebuiltB = rebuildCopyOf(branchB);
 
     DocumentInitFlags flags;
     flags.createView = createView;
@@ -388,15 +419,30 @@ MergedDocument App::buildMergedDocument(const Document& ancestor,
         }
     }
 
-    merged->recompute();
+    std::map<std::string, std::string> labelOf;
+    for (const DocumentObject* obj : merged->getObjects()) {
+        labelOf[obj->Uid.getValueStr()] = obj->Label.getValue();
+    }
+    const Rebuilt rebuilt = rebuild(*merged);
 
-    for (DocumentObject* obj : merged->getObjects()) {
-        if (obj == nullptr || obj->isValid()) {
-            continue;
+    for (const std::string& id : rebuilt.failing) {
+        if (rebuiltA.failing.count(id) == 0 && rebuiltB.failing.count(id) == 0) {
+            result.newlyFailing.push_back(objectWithUid(*merged, id)->Label.getValue());
         }
-        const std::string id = obj->Uid.getValueStr();
-        if (failingA.count(id) == 0 && failingB.count(id) == 0) {
-            result.newlyFailing.push_back(obj->Label.getValue());
+    }
+    // A body each version keeps whole that the merged part splits, or one the merged part makes
+    // from pieces no version had (§4.7, Clause 21.3 item 2).
+    for (const std::string& id : rebuilt.retired) {
+        if (rebuiltA.retired.count(id) == 0 && rebuiltB.retired.count(id) == 0) {
+            result.identityChanges.push_back(labelOf[id] + " is retired by the rebuild");
+        }
+    }
+    if (rebuilt.minted && !rebuiltA.minted && !rebuiltB.minted) {
+        for (const DocumentObject* obj : merged->getObjects()) {
+            if (labelOf.count(obj->Uid.getValueStr()) == 0) {
+                result.identityChanges.push_back(std::string(obj->Label.getValue())
+                                                 + " is made by the rebuild");
+            }
         }
     }
 
