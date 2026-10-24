@@ -65,6 +65,7 @@ jobs:
     uses: ./.github/workflows/sub_buildUbuntu.yml
     with:
       artifactBasename: Ubuntu-${{ github.run_id }}
+      testOnBuildDir: true
     secrets:
       assetsToken: ${{ secrets.CORECAD_ASSETS_TOKEN }}
 
