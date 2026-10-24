@@ -44,6 +44,7 @@
 #include "ObjectIdentifier.h"
 #include "PropertyExpressionEngine.h"
 #include "PropertyLinks.h"
+#include "PropertyStandard.h"
 #include "RecipeDetail.h"
 #include "StoredRecipe.h"
 
@@ -204,6 +205,52 @@ std::optional<std::string> applyMergedLink(DocumentObject& into,
     return std::nullopt;
 }
 
+/// The fields a node states for one property: the property's own, or one per entry of a map.
+std::map<std::string, std::string> fieldsOf(const RecipeNode& node, const std::string& name)
+{
+    std::map<std::string, std::string> fields;
+    for (const auto& [field, value] : node.fields) {
+        if (field == name || field.rfind(name + ".", 0) == 0) {
+            fields[field] = value;
+        }
+    }
+    return fields;
+}
+
+/// Give the merged document the values the merge took for the document itself; it starts as A
+/// states it. Returns why it could not, or nothing.
+std::optional<std::string> takeDocumentValues(Document& into,
+                                              const Document& branchA,
+                                              const Document& branchB,
+                                              const RecipeNode& merged)
+{
+    const RecipeNode stateA = emitDocumentValues(branchA, merged.id);
+    const RecipeNode stateB = emitDocumentValues(branchB, merged.id);
+    std::map<std::string, Property*> properties;
+    into.getPropertyMap(properties);
+    for (const auto& [name, prop] : properties) {
+        const std::map<std::string, std::string> wanted = fieldsOf(merged, name);
+        if (prop == nullptr || wanted == fieldsOf(stateA, name)) {
+            continue;
+        }
+        const Property* fromB = branchB.getPropertyByName(name.c_str());
+        if (fromB != nullptr && wanted == fieldsOf(stateB, name)) {
+            prop->Paste(*fromB);
+            continue;
+        }
+        if (auto* entries = dynamic_cast<PropertyMap*>(prop)) {
+            std::map<std::string, std::string> values;
+            for (const auto& [field, value] : wanted) {
+                values[field.substr(name.size() + 1)] = value;
+            }
+            entries->setValues(values);
+            continue;
+        }
+        return "combining both versions of the document's " + name + " is not built yet";
+    }
+    return std::nullopt;
+}
+
 /// The ids of the steps that fail when a version is rebuilt from its recipe, as the merged part is.
 /// What a version shows in this session may predate its last edit, so it is not asked.
 std::set<std::string> failingWhenRebuilt(const Document& version)
@@ -287,7 +334,13 @@ MergedDocument App::buildMergedDocument(const Document& ancestor,
         flags);
     std::istringstream recipe(formatStoredRecipe(branchA, {}, scope));
     restoreStoredRecipe(*merged, recipe);
-    merged->Label.setValue(std::string(branchA.Label.getValue()) + " (merged)");
+    if (const std::optional<std::string> refusal =
+            takeDocumentValues(*merged, branchA, branchB, result.report.document)) {
+        result.refusal = *refusal;
+        GetApplication().closeDocument(merged->getName());
+        return result;
+    }
+    merged->Label.setValue(std::string(merged->Label.getValue()) + " (merged)");
 
     for (const auto& [objA, taken] : scope.valuesFrom) {
         DocumentObject* into = objectWithUid(*merged, objA->Uid.getValueStr());
