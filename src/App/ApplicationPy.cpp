@@ -270,7 +270,9 @@ PyMethodDef ApplicationPy::Methods[] = {
      "for the object (None where that version has none), and 'overridden', each choice a\n"
      "side made that the rebuilt result no longer holds. With build, also makes the\n"
      "merged part as a new document: 'document' (None when refused), 'refusal' and\n"
-     "'newlyFailing', the steps that fail merged and failed on neither side."},
+     "'newlyFailing', the steps that fail merged and failed on neither side, and\n"
+     "'identityChanges', the bodies the merged rebuild retired or made where neither\n"
+     "version's rebuild did."},
     {"diffDocuments",
      (PyCFunction)ApplicationPy::sDiffDocuments,
      METH_VARARGS,
@@ -988,6 +990,11 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
                 failing.append(Py::String(label));
             }
             answer.setItem("newlyFailing", failing);
+            Py::List identity;
+            for (const std::string& change : made.identityChanges) {
+                identity.append(Py::String(change));
+            }
+            answer.setItem("identityChanges", identity);
         }
         return Py::new_reference_to(answer);
     }
