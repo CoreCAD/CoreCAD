@@ -1210,3 +1210,43 @@ TEST_F(SketchObjectTest, testJoinCurvesWhenTangent)
         = static_cast<const Part::GeomBSplineCurve*>(getObject()->getGeometry(0))->getMultiplicities();
     EXPECT_TRUE(std::all_of(mults.begin(), mults.end(), [](auto mult) { return mult >= 1; }));
 }
+
+TEST_F(SketchObjectTest, testDecreaseBSplineDegreeKeepsTheCurveAndItsConstraints)
+{
+    auto bspline = createTypicalNonPeriodicBSpline();
+    int geoId = getObject()->addGeometry(bspline.get());
+    getObject()->exposeInternalGeometry(geoId);
+    long curveId = GeometryFacade::getFacade(getObject()->getGeometry(geoId))->getId();
+    Part::GeomLineSegment line;
+    line.setPoints(Base::Vector3d(5, 5, 0), Base::Vector3d(1, 0, 0));
+    int lineId = getObject()->addGeometry(&line);
+    auto* coincident = new Sketcher::Constraint();
+    coincident->Type = Sketcher::Coincident;
+    coincident->First = lineId;
+    coincident->FirstPos = Sketcher::PointPos::end;
+    coincident->Second = geoId;
+    coincident->SecondPos = Sketcher::PointPos::start;
+    getObject()->addConstraint(coincident);
+
+    ASSERT_TRUE(getObject()->decreaseBSplineDegree(geoId));
+
+    const auto* curve = getObject()->getGeometry(geoId);
+    ASSERT_TRUE(curve->is<Part::GeomBSplineCurve>());
+    EXPECT_EQ(static_cast<const Part::GeomBSplineCurve*>(curve)->getDegree(), 2);
+    EXPECT_EQ(GeometryFacade::getFacade(curve)->getId(), curveId);
+    const auto& constraints = getObject()->Constraints.getValues();
+    EXPECT_TRUE(std::ranges::any_of(constraints, [&](const Sketcher::Constraint* c) {
+        return c->Type == Sketcher::Coincident && c->Second == geoId
+            && c->SecondPos == Sketcher::PointPos::start;
+    }));
+    int poles = static_cast<const Part::GeomBSplineCurve*>(curve)->countPoles();
+    int alignedPoles = 0;
+    for (const auto* c : constraints) {
+        if (c->Type == Sketcher::InternalAlignment && c->Second == geoId
+            && c->AlignmentType == Sketcher::BSplineControlPoint) {
+            EXPECT_LT(c->InternalAlignmentIndex, poles);
+            ++alignedPoles;
+        }
+    }
+    EXPECT_EQ(alignedPoles, poles);
+}
