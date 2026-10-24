@@ -115,6 +115,8 @@ AppExport RecipeConsequences recipeConsequences(const DocumentObject& before,
 struct RecipeContentMerge
 {
     std::vector<MergeConflict> conflicts;
+    /// Each value a side chose that the rebuilt content no longer holds, named for a person.
+    std::vector<std::string> overridden;
 };
 
 using RecipeContentMerger = std::function<RecipeContentMerge(

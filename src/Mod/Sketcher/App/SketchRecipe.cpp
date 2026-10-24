@@ -1556,7 +1556,11 @@ void Sketcher::registerSketchRecipeDetail()
                 static_cast<const SketchObject&>(branchA),
                 static_cast<const SketchObject&>(branchB)
             );
-            return App::RecipeContentMerge {std::move(report.conflicts)};
+            App::RecipeContentMerge merged {std::move(report.conflicts), {}};
+            for (const OverriddenChoice& lost : report.overridden) {
+                merged.overridden.push_back(nounFor(lost.type) + " (" + lost.field + ")");
+            }
+            return merged;
         },
         [](App::DocumentObject& into,
            const App::DocumentObject& ancestor,

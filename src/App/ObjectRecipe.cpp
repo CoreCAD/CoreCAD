@@ -381,6 +381,9 @@ RecipeContentMerge markUncomparedChanges(const Document& ancestor,
             conflict.detail = where + conflict.detail;
             found.conflicts.push_back(std::move(conflict));
         }
+        for (const std::string& lost : inside.overridden) {
+            found.overridden.push_back(where + lost);
+        }
     }
 
     return found;
@@ -665,6 +668,7 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     report.conflicts.insert(report.conflicts.end(), inside.conflicts.begin(), inside.conflicts.end());
     report.conflicts.insert(
         report.conflicts.end(), documentConflicts.begin(), documentConflicts.end());
+    report.overridden = std::move(inside.overridden);
 
     return report;
 }
@@ -674,7 +678,7 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
     std::ostringstream out;
     const std::size_t objectCount = report.merged.size();
 
-    if (report.conflicts.empty()) {
+    if (report.conflicts.empty() && report.overridden.empty()) {
         out << "Merged cleanly: " << objectCount << " objects, no conflicts.\n";
         return out.str();
     }
@@ -699,6 +703,13 @@ std::string App::formatDocumentReport(const DocumentMergeReport& report)
                    "\nConflicts — both branches changed the same object differently:\n");
     printConflicts(MergeConflict::Kind::Referential,
                    "\nConflicts — one branch built on an object the other branch deleted:\n");
+
+    if (!report.overridden.empty()) {
+        out << "\nConflicts — a choice the rest of the merge now decides otherwise:\n";
+        for (const std::string& lost : report.overridden) {
+            out << "  - " << lost << "\n";
+        }
+    }
 
     return out.str();
 }
