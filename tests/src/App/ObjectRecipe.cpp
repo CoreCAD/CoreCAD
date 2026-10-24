@@ -859,6 +859,45 @@ TEST_F(ObjectRecipeTest, mergeDocumentsHoldsAnEditedObjectTheOtherBranchDeletedW
     app.closeDocument(docB->getName());
 }
 
+// Each branch sets a different length on a box a mirror reads. The box is held for the person
+// settling it, and still there: the mirror pointing at it is not dropped as if it were deleted.
+TEST_F(ObjectRecipeTest, mergeDocumentsKeepsWhatPointsAtAConflictedObject)
+{
+    auto& app = App::GetApplication();
+    const auto version =
+        [](App::Document* doc, const Base::Uuid* boxId, const Base::Uuid* mirrorId, double length) {
+            auto* box = doc->addObject("Part::Box", "Box");
+            auto* mirror = doc->addObject("Part::Mirroring", "Mirror");
+            if (boxId != nullptr) {
+                box->Uid.setValue(*boxId);
+                mirror->Uid.setValue(*mirrorId);
+            }
+            static_cast<App::PropertyLink*>(mirror->getPropertyByName("Source"))->setValue(box);
+            static_cast<App::PropertyFloat*>(box->getPropertyByName("Length"))->setValue(length);
+            return std::make_pair(box, mirror);
+        };
+    const auto [ancestorBox, ancestorMirror] = version(_doc, nullptr, nullptr, 10.0);
+    Base::Uuid boxId;
+    boxId.setValue(ancestorBox->Uid.getValueStr());
+    Base::Uuid mirrorId;
+    mirrorId.setValue(ancestorMirror->Uid.getValueStr());
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    version(docA, &boxId, &mirrorId, 20.0);
+    version(docB, &boxId, &mirrorId, 30.0);
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_doc, *docA, *docB);
+
+    ASSERT_EQ(report.conflicts.size(), 1u);
+    EXPECT_EQ(report.conflicts.front().id, boxId.getValue());
+    EXPECT_EQ(report.merged.count(mirrorId.getValue()), 1u);
+    EXPECT_TRUE(report.resolutions.empty());
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // A formula binds the object it reads by durable id; the name in its text is display (§4.5). So a
 // rename, which rewrites that text, leaves the recipe's statement of the formula as it was, both
 // for a reference by label and one by name.
