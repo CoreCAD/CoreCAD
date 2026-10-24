@@ -24,6 +24,7 @@ setup_qt_test(DocumentRecovery)
 setup_qt_test(Transaction)
 setup_qt_test(Tree)
 setup_qt_test(SelectionFilter)
+setup_qt_test(ProjectDialogs)
 
 target_link_libraries(Gui_tests_run PRIVATE
     GTest::gtest_main
