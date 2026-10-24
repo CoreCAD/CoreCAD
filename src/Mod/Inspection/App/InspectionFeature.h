@@ -182,6 +182,12 @@ class InspectionExport PropertyDistanceList: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: one measured distance per sampled point.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     /**
      * A constructor.
      * A more elaborate description of the constructor.

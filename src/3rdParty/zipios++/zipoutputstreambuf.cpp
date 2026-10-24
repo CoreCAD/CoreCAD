@@ -146,13 +146,21 @@ void ZipOutputStreambuf::updateEntryHeaderInfo() {
   entry.setCompressedSize( curr_pos - entry.getLocalHeaderOffset() 
 			   - entry.getLocalHeaderSize() ) ;
 
-  // Mark Donszelmann: added current date and time
-  time_t ltime;
-  time( &ltime );
-  struct tm *now;
-  now = localtime( &ltime );
-  int dosTime = (now->tm_year - 80) << 25 | (now->tm_mon + 1) << 21 | now->tm_mday << 16 |
-              now->tm_hour << 11 | now->tm_min << 5 | now->tm_sec >> 1;
+  // Cruth: entries carry a FIXED timestamp, not the current wall clock.
+  //
+  // A document archive is written afresh on every save. Stamping each entry with the
+  // current local time meant two saves of an unchanged document differed in bytes, and
+  // the same document saved in two timezones differed again -- which defeats any
+  // byte-level differencing of the archive (version control stores a whole new copy
+  // rather than the small region that actually changed).
+  //
+  // The per-entry time carries no information a user reads: an entry is an internal part
+  // of one document, and the document's own modification date is recorded in its
+  // metadata. So it is pinned to the DOS epoch (1980-01-01 00:00:00), the convention used
+  // by reproducible-archive tooling.
+  //
+  // (was: Mark Donszelmann's "added current date and time")
+  const int dosTime = (0 << 25) | (1 << 21) | (1 << 16);
   entry.setTime(dosTime);
 
   // write ZipLocalEntry header to header position

@@ -526,6 +526,23 @@ bool SelectionSingleton::needPickedList(const char* pDocName) const
     return context.info->needPickedList;
 }
 
+/** The view a cursor change would land on, or nothing.
+ *
+ * A selection gate answers a person by changing the cursor over the view they are pointing at.
+ * That view is not always there: a main window can be open with no document active, or with a
+ * document that has no view -- a document opened without one, or one whose views a person has
+ * closed. Every caller here wants "tell them if there is somewhere to tell them", so the absence
+ * is ordinary and is not worth a message of its own.
+ */
+static Gui::MDIView* activeViewOrNothing()
+{
+    if (!Gui::Application::Instance) {
+        return nullptr;
+    }
+    Gui::Document* doc = Gui::Application::Instance->activeDocument();
+    return doc ? doc->getActiveView() : nullptr;
+}
+
 SelectionSingleton::SelectionAllowance SelectionSingleton::isSelectionAllowed(
     const SelectionSingleton::SelectionContext& context,
     const SelectionDescription& sel
@@ -895,13 +912,15 @@ int SelectionSingleton::setPreselect(
 
             if (getMainWindow()) {
                 getMainWindow()->showMessage(msg);
-                Gui::MDIView* mdi = Gui::Application::Instance->activeDocument()->getActiveView();
-                mdi->setOverrideCursor(QCursor(Qt::ForbiddenCursor));
+                if (Gui::MDIView* mdi = activeViewOrNothing()) {
+                    mdi->setOverrideCursor(QCursor(Qt::ForbiddenCursor));
+                }
             }
             return 0;
         }
-        Gui::MDIView* mdi = Gui::Application::Instance->activeDocument()->getActiveView();
-        mdi->restoreOverrideCursor();
+        if (Gui::MDIView* mdi = activeViewOrNothing()) {
+            mdi->restoreOverrideCursor();
+        }
     }
 
     DocName = context.docName.c_str();
@@ -1064,8 +1083,9 @@ void SelectionSingleton::rmvPreselect(bool signal)
 
     auto context = getSelectionContext(DocName.c_str());
     if (context.info && context.info->gate && getMainWindow()) {
-        Gui::MDIView* mdi = Gui::Application::Instance->activeDocument()->getActiveView();
-        mdi->restoreOverrideCursor();
+        if (Gui::MDIView* mdi = activeViewOrNothing()) {
+            mdi->restoreOverrideCursor();
+        }
     }
 
     // Reset preselection helpers
@@ -1268,8 +1288,9 @@ bool SelectionSingleton::addSelection(
                 msg = QCoreApplication::translate("SelectionFilter", "Selection not allowed by filter");
             }
             getMainWindow()->showMessage(msg);
-            Gui::MDIView* mdi = Gui::Application::Instance->activeDocument()->getActiveView();
-            mdi->setOverrideCursor(Qt::ForbiddenCursor);
+            if (Gui::MDIView* mdi = activeViewOrNothing()) {
+                mdi->setOverrideCursor(Qt::ForbiddenCursor);
+            }
         }
         QApplication::beep();
         return false;

@@ -51,6 +51,10 @@ public:
     const char* getViewProviderName(void) const override {
         return "TechDrawGui::ViewProviderTile";
     }
+    /// A tile is Drawing-scoped content (Amendment 8, ARCHITECTURE §7.1).
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
+    }
     PyObject *getPyObject(void) override;
     virtual DrawView* getParent(void) const;
 

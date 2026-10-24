@@ -35,18 +35,30 @@ def test_python_syntax(rootdir, whitelist=None):
             kargs = {}
             kargs["encoding"] = "utf-8"
             if (not fn in whitelist) and os.path.splitext(fn)[1] == ".py":
-                with open(os.path.join(sub_dir, fn), **kargs) as py_file:
-                    try:
-                        ast.parse(py_file.read())
-                    except SyntaxError as err:
-                        log.append(str(err).replace("<unknown>", os.path.join(sub_dir, fn)))
+                path = os.path.join(sub_dir, fn)
+                try:
+                    with open(path, **kargs) as py_file:
+                        source = py_file.read()
+                except OSError as err:
+                    # The tree lists a file that cannot be read. A build tree links its scripts
+                    # back to the source tree, so a script deleted from the source leaves a link
+                    # that is still listed and no longer leads anywhere. Reported by name with
+                    # everything else, rather than ending the walk with a traceback from the
+                    # middle of it and saying nothing about the files after it.
+                    log.append("{} could not be read: {}".format(path, err))
+                    continue
+                try:
+                    ast.parse(source)
+                except SyntaxError as err:
+                    log.append(str(err).replace("<unknown>", path))
     message = "\n\n" + "#" * 30 + "\n"
-    message += "{} python files are not parseable:\n\n".format(len(log))
+    message += "{} python files could not be read or parsed:\n\n".format(len(log))
     for i, m in enumerate(log):
         message += str(i + 1) + " " + m + "\n"
     if log:
         raise RuntimeError(
-            "there are some files not parse-able with the used python-interpreter" + message
+            "there are some files that cannot be read or parsed with the used "
+            "python-interpreter" + message
         )
     else:
         return

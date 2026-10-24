@@ -31,32 +31,27 @@ import FreeCADGui
 
 class TestActiveObject(unittest.TestCase):
     def setUp(self):
-        self.doc = FreeCAD.newDocument("PartDesignTestSketch")
+        self.doc = FreeCAD.newDocument("PartDesignTestSketch", type="Part")
         self.doc.UndoMode = True
 
-    def testPartBody(self):
-        self.doc.openTransaction("Create part")
-        part = self.doc.addObject("App::Part", "Part")
-        FreeCADGui.activateView("Gui::View3DInventor", True)
-        FreeCADGui.activeView().setActiveObject("part", part)
-        self.doc.commitTransaction()
-
+    def testActiveObjectSurvivesUndo(self):
+        # Undoing the creation of an object held in the view's active-object list must leave
+        # the list usable: an object can be made and held again afterwards. (There is no active
+        # body any more; the list is generic, so any key will do.)
         self.doc.openTransaction("Create body")
         body = self.doc.addObject("PartDesign::Body", "Body")
-        part.addObject(body)
         FreeCADGui.activateView("Gui::View3DInventor", True)
-        FreeCADGui.activeView().setActiveObject("pdbody", body)
+        FreeCADGui.activeView().setActiveObject("testkey", body)
         self.doc.commitTransaction()
 
         self.doc.undo()  # undo body creation
-        self.doc.undo()  # undo part creation
 
         FreeCADGui.updateGui()
 
         self.doc.openTransaction("Create body")
         body = self.doc.addObject("PartDesign::Body", "Body")
         FreeCADGui.activateView("Gui::View3DInventor", True)
-        FreeCADGui.activeView().setActiveObject("pdbody", body)
+        FreeCADGui.activeView().setActiveObject("testkey", body)
         self.doc.commitTransaction()
 
         FreeCADGui.updateGui()

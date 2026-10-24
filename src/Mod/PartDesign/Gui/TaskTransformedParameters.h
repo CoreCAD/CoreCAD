@@ -26,9 +26,11 @@
 #pragma once
 
 #include <Gui/ComboLinks.h>
+#include <App/DocumentObserver.h>
 #include <Gui/DocumentObserver.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/TaskView/TaskView.h>
+#include "OriginDisplay.h"
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/PartDesign/Gui/EnumFlags.h>
 
@@ -53,16 +55,6 @@ class Transformed;
 namespace PartDesignGui
 {
 
-class TaskMultiTransformParameters;
-
-/**
-  The transformed subclasses will be used in two different modes:
-  1. As a stand-alone feature
-  2. As a container that stores transformation info for a MultiTransform feature. In this case
-     the flag insideMultiTransform is set to true.
-  Because in the second case there is no ViewProvider, some special methods are required to
-  access the underlying FeatureTransformed object in two different ways.
-  **/
 class TaskTransformedParameters: public Gui::TaskView::TaskBox,
                                  public Gui::SelectionObserver,
                                  public Gui::DocumentObserver
@@ -75,20 +67,10 @@ public:
         ViewProviderTransformed* TransformedView,
         QWidget* parent = nullptr
     );
-    /// Constructor for task with parent task (MultiTransform mode)
-    explicit TaskTransformedParameters(TaskMultiTransformParameters* parentTask);
     ~TaskTransformedParameters() override;
 
     /// Apply changes for python console
     virtual void apply() = 0;
-
-    /*!
-     * \brief setEnabledTransaction
-     * The transaction handling of this panel can be disabled if there is another
-     * instance that does it already, e.g. TaskDlgMultiTransformParameters.
-     * By default, transactions are enabled.
-     */
-    void setEnabledTransaction(bool /*unused*/);
 
     /// Exit the selection mode of the associated task panel
     void exitSelectionMode();
@@ -101,11 +83,6 @@ protected:
      */
     void setupUI();
 
-    /**
-     * Returns the base transformation
-     * For standalone features it will be object associated with the view provider
-     * For features inside MultiTransform it will be the parent MultiTransform's sub feature object
-     */
     PartDesign::Transformed* getObject() const;
 
     template<class T>
@@ -114,8 +91,7 @@ protected:
         return freecad_cast<T*>(getObject());
     }
 
-    /// Get the sketch object of the first original either of the object associated with this
-    /// feature or with the parent feature (MultiTransform mode)
+    /// Get the sketch object of the first original
     App::DocumentObject* getSketchObject() const;
 
     /** Handle adding/removing of selected features
@@ -123,12 +99,9 @@ protected:
      */
     bool originalSelected(const Gui::SelectionChanges& msg);
 
-    /// Recompute either this feature or the parent MultiTransform feature
     void recomputeFeature();
 
-    /// Hide the top transformed object (see getTopTransformedObject())
     void hideObject();
-    /// Show the top transformed object (see getTopTransformedObject())
     void showObject();
     /// Hide the base transformation object (see getObject())
     void hideBase();
@@ -149,14 +122,6 @@ protected:
     /// Fill combobox with the planes from the sketch and the own bodys origin planes
     void fillPlanesCombo(Gui::ComboLinks& combolinks, Part::Part2DObject* sketch);
 
-    /**
-     * Returns the base transformed objectfromStdString
-     * For stand alone features it will be objects associated with this object
-     * For features inside multitransform it will be the base multitransform object
-     */
-    PartDesign::Transformed* getTopTransformedObject() const;
-
-    bool isEnabledTransaction() const;
     void setupTransaction();
 
 private Q_SLOTS:
@@ -171,7 +136,6 @@ private Q_SLOTS:
 private:
     /** Setup the parameter UI.
      * This is called to create the parameter UI in the specified widget.
-     * Call this in the derived constructor with MultiTransform parent.
      */
     virtual void setupParameterUI(QWidget* widget) = 0;
 
@@ -183,16 +147,7 @@ private:
     void clearButtons();
     void checkVisibility();
 
-    /// Return the base object of the base transformed object (see getTopTransformedObject())
-    // Either through the ViewProvider or the currently active subFeature of the parentTask
     App::DocumentObject* getBaseObject() const;
-
-    /**
-     * Returns the base transformation view provider
-     * For stand alone features it will be view provider associated with this object
-     * For features inside multitransform it will be the view provider of the multitransform object
-     */
-    PartDesignGui::ViewProviderTransformed* getTopTransformedView() const;
 
     void changeEvent(QEvent* event) override;
 
@@ -208,16 +163,13 @@ protected:
     ViewProviderTransformed* TransformedView = nullptr;
     SelectionMode selectionMode = SelectionMode::None;
 
+    OriginDisplay originDisplay;
+
     /// Lock updateUI(), applying changes to the underlying feature and calling recomputeFeature()
     bool blockUpdate = false;
 
 private:
     int transactionID = 0;
-    bool enableTransaction = true;
-    /// The MultiTransform parent task of this task
-    TaskMultiTransformParameters* parentTask = nullptr;
-    /// Flag indicating whether this object is a container for MultiTransform
-    bool insideMultiTransform = false;
     /// Widget holding the transform task UI
     QWidget* proxy = nullptr;
     std::unique_ptr<Ui_TaskTransformedParameters> ui;

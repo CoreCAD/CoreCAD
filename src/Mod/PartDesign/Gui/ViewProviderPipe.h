@@ -48,8 +48,7 @@ public:
     /// destructor
     ~ViewProviderPipe() override;
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
+    std::vector<App::DocumentObject*> consumedProfiles() const override;
     void setupContextMenu(QMenu*, QObject*, const char*) override;
 
     void highlightReferences(Reference mode, bool on);
@@ -61,7 +60,7 @@ protected:
     TaskDlgFeatureParameters* getEditDialog() override;
 
 private:
-    void highlightReferences(Part::Feature*, const std::vector<std::string>&, bool);
+    void highlightReferences(Part::ShapeFeature*, const std::vector<std::string>&, bool);
 
 private:
     std::map<long, std::vector<Base::Color>> originalLineColors;

@@ -6,15 +6,30 @@ add_executable(App_tests_run
         ApplicationDirectories.cpp
         BackupPolicy.cpp
         Branding.cpp
+        BrokenFileRefusal.cpp
         ComplexGeoData.cpp
+        ConfigurationBlocking.cpp
+        ConfigurationValuesAreNotPrograms.cpp
+        UnreferencedFiles.cpp
+        CopyObject.cpp
         Document.cpp
+        DocumentByteStability.cpp
+        ContentPlacedByWhatProducedIt.cpp
+        DocumentsDoNotNameCode.cpp
         DocumentObject.cpp
+        FilingNeverMoves.cpp
         DocumentObserver.cpp
         Expression.cpp
         ExpressionParser.cpp
+        EnumsStatedByName.cpp
+        FormatVersion.cpp
+        FragmentWriteGuard.cpp
         ElementMap.cpp
+        HeldStatements.cpp
         ElementNamingUtils.cpp
         IndexedName.cpp
+        KeptStatementReason.cpp
+        SealedArchive.cpp
         License.cpp
         MappedElement.cpp
         MappedName.cpp
@@ -22,7 +37,15 @@ add_executable(App_tests_run
         ProjectFile.cpp
         Property.h
         Property.cpp
+        PropertyRegistration.cpp
         PropertyExpressionEngine.cpp
+        DocumentChanges.cpp
+        Project.cpp
+        VersionHistory.cpp
+        ObjectRecipe.cpp
+        Recipe.cpp
+        RecoverySnapshot.cpp
+        StoredRecipe.cpp
         StringHasher.cpp
         VarSet.cpp
         VRMLObject.cpp

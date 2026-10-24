@@ -2,10 +2,16 @@
 
 add_executable(Sketcher_tests_run
         Constraint.cpp
+    ConstraintReferenceStatedOnce.cpp
+    ConstraintTypesByName.cpp
+    DuplicateKeepsReferences.cpp
+        EntityIdentity.cpp
         SketcherTestHelpers.cpp
         SketchObject.cpp
         SketchObjectChanges.cpp
         SketchObjectSymmetric.cpp
+        SketchRecipe.cpp
+        SketchChanges.cpp
 )
 
 add_subdirectory(planegcs)

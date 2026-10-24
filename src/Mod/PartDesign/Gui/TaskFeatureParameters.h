@@ -26,11 +26,21 @@
 
 
 #include <type_traits>
+#include <vector>
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
 #include <Gui/DocumentObserver.h>
 
 #include "ViewProvider.h"
+
+class QCheckBox;
+class QLabel;
+class QPushButton;
+
+namespace PartDesign
+{
+class Body;
+}
 
 namespace PartDesignGui
 {
@@ -56,6 +66,57 @@ private:
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/PartDesign/Preview"
     );
+};
+
+/// Cruth §8.5 (#27): the "Merge result" control. Makes the otherwise-silent
+/// spawn-vs-extend choice at feature creation visible and reversible. Checked = the
+/// feature extends the Body it was anchored to; unchecked = the feature is its own new
+/// Body. Additive sketch features only — a subtractive cut must extend something, and a
+/// feature that opened as its own new Body (bare global plane) has nothing to merge into,
+/// so in both cases the checkbox is present but disabled.
+///
+/// A pattern asks a SECOND merge question, and this box carries both, because they are one
+/// subject to the person answering them: does the result join the Body it was added to, and
+/// do the COPIES join EACH OTHER (§5.5, #34). The two are independent — a pattern can extend
+/// its Body while keeping its copies apart — and the second row appears only for a pattern,
+/// which is the only feature that has copies to ask about.
+class TaskMergeResultParameters: public Gui::TaskView::TaskBox
+{
+    Q_OBJECT
+
+public:
+    explicit TaskMergeResultParameters(PartDesignGui::ViewProvider* vp, QWidget* parent = nullptr);
+    ~TaskMergeResultParameters() override;
+
+private Q_SLOTS:
+    void onMergeToggled(bool merge);
+    void onPickBody();
+    void onMergeCopiesToggled(bool merge);
+
+private:
+    void refreshBodyLabel();
+    /// Restate what the last recompute found: how many copies were asked for and how many
+    /// pieces they came back as. Says nothing when the question did not arise — when the
+    /// copies were kept apart, or when there are too few to run into each other.
+    void refreshOverlapNotice();
+    /// Bodies this feature could legally be moved into: every Body in the document except
+    /// the one it already sits in, and except any that depends on it (which would close a
+    /// cycle). Recomputed on demand — a move can retire the Body it left (§4.7).
+    std::vector<PartDesign::Body*> candidateBodies() const;
+
+    PartDesignGui::ViewProvider* vp;
+    QCheckBox* mergeCheckBox;
+    QLabel* bodyLabel;
+    QPushButton* pickBodyButton;
+    /// Patterns only; null for every other feature. Checked = the copies are fused with each
+    /// other, which is the feature's MultiBody property read the way a person thinks about it
+    /// (MultiBody true means "keep them apart", so the checkbox is its inverse).
+    QCheckBox* mergeCopiesCheckBox {nullptr};
+    QLabel* overlapLabel {nullptr};
+    /// The pre-existing Body the feature was anchored to when the dialog opened — the
+    /// target we splice back onto when the user re-enables merge after toggling off.
+    /// Null when the feature opened as its own new Body (nothing to merge into).
+    PartDesign::Body* mergeTargetBody;
 };
 
 /// Convenience class to collect common methods for all SketchBased features
@@ -156,6 +217,8 @@ public:
     bool accept() override;
     /// is called by the framework if the dialog is rejected (Cancel)
     bool reject() override;
+    /// is called by the framework when the dialog is removed, however that happened
+    void closed() override;
 
     template<typename T = PartDesignGui::ViewProvider>
     T* getViewObject() const
@@ -180,6 +243,9 @@ protected:
 
 private:
     PartDesignGui::ViewProvider* vp;
+    /// The undo step that was open when the dialog was made: the feature's "Make ..." step
+    /// for a new feature, 0 when editing one that already exists.
+    int creationTransaction {0};
 };
 
 }  // namespace PartDesignGui

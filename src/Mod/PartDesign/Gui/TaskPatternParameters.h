@@ -39,8 +39,6 @@ class PatternParametersWidget;
 namespace PartDesignGui
 {
 
-class TaskMultiTransformParameters;
-
 class TaskPatternParameters: public TaskTransformedParameters
 {
     Q_OBJECT
@@ -48,8 +46,6 @@ class TaskPatternParameters: public TaskTransformedParameters
 public:
     /// Constructor for task with ViewProvider
     explicit TaskPatternParameters(ViewProviderTransformed* TransformedView, QWidget* parent = nullptr);
-    /// Constructor for task with parent task (MultiTransform mode)
-    TaskPatternParameters(TaskMultiTransformParameters* parentTask, QWidget* parameterWidget);
     ~TaskPatternParameters() override;
 
     void apply() override;
@@ -78,7 +74,6 @@ private:
     void bindProperties();
 
     // Task-specific logic remains
-    void showOriginAxes(bool show);
     void enterReferenceSelectionMode();
     void exitReferenceSelectionMode();  // Ensure this clears gates etc.
 

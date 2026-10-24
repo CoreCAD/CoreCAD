@@ -30,8 +30,14 @@
 #include "AssemblyLink.h"
 #include "BomObject.h"
 #include "BomGroup.h"
+#include "GroundedJoint.h"
+#include "Joint.h"
 #include "JointGroup.h"
+#include "ExplodedView.h"
+#include "ExplodedViewStep.h"
 #include "ViewGroup.h"
+#include "Motion.h"
+#include "Simulation.h"
 #include "SimulationGroup.h"
 
 
@@ -65,10 +71,17 @@ PyMOD_INIT_FUNC(AssemblyApp)
     Assembly::AssemblyLink ::init();
     Assembly::BomObject ::init();
 
+    Assembly::Joint ::init();
+    Assembly::GroundedJoint ::init();
+
     Assembly::BomGroup ::init();
     Assembly::JointGroup ::init();
     Assembly::ViewGroup ::init();
+    Assembly::ExplodedView ::init();
+    Assembly::ExplodedViewStep ::init();
     Assembly::SimulationGroup ::init();
+    Assembly::Simulation ::init();
+    Assembly::Motion ::init();
 
     PyMOD_Return(mod);
 }

@@ -42,7 +42,6 @@ public:
     ViewProviderCompound();
     /// destructor
     ~ViewProviderCompound() override;
-    std::vector<App::DocumentObject*> claimChildren() const override;
     bool onDelete(const std::vector<std::string>&) override;
 
     /// drag and drop

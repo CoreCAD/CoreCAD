@@ -27,6 +27,7 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepFill.hxx>
 #include <BRepLib_MakeWire.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
@@ -46,12 +47,13 @@
 #include <App/Link.h>
 
 #include <App/Document.h>
+#include "NeutralRef.h"
 #include "PartFeatures.h"
 #include "TopoShapeOpCode.h"
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::RuledSurface, Part::Feature)
+PROPERTY_SOURCE(Part::RuledSurface, Part::ShapeFeature)
 
 const char* RuledSurface::OrientationEnums[] = {"Automatic", "Forward", "Reversed", nullptr};
 
@@ -85,7 +87,7 @@ short RuledSurface::mustExecute() const
 
 void RuledSurface::onChanged(const App::Property* prop)
 {
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 App::DocumentObjectExecReturn* RuledSurface::getShape(
@@ -159,7 +161,7 @@ App::DocumentObjectExecReturn* RuledSurface::execute()
         TopoShape res(0, getDocument()->getStringHasher());
         res.makeElementRuledSurface(shapes, Orientation.getValue());
         this->Shape.setValue(res);
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
 
@@ -174,10 +176,11 @@ App::DocumentObjectExecReturn* RuledSurface::execute()
 
 App::PropertyIntegerConstraint::Constraints Loft::Degrees = {2, Geom_BSplineSurface::MaxDegree(), 1};
 
-PROPERTY_SOURCE(Part::Loft, Part::Feature)
+PROPERTY_SOURCE(Part::Loft, Part::ShapeFeature)
 
 Loft::Loft()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Sections, (nullptr), "Loft", App::Prop_None, "List of sections");
     Sections.setSize(0);
     ADD_PROPERTY_TYPE(Solid, (true), "Loft", App::Prop_None, "Create solid");
@@ -216,7 +219,7 @@ short Loft::mustExecute() const
 
 void Loft::onChanged(const App::Property* prop)
 {
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 App::DocumentObjectExecReturn* Loft::execute()
@@ -243,7 +246,7 @@ App::DocumentObjectExecReturn* Loft::execute()
             result.linearize(LinearizeFace::linearizeFaces, LinearizeEdge::noEdges);
         }
         this->Shape.setValue(result);
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
 
@@ -255,10 +258,11 @@ App::DocumentObjectExecReturn* Loft::execute()
 
 const char* Part::Sweep::TransitionEnums[] = {"Transformed", "Right corner", "Round corner", nullptr};
 
-PROPERTY_SOURCE(Part::Sweep, Part::Feature)
+PROPERTY_SOURCE(Part::Sweep, Part::ShapeFeature)
 
 Sweep::Sweep()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Sections, (nullptr), "Sweep", App::Prop_None, "List of sections");
     Sections.setSize(0);
     ADD_PROPERTY_TYPE(Spine, (nullptr), "Sweep", App::Prop_None, "Path to sweep along");
@@ -297,7 +301,7 @@ short Sweep::mustExecute() const
 
 void Sweep::onChanged(const App::Property* prop)
 {
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 App::DocumentObjectExecReturn* Sweep::execute()
@@ -362,10 +366,11 @@ App::DocumentObjectExecReturn* Sweep::execute()
 const char* Part::Thickness::ModeEnums[] = {"Skin", "Pipe", "RectoVerso", nullptr};
 const char* Part::Thickness::JoinEnums[] = {"Arc", "Tangent", "Intersection", nullptr};
 
-PROPERTY_SOURCE(Part::Thickness, Part::Feature)
+PROPERTY_SOURCE(Part::Thickness, Part::ShapeFeature)
 
 Thickness::Thickness()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Faces, (nullptr), "Thickness", App::Prop_None, "Faces to be removed");
     ADD_PROPERTY_TYPE(Value, (1.0), "Thickness", App::Prop_None, "Thickness value");
     ADD_PROPERTY_TYPE(Mode, (long(0)), "Thickness", App::Prop_None, "Mode");
@@ -374,6 +379,13 @@ Thickness::Thickness()
     Join.setEnums(JoinEnums);
     ADD_PROPERTY_TYPE(Intersection, (false), "Thickness", App::Prop_None, "Intersection");
     ADD_PROPERTY_TYPE(SelfIntersection, (false), "Thickness", App::Prop_None, "Self Intersection");
+    ADD_PROPERTY_TYPE(
+        FaceRefs,
+        (),
+        "Thickness",
+        App::PropertyType(App::Prop_Hidden | App::Prop_Output),
+        "Durable references for the selected faces"
+    );
 
     // Value should have length as unit
     Value.setUnit(Base::Unit::Length);
@@ -416,7 +428,7 @@ void Thickness::handleChangedPropertyType(
         Value.setValue(v.getValue());
     }
     else {
-        Part::Feature::handleChangedPropertyType(reader, TypeName, prop);
+        Part::ShapeFeature::handleChangedPropertyType(reader, TypeName, prop);
     }
 }
 
@@ -430,12 +442,68 @@ App::DocumentObjectExecReturn* Thickness::execute()
     if (base.countSubShapes(TopAbs_SOLID) != 1) {
         return new App::DocumentObjectExecReturn("Source shape is not single solid.");
     }
-    for (auto& sub : Faces.getSubValues(true)) {
+    // The durable references drive the selection. Resolve each stored NRef against the
+    // current base and use the sub-name it now denotes, so a selection gone stale
+    // because the base was rebuilt with a different face numbering (a merge) self-heals
+    // here -- no user action, on the next recompute. The input property is not mutated;
+    // the heal is per-execute.
+    //
+    // A reference that was captured and no longer resolves STOPS the feature. The old
+    // positional sub-name is not a safe fallback there: after the base changed, "Face3"
+    // is simply whatever face now sits at that index, so computing on it would answer
+    // confidently with the wrong face rather than reporting that the face this feature
+    // was built on is gone or is no longer unique. Only a face that has no reference
+    // yet -- the first execute, before anything was captured -- falls back to the
+    // stored selection, and that is not a guess: it is the only record there is.
+    std::vector<std::string> subs = Faces.getSubValues();
+    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
+    const std::vector<std::string>& refs = FaceRefs.getValues();
+    if (baseFeat != nullptr && refs.size() == subs.size()) {
+        const std::string baseName = baseFeat->Label.getStrValue();
+        for (std::size_t i = 0; i < subs.size(); ++i) {
+            const NRefResolution rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+            const std::string which = "Face " + std::to_string(i + 1) + " of this thickness";
+            switch (rebound.match) {
+                case RefMatch::Matched:
+                    subs[i] = rebound.subName;
+                    break;
+                case RefMatch::None:
+                    break;  // nothing captured for this face yet -- keep the selection as given
+                case RefMatch::Ambiguous:
+                    return new App::DocumentObjectExecReturn(
+                        which + " now matches more than one face of " + baseName
+                            + ", so which face was meant has to be chosen before it can rebuild.",
+                        this
+                    );
+                case RefMatch::Lost:
+                    return new App::DocumentObjectExecReturn(
+                        which + " is no longer in " + baseName + ".",
+                        this
+                    );
+            }
+        }
+    }
+
+    for (const std::string& sub : subs) {
         shapes.push_back(base.getSubTopoShape(sub.c_str()));
         if (shapes.back().getShape().ShapeType() != TopAbs_FACE) {
             return new App::DocumentObjectExecReturn("Invalid face selection");
         }
     }
+
+    // Refresh the durable references from the effective (healed) selection, so the last
+    // good binding is always on record -- and captured on the very first execute.
+    if (baseFeat != nullptr) {
+        std::vector<std::string> newRefs;
+        newRefs.reserve(subs.size());
+        for (const std::string& sub : subs) {
+            newRefs.push_back(toNeutralString(captureFaceRef(*baseFeat, sub)));
+        }
+        if (newRefs != FaceRefs.getValues()) {
+            FaceRefs.setValues(newRefs);  // only on change -- an unchanged recompute stays clean
+        }
+    }
+
     double thickness = Value.getValue();
     double tol = Precision::Confusion();
     bool inter = Intersection.getValue();
@@ -447,21 +515,45 @@ App::DocumentObjectExecReturn* Thickness::execute()
         TopoShape(0, getDocument()->getStringHasher())
             .makeElementThickSolid(base, shapes, thickness, tol, inter, self, mode, static_cast<JoinType>(join))
     );
-    return Part::Feature::execute();
+    return Part::ShapeFeature::execute();
+}
+
+int Thickness::rebindFacesFromRefs()
+{
+    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
+    const std::vector<std::string>& refs = FaceRefs.getValues();
+    std::vector<std::string> subs = Faces.getSubValues();
+    if (baseFeat == nullptr || refs.size() != subs.size()) {
+        return 0;  // no base, or refs not aligned with the current selection
+    }
+
+    int changed = 0;
+    for (std::size_t i = 0; i < subs.size(); ++i) {
+        const NRefResolution rebound = resolveFaceRef(fromNeutralString(refs[i]), *baseFeat);
+        if (rebound.match == RefMatch::Matched && rebound.subName != subs[i]) {
+            subs[i] = rebound.subName;
+            ++changed;
+        }
+    }
+    if (changed > 0) {
+        Faces.setValue(Faces.getValue(), subs);
+    }
+    return changed;
 }
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(Part::Refine, Part::Feature)
+PROPERTY_SOURCE(Part::Refine, Part::ShapeFeature)
 
 Refine::Refine()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Source, (nullptr), "Refine", App::Prop_None, "Source shape");
 }
 
 App::DocumentObjectExecReturn* Refine::execute()
 {
-    Part::Feature* source = Source.getValue<Part::Feature*>();
+    Part::ShapeFeature* source = Source.getValue<Part::ShapeFeature*>();
     if (!source) {
         return new App::DocumentObjectExecReturn("No part object linked.");
     }
@@ -478,10 +570,11 @@ App::DocumentObjectExecReturn* Refine::execute()
 
 // ----------------------------------------------------------------------------
 
-PROPERTY_SOURCE(Part::Reverse, Part::Feature)
+PROPERTY_SOURCE(Part::Reverse, Part::ShapeFeature)
 
 Reverse::Reverse()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Source, (nullptr), "Reverse", App::Prop_None, "Source shape");
 }
 
@@ -497,10 +590,10 @@ App::DocumentObjectExecReturn* Reverse::execute()
     try {
         TopoDS_Shape myShape = topoShape.getShape();
         if (!myShape.IsNull()) {
-            this->Shape.setValue(myShape.Reversed());
-            Base::Placement p;
-            p.fromMatrix(topoShape.getTransform());
-            this->Placement.setValue(p);
+            // Reversing leaves the source's position in the shape's location, which a
+            // feature that authors no placement cannot keep. Bake it into the geometry
+            // so the result stays where its source is (Amendment 4).
+            this->Shape.setValue(bakeLocationIntoGeometry(myShape).Reversed());
             return App::DocumentObject::StdReturn;
         }
         return new App::DocumentObjectExecReturn("Shape is null.");

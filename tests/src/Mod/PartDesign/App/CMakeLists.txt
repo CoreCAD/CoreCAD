@@ -2,9 +2,22 @@
 
 add_executable(PartDesign_tests_run
         BackwardCompatibility.cpp
+        BodyShapeCapability.cpp
         DatumPlane.cpp
-        ShapeBinder.cpp
         Pad.cpp
+        PadRecipe.cpp
+    StoredRecipeRoundTrip.cpp
+        MaterialBelongsToThePart.cpp
+        MergeCandidates.cpp
+        BodiesOf.cpp
+        MoveFeatureToBody.cpp
+        ResolveMergeCandidate.cpp
+        AddFeature.cpp
+        FindInterferingPairs.cpp
+        ReconcileMultiOutput.cpp
+        SpawnScopeSiblings.cpp
+        ToolReaches.cpp
+        WorldFrame.cpp
 )
 
 set(PartDesignTestData_Files

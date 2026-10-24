@@ -36,6 +36,13 @@
 
 #include <Mod/Part/App/PreviewExtension.h>
 
+#include "AppearancePanel.h"
+#include "VersionComparison.h"
+#include <App/MaterialPy.h>
+#include <Mod/Material/App/MaterialManager.h>
+#include <Mod/Material/App/Materials.h>
+#include <App/Document.h>
+#include <App/DocumentPy.h>
 #include "AttacherTexts.h"
 #include "PropertyEnumAttacherItem.h"
 #include "DlgSettings3DViewPartImp.h"
@@ -104,10 +111,112 @@ public:
     Module()
         : Py::ExtensionModule<Module>("PartGui")
     {
+        add_varargs_method(
+            "versionLayers",
+            &Module::versionLayers,
+            "versionLayers(before, after, showChanges=True) -> Document\n"
+            "How History draws a version in the model view: a hidden document holding after's\n"
+            "material, with what it added over before blue and what it removed red when\n"
+            "showChanges. Both documents must hold built shapes. The caller closes it."
+        );
+        add_varargs_method(
+            "setAppearanceOfSelection",
+            &Module::setAppearanceOfSelection,
+            "setAppearanceOfSelection(look)\n"
+            "Sets how the selection looks, as the appearance panel does: selected faces, or the\n"
+            "whole part when an object is selected. look is an App.Material. One undo step."
+        );
+        add_varargs_method(
+            "resetAppearanceOfSelection",
+            &Module::resetAppearanceOfSelection,
+            "resetAppearanceOfSelection()\n"
+            "Returns the selection to its default look: its part's material's look, or the\n"
+            "standard look. One undo step."
+        );
+        add_varargs_method(
+            "setMaterialOfSelection",
+            &Module::setMaterialOfSelection,
+            "setMaterialOfSelection(uuid)\n"
+            "Sets what the selected parts are made of, from the material library. Faces nobody\n"
+            "coloured by hand follow the material's look. Faces in the selection are an error."
+        );
         initialize("This module is the PartGui module.");  // register with Python
     }
 
 private:
+    Py::Object setAppearanceOfSelection(const Py::Tuple& args)
+    {
+        PyObject* look = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &App::MaterialPy::Type, &look)) {
+            throw Py::Exception();
+        }
+        PartGui::applyLook(
+            PartGui::appearanceTargetsFromSelection(),
+            *static_cast<App::MaterialPy*>(look)->getMaterialPtr()
+        );
+        return Py::None();
+    }
+
+    Py::Object resetAppearanceOfSelection(const Py::Tuple& args)
+    {
+        if (!PyArg_ParseTuple(args.ptr(), "")) {
+            throw Py::Exception();
+        }
+        PartGui::resetLook(PartGui::appearanceTargetsFromSelection());
+        return Py::None();
+    }
+
+    Py::Object setMaterialOfSelection(const Py::Tuple& args)
+    {
+        const char* uuid = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "s", &uuid)) {
+            throw Py::Exception();
+        }
+        const PartGui::AppearanceTargets targets = PartGui::appearanceTargetsFromSelection();
+        if (!targets.faces.empty()) {
+            throw Py::ValueError("A material applies to whole parts; the selection holds faces");
+        }
+        try {
+            auto material = Materials::MaterialManager::getManager().getMaterial(
+                QString::fromUtf8(uuid)
+            );
+            PartGui::applyMaterial(targets.parts, *material);
+        }
+        catch (const Base::Exception& e) {
+            throw Py::ValueError(e.what());
+        }
+        return Py::None();
+    }
+
+    Py::Object versionLayers(const Py::Tuple& args)
+    {
+        PyObject* before = nullptr;
+        PyObject* after = nullptr;
+        PyObject* showChanges = Py_True;
+        if (!PyArg_ParseTuple(
+                args.ptr(),
+                "O!O!|O!",
+                &App::DocumentPy::Type,
+                &before,
+                &App::DocumentPy::Type,
+                &after,
+                &PyBool_Type,
+                &showChanges
+            )) {
+            throw Py::Exception();
+        }
+        try {
+            App::Document* layers = PartGui::versionLayers(
+                *static_cast<App::DocumentPy*>(before)->getDocumentPtr(),
+                *static_cast<App::DocumentPy*>(after)->getDocumentPtr(),
+                showChanges == Py_True
+            );
+            return Py::asObject(layers->getPyObject());
+        }
+        catch (const Base::Exception& e) {
+            throw Py::RuntimeError(e.what());
+        }
+    }
 };
 
 PyObject* initModule()
@@ -229,6 +338,7 @@ PyMOD_INIT_FUNC(PartGui)
     PartGui::ViewProviderProjectOnSurface           ::init();
 
     PartGui::Workbench                              ::init();
+    PartGui::registerVersionLayers();
     auto manip = std::make_shared<PartGui::WorkbenchManipulator>();
     Gui::WorkbenchManipulator::installManipulator(manip);
 

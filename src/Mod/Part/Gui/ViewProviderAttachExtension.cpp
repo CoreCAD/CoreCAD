@@ -26,7 +26,6 @@
 #include <QMenu>
 
 #include <Gui/ActionFunction.h>
-#include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Mod/Part/App/AttachExtension.h>
@@ -43,51 +42,6 @@ EXTENSION_PROPERTY_SOURCE(PartGui::ViewProviderAttachExtension, Gui::ViewProvide
 ViewProviderAttachExtension::ViewProviderAttachExtension()
 {
     initExtensionType(ViewProviderAttachExtension::getExtensionClassTypeId());
-}
-
-QIcon ViewProviderAttachExtension::extensionMergeColorfullOverlayIcons(const QIcon& orig) const
-{
-    QIcon mergedicon = orig;
-
-    if (getExtendedViewProvider()->getObject()->hasExtension(
-            Part::AttachExtension::getExtensionClassTypeId()
-        )) {
-
-        auto* attach
-            = getExtendedViewProvider()->getObject()->getExtensionByType<Part::AttachExtension>();
-
-        if (attach) {
-
-            if (!attach->isAttacherActive()) {
-                static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("Part_Detached", QSize(10, 10)));
-
-                mergedicon = Gui::BitmapFactoryInst::mergePixmap(
-                    mergedicon,
-                    px,
-                    Gui::BitmapFactoryInst::BottomLeft
-                );
-            }
-        }
-    }
-
-    return mergedicon;
-}
-
-void ViewProviderAttachExtension::extensionUpdateData(const App::Property* prop)
-{
-    auto obj = getExtendedViewProvider()->getObject();
-    if (obj && obj->hasExtension(Part::AttachExtension::getExtensionClassTypeId())) {
-        auto* attach = obj->getExtensionByType<Part::AttachExtension>();
-
-        if (attach) {
-            if (prop == &(attach->AttachmentSupport) || prop == &(attach->MapMode)
-                || prop == &(attach->MapPathParameter) || prop == &(attach->MapReversed)
-                || prop == &(attach->AttachmentOffset) || prop == &(attach->AttacherType)) {
-
-                getExtendedViewProvider()->signalChangeIcon();  // signal icon change
-            }
-        }
-    }
 }
 
 void ViewProviderAttachExtension::extensionSetupContextMenu(QMenu* menu, QObject*, const char*)

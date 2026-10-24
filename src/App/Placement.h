@@ -26,6 +26,7 @@
 #pragma once
 
 #include "FeaturePython.h"
+#include "PlacementExtension.h"
 
 namespace App
 {
@@ -33,7 +34,7 @@ namespace App
 /** Placement Object
  *  Handles the repositioning of data. Also can do grouping
  */
-class AppExport Placement: public App::GeoFeature
+class AppExport Placement: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::Placement);
 

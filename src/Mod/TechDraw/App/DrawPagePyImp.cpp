@@ -85,25 +85,15 @@ PyObject* DrawPagePy::getViews(PyObject* args)
     DrawPage* page = getDrawPagePtr();
     std::vector<App::DocumentObject*> allViews = page->getViews();
 
+    // Each view is handed back as ITSELF: the object's own Python handle, which knows what
+    // kind of view it is and compares equal to the same view reached any other way. Building a
+    // fresh handle here instead -- and picking its class from a short list of the kinds this
+    // function had heard of -- gave a script a stranger: a drafted view came back typed as a
+    // plain DrawView, missing everything its own class offers, and `view in page.getViews()`
+    // was False for a view that was on the page.
     Py::List ret;
-    for (auto v: allViews) {
-        auto dvp = freecad_cast<DrawViewPart*>(v);
-        if (dvp && DrawView::isProjGroupItem(dvp)) {
-            TechDraw::DrawProjGroupItem* dpgi = static_cast<TechDraw::DrawProjGroupItem*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawProjGroupItemPy(dpgi)));
-        }
-        else if (v->isDerivedFrom<TechDraw::DrawViewPart>()) {
-            TechDraw::DrawViewPart* dvp = static_cast<TechDraw::DrawViewPart*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawViewPartPy(dvp)));
-        }
-        else if (v->isDerivedFrom<TechDraw::DrawViewAnnotation>()) {
-            TechDraw::DrawViewAnnotation* dva = static_cast<TechDraw::DrawViewAnnotation*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawViewAnnotationPy(dva)));
-        }
-        else {
-            TechDraw::DrawView* dv = static_cast<TechDraw::DrawView*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawViewPy(dv)));
-        }
+    for (auto* v : allViews) {
+        ret.append(Py::asObject(v->getPyObject()));
     }
 
     return Py::new_reference_to(ret);
@@ -118,25 +108,15 @@ PyObject* DrawPagePy::getAllViews(PyObject* args)
     DrawPage* page = getDrawPagePtr();
     std::vector<App::DocumentObject*> allViews = page->getAllViews();
 
+    // Each view is handed back as ITSELF: the object's own Python handle, which knows what
+    // kind of view it is and compares equal to the same view reached any other way. Building a
+    // fresh handle here instead -- and picking its class from a short list of the kinds this
+    // function had heard of -- gave a script a stranger: a drafted view came back typed as a
+    // plain DrawView, missing everything its own class offers, and `view in page.getViews()`
+    // was False for a view that was on the page.
     Py::List ret;
-    for (auto v: allViews) {
-        auto dvp = freecad_cast<DrawViewPart*>(v);
-        if (dvp && DrawView::isProjGroupItem(dvp)) {
-            TechDraw::DrawProjGroupItem* dpgi = static_cast<TechDraw::DrawProjGroupItem*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawProjGroupItemPy(dpgi)));
-        }
-        else if (v->isDerivedFrom<TechDraw::DrawViewPart>()) {
-            TechDraw::DrawViewPart* dvp = static_cast<TechDraw::DrawViewPart*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawViewPartPy(dvp)));
-        }
-        else if (v->isDerivedFrom<TechDraw::DrawViewAnnotation>()) {
-            TechDraw::DrawViewAnnotation* dva = static_cast<TechDraw::DrawViewAnnotation*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawViewAnnotationPy(dva)));
-        }
-        else {
-            TechDraw::DrawView* dv = static_cast<TechDraw::DrawView*>(v);
-            ret.append(Py::asObject(new TechDraw::DrawViewPy(dv)));
-        }
+    for (auto* v : allViews) {
+        ret.append(Py::asObject(v->getPyObject()));
     }
 
     return Py::new_reference_to(ret);

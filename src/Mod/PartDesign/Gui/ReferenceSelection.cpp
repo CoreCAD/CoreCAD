@@ -34,23 +34,18 @@
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Base/Tools.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Mod/Part/App/Part2DObject.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/DatumLine.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
-#include <Mod/PartDesign/App/DatumPoint.h>
 
-#include "ui_DlgReference.h"
 #include "ReferenceSelection.h"
-#include "TaskFeaturePick.h"
 #include "Utils.h"
 
 
@@ -65,19 +60,19 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
         return false;
     }
     PartDesign::Body* body = getBody();
-    App::OriginGroupExtension* originGroup = getOriginGroupExtension(body);
 
     // Don't allow selection in other document
     if (support && pDoc != support->getDocument()) {
         return false;
     }
 
-    // Enable selection from origin of current part/
+    // A shared world-frame base plane/axis lives in the document Origin; a user-created datum
+    // is an App::DatumElement of its own. Route the former to the Origin rule, and fall back to
+    // the datum rule for the latter.
     if (pObj->isDerivedFrom<App::DatumElement>()) {
-        return allowOrigin(body, originGroup, pObj);
-    }
-
-    if (pObj->isDerivedFrom<Part::Datum>()) {
+        if (allowOrigin(body, pObj)) {
+            return true;
+        }
         return allowDatum(body, pObj);
     }
 
@@ -101,11 +96,11 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
     }
 
     // resolve links if needed
-    if (!pObj->isDerivedFrom<Part::Feature>()) {
+    if (!Part::hasShape(pObj)) {
         pObj = Part::Feature::getShapeOwner(pObj, sSubName);
     }
 
-    if (pObj && pObj->isDerivedFrom<Part::Feature>()) {
+    if (pObj && Part::hasShape(pObj)) {
         return allowPartFeature(pObj, sSubName);
     }
 
@@ -114,37 +109,11 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
 
 PartDesign::Body* ReferenceSelection::getBody() const
 {
-    auto* body = support ? PartDesign::Body::findBodyOf(support) : PartDesignGui::getBody(false);
-    return body;
+    // The body the reference is taken for is the support's; with no support there is none.
+    return support ? PartDesign::Body::findBodyOf(support) : nullptr;
 }
 
-App::OriginGroupExtension* ReferenceSelection::getOriginGroupExtension(PartDesign::Body* body) const
-{
-    App::DocumentObject* originGroupObject = nullptr;
-
-    if (body) {  // Search for Part of the body
-        originGroupObject = App::OriginGroupExtension::getGroupOfObject(body);
-    }
-    else if (support) {  // if no body search part for support
-        originGroupObject = App::OriginGroupExtension::getGroupOfObject(support);
-    }
-    else {  // fallback to active part
-        originGroupObject = PartDesignGui::getActivePart();
-    }
-
-    App::OriginGroupExtension* originGroup = nullptr;
-    if (originGroupObject) {
-        originGroup = originGroupObject->getExtensionByType<App::OriginGroupExtension>();
-    }
-
-    return originGroup;
-}
-
-bool ReferenceSelection::allowOrigin(
-    PartDesign::Body* body,
-    App::OriginGroupExtension* originGroup,
-    App::DocumentObject* pObj
-) const
+bool ReferenceSelection::allowOrigin(PartDesign::Body* body, App::DocumentObject* pObj) const
 {
     bool fits = false;
     if (type.testFlag(AllowSelection::FACE) && pObj->isDerivedFrom<App::Plane>()) {
@@ -154,41 +123,45 @@ bool ReferenceSelection::allowOrigin(
         fits = true;
     }
 
-    if (fits) {  // check that it actually belongs to the chosen body or part
-        try {    // here are some throwers
-            if (body) {
-                if (body->hasObject(pObj, true)) {
-                    return true;
-                }
-            }
-            else if (originGroup) {
-                if (originGroup->hasObject(pObj, true)) {
-                    return true;
-                }
-            }
+    if (!fits) {
+        return false;  // The Plane/Axis doesn't fit our needs
+    }
+
+    try {  // membership queries can throw
+        // The world-frame base planes and axes live in the single shared document Origin
+        // (Cruth §11 step 5e). Resolve the frame straight from the document that owns the
+        // candidate — no walking up to the retired App::Part container. A base plane is valid
+        // for every body, and for a bare document that has no body yet.
+        App::Origin* origin = PartDesign::Body::findDocumentOrigin(pObj->getDocument());
+        if (origin && origin->hasObject(pObj, true)) {
+            return true;
         }
-        catch (const Base::Exception&) {
+        // Belt-and-braces for a legacy per-body Origin still referenced by a Body's Tip.
+        if (body && PartDesign::Body::backsBody(pObj, body)) {
+            return true;
         }
     }
-    return false;  // The Plane/Axis doesn't fits our needs
+    catch (const Base::Exception&) {
+    }
+    return false;
 }
 
 bool ReferenceSelection::allowDatum(PartDesign::Body* body, App::DocumentObject* pObj) const
 {
-    if (!body) {  // Allow selecting Part::Datum features from the active Body
-        return false;
-    }
-    else if (!type.testFlag(AllowSelection::OTHERBODY) && !body->hasObject(pObj)) {
+    // With no body to take the reference for, any datum will do (Cruth #132: there is no
+    // active body to fall back on).
+    if (body && !type.testFlag(AllowSelection::OTHERBODY)
+        && !PartDesign::Body::backsBody(pObj, body)) {
         return false;
     }
 
-    if (type.testFlag(AllowSelection::FACE) && (pObj->isDerivedFrom<PartDesign::Plane>())) {
+    if (type.testFlag(AllowSelection::FACE) && pObj->isDerivedFrom<App::Plane>()) {
         return true;
     }
-    if (type.testFlag(AllowSelection::EDGE) && (pObj->isDerivedFrom<PartDesign::Line>())) {
+    if (type.testFlag(AllowSelection::EDGE) && pObj->isDerivedFrom<App::Line>()) {
         return true;
     }
-    if (type.testFlag(AllowSelection::POINT) && (pObj->isDerivedFrom<PartDesign::Point>())) {
+    if (type.testFlag(AllowSelection::POINT) && pObj->isDerivedFrom<App::Point>()) {
         return true;
     }
 
@@ -225,7 +198,7 @@ bool ReferenceSelection::allowPartFeature(App::DocumentObject* pObj, const char*
 
 bool ReferenceSelection::isEdge(App::DocumentObject* pObj, const char* sSubName) const
 {
-    const Part::TopoShape& shape = static_cast<const Part::Feature*>(pObj)->Shape.getValue();
+    const Part::TopoShape shape = Part::getShape(pObj);
     TopoDS_Shape sh = shape.getSubShape(sSubName);
     const TopoDS_Edge& edgeShape = TopoDS::Edge(sh);
     if (!edgeShape.IsNull()) {
@@ -245,7 +218,7 @@ bool ReferenceSelection::isEdge(App::DocumentObject* pObj, const char* sSubName)
 
 bool ReferenceSelection::isFace(App::DocumentObject* pObj, const char* sSubName) const
 {
-    const Part::TopoShape& shape = static_cast<const Part::Feature*>(pObj)->Shape.getValue();
+    const Part::TopoShape shape = Part::getShape(pObj);
     TopoDS_Shape sh = shape.getSubShape(sSubName);
     const TopoDS_Face& face = TopoDS::Face(sh);
     if (!face.IsNull()) {
@@ -265,7 +238,7 @@ bool ReferenceSelection::isFace(App::DocumentObject* pObj, const char* sSubName)
 
 bool ReferenceSelection::isCircle(App::DocumentObject* pObj, const char* sSubName) const
 {
-    const Part::TopoShape& shape = static_cast<const Part::Feature*>(pObj)->Shape.getValue();
+    const Part::TopoShape shape = Part::getShape(pObj);
     TopoDS_Shape sh = shape.getSubShape(sSubName);
     const TopoDS_Edge& edgeShape = TopoDS::Edge(sh);
     BRepAdaptor_Curve adapt(edgeShape);
@@ -321,40 +294,7 @@ bool getReferencedSelection(
 
     std::string subname = msg.pSubName;
 
-    // check if the selection is an external reference and ask the user what to do
-    // of course only if thisObj is in a body, as otherwise the old workflow would not
-    // be supported
-    PartDesign::Body* body = PartDesignGui::getBodyFor(thisObj, false);
-    bool originfeature = selObj->isDerivedFrom<App::DatumElement>();
-    if (!originfeature && body) {
-        PartDesign::Body* selBody = PartDesignGui::getBodyFor(selObj, false);
-        if (!selBody || body != selBody) {
-            QDialog dia(Gui::getMainWindow());
-            Ui_DlgReference dlg;
-            dlg.setupUi(&dia);
-            dia.setModal(true);
-            int result = dia.exec();
-            if (result == QDialog::DialogCode::Rejected) {
-                selObj = nullptr;
-                return false;
-            }
-
-            if (!dlg.radioXRef->isChecked()) {
-                App::Document* document = thisObj->getDocument();
-                document->openTransaction("Make copy");
-                auto copy = PartDesignGui::TaskFeaturePick::makeCopy(
-                    selObj,
-                    subname,
-                    dlg.radioIndependent->isChecked()
-                );
-                body->addObject(copy);
-
-                selObj = copy;
-                subname.erase(std::remove_if(subname.begin(), subname.end(), &isdigit), subname.end());
-                subname.append("1");
-            }
-        }
-    }
+    // CoreCAD Phase 2: cross-Body references are valid. No copy needed.
 
     // Remove subname for planes and datum features
     if (PartDesign::Feature::isDatum(selObj)) {

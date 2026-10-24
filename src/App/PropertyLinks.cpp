@@ -22,15 +22,21 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <optional>
 #include <QDir>
 #include <QFileInfo>
 #include <boost/algorithm/string/predicate.hpp>
+#include <array>
+#include <zipios++/zipinputstream.h>
 
 #include <Base/Console.h>
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Reader.h>
+#include <Base/Stream.h>
 #include <Base/Writer.h>
 #include <Base/Tools.h>
+#include <Base/Uuid.h>
 
 #include "PropertyLinks.h"
 #include "Application.h"
@@ -49,6 +55,105 @@ using namespace App;
 using namespace Base;
 using namespace std;
 namespace sp = std::placeholders;
+
+namespace
+{
+/// A reference's name split into the path to the object holding the element, and the element's
+/// own name without the leading marker or the trailing position.
+struct ElementNameParts
+{
+    std::string path;
+    Data::MappedName mapped;
+    std::string position;
+};
+
+std::optional<ElementNameParts> splitElementName(const std::string& name)
+{
+    const char* element = Data::findElementName(name.c_str());
+    if (element == nullptr || !Data::isMappedElement(element)) {
+        return std::nullopt;
+    }
+    const std::string tail(element + 1);
+    const std::size_t dot = tail.rfind('.');
+    if (dot == std::string::npos) {
+        return std::nullopt;
+    }
+    return ElementNameParts {std::string(name.c_str(), element - name.c_str()),
+                             Data::MappedName(tail.substr(0, dot)),
+                             tail.substr(dot + 1)};
+}
+
+const Data::ComplexGeoData* elementsOf(DocumentObject* target, const std::string& path)
+{
+    DocumentObject* owner = path.empty() ? target : target->getSubObject(path.c_str());
+    const auto* geo = freecad_cast<GeoFeature*>(owner);
+    const PropertyComplexGeoData* shape = geo != nullptr ? geo->getPropertyOfGeometry() : nullptr;
+    return shape != nullptr ? shape->getComplexData() : nullptr;
+}
+
+/// The name kept beside the part at `index`, written out in full so it means the same thing in
+/// the next session. Empty when there is none, rather than one only this session can read.
+std::string fullNameOf(DocumentObject* target,
+                       const std::vector<PropertyLinkBase::ShadowSub>& shadows,
+                       std::size_t index)
+{
+    if (index >= shadows.size()) {
+        return {};
+    }
+    const auto parts = splitElementName(shadows[index].newName);
+    const Data::ComplexGeoData* elements = parts ? elementsOf(target, parts->path) : nullptr;
+    if (elements == nullptr) {
+        return {};
+    }
+    return parts->path + Data::ELEMENT_MAP_PREFIX
+        + elements->fullElementName(parts->mapped).toString() + '.' + parts->position;
+}
+
+/// A name read from a file is in full; the target's own names may be shortened through this
+/// session's string table, so find the element whose name expands to it and use that. False when
+/// an opening document has not built the target yet, so it has no names to match against; it is
+/// asked again once built. Outside opening, a target with no names is a miss like any other.
+bool shortenToSessionName(DocumentObject* target, std::string& name)
+{
+    const auto parts = splitElementName(name);
+    const Data::ComplexGeoData* elements = parts ? elementsOf(target, parts->path) : nullptr;
+    if (elements == nullptr || elements->getIndexedName(parts->mapped)) {
+        return true;
+    }
+    if (elements->getElementMapSize() == 0 && target->getDocument() != nullptr
+        && target->getDocument()->testStatus(Document::BuildingOnOpen)) {
+        return false;
+    }
+    const Data::IndexedName found = elements->findByFullElementName(parts->mapped);
+    if (found) {
+        name = parts->path + Data::ELEMENT_MAP_PREFIX + elements->getMappedName(found).toString()
+            + '.' + found.toString();
+    }
+    return true;
+}
+}  // namespace
+
+// Resolve a link target the durable way (Amendment 3, Clause 3.2/3.6): by UUID
+// first, falling back to the cached name only when no UUID was stored (forward
+// interop, not legacy migration). The name remains display/diagnostic.
+static App::DocumentObject*
+resolveLinkTarget(App::Document* document, const std::string& uuid, const std::string& name)
+{
+    if (!document) {
+        return nullptr;
+    }
+    if (!uuid.empty()) {
+        Base::Uuid targetUuid;
+        targetUuid.setValue(uuid);
+        if (auto* object = document->getObjectByUuid(targetUuid)) {
+            return object;
+        }
+    }
+    if (!name.empty()) {
+        return document->getObject(name.c_str());
+    }
+    return nullptr;
+}
 
 //**************************************************************************
 //**************************************************************************
@@ -427,6 +532,9 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject* feature,
     }
     ShadowSub elementName;
     const char* subname;
+    if (!shortenToSessionName(obj, shadow.newName)) {
+        return false;
+    }
     if (shadow.newName.size()) {
         subname = shadow.newName.c_str();
     }
@@ -729,6 +837,27 @@ void PropertyLink::resetLink()
     _pcLink = nullptr;
 }
 
+bool PropertyLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    if (_pcLink != nullptr) {
+        pointing.push_back({_pcLink, {}, /*noPart=*/true});
+    }
+    return true;
+}
+
+bool PropertyLink::pointAt(const std::vector<Pointing>& pointing)
+{
+    // A plain link points at an object and cannot say which part of one. Refusing is the honest
+    // answer: setting the object and dropping the part would keep a reference nobody authored.
+    for (const Pointing& one : pointing) {
+        if (!one.sub.empty()) {
+            return false;
+        }
+    }
+    setValue(pointing.empty() ? nullptr : pointing.front().target);
+    return true;
+}
+
 void PropertyLink::setValue(App::DocumentObject* lValue)
 {
     auto parent = dynamic_cast<App::DocumentObject*>(getContainer());
@@ -791,8 +920,11 @@ void PropertyLink::setPyObject(PyObject* value)
 
 void PropertyLink::Save(Base::Writer& writer) const
 {
+    // The durable binding is the target's UUID (Amendment 3, Clause 3.2); the
+    // name is written as display/diagnostic and as a resolution fallback.
     writer.Stream() << writer.ind() << "<Link value=\"" << (_pcLink ? _pcLink->getExportName() : "")
-                    << "\"/>" << std::endl;
+                    << "\" uuid=\"" << (_pcLink ? _pcLink->Uid.getValueStr() : "") << "\"/>"
+                    << std::endl;
 }
 
 void PropertyLink::Restore(Base::XMLReader& reader)
@@ -801,15 +933,26 @@ void PropertyLink::Restore(Base::XMLReader& reader)
     reader.readElement("Link");
     // get the value of my attribute
     std::string name = reader.getName(reader.getAttribute<const char*>("value"));
+    std::string uuid = reader.getAttribute<const char*>("uuid", "");
 
     // Property not in a DocumentObject!
     assert(getContainer()->isDerivedFrom<App::DocumentObject>());
 
-    if (!name.empty()) {
+    if (!name.empty() || !uuid.empty()) {
         DocumentObject* parent = static_cast<DocumentObject*>(getContainer());
 
         App::Document* document = parent->getDocument();
-        DocumentObject* object = document ? document->getObject(name.c_str()) : nullptr;
+        // Resolve by UUID first (durable binding); fall back to the name only
+        // when no UUID was stored (forward interop, not legacy migration).
+        DocumentObject* object = nullptr;
+        if (document && !uuid.empty()) {
+            Base::Uuid targetUuid;
+            targetUuid.setValue(uuid);
+            object = document->getObjectByUuid(targetUuid);
+        }
+        if (!object && document && !name.empty()) {
+            object = document->getObject(name.c_str());
+        }
         if (!object) {
             if (reader.isVerbose()) {
                 Base::Console().warning("Lost link to '%s' while loading, maybe "
@@ -992,6 +1135,27 @@ void PropertyLinkList::set1Value(int idx, DocumentObject* const& value)
     inherited::set1Value(idx, value);
 }
 
+bool PropertyLinkList::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    for (DocumentObject* target : getValues()) {
+        if (target != nullptr) {
+            pointing.push_back({target, {}, /*noPart=*/true});
+        }
+    }
+    return true;
+}
+
+bool PropertyLinkList::pointAt(const std::vector<Pointing>& pointing)
+{
+    std::vector<DocumentObject*> targets;
+    targets.reserve(pointing.size());
+    for (const Pointing& one : pointing) {
+        targets.push_back(one.target);
+    }
+    setValues(targets);
+    return true;
+}
+
 void PropertyLinkList::setValues(const std::vector<DocumentObject*>& value)
 {
     if (value.size() == 1 && !value[0]) {
@@ -1067,8 +1231,8 @@ void PropertyLinkList::Save(Base::Writer& writer) const
     for (int i = 0; i < getSize(); i++) {
         DocumentObject* obj = _lValueList[i];
         if (obj) {
-            writer.Stream() << writer.ind() << "<Link value=\"" << obj->getExportName() << "\"/>"
-                            << endl;
+            writer.Stream() << writer.ind() << "<Link value=\"" << obj->getExportName()
+                            << "\" uuid=\"" << obj->Uid.getValueStr() << "\"/>" << endl;
         }
         else {
             writer.Stream() << writer.ind() << "<Link value=\"\"/>" << endl;
@@ -1100,13 +1264,14 @@ void PropertyLinkList::Restore(Base::XMLReader& reader)
     for (int i = 0; i < count; i++) {
         reader.readElement("Link");
         std::string name = reader.getName(reader.getAttribute<const char*>("value"));
+        std::string uuid = reader.getAttribute<const char*>("uuid", "");
         // In order to do copy/paste it must be allowed to have defined some
         // referenced objects in XML which do not exist anymore in the new
         // document. Thus, we should silently ignore this.
         // Property not in an object!
         DocumentObject* father = static_cast<DocumentObject*>(getContainer());
         App::Document* document = father->getDocument();
-        DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
+        DocumentObject* child = resolveLinkTarget(document, uuid, name);
         if (child) {
             values.push_back(child);
         }
@@ -1332,6 +1497,35 @@ PropertyLinkSub::~PropertyLinkSub()
 void PropertyLinkSub::setSyncSubObject(bool enable)
 {
     _Flags.set((std::size_t)LinkSyncSubObject, enable);
+}
+
+bool PropertyLinkSub::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    if (_pcLinkSub == nullptr) {
+        return true;
+    }
+    if (_cSubList.empty()) {
+        pointing.push_back({_pcLinkSub, {}, /*noPart=*/true});
+        return true;
+    }
+    for (std::size_t i = 0; i < _cSubList.size(); ++i) {
+        pointing.push_back({_pcLinkSub, _cSubList[i], false, fullNameOf(_pcLinkSub, _ShadowSubList, i)});
+    }
+    return true;
+}
+
+bool PropertyLinkSub::pointAt(const std::vector<Pointing>& pointing)
+{
+    std::vector<std::string> subs;
+    std::vector<ShadowSub> shadows;
+    for (const Pointing& one : pointing) {
+        if (!one.noPart) {
+            subs.push_back(one.sub);
+            shadows.push_back({one.name, one.name.empty() ? std::string() : one.sub});
+        }
+    }
+    setValue(pointing.empty() ? nullptr : pointing.front().target, subs, std::move(shadows));
+    return true;
 }
 
 void PropertyLinkSub::setValue(App::DocumentObject* lValue,
@@ -1861,13 +2055,17 @@ void PropertyLinkSub::Save(Base::Writer& writer) const
     assert(_cSubList.size() == _ShadowSubList.size());
 
     std::string internal_name;
+    std::string uuid;
     // it can happen that the object is still alive but is not part of the document anymore and thus
     // returns 0
     if (_pcLinkSub && _pcLinkSub->isAttachedToDocument()) {
         internal_name = _pcLinkSub->getExportName();
+        uuid = _pcLinkSub->Uid.getValueStr();
     }
-    writer.Stream() << writer.ind() << "<LinkSub value=\"" << internal_name << "\" count=\""
-                    << _cSubList.size();
+    // The durable binding is the object's UUID (Clause 3.2); the subname text
+    // stays a name (element identity, scope fence 0.1).
+    writer.Stream() << writer.ind() << "<LinkSub value=\"" << internal_name << "\" uuid=\"" << uuid
+                    << "\" count=\"" << _cSubList.size();
     writer.Stream() << "\">" << std::endl;
     writer.incInd();
     auto owner = freecad_cast<DocumentObject*>(getContainer());
@@ -1913,6 +2111,7 @@ void PropertyLinkSub::Restore(Base::XMLReader& reader)
     reader.readElement("LinkSub");
     // get the values of my attributes
     std::string name = reader.getName(reader.getAttribute<const char*>("value"));
+    std::string uuid = reader.getAttribute<const char*>("uuid", "");
     int count = reader.getAttribute<long>("count");
 
     // Property not in a DocumentObject!
@@ -1920,8 +2119,8 @@ void PropertyLinkSub::Restore(Base::XMLReader& reader)
     App::Document* document = static_cast<DocumentObject*>(getContainer())->getDocument();
 
     DocumentObject* pcObject = nullptr;
-    if (!name.empty()) {
-        pcObject = document ? document->getObject(name.c_str()) : nullptr;
+    if (!name.empty() || !uuid.empty()) {
+        pcObject = resolveLinkTarget(document, uuid, name);
         if (!pcObject) {
             if (reader.isVerbose()) {
                 FC_WARN("Lost link to "
@@ -2278,6 +2477,40 @@ void PropertyLinkSubList::setValue(DocumentObject* lValue, const char* SubName)
     updateElementReference(nullptr);
     checkLabelReferences(_lSubList);
     hasSetValue();
+}
+
+bool PropertyLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    const std::vector<DocumentObject*>& targets = getValues();
+    const std::vector<std::string>& subs = getSubValues();
+    for (std::size_t i = 0; i < targets.size(); ++i) {
+        if (targets[i] != nullptr) {
+            pointing.push_back({targets[i],
+                                i < subs.size() ? subs[i] : std::string(),
+                                false,
+                                fullNameOf(targets[i], _ShadowSubList, i)});
+        }
+    }
+    return true;
+}
+
+bool PropertyLinkSubList::pointAt(const std::vector<Pointing>& pointing)
+{
+    // Target and part are kept side by side, one entry each, because this property says a whole
+    // object by pairing it with an empty part rather than by leaving it out.
+    std::vector<DocumentObject*> targets;
+    std::vector<std::string> subs;
+    std::vector<ShadowSub> shadows;
+    targets.reserve(pointing.size());
+    subs.reserve(pointing.size());
+    shadows.reserve(pointing.size());
+    for (const Pointing& one : pointing) {
+        targets.push_back(one.target);
+        subs.push_back(one.sub);
+        shadows.push_back({one.name, one.name.empty() ? std::string() : one.sub});
+    }
+    setValues(targets, subs, std::move(shadows));
+    return true;
 }
 
 void PropertyLinkSubList::setValues(const std::vector<DocumentObject*>& lValue,
@@ -2829,7 +3062,8 @@ void PropertyLinkSubList::Save(Base::Writer& writer) const
         // 'value' whenever possible.
         const auto& sub = shadow.oldName.empty() ? _lSubList[i] : shadow.oldName;
 
-        writer.Stream() << writer.ind() << "<Link obj=\"" << obj->getExportName() << "\" sub=\"";
+        writer.Stream() << writer.ind() << "<Link obj=\"" << obj->getExportName() << "\" uuid=\""
+                        << obj->Uid.getValueStr() << "\" sub=\"";
         if (exporting) {
             std::string exportName;
             writer.Stream() << encodeAttribute(exportSubName(exportName, obj, sub.c_str()));
@@ -2879,11 +3113,12 @@ void PropertyLinkSubList::Restore(Base::XMLReader& reader)
     for (int i = 0; i < count; i++) {
         reader.readElement("Link");
         std::string name = reader.getName(reader.getAttribute<const char*>("obj"));
+        std::string uuid = reader.getAttribute<const char*>("uuid", "");
         // In order to do copy/paste it must be allowed to have defined some
         // referenced objects in XML which do not exist anymore in the new
         // document. Thus, we should silently ignore this.
         // Property not in an object!
-        DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
+        DocumentObject* child = resolveLinkTarget(document, uuid, name);
         if (child) {
             values.push_back(child);
             shadows.emplace_back();
@@ -3501,6 +3736,18 @@ public:
     void attach(Document* doc)
     {
         assert(!pcDoc);
+        // Durable validation (Clause 3.7 step 3): when a link at this path
+        // expects a specific target-document UUID, refuse to bind a file that
+        // carries a different one. Leaving pcDoc unset keeps the info
+        // unresolved so path recovery can locate the right file by UUID.
+        for (auto* link : links) {
+            if (!link->docUuid.empty() && doc->Uid.getValueStr() != link->docUuid) {
+                FC_WARN("document at '" << doc->getFileName() << "' has UUID "
+                                        << doc->Uid.getValueStr() << ", expected " << link->docUuid
+                                        << " -- refusing to bind");
+                return;
+            }
+        }
         pcDoc = doc;
         FC_LOG("attaching " << doc->getName() << ", " << doc->getFileName());
         std::map<App::PropertyLinkBase*, std::vector<App::PropertyXLink*>> parentLinks;
@@ -3841,6 +4088,37 @@ void PropertyXLink::setSubValues(std::vector<std::string>&& subs, std::vector<Sh
     checkLabelReferences(_SubList);
 }
 
+bool PropertyXLink::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    if (_pcLink == nullptr) {
+        return true;
+    }
+    if (_SubList.empty()) {
+        pointing.push_back({_pcLink, {}, /*noPart=*/true});
+        return true;
+    }
+    for (std::size_t i = 0; i < _SubList.size(); ++i) {
+        pointing.push_back({_pcLink, _SubList[i], false, fullNameOf(_pcLink, _ShadowSubList, i)});
+    }
+    return true;
+}
+
+bool PropertyXLink::pointAt(const std::vector<Pointing>& pointing)
+{
+    std::vector<std::string> subs;
+    std::vector<ShadowSub> shadows;
+    for (const Pointing& one : pointing) {
+        if (!one.noPart) {
+            subs.push_back(one.sub);
+            shadows.push_back({one.name, one.name.empty() ? std::string() : one.sub});
+        }
+    }
+    setValue(pointing.empty() ? nullptr : pointing.front().target,
+             std::move(subs),
+             std::move(shadows));
+    return true;
+}
+
 void PropertyXLink::setValue(App::DocumentObject* lValue)
 {
     setValue(lValue, nullptr);
@@ -3954,8 +4232,135 @@ void PropertyXLink::setValue(App::DocumentObject* lValue,
     hasSetValue();
 }
 
+namespace
+{
+// Read a document file's own durable UUID (Clause 3.7 step 3b) without opening the whole
+// document. A document written by this program is a recipe in plain text and names its uuid in
+// the first few lines; a sealed archive -- a release, or a file from an older version -- keeps
+// the same fact inside Document.xml. Both are read here, because a link has to find its target
+// whichever shape the target happens to have. Returns an empty string if the file cannot be
+// read or carries no UUID.
+std::string peekDocumentUuid(const QString& filePath)
+{
+    try {
+        Base::FileInfo fi(filePath.toUtf8().constData());
+        if (!fi.exists() || !fi.isFile()) {
+            return {};
+        }
+        Base::ifstream file(fi, std::ios::in | std::ios::binary);
+        if (!file) {
+            return {};
+        }
+        const bool sealedArchive = file.peek() == 'P';
+        std::unique_ptr<zipios::ZipInputStream> zip;
+        std::istream* source = &file;
+        if (sealedArchive) {
+            // positioned at the first entry, Document.xml
+            zip = std::make_unique<zipios::ZipInputStream>(file);
+            source = zip.get();
+        }
+
+        // The recipe says it outright; the archive says it as the first Uid property, which
+        // precedes any object data.
+        const std::string recipeTag = "<Document uuid=\"";
+        const std::string uidTag = "name=\"Uid\"";
+        const std::string valueTag = "<Uuid value=\"";
+
+        const auto found = [&](const std::string& content) {
+            if (content.find(recipeTag) != std::string::npos) {
+                return true;
+            }
+            const auto uidPos = content.find(uidTag);
+            return uidPos != std::string::npos
+                && content.find(valueTag, uidPos) != std::string::npos;
+        };
+        const auto valueAfter = [](const std::string& content, std::string::size_type pos) {
+            const auto end = content.find('"', pos);
+            return end == std::string::npos ? std::string() : content.substr(pos, end - pos);
+        };
+
+        std::string content;
+        constexpr std::string::size_type cap = 1u << 20;  // 1 MiB safety cap
+        std::array<char, 4096> buf {};
+        while (source->good() && content.size() < cap) {
+            source->read(buf.data(), static_cast<std::streamsize>(buf.size()));
+            content.append(buf.data(), static_cast<std::size_t>(source->gcount()));
+            if (found(content)) {
+                break;
+            }
+        }
+
+        auto pos = content.find(recipeTag);
+        if (pos != std::string::npos) {
+            return valueAfter(content, pos + recipeTag.size());
+        }
+        pos = content.find(uidTag);
+        if (pos == std::string::npos) {
+            return {};
+        }
+        pos = content.find(valueTag, pos);
+        if (pos == std::string::npos) {
+            return {};
+        }
+        return valueAfter(content, pos + valueTag.size());
+    }
+    catch (const std::exception&) {
+        return {};
+    }
+}
+
+// Recover the path of a cross-document reference target that has moved
+// (Clause 3.7 step 3b). If the file at the stored path is absent or now carries
+// a different document UUID, scan the referring document's directory for a file
+// whose document UUID matches docUuid; on a hit return its absolute path (the
+// caller adopts it and the stored path locator refreshes). Returns empty when no
+// recovery is needed or none is found. Search scope is the referring document's
+// directory only; wider search paths are tracked as a follow-on (#57).
+std::string recoverXLinkPath(App::Document* ownerDoc,
+                             const std::string& filename,
+                             const std::string& docUuid)
+{
+    if (docUuid.empty() || !ownerDoc) {
+        return {};
+    }
+    // Resolve the stored path to absolute; if it already carries the right UUID
+    // there is nothing to recover.
+    QString stored;
+    try {
+        App::DocInfo::getDocPath(filename.c_str(), ownerDoc, false, &stored);
+    }
+    catch (const Base::Exception&) {
+        stored.clear();
+    }
+    if (!stored.isEmpty() && peekDocumentUuid(stored) == docUuid) {
+        return {};
+    }
+    const char* ownerFile = ownerDoc->getFileName();
+    if (Base::Tools::isNullOrEmpty(ownerFile)) {
+        return {};
+    }
+    QDir dir = QFileInfo(QString::fromUtf8(ownerFile)).absoluteDir();
+    QStringList filters;
+    for (const std::string& ext : Document::nativeFormatExtensions()) {
+        filters.append(QStringLiteral("*.") + QString::fromStdString(ext));
+    }
+    for (const QFileInfo& cand : dir.entryInfoList(filters, QDir::Files)) {
+        const QString candPath = cand.absoluteFilePath();
+        if (candPath == stored) {
+            continue;  // already ruled out above
+        }
+        if (peekDocumentUuid(candPath) == docUuid) {
+            return std::string(candPath.toUtf8().constData());
+        }
+    }
+    return {};
+}
+}  // namespace
+
 void PropertyXLink::setValue(std::string&& filename,
                              std::string&& name,
+                             std::string&& docUuid,
+                             std::string&& objUuid,
                              std::vector<std::string>&& subs,
                              std::vector<ShadowSub>&& shadows)
 {
@@ -3968,13 +4373,48 @@ void PropertyXLink::setValue(std::string&& filename,
         throw Base::RuntimeError("invalid container");
     }
 
+    // Remember the durable target-document UUID (Clause 3.7): it is the real
+    // binding, validated against the file the path locator resolves to.
+    this->docUuid = docUuid;
+
     DocumentObject* pObject = nullptr;
     DocInfoPtr info;
     if (!filename.empty()) {
         owner->getDocument()->signalLinkXsetValue(filename);
         info = DocInfo::get(filename.c_str(), owner->getDocument(), this, name.c_str());
-        if (info->pcDoc) {
-            pObject = info->pcDoc->getObject(name.c_str());
+        // Durable resolution (Clause 3.7): bind the object through its UUID
+        // within the target document, name as fallback. Prefer the document
+        // opened via the stored path; when that path yields nothing, fall back
+        // to a document already open under the target UUID.
+        App::Document* targetDoc = info->pcDoc;
+        // A path that resolves to the WRONG document UUID must not bind
+        // (Clause 3.7 step 3): treat it as unresolved and defer to the UUID.
+        if (targetDoc && !docUuid.empty() && targetDoc->Uid.getValueStr() != docUuid) {
+            targetDoc = nullptr;
+        }
+        if (!targetDoc && !docUuid.empty()) {
+            Base::Uuid targetDocUuid;
+            targetDocUuid.setValue(docUuid);
+            targetDoc = App::GetApplication().getDocumentByUuid(targetDocUuid);
+        }
+        // Path recovery (Clause 3.7 step 3b): the stored path is gone or now
+        // holds a different document, and no open document carries the target
+        // UUID. Search the referring document's directory for the moved target
+        // by UUID and adopt its path, so the correct file is opened and the
+        // stored path locator is refreshed. Runs only on the cold path -- a
+        // valid, matching stored path never reaches here.
+        if (!targetDoc && !docUuid.empty()) {
+            std::string recovered = recoverXLinkPath(owner->getDocument(), filename, docUuid);
+            if (!recovered.empty()) {
+                FC_WARN("cross-document reference target moved; recovered by UUID at '" << recovered
+                                                                                        << "'");
+                filename = std::move(recovered);
+                info = DocInfo::get(filename.c_str(), owner->getDocument(), this, name.c_str());
+                targetDoc = info->pcDoc;
+            }
+        }
+        if (targetDoc) {
+            pObject = resolveLinkTarget(targetDoc, objUuid, name);
         }
     }
     else {
@@ -4188,6 +4628,18 @@ void PropertyXLink::Save(Base::Writer& writer) const
                         << (docInfo && docInfo->pcDoc ? docInfo->pcDoc->LastModifiedDate.getValue()
                                                       : "")
                         << "\" name=\"" << objectName;
+
+        // Durable identity (Clause 3.7): persist the target document's and
+        // object's UUIDs as the real binding; file/name stay locator hints.
+        std::string docUuid;
+        std::string objUuid;
+        if (_pcLink && _pcLink->isAttachedToDocument()) {
+            objUuid = _pcLink->Uid.getValueStr();
+            if (auto* linkedDoc = _pcLink->getDocument()) {
+                docUuid = linkedDoc->Uid.getValueStr();
+            }
+        }
+        writer.Stream() << "\" docUuid=\"" << docUuid << "\" uuid=\"" << objUuid;
     }
 
     if (testFlag(LinkAllowPartial)) {
@@ -4224,7 +4676,10 @@ void PropertyXLink::Save(Base::Writer& writer) const
         writer.Stream() << "\"/>" << std::endl;
     }
     else {
-        writer.Stream() << "\" count=\"" << _SubList.size() << "\">" << std::endl;
+        // Cruth: the subs are stated, never counted. A declared length is a second statement of
+        // what the same element holds, and a textual merge takes the same raised number from both
+        // sides without a conflict, after which a reader that loops it drops one side's addition.
+        writer.Stream() << "\">" << std::endl;
         writer.incInd();
         for (unsigned int i = 0; i < _SubList.size(); i++) {
             const auto& shadow = _ShadowSubList[i];
@@ -4262,8 +4717,13 @@ void PropertyXLink::Save(Base::Writer& writer) const
 
 void PropertyXLink::Restore(Base::XMLReader& reader)
 {
-    // read my element
     reader.readElement("XLink");
+    restoreFromCurrentElement(reader);
+}
+
+void PropertyXLink::restoreFromCurrentElement(Base::XMLReader& reader)
+{
+    const int link = reader.level();
     std::string stampAttr, file;
     if (reader.hasAttribute("stamp")) {
         stampAttr = reader.getAttribute<const char*>("stamp");
@@ -4271,6 +4731,10 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
     if (reader.hasAttribute("file")) {
         file = reader.getAttribute<const char*>("file");
     }
+    // Durable identity (Clause 3.7): the target document / object UUIDs are the
+    // real binding, resolved ahead of the path / name locator hints below.
+    std::string docUuid = reader.getAttribute<const char*>("docUuid", "");
+    std::string objUuid = reader.getAttribute<const char*>("uuid", "");
 
     setFlag(LinkAllowPartial,
             reader.hasAttribute("partial") && reader.getAttribute<bool>("partial"));
@@ -4320,12 +4784,12 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
             }
         }
     }
-    else if (reader.hasAttribute("count")) {
-        int count = reader.getAttribute<long>("count");
-        subs.resize(count);
-        shadows.resize(count);
-        for (int i = 0; i < count; i++) {
-            reader.readElement("Sub");
+    else {
+        while (nextChildElement(reader, link)) {
+            expectElement(reader, "Sub");
+            const int i = static_cast<int>(subs.size());
+            subs.emplace_back();
+            shadows.emplace_back();
             shadows[i].oldName = importSubName(reader, reader.getAttribute<const char*>("value"), restoreLabel);
             if (reader.hasAttribute(ATTR_SHADOWED) && !IGNORE_SHADOW) {
                 subs[i] = shadows[i].newName =
@@ -4342,7 +4806,6 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
                 mapped.push_back(i);
             }
         }
-        reader.readEndElement("XLink");
     }
     setFlag(LinkRestoreLabel, restoreLabel);
 
@@ -4353,7 +4816,12 @@ void PropertyXLink::Restore(Base::XMLReader& reader)
 
     if (!file.empty() || (!object && !name.empty())) {
         this->stamp = stampAttr;
-        setValue(std::move(file), std::move(name), std::move(subs), std::move(shadows));
+        setValue(std::move(file),
+                 std::move(name),
+                 std::move(docUuid),
+                 std::move(objUuid),
+                 std::move(subs),
+                 std::move(shadows));
     }
     else {
         setValue(object, std::move(subs), std::move(shadows));
@@ -4469,8 +4937,18 @@ void PropertyXLink::Paste(const Property& from)
                  std::vector<ShadowSub>(other._ShadowSubList));
     }
     else {
+        std::string docUuid;
+        std::string objUuid;
+        if (other._pcLink && other._pcLink->isAttachedToDocument()) {
+            objUuid = other._pcLink->Uid.getValueStr();
+            if (auto* linkedDoc = other._pcLink->getDocument()) {
+                docUuid = linkedDoc->Uid.getValueStr();
+            }
+        }
         setValue(std::string(other.filePath),
                  std::string(other.objectName),
+                 std::move(docUuid),
+                 std::move(objUuid),
                  std::vector<std::string>(other._SubList),
                  std::vector<ShadowSub>(other._ShadowSubList));
     }
@@ -4837,6 +5315,41 @@ void PropertyXLinkSubList::setValue(DocumentObject* lValue, const char* SubName)
     setValues(std::move(values));
 }
 
+bool PropertyXLinkSubList::statesWhereItPoints(std::vector<Pointing>& pointing) const
+{
+    for (DocumentObject* target : getValues()) {
+        if (target == nullptr) {
+            continue;
+        }
+        const std::vector<std::string> subs = getSubValues(target);
+        if (subs.empty()) {
+            pointing.push_back({target, {}, /*noPart=*/true});
+            continue;
+        }
+        for (const std::string& sub : subs) {
+            pointing.push_back({target, sub});
+        }
+    }
+    return true;
+}
+
+bool PropertyXLinkSubList::pointAt(const std::vector<Pointing>& pointing)
+{
+    // Gathered per target, because this property holds the parts of one object together rather
+    // than as a flat list of pairs.
+    std::map<DocumentObject*, std::vector<std::string>> picked;
+    for (const Pointing& one : pointing) {
+        if (one.noPart) {
+            picked.emplace(one.target, std::vector<std::string> {});
+        }
+        else {
+            picked[one.target].push_back(one.sub);
+        }
+    }
+    setValues(picked);
+    return true;
+}
+
 void PropertyXLinkSubList::setValues(const std::vector<DocumentObject*>& lValue,
                                      const std::vector<const char*>& lSubNames)
 {
@@ -5147,11 +5660,12 @@ bool PropertyXLinkSubList::referenceChanged() const
 
 void PropertyXLinkSubList::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<XLinkSubList count=\"" << _Links.size();
+    // Cruth: the links are stated, never counted -- see the note in PropertyXLink::Save.
+    writer.Stream() << writer.ind() << "<XLinkSubList";
     if (testFlag(LinkAllowPartial)) {
-        writer.Stream() << "\" partial=\"1";
+        writer.Stream() << " partial=\"1\"";
     }
-    writer.Stream() << "\">" << endl;
+    writer.Stream() << ">" << endl;
     writer.incInd();
     for (auto& l : _Links) {
         l.Save(writer);
@@ -5165,14 +5679,14 @@ void PropertyXLinkSubList::Restore(Base::XMLReader& reader)
     reader.readElement("XLinkSubList");
     setFlag(LinkAllowPartial,
             reader.hasAttribute("partial") && reader.getAttribute<bool>("partial"));
-    int count = reader.getAttribute<long>("count");
+    const int list = reader.level();
     atomic_change guard(*this, false);
     _Links.clear();
-    for (int i = 0; i < count; ++i) {
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "XLink");
         _Links.emplace_back(false, this);
-        _Links.back().Restore(reader);
+        _Links.back().restoreFromCurrentElement(reader);
     }
-    reader.readEndElement("XLinkSubList");
     guard.tryInvoke();
 }
 

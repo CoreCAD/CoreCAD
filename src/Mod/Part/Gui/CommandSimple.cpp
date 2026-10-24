@@ -128,7 +128,7 @@ void CmdPartShapeFromMesh::activated(int iMsg)
 
 bool CmdPartShapeFromMesh::isActive()
 {
-    return Gui::Selection().countObjectsOfType("Mesh::Feature") > 0;
+    return true;
 }
 //===========================================================================
 // Part_PointsFromMesh
@@ -151,7 +151,7 @@ void CmdPartPointsFromMesh::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
 
-    auto getDefaultDistance = [](Part::Feature* geometry) {
+    auto getDefaultDistance = [](Part::ShapeFeature* geometry) {
         auto bbox = geometry->Shape.getBoundingBox();
         int steps {20};
         return bbox.CalcDiagonalLength() / steps;
@@ -163,12 +163,12 @@ void CmdPartPointsFromMesh::activated(int iMsg)
 
     double distance {1.0};
     auto found = std::find_if(geoms.begin(), geoms.end(), [](App::DocumentObject* obj) {
-        return freecad_cast<Part::Feature*>(obj);
+        return freecad_cast<Part::ShapeFeature*>(obj);
     });
 
     if (found != geoms.end()) {
 
-        double defaultDistance = getDefaultDistance(freecad_cast<Part::Feature*>(*found));
+        double defaultDistance = getDefaultDistance(freecad_cast<Part::ShapeFeature*>(*found));
 
         double STD_OCC_TOLERANCE = 1e-6;
 
@@ -400,7 +400,9 @@ void CmdPartRefineShape::activated(int iMsg)
     bool parametric = hGrp->GetBool("ParametricRefine", true);
     if (parametric) {
         Gui::WaitCursor wc;
-        Base::Type partid = Base::Type::fromName("Part::Feature");
+        // Any shape-carrying feature can be refined, placed or not (Amendment 4):
+        // narrowing to the placed Part::Feature would skip every derived feature.
+        Base::Type partid = Part::ShapeFeature::getClassTypeId();
         std::vector<App::DocumentObject*> objs = Gui::Selection().getObjectsOfType(partid);
         openCommand(QT_TRANSLATE_NOOP("Command", "Refine shape"));
         std::for_each(objs.begin(), objs.end(), [](App::DocumentObject* obj) {
@@ -446,7 +448,7 @@ void CmdPartRefineShape::activated(int iMsg)
 
 bool CmdPartRefineShape::isActive()
 {
-    return Gui::Selection().hasSelection();
+    return true;
 }
 
 //===========================================================================
@@ -470,7 +472,7 @@ void CmdPartDefeaturing::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     Gui::WaitCursor wc;
-    Base::Type partid = Base::Type::fromName("Part::Feature");
+    Base::Type partid = Part::ShapeFeature::getClassTypeId();
     std::vector<Gui::SelectionObject> objs = Gui::Selection().getSelectionEx(nullptr, partid);
     openCommand(QT_TRANSLATE_NOOP("Command", "Defeaturing"));
     for (std::vector<Gui::SelectionObject>::iterator it = objs.begin(); it != objs.end(); ++it) {
@@ -516,7 +518,7 @@ void CmdPartDefeaturing::activated(int iMsg)
 
 bool CmdPartDefeaturing::isActive()
 {
-    Base::Type partid = Base::Type::fromName("Part::Feature");
+    Base::Type partid = Part::ShapeFeature::getClassTypeId();
     std::vector<Gui::SelectionObject> objs = Gui::Selection().getSelectionEx(nullptr, partid);
     for (const auto& obj : objs) {
         std::vector<std::string> subnames = obj.getSubNames();

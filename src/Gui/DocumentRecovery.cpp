@@ -47,9 +47,17 @@
 
 #include <FCConfig.h>
 
+#ifdef FC_OS_WIN32
+# include <windows.h>
+#else
+# include <cerrno>
+# include <csignal>
+#endif
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/ProjectFile.h>
+#include <App/SealedArchive.h>
 #include <Base/Exception.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
@@ -67,74 +75,6 @@ FC_LOG_LEVEL_INIT("Gui", true, true)
 using namespace Gui;
 using namespace Gui::Dialog;
 namespace sp = std::placeholders;
-
-// taken from the script doctools.py
-std::string DocumentRecovery::doctools
-    = "import os,sys,string\n"
-      "from defusedxml import sax as defused_sax\n"
-      "from xml.sax.handler import ContentHandler\n"
-      "import zipfile\n"
-      "\n"
-      "# SAX handler to parse the Document.xml\n"
-      "class DocumentHandler(ContentHandler):\n"
-      "	def __init__(self, dirname):\n"
-      "		self.files = []\n"
-      "		self.dirname = dirname\n"
-      "\n"
-      "	def startElement(self, name, attributes):\n"
-      "		if name == 'XLink':\n"
-      "			return\n"
-      "		item=attributes.get(\"file\")\n"
-      "		if item:\n"
-      "			self.files.append(os.path.join(self.dirname,str(item)))\n"
-      "\n"
-      "	def characters(self, data):\n"
-      "		return\n"
-      "\n"
-      "	def endElement(self, name):\n"
-      "		return\n"
-      "\n"
-      "def extractDocument(filename, outpath):\n"
-      "	zfile=zipfile.ZipFile(filename)\n"
-      "	files=zfile.namelist()\n"
-      "\n"
-      "	for i in files:\n"
-      "		data=zfile.read(i)\n"
-      "		dirs=i.split(\"/\")\n"
-      "		if len(dirs) > 1:\n"
-      "			dirs.pop()\n"
-      "			curpath=outpath\n"
-      "			for j in dirs:\n"
-      "				curpath=curpath+\"/\"+j\n"
-      "				os.mkdir(curpath)\n"
-      "		output=open(outpath+\"/\"+i,'wb')\n"
-      "		output.write(data)\n"
-      "		output.close()\n"
-      "\n"
-      "def createDocument(filename, outpath):\n"
-      "	files=getFilesList(filename)\n"
-      "	dirname=os.path.dirname(filename)\n"
-      "	guixml=os.path.join(dirname,\"GuiDocument.xml\")\n"
-      "	if os.path.exists(guixml):\n"
-      "		files.extend(getFilesList(guixml))\n"
-      "	compress=zipfile.ZipFile(outpath,'w',zipfile.ZIP_DEFLATED)\n"
-      "	for i in files:\n"
-      "		dirs=os.path.split(i)\n"
-      "		#print i, dirs[-1]\n"
-      "		compress.write(i,dirs[-1],zipfile.ZIP_DEFLATED)\n"
-      "	compress.close()\n"
-      "\n"
-      "def getFilesList(filename):\n"
-      "	dirname=os.path.dirname(filename)\n"
-      "	handler=DocumentHandler(dirname)\n"
-      "	parser=defused_sax.make_parser()\n"
-      "	parser.setContentHandler(handler)\n"
-      "	parser.parse(filename)\n"
-      "\n"
-      "	files=[]\n"
-      "	files.append(filename)\n"
-      "	files.extend(iter(handler.files))\n"
-      "	return files\n";
 
 
 namespace Gui
@@ -221,21 +161,6 @@ bool DocumentRecovery::foundDocuments() const
     return (!d->recoveryInfo.isEmpty());
 }
 
-QString DocumentRecovery::createProjectFile(const QString& documentXml)
-{
-    QString source = documentXml;
-    QFileInfo fi(source);
-    QString dest = fi.dir().absoluteFilePath(QStringLiteral("fc_recovery_file.fcstd"));
-
-    std::stringstream str;
-    str << doctools << "\n";
-    str << "createDocument(\"" << (const char*)source.toUtf8() << "\", \""
-        << (const char*)dest.toUtf8() << "\")";
-    Gui::Command::runCommand(Gui::Command::App, str.str().c_str());
-
-    return dest;
-}
-
 void DocumentRecovery::closeEvent(QCloseEvent* e)
 {
     // Do not disable the X button in the title bar
@@ -258,13 +183,7 @@ void DocumentRecovery::accept()
             QTreeWidgetItem* item = d_ptr->ui.treeWidget->topLevelItem(index);
 
             try {
-                QString file = info.projectFile;
-                QFileInfo fi(file);
-                if (fi.fileName() == QLatin1String("Document.xml")) {
-                    file = createProjectFile(info.projectFile);
-                }
-
-                paths.emplace_back(file.toUtf8().constData());
+                paths.emplace_back(info.projectFile.toUtf8().constData());
                 filenames.emplace_back(info.fileName.toUtf8().constData());
                 labels.emplace_back(info.label.toUtf8().constData());
                 indices.push_back(index);
@@ -291,7 +210,11 @@ void DocumentRecovery::accept()
             }
         }
 
-        auto docs = App::GetApplication().openDocuments(filenames, &paths, &labels, &errs);
+        // A snapshot is the document it was taken of.
+        App::DocumentInitFlags sameDocument;
+        sameDocument.duplicate = App::DuplicateAnswer::SamePart;
+        auto docs
+            = App::GetApplication().openDocuments(filenames, &paths, &labels, &errs, sameDocument);
 
         for (size_t i = 0; i < docs.size(); ++i) {
             auto& info = d->recoveryInfo[indices[i]];
@@ -328,14 +251,8 @@ void DocumentRecovery::accept()
                 QFileInfo fi(info.projectFile);
                 bool res = false;
 
-                if (fi.fileName() == QLatin1String("fc_recovery_file.fcstd")) {
-                    transDir.remove(fi.fileName());
-                    res = transDir.rename(fi.absoluteFilePath(), fi.fileName());
-                }
-                else {
-                    transDir.rmdir(fi.dir().dirName());
-                    res = transDir.rename(fi.absolutePath(), fi.dir().dirName());
-                }
+                transDir.remove(fi.fileName());
+                res = transDir.rename(fi.absoluteFilePath(), fi.fileName());
 
                 if (res) {
                     transDir.remove(xfi.fileName());
@@ -413,15 +330,11 @@ DocumentRecoveryPrivate::Info DocumentRecoveryPrivate::getRecoveryInfo(const QFi
 
     QString file;
     QDir doc_dir(fi.absoluteFilePath());
-    QDir rec_dir(doc_dir.absoluteFilePath(QLatin1String("fc_recovery_files")));
 
-    // compressed recovery file
-    if (doc_dir.exists(QLatin1String("fc_recovery_file.fcstd"))) {
-        file = doc_dir.absoluteFilePath(QLatin1String("fc_recovery_file.fcstd"));
-    }
-    // separate files for recovery
-    else if (rec_dir.exists(QLatin1String("Document.xml"))) {
-        file = rec_dir.absoluteFilePath(QLatin1String("Document.xml"));
+    // A snapshot is written as the document itself, in the record's own form, so recovery opens
+    // it the way any document is opened (Amendment 19 Clause 19.5).
+    if (doc_dir.exists(QLatin1String("fc_recovery_file.cpart"))) {
+        file = doc_dir.absoluteFilePath(QLatin1String("fc_recovery_file.cpart"));
     }
 
     info.status = DocumentRecoveryPrivate::Created;
@@ -460,7 +373,9 @@ DocumentRecoveryPrivate::Info DocumentRecoveryPrivate::getRecoveryInfo(const QFi
         if (info.status == DocumentRecoveryPrivate::Created) {
             // compare the modification dates
             QFileInfo fileInfo(info.fileName);
-            if (!info.fileName.isEmpty()) {
+            // a deleted original is not a corrupted one: offer the recovery like a never-saved
+            // document
+            if (!info.fileName.isEmpty() && fileInfo.exists()) {
                 if (isValidProject(fileInfo)) {
                     QDateTime dateRecv = QFileInfo(file).lastModified();
                     QDateTime dateProj = fileInfo.lastModified();
@@ -563,22 +478,60 @@ bool xmlFilesAreValid(const QString& fcstdFile)
     }
 }
 
-bool DocumentRecoveryPrivate::isValidProject(const QFileInfo& fi) const
+static bool recipeTextIsWellFormed(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QFile::ReadOnly)) {
+        return false;
+    }
+    QXmlStreamReader xr(&file);
+    bool hasElement = false;
+    while (!xr.atEnd()) {
+        if (xr.readNext() == QXmlStreamReader::StartElement) {
+            hasElement = true;
+        }
+    }
+    return hasElement && !xr.hasError();
+}
+
+bool Gui::Dialog::originalDocumentIsIntact(const QFileInfo& fi)
 {
     if (!fi.exists()) {
         return false;
     }
 
-    if (!zipDataIsValid(fi.fileName())) {
+    const QString path = fi.absoluteFilePath();
+    QFile file(path);
+    char first = 0;
+    if (!file.open(QFile::ReadOnly) || !file.getChar(&first)) {
+        return false;
+    }
+    file.close();
+
+    // The same test the document reader makes: a zip container starts with 'P'.
+    if (first != 'P') {
+        return recipeTextIsWellFormed(path);
+    }
+
+    if (!zipDataIsValid(path)) {
         return false;
     }
 
-    if (!xmlFilesAreValid(fi.fileName())) {
+    if (App::holdsSealedRecipe(path.toStdString())) {
+        return true;
+    }
+
+    if (!xmlFilesAreValid(path)) {
         return false;
     }
 
-    App::ProjectFile project(fi.absoluteFilePath().toStdString());
+    App::ProjectFile project(path.toStdString());
     return project.loadDocument();
+}
+
+bool DocumentRecoveryPrivate::isValidProject(const QFileInfo& fi) const
+{
+    return originalDocumentIsIntact(fi);
 }
 
 DocumentRecoveryPrivate::XmlConfig DocumentRecoveryPrivate::readXmlFile(const QString& fn) const
@@ -727,7 +680,51 @@ bool DocumentRecoveryFinder::checkForPreviousCrashes()
     );
     // NOLINTEND
 
+    removeEmptyOrphanDirs();
     return showRecoveryDialogIfNeeded();
+}
+
+static bool processIsRunning(qint64 pid)
+{
+#ifdef FC_OS_WIN32
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (!process) {
+        return false;
+    }
+    DWORD exitCode = 0;
+    bool running = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(process);
+    return running;
+#else
+    return kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+#endif
+}
+
+// A session that exits without its normal cleanup leaves an empty transient directory and no
+// lock file; nothing ever revisits it. Only GUI sessions take a lock, so a live process is
+// checked too. Directories with content may hold work and are kept.
+void DocumentRecoveryFinder::removeEmptyOrphanDirs() const
+{
+    QDir tmp = QString::fromUtf8(App::Application::getUserCachePath().c_str());
+    QString exeName = QString::fromStdString(App::Application::getExecutableName());
+
+    tmp.setNameFilters(QStringList() << exeName + QStringLiteral("_*.lock"));
+    tmp.setFilter(QDir::Files);
+    QSet<QString> lockedPids;
+    for (const QFileInfo& lock : tmp.entryInfoList()) {
+        lockedPids.insert(lock.completeBaseName().mid(exeName.length() + 1));
+    }
+
+    tmp.setNameFilters(QStringList() << exeName + QStringLiteral("_Doc_*"));
+    tmp.setFilter(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo& dir : tmp.entryInfoList()) {
+        QString pid = dir.fileName().section(QLatin1Char('_'), -1);
+        bool isNumber = false;
+        qint64 pidNumber = pid.toLongLong(&isNumber);
+        if (isNumber && !lockedPids.contains(pid) && !processIsRunning(pidNumber)) {
+            tmp.rmdir(dir.fileName());
+        }
+    }
 }
 
 void DocumentRecoveryFinder::checkDocumentDirs(QDir& tmp, const QList<QFileInfo>& dirs, const QString& fn)
@@ -738,7 +735,7 @@ void DocumentRecoveryFinder::checkDocumentDirs(QDir& tmp, const QList<QFileInfo>
     }
     else {
         int countDeletedDocs = 0;
-        QString recovery_files = QStringLiteral("fc_recovery_files");
+        QString recovery_files = QStringLiteral("assets");
         for (QList<QFileInfo>::const_iterator it = dirs.cbegin(); it != dirs.cend(); ++it) {
             QDir doc_dir(it->absoluteFilePath());
             doc_dir.setFilter(QDir::NoDotAndDotDot | QDir::AllEntries);

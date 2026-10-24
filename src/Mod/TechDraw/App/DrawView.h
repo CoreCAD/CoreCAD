@@ -62,6 +62,21 @@ public:
     App::PropertyAngle Rotation;
     App::PropertyString Caption;
 
+    /// The page this view appears on. This link is the authoritative page/view edge:
+    /// a view names its page, the page does not store a list of views. Storing the edge
+    /// in this direction keeps two people adding views to the same page from colliding.
+    App::PropertyLink Page;
+
+    /// The collection (projection group) this view is an item of, if any. Same principle as
+    /// Page: an item names its collection, the collection stores no list of members. A view
+    /// inside a collection derives its page from the collection, so it does not also name a page.
+    App::PropertyLink Collection;
+
+    /// The clip group this view is clipped by, if any. Clip membership is orthogonal to page
+    /// and collection membership — a clipped view still names its page — so it is a separate
+    /// edge, again stored on the item: the clip group keeps no member list.
+    App::PropertyLink ClipGroup;
+
     /** @name methods override Feature */
     //@{
     App::DocumentObjectExecReturn* recompute() override;
@@ -81,6 +96,12 @@ public:
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override {
         return "TechDrawGui::ViewProviderDrawingView";
+    }
+    /// A drawing view (and every dimension, annotation, and balloon derived from it) is
+    /// Drawing-scoped content (ARCHITECTURE §7.1, Amendment 8): only a Drawing document
+    /// admits it; Part, Assembly, and Spreadsheet documents refuse it at the door.
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
     }
     //return PyObject as DrawViewPy
     PyObject *getPyObject() override;

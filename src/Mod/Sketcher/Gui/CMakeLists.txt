@@ -10,7 +10,14 @@ set (Sketcher_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/Sketcher_translation.
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${Sketcher_TR_QRC} ${QM_SRCS})
-qt_add_resources(SketcherGui_SRCS Resources/Sketcher.qrc ${Sketcher_TR_QRC})
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/Sketcher"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Sketcher.qrc"
+    OUTPUT_QRC    _Sketcher_Icons_QRC
+)
+qt_add_resources(SketcherGui_SRCS ${_Sketcher_Icons_QRC} ${Sketcher_TR_QRC})
 
 generate_from_py(ViewProviderSketchGeometryExtension)
 

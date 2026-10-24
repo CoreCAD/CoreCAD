@@ -25,6 +25,7 @@
 
 #include "PropertyPostDataObject.h"
 #include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>
 #include <App/PropertyStandard.h>
 
 #include <vtkBoundingBox.h>
@@ -38,7 +39,7 @@ namespace Fem
 
 // poly data is the only data we can visualize, hence every post
 // processing object needs to expose it
-class FemExport FemPostObject: public App::GeoFeature
+class FemExport FemPostObject: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Fem::FemPostObject);
 

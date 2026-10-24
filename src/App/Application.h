@@ -58,6 +58,7 @@ namespace Base
 {
 class ConsoleObserverStd;
 class ConsoleObserverFile;
+class Uuid;
 }
 
 namespace App
@@ -90,10 +91,24 @@ enum class MessageOption {
     Throw, ///< Throw an exception. */
 };
 
+/// What a file carrying the identity of a document already open is.
+enum class DuplicateAnswer
+{
+    Unanswered,
+    SamePart,  ///< A clone or relocation: it keeps the identity.
+    NewPart,   ///< A fork: it gets a fresh identity; its objects keep theirs.
+    DontOpen,
+};
+
 /// Options for document initialization.
 struct DocumentInitFlags {
     bool createView {true}; ///< Whether to hide the document in the tree view.
     bool temporary {false}; ///< Whether the document should be a temporary one.
+    /// Cruth document-type marker to stamp on creation (e.g. "Part"); empty = untyped/legacy.
+    /// A typed CAD document (e.g. "Part") mints its shared world frame at creation.
+    std::string documentType {};
+    /// The caller's answer for a file that turns out to be a copy of an open document.
+    DuplicateAnswer duplicate {DuplicateAnswer::Unanswered};
 };
 
 /**
@@ -295,6 +310,18 @@ public:
      */
     App::Document* getDocumentByPath(const char *path,
                                      PathMatchMode checkCanonical = PathMatchMode::MatchAbsolute) const;
+
+    /**
+     * @brief Retrieve an open document by its durable UUID.
+     *
+     * The document UUID is the namespace half of a cross-document reference's
+     * (document UUID, object UUID) address (Amendment 3, Clause 3.7; ARCHITECTURE
+     * §7.2). Unlike the file path, it survives rename and relocation.
+     *
+     * @param[in] uuid: the document's durable @ref Document::Uid.
+     * @return The open document carrying that UUID, or `nullptr` if none does.
+     */
+    App::Document* getDocumentByUuid(const Base::Uuid& uuid) const;
 
     /// Gets the (internal) name of a given document.
     const char* getDocumentName(const App::Document*) const;
@@ -975,6 +1002,8 @@ private:
 
     static void cleanupUnits();
 
+    /// False when the newcomer is not to be opened; throws when nobody answered.
+    bool settleDuplicate(Document& newcomer, DuplicateAnswer answer);
     App::Document* openDocumentPrivate(const char * FileName, const char *propFileName,
             const char *label, bool isMainDoc, DocumentInitFlags initFlags, std::vector<std::string> &&objNames);
 

@@ -22,14 +22,30 @@
  **************************************************************************/
 
 
+#include <cstring>
+
 #include "WorkbenchManipulator.h"
 #include <Gui/MenuManager.h>
 #include <Gui/ToolBarManager.h>
 
 using namespace PartGui;
 
-void WorkbenchManipulator::modifyMenuBar([[maybe_unused]] Gui::MenuItem* menuBar)
-{}
+void WorkbenchManipulator::modifyMenuBar(Gui::MenuItem* menuBar)
+{
+    addAppearanceAfter(menuBar, "Std_ToggleNavigation");
+}
+
+void WorkbenchManipulator::modifyContextMenu(const char* recipient, Gui::MenuItem* menuBar)
+{
+    if (strcmp(recipient, "View") == 0) {
+        addAppearanceAfter(menuBar, "Std_TreeSelection");
+    }
+    else if (strcmp(recipient, "Tree") == 0) {
+        if (!addAppearanceAfter(menuBar, "Std_RandomColor")) {
+            addAppearanceAfter(menuBar, "Std_ToggleVisibility");
+        }
+    }
+}
 
 void WorkbenchManipulator::modifyToolBars(Gui::ToolBarItem* toolBar)
 {
@@ -39,6 +55,23 @@ void WorkbenchManipulator::modifyToolBars(Gui::ToolBarItem* toolBar)
 
 void WorkbenchManipulator::modifyDockWindows([[maybe_unused]] Gui::DockWindowItems* dockWindow)
 {}
+
+bool WorkbenchManipulator::addAppearanceAfter(Gui::MenuItem* menuBar, const char* reference)
+{
+    Gui::MenuItem* parent = menuBar->findParentOf(reference);
+    if (!parent) {
+        return false;
+    }
+    auto* item = new Gui::MenuItem();  // NOLINT
+    item->setCommand("Part_EditAppearance");
+    if (Gui::MenuItem* next = parent->afterItem(parent->findItem(reference))) {
+        parent->insertItem(next, item);
+    }
+    else {
+        parent->appendItem(item);
+    }
+    return true;
+}
 
 void WorkbenchManipulator::addSelectionFilter(Gui::ToolBarItem* toolBar)
 {

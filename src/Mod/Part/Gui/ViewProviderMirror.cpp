@@ -76,7 +76,7 @@ void ViewProviderMirror::setupContextMenu(QMenu* menu, QObject* receiver, const 
     // don't add plane editor to context menu if MirrorPlane is set because it would override any
     // changes, anyway
     Part::Mirroring* mf = getObject<Part::Mirroring>();
-    Part::Feature* ref = static_cast<Part::Feature*>(mf->MirrorPlane.getValue());
+    Part::ShapeFeature* ref = static_cast<Part::ShapeFeature*>(mf->MirrorPlane.getValue());
     bool enabled = true;
     if (ref) {
         enabled = false;
@@ -94,7 +94,7 @@ bool ViewProviderMirror::setEdit(int ModNum)
     if (ModNum == ViewProvider::Default) {
         // get the properties from the mirror feature
         Part::Mirroring* mf = getObject<Part::Mirroring>();
-        Part::Feature* ref = static_cast<Part::Feature*>(mf->MirrorPlane.getValue());
+        Part::ShapeFeature* ref = static_cast<Part::ShapeFeature*>(mf->MirrorPlane.getValue());
         if (ref) {  // skip this editor if MirrorPlane property is set
             return false;
         }
@@ -186,14 +186,6 @@ void ViewProviderMirror::unsetEdit(int ModNum)
     }
 }
 
-std::vector<App::DocumentObject*> ViewProviderMirror::claimChildren() const
-{
-    // Make the input object a child (see also #0001482)
-    std::vector<App::DocumentObject*> temp;
-    temp.push_back(getObject<Part::Mirroring>()->Source.getValue());
-    return temp;
-}
-
 bool ViewProviderMirror::onDelete(const std::vector<std::string>&)
 {
     // get the input shape
@@ -257,7 +249,7 @@ void ViewProviderFillet::updateData(const App::Property* prop)
         if (!objFill) {
             return;
         }
-        Part::Feature* objBase = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objFill->Base.getValue())
         );
         if (objBase) {
@@ -335,13 +327,6 @@ void ViewProviderFillet::unsetEdit(int ModNum)
     }
 }
 
-std::vector<App::DocumentObject*> ViewProviderFillet::claimChildren() const
-{
-    std::vector<App::DocumentObject*> temp;
-    temp.push_back(getObject<Part::Fillet>()->Base.getValue());
-    return temp;
-}
-
 bool ViewProviderFillet::onDelete(const std::vector<std::string>&)
 {
     // get the input shape
@@ -378,7 +363,7 @@ void ViewProviderChamfer::updateData(const App::Property* prop)
         if (!objCham) {
             return;
         }
-        Part::Feature* objBase = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objCham->Base.getValue())
         );
         if (objBase) {
@@ -456,13 +441,6 @@ void ViewProviderChamfer::unsetEdit(int ModNum)
     }
 }
 
-std::vector<App::DocumentObject*> ViewProviderChamfer::claimChildren() const
-{
-    std::vector<App::DocumentObject*> temp;
-    temp.push_back(getObject<Part::Chamfer>()->Base.getValue());
-    return temp;
-}
-
 bool ViewProviderChamfer::onDelete(const std::vector<std::string>&)
 {
     // get the input shape
@@ -485,13 +463,6 @@ ViewProviderRevolution::ViewProviderRevolution()
 }
 
 ViewProviderRevolution::~ViewProviderRevolution() = default;
-
-std::vector<App::DocumentObject*> ViewProviderRevolution::claimChildren() const
-{
-    std::vector<App::DocumentObject*> temp;
-    temp.push_back(getObject<Part::Revolution>()->Source.getValue());
-    return temp;
-}
 
 bool ViewProviderRevolution::onDelete(const std::vector<std::string>&)
 {
@@ -516,11 +487,6 @@ ViewProviderLoft::ViewProviderLoft()
 
 ViewProviderLoft::~ViewProviderLoft() = default;
 
-std::vector<App::DocumentObject*> ViewProviderLoft::claimChildren() const
-{
-    return getObject<Part::Loft>()->Sections.getValues();
-}
-
 bool ViewProviderLoft::onDelete(const std::vector<std::string>&)
 {
     return true;
@@ -536,16 +502,6 @@ ViewProviderSweep::ViewProviderSweep()
 }
 
 ViewProviderSweep::~ViewProviderSweep() = default;
-
-std::vector<App::DocumentObject*> ViewProviderSweep::claimChildren() const
-{
-    auto obj = getObject<Part::Sweep>();
-    auto children = obj->Sections.getValues();
-    if (obj->Spine.getValue()) {
-        children.push_back(obj->Spine.getValue());
-    }
-    return children;
-}
 
 bool ViewProviderSweep::onDelete(const std::vector<std::string>&)
 {
@@ -616,13 +572,6 @@ void ViewProviderOffset::unsetEdit(int ModNum)
     else {
         PartGui::ViewProviderPart::unsetEdit(ModNum);
     }
-}
-
-std::vector<App::DocumentObject*> ViewProviderOffset::claimChildren() const
-{
-    std::vector<App::DocumentObject*> child;
-    child.push_back(getObject<Part::Offset>()->Source.getValue());
-    return child;
 }
 
 bool ViewProviderOffset::onDelete(const std::vector<std::string>&)
@@ -716,13 +665,6 @@ void ViewProviderThickness::unsetEdit(int ModNum)
     else {
         PartGui::ViewProviderPart::unsetEdit(ModNum);
     }
-}
-
-std::vector<App::DocumentObject*> ViewProviderThickness::claimChildren() const
-{
-    std::vector<App::DocumentObject*> child;
-    child.push_back(getObject<Part::Thickness>()->Faces.getValue());
-    return child;
 }
 
 bool ViewProviderThickness::onDelete(const std::vector<std::string>&)

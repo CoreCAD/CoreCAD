@@ -2,10 +2,13 @@
 
 #include <FCConfig.h>
 
+#include <iomanip>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/Expression.h>
 #include <App/ObjectIdentifier.h>
+#include <Mod/Sketcher/App/ExternalGeometryFacade.h>
 #include <Mod/Sketcher/App/GeoEnum.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include "SketcherTestHelpers.h"
@@ -685,6 +688,57 @@ TEST_F(SketchObjectTest, testDeleteExposeInternalGeometryOfBSpline)
     EXPECT_EQ(getObject()->getHighestCurveIndex(), 0);
 }
 
+// A B-spline InternalAlignment names a pole/knot by a bare positional ordinal
+// (InternalAlignmentIndex). When the referenced B-spline survives but now has fewer
+// poles/knots, that ordinal can point past the end -- the state a cross-branch
+// pole-count change leaves behind. evaluateConstraint must fail loud on it (#82,
+// ARCHITECTURE §10.1), never silently address the wrong pole.
+TEST_F(SketchObjectTest, bSplineInternalAlignmentIndexOutOfRangeFailsEvaluation)
+{
+    // Arrange
+    auto bspline = createTypicalNonPeriodicBSpline();
+    int geoId = getObject()->addGeometry(bspline.get());
+    const int poleCount = bspline->countPoles();
+    const int knotCount = bspline->countKnots();
+
+    // evaluateConstraint only range-checks First, so pointing it at the B-spline's
+    // own (in-range) geoId keeps the setup minimal; Second is the B-spline itself.
+    // Constraint is non-copyable, so each case is built in place.
+    auto makeControlPointAlignment = [geoId](Sketcher::Constraint& c, int index) {
+        c.Type = Sketcher::InternalAlignment;
+        c.AlignmentType = Sketcher::BSplineControlPoint;
+        c.First = geoId;
+        c.Second = geoId;
+        c.InternalAlignmentIndex = index;
+    };
+
+    // Act / Assert
+    // The last valid pole ordinal evaluates as valid...
+    Sketcher::Constraint lastValid;
+    makeControlPointAlignment(lastValid, poleCount - 1);
+    EXPECT_TRUE(getObject()->evaluateConstraint(&lastValid));
+
+    // ...one past it is out of range and must fail (before the fix the ordinal was
+    // never checked and this passed).
+    Sketcher::Constraint pastEnd;
+    makeControlPointAlignment(pastEnd, poleCount);
+    EXPECT_FALSE(getObject()->evaluateConstraint(&pastEnd));
+
+    // A negative ordinal is likewise invalid.
+    Sketcher::Constraint negative;
+    makeControlPointAlignment(negative, -1);
+    EXPECT_FALSE(getObject()->evaluateConstraint(&negative));
+
+    // The same bound applies to knot-point alignments, checked against the knot count.
+    Sketcher::Constraint knotPastEnd;
+    knotPastEnd.Type = Sketcher::InternalAlignment;
+    knotPastEnd.AlignmentType = Sketcher::BSplineKnotPoint;
+    knotPastEnd.First = geoId;
+    knotPastEnd.Second = geoId;
+    knotPastEnd.InternalAlignmentIndex = knotCount;
+    EXPECT_FALSE(getObject()->evaluateConstraint(&knotPastEnd));
+}
+
 // TODO: Needs to be done for other curves too but currently they are working as intended
 TEST_F(SketchObjectTest, testDeleteOnlyUnusedInternalGeometryOfBSpline)
 {
@@ -817,6 +871,67 @@ TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionFunc
     EXPECT_EQ(std::string("atan(0.03)"), getObject()->getConstraintExpression(id));
 }
 
+// Two copies of one saved sketch stand for two branches. Each adds a different line; the lines
+// must not share an id, or every edge name downstream collides when the branches merge.
+TEST_F(SketchObjectTest, shapesAddedOnTwoBranchesGetDistinctIds)
+{
+    auto line = [](double y) {
+        auto geo = std::make_unique<Part::GeomLineSegment>();
+        geo->setPoints(Base::Vector3d(0.0, y, 0.0), Base::Vector3d(1.0, y, 0.0));
+        return geo;
+    };
+    getObject()->addGeometry(line(0.0).get());
+    auto* branchB = freecad_cast<Sketcher::SketchObject*>(
+        getObject()->getDocument()->addObject("Sketcher::SketchObject", "BranchB")
+    );
+    branchB->Geometry.setValues(getObject()->Geometry.getValues());
+
+    const int onA = getObject()->addGeometry(line(1.0).get());
+    const int onB = branchB->addGeometry(line(2.0).get());
+
+    long shared = 0;
+    long sharedOnB = 0;
+    long addedOnA = 0;
+    long addedOnB = 0;
+    getObject()->getGeometryId(0, shared);
+    branchB->getGeometryId(0, sharedOnB);
+    getObject()->getGeometryId(onA, addedOnA);
+    branchB->getGeometryId(onB, addedOnB);
+    EXPECT_EQ(shared, sharedOnB);
+    EXPECT_NE(addedOnA, addedOnB);
+    // Names compare numerically and a face takes its lowest edge name, so newer must sort later.
+    EXPECT_LT(shared >> 32, addedOnA >> 32);
+    EXPECT_LT(shared >> 32, addedOnB >> 32);
+}
+
+// Projected geometry is named downstream like drawn geometry, so the same holds: two branches
+// projecting different edges must not mint the same id.
+TEST_F(SketchObjectTest, projectionsAddedOnTwoBranchesGetDistinctIds)
+{
+    auto* source = freecad_cast<Sketcher::SketchObject*>(
+        getObject()->getDocument()->addObject("Sketcher::SketchObject", "Source")
+    );
+    for (double y : {0.0, 1.0}) {
+        Part::GeomLineSegment line;
+        line.setPoints(Base::Vector3d(0.0, y, 0.0), Base::Vector3d(1.0, y, 0.0));
+        source->addGeometry(&line);
+    }
+    getObject()->getDocument()->recompute();
+    auto* branchB = freecad_cast<Sketcher::SketchObject*>(
+        getObject()->getDocument()->addObject("Sketcher::SketchObject", "BranchB")
+    );
+
+    ASSERT_EQ(getObject()->addExternal(source, "Edge1"), 0);
+    ASSERT_EQ(branchB->addExternal(source, "Edge2"), 0);
+
+    const auto projectedId = [](const Sketcher::SketchObject* sketch) {
+        return Sketcher::ExternalGeometryFacade::getFacade(sketch->ExternalGeo[2])->getId();
+    };
+    ASSERT_EQ(getObject()->ExternalGeo.getSize(), 3);
+    ASSERT_EQ(branchB->ExternalGeo.getSize(), 3);
+    EXPECT_NE(projectedId(getObject()), projectedId(branchB));
+}
+
 TEST_F(SketchObjectTest, testGetElementName)
 {
     // Arrange
@@ -827,7 +942,8 @@ TEST_F(SketchObjectTest, testGetElementName)
     long tag;
     getObject()->getGeometryId(id, tag);  // We need to look up the tag that got assigned
     std::ostringstream oss;
-    oss << "g" << tag;
+    oss << "g" << (tag >> 32) << 'h' << std::hex << std::setw(8) << std::setfill('0')
+        << (tag & 0xFFFFFFFFL);
     auto tagName = oss.str();
     getObject()->recomputeFeature();  // or ->execute()
     // Act
@@ -856,4 +972,41 @@ TEST_F(SketchObjectTest, testGetElementName)
     EXPECT_STREQ(reverse_normal_name.oldName.c_str(), "Vertex2");
     EXPECT_STREQ(reverse_export_name.newName.c_str(), (";" + tagName + "v1;SKT.Vertex1").c_str());
     EXPECT_STREQ(reverse_export_name.oldName.c_str(), "Vertex1");
+}
+
+// The document is the only hard boundary left for an external reference: within one document a
+// sketch may reference any geometry it can see, but crossing into another document must go through
+// a binder. These two cases together are the discriminator — a check that refused (or allowed)
+// both would say nothing.
+TEST_F(SketchObjectTest, testExternalWithinDocumentIsAllowed)
+{
+    // Arrange
+    auto* doc = getObject()->getDocument();
+    auto* neighbour = doc->addObject("Sketcher::SketchObject");
+    Sketcher::SketchObject::eReasonList reason {};
+
+    // Act
+    bool allowed = getObject()->isExternalAllowed(doc, neighbour, &reason);
+
+    // Assert
+    EXPECT_TRUE(allowed);
+    EXPECT_EQ(reason, Sketcher::SketchObject::rlAllowed);
+}
+
+TEST_F(SketchObjectTest, testExternalAcrossDocumentsIsRefused)
+{
+    // Arrange
+    auto otherName = App::GetApplication().getUniqueDocumentName("other");
+    auto* otherDoc = App::GetApplication().newDocument(otherName.c_str(), "testUser");
+    auto* stranger = otherDoc->addObject("Sketcher::SketchObject");
+    Sketcher::SketchObject::eReasonList reason {};
+
+    // Act
+    bool allowed = getObject()->isExternalAllowed(otherDoc, stranger, &reason);
+
+    // Assert
+    EXPECT_FALSE(allowed);
+    EXPECT_EQ(reason, Sketcher::SketchObject::rlOtherDoc);
+
+    App::GetApplication().closeDocument(otherName.c_str());
 }

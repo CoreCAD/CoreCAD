@@ -12,9 +12,15 @@ generate_from_py(AssemblyObject)
 generate_from_py(AssemblyLink)
 generate_from_py(BomObject)
 generate_from_py(BomGroup)
+generate_from_py(Joint)
+generate_from_py(GroundedJoint)
 generate_from_py(JointGroup)
 generate_from_py(ViewGroup)
+generate_from_py(ExplodedView)
+generate_from_py(ExplodedViewStep)
 generate_from_py(SimulationGroup)
+generate_from_py(Simulation)
+generate_from_py(Motion)
 
 
 SET(Python_SRCS
@@ -26,12 +32,24 @@ SET(Python_SRCS
     BomObjectPyImp.cpp
     BomGroup.pyi
     BomGroupPyImp.cpp
+    Joint.pyi
+    JointPyImp.cpp
+    GroundedJoint.pyi
+    GroundedJointPyImp.cpp
     JointGroup.pyi
     JointGroupPyImp.cpp
     ViewGroup.pyi
     ViewGroupPyImp.cpp
+    ExplodedView.pyi
+    ExplodedViewPyImp.cpp
+    ExplodedViewStep.pyi
+    ExplodedViewStepPyImp.cpp
     SimulationGroup.pyi
     SimulationGroupPyImp.cpp
+    Simulation.pyi
+    SimulationPyImp.cpp
+    Motion.pyi
+    MotionPyImp.cpp
 )
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
@@ -53,12 +71,26 @@ SET(Assembly_SRCS
     BomObject.h
     BomGroup.cpp
     BomGroup.h
+    Joint.cpp
+    Joint.h
+    JointKind.cpp
+    JointKind.h
+    GroundedJoint.cpp
+    GroundedJoint.h
     JointGroup.cpp
     JointGroup.h
     ViewGroup.cpp
     ViewGroup.h
+    ExplodedView.cpp
+    ExplodedView.h
+    ExplodedViewStep.cpp
+    ExplodedViewStep.h
     SimulationGroup.cpp
     SimulationGroup.h
+    Simulation.cpp
+    Simulation.h
+    Motion.cpp
+    Motion.h
     ${Module_SRCS}
     ${Python_SRCS}
 )

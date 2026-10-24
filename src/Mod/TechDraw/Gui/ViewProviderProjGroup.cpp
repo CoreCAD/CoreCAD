@@ -203,7 +203,7 @@ std::vector<App::DocumentObject*> ViewProviderProjGroup::claimChildren() const
     }
 
     // plus the individual ProjGroupItems
-    for (auto& view : getViewObject()->Views.getValues()) {
+    for (auto& view : getViewObject()->getViews()) {
         temp.push_back(view);
     }
 

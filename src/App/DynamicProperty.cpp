@@ -255,7 +255,7 @@ Property* DynamicProperty::addDynamicProperty(PropertyContainer& pc,
     }
 
     Base::Type propType =
-        Base::Type::getTypeIfDerivedFrom(type, App::Property::getClassTypeId(), true);
+        Base::Type::getTypeIfDerivedFrom(type, App::Property::getClassTypeId(), false);
     if (propType.isBad()) {
         FC_THROWM(Base::TypeError,
                   "Invalid type " << type << " for property " << pc.getFullName() << '.' << name);

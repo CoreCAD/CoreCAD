@@ -334,6 +334,7 @@ PROPERTY_SOURCE(Part::Sphere, Part::Primitive)
 
 Sphere::Sphere()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius, (5.0), "Sphere", App::Prop_None, "The radius of the sphere");
     Radius.setConstraints(&quantityRange);
     ADD_PROPERTY_TYPE(Angle1, (-90.0f), "Sphere", App::Prop_None, "The angle of the sphere");
@@ -389,6 +390,7 @@ PROPERTY_SOURCE(Part::Ellipsoid, Part::Primitive)
 
 Ellipsoid::Ellipsoid()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius1, (2.0), "Ellipsoid", App::Prop_None, "The radius of the ellipsoid");
     Radius1.setConstraints(&quantityRange);
     ADD_PROPERTY_TYPE(Radius2, (4.0), "Ellipsoid", App::Prop_None, "The radius of the ellipsoid");
@@ -482,6 +484,7 @@ PROPERTY_SOURCE(Part::Cylinder, Part::Primitive)
 
 Cylinder::Cylinder()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius, (2.0), "Cylinder", App::Prop_None, "The radius of the cylinder");
     ADD_PROPERTY_TYPE(Height, (10.0f), "Cylinder", App::Prop_None, "The height of the cylinder");
     ADD_PROPERTY_TYPE(Angle, (360.0f), "Cylinder", App::Prop_None, "The rotation angle of the cylinder");
@@ -541,6 +544,7 @@ PROPERTY_SOURCE(Part::Prism, Part::Primitive)
 
 Prism::Prism()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(
         Polygon,
         (6.0),
@@ -689,6 +693,7 @@ PROPERTY_SOURCE(Part::Cone, Part::Primitive)
 
 Cone::Cone()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius1, (2.0), "Cone", App::Prop_None, "The radius of the cone");
     ADD_PROPERTY_TYPE(Radius2, (4.0), "Cone", App::Prop_None, "The radius of the cone");
     ADD_PROPERTY_TYPE(Height, (10.0), "Cone", App::Prop_None, "The height of the cone");
@@ -759,6 +764,7 @@ PROPERTY_SOURCE(Part::Torus, Part::Primitive)
 
 Torus::Torus()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius1, (10.0), "Torus", App::Prop_None, "The radius of the torus");
     Radius1.setConstraints(&quantityRange);
     ADD_PROPERTY_TYPE(Radius2, (2.0), "Torus", App::Prop_None, "The radius of the torus");
@@ -1021,6 +1027,7 @@ PROPERTY_SOURCE(Part::Wedge, Part::Primitive)
 
 Wedge::Wedge()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Xmin, (0.0f), "Wedge", App::Prop_None, "Xmin of the wedge");
     ADD_PROPERTY_TYPE(Ymin, (0.0f), "Wedge", App::Prop_None, "Ymin of the wedge");
     ADD_PROPERTY_TYPE(Zmin, (0.0f), "Wedge", App::Prop_None, "Zmin of the wedge");

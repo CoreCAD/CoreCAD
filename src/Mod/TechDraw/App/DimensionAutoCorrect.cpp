@@ -57,7 +57,10 @@
 //                //we can't fix this
 
 
+#include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
 #include <TopoDS_Shape.hxx>
+#include <TopoDS_Vertex.hxx>
 
 #include <App/Document.h>
 #include <Base/Console.h>
@@ -171,6 +174,17 @@ bool DimensionAutoCorrect::autocorrectReferences(std::vector<bool>& referenceSta
             continue;
         }
 
+        // no exact match - the referenced geometry likely moved.  Try to re-find
+        // it by its durable 3d source anchor (identity through the element map)
+        // before falling back to fuzzy matching.
+        success = fix1GeomDurable(fixedRef, iRef);
+        if (success) {
+            referenceState.at(iRef) = true;
+            repairedRefs.push_back(fixedRef);
+            iRef++;
+            continue;
+        }
+
         // we did not find an exact match, so check for a similar match
         success = fix1GeomSimilar(fixedRef, savedGeometry.at(iRef).getShape());
         if (success) {
@@ -251,6 +265,60 @@ bool DimensionAutoCorrect::fix1GeomSimilar(ReferenceEntry& refToFix, const TopoD
     return success;
 }
 
+
+//! repair a 2d reference from its durable 3d source anchor.  The anchor is a
+//! PropertyLinkSub kept in step with References2D; the element map keeps it
+//! pointing at the same physical edge/vertex across model edits, so re-projecting
+//! it gives the current 2d edge/vertex even after it has moved and the projected
+//! edge array has been renumbered.
+bool DimensionAutoCorrect::fix1GeomDurable(ReferenceEntry& refToFix, size_t iRef) const
+{
+    if (refToFix.is3d()) {
+        // 3d references are already durable through References3D.
+        return false;
+    }
+    auto dim = getDimension();
+    const std::vector<App::DocumentObject*>& anchorObjects = dim->ReferenceAnchors3D.getValues();
+    const std::vector<std::string>& anchorSubs = dim->ReferenceAnchors3D.getSubValues();
+    if (iRef >= anchorSubs.size() || iRef >= anchorObjects.size()) {
+        return false;
+    }
+    App::DocumentObject* anchorObject = anchorObjects.at(iRef);
+    const std::string& anchorSub = anchorSubs.at(iRef);
+    if (!anchorObject || anchorSub.empty()) {
+        // no durable source was captured for this reference (e.g. a silhouette edge)
+        return false;
+    }
+
+    auto dvp = dim->getViewPart();
+    if (!dvp) {
+        return false;
+    }
+
+    // resolve the anchor's current geometry through the element map
+    TopoDS_Shape modelShape = ShapeFinder::getLocatedShape(*anchorObject, anchorSub);
+    if (modelShape.IsNull()) {
+        return false;
+    }
+
+    if (modelShape.ShapeType() == TopAbs_EDGE) {
+        int viewIndex = dvp->edgeIndexForModelEdge(TopoDS::Edge(modelShape));
+        if (viewIndex < 0) {
+            return false;
+        }
+        refToFix.setSubName(std::string("Edge") + std::to_string(viewIndex));
+        return true;
+    }
+    if (modelShape.ShapeType() == TopAbs_VERTEX) {
+        int viewIndex = dvp->vertexIndexForModelVertex(TopoDS::Vertex(modelShape));
+        if (viewIndex < 0) {
+            return false;
+        }
+        refToFix.setSubName(std::string("Vertex") + std::to_string(viewIndex));
+        return true;
+    }
+    return false;
+}
 
 //! search the view for a 2d vertex that is the same as the saved reference geometry
 //! and return a reference pointing to the matching vertex

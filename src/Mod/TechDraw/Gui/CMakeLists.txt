@@ -24,7 +24,17 @@ set (TechDraw_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/TechDraw_translation.
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${TechDraw_TR_QRC} ${QM_SRCS})
-qt_add_resources(TechDrawGui_SRCS Resources/TechDraw.qrc ${TechDraw_TR_QRC})
+# Stage branding icon overrides (private corecad-assets) into the build tree.
+# SRC_DIR is Resources/ so the icons/ subdirectory structure is preserved in
+# staging and matches the QRC's "icons/actions/..." and "icons/..." references.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/TechDraw"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/TechDraw.qrc"
+    OUTPUT_QRC    _TechDraw_Icons_QRC
+)
+qt_add_resources(TechDrawGui_SRCS ${_TechDraw_Icons_QRC} ${TechDraw_TR_QRC})
 
 set(TechDrawGui_UIC_SRCS
     DlgPageChooser.ui

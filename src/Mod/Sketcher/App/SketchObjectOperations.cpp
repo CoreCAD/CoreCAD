@@ -657,7 +657,9 @@ void createNewConstraintsForTrim(
     std::vector<int>& idsOfOldConstraints,
     std::vector<Constraint*>& newConstraints,
     std::set<int, std::greater<>>& geoIdsToBeDeleted,
-    std::map<Constraint*, int>& newToOldConstraintMap
+    std::map<Constraint*, int>& newToOldConstraintMap,
+    std::vector<std::string>& retiredConstraintLabels,
+    std::vector<std::string>& forcedPickLabels
 )
 {
     const auto& allConstraints = obj->Constraints.getValues();
@@ -707,10 +709,24 @@ void createNewConstraintsForTrim(
         }
         // constraint has not yet been changed
         size_t sizeBefore = newConstraints.size();
-        obj->deriveConstraintsForPieces(GeoId, newIds, newGeos, con, newConstraints);
+        bool forcedPick = false;
+        obj->deriveConstraintsForPieces(GeoId, newIds, newGeos, con, newConstraints, &forcedPick);
         // Map all newly added derived constraints to the old ID
         for (size_t i = sizeBefore; i < newConstraints.size(); ++i) {
             newToOldConstraintMap[newConstraints[i]] = oldConstrId;
+        }
+        // §4.7 / P7: a sever-trim (newIds.size() > 1) retires the entity into two pieces. A
+        // constraint that produced no replacement is residue — its subject was the whole retired
+        // entity, so it has no piece to bind to and is dropped below. Unlike a delete the user did
+        // not ask to retire it, so surface the loss loudly rather than silently (see split).
+        if (newIds.size() > 1 && newConstraints.size() == sizeBefore) {
+            retiredConstraintLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
+        }
+        // A constraint that was carried but could equally have gone to more than one piece (its
+        // point sits exactly on the cut boundary) was attached to one piece arbitrarily. Disclose
+        // that forced choice too rather than making it silently (§4.7 / P7; see split).
+        else if (forcedPick) {
+            forcedPickLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
         }
     }
 
@@ -847,6 +863,8 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         return (allConstraints[i]->involvesGeoIdAndPosId(GeoId, PointPos::mid));
     });
 
+    std::vector<std::string> retiredConstraintLabels;
+    std::vector<std::string> forcedPickLabels;
     createNewConstraintsForTrim(
         this,
         GeoId,
@@ -857,7 +875,9 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         idsOfOldConstraints,
         newConstraints,
         geoIdsToBeDeleted,
-        newToOldConstraintMap
+        newToOldConstraintMap,
+        retiredConstraintLabels,
+        forcedPickLabels
     );
 
     //******************* Step D => Replacing geometries and constraints
@@ -921,6 +941,17 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         }
     }
 
+    // Architecture §4.7: a shorten-only trim keeps the entity as one entity, so it keeps its
+    // durable id. replaceGeometries already carries the solver-local integer id (copyId); the
+    // durable tag must ride along too, but only in the 1->1 case (paramsOfNewGeos.size() == 1). A
+    // middle-removal trim (paramsOfNewGeos.size() == 2) severs the entity in two: the parent tag
+    // retires and both children mint fresh (createArcsFromGeoWithLimits already did this), so we
+    // leave the tag alone there. No parent->child lineage is recorded across the sever: it is
+    // treated the same as deleting the entity and drawing the children anew.
+    if (paramsOfNewGeos.size() == 1) {
+        newGeos.front()->copyTagFrom(geoAsCurve);
+    }
+
     replaceGeometries({GeoId}, newGeos);
     for (auto newId : newIds) {
         setConstruction(newId, isOriginalCurveConstruction);
@@ -961,6 +992,35 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
     // Since we used regular "non-smart" pointers, we have to handle cleanup
     for (auto& cons : newConstraints) {
         delete cons;
+    }
+
+    if (!retiredConstraintLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < retiredConstraintLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + retiredConstraintLabels[i];
+        }
+        Base::Console().warning(
+            "Trim severed geometry %d; %zu constraint(s) could not follow it and were removed: "
+            "%s. Their subject was the whole entity, which no longer exists as a single edge.\n",
+            GeoId,
+            retiredConstraintLabels.size(),
+            joined.c_str()
+        );
+    }
+
+    if (!forcedPickLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < forcedPickLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + forcedPickLabels[i];
+        }
+        Base::Console().warning(
+            "Trim severed geometry %d; %zu constraint(s) could apply to more than one of the new "
+            "pieces and each was attached to one piece: %s. Reattach it if the wrong piece was "
+            "chosen.\n",
+            GeoId,
+            forcedPickLabels.size(),
+            joined.c_str()
+        );
     }
 
     return 0;
@@ -1028,9 +1088,26 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
         return !allConstraints[i]->involvesGeoIdAndPosId(GeoId, PointPos::none);
     });
 
+    // Architecture §4.7 / P7: a split retires the parent entity; constraints that referenced it
+    // are carried to the pieces where that is decidable without resemblance. The residue — a
+    // dimension or relation whose subject was the whole retired entity — has no piece to bind to
+    // and is dropped. Dropping it is honest (its subject genuinely ceased to exist), but the user
+    // did not directly ask to retire it, so the loss is surfaced loudly rather than silently.
+    // A constraint may also be carried to a piece that was chosen arbitrarily because more than
+    // one piece could equally have taken it (a point sitting exactly on the split boundary). That
+    // pick is disclosed too (§4.7 / P7: a forced choice is surfaced, not made silently), so the
+    // user can reattach it if the wrong piece was chosen.
+    std::vector<std::string> retiredConstraintLabels;
+    std::vector<std::string> forcedPickLabels;
     for (const auto& oldConstrId : idsOfOldConstraints) {
         Constraint* con = allConstraints[oldConstrId];
-        deriveConstraintsForPieces(GeoId, newIds, con, newConstraints);
+        bool forcedPick = false;
+        if (!deriveConstraintsForPieces(GeoId, newIds, con, newConstraints, &forcedPick)) {
+            retiredConstraintLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
+        }
+        else if (forcedPick) {
+            forcedPickLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
+        }
     }
 
     // This also seems to reset SketchObject::Geometry.
@@ -1067,6 +1144,17 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
         transferConstraints(GeoId, PointPos::mid, newIds.front(), PointPos::mid);
     }
 
+    // Architecture §4.7: splitting a closed curve (circle/ellipse) at one point yields a single
+    // open arc — the entity stays one entity, so it keeps its durable id (paramsOfNewGeos.size()
+    // == 1). Splitting an open curve is a 1->N count-changing event: the parent tag retires and
+    // every child mints fresh (the constructor already does this, and replaceGeometries carries
+    // only the solver-local integer id to child-0), so we leave the tag alone in that case. No
+    // parent->child lineage is recorded across the split: a split is treated the same as deleting
+    // the entity and drawing the children anew.
+    if (paramsOfNewGeos.size() == 1) {
+        newGeos.front()->copyTagFrom(geoAsCurve);
+    }
+
     delConstraints(std::move(idsOfOldConstraints), DeleteOption::NoSolve);
     replaceGeometries({GeoId}, newGeos);
     addConstraints(newConstraints);
@@ -1077,6 +1165,35 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
 
     for (auto& cons : newConstraints) {
         delete cons;
+    }
+
+    if (!retiredConstraintLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < retiredConstraintLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + retiredConstraintLabels[i];
+        }
+        Base::Console().warning(
+            "Split retired geometry %d; %zu constraint(s) could not follow it and were removed: "
+            "%s. Their subject was the whole entity, which no longer exists as a single edge.\n",
+            GeoId,
+            retiredConstraintLabels.size(),
+            joined.c_str()
+        );
+    }
+
+    if (!forcedPickLabels.empty()) {
+        std::string joined;
+        for (std::size_t i = 0; i < forcedPickLabels.size(); ++i) {
+            joined += (i != 0 ? ", " : "") + forcedPickLabels[i];
+        }
+        Base::Console().warning(
+            "Split of geometry %d: %zu constraint(s) could apply to more than one of the new "
+            "pieces; each was attached to one piece: %s. Reattach it if the wrong piece was "
+            "chosen.\n",
+            GeoId,
+            forcedPickLabels.size(),
+            joined.c_str()
+        );
     }
 
     return 0;
@@ -2651,6 +2768,9 @@ bool SketchObject::convertToNURBS(int GeoId)
 
             newVals[GeoId] = bspline;
             GeometryFacade::copyId(geo, bspline);
+            // 1->1 reparametrise: the B-spline is the same sketch entity, so it keeps its durable
+            // tag as well as its solver-local id (Amendment 6, Clause 6.3).
+            GeometryFacade::copyTag(geo, bspline);
 
             const std::vector<Sketcher::Constraint*>& cvals = Constraints.getValues();
 
@@ -2721,6 +2841,8 @@ bool SketchObject::increaseBSplineDegree(int GeoId, int degreeincrement /*= 1*/)
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
     // AcceptGeometry called from onChanged
@@ -2774,8 +2896,14 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
     // AcceptGeometry called from onChanged
     Geometry.setValues(newVals);
 #else
+    // Decrease-degree re-fits the curve and (unlike the sibling ops) rebuilds via delete + re-add,
+    // so carry the durable tag onto the new curve before the old one is destroyed (Amendment 6,
+    // Clause 6.3: a 1->1 edit keeps its id). Hand the curve to the unique_ptr overload of
+    // addGeometry so the stamped tag is stored as-is; the raw-pointer overload would copy() it to a
+    // fresh tag. (The local integer id and constraints are still dropped here — see #54.)
+    bspline->copyTagFrom(geo);
     delGeometry(GeoId);
-    int newId = addGeometry(bspline.release());
+    int newId = addGeometry(std::move(bspline));
     exposeInternalGeometry(newId);
 #endif
 
@@ -2937,6 +3065,8 @@ bool SketchObject::modifyBSplineKnotMultiplicity(int GeoId, int knotIndex, int m
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
     // Block acceptGeometry in OnChanged to avoid unnecessary checks and updates
@@ -3090,6 +3220,8 @@ bool SketchObject::insertBSplineKnot(int GeoId, double param, int multiplicity)
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
     // Block acceptGeometry in OnChanged to avoid unnecessary checks and updates

@@ -38,6 +38,7 @@ PROPERTY_SOURCE(Part::ImportStep, Part::Feature)
 
 ImportStep::ImportStep()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(FileName, (""));
 }
 

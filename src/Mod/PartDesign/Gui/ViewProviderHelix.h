@@ -43,8 +43,7 @@ public:
 
     void setupContextMenu(QMenu*, QObject*, const char*) override;
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
+    std::vector<App::DocumentObject*> consumedProfiles() const override;
 
 protected:
     QIcon getIcon() const override;

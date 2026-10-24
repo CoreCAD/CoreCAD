@@ -476,6 +476,13 @@ OverlayTabWidget::OverlayTabWidget(QWidget* parent, Qt::DockWidgetArea pos)
     connect(_animator, &QAbstractAnimation::stateChanged, this, &OverlayTabWidget::onAnimationStateChanged);
 }
 
+OverlayTabWidget::~OverlayTabWidget()
+{
+    // A running animation stops when its target is destroyed and reports that to this widget,
+    // which by then is no longer one.
+    disconnect(_animator, nullptr, this, nullptr);
+}
+
 void OverlayTabWidget::refreshIcons()
 {
     auto curStyleSheet = App::GetApplication()
@@ -807,8 +814,8 @@ void OverlayTabWidget::restore(ParameterGrp::handle handle)
         handle->SetASCII("Widgets", handle->GetASCII("Widgets", ""));
     }
 
-    std::string widgets
-        = handle->GetASCII("Widgets", getDockArea() == Qt::RightDockWidgetArea ? "Tasks," : "");
+    // No panel starts as an overlay: Tasks docks like every other panel (UI_GUIDE §6, one sheet)
+    std::string widgets = handle->GetASCII("Widgets", "");
 
     for (auto& name : QString::fromUtf8(widgets.c_str()).split(QLatin1Char(','))) {
         if (name.isEmpty()) {
@@ -2154,7 +2161,7 @@ void OverlayTitleBar::paintEvent(QPaintEvent*)
 
     QDockWidget* dock = qobject_cast<QDockWidget*>(parentWidget());
     int vertical = false;
-    int flags = Qt::AlignCenter;
+    int flags = dock ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignCenter;
     if (!dock) {
         OverlayTabWidget* tabWidget = qobject_cast<OverlayTabWidget*>(parentWidget());
         if (tabWidget) {

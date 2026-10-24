@@ -47,8 +47,15 @@ def findDockWidget(name):
 # define the test cases to test the FreeCAD Part module
 #---------------------------------------------------------------------------
 """
+from parttests.AppearancePanelTest import AppearancePanelTest
 from parttests.ColorPerFaceTest import ColorPerFaceTest
 from parttests.ColorTransparencyTest import ColorTransparencyTest
+from parttests.VersionComparisonTest import (
+    VersionComparisonTest,
+    HistoryModelViewTest,
+    HistoryCommitTest,
+    ProjectPanelTest,
+)
 
 
 # class PartGuiTestCases(unittest.TestCase):
@@ -80,9 +87,58 @@ class PartGuiViewProviderTestCases(unittest.TestCase):
         with self.assertRaises(TypeError):
             box.ViewObject.dropObject(box, 0)
 
+    def testFeatureDoesNotNestItsInputs(self):
+        # A feature's inputs keep their own rows in the tree: one feature never folds into another.
+        from BOPTools import SplitFeatures
+
+        box = self.Doc.addObject("Part::Box", "Box")
+        cyl = self.Doc.addObject("Part::Cylinder", "Cylinder")
+        cut = self.Doc.addObject("Part::Cut", "Cut")
+        cut.Base = box
+        cut.Tool = cyl
+        fuse = self.Doc.addObject("Part::MultiFuse", "Fuse")
+        fuse.Shapes = [box, cyl]
+        mirror = self.Doc.addObject("Part::Mirroring", "Mirror")
+        mirror.Source = cut
+        compound = self.Doc.addObject("Part::Compound", "Compound")
+        compound.Links = [box, cyl]
+        fragments = SplitFeatures.makeBooleanFragments("Fragments")
+        fragments.Objects = [box, cyl]
+        self.Doc.recompute()
+        for feature in (cut, fuse, mirror, compound, fragments):
+            self.assertEqual(feature.ViewObject.claimChildren(), [], feature.Name)
+        self.assertEqual(fragments.ViewObject.Proxy.inputs(), [box, cyl])
+
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument("PartGuiTest")
+
+
+class AttachmentEditorTestCases(unittest.TestCase):
+    """A task dialog closes with the document it belongs to.
+
+    It is held per document, so one left behind could never be shown or closed again, and its
+    teardown at exit reached into the deleted document and the half-destroyed main window.
+    """
+
+    def testClosingTheDocumentClosesItsAttachmentEditor(self):
+        doc = FreeCAD.newDocument("AttachmentEditor")
+        plane = doc.addObject("Part::DatumPlane", "DatumPlane")
+        doc.recompute()
+        plane.ViewObject.doubleClicked()
+        self.assertTrue(FreeCADGui.Control.activeDialog(), "the attachment editor did not open")
+        self.assertTrue(self.editorIsOpen(), "the attachment editor panel was not found")
+
+        FreeCAD.closeDocument(doc.Name)
+        QtWidgets.QApplication.processEvents()
+
+        self.assertFalse(self.editorIsOpen(), "the editor outlived the document it belongs to")
+
+    @staticmethod
+    def editorIsOpen():
+        # No handle is kept: one held past the panel's deletion crashes the interpreter at exit.
+        mw = FreeCADGui.getMainWindow()
+        return mw.findChild(QtWidgets.QWidget, "TaskAttacher") is not None
 
 
 class SectionCutTestCases(unittest.TestCase):

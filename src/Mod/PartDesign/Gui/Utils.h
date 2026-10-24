@@ -37,12 +37,16 @@ namespace App
 {
 class Document;
 class DocumentObject;
-class Part;
 }  // namespace App
 
 namespace Sketcher
 {
 class SketchObject;
+}
+
+namespace Gui
+{
+class Command;
 }
 
 namespace PartDesignGui
@@ -51,67 +55,38 @@ namespace PartDesignGui
 /// Activate edit mode of the given object
 bool setEdit(App::DocumentObject* obj, PartDesign::Body* body = nullptr);
 
-/// Return active body or show a warning message
-PartDesign::Body* getBody(
-    bool messageIfNot,
-    bool autoActivate = true,
-    bool assertModern = true,
-    App::DocumentObject** topParent = nullptr,
-    std::string* subname = nullptr
-);
-
-/// Display a dialog to select or create a Body object when none is active
-PartDesign::Body* needActiveBodyMessage(App::Document* doc, const QString& infoText = QString());
+/// Finds the body the given feature belongs to, and shows a message if there is none.
+PartDesign::Body* getBodyFor(const App::DocumentObject*, bool messageIfNot);
 
 /**
- * Set given body active, and return pointer to it.
- * \param body the pointer to the body
- * \param doc the pointer to the document in question
- * \param topParent and
- * \param subname to be passed under certain circumstances
- *        (currently only subshapebinder)
+ * The distinct bodies the current selection in \a doc points at: a Body picked directly, or
+ * any feature or sub-shape resolved to its Body. Shows no message and asks nothing.
  */
-PartDesign::Body* makeBodyActive(
-    App::DocumentObject* body,
-    App::Document* doc,
-    App::DocumentObject** topParent = nullptr,
-    std::string* subname = nullptr
-);
+std::vector<PartDesign::Body*> selectedBodies(const App::Document* doc);
 
-/// Display error when there are existing Body objects, but none are active
-void needActiveBodyError();
-
-/// Create a Body object in doc, set it active, and return pointer to it
-PartDesign::Body* makeBody(App::Document* doc);
+/// The one body the selection in \a doc points at, or nullptr when it points at none or several.
+PartDesign::Body* soleSelectedBody(const App::Document* doc);
 
 /**
- * Finds a body for the given feature. And shows a message if not found
- * Also unlike Body::findBodyFor it checks if the active body has the feature first.
+ * Cruth §8.5/§4.6: resolve the target Body a combinator (subtractive primitive, Boolean)
+ * operates on, from the selection rather than an active-body session state. One body
+ * selected → that body; several selected → warn and abort; nothing selected but a sole body
+ * exists → that body; several bodies, none selected → the de-owned pickBody chooser; no
+ * bodies → warn and abort. Shows the appropriate message and returns nullptr on any
+ * no-target/cancel/ambiguous outcome, so a combinator is never told a target it did not pick.
  */
-PartDesign::Body* getBodyFor(
-    const App::DocumentObject*,
-    bool messageIfNot,
-    bool autoActivate = true,
-    bool assertModern = true,
-    App::DocumentObject** topParent = nullptr,
-    std::string* subname = nullptr
-);
+PartDesign::Body* resolveTargetBody(Gui::Command* cmd);
 
-App::Part* getPartFor(const App::DocumentObject*, bool messageIfNot);
-App::Part* getActivePart();
+/**
+ * Cruth §8.5/§4.6: resolve the target Body of a Boolean, whose selection names its TOOLS.
+ * The target is the one body the selection leaves over: one unselected body → that body;
+ * several → the pickBody chooser; every body selected → the chooser over the selected ones
+ * (the rest stay tools). Never read from an active body. Returns nullptr on no-body/cancel.
+ */
+PartDesign::Body* resolveBooleanTarget(Gui::Command* cmd);
 
 /// Fix sketch support after moving a free sketch into a body
 void fixSketchSupport(Sketcher::SketchObject* sketch);
-
-/**
- * Returns true if document has any non-PartDesign objects that links to the given object.
- * If respectGroups is true don't count links from App::GeoFeatureGroup-derived objects (default is
- * false)
- */
-bool isAnyNonPartDesignLinksTo(PartDesign::Feature* feature, bool respectGroups = false);
-
-/// Relink all nonPartDesign features to the body instead of the given partDesign Feature
-void relinkToBody(PartDesign::Feature* feature);
 
 /// Check if feature is dependent on anything except movable sketches and datums
 bool isFeatureMovable(App::DocumentObject* feature);
@@ -119,7 +94,16 @@ bool isFeatureMovable(App::DocumentObject* feature);
 std::vector<App::DocumentObject*> collectMovableDependencies(
     std::vector<App::DocumentObject*>& features
 );
-/// Relink sketches and datums to target body's origin
-void relinkToOrigin(App::DocumentObject* feature, PartDesign::Body* body);
+
+/**
+ * Cruth §11 step 5e: author a new feature under de-ownership. Creates the object at the
+ * document level (creation is the Document's responsibility, no longer the Body's) then
+ * splices it into @p body's pipeline via Body::addFeature (the Tip/BaseFeature-chain edit).
+ * Both steps are emitted to the command console for macro fidelity (P8). This is the single
+ * replacement for the retired `body.newObject(type, name)` group-extension idiom.
+ *
+ * @return the created object, or nullptr on failure.
+ */
+App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, const std::string& name);
 
 }  // namespace PartDesignGui

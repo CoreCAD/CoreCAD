@@ -40,7 +40,6 @@
 #include <App/Link.h>
 #include <App/GeoFeature.h>
 #include <App/GeoFeatureGroupExtension.h>
-#include <App/Part.h>
 #include <Base/Tools.h>
 
 #include <Mod/Part/App/PartFeature.h>

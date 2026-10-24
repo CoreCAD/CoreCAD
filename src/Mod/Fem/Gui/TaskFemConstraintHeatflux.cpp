@@ -287,7 +287,7 @@ void TaskFemConstraintHeatflux::addToSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
 
     for (auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }
@@ -365,7 +365,7 @@ void TaskFemConstraintHeatflux::removeFromSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
     std::vector<size_t> itemsToDel;
     for (const auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }

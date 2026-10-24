@@ -58,8 +58,6 @@
 #include <Mod/Part/App/FaceMakerCheese.h>
 
 #include "FeatureSketchBased.h"
-#include "DatumLine.h"
-#include "DatumPlane.h"
 #include "Mod/Part/App/Geometry.h"
 
 
@@ -72,6 +70,7 @@ PROPERTY_SOURCE(PartDesign::ProfileBased, PartDesign::FeatureAddSub)
 ProfileBased::ProfileBased()
 {
     ADD_PROPERTY_TYPE(Profile, (nullptr), "SketchBased", App::Prop_None, "Reference to sketch");
+    Profile.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body profile references
     ADD_PROPERTY_TYPE(Midplane, (0), "SketchBased", App::Prop_None, "Extrude symmetric to sketch face");
     ADD_PROPERTY_TYPE(Reversed, (0), "SketchBased", App::Prop_None, "Reverse extrusion direction");
     ADD_PROPERTY_TYPE(
@@ -125,28 +124,9 @@ void ProfileBased::setupObject()
     AllowMultiFace.setValue(true);
 }
 
-void ProfileBased::positionByPrevious()
-{
-    Part::Feature* feat = getBaseObject(/* silent = */ true);
-    if (feat) {
-        this->Placement.setValue(feat->Placement.getValue());
-    }
-    else {
-        // no base. Use either Sketch support's placement, or sketch's placement itself.
-        Part::Part2DObject* sketch = getVerifiedSketch();
-        App::DocumentObject* support = sketch->AttachmentSupport.getValue();
-        if (support && support->isDerivedFrom<App::GeoFeature>()) {
-            this->Placement.setValue(static_cast<App::GeoFeature*>(support)->Placement.getValue());
-        }
-        else {
-            this->Placement.setValue(sketch->Placement.getValue());
-        }
-    }
-}
-
 void ProfileBased::transformPlacement(const Base::Placement& transform)
 {
-    Part::Feature* feat = getBaseObject(/* silent = */ true);
+    auto* feat = freecad_cast<App::GeoFeature*>(getBaseObject(/* silent = */ true));
     if (feat) {
         feat->transformPlacement(transform);
     }
@@ -154,7 +134,6 @@ void ProfileBased::transformPlacement(const Base::Placement& transform)
         Part::Part2DObject* sketch = getVerifiedSketch();
         sketch->transformPlacement(transform);
     }
-    positionByPrevious();
 }
 
 Part::Part2DObject* ProfileBased::getVerifiedSketch(bool silent) const
@@ -179,7 +158,7 @@ Part::Part2DObject* ProfileBased::getVerifiedSketch(bool silent) const
     return static_cast<Part::Part2DObject*>(result);
 }
 
-Part::Feature* ProfileBased::getVerifiedObject(bool silent) const
+Part::ShapeFeature* ProfileBased::getVerifiedObject(bool silent) const
 {
 
     App::DocumentObject* result = Profile.getValue();
@@ -189,7 +168,7 @@ Part::Feature* ProfileBased::getVerifiedObject(bool silent) const
         err = "No object linked";
     }
     else {
-        if (!result->isDerivedFrom<Part::Feature>()) {
+        if (!Part::hasShape(result)) {
             err = "Linked object is not a Sketch, Part2DObject or Feature";
         }
     }
@@ -198,7 +177,7 @@ Part::Feature* ProfileBased::getVerifiedObject(bool silent) const
         throw Base::RuntimeError(err);
     }
 
-    return static_cast<Part::Feature*>(result);
+    return static_cast<Part::ShapeFeature*>(result);
 }
 TopoShape ProfileBased::getTopoShapeVerifiedFace(
     bool silent,
@@ -419,13 +398,14 @@ TopoDS_Shape ProfileBased::getVerifiedFace(bool silent) const
             auto wires = getProfileWires();
             return Part::FaceMakerCheese::makeFace(wires);
         }
-        else if (result->isDerivedFrom<Part::Feature>()) {
+        else if (Part::hasShape(result)) {
             if (Profile.getSubValues().empty()) {
                 err = "Linked object has no subshape specified";
             }
             else {
 
-                const Part::TopoShape& shape = Profile.getValue<Part::Feature*>()->Shape.getShape();
+                const Part::TopoShape& shape
+                    = Profile.getValue<Part::ShapeFeature*>()->Shape.getShape();
                 TopoDS_Shape sub = shape.getSubShape(Profile.getSubValues()[0].c_str());
                 if (sub.ShapeType() == TopAbs_FACE) {
                     return TopoDS::Face(sub);
@@ -489,7 +469,7 @@ std::vector<TopoDS_Wire> ProfileBased::getProfileWires() const
 {
     std::vector<TopoDS_Wire> result;
 
-    if (!Profile.getValue() || !Profile.getValue()->isDerivedFrom<Part::Feature>()) {
+    if (!Profile.getValue() || !Part::hasShape(Profile.getValue())) {
         throw Base::TypeError("No valid profile linked");
     }
 
@@ -502,7 +482,7 @@ std::vector<TopoDS_Wire> ProfileBased::getProfileWires() const
             throw Base::ValueError("No valid subelement linked in Part::Feature");
         }
 
-        shape = Profile.getValue<Part::Feature*>()->Shape.getShape().getSubShape(
+        shape = Profile.getValue<Part::ShapeFeature*>()->Shape.getShape().getSubShape(
             Profile.getSubValues().front().c_str()
         );
     }
@@ -572,7 +552,7 @@ TopoDS_Face ProfileBased::getSupportFace(const Part::Part2DObject* sketch) const
         const auto& AttachmentSupport = sketch->AttachmentSupport;
         App::DocumentObject* ref = AttachmentSupport.getValue();
 
-        Part::Feature* part = dynamic_cast<Part::Feature*>(ref);
+        Part::ShapeFeature* part = dynamic_cast<Part::ShapeFeature*>(ref);
         if (part) {
             const std::vector<std::string>& sub = AttachmentSupport.getSubValues();
             assert(sub.size() == 1);
@@ -669,56 +649,18 @@ int ProfileBased::getSketchAxisCount() const
     return sketch->getAxisCount();
 }
 
-Part::Feature* ProfileBased::getBaseObject(bool silent) const
-{
-    // Test the base's class feature.
-    Part::Feature* rv = Feature::getBaseObject(/* silent = */ true);
-    if (rv) {
-        return rv;
-    }
-
-    // getVerifiedObject() may throw it's own exception if fail
-    Part::Feature* obj = getVerifiedObject(silent);
-
-    if (!obj) {
-        return nullptr;
-    }
-
-    if (!obj->isDerivedFrom<Part::Part2DObject>()) {
-        return obj;
-    }
-
-    // due to former test we know we have a 2d object
-    Part::Part2DObject* sketch = getVerifiedSketch(silent);
-    const char* err = nullptr;
-    App::DocumentObject* spt = sketch->AttachmentSupport.getValue();
-    if (spt) {
-        if (spt->isDerivedFrom<Part::Feature>()) {
-            rv = static_cast<Part::Feature*>(spt);
-        }
-        else {
-            err = "No base set, sketch support is not Part::Feature";
-        }
-    }
-    else {
-        err = "No base set, no sketch support either";
-    }
-
-    if (!silent && err) {
-        throw Base::RuntimeError(err);
-    }
-
-    return rv;
-}
-
 void ProfileBased::onChanged(const App::Property* prop)
 {
-    if (prop == &Profile) {
-        // if attached to a sketch then mark it as read-only
-        this->Placement.setStatus(App::Property::ReadOnly, Profile.getValue() != nullptr);
-    }
-
     FeatureAddSub::onChanged(prop);
+}
+
+void ProfileBased::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase)
+{
+    // Sketches are independent objects with their own attachment; leave them
+    // alone. Only redirect when Profile references the deleted base directly.
+    if (Profile.getValue() && !Profile.getValue()->isDerivedFrom<Part::Part2DObject>()) {
+        relinkByLineage(Profile, oldBase, newBase);
+    }
 }
 
 void ProfileBased::getUpToFaceFromLinkSub(TopoShape& upToFace, const App::PropertyLinkSub& refFace)
@@ -764,7 +706,7 @@ int ProfileBased::getUpToShapeFromLinkSubList(
             ret++;
         }
         else {
-            if (!ref->isDerivedFrom<Part::Feature>()) {
+            if (!Part::hasShape(ref)) {
                 throw Base::TypeError("SketchBased: Must be face of a feature");
             }
 
@@ -828,16 +770,11 @@ void ProfileBased::getFaceFromLinkSub(TopoDS_Face& upToFace, const App::Property
         upToFace = TopoDS::Face(makeShapeFromPlane(ref));
         return;
     }
-    else if (ref->isDerivedFrom<PartDesign::Plane>()) {
-        Part::Datum* datum = static_cast<Part::Datum*>(ref);
-        upToFace = TopoDS::Face(datum->getShape());
-        return;
-    }
 
-    if (!ref->isDerivedFrom<Part::Feature>()) {
+    if (!Part::hasShape(ref)) {
         throw Base::TypeError("SketchBased: Must be face of a feature");
     }
-    Part::TopoShape baseShape = static_cast<Part::Feature*>(ref)->Shape.getShape();
+    Part::TopoShape baseShape = static_cast<Part::ShapeFeature*>(ref)->Shape.getShape();
 
     // Allow an empty sub here - example is a sketch reference (no sub) that creates a face.
     if (subStrings.empty()) {
@@ -1209,7 +1146,7 @@ bool ProfileBased::isParallelPlane(const TopoDS_Shape& s1, const TopoDS_Shape& s
 double ProfileBased::getReversedAngle(const Base::Vector3d& b, const Base::Vector3d& v) const
 {
     try {
-        Part::Feature* obj = getVerifiedObject();
+        Part::ShapeFeature* obj = getVerifiedObject();
         TopoShape sketchshape = getTopoShapeVerifiedFace();
 
         // get centre of gravity of the sketch face
@@ -1222,7 +1159,7 @@ double ProfileBased::getReversedAngle(const Base::Vector3d& b, const Base::Vecto
         // get cross product of projection direction with revolve axis direction
         Base::Vector3d cross = v % perp_dir;
         // get sketch vector pointing away from support material
-        Base::Placement SketchPos = obj->Placement.getValue();
+        Base::Placement SketchPos = obj->getPlacement();
         Base::Rotation SketchOrientation = SketchPos.getRotation();
         Base::Vector3d SketchNormal(0, 0, 1);
         SketchOrientation.multVec(SketchNormal, SketchNormal);
@@ -1335,8 +1272,8 @@ void ProfileBased::getAxis(
             }  // else - an edge of the sketch was selected as an axis
         }
     }
-    else if (profile->isDerivedFrom<Part::Feature>()) {
-        Base::Placement SketchPlm = getVerifiedObject()->Placement.getValue();
+    else if (Part::hasShape(profile)) {
+        Base::Placement SketchPlm = getVerifiedObject()->getPlacement();
         Base::Vector3d SketchVector = getProfileNormal();
         Base::Vector3d SketchPos = SketchPlm.getPosition();
         sketchplane = gp_Pln(
@@ -1346,15 +1283,6 @@ void ProfileBased::getAxis(
     }
 
     // get reference axis
-    if (pcReferenceAxis->isDerivedFrom<PartDesign::Line>()) {
-        const PartDesign::Line* line = static_cast<const PartDesign::Line*>(pcReferenceAxis);
-        base = line->getBasePoint();
-        dir = line->getDirection();
-
-        verifyAxisFunc(checkAxis, sketchplane, gp_Dir(dir.x, dir.y, dir.z));
-        return;
-    }
-
     if (pcReferenceAxis->isDerivedFrom<App::Line>()) {
         auto* line = static_cast<const App::Line*>(pcReferenceAxis);
         base = line->getBasePoint();
@@ -1364,12 +1292,11 @@ void ProfileBased::getAxis(
         return;
     }
 
-    if (pcReferenceAxis->isDerivedFrom<Part::Feature>()) {
+    if (Part::hasShape(pcReferenceAxis)) {
         if (subReferenceAxis.empty()) {
             throw Base::ValueError("No rotation axis reference specified");
         }
-        const Part::Feature* refFeature = static_cast<const Part::Feature*>(pcReferenceAxis);
-        Part::TopoShape refShape = refFeature->Shape.getShape();
+        Part::TopoShape refShape = Part::getShape(pcReferenceAxis);
         TopoDS_Shape ref;
         try {
             // if an exception is raised then convert it into a FreeCAD-specific exception
@@ -1400,7 +1327,7 @@ Base::Vector3d ProfileBased::getProfileNormal() const
 
     // get the Sketch plane
     if (obj->isDerivedFrom<Part::Part2DObject>()) {
-        Base::Placement SketchPos = obj->Placement.getValue();
+        Base::Placement SketchPos = obj->getPlacement();
         Base::Rotation SketchOrientation = SketchPos.getRotation();
         SketchOrientation.multVec(SketchVector, SketchVector);
         return SketchVector;

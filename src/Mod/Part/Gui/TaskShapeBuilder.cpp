@@ -44,6 +44,7 @@
 #include <Gui/Selection/SelectionFilter.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "TaskShapeBuilder.h"
 #include "ui_TaskShapeBuilder.h"
@@ -74,7 +75,7 @@ public:
     }
     bool allow(App::Document*, App::DocumentObject* obj, const char* sSubName) override
     {
-        if (!obj || !obj->isDerivedFrom<Part::Feature>()) {
+        if (!obj || !Part::hasShape(obj)) {
             return false;
         }
         if (Base::Tools::isNullOrEmpty(sSubName)) {
@@ -152,8 +153,8 @@ void ShapeBuilderWidget::onSelectionChanged(const Gui::SelectionChanges& msg)
                 bool blocked = blockSelection(true);
                 App::Document* doc = App::GetApplication().getDocument(msg.pDocName);
                 App::DocumentObject* obj = doc->getObject(msg.pObjectName);
-                if (obj->isDerivedFrom<Part::Feature>()) {
-                    TopoDS_Shape myShape = static_cast<Part::Feature*>(obj)->Shape.getValue();
+                if (Part::hasShape(obj)) {
+                    TopoDS_Shape myShape = Part::getShape(obj).getShape();
                     TopTools_IndexedMapOfShape all_faces;
                     TopExp::MapShapes(myShape, TopAbs_FACE, all_faces);
                     for (int i = 1; i <= all_faces.Extent(); i++) {

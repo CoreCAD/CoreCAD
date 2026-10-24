@@ -25,6 +25,7 @@
 #pragma once
 
 #include "PartFeature.h"
+#include "PropertyTopoShape.h"
 
 #include <Mod/Part/PartGlobal.h>
 
@@ -37,6 +38,14 @@ class PartExport Chamfer: public Part::FilletBase
 
 public:
     Chamfer();
+
+    /// The distance the chamfer takes on each edge, along each of the two faces it joins.
+    PropertyChamferEdges Edges;
+
+    PropertyFilletEdges& edgeMeasurements() override
+    {
+        return Edges;
+    }
 
     /** @name methods override feature */
     //@{

@@ -28,8 +28,6 @@
 #include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
 #include <Mod/PartDesign/App/Feature.h>
-#include <Gui/ViewProviderPart.h>
-#include <Gui/ViewProviderOriginGroupExtension.h>
 #include <QCoreApplication>
 #include <fastsignals/signal.h>
 
@@ -37,6 +35,11 @@ class SoGroup;
 class SoSeparator;
 class SbBox3f;
 class SoGetBoundingBoxAction;
+
+namespace Gui
+{
+class SoFCSelectionRoot;
+}
 namespace PartDesignGui
 {
 
@@ -46,11 +49,10 @@ namespace PartDesignGui
  *  If the Body is not active it shows only the result shape (tip).
  * \author jriegel
  */
-class PartDesignGuiExport ViewProviderBody: public PartGui::ViewProviderPart,
-                                            public Gui::ViewProviderOriginGroupExtension
+class PartDesignGuiExport ViewProviderBody: public PartGui::ViewProviderPart
 {
     Q_DECLARE_TR_FUNCTIONS(PartDesignGui::ViewProviderBody)
-    PROPERTY_HEADER_WITH_EXTENSIONS(PartDesignGui::ViewProviderBody);
+    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderBody);
 
 public:
     /// constructor
@@ -64,8 +66,6 @@ public:
 
     bool doubleClicked() override;
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
-    bool isActiveBody();
-    void toggleActiveBody();
 
     std::vector<std::string> getDisplayModes() const override;
     void setDisplayMode(const char* ModeName) override;
@@ -89,6 +89,8 @@ public:
 
     /** Check whether objects can be added to the view provider by drag and drop */
     bool canDropObjects() const override;
+    /// A body none of whose steps is built yet has nothing to draw.
+    bool isHeldBack() const override;
     /** Check whether the object can be dropped to the view provider by drag and drop */
     bool canDropObject(App::DocumentObject*) const override;
     /** Add an object to the view provider by drag and drop */
@@ -103,7 +105,44 @@ public:
     /// Override to return the color of the tip instead of the body, which doesn't really have color
     std::map<std::string, Base::Color> getElementColors(const char* element) const override;
 
+    /// The roll-back marker's row in the tree; dropping it on the Tip rolls the Body to the end.
+
+    /// A body lists no children in the tree: the tree is the flat timeline and the Body
+    /// column names the body each step builds (ARCHITECTURE §8.1, §8.7).
+    std::vector<App::DocumentObject*> claimChildren() const override;
+
+    /// A body has no row in the timeline either: it is not a step the user performed, and the
+    /// Body column already names it beside every step that builds it (ARCHITECTURE §8.1, §8.7).
+    bool showInTree() const override
+    {
+        return false;
+    }
+
+    /**
+     * Derive the body's 3D scene-graph children from the BaseFeature chain. The base OriginGroup
+     * extension parents only Group members under the body's coordinate node, so a de-owned feature
+     * (on the chain but not in Group) would never inherit the body frame. This flat variant returns
+     * Origin + every chain feature + their claimed sub-objects (sketches/datums) so all pipeline
+     * objects are parented. For a normal body (every feature both on the chain and in Group) the
+     * set is identical to the old Group-based one, so non-de-owned bodies are unaffected.
+     */
+    std::vector<App::DocumentObject*> claimChildren3D() const override;
+
     void show() override;
+    void finishRestoring() override;
+
+    /**
+     * Scene-graph child plumbing, formerly supplied by the Gui OriginGroup extension
+     * (Cruth §11 step 5e). The Body is a coordinate container for its pipeline
+     * features in 3D: getChildRoot() returns the node under which
+     * Document::handleChildren3D parents the claimChildren3D() members, and it is
+     * the same node registered as the "Group" display-mask mode (Through mode).
+     * getFrontRoot()/getBackRoot() are the annotation separators the same code path
+     * clears, so all three must be non-null.
+     */
+    SoGroup* getChildRoot() const override;
+    SoSeparator* getFrontRoot() const override;
+    SoSeparator* getBackRoot() const override;
 
 protected:
     /// Copy over all visual properties to the child features
@@ -113,6 +152,30 @@ protected:
 
 private:
     static const char* BodyModeEnum[];
+
+    /// Own scene nodes replacing the retired Gui OriginGroup extension's group nodes.
+    Gui::SoFCSelectionRoot* pcBodyChildren;
+    SoSeparator* pcBodyFront;
+    SoSeparator* pcBodyBack;
+
+    /// Ordered pipeline (base -> tip) derived by walking BaseFeature back from
+    /// the Tip, with a cycle guard. The single source of truth for the chain walk.
+    std::vector<App::DocumentObject*> pipelineChain() const;
+
+    /**
+     * Cruth §3.3 multi-output display, two-way. A Body whose TipComponentId is set
+     * shares its Tip feature with sibling Bodies, so it cannot delegate display to that
+     * feature ("Through" mode would draw the whole multi-solid shape under every sibling).
+     * Force "Tip" mode so the Body renders its own component shape as its own selectable
+     * scene node, and hide the shared feature so its full shape does not also draw.
+     * When the component id is cleared (collapse back to a single output) undo that:
+     * revert to "Through" mode and re-show the shared feature. No-op for ordinary
+     * single-component Bodies, which already sit in "Through" mode.
+     */
+    void applyMultiOutputDisplay();
+    void syncTipEye();
+    void showShownStep();
+    void hideHeldBack();
 
     void afterRecompute(const App::Document&, const std::vector<App::DocumentObject*>& recomputedObjs);
     fastsignals::scoped_connection m_RecomputedConn;

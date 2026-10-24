@@ -262,6 +262,17 @@ void PropertyGeometryList::Save(Writer& writer) const
     writer.Stream() << writer.ind() << "</GeometryList>" << endl;
 }
 
+void PropertyGeometryList::mintDurableIdentity()
+{
+    // No signal: this runs mid-import on geometry that is not yet visible to
+    // anything, and the tag is identity rather than shape.
+    for (auto geom : _lValueList) {
+        if (geom) {
+            geom->mintDurableIdentity();
+        }
+    }
+}
+
 void PropertyGeometryList::Restore(Base::XMLReader& reader)
 {
     // read my element

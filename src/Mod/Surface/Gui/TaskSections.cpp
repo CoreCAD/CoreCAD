@@ -40,6 +40,7 @@
 #include <Gui/Tools.h>
 #include <Gui/Widgets.h>
 #include <Mod/Part/Gui/ViewProvider.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "TaskSections.h"
 
@@ -109,7 +110,7 @@ QIcon ViewProviderSections::getIcon() const
 void ViewProviderSections::highlightReferences(ShapeType type, const References& refs, bool on)
 {
     for (const auto& it : refs) {
-        Part::Feature* base = dynamic_cast<Part::Feature*>(it.first);
+        Part::ShapeFeature* base = dynamic_cast<Part::ShapeFeature*>(it.first);
         if (base) {
             PartGui::ViewProviderPartExt* svp = dynamic_cast<PartGui::ViewProviderPartExt*>(
                 Gui::Application::Instance->getViewProvider(base)
@@ -210,7 +211,7 @@ public:
         if (pObj == editedObject) {
             return false;
         }
-        if (!pObj->isDerivedFrom<Part::Feature>()) {
+        if (!Part::hasShape(pObj)) {
             return false;
         }
 

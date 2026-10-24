@@ -87,6 +87,13 @@ public:
     {
         return "SpreadsheetGui::ViewProviderSheet";
     }
+    /// A spreadsheet is admitted by every typed document (ARCHITECTURE §7.1, Amendment 8):
+    /// Part, Assembly, and Drawing documents all carry spreadsheets, and a Spreadsheet
+    /// document holds nothing else. It still declares its kind so the door is explicit.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::Spreadsheet;
+    }
 
     bool importFromFile(
         const std::string& filename,

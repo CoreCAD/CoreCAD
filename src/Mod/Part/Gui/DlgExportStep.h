@@ -37,7 +37,6 @@ namespace PartGui
 
 struct StepSettings
 {
-    bool exportLegacy = false;
     bool exportHidden = false;
     bool keepPlacement = false;
 };

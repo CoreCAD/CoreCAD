@@ -172,18 +172,6 @@ class BIM_Setup:
         unit = self.form.settingUnits.currentIndex()
         unit = [0, 4, 1, 3, 7, 5][unit]  # less choices in our simplified dialog
         FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Units").SetInt("UserSchema", unit)
-        if FreeCAD.ActiveDocument is not None:
-            docs_dict = FreeCAD.listDocuments()
-            for doc in docs_dict.values():
-                doc.UnitSystem = unit
-            if len(docs_dict) == 1:
-                FreeCAD.Console.PrintWarning(
-                    translate("BIM", "Unit system updated for active document") + "\n"
-                )
-            else:
-                FreeCAD.Console.PrintWarning(
-                    translate("BIM", "Unit system updated for all opened documents") + "\n"
-                )
         if hasattr(FreeCAD.Units, "setSchema"):
             FreeCAD.Units.setSchema(unit)
         decimals = self.form.settingDecimals.value()

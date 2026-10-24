@@ -39,7 +39,7 @@ class TestSketchPlacementUpdate(unittest.TestCase):
         if not GUI_AVAILABLE:
             self.skipTest("GUI not available")
 
-        self.doc = FreeCAD.newDocument("TestPlacementUpdate")
+        self.doc = FreeCAD.newDocument("TestPlacementUpdate", type="Part")
 
         # create a body (typical partdesign workflow)
         self.body = self.doc.addObject("PartDesign::Body", "Body")
@@ -48,12 +48,11 @@ class TestSketchPlacementUpdate(unittest.TestCase):
         self.cylinder = self.doc.addObject("PartDesign::AdditiveCylinder", "Cylinder")
         self.cylinder.Height = 10.0
         self.cylinder.Radius = 2.0
-        self.body.addObject(self.cylinder)
+        self.body.addFeature(self.cylinder)
         self.doc.recompute()
 
         # create a sketch and attach it to the bottom face of the cylinder
         self.sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
-        self.body.addObject(self.sketch)
 
         # attach the sketch to Face2, ie. bottom circle face of the cylinder
         self.sketch.AttachmentSupport = (self.cylinder, ["Face2"])
@@ -171,7 +170,6 @@ class TestSketchPlacementUpdate(unittest.TestCase):
         """
         # create an unattached sketch for comparison
         unattached = self.doc.addObject("Sketcher::SketchObject", "UnattachedSketch")
-        self.body.addObject(unattached)
 
         import Part
 

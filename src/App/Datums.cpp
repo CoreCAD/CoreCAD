@@ -34,15 +34,61 @@
 
 using namespace App;
 
-PROPERTY_SOURCE(App::DatumElement, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(App::DatumElement, App::GeoFeature)
 PROPERTY_SOURCE(App::Plane, App::DatumElement)
 PROPERTY_SOURCE(App::Line, App::DatumElement)
 PROPERTY_SOURCE(App::Point, App::DatumElement)
 PROPERTY_SOURCE_WITH_EXTENSIONS(App::LocalCoordinateSystem, App::GeoFeature)
 
+namespace
+{
+// ---------------------------------------------------------------------------
+// Reserved identity sentinels for the built-in world origin (Amendment 3,
+// Clause 3.5).
+//
+// The world origin and its base planes/axes are not authored objects — they
+// are a fixed fixture generated identically in every document. So a reference
+// like "attached to the XY plane" resolves to the *same* durable identity in
+// two independently created files, these objects carry hardcoded UUIDs
+// instead of the random one minted at construction; that is what lets fork
+// and merge line them up. The values below were rolled once and must never
+// change — they are reserved sentinels, not live-generated ids. Only the
+// world origin (App::Origin, where isOrigin() is true) stamps them; a
+// user-created coordinate system keeps the real minted id on each element.
+// ---------------------------------------------------------------------------
+constexpr const char* kOriginUid = "21798959-82dd-4761-b5dd-fcdcd2115a6c";
+
+struct ReservedUid
+{
+    const char* role;
+    const char* uid;
+};
+
+constexpr ReservedUid kReservedChildUids[] = {
+    {LocalCoordinateSystem::AxisRoles[0],  "fa0d1b02-2ccd-4d65-9b46-c11f37fa5c80"},
+    {LocalCoordinateSystem::AxisRoles[1],  "5dba3cca-5e11-47f0-8266-15ddc571fa14"},
+    {LocalCoordinateSystem::AxisRoles[2],  "d72da02c-f924-4de2-8382-1e70d75f4bc7"},
+    {LocalCoordinateSystem::PlaneRoles[0], "25d35639-3f10-4abf-b00d-ee96713f2046"},
+    {LocalCoordinateSystem::PlaneRoles[1], "362fa29a-5949-418c-8635-c70a3c7a8d12"},
+    {LocalCoordinateSystem::PlaneRoles[2], "6055ce54-2dbc-4047-89c8-9640cc91194d"},
+    {LocalCoordinateSystem::PointRoles[0], "c3490be1-a2ae-4345-9f0d-8d2f52f77cd1"},
+};
+
+const char* reservedChildUid(const char* role)
+{
+    for (const auto& entry : kReservedChildUids) {
+        if (std::strcmp(role, entry.role) == 0) {
+            return entry.uid;
+        }
+    }
+    return nullptr;
+}
+}  // namespace
+
 DatumElement::DatumElement(bool hideRole)
     : baseDir{0.0, 0.0, 1.0}
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Role,
                       (""),
                       0,
@@ -154,6 +200,7 @@ LocalCoordinateSystem::LocalCoordinateSystem()
     setStatus(App::NoAutoExpand, true);
 
     GroupExtension::initExtension(this);
+    App::PlacementExtension::initExtension(this);
 }
 
 
@@ -260,16 +307,34 @@ App::DocumentObjectExecReturn* LocalCoordinateSystem::execute()
 
 const std::vector<LocalCoordinateSystem::SetupData>& LocalCoordinateSystem::getSetupData()
 {
-    using std::numbers::pi;
+    // Cruth: the world frame's rotations are written as exact quaternions, not derived from an
+    // axis and an angle.
+    //
+    // A third of a turn about (1,1,1) is the quaternion (0.5, 0.5, 0.5, 0.5) exactly, but
+    // reaching it through an angle routes it via cosine, and cos(pi/3) evaluates to
+    // 0.50000000000000011 rather than one half. Trigonometry is the one piece of floating-point
+    // arithmetic platforms are NOT required to agree on to the last digit, so the same document
+    // could hold different numbers for the same fixed plane on Windows and on Linux, and version
+    // control would report a change neither engineer made. Written out, every machine starts
+    // from the same numbers -- and each of these is already unit length, so nothing normalizes
+    // them afterwards either.
+    //
+    // Quaternion component order is (x, y, z, w).
+    // Each component of a 120-degree turn about a diagonal is one half: the axis contributes
+    // sin(60)/sqrt(3) and the angle contributes cos(60), and both are exactly 0.5.
+    constexpr double half = 0.5;
+    const Base::Rotation aboutXYZ(half, half, half, half);        // (1, 1, 1), 120 degrees
+    const Base::Rotation aboutXnYZ(half, -half, half, half);      // (1,-1, 1), 120 degrees
+    const Base::Rotation aboutX90(std::numbers::sqrt2 / 2, 0.0, 0.0, std::numbers::sqrt2 / 2);
 
     static const std::vector<SetupData> setupData = {
         // clang-format off
         {App::Line::getClassTypeId(),  AxisRoles[0],  tr("X-axis"),   Base::Rotation()},
-        {App::Line::getClassTypeId(),  AxisRoles[1],  tr("Y-axis"),   Base::Rotation(Base::Vector3d(1, 1, 1), pi * 2 / 3)},
-        {App::Line::getClassTypeId(),  AxisRoles[2],  tr("Z-axis"),   Base::Rotation(Base::Vector3d(1,-1, 1), pi * 2 / 3)},
+        {App::Line::getClassTypeId(),  AxisRoles[1],  tr("Y-axis"),   aboutXYZ},
+        {App::Line::getClassTypeId(),  AxisRoles[2],  tr("Z-axis"),   aboutXnYZ},
         {App::Plane::getClassTypeId(), PlaneRoles[0], tr("XY-plane"), Base::Rotation()},
-        {App::Plane::getClassTypeId(), PlaneRoles[1], tr("XZ-plane"), Base::Rotation(1.0, 0.0, 0.0, 1.0)},
-        {App::Plane::getClassTypeId(), PlaneRoles[2], tr("YZ-plane"), Base::Rotation(Base::Vector3d(1, 1, 1), pi * 2 / 3)},
+        {App::Plane::getClassTypeId(), PlaneRoles[1], tr("XZ-plane"), aboutX90},
+        {App::Plane::getClassTypeId(), PlaneRoles[2], tr("YZ-plane"), aboutXYZ},
         {App::Point::getClassTypeId(), PointRoles[0], tr("Origin-Point"),   Base::Rotation()}
         // clang-format on
     };
@@ -291,6 +356,15 @@ DatumElement* LocalCoordinateSystem::createDatum(const SetupData& data)
     feature->Placement.setValue(Base::Placement(Base::Vector3d(), data.rot));
     feature->Role.setValue(data.role);
 
+    // The world origin's base elements carry reserved, constant identities
+    // (Clause 3.5) so references to them line up across documents. A user LCS
+    // keeps the random id minted at construction.
+    if (isOrigin()) {
+        if (const char* uid = reservedChildUid(data.role)) {
+            feature->Uid.setValue(uid);
+        }
+    }
+
     feature->Placement.setStatus(Property::Hidden, true);
     return feature;
 }
@@ -308,6 +382,12 @@ LocalCoordinateSystem::SetupData LocalCoordinateSystem::getData(const char* role
 
 void LocalCoordinateSystem::setupObject()
 {
+    // The world origin object itself is a reserved sentinel identity (Clause
+    // 3.5), overwriting the random id minted at construction.
+    if (isOrigin()) {
+        Uid.setValue(kOriginUid);
+    }
+
     std::vector<App::DocumentObject*> links;
     const auto& setupData = getSetupData();
     for (auto data : setupData) {

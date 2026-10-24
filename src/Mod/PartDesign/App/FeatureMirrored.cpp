@@ -35,7 +35,6 @@
 #include <Mod/Part/App/Part2DObject.h>
 
 #include "FeatureMirrored.h"
-#include "DatumPlane.h"
 
 
 using namespace PartDesign;
@@ -65,7 +64,7 @@ short Mirrored::mustExecute() const
     return Transformed::mustExecute();
 }
 
-const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::DocumentObject*>)
+std::list<gp_Trsf> Mirrored::getTransformations()
 {
     using getMirrorAxis = std::function<bool(gp_Pnt&, gp_Dir&)>;
 
@@ -111,21 +110,7 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
         return false;
     };
 
-    // Datum plane
-    getMirrorAxis axisOfDatumPlane = [this](gp_Pnt& axbase, gp_Dir& axdir) {
-        App::DocumentObject* refObject = MirrorPlane.getValue();
-        if (auto plane = dynamic_cast<PartDesign::Plane*>(refObject)) {
-            Base::Vector3d base = plane->getBasePoint();
-            axbase = gp_Pnt(base.x, base.y, base.z);
-            Base::Vector3d dir = plane->getNormal();
-            axdir = gp_Dir(dir.x, dir.y, dir.z);
-            return true;
-        }
-
-        return false;
-    };
-
-    // Normal plane
+    // Datum or normal plane
     getMirrorAxis axisOfPlane = [this](gp_Pnt& axbase, gp_Dir& axdir) {
         App::DocumentObject* refObject = MirrorPlane.getValue();
         if (auto plane = dynamic_cast<App::Plane*>(refObject)) {
@@ -144,7 +129,7 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
         App::DocumentObject* refObject = MirrorPlane.getValue();
         std::vector<std::string> subStrings = MirrorPlane.getSubValues();
 
-        if (auto feature = dynamic_cast<Part::Feature*>(refObject)) {
+        if (auto feature = dynamic_cast<Part::ShapeFeature*>(refObject)) {
             if (subStrings.empty()) {
                 throw Base::ValueError("No mirror plane reference specified");
             }
@@ -184,7 +169,6 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
     gp_Dir axdir;
     std::vector<getMirrorAxis> axisCheckers;
     axisCheckers.push_back(axisOfSketch);
-    axisCheckers.push_back(axisOfDatumPlane);
     axisCheckers.push_back(axisOfPlane);
     axisCheckers.push_back(axisOfPlanarShape);
 
@@ -201,10 +185,6 @@ const std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<App::Doc
 
 std::list<gp_Trsf> Mirrored::createTransformations(gp_Pnt& axbase, gp_Dir& axdir) const
 {
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    axbase.Transform(invObjLoc.Transformation());
-    axdir.Transform(invObjLoc.Transformation());
-
     gp_Ax2 mirrorAxis(axbase, axdir);
 
     std::list<gp_Trsf> transformations;

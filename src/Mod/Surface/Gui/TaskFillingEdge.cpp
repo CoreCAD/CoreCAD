@@ -41,6 +41,7 @@
 #include <Gui/Selection/SelectionObject.h>
 #include <Gui/Widgets.h>
 #include <Mod/Part/Gui/ViewProvider.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "TaskFilling.h"
 #include "TaskFillingEdge.h"
@@ -72,7 +73,7 @@ public:
         if (pObj == editedObject) {
             return false;
         }
-        if (!pObj->isDerivedFrom<Part::Feature>()) {
+        if (!Part::hasShape(pObj)) {
             return false;
         }
 
@@ -393,8 +394,8 @@ void FillingEdgePanel::onListUnboundItemDoubleClicked(QListWidgetItem* item)
         try {
             App::Document* doc = App::GetApplication().getDocument(data[0].toByteArray());
             App::DocumentObject* obj = doc ? doc->getObject(data[1].toByteArray()) : nullptr;
-            if (obj && obj->isDerivedFrom<Part::Feature>()) {
-                const Part::TopoShape& shape = static_cast<Part::Feature*>(obj)->Shape.getShape();
+            if (obj && Part::hasShape(obj)) {
+                Part::TopoShape shape = Part::getShape(obj);
                 TopoDS_Shape edge = shape.getSubShape(data[2].toByteArray());
 
                 // build up map edge->face

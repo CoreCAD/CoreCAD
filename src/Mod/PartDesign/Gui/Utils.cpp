@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 
+#include <algorithm>
+
 #include <QMessageBox>
 #include <gp_Pln.hxx>
 #include <Precision.hxx>
@@ -30,20 +32,20 @@
 
 #include <App/Origin.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
+#include <Gui/Command.h>
 #include <Gui/CommandT.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
+#include <Gui/Selection/Selection.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "Utils.h"
-#include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
-#include "WorkflowManager.h"
+#include "SketchPickDialog.h"
 
 
 FC_LOG_LEVEL_INIT("PartDesignGui", true, true)
@@ -73,198 +75,43 @@ App::DocumentObject* getParent(App::DocumentObject* obj, std::string& subname)
     return obj;
 }
 
-bool setEdit(App::DocumentObject* obj, PartDesign::Body* body)
+bool setEdit(App::DocumentObject* obj, PartDesign::Body* /*body*/)
 {
     if (!obj || !obj->isAttachedToDocument()) {
         FC_ERR("invalid object");
         return false;
     }
-    if (!body) {
-        body = getBodyFor(obj, false);
-        if (!body) {
-            FC_ERR("no body found");
-            return false;
-        }
-    }
-    auto* activeView = Gui::Application::Instance->activeView();
-    if (!activeView) {
+    if (!Gui::Application::Instance->activeView()) {
         return false;
     }
-    App::DocumentObject* parent = nullptr;
-    std::string subname;
-    auto activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY, &parent, &subname);
-    if (activeBody != body) {
-        parent = obj;
-        subname.clear();
-    }
-    else {
-        subname += obj->getNameInDocument();
-        subname += '.';
-    }
 
+    // Marker model (ARCHITECTURE §4.6): features are document-level objects, not
+    // GeoFeatureGroup children of their Body — the Body is a
+    // marker, not a container. So we must not fabricate a body-relative edit path such as
+    // "Body.Sketch.": that sub-object no longer exists, and Gui::Document::trySetEdit would
+    // reject it and open no editor (while this function still returned true, so the failure
+    // was silent — the New-Sketch "doesn't drop into the editor" bug). Edit the object
+    // directly; trySetEdit's ParentFinder resolves any genuine group parent from the
+    // object's actual membership.
     Gui::cmdGuiDocument(
-        parent,
-        std::ostringstream() << "setEdit(" << Gui::Command::getObjectCmd(parent) << ", 0, '"
-                             << subname << "')"
+        obj,
+        std::ostringstream() << "setEdit(" << Gui::Command::getObjectCmd(obj) << ", 0, '')"
     );
     return true;
 }
 
-/*!
- * \brief Return active body or show a warning message.
- * If \a autoActivate is true (the default) then if there is
- * only single body in the document it will be activated.
- * \param messageIfNot
- * \param autoActivate
- * \return Body
- */
-PartDesign::Body* getBody(
-    bool messageIfNot,
-    bool autoActivate,
-    bool assertModern,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
-{
-    PartDesign::Body* activeBody = nullptr;
-    Gui::MDIView* activeView = Gui::Application::Instance->activeView();
+// (Cruth §4.6/§4.8) makeBody() is gone. It birthed a bare Body with no feature in it — the
+// placeholder Body the architecture rules out. Bodies now come into being only with the solid
+// feature that starts them, via PartDesign::Body::spawnAutoBody() inside the feature's own
+// transaction.
 
-    if (activeView) {
-        auto doc = activeView->getAppDocument();
-        bool singleBodyDocument = doc->countObjectsOfType<PartDesign::Body>() == 1;
-        if (assertModern) {
-            activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY, topParent, subname);
-
-            if (!activeBody && singleBodyDocument && autoActivate) {
-                auto bodies = doc->getObjectsOfType(PartDesign::Body::getClassTypeId());
-                App::DocumentObject* body = nullptr;
-                if (bodies.size() == 1) {
-                    body = bodies[0];
-                    activeBody = makeBodyActive(body, doc, topParent, subname);
-                }
-            }
-            if (!activeBody && messageIfNot) {
-                DlgActiveBody dia(
-                    Gui::getMainWindow(),
-                    doc,
-                    QObject::tr(
-                        "To use Part Design, an active body is required in the document. "
-                        "Activate a body (double-click) or create a new one."
-                        "\n\nFor legacy documents with Part Design objects lacking a body, "
-                        "use the migrate function in Part Design to place them into a body."
-                    )
-                );
-                if (dia.exec() == QDialog::DialogCode::Accepted) {
-                    activeBody = dia.getActiveBody();
-                }
-            }
-        }
-    }
-
-    return activeBody;
-}
-
-PartDesign::Body* makeBodyActive(
-    App::DocumentObject* body,
-    App::Document* doc,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
-{
-    App::DocumentObject* parent = nullptr;
-    std::string sub;
-
-    for (auto& v : body->getParents()) {
-        if (v.first->getDocument() != doc) {
-            continue;
-        }
-        if (parent) {
-            body = nullptr;
-            break;
-        }
-        parent = v.first;
-        sub = v.second;
-    }
-
-    if (body) {
-        auto _doc = parent ? parent->getDocument() : body->getDocument();
-        Gui::cmdGuiDocument(
-            _doc,
-            std::stringstream() << "ActiveView.setActiveObject('" << PDBODYKEY << "',"
-                                << Gui::Command::getObjectCmd(parent ? parent : body) << ",'" << sub
-                                << "')"
-        );
-        return Gui::Application::Instance->activeView()
-            ->getActiveObject<PartDesign::Body*>(PDBODYKEY, topParent, subname);
-    }
-
-    return dynamic_cast<PartDesign::Body*>(body);
-}
-
-void needActiveBodyError()
-{
-    QMessageBox::warning(
-        Gui::getMainWindow(),
-        QObject::tr("Active Body Required"),
-        QObject::tr(
-            "To create a new Part Design object, an active body is required in the document. "
-            "Activate an existing body (double-click) or create a new one."
-        )
-    );
-}
-
-PartDesign::Body* makeBody(App::Document* doc)
-{
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Mod/PartDesign"
-    );
-
-    bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
-    // This is intended as a convenience when starting a new document.
-    auto bodyName(doc->getUniqueObjectName("Body"));
-    Gui::Command::doCommand(
-        Gui::Command::Doc,
-        "App.getDocument('%s').addObject('PartDesign::Body','%s')",
-        doc->getName(),
-        bodyName.c_str()
-    );
-    Gui::Command::doCommand(
-        Gui::Command::Doc,
-        "App.getDocument('%s').getObject('%s').AllowCompound = %s",
-        doc->getName(),
-        bodyName.c_str(),
-        allowCompound ? "True" : "False"
-    );
-
-
-    auto body = dynamic_cast<PartDesign::Body*>(doc->getObject(bodyName.c_str()));
-    if (body) {
-        makeBodyActive(body, doc);
-    }
-    return body;
-}
-
-PartDesign::Body* getBodyFor(
-    const App::DocumentObject* obj,
-    bool messageIfNot,
-    bool autoActivate,
-    bool assertModern,
-    App::DocumentObject** topParent,
-    std::string* subname
-)
+PartDesign::Body* getBodyFor(const App::DocumentObject* obj, bool messageIfNot)
 {
     if (!obj) {
         return nullptr;
     }
 
-    PartDesign::Body* rv
-        = getBody(/*messageIfNot =*/false, autoActivate, assertModern, topParent, subname);
-    if (rv && rv->hasObject(obj)) {
-        return rv;
-    }
-
-    rv = PartDesign::Body::findBodyOf(obj);
+    PartDesign::Body* rv = PartDesign::Body::findBodyOf(obj);
     if (rv) {
         return rv;
     }
@@ -282,52 +129,152 @@ PartDesign::Body* getBodyFor(
     return nullptr;
 }
 
-App::Part* getActivePart()
+std::vector<PartDesign::Body*> selectedBodies(const App::Document* doc)
 {
-    Gui::MDIView* activeView = Gui::Application::Instance->activeView();
-    if (activeView) {
-        auto* obj = activeView->getActiveObject<App::Part*>(PARTKEY);
-        if (!obj) {
-            obj = activeView->getActiveObject<App::Part*>(ASSEMBLYKEY);
+    std::vector<PartDesign::Body*> bodies;
+    if (!doc) {
+        return bodies;
+    }
+    // A Body picked directly, or any feature/sub-shape resolved to its Body (getBodyFor walks
+    // the BaseFeature chain).
+    for (auto* obj :
+         Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId(), doc->getName())) {
+        auto* body = freecad_cast<PartDesign::Body*>(obj);
+        if (!body) {
+            body = getBodyFor(obj, /*messageIfNot=*/false);
         }
-        return obj;
+        if (body && std::find(bodies.begin(), bodies.end(), body) == bodies.end()) {
+            bodies.push_back(body);
+        }
     }
-    else {
-        return nullptr;
-    }
+    return bodies;
 }
 
-App::Part* getPartFor(const App::DocumentObject* obj, bool messageIfNot)
+PartDesign::Body* soleSelectedBody(const App::Document* doc)
 {
+    auto bodies = selectedBodies(doc);
+    return bodies.size() == 1 ? bodies.front() : nullptr;
+}
 
-    if (!obj) {
+PartDesign::Body* resolveTargetBody(Gui::Command* cmd)
+{
+    if (!cmd) {
+        return nullptr;
+    }
+    App::Document* doc = cmd->getDocument();
+    if (!doc) {
         return nullptr;
     }
 
-    PartDesign::Body* body = getBodyFor(obj, false);
-    if (body) {
-        obj = body;
-    }
+    // Cruth §8.5/§4.6: a command is *told* the solid it operates on — there is no active body.
+    // Resolve the target from the bodies the selection points at.
+    std::vector<PartDesign::Body*> selectedBodies = PartDesignGui::selectedBodies(doc);
 
-    // get the part
-    for (App::Part* p : obj->getDocument()->getObjectsOfType<App::Part>()) {
-        if (p->hasObject(obj)) {
-            return p;
-        }
+    if (selectedBodies.size() == 1) {
+        return selectedBodies.front();  // one body indicated — unambiguous
     }
-
-    if (messageIfNot) {
+    if (selectedBodies.size() > 1) {
         QMessageBox::warning(
             Gui::getMainWindow(),
-            QObject::tr("Feature is not in a part"),
-            QObject::tr(
-                "In order to use this feature it needs to belong to a part object in the document."
-            )
+            QObject::tr("Multiple bodies selected"),
+            QObject::tr("Select exactly one body as the target of this operation.")
         );
+        return nullptr;
     }
 
-    return nullptr;
+    // Nothing in the selection resolves to a Body — fall back to the document.
+    auto allBodies = doc->getObjectsOfType(PartDesign::Body::getClassTypeId());
+    if (allBodies.empty()) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No body to work on"),
+            QObject::tr("No solid body is available in the document to operate on.")
+        );
+        return nullptr;
+    }
+    if (allBodies.size() == 1) {
+        return static_cast<PartDesign::Body*>(allBodies.front());  // sole body — unambiguous
+    }
+
+    // Several bodies, none selected: open the de-owned chooser (Cancel aborts silently).
+    std::vector<PartDesign::Body*> candidates;
+    candidates.reserve(allBodies.size());
+    for (auto* obj : allBodies) {
+        candidates.push_back(static_cast<PartDesign::Body*>(obj));
+    }
+    return pickBody(candidates);
 }
+
+PartDesign::Body* resolveBooleanTarget(Gui::Command* cmd)
+{
+    if (!cmd || !cmd->getDocument()) {
+        return nullptr;
+    }
+
+    // The selection names the tools.
+    std::vector<PartDesign::Body*> selectedBodies = PartDesignGui::selectedBodies(cmd->getDocument());
+
+    // The target is chosen from the bodies the selection leaves over.
+    std::vector<PartDesign::Body*> candidates;
+    for (auto* obj : cmd->getDocument()->getObjectsOfType(PartDesign::Body::getClassTypeId())) {
+        auto* body = static_cast<PartDesign::Body*>(obj);
+        if (std::find(selectedBodies.begin(), selectedBodies.end(), body) == selectedBodies.end()) {
+            candidates.push_back(body);
+        }
+    }
+    // Every body is selected: one of them must be the target — ask which, never guess.
+    if (candidates.empty()) {
+        candidates = selectedBodies;
+    }
+
+    if (candidates.empty()) {
+        QMessageBox::warning(
+            Gui::getMainWindow(),
+            QObject::tr("No body to work on"),
+            QObject::tr("No solid body is available in the document to operate on.")
+        );
+        return nullptr;
+    }
+    if (candidates.size() == 1) {
+        return candidates.front();  // one body left over — unambiguous
+    }
+    return pickBody(candidates);  // Cancel aborts silently
+}
+
+App::DocumentObject* createFeature(PartDesign::Body* body, const char* type, const std::string& name)
+{
+    if (!body) {
+        return nullptr;
+    }
+    App::Document* doc = body->getDocument();
+    if (!doc) {
+        return nullptr;
+    }
+
+    // Creation is the Document's responsibility, not the Body's (Cruth §11 step 5e): birth the
+    // object at document level ...
+    Gui::Command::doCommand(
+        Gui::Command::Doc,
+        "App.getDocument('%s').addObject('%s', '%s')",
+        doc->getName(),
+        type,
+        name.c_str()
+    );
+    App::DocumentObject* feature = doc->getObject(name.c_str());
+
+    // ... then splice it into this Body's pipeline (Tip + BaseFeature chain) — a pipeline edit,
+    // not a container add.
+    if (feature && PartDesign::Body::isSolidFeature(feature)) {
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "%s.addFeature(%s)",
+            Gui::Command::getObjectCmd(body).c_str(),
+            Gui::Command::getObjectCmd(feature).c_str()
+        );
+    }
+    return feature;
+}
+
 
 // static void buildDefaultPartAndBody(const App::Document* doc)
 //{
@@ -411,16 +358,11 @@ void fixSketchSupport(Sketcher::SketchObject* sketch)
         }
 
         std::string Datum = doc->getUniqueObjectName("DatumPlane");
-        FCMD_DOC_CMD(doc, "addObject('PartDesign::Plane','" << Datum << "')");
+        FCMD_DOC_CMD(doc, "addObject('Part::DatumPlane','" << Datum << "')");
         auto obj = doc->getObject(Datum.c_str());
         FCMD_OBJ_CMD(obj, "AttachmentSupport = [(" << Gui::Command::getObjectCmd(plane) << ",'')]");
         FCMD_OBJ_CMD(obj, "MapMode = '" << AttachEngine::getModeName(Attacher::mmFlatFace) << "'");
         FCMD_OBJ_CMD(obj, "AttachmentOffset.Base.z = " << offset);
-        FCMD_OBJ_CMD(
-            body,
-            "insertObject(" << Gui::Command::getObjectCmd(obj) << ','
-                            << Gui::Command::getObjectCmd(sketch) << ")"
-        );
         FCMD_OBJ_CMD(sketch, "AttachmentSupport = (" << Gui::Command::getObjectCmd(obj) << ",[''])");
         FCMD_OBJ_CMD(sketch, "MapReversed = " << (reverseSketch ? "True" : "False"));
         FCMD_OBJ_CMD(
@@ -430,124 +372,6 @@ void fixSketchSupport(Sketcher::SketchObject* sketch)
     }
 }
 
-bool isPartDesignAwareObjecta(App::DocumentObject* obj, bool respectGroups = false)
-{
-    return (
-        obj->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-        || PartDesign::Body::isAllowed(obj) || obj->isDerivedFrom(PartDesign::Body::getClassTypeId())
-        || (respectGroups
-            && (obj->hasExtension(App::GeoFeatureGroupExtension::getExtensionClassTypeId())
-                || obj->hasExtension(App::GroupExtension::getExtensionClassTypeId())))
-    );
-}
-
-bool isAnyNonPartDesignLinksTo(PartDesign::Feature* feature, bool respectGroups)
-{
-    App::Document* doc = feature->getDocument();
-
-    for (const auto& obj : doc->getObjects()) {
-        if (!isPartDesignAwareObjecta(obj, respectGroups)) {
-            std::vector<App::Property*> properties;
-            obj->getPropertyList(properties);
-            for (auto prop : properties) {
-                if (prop->isDerivedFrom(App::PropertyLink::getClassTypeId())) {
-                    if (static_cast<App::PropertyLink*>(prop)->getValue() == feature) {
-                        return true;
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
-                    if (static_cast<App::PropertyLinkSub*>(prop)->getValue() == feature) {
-                        return true;
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
-                    auto values = static_cast<App::PropertyLinkList*>(prop)->getValues();
-                    if (std::find(values.begin(), values.end(), feature) != values.end()) {
-                        return true;
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSubList::getClassTypeId())) {
-                    auto values = static_cast<App::PropertyLinkSubList*>(prop)->getValues();
-                    if (std::find(values.begin(), values.end(), feature) != values.end()) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
-void relinkToBody(PartDesign::Feature* feature)
-{
-    App::Document* doc = feature->getDocument();
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(feature);
-
-    if (!body) {
-        throw Base::RuntimeError("Could not find a body for the feature");
-    }
-
-    for (const auto& obj : doc->getObjects()) {
-        if (!isPartDesignAwareObjecta(obj)) {
-            std::vector<App::Property*> properties;
-            obj->getPropertyList(properties);
-            for (auto prop : properties) {
-                std::string valueStr;
-                if (prop->isDerivedFrom(App::PropertyLink::getClassTypeId())) {
-                    App::PropertyLink* propLink = static_cast<App::PropertyLink*>(prop);
-                    if (propLink->getValue() != feature) {
-                        continue;
-                    }
-                    valueStr = Gui::Command::getObjectCmd(body);
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
-                    App::PropertyLinkSub* propLink = static_cast<App::PropertyLinkSub*>(prop);
-                    if (propLink->getValue() != feature) {
-                        continue;
-                    }
-                    valueStr = buildLinkSubPythonStr(body, propLink->getSubValues());
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkList::getClassTypeId())) {
-                    App::PropertyLinkList* propLink = static_cast<App::PropertyLinkList*>(prop);
-                    std::vector<App::DocumentObject*> linkList = propLink->getValues();
-                    bool valueChanged = false;
-                    for (auto& link : linkList) {
-                        if (link == feature) {
-                            link = body;
-                            valueChanged = true;
-                        }
-                    }
-                    if (valueChanged) {
-                        valueStr = buildLinkListPythonStr(linkList);
-                        // TODO Issue some message here due to it likely will break something
-                        //     (2015-08-13, Fat-Zer)
-                    }
-                }
-                else if (prop->isDerivedFrom(App::PropertyLinkSub::getClassTypeId())) {
-                    App::PropertyLinkSubList* propLink = static_cast<App::PropertyLinkSubList*>(prop);
-                    std::vector<App::DocumentObject*> linkList = propLink->getValues();
-                    bool valueChanged = false;
-                    for (auto& link : linkList) {
-                        if (link == feature) {
-                            link = body;
-                            valueChanged = true;
-                        }
-                    }
-                    if (valueChanged) {
-                        valueStr = buildLinkSubListPythonStr(linkList, propLink->getSubValues());
-                        // TODO Issue some message here due to it likely will break something
-                        //     (2015-08-13, Fat-Zer)
-                    }
-                }
-
-                if (!valueStr.empty() && prop->hasName()) {
-                    FCMD_OBJ_CMD(obj, prop->getName() << '=' << valueStr);
-                }
-            }
-        }
-    }
-}
 
 bool isFeatureMovable(App::DocumentObject* const feat)
 {
@@ -672,44 +496,6 @@ std::vector<App::DocumentObject*> collectMovableDependencies(std::vector<App::Do
     result.insert(result.begin(), unique_objs.begin(), unique_objs.end());
 
     return result;
-}
-
-void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
-{
-    if (feat->hasExtension(Part::AttachExtension::getExtensionClassTypeId())) {
-        auto attachable = feat->getExtensionByType<Part::AttachExtension>();
-        App::DocumentObject* support = attachable->AttachmentSupport.getValue();
-        if (support && support->isDerivedFrom<App::DatumElement>()) {
-            auto originfeat = static_cast<App::DatumElement*>(support);
-            App::DatumElement* targetOriginFeature = targetbody->getOrigin()->getDatumElement(
-                originfeat->Role.getValue()
-            );
-            if (targetOriginFeature) {
-                attachable->AttachmentSupport.setValue(
-                    static_cast<App::DocumentObject*>(targetOriginFeature),
-                    ""
-                );
-            }
-        }
-    }
-    else if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
-        auto prim = static_cast<PartDesign::ProfileBased*>(feat);
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
-            App::DocumentObject* axis = prop->getValue();
-            if (axis && axis->isDerivedFrom<App::DatumElement>()) {
-                auto originfeat = static_cast<App::DatumElement*>(axis);
-                App::DatumElement* targetOriginFeature = targetbody->getOrigin()->getDatumElement(
-                    originfeat->Role.getValue()
-                );
-                if (targetOriginFeature) {
-                    prop->setValue(
-                        static_cast<App::DocumentObject*>(targetOriginFeature),
-                        std::vector<std::string>(0)
-                    );
-                }
-            }
-        }
-    }
 }
 
 }  // namespace PartDesignGui

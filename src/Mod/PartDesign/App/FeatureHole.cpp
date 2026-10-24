@@ -1755,12 +1755,6 @@ App::DocumentObjectExecReturn* Hole::execute()
         std::string method(DepthType.getValueAsString());
         double length = 0.0;
 
-        this->positionByPrevious();
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-
-        base.move(invObjLoc);
-        profileshape.move(invObjLoc);
-
         /* Build the prototype hole */
 
         // Get vector normal to profile
@@ -1772,7 +1766,6 @@ App::DocumentObjectExecReturn* Hole::execute()
 
         // Define this as zDir
         gp_Vec zDir(SketchVector.x, SketchVector.y, SketchVector.z);
-        zDir.Transform(invObjLoc.Transformation());
         gp_Vec xDir = computePerpendicular(zDir);
 
         if (method == "Dimension") {
@@ -2041,7 +2034,6 @@ App::DocumentObjectExecReturn* Hole::execute()
                     Precision::Confusion()
                 );
             }
-            result = getSolid(result);
             retry = false;
         }
         catch (Standard_Failure& e) {
@@ -2083,7 +2075,7 @@ App::DocumentObjectExecReturn* Hole::execute()
                     msg += std::to_string(i);
                     return new App::DocumentObjectExecReturn(msg.c_str());
                 }
-                base = getSolid(result);
+                base = result;
                 if (base.isNull()) {
                     std::string msg(QT_TRANSLATE_NOOP(
                         "Exception",
@@ -2097,12 +2089,6 @@ App::DocumentObjectExecReturn* Hole::execute()
         }
         result = refineShapeIfActive(result);
 
-        if (!isSingleSolidRuleSatisfied(result.getShape())) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                "Exception",
-                "Result has multiple solids: enable 'Allow Compound' in the active body."
-            ));
-        }
         this->Shape.setValue(result);
 
         return App::DocumentObject::StdReturn;

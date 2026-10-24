@@ -162,7 +162,7 @@ void ViewProviderPreviewExtension::extensionBeforeDelete()
 
 void ViewProviderPreviewExtension::showPreview(bool enable)
 {
-    auto feature = getExtendedViewProvider()->getObject<Part::Feature>();
+    auto feature = getExtendedViewProvider()->getObject<Part::ShapeFeature>();
     if (!feature) {
         return;
     }

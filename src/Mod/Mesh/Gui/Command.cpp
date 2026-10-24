@@ -374,6 +374,12 @@ void CmdMeshImport::activated(int)
         QString(),
         filter
     );
+    if (fn.isEmpty()) {
+        return;
+    }
+    if (!ensureActiveDocument()) {
+        return;
+    }
     for (const auto& it : fn) {
         std::string unicodepath = Base::Tools::escapedUnicodeFromUtf8(it.toUtf8().data());
         unicodepath = Base::Tools::escapeEncodeFilename(unicodepath);
@@ -387,7 +393,7 @@ void CmdMeshImport::activated(int)
 
 bool CmdMeshImport::isActive()
 {
-    return (getActiveGuiDocument() ? true : false);
+    return true;
 }
 
 //--------------------------------------------------------------------------------------

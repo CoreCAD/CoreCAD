@@ -187,6 +187,17 @@ public:
     virtual Base::Vector3d projectPoint(const Base::Vector3d& pt, bool invert = true) const;
     virtual BaseGeomPtr projectEdge(const TopoDS_Edge& e) const;
 
+    // Map a 3d model point into the frame of the stored projected geometry
+    // (getEdgeGeometry/getVertexGeometry).  Used to correlate a durable 3d
+    // source sub-element with the 2d edge/vertex it projects to.
+    Base::Vector3d modelPointToViewFrame(const Base::Vector3d& modelPoint) const;
+    // Return the index into getEdgeGeometry() of the projected edge that the
+    // given 3d model edge projects to, or -1 if none matches.
+    int edgeIndexForModelEdge(const TopoDS_Edge& modelEdge) const;
+    // Return the index into getVertexGeometry() of the projected vertex that
+    // the given 3d model vertex projects to, or -1 if none matches.
+    int vertexIndexForModelVertex(const TopoDS_Vertex& modelVertex) const;
+
     virtual gp_Ax2 getViewAxis(const Base::Vector3d& pt, const Base::Vector3d& direction,
                                const bool flip = true) const;
     virtual gp_Ax2 getProjectionCS(Base::Vector3d pt = Base::Vector3d(0.0, 0.0, 0.0)) const;

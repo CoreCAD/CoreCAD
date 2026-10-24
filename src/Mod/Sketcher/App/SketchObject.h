@@ -121,6 +121,12 @@ public:
     {
         return "SketcherGui::ViewProviderSketch";
     }
+    /// A sketch is Part-scoped content (ARCHITECTURE §7.1, Amendment 8): a typed
+    /// Assembly, Drawing, or Spreadsheet document refuses it at the admission door.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::Sketch;
+    }
     void setupObject() override;
     //@}
 
@@ -486,11 +492,15 @@ public:
     /// assuming all constraints on the end points of the old curve have been transferred or
     /// destroyed
     /// Returns whether or not new constraint(s) was/were added.
+    /// If `forcedPick` is given, it is set true when the constraint was carried but more than one
+    /// piece could equally have taken it and one was chosen arbitrarily (§4.7 / P7: the choice is
+    /// disclosed to the user rather than made silently).
     bool deriveConstraintsForPieces(
         const int oldId,
         const std::vector<int>& newIds,
         const Constraint* con,
-        std::vector<Constraint*>& newConstraints
+        std::vector<Constraint*>& newConstraints,
+        bool* forcedPick = nullptr
     ) const;
     // Explicitly giving `newGeos` for cases where they are not yet added
     bool deriveConstraintsForPieces(
@@ -498,7 +508,8 @@ public:
         const std::vector<int>& newIds,
         const std::vector<const Part::Geometry*>& newGeo,
         const Constraint* con,
-        std::vector<Constraint*>& newConstraints
+        std::vector<Constraint*>& newConstraints,
+        bool* forcedPick = nullptr
     ) const;
 
     /// split a curve
@@ -828,16 +839,6 @@ public:
     /// parameters. these parameters relate to not fully constraint edges/vertices.
     void getGeometryWithDependentParameters(std::vector<std::pair<int, PointPos>>& geometrymap);
 
-    /// Flag to allow external geometry from other bodies than the one this sketch belongs to
-    bool isAllowedOtherBody() const
-    {
-        return allowOtherBody;
-    }
-    void setAllowOtherBody(bool on)
-    {
-        allowOtherBody = on;
-    }
-
     /// Flag to allow carbon copy from misaligned geometry
     bool isAllowedUnaligned() const
     {
@@ -853,13 +854,10 @@ public:
         rlAllowed,
         rlOtherDoc,
         rlCircularReference,
-        rlOtherPart,
-        rlOtherBody,
-        rlOtherBodyWithLinks,  // for carbon copy
-        rlNotASketch,          // for carbon copy
-        rlNonParallel,         // for carbon copy
-        rlAxesMisaligned,      // for carbon copy
-        rlOriginsMisaligned    // for carbon copy
+        rlNotASketch,        // for carbon copy
+        rlNonParallel,       // for carbon copy
+        rlAxesMisaligned,    // for carbon copy
+        rlOriginsMisaligned  // for carbon copy
     };
     /// Return true if this object is allowed as external geometry for the
     /// sketch. rsn argument receives the reason for disallowing.
@@ -1040,6 +1038,16 @@ protected:
     void restoreFinished() override;
     void onSketchRestore();
 
+    /** Give the duplicate an identity of its own, carrying the references that resolve through it.
+     *
+     * Cruth: a re-mint has to carry the references that resolve through what it re-mints. A
+     * duplicated sketch's geometry is reborn with fresh durable identities, and its constraints
+     * name that geometry by the identity it had a moment ago -- they have not been bound to it
+     * yet, because that happens once the whole document has been read. Re-minting underneath them
+     * leaves every constraint naming something that no longer exists.
+     */
+    void mintDurableIdentity() override;
+
     std::string validateExpression(
         const App::ObjectIdentifier& path,
         std::shared_ptr<const App::Expression> expr
@@ -1056,6 +1064,7 @@ protected:
 
     void updateGeoHistory();
     void generateId(const Part::Geometry* geo);
+    long mintGeometryId(const Part::Geometry* geo);
 
     /*!
      \brief Transfer constraints on lines being filleted.
@@ -1081,6 +1090,11 @@ protected:
     void delExternalPrivate(const std::set<long>& ids, bool removeReference);
 
     void updateGeometryRefs();
+
+    /// Restore-side boundary translation: rewrite each constraint element's positional
+    /// GeoId from the durable geometry tag it carries, so references survive a
+    /// geometry-list reorder (merge, upstream edit).
+    void rebindConstraintsToDurableGeometry();
 
     void onUndoRedoFinished() override;
 
@@ -1158,9 +1172,6 @@ private:
     /// Add geometry and constraints to `this`, then delete the geometry and constraints in the
     /// vectors Note that the contents of the two vectors are invalid after this call.
     void addAndCleanup(std::vector<Part::Geometry*> igeo, std::vector<Constraint*> icon);
-
-    /// Flag to allow external geometry from other bodies than the one this sketch belongs to
-    bool allowOtherBody;
 
     /// Flag to allow carbon copy from misaligned geometry
     bool allowUnaligned;

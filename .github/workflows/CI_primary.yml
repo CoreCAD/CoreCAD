@@ -51,12 +51,31 @@ jobs:
     with:
       artifactBasename: Prepare-${{ github.run_id }}
 
+  Pixi:
+    needs: [Prepare]
+    uses: ./.github/workflows/sub_buildPixi.yml
+    with:
+      artifactBasename: Pixi-${{ github.run_id }}
+    secrets:
+      assetsToken: ${{ secrets.CORECAD_ASSETS_TOKEN }}
+
   Ubuntu:
     needs: [Prepare]
     if: "!startsWith(github.head_ref, 'refs/heads/backport-')"
     uses: ./.github/workflows/sub_buildUbuntu.yml
     with:
       artifactBasename: Ubuntu-${{ github.run_id }}
+    secrets:
+      assetsToken: ${{ secrets.CORECAD_ASSETS_TOKEN }}
+
+  Windows:
+    needs: [Prepare]
+    if: "!startsWith(github.head_ref, 'refs/heads/backport-')"
+    uses: ./.github/workflows/sub_buildWindows.yml
+    with:
+      artifactBasename: Windows-${{ github.run_id }}
+    secrets:
+      assetsToken: ${{ secrets.CORECAD_ASSETS_TOKEN }}
 
   Lint:
     needs: [Prepare]

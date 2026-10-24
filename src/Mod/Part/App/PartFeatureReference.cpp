@@ -35,10 +35,11 @@
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::FeatureReference, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Part::FeatureReference, App::GeoFeature)
 
 FeatureReference::FeatureReference()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY(Reference, (nullptr));
 }
 

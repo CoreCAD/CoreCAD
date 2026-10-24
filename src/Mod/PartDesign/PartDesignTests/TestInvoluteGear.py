@@ -37,7 +37,7 @@ FIXTURE_PATH = pathlib.Path(__file__).parent / "Fixtures"
 
 class TestInvoluteGear(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestInvoluteGear")
+        self.Doc = FreeCAD.newDocument("PartDesignTestInvoluteGear", type="Part")
         FreeCAD.ConfigSet("SuppressRecomputeRequiredDialog", "True")
 
     def tearDown(self):
@@ -290,8 +290,7 @@ class TestInvoluteGear(unittest.TestCase):
     def testUsagePadGearProfile(self):
         profile = InvoluteGearFeature.makeInvoluteGear("GearProfile")
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
-        body.addObject(profile)
-        pad = body.newObject("PartDesign::Pad", "GearPad")
+        pad = body.addFeature(body.Document.addObject("PartDesign::Pad", "GearPad"))
         pad.Profile = profile
         pad.Length = "5 mm"  # that our gear's "Face Width"
         self.assertSuccessfulRecompute()
@@ -304,8 +303,9 @@ class TestInvoluteGear(unittest.TestCase):
         profile.HighPrecision = False
         profile.NumberOfTeeth = 8
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
-        body.addObject(profile)
-        cylinder = body.newObject("PartDesign::AdditiveCylinder", "GearCylinder")
+        cylinder = body.addFeature(
+            body.Document.addObject("PartDesign::AdditiveCylinder", "GearCylinder")
+        )
         default_dedendum = 1.25
         rim_width = 3 * FreeCAD.Units.MilliMetre
         cylinder.Height = "5 mm"  # that our gear's "Face Width"
@@ -314,7 +314,7 @@ class TestInvoluteGear(unittest.TestCase):
             + default_dedendum * profile.Modules
             + rim_width
         )
-        pocket = body.newObject("PartDesign::Pocket", "GearPocket")
+        pocket = body.addFeature(body.Document.addObject("PartDesign::Pocket", "GearPocket"))
         pocket.Profile = profile
         pocket.Reversed = True  # need to "pocket upwards" into the cylinder
         pocket.Type = "ThroughAll"
@@ -398,8 +398,8 @@ class TestInvoluteGear(unittest.TestCase):
         return distance < Precision.intersection()
 
     def assertSolid(self, shape, msg=None):
-        # we don't check shape.ShapeType for 'Solid' as with body.AllowCompound==True
-        # we get, also in the good case, our solid wrapped in a compound.
+        # we don't check shape.ShapeType for 'Solid' because a feature's output solid is,
+        # also in the good case, wrapped in a compound (Cruth §4.7 multi-output model).
         self.assertEqual(len(shape.Solids), 1, msg=msg)
 
 

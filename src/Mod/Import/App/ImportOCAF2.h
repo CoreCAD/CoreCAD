@@ -30,16 +30,28 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/dynamic_bitset.hpp>
+
 #include <TDocStd_Document.hxx>
 #include <TopoDS_Shape.hxx>
 #include <XCAFDoc_ColorTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
+#include <App/PropertyGeo.h>
 #include <Base/Sequencer.h>
 #include <Mod/Part/App/TopoShape.h>
 
-#include "ExportOCAF.h"
-#include "ImportOCAF.h"
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+#include <TDocStd_Document.hxx>
+#include <XCAFDoc_ColorTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
+
+#include <App/Material.h>
+#include <Mod/Import/ImportGlobal.h>
 #include "Tools.h"
 
 
@@ -59,13 +71,14 @@ class Feature;
 namespace Import
 {
 
+class Feature;
+
 struct ImportExport ImportOCAFOptions
 {
     ImportOCAFOptions();
     Base::Color defaultFaceColor;
     Base::Color defaultEdgeColor;
     bool merge = false;
-    bool useLinkGroup = false;
     bool useBaseName = true;
     bool importHidden = true;
     bool reduceObjects = false;
@@ -87,7 +100,6 @@ public:
     {
         options.merge = enable;
     }
-    void setUseLinkGroup(bool enable);
     void setBaseName(bool enable)
     {
         options.useBaseName = enable;
@@ -111,6 +123,17 @@ public:
     void setExpandCompound(bool enable)
     {
         options.expandCompound = enable;
+    }
+    /**
+     * Path of the file being translated, so imported geometry can record where
+     * it came from.
+     *
+     * Without it an import leaves no provenance at all and there is no way back
+     * to the source when a newer revision arrives.
+     */
+    void setSourceFile(const std::string& path)
+    {
+        sourceFile = path;
     }
 
     enum ImportMode
@@ -187,32 +210,21 @@ private:
     {}
 
 private:
-    class ImportLegacy: public ImportOCAF
-    {
-    public:
-        explicit ImportLegacy(ImportOCAF2& parent)
-            : ImportOCAF(parent.pDoc, parent.pDocument, parent.default_name)
-            , myParent(parent)
-        {}
-
-    private:
-        void applyColors(Part::Feature* part, const std::vector<Base::Color>& colors) override
-        {
-            myParent.applyFaceColors(part, colors);
-        }
-
-        ImportOCAF2& myParent;
-    };
-    friend class ImportLegacy;
-
     Handle(TDocStd_Document) pDoc;
     App::Document* pDocument;
     Handle(XCAFDoc_ShapeTool) aShapeTool;
     Handle(XCAFDoc_ColorTool) aColorTool;
     std::string default_name;
 
+    /// Stamps the file, node and settings this feature's geometry was read under.
+    void recordSource(Import::Feature* feature, TDF_Label label) const;
+
+    /// The translator options this import ran under, as storable text.
+    std::map<std::string, std::string> describeOptions() const;
+
     ImportOCAFOptions options;
     std::string filePath;
+    std::string sourceFile;
 
     std::unordered_map<TopoDS_Shape, Info, ShapeHasher> myShapes;
     std::unordered_map<TDF_Label, std::string, LabelHasher> myNames;

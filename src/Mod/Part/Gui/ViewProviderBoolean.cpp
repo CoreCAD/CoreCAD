@@ -106,15 +106,6 @@ ViewProviderBoolean::ViewProviderBoolean() = default;
 
 ViewProviderBoolean::~ViewProviderBoolean() = default;
 
-std::vector<App::DocumentObject*> ViewProviderBoolean::claimChildren() const
-{
-    std::vector<App::DocumentObject*> temp;
-    temp.push_back(getObject<Part::Boolean>()->Base.getValue());
-    temp.push_back(getObject<Part::Boolean>()->Tool.getValue());
-
-    return temp;
-}
-
 QIcon ViewProviderBoolean::getIcon() const
 {
     App::DocumentObject* obj = getObject();
@@ -150,10 +141,10 @@ void ViewProviderBoolean::updateData(const App::Property* prop)
         if (!objBool) {
             return;
         }
-        Part::Feature* objBase = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objBool->Base.getValue())
         );
-        Part::Feature* objTool = dynamic_cast<Part::Feature*>(
+        Part::ShapeFeature* objTool = dynamic_cast<Part::ShapeFeature*>(
             Part::Feature::getShapeOwner(objBool->Tool.getValue())
         );
         if (objBase && objTool) {
@@ -257,11 +248,6 @@ ViewProviderMultiFuse::ViewProviderMultiFuse() = default;
 
 ViewProviderMultiFuse::~ViewProviderMultiFuse() = default;
 
-std::vector<App::DocumentObject*> ViewProviderMultiFuse::claimChildren() const
-{
-    return getObject<Part::MultiFuse>()->Shapes.getValues();
-}
-
 QIcon ViewProviderMultiFuse::getIcon() const
 {
     return Gui::BitmapFactory().iconFromTheme("Part_Fuse");
@@ -289,7 +275,9 @@ void ViewProviderMultiFuse::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::Feature* objBase = dynamic_cast<Part::Feature*>(Part::Feature::getShapeOwner(*it));
+            Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
+                Part::Feature::getShapeOwner(*it)
+            );
             if (!objBase) {
                 continue;
             }
@@ -401,11 +389,6 @@ ViewProviderMultiCommon::ViewProviderMultiCommon() = default;
 
 ViewProviderMultiCommon::~ViewProviderMultiCommon() = default;
 
-std::vector<App::DocumentObject*> ViewProviderMultiCommon::claimChildren() const
-{
-    return getObject<Part::MultiCommon>()->Shapes.getValues();
-}
-
 QIcon ViewProviderMultiCommon::getIcon() const
 {
     return Gui::BitmapFactory().iconFromTheme("Part_Common");
@@ -433,7 +416,9 @@ void ViewProviderMultiCommon::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::Feature* objBase = dynamic_cast<Part::Feature*>(Part::Feature::getShapeOwner(*it));
+            Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
+                Part::Feature::getShapeOwner(*it)
+            );
             if (!objBase) {
                 continue;
             }

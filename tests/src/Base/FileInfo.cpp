@@ -102,7 +102,7 @@ TEST_F(FileInfoTest, TestCheckFile)
 
     std::string path = tmp.filePath();
     Base::FileInfo file2(path + "/file2");
-    EXPECT_TRUE(file2.isFile());
+    EXPECT_FALSE(file2.isFile());
 }
 
 TEST_F(FileInfoTest, TestCheckDirectory)
@@ -147,6 +147,7 @@ TEST_F(FileInfoTest, TestRenameFile)
     Base::FileInfo file2(path + "/file2");
     EXPECT_FALSE(file2.renameFile((path + "/file3").c_str()));
     EXPECT_TRUE(file.renameFile((path + "/file2").c_str()));
+    EXPECT_TRUE(file2.renameFile(file.filePath().c_str()));
 }
 
 TEST_F(FileInfoTest, TestCopyFile)

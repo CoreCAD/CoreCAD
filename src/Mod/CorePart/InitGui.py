@@ -1,0 +1,678 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-FileCopyrightText: 2026 Cruth contributors
+
+# CorePart workbench — combines Part + PartDesign under a single "Part" tab.
+# Pure-Python wrapper: no C++ changes, imports both PartGui and PartDesignGui,
+# wires up their commands into combined toolbars and menus.
+
+import FreeCAD as App
+import FreeCADGui as Gui
+
+
+class CorePartWorkbench(Gui.Workbench):
+    """Combined Part + Part Design workbench for CoreCAD."""
+
+    def __init__(self):
+        self.__class__.Icon = (
+            App.getResourceDir()
+            + "Mod/PartDesign/Resources/icons/PartDesignWorkbench.svg"
+        )
+        self.__class__.MenuText = "Part"
+        self.__class__.ToolTip = "Part workbench"
+
+    def GetClassName(self):
+        return "Gui::PythonWorkbench"
+
+    def Initialize(self):
+        # ---- PartDesign modules ----
+        import PartDesignGui  # noqa: F401 — registers C++ commands
+        import PartDesign  # noqa: F401
+
+        # WizardShaft (optional, numpy-dependent)
+        try:
+            import traceback
+            from PartDesign.WizardShaft import WizardShaft  # noqa: F401
+        except RuntimeError:
+            import traceback as _tb
+
+            print("{}".format(_tb.format_exc()))
+        except ImportError:
+            try:
+                from FeatureHole import HoleGui  # noqa: F401
+            except Exception:
+                pass
+
+        # Python-only PartDesign commands
+        from PartDesign.InvoluteGearFeature import CommandInvoluteGear
+
+        if "PartDesign_InvoluteGear" not in Gui.listCommands():
+            Gui.addCommand("PartDesign_InvoluteGear", CommandInvoluteGear())
+
+        from PartDesign.SprocketFeature import CommandSprocket
+
+        if "PartDesign_Sprocket" not in Gui.listCommands():
+            Gui.addCommand("PartDesign_Sprocket", CommandSprocket())
+
+        # CorePart body-aware boolean commands
+        from CorePart.commands.body_boolean import BodyUnion, BodyCut, BodyIntersect
+
+        Gui.addCommand("CorePart_BodyUnion", BodyUnion())
+        Gui.addCommand("CorePart_BodyCut", BodyCut())
+        Gui.addCommand("CorePart_BodyIntersect", BodyIntersect())
+
+        # ---- Part modules ----
+        import PartGui  # noqa: F401 — registers C++ commands
+
+        try:
+            import BasicShapes.CommandShapes  # noqa: F401
+        except ImportError as err:
+            App.Console.PrintError(
+                "'BasicShapes' package cannot be loaded. {err}\n".format(err=str(err))
+            )
+
+        try:
+            import CompoundTools._CommandCompoundFilter  # noqa: F401
+            import CompoundTools._CommandExplodeCompound  # noqa: F401
+        except ImportError as err:
+            App.Console.PrintError(
+                "'CompoundTools' package cannot be loaded. {err}\n".format(err=str(err))
+            )
+
+        try:
+            bop = __import__("BOPTools")
+            bop.importAll()
+            bop.addCommands()
+            PartGui.BOPTools = bop
+        except Exception as err:
+            App.Console.PrintError(
+                "'BOPTools' package cannot be loaded. {err}\n".format(err=str(err))
+            )
+
+        # ---- PartDesign toolbars (shown first in ribbon) ----
+        self.appendToolbar(
+            "Part",
+            [
+                "Std_Part",
+                "PartDesign_CompSketches",
+            ],
+        )
+        self.appendToolbar(
+            "Part Helper",
+            [
+                "Sketcher_ValidateSketch",
+                "Part_CheckGeometry",
+                "Part_EditAttachment",
+            ],
+        )
+        self.appendToolbar(
+            "Part Modeling",
+            [
+                "PartDesign_Pad",
+                "PartDesign_Revolution",
+                "PartDesign_AdditiveLoft",
+                "PartDesign_AdditivePipe",
+                "PartDesign_AdditiveHelix",
+                "PartDesign_CompPrimitiveAdditive",
+                "Separator",
+                "PartDesign_Pocket",
+                "PartDesign_Hole",
+                "PartDesign_Groove",
+                "PartDesign_SubtractiveLoft",
+                "PartDesign_SubtractivePipe",
+                "PartDesign_SubtractiveHelix",
+                "PartDesign_CompPrimitiveSubtractive",
+                "Separator",
+                "PartDesign_Boolean",
+            ],
+        )
+        self.appendToolbar(
+            "Body Boolean",
+            [
+                "CorePart_BodyUnion",
+                "CorePart_BodyCut",
+                "CorePart_BodyIntersect",
+            ],
+        )
+        self.appendToolbar(
+            "Part Dress-Up",
+            [
+                "PartDesign_Fillet",
+                "PartDesign_Chamfer",
+                "PartDesign_Draft",
+                "PartDesign_Thickness",
+            ],
+        )
+        self.appendToolbar(
+            "Part Transform",
+            [
+                "PartDesign_Mirrored",
+                "PartDesign_LinearPattern",
+                "PartDesign_PolarPattern",
+                "PartDesign_PointPattern",
+            ],
+        )
+
+        # ---- Part import/export toolbar ----
+        self.appendToolbar(
+            "Part Import/Export",
+            [
+                "Part_Import",
+                "Part_Export",
+            ],
+        )
+
+        # ---- Part toolbars ----
+        self.appendToolbar(
+            "Solids",
+            [
+                "Part_Box",
+                "Part_Cylinder",
+                "Part_Sphere",
+                "Part_Cone",
+                "Part_Torus",
+                "Part_Tube",
+                "Part_Primitives",
+                "Part_Builder",
+            ],
+        )
+        self.appendToolbar(
+            "Solids Tools",
+            [
+                "Part_Extrude",
+                "Part_Revolve",
+                "Part_Mirror",
+                "Part_Scale",
+                "Part_Fillet",
+                "Part_Chamfer",
+                "Part_MakeFace",
+                "Part_RuledSurface",
+                "Part_Loft",
+                "Part_Sweep",
+                "Part_Section",
+                "Part_CrossSections",
+                "Part_CompOffset",
+                "Part_Thickness",
+                "Part_ProjectionOnSurface",
+                "Part_ShapeFromMesh",
+                "Part_MakeSolid",
+                "Part_RefineShape",
+                "Part_SectionCut",
+            ],
+        )
+        self.appendToolbar(
+            "Solids Boolean",
+            [
+                "Part_CompCompoundTools",
+                "Part_Boolean",
+                "Part_Cut",
+                "Part_Fuse",
+                "Part_Common",
+                "Part_CompJoinFeatures",
+                "Part_CompSplitFeatures",
+                "Part_CheckGeometry",
+                "Part_Defeaturing",
+            ],
+        )
+
+        # ---- Menus ----
+        self.appendMenu(
+            ["&Sketch"],
+            [
+                "PartDesign_NewSketch",
+                "Sketcher_EditSketch",
+                "Sketcher_MapSketch",
+                "Sketcher_ReorientSketch",
+                "Sketcher_ValidateSketch",
+                "Sketcher_MergeSketches",
+                "Sketcher_MirrorSketch",
+            ],
+        )
+
+        self.appendMenu(
+            ["&Part Design"],
+            [
+                "Std_Part",
+                "Separator",
+            ],
+        )
+        self.appendMenu(
+            ["&Part Design", "Additive Features"],
+            [
+                "PartDesign_Pad",
+                "PartDesign_Revolution",
+                "PartDesign_AdditiveLoft",
+                "PartDesign_AdditivePipe",
+                "PartDesign_AdditiveHelix",
+            ],
+        )
+        self.appendMenu(
+            ["&Part Design"],
+            ["PartDesign_CompPrimitiveAdditive", "Separator"],
+        )
+        self.appendMenu(
+            ["&Part Design", "Subtractive Features"],
+            [
+                "PartDesign_Pocket",
+                "PartDesign_Hole",
+                "PartDesign_Groove",
+                "PartDesign_SubtractiveLoft",
+                "PartDesign_SubtractivePipe",
+                "PartDesign_SubtractiveHelix",
+            ],
+        )
+        self.appendMenu(
+            ["&Part Design"],
+            ["PartDesign_CompPrimitiveSubtractive", "Separator"],
+        )
+        self.appendMenu(
+            ["&Part Design", "Dress-Up Features"],
+            [
+                "PartDesign_Fillet",
+                "PartDesign_Chamfer",
+                "PartDesign_Draft",
+                "PartDesign_Thickness",
+            ],
+        )
+        self.appendMenu(
+            ["&Part Design", "Transformation Features"],
+            [
+                "PartDesign_Mirrored",
+                "PartDesign_LinearPattern",
+                "PartDesign_PolarPattern",
+                "PartDesign_PointPattern",
+            ],
+        )
+        self.appendMenu(
+            ["&Part Design"],
+            [
+                "Separator",
+                "PartDesign_Boolean",
+                "CorePart_BodyUnion",
+                "CorePart_BodyCut",
+                "CorePart_BodyIntersect",
+                "Separator",
+                "Materials_InspectAppearance",
+                "Materials_InspectMaterial",
+                "Separator",
+                "Part_CheckGeometry",
+                "Separator",
+                "PartDesign_InvoluteGear",
+                "PartDesign_Sprocket",
+            ],
+        )
+
+        self.appendMenu(
+            ["&Part"],
+            [
+                "Part_Import",
+                "Part_Export",
+                "Separator",
+                "Part_BoxSelection",
+                "Separator",
+                "Part_Box",
+                "Part_Cylinder",
+                "Part_Sphere",
+                "Part_Cone",
+                "Part_Torus",
+                "Part_Tube",
+                "Part_Primitives",
+                "Part_Builder",
+                "Separator",
+                "Part_ShapeFromMesh",
+                "Part_PointsFromMesh",
+                "Part_MakeSolid",
+                "Part_ReverseShape",
+                "Separator",
+                "Part_SimpleCopy",
+                "Part_TransformedCopy",
+                "Part_ElementCopy",
+                "Part_RefineShape",
+                "Separator",
+                "Part_Boolean",
+                "Part_Cut",
+                "Part_Fuse",
+                "Part_Common",
+                "Separator",
+                "Part_JoinConnect",
+                "Part_JoinEmbed",
+                "Part_JoinCutout",
+                "Separator",
+                "Part_BooleanFragments",
+                "Part_SliceApart",
+                "Part_Slice",
+                "Part_XOR",
+                "Separator",
+                "Part_Compound",
+                "Part_ExplodeCompound",
+                "Part_CompoundFilter",
+                "Part_ToleranceSet",
+                "Separator",
+                "Part_Extrude",
+                "Part_Revolve",
+                "Part_Mirror",
+                "Part_Scale",
+                "Part_Fillet",
+                "Part_Chamfer",
+                "Part_MakeFace",
+                "Part_RuledSurface",
+                "Part_Loft",
+                "Part_Sweep",
+                "Part_Section",
+                "Part_CrossSections",
+                "Part_Offset",
+                "Part_Offset2D",
+                "Part_Thickness",
+                "Part_ProjectionOnSurface",
+                "Part_SectionCut",
+                "Separator",
+                "Part_EditAttachment",
+                "Separator",
+                "Part_CheckGeometry",
+                "Part_Defeaturing",
+                "Materials_InspectAppearance",
+                "Materials_InspectMaterial",
+            ],
+        )
+
+        # ---- Proprietary Inspect toolbar (present only with corecad-part) ----
+        # _pro_init is imported at module level below; by the time Initialize
+        # is called the module is already cached, so this just reads the list.
+        try:
+            from _pro_init import INSPECT_COMMANDS  # pylint: disable=import-error
+
+            if INSPECT_COMMANDS:
+                self.appendToolbar("Inspect", INSPECT_COMMANDS)
+                self.appendMenu(["&Part", "Inspect"], INSPECT_COMMANDS)
+        except ImportError:
+            pass
+
+    def Activated(self):
+        # Trigger PartDesign initialization (WorkflowManager etc.)
+        try:
+            Gui.doCommand("import PartDesignGui")
+        except Exception:
+            pass
+
+        self._setup_task_watchers()
+
+        # Show task panel if the user prefers it
+        try:
+            pref = (
+                App.GetApplication()
+                .GetParameterGroupByPath(
+                    "User parameter:BaseApp/Preferences/Mod/PartDesign"
+                )
+                .GetBool("SwitchToTask", True)
+            )
+            if pref:
+                Gui.Control.showTaskView()
+        except Exception:
+            pass
+
+    def Deactivated(self):
+        Gui.Control.clearTaskWatcher()
+        # Mirror C++ Workbench::deactivated() which does "import PartDesignGui"
+        # to reset the active Body context.
+        try:
+            Gui.doCommand("import PartDesignGui")
+        except Exception:
+            pass
+
+    def ContextMenu(self, recipient):
+        try:
+            self._setup_context_menu(recipient)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _setup_context_menu(self, recipient):
+        selection = Gui.Selection.getSelection()
+        if not selection:
+            return
+
+        feature = selection[0]
+        doc = App.ActiveDocument
+        if not doc:
+            return
+
+        # Find the PartDesign Body (if any) that emits the first selected object.
+        # Body membership is DERIVED (reverse lookup along the BaseFeature chain),
+        # never stored — Body.Group is empty under de-ownership, so we must ask
+        # PartDesign.findBodyOf rather than test `feature in b.Group`.
+        import PartDesign
+
+        bodies = [o for o in doc.Objects if o.isDerivedFrom("PartDesign::Body")]
+        try:
+            body = PartDesign.findBodyOf(feature)
+        except Exception:
+            body = None
+
+        if recipient == "Tree":
+            if bodies:
+                add_move_feature = True
+                add_move_in_tree = body is not None
+                for sel in selection:
+                    if add_move_feature and not sel.isDerivedFrom("Part::Feature"):
+                        add_move_feature = False
+                    if add_move_in_tree and body is not None:
+                        try:
+                            if PartDesign.findBodyOf(sel) != body:
+                                add_move_in_tree = False
+                        except Exception:
+                            add_move_in_tree = False
+                    if not add_move_in_tree and not add_move_feature:
+                        break
+
+                if add_move_feature:
+                    self.appendContextMenu("", ["PartDesign_MoveFeature"])
+                if add_move_in_tree:
+                    self.appendContextMenu("", ["PartDesign_MoveFeatureInTree"])
+
+        if len(selection) == 1:
+            self.appendContextMenu("", ["PartDesign_ShowDependencies"])
+
+    def _setup_task_watchers(self):
+        """Register PartDesign TaskWatchers equivalent to C++ Workbench::activated()."""
+
+        class FilterWatcher:
+            """Watcher whose visibility is controlled by a SelectionFilter string."""
+
+            def __init__(self, filter_str, commands, title, icon=""):
+                self.filter = filter_str
+                self.commands = list(commands)
+                self.title = title
+                if icon:
+                    self.icon = icon
+
+        class EmptySelectionWatcher:
+            """Watcher shown only when nothing is selected ('Start Part')."""
+
+            def __init__(self, commands, title, icon=""):
+                self.commands = list(commands)
+                self.title = title
+                if icon:
+                    self.icon = icon
+
+            def shouldShow(self):
+                return len(Gui.Selection.getSelection()) == 0
+
+        watchers = [
+            # Vertex tools (datum — legacy Part::DatumPoint/Line/Plane)
+            FilterWatcher(
+                "SELECT Part::Feature SUBELEMENT Vertex COUNT 1..",
+                [
+                    "Part_DatumPoint",
+                    "Part_DatumLine",
+                    "Part_DatumPlane",
+                    "Part_CoordinateSystem",
+                ],
+                "Vertex Tools",
+                "PartDesign_Body",
+            ),
+            # Edge tools
+            FilterWatcher(
+                "SELECT Part::Feature SUBELEMENT Edge COUNT 1..",
+                [
+                    "PartDesign_Fillet",
+                    "PartDesign_Chamfer",
+                    "Part_DatumPoint",
+                    "Part_DatumLine",
+                    "Part_DatumPlane",
+                    "Part_CoordinateSystem",
+                ],
+                "Edge Tools",
+                "PartDesign_Body",
+            ),
+            # Single-face tools
+            FilterWatcher(
+                "SELECT Part::Feature SUBELEMENT Face COUNT 1",
+                [
+                    "PartDesign_NewSketch",
+                    "PartDesign_Fillet",
+                    "PartDesign_Chamfer",
+                    "PartDesign_Draft",
+                    "PartDesign_Thickness",
+                    "Part_DatumPoint",
+                    "Part_DatumLine",
+                    "Part_DatumPlane",
+                    "Part_CoordinateSystem",
+                ],
+                "Face Tools",
+                "PartDesign_Body",
+            ),
+            # Body selected
+            FilterWatcher(
+                "SELECT PartDesign::Body COUNT 1",
+                ["PartDesign_NewSketch"],
+                "Helper Tools",
+                "PartDesign_Body",
+            ),
+            FilterWatcher(
+                "SELECT PartDesign::Body COUNT 1..",
+                [
+                    "PartDesign_Boolean",
+                    "CorePart_BodyUnion",
+                    "CorePart_BodyCut",
+                    "CorePart_BodyIntersect",
+                ],
+                "Boolean Tools",
+                "PartDesign_Body",
+            ),
+            # Plane selected (App::Plane — origin planes)
+            FilterWatcher(
+                "SELECT App::Plane COUNT 1",
+                [
+                    "PartDesign_NewSketch",
+                    "Part_DatumPoint",
+                    "Part_DatumLine",
+                    "Part_DatumPlane",
+                    "Part_CoordinateSystem",
+                ],
+                "Helper Tools",
+                "PartDesign_Body",
+            ),
+            # Plane selected (Part::DatumPlane — datum plane)
+            FilterWatcher(
+                "SELECT Part::DatumPlane COUNT 1",
+                [
+                    "PartDesign_NewSketch",
+                    "Part_DatumPoint",
+                    "Part_DatumLine",
+                    "Part_DatumPlane",
+                    "Part_CoordinateSystem",
+                ],
+                "Helper Tools",
+                "PartDesign_Body",
+            ),
+            # Line selected (Part::DatumLine)
+            FilterWatcher(
+                "SELECT Part::DatumLine COUNT 1",
+                ["Part_DatumPoint", "Part_DatumLine", "Part_DatumPlane"],
+                "Helper Tools",
+                "PartDesign_Body",
+            ),
+            # Point selected (Part::DatumPoint)
+            FilterWatcher(
+                "SELECT Part::DatumPoint COUNT 1",
+                [
+                    "Part_DatumPoint",
+                    "Part_DatumLine",
+                    "Part_DatumPlane",
+                    "Part_CoordinateSystem",
+                ],
+                "Helper Tools",
+                "PartDesign_Body",
+            ),
+            # Multiple faces
+            FilterWatcher(
+                "SELECT Part::Feature SUBELEMENT Face COUNT 2..",
+                [
+                    "PartDesign_Fillet",
+                    "PartDesign_Chamfer",
+                    "PartDesign_Draft",
+                    "PartDesign_Thickness",
+                ],
+                "Face Tools",
+                "PartDesign_Body",
+            ),
+            # Sketch selected
+            FilterWatcher(
+                "SELECT Sketcher::SketchObject COUNT 1",
+                [
+                    "PartDesign_NewSketch",
+                    "PartDesign_Pad",
+                    "PartDesign_Pocket",
+                    "PartDesign_Hole",
+                    "PartDesign_Revolution",
+                    "PartDesign_Groove",
+                    "PartDesign_AdditiveLoft",
+                    "PartDesign_SubtractiveLoft",
+                    "PartDesign_AdditivePipe",
+                    "PartDesign_SubtractivePipe",
+                    "PartDesign_AdditiveHelix",
+                    "PartDesign_SubtractiveHelix",
+                ],
+                "Modeling Tools",
+                "PartDesign_Body",
+            ),
+            # Multiple sketches
+            FilterWatcher(
+                "SELECT Sketcher::SketchObject COUNT 2..",
+                [
+                    "PartDesign_AdditiveLoft",
+                    "PartDesign_SubtractiveLoft",
+                    "PartDesign_AdditivePipe",
+                    "PartDesign_SubtractivePipe",
+                ],
+                "Modeling tools",
+                "PartDesign_Body",
+            ),
+            # SketchBased feature selected → suggest transformation
+            FilterWatcher(
+                "SELECT PartDesign::SketchBased",
+                [
+                    "PartDesign_Mirrored",
+                    "PartDesign_LinearPattern",
+                    "PartDesign_PolarPattern",
+                    "PartDesign_PointPattern",
+                ],
+                "Transformation Tools",
+                "PartDesign_LinearPattern",
+            ),
+        ]
+
+        Gui.Control.addTaskWatcher(watchers)
+
+
+Gui.addWorkbench(CorePartWorkbench())
+
+# Optionally load proprietary extensions (present only in proprietary builds).
+# The _pro_init module registers additional commands and injects them into the
+# workbench.  Its absence is not an error.
+try:
+    import _pro_init  # noqa: F401  # pylint: disable=import-error
+except ImportError:
+    pass

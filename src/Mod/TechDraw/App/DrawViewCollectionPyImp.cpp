@@ -21,6 +21,8 @@
  ***************************************************************************/
 
 
+#include <App/DocumentObject.h>
+
 #include "DrawViewCollection.h"
 // inclusion of the generated files (generated out of DrawViewCollectionPy.xml)
 #include <Mod/TechDraw/App/DrawViewCollectionPy.h>
@@ -64,6 +66,24 @@ PyObject* DrawViewCollectionPy::removeView(PyObject* args)
     int i = collect->removeView(view);
 
     return PyLong_FromLong(i);
+}
+
+
+PyObject* DrawViewCollectionPy::getViews(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+
+    // A collection keeps no list of its items: an item names the collection it belongs to, and
+    // the membership is derived from that side. This is the question a script used to answer by
+    // reading a stored Views property, and it is still a fair question to ask.
+    DrawViewCollection* collect = getDrawViewCollectionPtr();
+    Py::List items;
+    for (App::DocumentObject* item : collect->getViews()) {
+        items.append(Py::asObject(item->getPyObject()));
+    }
+    return Py::new_reference_to(items);
 }
 
 

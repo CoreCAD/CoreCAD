@@ -337,7 +337,7 @@ void TaskFemConstraintTransform::addToSelection()
     std::vector<App::DocumentObject*> ObjDispl = pcConstraint->RefDispl.getValues();
     std::vector<std::string> SubElemDispl = pcConstraint->RefDispl.getSubValues();
     for (auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }
@@ -370,7 +370,7 @@ void TaskFemConstraintTransform::addToSelection()
             }
             if (subName.substr(0, 4) == "Face") {
                 if (ui->rb_cylin->isChecked()) {
-                    Part::Feature* feat = static_cast<Part::Feature*>(obj);
+                    Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(obj);
                     TopoDS_Shape ref = feat->Shape.getShape().getSubShape(subName.c_str());
                     BRepAdaptor_Surface surface(TopoDS::Face(ref));
                     if (surface.GetType() != GeomAbs_Cylinder) {
@@ -463,7 +463,7 @@ void TaskFemConstraintTransform::removeFromSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
     std::vector<size_t> itemsToDel;
     for (const auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }

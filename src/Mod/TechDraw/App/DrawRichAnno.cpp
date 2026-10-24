@@ -53,36 +53,15 @@ DrawRichAnno::DrawRichAnno()
 
 void DrawRichAnno::Restore(Base::XMLReader& reader)
 {
-    bool originCenteredFound = false;
+    // Cruth: reading a block of properties is the reader's work, and this feature used to do it
+    // again -- without the type check the reader makes, without the dynamic properties, without
+    // the extensions, and without any handling of a value that would not read back. All it ever
+    // needed was what a file written before #24624 does NOT say: those annotations sat on their
+    // origin, so silence means centred. That is what this holds going into the read, and a file
+    // that states the property says so itself and overwrites it.
+    OriginCentered.setValue(true);
 
-    // Start parsing the properties block.
-    reader.readElement("Properties");
-    int propCount = reader.getAttribute<long>("Count");
-
-    for (int i = 0; i < propCount; i++) {
-        reader.readElement("Property");
-        const char* propName = reader.getAttribute<const char*>("name");
-
-        // The "checking" part:
-        if (strcmp(propName, "OriginCentered") == 0) {
-            originCenteredFound = true;
-        }
-
-        // The "restoring" part:
-        App::Property* prop = getPropertyByName(propName);
-        if (prop) {
-            prop->Restore(reader);  // Restore the value
-        }
-
-        reader.readEndElement("Property");
-    }
-
-    reader.readEndElement("Properties");
-
-    // Ensure backward compatibility: Old files have their anno centered on origin.
-    if (!originCenteredFound) {
-        OriginCentered.setValue(true);
-    }
+    DrawView::Restore(reader);
 }
 
 void DrawRichAnno::onChanged(const App::Property* prop)

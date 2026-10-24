@@ -57,6 +57,71 @@ TEST(PropertyLink, TestSetValues)
     EXPECT_EQ(sub[1], "Sub2");
 }
 
+/// A link into another document states the sub-elements it points at, and never how many. Both
+/// halves are here: the file carries no declared length, and a file that states one more than the
+/// writer produced -- which is what a merge that keeps both sides' additions leaves behind -- is
+/// read for everything it states.
+class PropertyXLinkSubTest: public ::testing::Test
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+
+    void SetUp() override
+    {
+        _docName = App::GetApplication().getUniqueDocumentName("xlinksub");
+        _doc = App::GetApplication().newDocument(_docName.c_str(), "testUser");
+        _target = _doc->addObject("App::DocumentObjectGroup", "Target");
+        _holder = _doc->addObject("App::DocumentObjectGroup", "Holder");
+    }
+
+    void TearDown() override
+    {
+        App::GetApplication().closeDocument(_docName.c_str());
+    }
+
+    std::string _docName;
+    App::Document* _doc {nullptr};
+    App::DocumentObject* _target {nullptr};
+    App::DocumentObject* _holder {nullptr};
+};
+
+TEST_F(PropertyXLinkSubTest, everySubStatedIsRead)
+{
+    auto* ref = freecad_cast<App::PropertyXLinkSub*>(
+        _holder->addDynamicProperty("App::PropertyXLinkSub", "Ref")
+    );
+    ASSERT_NE(ref, nullptr);
+    ref->setValue(_target, std::vector<std::string> {"Face1", "Face2"});
+
+    Base::StringWriter writer;
+    ref->Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<Property name='Ref'>\n";
+    xml += writer.getString();
+    xml += "</Property>\n";
+
+    EXPECT_EQ(xml.find("count=\""), std::string::npos) << "the link declares how many subs follow";
+
+    // What a merge that keeps both sides leaves behind: one more sub than either side wrote.
+    const std::string::size_type close = xml.find("</XLink>");
+    ASSERT_NE(close, std::string::npos);
+    xml.insert(close, "<Sub value=\"Face3\"/>\n");
+
+    auto* reread = freecad_cast<App::PropertyXLinkSub*>(
+        _holder->addDynamicProperty("App::PropertyXLinkSub", "Reread")
+    );
+    ASSERT_NE(reread, nullptr);
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("Property");
+    reread->Restore(reader);
+
+    EXPECT_EQ(reread->getSubValues(), std::vector<std::string>({"Face1", "Face2", "Face3"}))
+        << "a sub the file states was not read";
+}
+
 class PropertyFloatTest: public ::testing::Test
 {
 protected:

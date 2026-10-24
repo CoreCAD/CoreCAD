@@ -26,7 +26,8 @@
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
-#include <Mod/Material/App/PropertyMaterial.h>
+#include <App/PlacementExtension.h>
+#include <Mod/Part/App/MaterialExtension.h>
 #include <Mod/Part/PartGlobal.h>
 #include <Base/Bitmask.h>
 
@@ -35,6 +36,7 @@
 #include <Mod/Part/PartGlobal.h>
 
 #include "PropertyTopoShape.h"
+#include "ShapeExtension.h"
 
 
 class gp_Dir;
@@ -61,20 +63,36 @@ using ShapeOptions = Base::Flags<ShapeOption>;
 
 
 class PartFeaturePy;
+class Feature;
 
-/** Base class of all shape feature classes in FreeCAD
+/** Base class of all shape feature classes.
+ *
+ * ShapeFeature owns the geometry (Shape) and the shape machinery but authors
+ * no position of its own — Amendment 4's unplaced base. The placed concrete
+ * class Part::Feature (below) adds an authored placement via
+ * App::PlacementExtension; the derived PartDesign feature line derives from
+ * ShapeFeature directly and holds none. Everything asks getLocation() /
+ * getPlacement(), which answer identity when no placement is carried.
+ *
+ * ShapeFeature composes Part::ShapeExtension (Amendment 17, #79): carrying a
+ * shape is a capability, so the whole shape lineage gets it from the base and
+ * Part::hasShape(obj) is true for every shape feature — the faithful successor
+ * to the ~138 isDerivedFrom<ShapeFeature>() type tests the consumer migration
+ * will retire. The extension is stateless (no properties to serialize) and its
+ * getSubObject routing stays dormant here: ShapeFeature::getSubObject keeps the
+ * in-line resolution; only classes that override getSubObject to delegate to the
+ * App base (Box, Body) actually route the shape query through the extension.
  */
-class PartExport Feature: public App::GeoFeature
+class PartExport ShapeFeature: public App::GeoFeature, public Part::ShapeExtension
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Part::Feature);
+    PROPERTY_HEADER_WITH_OVERRIDE(Part::ShapeFeature);
 
 public:
     /// Constructor
-    Feature();
-    ~Feature() override;
+    ShapeFeature();
+    ~ShapeFeature() override;
 
     PropertyPartShape Shape;
-    Materials::PropertyMaterial ShapeMaterial;
 
     /** @name methods override feature */
     //@{
@@ -84,6 +102,39 @@ public:
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override;
     const App::PropertyComplexGeoData* getPropertyOfGeometry() const override;
+
+    /// The shape-source capability answering for the shape it carries: every subclass here
+    /// BUILDS its shape from the values and references it was given, while a plain feature is
+    /// the shape it was handed -- an import, a copy, a shape built in a script -- which nothing
+    /// in the document can produce again. That is why the answer is the exact type and not the
+    /// family, and why it is asked of the object rather than of the property (Amendment 18
+    /// Clause 18.2).
+    bool producesContentOf(const App::Property& prop) const override;
+
+    /// Cruth §4.6: does this feature's output stand as a part of its own -- a Body?
+    ///
+    /// Bodies are not user-managed objects: the user authors features, and a Body is the
+    /// system's accounting of which connected solids exist as a result. §4.6 says every
+    /// connected solid a feature produces that does not extend an existing chain spawns
+    /// one, which makes the honest default here `true` for anything producing a solid --
+    /// there is no such thing, in the model, as a solid belonging to no Body.
+    ///
+    /// It is `false` while that is being built, because flipping it for every shape
+    /// feature at once changes what the whole Part workbench produces. A feature opts in
+    /// by overriding, and when the last one has, this predicate goes away rather than
+    /// being inverted: the model has no room for a shape that opts out.
+    virtual bool spawnsBodyForOutput() const
+    {
+        return false;
+    }
+
+    /// A shape-carrying feature is Part-scoped geometry (ARCHITECTURE §7.1, Amendment 8):
+    /// only a Part document admits it; Assembly, Drawing, and Spreadsheet documents refuse
+    /// it at the admission door. Bodies and sketches narrow this to their own kind.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::Feature;
+    }
 
     PyObject* getPyObject() override;
 
@@ -132,9 +183,6 @@ public:
         bool transform,
         int depth
     ) const override;
-
-    App::Material getMaterialAppearance() const override;
-    void setMaterialAppearance(const App::Material& material) override;
 
     /** Convenience function to extract shape from fully qualified subname
      *
@@ -222,9 +270,6 @@ protected:
     void onChanged(const App::Property* prop) override;
     void onDocumentRestored() override;
 
-    void copyMaterial(Feature* feature);
-    void copyMaterial(App::DocumentObject* link);
-
     void registerElementCache(const std::string& prefix, PropertyPartShape* prop);
 
     /** Helper function to obtain mapped and indexed element name from a shape
@@ -259,7 +304,38 @@ private:
     std::vector<std::pair<std::string, PropertyPartShape*>> _elementCachePrefixMap;
 };
 
-class PartExport FilletBase: public Part::Feature
+/** A shape feature that also authors its own placement (Amendment 4).
+ *
+ * Kept under the historical type name "Part::Feature" so imported shapes and
+ * existing documents need no migration. It mixes App::PlacementExtension into
+ * the unplaced ShapeFeature base to carry an authored position; the ->Placement
+ * member access resolves to the extension's property. This is the placed
+ * concrete class used for primitives, imports and generic shape holders.
+ */
+/** A placed shape feature: geometry that authors a coordinate frame of its own.
+ *
+ * Part::Feature adds an authored placement (Amendment 4) to the shape lineage and
+ * says nothing else. In particular it does NOT carry the "is made of something"
+ * capability: a sketch is a Part::Feature too, and a sketch is made of nothing. Only
+ * the classes that can produce a solid compose Part::MaterialExtension, one by one,
+ * and a shape that is not one of them answers with the material of the part it
+ * belongs to (#121).
+ */
+class PartExport Feature: public ShapeFeature, public App::PlacementExtension
+{
+    PROPERTY_HEADER_WITH_OVERRIDE(Part::Feature);
+
+public:
+    Feature();
+    ~Feature() override;
+};
+
+/** Base of the dress-ups that round or cut back an edge of what they consume.
+ *
+ * Derived, not an anchor (Amendment 4): a fillet sits where its base sits, so
+ * it holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class PartExport FilletBase: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::FilletBase);
 
@@ -267,8 +343,20 @@ public:
     FilletBase();
 
     App::PropertyLink Base;
-    PropertyFilletEdges Edges;
     App::PropertyLinkSub EdgeLinks;
+
+    /** The per-edge measurements this operation holds.
+     *
+     * Declared by the operation rather than here, because the two numbers are not the same thing
+     * to both: a fillet holds radii and a chamfer holds distances along the two faces an edge
+     * joins. They share this class's work -- syncing the edge links, re-binding a reference --
+     * and not its vocabulary.
+     */
+    virtual PropertyFilletEdges& edgeMeasurements() = 0;
+    const PropertyFilletEdges& edgeMeasurements() const
+    {
+        return const_cast<FilletBase*>(this)->edgeMeasurements();
+    }
 
     short mustExecute() const override;
     App::DocumentObjectExecReturn* execute() override;
@@ -339,6 +427,18 @@ PartExport bool checkIntersection(
     const bool quick,
     const bool touch_is_intersection
 );
+
+/** Rebuild a shape's geometry at the position its location holds.
+ *
+ * OCC records a rigid move as a location beside the geometry rather than in it.
+ * A feature that authors no placement stores its shape at identity (Amendment 4),
+ * so such a location is dropped on the way into the Shape property and the result
+ * snaps back to the origin. A derived feature whose operation may leave the
+ * position in the location -- rather than baking it, as a boolean or a real scale
+ * does -- passes its result through here first. A shape already at identity is
+ * returned untouched.
+ */
+PartExport TopoDS_Shape bakeLocationIntoGeometry(const TopoDS_Shape& shape);
 
 }  // namespace Part
 

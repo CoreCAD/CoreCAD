@@ -1010,6 +1010,7 @@ public:
     {
         OverlayTitleBar* widget = new OverlayTitleBar(parent);
         widget->setObjectName(QStringLiteral("OverlayTitle"));
+        widget->setAttribute(Qt::WA_StyledBackground);
 
         QList<QAction*> actions;
         if (auto tabWidget = qobject_cast<OverlayTabWidget*>(parent)) {
@@ -1018,6 +1019,7 @@ public:
         else if (auto dockWidget = qobject_cast<QDockWidget*>(parent)) {
             const QDockWidget::DockWidgetFeatures features = dockWidget->features();
 
+            actions = dockWidget->actions();
             actions.append(&_actOverlay);
             if (features.testFlag(QDockWidget::DockWidgetFloatable)) {
                 actions.append(&_actFloat);
@@ -1031,6 +1033,9 @@ public:
         }
 
         widget->setTitleItem(OverlayTabWidget::prepareTitleWidget(widget, actions));
+        if (qobject_cast<QDockWidget*>(parent)) {
+            widget->layout()->setContentsMargins(8, 3, 4, 3);
+        }
         return widget;
     }
 

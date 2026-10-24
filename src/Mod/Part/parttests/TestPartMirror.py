@@ -42,7 +42,9 @@ class TestPartMirroringRegression(unittest.TestCase):
     """
 
     def setUp(self):
-        self.doc = App.newDocument("TestMirrorRegression")
+        # A Body needs the document-level world frame, which a Part document has and a
+        # plain one does not: a Body must not create the coordinate frame it sits in.
+        self.doc = App.newDocument("TestMirrorRegression", type="Part")
 
     def tearDown(self):
         App.closeDocument(self.doc.Name)
@@ -128,7 +130,7 @@ class TestPartMirroringRegression(unittest.TestCase):
         box.Length = 10
         box.Width = 10
         box.Height = 10
-        body.addObject(box)
+        body.addFeature(box)
         self.doc.recompute()
 
         # body shape should be at origin
@@ -187,7 +189,7 @@ class TestPartMirroringRegression(unittest.TestCase):
         box.Length = 10
         box.Width = 20
         box.Height = 5
-        body.addObject(box)
+        body.addFeature(box)
         self.doc.recompute()
 
         # link with translation and 90° rotation around Z

@@ -208,49 +208,44 @@ StartView::StartView(QWidget* parent)
 
 void StartView::configureNewFileButtons(QLayout* layout) const
 {
-    auto newEmptyFile = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Empty File"),
-         tr("Creates a new empty FreeCAD file"),
-         QLatin1String(":/icons/document-new.svg")}
-    ));
     auto openFile = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Open File"),
-         tr("Opens an existing CAD file or 3D model"),
-         QLatin1String(":/icons/document-open.svg")}
+        {tr("Open"), tr("Opens an existing file"), QLatin1String(":/icons/document-open.svg")}
     ));
-    auto partDesign = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Parametric Body"),
-         tr("Creates a body with the Part Design workbench"),
+    auto part = gsl::owner<NewFileButton*>(new NewFileButton(
+        {tr("New Part"),
+         tr("Makes a new part document"),
          QLatin1String(":/icons/PartDesignWorkbench.svg")}
     ));
     auto assembly = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("Assembly"),
-         tr("Creates an assembly project"),
+        {tr("New Assembly"),
+         tr("Makes a new assembly document"),
          QLatin1String(":/icons/AssemblyWorkbench.svg")}
     ));
-    auto draft = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("2D Draft"), tr("Creates a 2D Draft document"), QLatin1String(":/icons/DraftWorkbench.svg")}
+    auto drawing = gsl::owner<NewFileButton*>(new NewFileButton(
+        {tr("New Drawing"),
+         tr("Makes a new drawing document with one sheet"),
+         QString::fromStdString(
+             App::Application::getResourceDir() + "Mod/TechDraw/Resources/icons/preferences-techdraw.svg"
+         )}
     ));
-    auto arch = gsl::owner<NewFileButton*>(new NewFileButton(
-        {tr("BIM/Architecture"),
-         tr("Creates an architectural project"),
-         QLatin1String(":/icons/BIMWorkbench.svg")}
+    auto materialLibrary = gsl::owner<NewFileButton*>(new NewFileButton(
+        {tr("Material Library"),
+         tr("Adds and changes materials in the library"),
+         QLatin1String(":/icons/Material_Edit.svg")}
     ));
-
-    // TODO: Ensure all of the required WBs are actually available
-    layout->addWidget(partDesign);
+    layout->addWidget(part);
     layout->addWidget(assembly);
-    layout->addWidget(draft);
-    layout->addWidget(arch);
-    layout->addWidget(newEmptyFile);
+    layout->addWidget(drawing);
     layout->addWidget(openFile);
+    layout->addWidget(materialLibrary);
 
-    connect(newEmptyFile, &QPushButton::clicked, this, &StartView::newEmptyFile);
     connect(openFile, &QPushButton::clicked, this, &StartView::openExistingFile);
-    connect(partDesign, &QPushButton::clicked, this, &StartView::newPartDesignFile);
+    connect(part, &QPushButton::clicked, this, &StartView::newPartFile);
     connect(assembly, &QPushButton::clicked, this, &StartView::newAssemblyFile);
-    connect(draft, &QPushButton::clicked, this, &StartView::newDraftFile);
-    connect(arch, &QPushButton::clicked, this, &StartView::newArchFile);
+    connect(drawing, &QPushButton::clicked, this, &StartView::newDrawingFile);
+    connect(materialLibrary, &QPushButton::clicked, this, [] {
+        Gui::Application::Instance->commandManager().runCommandByName("Material_Edit");
+    });
 }
 
 void StartView::configureFileCardWidget(QListView* fileCardWidget)
@@ -302,17 +297,10 @@ void StartView::configureCustomFolderListWidget(QListView* customFolderListWidge
 }
 
 
-void StartView::newEmptyFile()
+void StartView::newPartFile()
 {
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
-    postStart(PostStartBehavior::switchWorkbench);
-}
-
-void StartView::newPartDesignFile()
-{
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
+    Gui::Application::Instance->commandManager().runCommandByName("Std_Part");
     Gui::Application::Instance->activateWorkbench("PartDesignWorkbench");
-    Gui::Application::Instance->commandManager().runCommandByName("PartDesign_Body");
     postStart(PostStartBehavior::doNotSwitchWorkbench);
 }
 
@@ -330,36 +318,13 @@ void StartView::openExistingFile()
 
 void StartView::newAssemblyFile()
 {
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
-    Gui::Application::Instance->activateWorkbench("AssemblyWorkbench");
-    Gui::Application::Instance->commandManager().runCommandByName("Assembly_CreateAssembly");
-    Gui::Application::Instance->commandManager().runCommandByName("Std_Refresh");
+    Gui::Application::Instance->commandManager().runCommandByName("Std_NewAssembly");
     postStart(PostStartBehavior::doNotSwitchWorkbench);
 }
 
-void StartView::newDraftFile()
+void StartView::newDrawingFile()
 {
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
-    Gui::Application::Instance->activateWorkbench("DraftWorkbench");
-    Gui::Application::Instance->commandManager().runCommandByName("Std_ViewTop");
-    postStart(PostStartBehavior::doNotSwitchWorkbench);
-}
-
-void StartView::newArchFile()
-{
-    Gui::Application::Instance->commandManager().runCommandByName("Std_New");
-    try {
-        Gui::Application::Instance->activateWorkbench("BIMWorkbench");
-    }
-    catch (...) {
-        Gui::Application::Instance->activateWorkbench("ArchWorkbench");
-    }
-
-    // Set the camera zoom level to 10 m, which is more appropriate for architectural projects
-    Gui::Command::doCommand(
-        Gui::Command::Gui,
-        "Gui.activeDocument().activeView().viewDefaultOrientation(None, 10000.0)"
-    );
+    Gui::Application::Instance->commandManager().runCommandByName("Std_NewDrawing");
     postStart(PostStartBehavior::doNotSwitchWorkbench);
 }
 

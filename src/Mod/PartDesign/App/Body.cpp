@@ -2,6 +2,7 @@
 
 /***************************************************************************
  *   Copyright (c) 2010 Juergen Riegel <FreeCAD@juergen-riegel.net>        *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -23,77 +24,216 @@
  ***************************************************************************/
 
 
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+#include <TopAbs_ShapeEnum.hxx>
+#include <TopoDS_Shape.hxx>
+
+#include <App/Datums.h>
 #include <App/Document.h>
-#include <App/VarSet.h>
+#include <App/MappedName.h>
 #include <App/Origin.h>
-#include <Base/Placement.h>
+#include <App/PropertyLinks.h>
+#include <App/VarSet.h>
+#include <Base/Color.h>
+#include <Base/Uuid.h>
+
+#include <Mod/Part/App/Part2DObject.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/TopoShape.h>
 
 #include "Body.h"
+#include "BodyChain.h"
 #include "BodyPy.h"
 #include "FeatureBase.h"
-#include "FeatureSketchBased.h"
-#include "FeatureSolid.h"
 #include "FeatureTransformed.h"
-#include "ShapeBinder.h"
 
 using namespace PartDesign;
 
 
 PROPERTY_SOURCE(PartDesign::Body, Part::BodyBase)
 
+namespace
+{
+// Blue, orange, green, purple, teal, magenta, gold, slate.
+constexpr std::array<std::array<float, 3>, 8> bodyPalette = {{
+    {0.30F, 0.55F, 0.90F},
+    {0.95F, 0.60F, 0.20F},
+    {0.40F, 0.75F, 0.40F},
+    {0.65F, 0.45F, 0.85F},
+    {0.25F, 0.70F, 0.70F},
+    {0.90F, 0.40F, 0.70F},
+    {0.85F, 0.75F, 0.25F},
+    {0.50F, 0.55F, 0.65F},
+}};
+
+Base::Color paletteColorFor(std::size_t index)
+{
+    const auto& rgb = bodyPalette[index % bodyPalette.size()];
+    return Base::Color(rgb[0], rgb[1], rgb[2], 1.0F);
+}
+
+// Counted by colour, not by number of Bodies: Bodies retire and respawn, so a count repeats.
+Base::Color leastUsedPaletteColor(const App::Document* doc, const PartDesign::Body* self)
+{
+    std::array<int, bodyPalette.size()> uses {};
+    for (auto* other : doc->getObjectsOfType<PartDesign::Body>()) {
+        if (other == self) {
+            continue;
+        }
+        const Base::Color color = other->Color.getValue();
+        for (std::size_t i = 0; i < bodyPalette.size(); ++i) {
+            if (color == paletteColorFor(i)) {
+                ++uses[i];
+                break;
+            }
+        }
+    }
+    const auto least = std::ranges::min_element(uses);
+    return paletteColorFor(static_cast<std::size_t>(least - uses.begin()));
+}
+
+// Points every link from @p obj to an origin plane, axis or point at the same one on @p origin.
+void relinkToOrigin(App::DocumentObject* obj, App::Origin* origin)
+{
+    if (!origin) {
+        return;
+    }
+    const auto onOrigin = [origin](App::DocumentObject* linked) -> App::DocumentObject* {
+        auto* datum = dynamic_cast<App::DatumElement*>(linked);
+        return datum && datum->isOriginFeature() ? origin->getDatumElement(datum->Role.getValue())
+                                                 : linked;
+    };
+
+    std::vector<App::Property*> props;
+    obj->getPropertyList(props);
+    for (App::Property* prop : props) {
+        if (auto* link = dynamic_cast<App::PropertyLink*>(prop)) {
+            if (auto* to = onOrigin(link->getValue()); to != link->getValue()) {
+                link->setValue(to);
+            }
+        }
+        else if (auto* list = dynamic_cast<App::PropertyLinkList*>(prop)) {
+            auto values = list->getValues();
+            std::ranges::transform(values, values.begin(), onOrigin);
+            if (values != list->getValues()) {
+                list->setValues(values);
+            }
+        }
+        else if (auto* sub = dynamic_cast<App::PropertyLinkSub*>(prop)) {
+            if (auto* to = onOrigin(sub->getValue()); to != sub->getValue()) {
+                sub->setValue(to, sub->getSubValues());
+            }
+        }
+        else if (auto* subList = dynamic_cast<App::PropertyLinkSubList*>(prop)) {
+            auto values = subList->getSubListValues();
+            bool changed = false;
+            for (auto& [linked, subs] : values) {
+                auto* to = onOrigin(linked);
+                changed = changed || to != linked;
+                linked = to;
+            }
+            if (changed) {
+                subList->setSubListValues(values);
+            }
+        }
+    }
+}
+
+Part::TopoShape solidOfCopy(const App::DocumentObject* step, const Part::TopoShape& shape, long copy)
+{
+    auto* pattern = freecad_cast<const PartDesign::Transformed*>(step);
+    const int index = pattern ? pattern->solidIndexOfInstance(copy) : 0;
+    return index > 0 ? shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true)
+                     : Part::TopoShape();
+}
+
+Part::TopoShape solidWithComponentKey(
+    const App::DocumentObject* tip,
+    const Part::TopoShape& shape,
+    const std::string& key
+)
+{
+    const auto count = static_cast<int>(shape.countSubShapes(TopAbs_SOLID));
+    for (int i = 1; i <= count; ++i) {
+        if (Body::componentKeyOfSolid(tip, shape, i) == key) {
+            return shape.getSubTopoShape(TopAbs_SOLID, i, /*silent*/ true);
+        }
+    }
+    return {};
+}
+
+// Builds @p feature on copy @p copy of @p base; the steps that were there now build on it.
+// Returns how many moved.
+std::size_t spliceAfter(PartDesign::Feature* feature, App::DocumentObject* base, long copy)
+{
+    auto steps = chain::nextSteps(base, copy);
+    std::erase(steps, feature);
+    feature->BaseFeature.setValue(base);
+    feature->BaseInstance.setValue(copy);
+    for (auto* step : steps) {
+        step->BaseFeature.setValue(feature);
+        step->BaseInstance.setValue(chain::WholeOutput);
+    }
+    return steps.size();
+}
+
+// Steps on the whole output move to the feature's base. A step on one copy stays: the copy
+// goes with the feature, so that step fails and says why.
+void unsplice(App::DocumentObject* feature)
+{
+    auto* pd = freecad_cast<PartDesign::Feature*>(feature);
+    App::DocumentObject* base = pd ? pd->BaseFeature.getValue() : nullptr;
+    const long copy = pd ? pd->BaseInstance.getValue() : chain::WholeOutput;
+    for (auto* step : chain::nextSteps(feature, chain::WholeOutput)) {
+        step->BaseInstance.setValue(copy);
+        step->BaseFeature.setValue(base);
+        step->onBaseFeatureRerouted(feature, base);
+    }
+}
+}  // namespace
+
 Body::Body()
 {
-    ADD_PROPERTY_TYPE(AllowCompound, (true), "Base", App::Prop_None, "Allow multiple solids in Body");
+    ADD_PROPERTY_TYPE(Color, (paletteColorFor(0)), "Base", App::Prop_None, "Body identity colour");
+    ADD_PROPERTY_TYPE(
+        TipComponentId,
+        (""),
+        "Base",
+        App::Prop_None,
+        "The solid of the Tip this Body stands for; empty for the whole Tip"
+    );
+    // Restored over on load, so a Body keeps its identity for life.
+    Base::Uuid bodyId;
+    ADD_PROPERTY_TYPE(Uid, (bodyId), "Base", App::Prop_ReadOnly, "Durable body identity");
+    ADD_PROPERTY_TYPE(
+        AcknowledgedOverlaps,
+        (),
+        "Base",
+        static_cast<App::PropertyType>(App::Prop_Hidden | App::Prop_NoRecompute),
+        "Uids of Bodies whose overlap with this one the user acknowledged"
+    );
 
-    _GroupTouched.setStatus(App::Property::Output, true);
+    // Derived from the Tip on every recompute and on load, never authored or saved.
+    Shape.setStatus(App::Property::Transient, true);
+    Shape.setStatus(App::Property::ReadOnly, true);
 }
-
-/*
-// Note: The following code will catch Python Document::removeObject() modifications. If the object
-removed is
-// a member of the Body::Group, then it will be automatically removed from the Group property which
-triggers the
-// following two methods
-// But since we require the Python user to call both Document::addObject() and Body::addObject(), we
-should
-// also require calling both Document::removeObject and Body::removeFeature() in order to be
-consistent void Body::onBeforeChange(const App::Property *prop)
-{
-    // Remember the feature before the current Tip. If the Tip is already at the first feature,
-remember the next feature if (prop == &Group) { std::vector<App::DocumentObject*> features =
-Group.getValues(); if (features.empty()) { rememberTip = NULL; } else {
-            std::vector<App::DocumentObject*>::iterator it = std::find(features.begin(),
-features.end(), Tip.getValue()); if (it == features.begin()) { it++; if (it == features.end())
-rememberTip = NULL; else rememberTip = *it; } else { it--; rememberTip = *it;
-            }
-        }
-    }
-
-    return Part::Feature::onBeforeChange(prop);
-}
-
-void Body::onChanged(const App::Property *prop)
-{
-    if (prop == &Group) {
-        std::vector<App::DocumentObject*> features = Group.getValues();
-        if (features.empty()) {
-            Tip.setValue(NULL);
-        } else {
-            std::vector<App::DocumentObject*>::iterator it = std::find(features.begin(),
-features.end(), Tip.getValue()); if (it == features.end()) {
-                // Tip feature was deleted
-                Tip.setValue(rememberTip);
-            }
-        }
-    }
-
-    return Part::Feature::onChanged(prop);
-}
-*/
 
 short Body::mustExecute() const
 {
     if (Tip.isTouched()) {
+        return 1;
+    }
+    // A step handed its geometry from the build cache is not recomputed, so nothing else would
+    // fill the mirror of a body whose steps all came back that way.
+    const auto* shown = freecad_cast<Part::ShapeFeature*>(shownStep());
+    if (Shape.getShape().isNull() && shown && !shown->Shape.getShape().isNull()) {
         return 1;
     }
     return Part::BodyBase::mustExecute();
@@ -101,76 +241,24 @@ short Body::mustExecute() const
 
 App::DocumentObject* Body::getPrevSolidFeature(App::DocumentObject* start)
 {
-    if (!start) {  // default to tip
+    if (!start) {
         start = Tip.getValue();
     }
-
-    if (!start) {  // No Tip
+    if (!start) {
         return nullptr;
     }
-
-    if (!hasObject(start)) {
-        return nullptr;
-    }
-
-    const std::vector<App::DocumentObject*>& features = Group.getValues();
-
-    auto startIt = std::find(features.rbegin(), features.rend(), start);
-    if (startIt == features.rend()) {  // object not found
-        return nullptr;
-    }
-
-    auto rvIt = std::find_if(startIt + 1, features.rend(), isSolidFeature);
-    if (rvIt != features.rend()) {  // the solid found in model list
-        return *rvIt;
+    std::set<App::DocumentObject*> seen {start};
+    for (auto* pd = freecad_cast<PartDesign::Feature*>(start); pd;) {
+        App::DocumentObject* prev = pd->BaseFeature.getValue();
+        if (!prev || !seen.insert(prev).second) {
+            return nullptr;
+        }
+        if (isSolidFeature(prev)) {
+            return prev;
+        }
+        pd = freecad_cast<PartDesign::Feature*>(prev);
     }
     return nullptr;
-}
-
-App::DocumentObject* Body::getNextSolidFeature(App::DocumentObject* start)
-{
-    if (!start) {  // default to tip
-        start = Tip.getValue();
-    }
-
-    if (!start || !hasObject(start)) {  // no or faulty tip
-        return nullptr;
-    }
-
-    const std::vector<App::DocumentObject*>& features = Group.getValues();
-    std::vector<App::DocumentObject*>::const_iterator startIt;
-
-    startIt = std::find(features.begin(), features.end(), start);
-    if (startIt == features.end()) {  // object not found
-        return nullptr;
-    }
-
-    startIt++;
-    if (startIt == features.end()) {  // features list has only one element
-        return nullptr;
-    }
-
-    auto rvIt = std::find_if(startIt, features.end(), isSolidFeature);
-    if (rvIt != features.end()) {  // the solid found in model list
-        return *rvIt;
-    }
-    return nullptr;
-}
-
-bool Body::isAfterInsertPoint(App::DocumentObject* feature)
-{
-    App::DocumentObject* nextSolid = getNextSolidFeature();
-    assert(feature);
-
-    if (feature == nextSolid) {
-        return true;
-    }
-    else if (!nextSolid) {  // the tip is last solid, we can't be placed after it
-        return false;
-    }
-    else {
-        return isAfter(feature, nextSolid);
-    }
 }
 
 bool Body::isSolidFeature(const App::DocumentObject* obj)
@@ -178,19 +266,17 @@ bool Body::isSolidFeature(const App::DocumentObject* obj)
     if (!obj) {
         return false;
     }
-
     if (obj->isDerivedFrom<PartDesign::Feature>()) {
         if (PartDesign::Feature::isDatum(obj)) {
-            // Datum objects are not solid
             return false;
-        }
-        if (auto transFeature = freecad_cast<PartDesign::Transformed*>(obj)) {
-            // Transformed Features inside a MultiTransform are not solid features
-            return !transFeature->isMultiTransformChild();
         }
         return true;
     }
-    return false;  // DeepSOIC: work-in-progress?
+    // An import: it stands as a part of its own and can only start a chain.
+    if (const auto* shapeFeature = freecad_cast<const Part::ShapeFeature*>(obj)) {
+        return shapeFeature->spawnsBodyForOutput();
+    }
+    return false;
 }
 
 bool Body::isAllowed(const App::DocumentObject* obj)
@@ -198,321 +284,281 @@ bool Body::isAllowed(const App::DocumentObject* obj)
     if (!obj) {
         return false;
     }
-
-    // TODO: Should we introduce a PartDesign::FeaturePython class? This should then also return
-    // true for isSolidFeature()
-    return (
-        obj->isDerivedFrom<PartDesign::Feature>() || obj->isDerivedFrom<Part::Datum>() ||
-        // TODO Shouldn't we replace it with Sketcher::SketchObject? (2015-08-13, Fat-Zer)
-        obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<PartDesign::ShapeBinder>()
-        || obj->isDerivedFrom<PartDesign::SubShapeBinder>() ||
-        // TODO Why this lines was here? why should we allow anything of those? (2015-08-13,
-        // Fat-Zer) obj->isDerivedFrom<Part::FeaturePython>() // trouble with this line on Windows!?
-        // Linker fails to find getClassTypeId() of the Part::FeaturePython...
-        // obj->isDerivedFrom<Part::Feature>()
-        // allow VarSets for parameterization
-        obj->isDerivedFrom<App::VarSet>() || obj->isDerivedFrom<App::DatumElement>()
-        || obj->isDerivedFrom<App::LocalCoordinateSystem>()
-    );
+    return isSolidFeature(obj) || obj->isDerivedFrom<PartDesign::Feature>()
+        || obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<App::DatumElement>()
+        || obj->isDerivedFrom<App::LocalCoordinateSystem>() || obj->isDerivedFrom<App::VarSet>();
 }
 
-
-Body* Body::findBodyOf(const App::DocumentObject* feature)
+void Body::refuseOffChain(const App::DocumentObject* obj)
 {
-    if (!feature) {
-        return nullptr;
+    if (!isSolidFeature(obj)) {
+        throw Base::ValueError(
+            "Body: only a step that builds the solid joins a body; a sketch, datum or other "
+            "object belongs to the document"
+        );
     }
-
-    return static_cast<Body*>(BodyBase::findBodyOf(feature));
 }
 
-
-std::vector<App::DocumentObject*> Body::addObject(App::DocumentObject* feature)
+std::vector<App::DocumentObject*> Body::addFeature(App::DocumentObject* feature)
 {
-    if (!isAllowed(feature)) {
-        throw Base::ValueError("Body: object is not allowed");
-    }
+    refuseOffChain(feature);
+    relinkToOrigin(feature, getOrigin());
+    const long copy = tipCopy();
 
-    // TODO: features should not add all links
-
-    // only one group per object. If it is in a body the single feature will be removed
-    auto* group = App::GroupExtension::getGroupOfObject(feature);
-    if (group && group != getExtendedObject()) {
-        group->getExtensionByType<GroupExtension>()->removeObject(feature);
-    }
-
-
-    insertObject(feature, getNextSolidFeature(), /*after = */ false);
-    // Move the Tip if we added a solid
-    if (isSolidFeature(feature)) {
+    if (isSolidFeature(feature) && !feature->isDerivedFrom<PartDesign::Feature>()) {
+        // It has no base to point at the old Tip, so splicing it in would drop the chain.
+        if (Tip.getValue()) {
+            throw Base::ValueError(
+                "Body: this feature has no base of its own, so it can only start a body's chain"
+            );
+        }
         Tip.setValue(feature);
     }
-
-    if (feature->Visibility.getValue() && feature->isDerivedFrom<PartDesign::Feature>()) {
-        for (auto obj : Group.getValues()) {
-            if (obj->Visibility.getValue() && obj != feature
-                && obj->isDerivedFrom<PartDesign::Feature>()) {
-                obj->Visibility.setValue(false);
-            }
-        }
+    else if (isSolidFeature(feature) && Tip.getValue() && !shownStep()) {
+        insertAtStart(static_cast<PartDesign::Feature*>(feature), Tip.getValue());
     }
-
-    std::vector<App::DocumentObject*> result = {feature};
-    return result;
+    else if (isSolidFeature(feature) && stopStep()) {
+        insertAtMarker(static_cast<PartDesign::Feature*>(feature));
+    }
+    else if (isSolidFeature(feature)) {
+        appendAtTip(static_cast<PartDesign::Feature*>(feature), copy);
+    }
+    return {feature};
 }
 
-std::vector<App::DocumentObject*> Body::addObjects(std::vector<App::DocumentObject*> objs)
+long Body::tipCopy() const
 {
-
-    for (auto obj : objs) {
-        addObject(obj);
-    }
-
-    return objs;
+    auto* pattern = freecad_cast<PartDesign::Transformed*>(Tip.getValue());
+    const std::string cid = TipComponentId.getStrValue();
+    return pattern && !cid.empty() ? pattern->ordinalOfComponent(cid) : chain::WholeOutput;
 }
 
+void Body::appendAtTip(PartDesign::Feature* feature, long copy)
+{
+    App::DocumentObject* prevTip = Tip.getValue();
+    spliceAfter(feature, prevTip, copy);
+    if (copy >= 0) {
+        TipComponentId.setValue("");  // the new Tip's whole output is that one copy
+    }
+    Tip.setValue(feature);
+    if (prevTip && prevTip->isDerivedFrom<PartDesign::Feature>() && prevTip->Visibility.getValue()) {
+        prevTip->Visibility.setValue(false);
+    }
+}
+
+PartDesign::Feature* Body::stepAfterMarker() const
+{
+    const auto solids = ownSolids();
+    const auto marker = std::ranges::find(solids, stopStep());
+    if (marker == solids.end() || marker + 1 == solids.end()) {
+        return nullptr;
+    }
+    return freecad_cast<PartDesign::Feature*>(*(marker + 1));
+}
+
+// The feature becomes the root that the old root of @p from's chain builds on.
+void Body::insertAtStart(PartDesign::Feature* feature, App::DocumentObject* from)
+{
+    App::DocumentObject* root = from;
+    std::set<App::DocumentObject*> seen;
+    for (auto* cur = freecad_cast<PartDesign::Feature*>(root);
+         cur && cur->BaseFeature.getValue() && seen.insert(cur).second;
+         cur = freecad_cast<PartDesign::Feature*>(root)) {
+        root = cur->BaseFeature.getValue();
+    }
+    feature->BaseFeature.setValue(nullptr);
+    feature->BaseInstance.setValue(chain::WholeOutput);
+    if (auto* rootPd = freecad_cast<PartDesign::Feature*>(root)) {
+        rootPd->BaseFeature.setValue(feature);
+    }
+    else {
+        Tip.setValue(feature);
+    }
+}
+
+// Only the step on this Body's way moves: another Body may fork from the marker too.
+void Body::insertAtMarker(PartDesign::Feature* feature)
+{
+    PartDesign::Feature* next = stepAfterMarker();
+    if (!next) {
+        throw Base::RuntimeError("Body: the roll-back marker is not on this body's chain");
+    }
+    feature->BaseFeature.setValue(stopStep());
+    feature->BaseInstance.setValue(next->BaseInstance.getValue());
+    next->BaseFeature.setValue(feature);
+    next->BaseInstance.setValue(chain::WholeOutput);
+}
+
+std::vector<App::DocumentObject*> Body::addFeatures(std::vector<App::DocumentObject*> features)
+{
+    for (auto* feature : features) {
+        addFeature(feature);
+    }
+    return features;
+}
 
 void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after)
 {
-    if (target && !hasObject(target)) {
+    if (target && (!target->isDerivedFrom<PartDesign::Feature>() || !backsBody(target, this))) {
         throw Base::ValueError(
             "Body: the feature we should insert relative to is not part of that body"
         );
     }
+    refuseOffChain(feature);
+    relinkToOrigin(feature, getOrigin());
 
-    // ensure that all origin links are ok
-    relinkToOrigin(feature);
-
-    std::vector<App::DocumentObject*> model = Group.getValues();
-    std::vector<App::DocumentObject*>::iterator insertInto;
-
-    // Find out the position there to insert the feature
-    if (!target) {
-        if (after) {
-            insertInto = model.begin();
+    auto* pd = static_cast<PartDesign::Feature*>(feature);
+    auto* targetPd = freecad_cast<PartDesign::Feature*>(target);
+    if (target && after) {
+        if (spliceAfter(pd, target, chain::WholeOutput) == 0) {
+            Tip.setValue(feature);
         }
-        else {
-            insertInto = model.end();
-        }
+    }
+    else if (targetPd && targetPd->BaseFeature.getValue()) {
+        // On the target's own base and copy, so the target builds on it.
+        spliceAfter(pd, targetPd->BaseFeature.getValue(), targetPd->BaseInstance.getValue());
+    }
+    else if (target || after || (Tip.getValue() && !shownStep())) {
+        insertAtStart(pd, target ? target : Tip.getValue());
+    }
+    else if (stopStep()) {
+        insertAtMarker(pd);
     }
     else {
-        std::vector<App::DocumentObject*>::iterator targetIt
-            = std::find(model.begin(), model.end(), target);
-        assert(targetIt != model.end());
-        if (after) {
-            insertInto = targetIt + 1;
-        }
-        else {
-            insertInto = targetIt;
-        }
+        appendAtTip(pd, tipCopy());
     }
-
-    // Insert the new feature after the given
-    model.insert(insertInto, feature);
-
-    Group.setValues(model);
-
-    if (feature->isDerivedFrom<PartDesign::Feature>()) {
-        static_cast<PartDesign::Feature*>(feature)->_Body.setValue(this);
-    }
-
-    // Set the BaseFeature property
-    setBaseProperty(feature);
 }
 
-void Body::setBaseProperty(App::DocumentObject* feature)
+// Call before the feature leaves the document.
+std::vector<App::DocumentObject*> Body::removeFeature(App::DocumentObject* feature)
 {
-    if (Body::isSolidFeature(feature)) {
-        // Set BaseFeature property to previous feature (this might be the Tip feature)
-        App::DocumentObject* prevSolidFeature = getPrevSolidFeature(feature);
-        // NULL is ok here, it just means we made the current one fiature the base solid
-        static_cast<PartDesign::Feature*>(feature)->BaseFeature.setValue(prevSolidFeature);
+    auto* pd = freecad_cast<PartDesign::Feature*>(feature);
+    const auto steps = chain::nextSteps(feature, chain::WholeOutput);
+    App::DocumentObject* base = pd ? pd->BaseFeature.getValue() : nullptr;
+    App::DocumentObject* const retreatTo = base ? base : (steps.empty() ? nullptr : steps.front());
+    unsplice(feature);
 
-        // Reroute the next solid feature's BaseFeature property to this feature
-        App::DocumentObject* nextSolidFeature = getNextSolidFeature(feature);
-        if (nextSolidFeature) {
-            assert(nextSolidFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId()));
-            static_cast<PartDesign::Feature*>(nextSolidFeature)->BaseFeature.setValue(feature);
-        }
+    retreatTippedBodies(feature, retreatTo);
+
+    // Retire an emptied Body. removeObject can destroy `this`, so it must be the last action.
+    App::Document* doc = getDocument();
+    const char* name = getNameInDocument();
+    if (!Tip.getValue() && doc && name) {
+        const std::string bodyName = name;
+        doc->removeObject(bodyName.c_str());
     }
+    return {feature};
 }
 
-std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* feature)
+void Body::removeFeatures(const std::vector<App::DocumentObject*>& features)
 {
-    // This method must be called BEFORE the feature is removed from the Document!
-
-    App::DocumentObject* nextSolidFeature = getNextSolidFeature(feature);
-    App::DocumentObject* prevSolidFeature = getPrevSolidFeature(feature);
-
-    // It's ok to remove the first solid feature, that just mean the next feature become the base one
-
-    if (nextSolidFeature && nextSolidFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
-        auto* nextPD = static_cast<PartDesign::Feature*>(nextSolidFeature);
-        // Check if the next feature is pointing to the one being deleted
-        if (nextPD->BaseFeature.getValue() == feature) {
-            nextPD->BaseFeature.setValue(prevSolidFeature);
-        }
+    for (auto* feature : features) {
+        removeFeature(feature);
     }
-
-    std::vector<App::DocumentObject*> model = Group.getValues();
-    const auto it = std::ranges::find(model, feature);
-
-    // Adjust Tip feature if it is pointing to the deleted object
-    if (Tip.getValue() == feature) {
-        if (prevSolidFeature) {
-            Tip.setValue(prevSolidFeature);
-        }
-        else {
-            Tip.setValue(nextSolidFeature);
-        }
-    }
-
-    // Erase feature from Group
-    if (it != model.end()) {
-        model.erase(it);
-        Group.setValues(model);
-    }
-    std::vector<App::DocumentObject*> result = {feature};
-    return result;
 }
-
 
 App::DocumentObjectExecReturn* Body::execute()
 {
+    copier.reset();
     Part::BodyBase::execute();
-    /*
-    Base::Console().error("Body '%s':\n", getNameInDocument());
-    App::DocumentObject* tip = Tip.getValue();
-    Base::Console().error("   Tip: %s\n", (tip == NULL) ? "None" : tip->getNameInDocument());
-    std::vector<App::DocumentObject*> model = Group.getValues();
-    Base::Console().error("   Group:\n");
-    for (std::vector<App::DocumentObject*>::const_iterator m = model.begin(); m != model.end(); m++)
-    { if (*m == NULL) continue; Base::Console().error("      %s", (*m)->getNameInDocument()); if
-    (Body::isSolidFeature(*m)) { App::DocumentObject* baseFeature =
-    static_cast<PartDesign::Feature*>(*m)->BaseFeature.getValue(); Base::Console().error(", Base:
-    %s\n", baseFeature == NULL ? "None" : baseFeature->getNameInDocument()); } else {
-            Base::Console().error("\n");
-        }
-    }
-    */
 
     App::DocumentObject* tip = Tip.getValue();
-
-    Part::TopoShape tipShape;
-    if (tip) {
-        if (!tip->isDerivedFrom<PartDesign::Feature>()) {
-            return new App::DocumentObjectExecReturn(
-                QT_TRANSLATE_NOOP("Exception", "Linked object is not a PartDesign feature")
-            );
-        }
-
-        // get the shape of the tip
-        tipShape = static_cast<Part::Feature*>(tip)->Shape.getShape();
-
-        if (tipShape.getShape().IsNull()) {
-            return new App::DocumentObjectExecReturn(
-                QT_TRANSLATE_NOOP("Exception", "Tip shape is empty")
-            );
-        }
-
-        // We should hide here the transformation of the baseFeature
-        tipShape.transformShape(tipShape.getTransform(), true);
+    if (!tip) {
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
+            "Exception",
+            "A Body must have at least one feature; empty bodies are not allowed"
+        ));
     }
-    else {
-        tipShape = Part::TopoShape();
+    if (!isSolidFeature(tip)) {
+        return new App::DocumentObjectExecReturn(
+            QT_TRANSLATE_NOOP("Exception", "Linked object is not a solid feature")
+        );
     }
-
-    Shape.setValue(tipShape);
+    // Every step past the marker: the Body is not made yet, so there is nothing to show.
+    auto* shown = static_cast<Part::ShapeFeature*>(shownStep());
+    if (!shown) {
+        return App::DocumentObject::StdReturn;
+    }
+    // Only the shown step must have a shape; steps past the marker may not have one yet.
+    if (shown->Shape.getShape().isNull()) {
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Tip shape is empty"));
+    }
+    // Empty here means this Body's copy is gone: the reconciler retires it after this
+    // recompute, so keep the last good shape rather than report an error.
+    Part::TopoShape shape = shownShape();
+    if (!shape.isNull()) {
+        Shape.setValue(shape);
+    }
     return App::DocumentObject::StdReturn;
-}
-
-void Body::onSettingDocument()
-{
-
-    if (connection.connected()) {
-        connection.disconnect();
-    }
-
-    Part::BodyBase::onSettingDocument();
 }
 
 void Body::onChanged(const App::Property* prop)
 {
-    // we neither load a project nor perform undo/redo
-    if (!this->isRestoring() && this->getDocument()
-        && !this->getDocument()->isPerformingTransaction()) {
-        if (prop == &BaseFeature) {
-            FeatureBase* bf = nullptr;
-            auto first = Group.getValues().empty() ? nullptr : Group.getValues().front();
+    if (prop == &Tip || prop == &TipComponentId || prop == &Shape) {
+        copier.reset();
+    }
+    const bool userEdit = !isRestoring() && getDocument()
+        && !getDocument()->isPerformingTransaction();
+    if (userEdit && prop == &BaseFeature) {
+        // The chain starts with a FeatureBase that carries this Body's BaseFeature.
+        const auto solids = ownSolids();
+        App::DocumentObject* first = solids.empty()
+                || !solids.front()->isDerivedFrom<PartDesign::Feature>()
+            ? nullptr
+            : solids.front();
 
-            if (BaseFeature.getValue()) {
-                // setup the FeatureBase if needed
-                if (!first || !first->isDerivedFrom<FeatureBase>()) {
-                    bf = getDocument()->addObject<FeatureBase>("BaseFeature");
-                    insertObject(bf, first, false);
-
-                    if (!Tip.getValue()) {
-                        Tip.setValue(bf);
-                    }
-                }
-                else {
-                    bf = static_cast<FeatureBase*>(first);
-                }
-            }
-
-            if (bf && (bf->BaseFeature.getValue() != BaseFeature.getValue())) {
-                bf->BaseFeature.setValue(BaseFeature.getValue());
-            }
-        }
-        else if (prop == &Group) {
-            // if the FeatureBase was deleted we set the BaseFeature link to nullptr
-            if (BaseFeature.getValue()
-                && (Group.getValues().empty()
-                    || !Group.getValues().front()->isDerivedFrom<FeatureBase>())) {
-                BaseFeature.setValue(nullptr);
-            }
-        }
-        else if (prop == &AllowCompound) {
-            // As disallowing compounds can break the model we need to recompute the whole tree.
-            // This will inform user about first place where there is more than one solid.
-            // On allowing compounds we must also recompute the entire feature tree
-            for (auto feature : getFullModel()) {
-                feature->enforceRecompute();
-            }
-        }
-        else if (prop == &ShapeMaterial) {
-            std::vector<App::DocumentObject*> features = Group.getValues();
-            if (!features.empty()) {
-                for (auto it : features) {
-                    auto feature = dynamic_cast<Part::Feature*>(it);
-                    if (feature) {
-                        if (feature->ShapeMaterial.getValue().getUUID()
-                            != ShapeMaterial.getValue().getUUID()) {
-                            feature->ShapeMaterial.setValue(ShapeMaterial.getValue());
-                        }
-                    }
+        FeatureBase* featureBase = nullptr;
+        if (BaseFeature.getValue()) {
+            featureBase = freecad_cast<FeatureBase*>(first);
+            if (!featureBase) {
+                featureBase = getDocument()->addObject<FeatureBase>("BaseFeature");
+                insertObject(featureBase, first, false);
+                if (!Tip.getValue()) {
+                    Tip.setValue(featureBase);
                 }
             }
+        }
+        if (featureBase && featureBase->BaseFeature.getValue() != BaseFeature.getValue()) {
+            featureBase->BaseFeature.setValue(BaseFeature.getValue());
         }
     }
-
     Part::BodyBase::onChanged(prop);
+}
+
+App::Origin* Body::findDocumentOrigin(App::Document* doc)
+{
+    if (!doc) {
+        return nullptr;
+    }
+    const auto origins = doc->getObjectsOfType<App::Origin>();
+    return origins.empty() ? nullptr : origins.front();
+}
+
+App::Origin* Body::requireDocumentOrigin(App::Document* doc)
+{
+    if (App::Origin* origin = findDocumentOrigin(doc)) {
+        return origin;
+    }
+    // The document owns the world frame; a Body must never create one.
+    throw Base::RuntimeError(
+        "PartDesign Body requires a document-level world frame (App::Origin), but the "
+        "document has none. Create the Body in a Part document "
+        "(App.newDocument(type='Part')); a Body must not create the coordinate frame."
+    );
 }
 
 void Body::setupObject()
 {
     Part::BodyBase::setupObject();
-}
-
-void Body::unsetupObject()
-{
-    Part::BodyBase::unsetupObject();
+    getOrigin();  // refuse a document without a world frame
+    if (auto* doc = getDocument()) {
+        Color.setValue(leastUsedPaletteColor(doc, this));
+    }
 }
 
 PyObject* Body::getPyObject()
 {
     if (PythonObject.is(Py::_None())) {
-        // ref counter is set to 1
         PythonObject = Py::Object(new BodyPy(this), true);
     }
     return Py::new_reference_to(PythonObject);
@@ -526,6 +572,141 @@ std::vector<std::string> Body::getSubObjects(int reason) const
     return {};
 }
 
+PartDesign::Feature* Body::findOwnedFeature(const std::string& name) const
+{
+    App::Document* doc = getDocument();
+    if (!doc || name.empty()) {
+        return nullptr;
+    }
+    const bool byLabel = name[0] == '$';
+    const std::string key = byLabel ? name.substr(1) : name;
+    for (auto* feat : doc->getObjectsOfType<PartDesign::Feature>()) {
+        const char* fname = feat->getNameInDocument();
+        if ((byLabel ? (key == feat->Label.getStrValue()) : (fname && key == fname))
+            && backsBody(feat, this)) {
+            return feat;
+        }
+    }
+    return nullptr;
+}
+
+App::DocumentObject* Body::shownStep() const
+{
+    App::Document* doc = getDocument();
+    if (!doc || doc->RollbackMarker.getStrValue().empty()) {
+        return Tip.getValue();
+    }
+    App::DocumentObject* shown = nullptr;
+    for (auto* step : ownSolids()) {
+        if (doc->isRolledBackPast(step)) {
+            break;
+        }
+        shown = step;
+    }
+    return shown;
+}
+
+App::DocumentObject* Body::stopStep() const
+{
+    App::DocumentObject* shown = shownStep();
+    return shown != Tip.getValue() ? shown : nullptr;
+}
+
+bool Body::isRolledBackPast(const App::DocumentObject* step)
+{
+    return step && step->getDocument() && step->getDocument()->isRolledBackPast(step);
+}
+
+bool Body::isHeldBack(const App::DocumentObject* obj)
+{
+    if (const auto* body = freecad_cast<const Body*>(obj)) {
+        return body->Tip.getValue() && !body->shownStep();
+    }
+    return isRolledBackPast(obj);
+}
+
+// The marker stands for the copy the next step builds on; the Tip for its component id.
+Part::TopoShape Body::standInSolid(
+    const App::DocumentObject* step,
+    const Part::TopoShape& shape,
+    bool& whole
+) const
+{
+    if (step && step == stopStep()) {
+        const PartDesign::Feature* next = stepAfterMarker();
+        const long copy = next ? next->BaseInstance.getValue() : chain::WholeOutput;
+        whole = copy < 0;
+        return whole ? Part::TopoShape() : solidOfCopy(step, shape, copy);
+    }
+    const std::string cid = TipComponentId.getStrValue();
+    whole = cid.empty();
+    return whole ? Part::TopoShape() : solidWithComponentKey(step, shape, cid);
+}
+
+Part::TopoShape Body::placedShapeOf(const App::DocumentObject* step) const
+{
+    if (!step || !isSolidFeature(step)) {
+        return {};
+    }
+    Part::TopoShape shape = static_cast<const Part::ShapeFeature*>(step)->Shape.getShape();
+    if (shape.isNull()) {
+        return {};
+    }
+    bool whole = true;
+    Part::TopoShape solid = standInSolid(step, shape, whole);
+    if (!whole) {
+        if (solid.isNull()) {
+            return {};
+        }
+        // A pattern keeps each copy's offset in its placement; bake it into the geometry.
+        solid.transformShape(Base::Matrix4D(), true);
+        shape = solid;
+    }
+    shape.transformShape(shape.getTransform(), true);
+    return shape;
+}
+
+Part::TopoShape Body::derivedTipShape() const
+{
+    return placedShapeOf(Tip.getValue());
+}
+
+Part::TopoShape Body::shownShape() const
+{
+    return placedShapeOf(shownStep());
+}
+
+std::string Body::shownSubElement(const char* bodySub) const
+{
+    App::DocumentObject* step = shownStep();
+    if (!step || !isSolidFeature(step) || !bodySub || !*bodySub) {
+        return {};
+    }
+    const Part::TopoShape shape = static_cast<Part::ShapeFeature*>(step)->Shape.getShape();
+    if (shape.isNull()) {
+        return {};
+    }
+    bool whole = true;
+    const Part::TopoShape solid = standInSolid(step, shape, whole);
+    if (whole) {
+        return shape.findShape(bodySub).IsNull() ? std::string() : std::string(bodySub);
+    }
+    // The copy's solid is placed but not renumbered, so find the picked element on it and read
+    // back its number in the whole shape.
+    if (solid.isNull()) {
+        return {};
+    }
+    const TopoDS_Shape element = solid.findShape(bodySub);
+    if (element.IsNull()) {
+        return {};
+    }
+    const int index = shape.findShape(element);
+    if (index <= 0) {
+        return {};
+    }
+    return Part::TopoShape::shapeName(element.ShapeType()) + std::to_string(index);
+}
+
 App::DocumentObject* Body::getSubObject(
     const char* subname,
     PyObject** pyObj,
@@ -535,89 +716,42 @@ App::DocumentObject* Body::getSubObject(
 ) const
 {
     while (subname && *subname == '.') {
-        ++subname;  // skip leading .
+        ++subname;
     }
-
-    // PartDesign::Feature now support grouping sibling features, and the user
-    // is free to expand/collapse at any time. To not disrupt subname path
-    // because of this, the body will peek the next two sub-objects reference,
-    // and skip the first sub-object if possible.
-    if (subname) {
-        const char* firstDot = strchr(subname, '.');
-        if (firstDot) {
-            const char* secondDot = strchr(firstDot + 1, '.');
-            if (secondDot) {
-                auto firstObj = Group.find(std::string(subname, firstDot).c_str());
-                if (!firstObj || firstObj->isDerivedFrom<PartDesign::Feature>()) {
-                    auto secondObj = Group.find(std::string(firstDot + 1, secondDot).c_str());
-                    if (secondObj) {
-                        // we support only one level of sibling grouping, so no
-                        // recursive call to our own getSubObject()
-                        return Part::BodyBase::getSubObject(
-                            firstDot + 1,
-                            pyObj,
-                            pmat,
-                            transform,
-                            depth + 1
-                        );
-                    }
+    // "Pad.Edge3" resolves through the feature that makes the edge, and "Origin.XY_Plane"
+    // through the document's origin: neither is stored in the Body.
+    if (subname && *subname && !Data::isMappedElement(subname)) {
+        if (const char* dot = std::strchr(subname, '.')) {
+            const std::string first(subname, dot);
+            if (auto* feat = findOwnedFeature(first)) {
+                return feat->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
+            }
+            if (App::Origin* origin = findDocumentOrigin(getDocument())) {
+                const char* originName = origin->getNameInDocument();
+                if (originName && first == originName) {
+                    return origin->getSubObject(dot + 1, pyObj, pmat, transform, depth + 1);
                 }
             }
         }
     }
-#if 1
-    return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
-#else
-    // The following code returns Body shape only if there is at least one
-    // child visible in the body (when show through, not show tip). The
-    // original intention is to sync visual to shape returned by
-    // Part.getShape() when the body is included in some other group. But this
-    // interfere with direct modeling using body shape. Therefore it is
-    // disabled here.
-
-    if (!pyObj || showTip
-        || (subname && !Data::ComplexGeoData::isMappedElement(subname) && strchr(subname, '.'))) {
-        return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
-    }
-
-    // We return the shape only if there are feature visible inside
-    for (auto obj : Group.getValues()) {
-        if (obj->Visibility.getValue() && obj->isDerivedFrom<PartDesign::Feature>()) {
-            return Part::BodyBase::getSubObject(subname, pyObj, pmat, transform, depth);
-        }
-    }
-    if (pmat && transform) {
-        *pmat *= Placement.getValue().toMatrix();
-    }
-    return const_cast<Body*>(this);
-#endif
+    return App::DocumentObject::getSubObject(subname, pyObj, pmat, transform, depth);
 }
 
 void Body::onDocumentRestored()
 {
-    for (auto obj : Group.getValues()) {
-        if (obj->isDerivedFrom<PartDesign::Feature>()) {
-            static_cast<PartDesign::Feature*>(obj)->_Body.setValue(this);
-        }
+    // The Tip's shape is already loaded, so the unsaved Shape can be filled without a recompute.
+    Part::TopoShape restoredShape = shownShape();
+    if (!restoredShape.isNull()) {
+        Shape.setValue(restoredShape);
     }
-    _GroupTouched.setStatus(App::Property::Output, true);
-
-    // trigger ViewProviderBody::copyColorsfromTip
+    // Lets the view provider copy the Tip's colours.
     if (Tip.getValue()) {
         Tip.touch();
     }
-
     DocumentObject::onDocumentRestored();
 }
 
-// a body is solid if it has features that are solid
 bool Body::isSolid()
 {
-    std::vector<App::DocumentObject*> features = getFullModel();
-    for (auto feature : features) {
-        if (isSolidFeature(feature)) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(getFullModel(), &Body::isSolidFeature);
 }

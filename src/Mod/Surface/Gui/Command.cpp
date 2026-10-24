@@ -64,7 +64,7 @@ void CmdSurfaceCut::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     /*    std::vector<Gui::SelectionObject> Sel = getSelection().getSelectionEx(0,
-       Part::Feature::getClassTypeId()); if (Sel.size() != 2) {
+       Part::ShapeFeature::getClassTypeId()); if (Sel.size() != 2) {
             QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Invalid selection"),
                 QObject::tr("Select two shapes please."));
             return;
@@ -73,8 +73,8 @@ void CmdSurfaceCut::activated(int iMsg)
         bool askUser = false;
         for (std::vector<Gui::SelectionObject>::iterator it = Sel.begin(); it != Sel.end(); ++it) {
             App::DocumentObject* obj = it->getObject();
-            if (obj->isDerivedFrom<Part::Feature>()) {
-                const TopoDS_Shape& shape = static_cast<Part::Feature*>(obj)->Shape.getValue();
+            if (Part::hasShape(obj)) {
+                TopoDS_Shape shape = Part::getShape(obj).getShape();
                 if (!PartGui::checkForSolids(shape) && !askUser) {
                     int ret = QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Non-solids
        selected"), QObject::tr("The use of non-solids for boolean operations may lead to unexpected
@@ -231,8 +231,8 @@ void CmdBlendCurve::activated(int)
     std::string objName[2];
     std::string edge[2];
     std::string featName = getUniqueObjectName("BlendCurve");
-    std::vector<Gui::SelectionObject> sel
-        = getSelection().getSelectionEx(nullptr, Part::Feature::getClassTypeId());
+    std::vector<Gui::SelectionObject> sel = getSelection().getSelectionEx();
+    std::erase_if(sel, [](const Gui::SelectionObject& s) { return !Part::hasShape(s.getObject()); });
 
     objName[0] = sel[0].getFeatName();
     edge[0] = sel[0].getSubNames()[0];
@@ -320,7 +320,7 @@ void CmdSurfaceExtendFace::activated(int)
 
 bool CmdSurfaceExtendFace::isActive()
 {
-    return Gui::Selection().countObjectsOfType<Part::Feature>() == 1;
+    return Gui::Selection().countObjectsOfType<Part::ShapeFeature>() == 1;
 }
 
 DEF_STD_CMD_A(CmdSurfaceSections)

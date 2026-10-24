@@ -30,11 +30,9 @@
 #include <Gui/MDIView.h>
 #include <Mod/Sketcher/Gui/Workbench.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/FeatureMultiTransform.h>
 
 #include "Utils.h"
 #include "Workbench.h"
-#include "WorkflowManager.h"
 
 using namespace PartDesignGui;
 namespace sp = std::placeholders;
@@ -72,47 +70,31 @@ TYPESYSTEM_SOURCE(PartDesignGui::Workbench, Gui::StdWorkbench)
 Workbench::Workbench() = default;
 
 Workbench::~Workbench()
-{
-    WorkflowManager::destruct();
-}
+{}
 
 void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) const
 {
     auto selection = Gui::Selection().getSelection();
-    // Add move Tip Command
     if (!selection.empty()) {
         App::DocumentObject* feature = selection.front().pObject;
-        PartDesign::Body* body = nullptr;
-
-        body = PartDesignGui::getBodyFor(feature, false, false, true);
-        // lote of assertion so feature should be marked as a tip
-        if (selection.size() == 1 && feature && body
-            && (feature->isDerivedFrom<PartDesign::Feature>()
-                || (feature->isDerivedFrom<Part::Feature>()
-                    && body->BaseFeature.getValue() == feature))) {
-            *item << "PartDesign_MoveTip";
-        }
+        PartDesign::Body* body = PartDesignGui::getBodyFor(feature, false);
 
         if (strcmp(recipient, "Tree") == 0) {
             Gui::MDIView* activeView = Gui::Application::Instance->activeView();
 
             if (activeView) {
-                if (feature && feature->isDerivedFrom<PartDesign::Body>()) {
-                    *item << "Std_ToggleFreeze";
-                }
-
                 if (activeView->getAppDocument()->countObjectsOfType<PartDesign::Body>() > 0) {
                     bool addMoveFeature = true;
                     bool addMoveFeatureInTree = (body != nullptr);
                     for (auto sel : selection) {
                         // if at least one selected feature cannot be moved to a body
                         // disable the entry
-                        if (addMoveFeature && !PartDesign::Body::isAllowed(sel.pObject)) {
+                        if (addMoveFeature && !PartDesign::Body::isSolidFeature(sel.pObject)) {
                             addMoveFeature = false;
                         }
                         // if all at least one selected feature doesn't belong to the same body
                         // disable the menu entry
-                        if (addMoveFeatureInTree && !body->hasObject(sel.pObject)) {
+                        if (addMoveFeatureInTree && !PartDesign::Body::backsBody(sel.pObject, body)) {
                             addMoveFeatureInTree = false;
                         }
 
@@ -128,12 +110,11 @@ void Workbench::setupContextMenu(const char* recipient, Gui::MenuItem* item) con
                     }
                 }
             }
-            if (Gui::Selection().countObjectsOfType<PartDesign::Transformed>()
-                    - Gui::Selection().countObjectsOfType<PartDesign::MultiTransform>()
-                == 1) {
-                *item << "PartDesign_MultiTransform";
-            }
         }
+    }
+
+    if (selection.size() == 1) {
+        *item << "PartDesign_ShowDependencies";
     }
 
     if (item->hasItems()) {
@@ -146,7 +127,6 @@ void Workbench::activated()
 {
     Gui::Workbench::activated();
 
-    WorkflowManager::init();
 
     std::vector<Gui::TaskView::TaskWatcher*> Watcher;
 
@@ -157,20 +137,6 @@ void Workbench::activated()
         Vertex,
         "Vertex Tools",
         "PartDesign_Body"
-    ));
-
-    const char* Vertex1[] = {
-        "PartDesign_Point",
-        "PartDesign_Line",
-        "PartDesign_Plane",
-        "PartDesign_CoordinateSystem",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT Part::Feature SUBELEMENT Vertex COUNT 1..",
-        Vertex1,
-        "Datum objects",
-        "PartDesign_CoordinateSystem"
     ));
 
     const char* Edge[] = {
@@ -187,20 +153,6 @@ void Workbench::activated()
         Edge,
         "Edge Tools",
         "PartDesign_Body"
-    ));
-
-    const char* Edge1[] = {
-        "PartDesign_Point",
-        "PartDesign_Line",
-        "PartDesign_Plane",
-        "PartDesign_CoordinateSystem",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT Part::Feature SUBELEMENT Edge COUNT 1..",
-        Edge1,
-        "Datum objects",
-        "PartDesign_CoordinateSystem"
     ));
 
     const char* Face[] = {
@@ -220,20 +172,6 @@ void Workbench::activated()
         Face,
         "Face Tools",
         "PartDesign_Body"
-    ));
-
-    const char* Face1[] = {
-        "PartDesign_Point",
-        "PartDesign_Line",
-        "PartDesign_Plane",
-        "PartDesign_CoordinateSystem",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT Part::Feature SUBELEMENT Face COUNT 1",
-        Face1,
-        "Datum objects",
-        "PartDesign_CoordinateSystem"
     ));
 
     const char* Body[] = {"PartDesign_NewSketch", nullptr};
@@ -276,83 +214,28 @@ void Workbench::activated()
         nullptr
     };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Plane COUNT 1",
+        "SELECT Part::DatumPlane COUNT 1",
         Plane2,
         "Helper Tools",
         "PartDesign_Body"
     ));
 
-    const char* Plane3[] = {
-        "PartDesign_Point",
-        "PartDesign_Line",
-        "PartDesign_Plane",
-        "PartDesign_CoordinateSystem",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT App::Plane COUNT 1",
-        Plane3,
-        "Datum objects",
-        "PartDesign_CoordinateSystem"
-    ));
-
-    const char* Plane4[] = {
-        "PartDesign_Point",
-        "PartDesign_Line",
-        "PartDesign_Plane",
-        "PartDesign_CoordinateSystem",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Plane COUNT 1",
-        Plane4,
-        "Datum objects",
-        "PartDesign_CoordinateSystem"
-    ));
-
     const char* Line[] = {"Part_DatumPoint", "Part_DatumLine", "Part_DatumPlane", nullptr};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Line COUNT 1",
+        "SELECT Part::DatumLine COUNT 1",
         Line,
         "Helper Tools",
         "PartDesign_Body"
     ));
 
-    const char* Line1[] = {"PartDesign_Point", "PartDesign_Line", "PartDesign_Plane", nullptr};
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Line COUNT 1",
-        Line1,
-        "Datum objects",
-        "PartDesign_CoordinateSystem"
-    ));
-
     const char* Point[]
         = {"Part_DatumPoint", "Part_DatumLine", "Part_DatumPlane", "Part_CoordinateSystem", nullptr};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Point COUNT 1",
+        "SELECT Part::DatumPoint COUNT 1",
         Point,
         "Helper Tools",
         "PartDesign_Body"
     ));
-
-    const char* Point1[] = {
-        "PartDesign_Point",
-        "PartDesign_Line",
-        "PartDesign_Plane",
-        "PartDesign_CoordinateSystem",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::Point COUNT 1",
-        Point1,
-        "Datum objects",
-        "PartDesign_CoordinateSystem"
-    ));
-
-    const char* NoSel[] = {"PartDesign_Body", nullptr};
-    Watcher.push_back(
-        new Gui::TaskView::TaskWatcherCommandsEmptySelection(NoSel, "Start Part", "Part_Box_Parametric")
-    );
 
     const char* Faces[] = {
         "PartDesign_Fillet",
@@ -404,54 +287,18 @@ void Workbench::activated()
         "PartDesign_Body"
     ));
 
-    const char* ShapeBinder[] = {
-        "PartDesign_Pad",
-        "PartDesign_Pocket",
-        "PartDesign_Revolution",
-        "PartDesign_Groove",
-        "PartDesign_AdditiveLoft",
-        "PartDesign_SubtractiveLoft",
-        "PartDesign_AdditivePipe",
-        "PartDesign_SubtractivePipe",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::ShapeBinder COUNT 1",
-        ShapeBinder,
-        "Modeling tools",
-        "PartDesign_Body"
-    ));
-
-    const char* SubShapeBinder[] = {
-        "PartDesign_Pad",
-        "PartDesign_Pocket",
-        "PartDesign_Revolution",
-        "PartDesign_Groove",
-        "PartDesign_AdditiveLoft",
-        "PartDesign_SubtractiveLoft",
-        "PartDesign_AdditivePipe",
-        "PartDesign_SubtractivePipe",
-        nullptr
-    };
-    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
-        "SELECT PartDesign::SubShapeBinder COUNT 1",
-        SubShapeBinder,
-        "Modeling tools",
-        "PartDesign_Body"
-    ));
-
     const char* Transformed[] = {
         "PartDesign_Mirrored",
         "PartDesign_LinearPattern",
         "PartDesign_PolarPattern",
-        "PartDesign_MultiTransform",
+        "PartDesign_PointPattern",
         nullptr
     };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
         "SELECT PartDesign::SketchBased",
         Transformed,
         "Transformation Tools",
-        "PartDesign_MultiTransform"
+        "PartDesign_LinearPattern"
     ));
 
     addTaskWatcher(Watcher);
@@ -524,7 +371,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     *transformations << "PartDesign_Mirrored"
                      << "PartDesign_LinearPattern"
                      << "PartDesign_PolarPattern"
-                     << "PartDesign_MultiTransform";
+                     << "PartDesign_PointPattern";
 
     // dressups
     Gui::MenuItem* dressups = new Gui::MenuItem;
@@ -535,12 +382,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
               << "PartDesign_Draft"
               << "PartDesign_Thickness";
 
-    *part << "PartDesign_Body"
-          << "Separator"
-          << "PartDesign_ShapeBinder"
-          << "PartDesign_SubShapeBinder"
-          << "PartDesign_Clone"
-          << "Separator" << additives << "PartDesign_CompPrimitiveAdditive"
+    *part << additives << "PartDesign_CompPrimitiveAdditive"
           << "Separator" << subtractives << "PartDesign_CompPrimitiveSubtractive"
           << "Separator" << dressups << "Separator" << transformations << "Separator"
           << "PartDesign_Boolean"
@@ -549,6 +391,7 @@ Gui::MenuItem* Workbench::setupMenuBar() const
           << "Materials_InspectMaterial"
           << "Separator"
           << "Part_CheckGeometry"
+          << "PartDesign_CheckInterference"
           << "Separator"
           << "PartDesign_InvoluteGear"
           << "PartDesign_Sprocket";
@@ -558,15 +401,6 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     // not deployed either hence the check for the existence of the command.
     if (Gui::Application::Instance->commandManager().getCommandByName("PartDesign_WizardShaft")) {
         *part << "Separator" << "PartDesign_WizardShaft";
-    }
-
-    Gui::MenuItem* view = root->findItem("&View");
-    if (view) {
-        Gui::MenuItem* appr = view->findItem("Std_RandomColor");
-        appr = view->afterItem(appr);
-        Gui::MenuItem* face = new Gui::MenuItem();
-        face->setCommand("Part_ColorPerFace");
-        view->insertItem(appr, face);
     }
 
     // Replace the "Duplicate selection" menu item with a replacement that is compatible with Body
@@ -583,12 +417,9 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     Gui::ToolBarItem* part = new Gui::ToolBarItem(root);
     part->setCommand("Part Design Helper Features");
 
-    *part << "PartDesign_Body"
-          << "PartDesign_CompSketches"
+    *part << "PartDesign_CompSketches"
           << "Sketcher_ValidateSketch"
-          << "Part_CheckGeometry"
-          << "PartDesign_SubShapeBinder"
-          << "PartDesign_Clone";
+          << "Part_CheckGeometry";
 
     part = new Gui::ToolBarItem(root);
     part->setCommand("Part Design Modeling Features");
@@ -624,7 +455,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     *part << "PartDesign_Mirrored"
           << "PartDesign_LinearPattern"
           << "PartDesign_PolarPattern"
-          << "PartDesign_MultiTransform";
+          << "PartDesign_PointPattern";
 
     return root;
 }

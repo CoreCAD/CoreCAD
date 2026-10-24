@@ -6,11 +6,11 @@ from typing import Any, Final
 
 from Base.Metadata import constmethod, export
 
-from App.Part import Part
+from App.DocumentObjectGroup import DocumentObjectGroup
 from App.DocumentObject import DocumentObject
 
 @export(Include="Mod/Assembly/App/AssemblyObject.h", Namespace="Assembly")
-class AssemblyObject(Part):
+class AssemblyObject(DocumentObjectGroup):
     """
     This class handles document objects in Assembly
 

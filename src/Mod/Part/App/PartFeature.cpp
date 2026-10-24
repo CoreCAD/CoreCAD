@@ -36,6 +36,7 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeShape.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
 #include <BRepGProp_Face.hxx>
@@ -89,24 +90,36 @@ namespace sp = std::placeholders;
 
 FC_LOG_LEVEL_INIT("Part", true, true)
 
-PROPERTY_SOURCE(Part::Feature, App::GeoFeature)
+PROPERTY_SOURCE(Part::ShapeFeature, App::GeoFeature)
 
+
+ShapeFeature::ShapeFeature()
+{
+    ADD_PROPERTY(Shape, (TopoDS_Shape()));
+    // Amendment 17 (#79): the whole shape lineage carries the shape-source
+    // capability, so Part::hasShape is true for every shape feature. Stateless
+    // extension; the getSubObject routing stays dormant unless a subclass opts in
+    // by overriding getSubObject (Box, Body).
+    ShapeExtension::initExtension(this);
+}
+
+ShapeFeature::~ShapeFeature() = default;
+
+PROPERTY_SOURCE_WITH_EXTENSIONS(Part::Feature, Part::ShapeFeature)
 
 Feature::Feature()
 {
-    ADD_PROPERTY(Shape, (TopoDS_Shape()));
-    auto mat = Materials::MaterialManager::defaultMaterial();
-    ADD_PROPERTY(ShapeMaterial, (*mat));
+    App::PlacementExtension::initExtension(this);
 }
 
 Feature::~Feature() = default;
 
-short Feature::mustExecute() const
+short ShapeFeature::mustExecute() const
 {
     return GeoFeature::mustExecute();
 }
 
-App::DocumentObjectExecReturn* Feature::recompute()
+App::DocumentObjectExecReturn* ShapeFeature::recompute()
 {
     try {
         return App::GeoFeature::recompute();
@@ -121,39 +134,19 @@ App::DocumentObjectExecReturn* Feature::recompute()
     }
 }
 
-App::DocumentObjectExecReturn* Feature::execute()
+App::DocumentObjectExecReturn* ShapeFeature::execute()
 {
     this->Shape.touch();
     return GeoFeature::execute();
 }
 
-PyObject* Feature::getPyObject()
+PyObject* ShapeFeature::getPyObject()
 {
     if (PythonObject.is(Py::_None())) {
         // ref counter is set to 1
         PythonObject = Py::Object(new PartFeaturePy(this), true);
     }
     return Py::new_reference_to(PythonObject);
-}
-
-void Feature::copyMaterial(Feature* feature)
-{
-    auto mat = Materials::MaterialManager::defaultMaterial();
-    if (feature) {
-        if (ShapeMaterial.getValue().getUUID() != feature->ShapeMaterial.getValue().getUUID()) {
-            if (ShapeMaterial.getValue().getUUID() == mat->getUUID()) {
-                ShapeMaterial.setValue(feature->ShapeMaterial.getValue());
-            }
-        }
-    }
-}
-
-void Feature::copyMaterial(App::DocumentObject* link)
-{
-    auto feature = dynamic_cast<Part::Feature*>(link);
-    if (feature) {
-        copyMaterial(feature);
-    }
 }
 
 /**
@@ -163,7 +156,7 @@ void Feature::copyMaterial(App::DocumentObject* link)
  * @param type An element type name.
  * @return a struct with the newName and oldName. New element name may be empty.
  */
-App::ElementNamePair Feature::getElementName(const char* name, ElementNameType type) const
+App::ElementNamePair ShapeFeature::getElementName(const char* name, ElementNameType type) const
 {
     if (type != ElementNameType::Export) {
         return App::GeoFeature::getElementName(name, type);
@@ -179,7 +172,7 @@ App::ElementNamePair Feature::getElementName(const char* name, ElementNameType t
     return getExportElementName(prop->getShape(), name);
 }
 
-App::ElementNamePair Feature::getExportElementName(TopoShape shape, const char* name) const
+App::ElementNamePair ShapeFeature::getExportElementName(TopoShape shape, const char* name) const
 {
     Data::MappedElement mapped = shape.getElementName(name);
     auto res = shape.shapeTypeAndIndex(mapped.index);
@@ -408,7 +401,7 @@ App::ElementNamePair Feature::getExportElementName(TopoShape shape, const char* 
     return App::GeoFeature::_getElementName(name, mapped);
 }
 
-App::DocumentObject* Feature::getSubObject(
+App::DocumentObject* ShapeFeature::getSubObject(
     const char* subname,
     PyObject** pyObj,
     Base::Matrix4D* pmat,
@@ -429,12 +422,12 @@ App::DocumentObject* Feature::getSubObject(
     Base::Matrix4D _mat;
     auto& mat = pmat ? *pmat : _mat;
     if (transform) {
-        mat *= Placement.getValue().toMatrix();
+        mat *= getPlacement().toMatrix();
     }
 
     if (!pyObj) {
         // TopoShape::hasSubShape is kind of slow, let's cut outself some slack here.
-        return const_cast<Feature*>(this);
+        return const_cast<ShapeFeature*>(this);
     }
 
     try {
@@ -472,7 +465,7 @@ App::DocumentObject* Feature::getSubObject(
             ts.transformShape(mat, copy, true);
         }
         *pyObj = Py::new_reference_to(shape2pyshape(ts));
-        return const_cast<Feature*>(this);
+        return const_cast<ShapeFeature*>(this);
     }
     catch (Standard_Failure& e) {
         // FIXME: Do not handle the exception here because it leads to a flood of irrelevant and
@@ -565,7 +558,7 @@ static std::vector<std::pair<long, Data::MappedName>> getElementSource(
             doc = nullptr;
         }
         else {
-            shape = Part::Feature::getTopoShape(
+            shape = Part::ShapeFeature::getTopoShape(
                 obj,
                 Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform,
                 nullptr,
@@ -594,7 +587,7 @@ static std::vector<std::pair<long, Data::MappedName>> getElementSource(
     return ret;
 }
 
-std::list<Data::HistoryItem> Feature::getElementHistory(
+std::list<Data::HistoryItem> ShapeFeature::getElementHistory(
     App::DocumentObject* feature,
     const char* name,
     bool recursive,
@@ -678,7 +671,7 @@ std::list<Data::HistoryItem> Feature::getElementHistory(
             }
         }
         feature = obj;
-        shape = Feature::getTopoShape(feature, ShapeOption::ResolveLink | ShapeOption::Transform);
+        shape = ShapeFeature::getTopoShape(feature, ShapeOption::ResolveLink | ShapeOption::Transform);
         element = original;
         if (element_type && shape.elementType(original) != element_type) {
             break;
@@ -687,7 +680,7 @@ std::list<Data::HistoryItem> Feature::getElementHistory(
     return ret;
 }
 
-QVector<Data::MappedElement> Feature::getElementFromSource(
+QVector<Data::MappedElement> ShapeFeature::getElementFromSource(
     App::DocumentObject* obj,
     const char* subname,
     App::DocumentObject* src,
@@ -816,7 +809,7 @@ QVector<Data::MappedElement> Feature::getElementFromSource(
     return res;
 }
 
-QVector<Data::MappedElement> Feature::getRelatedElements(
+QVector<Data::MappedElement> ShapeFeature::getRelatedElements(
     App::DocumentObject* obj,
     const char* name,
     HistoryTraceType sameType,
@@ -894,7 +887,7 @@ QVector<Data::MappedElement> Feature::getRelatedElements(
     return ret;
 }
 
-TopoDS_Shape Feature::getShape(
+TopoDS_Shape ShapeFeature::getShape(
     const App::DocumentObject* obj,
     ShapeOptions options,
     const char* subname,
@@ -905,23 +898,8 @@ TopoDS_Shape Feature::getShape(
     return getTopoShape(obj, options | ShapeOption::NoElementMap, subname, pmat, powner).getShape();
 }
 
-App::Material Feature::getMaterialAppearance() const
-{
-    return ShapeMaterial.getValue().getMaterialAppearance();
-}
-
-void Feature::setMaterialAppearance(const App::Material& material)
-{
-    try {
-        ShapeMaterial.setValue(material);
-    }
-    catch (const Base::Exception& e) {
-        e.reportException();
-    }
-}
-
 // Toponaming project March 2024:  This method should be going away when we get to the python layer.
-void Feature::clearShapeCache()
+void ShapeFeature::clearShapeCache()
 {
     //    _ShapeCache.cache.clear();
 }
@@ -1152,7 +1130,7 @@ static TopoShape _getTopoShape(
         && (!link || (!link->_ChildCache.getSize() && link->getSubElements().size() <= 1))) {
         // if there is a linked object, and there is no child cache (which is used
         // for special handling of plain group), obtain shape from the linked object
-        shape = Feature::getTopoShape(linked, ShapeOption::NoFlag);
+        shape = ShapeFeature::getTopoShape(linked, ShapeOption::NoFlag);
         if (shape.isNull()) {
             return shape;
         }
@@ -1177,7 +1155,7 @@ static TopoShape _getTopoShape(
         if (link && link->getElementCountValue()) {
             linked = link->getTrueLinkedObject(false, &baseMat);
             if (linked && linked != owner) {
-                baseShape = Feature::getTopoShape(linked, ShapeOption::NoFlag);
+                baseShape = ShapeFeature::getTopoShape(linked, ShapeOption::NoFlag);
                 if (!link->getShowElementValue()) {
                     baseShape.reTagElementMap(owner->getID(), owner->getDocument()->getStringHasher());
                 }
@@ -1295,7 +1273,7 @@ static TopoShape _getTopoShape(
 }
 
 
-TopoShape Feature::getTopoShape(
+TopoShape ShapeFeature::getTopoShape(
     const App::DocumentObject* obj,
     ShapeOptions options,
     const char* subname,
@@ -1320,13 +1298,13 @@ TopoShape Feature::getTopoShape(
     // to false. So we manually apply the top level transform if asked.
 
     if (options.testFlag(ShapeOption::NeedSubElement) && (!pmat || *pmat == Base::Matrix4D())
-        && obj->isDerivedFrom<Part::Feature>()
+        && Part::hasShape(obj)
         && !obj->hasExtension(App::LinkBaseExtension::getExtensionClassTypeId())) {
         // Some OCC shape making is very sensitive to shape transformation. So
         // check here if a direct sub shape is required, and bypass all extra
         // processing here.
         if (subname && *subname && Data::findElementName(subname) == subname) {
-            TopoShape ts = static_cast<const Part::Feature*>(obj)->Shape.getShape();
+            TopoShape ts = Part::getShape(obj);
             if (!options.testFlag(ShapeOption::Transform)) {
                 ts.setShape(ts.getShape().Located(TopLoc_Location()), false);
             }
@@ -1341,7 +1319,7 @@ TopoShape Feature::getTopoShape(
                     *powner = const_cast<App::DocumentObject*>(obj);
                 }
                 if (pmat && options.testFlag(ShapeOption::Transform)) {
-                    *pmat = static_cast<const Part::Feature*>(obj)->Placement.getValue().toMatrix();
+                    *pmat = obj->getPlacement().toMatrix();
                 }
                 return ts;
             }
@@ -1373,7 +1351,7 @@ TopoShape Feature::getTopoShape(
 
     return shape;
 }
-TopoShape Feature::simplifyCompound(TopoShape compoundShape)
+TopoShape ShapeFeature::simplifyCompound(TopoShape compoundShape)
 {
     std::initializer_list<TopAbs_ShapeEnum> simplificationOrder = {
         TopAbs_SOLID,
@@ -1394,7 +1372,7 @@ TopoShape Feature::simplifyCompound(TopoShape compoundShape)
     return compoundShape;
 }
 
-App::DocumentObject* Feature::getShapeOwner(const App::DocumentObject* obj, const char* subname)
+App::DocumentObject* ShapeFeature::getShapeOwner(const App::DocumentObject* obj, const char* subname)
 {
     if (!obj) {
         return nullptr;
@@ -1409,14 +1387,14 @@ App::DocumentObject* Feature::getShapeOwner(const App::DocumentObject* obj, cons
     return owner;
 }
 
-struct Feature::ElementCache
+struct ShapeFeature::ElementCache
 {
     TopoShape shape;
     mutable std::vector<std::string> names;
     mutable bool searched;
 };
 
-void Feature::registerElementCache(const std::string& prefix, PropertyPartShape* prop)
+void ShapeFeature::registerElementCache(const std::string& prefix, PropertyPartShape* prop)
 {
     if (prop) {
         _elementCachePrefixMap.emplace_back(prefix, prop);
@@ -1430,7 +1408,7 @@ void Feature::registerElementCache(const std::string& prefix, PropertyPartShape*
     }
 }
 
-void Feature::onBeforeChange(const App::Property* prop)
+void ShapeFeature::onBeforeChange(const App::Property* prop)
 {
     PropertyPartShape* propShape = nullptr;
     const std::string* prefix = nullptr;
@@ -1522,13 +1500,33 @@ void Feature::onBeforeChange(const App::Property* prop)
     GeoFeature::onBeforeChange(prop);
 }
 
-void Feature::onChanged(const App::Property* prop)
+void ShapeFeature::onChanged(const App::Property* prop)
 {
+    // The Shape<->Placement sync only applies to a placed feature (one carrying
+    // the placement extension). A derived feature holds no authored placement:
+    // its geometry already lives in the world frame, so there is nothing to
+    // lift by, and nothing to back-sync into. See Amendment 4, Clause 4.3.
+    //
+    // Resolving the placement (getPlacementProperty) is a by-name lookup, and a
+    // by-name lookup seals this object's static property table. onChanged also
+    // fires as each property is initialised during construction. Doing the lookup
+    // for an unrelated change would seal the table mid-constructor and silently
+    // drop every property registered afterwards (e.g. Pad's Offset/TaperAngle).
+    // So only resolve the placement when the change is one this sync cares about:
+    // the Shape (a cheap direct-member compare) or the Placement (matched by name,
+    // which needs no lookup). Everything else exits before touching the table.
+    const bool shapeChanged = (prop == &this->Shape);
+    const bool placementChanged = prop && std::string_view(prop->getName()) == "Placement";
+    if (!shapeChanged && !placementChanged) {
+        GeoFeature::onChanged(prop);
+        return;
+    }
+    auto* plProp = getPlacementProperty();
     // if the placement has changed apply the change to the point data as well
-    if (prop == &this->Placement) {
+    if (plProp && prop == plProp) {
         TopoShape shape = this->Shape.getShape();
         auto oldTransform = shape.getTransform();
-        auto newTransform = this->Placement.getValue().toMatrix();
+        auto newTransform = plProp->getValue().toMatrix();
         shape.setTransform(newTransform);
         Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(
             App::Property::NoRecompute,
@@ -1541,15 +1539,15 @@ void Feature::onChanged(const App::Property* prop)
     // if the point data has changed check and adjust the transformation as well
     else if (prop == &this->Shape) {
         if (this->isRecomputing()) {
-            this->Shape._Shape.setTransform(this->Placement.getValue().toMatrix());
+            this->Shape._Shape.setTransform(getPlacement().toMatrix());
         }
-        else {
+        else if (plProp) {
             Base::Placement p;
             // shape must not be null to override the placement
             if (!this->Shape.getValue().IsNull()) {
                 try {
                     p.fromMatrix(this->Shape.getShape().getTransform());
-                    this->Placement.setValueIfChanged(p);
+                    plProp->setValueIfChanged(p);
                 }
                 catch (const Base::ValueError&) {
                 }
@@ -1560,7 +1558,7 @@ void Feature::onChanged(const App::Property* prop)
     GeoFeature::onChanged(prop);
 }
 
-const std::vector<std::string>& Feature::searchElementCache(
+const std::vector<std::string>& ShapeFeature::searchElementCache(
     const std::string& element,
     Data::SearchOptions options,
     double tol,
@@ -1604,9 +1602,9 @@ const std::vector<std::string>& Feature::searchElementCache(
     return it->second.names;
 }
 
-TopLoc_Location Feature::getLocation() const
+TopLoc_Location ShapeFeature::getLocation() const
 {
-    Base::Placement pl = this->Placement.getValue();
+    Base::Placement pl = getPlacement();
     Base::Rotation rot(pl.getRotation());
     Base::Vector3d axis;
     double angle;
@@ -1617,7 +1615,7 @@ TopLoc_Location Feature::getLocation() const
     return TopLoc_Location(trf);
 }
 
-Feature* Feature::create(const TopoShape& shape, const char* name, App::Document* document)
+Feature* ShapeFeature::create(const TopoShape& shape, const char* name, App::Document* document)
 {
     if (!name || !name[0]) {
         name = "Shape";
@@ -1634,13 +1632,13 @@ Feature* Feature::create(const TopoShape& shape, const char* name, App::Document
     return res;
 }
 
-void Feature::onDocumentRestored()
+void ShapeFeature::onDocumentRestored()
 {
     // expandShapeContents();
     App::GeoFeature::onDocumentRestored();
 }
 
-ShapeHistory Feature::buildHistory(
+ShapeHistory ShapeFeature::buildHistory(
     BRepBuilderAPI_MakeShape& mkShape,
     TopAbs_ShapeEnum type,
     const TopoDS_Shape& newS,
@@ -1702,7 +1700,7 @@ ShapeHistory Feature::buildHistory(
     return history;
 }
 
-ShapeHistory Feature::joinHistory(const ShapeHistory& oldH, const ShapeHistory& newH)
+ShapeHistory ShapeFeature::joinHistory(const ShapeHistory& oldH, const ShapeHistory& newH)
 {
     ShapeHistory join;
     join.type = oldH.type;
@@ -1725,17 +1723,29 @@ ShapeHistory Feature::joinHistory(const ShapeHistory& oldH, const ShapeHistory& 
 }
 
 /// returns the type name of the ViewProvider
-const char* Feature::getViewProviderName() const
+const char* ShapeFeature::getViewProviderName() const
 {
     return "PartGui::ViewProviderPart";
 }
 
-const App::PropertyComplexGeoData* Feature::getPropertyOfGeometry() const
+const App::PropertyComplexGeoData* ShapeFeature::getPropertyOfGeometry() const
 {
     return &Shape;
 }
 
-bool Feature::isElementMappingDisabled(App::PropertyContainer* container)
+bool ShapeFeature::producesContentOf(const App::Property& prop) const
+{
+    if (&prop != &Shape) {
+        // Whatever else this object carries, the shape-source capability does not speak for it.
+        return App::GeoFeature::producesContentOf(prop);
+    }
+    // Part::Feature is the plain shape holder -- what an import, a copy or a script leaves
+    // behind, and the one type in this family that produces nothing. Every other type computes
+    // its shape from what it was given, so the answer is the exact type rather than the family.
+    return getTypeId() != Feature::getClassTypeId();
+}
+
+bool ShapeFeature::isElementMappingDisabled(App::PropertyContainer* container)
 {
     (void)container;
     return false;
@@ -1758,7 +1768,7 @@ bool Feature::isElementMappingDisabled(App::PropertyContainer* container)
     //    return false;
 }
 
-bool Feature::getCameraAlignmentDirection(
+bool ShapeFeature::getCameraAlignmentDirection(
     Base::Vector3d& directionZ,
     Base::Vector3d& directionX,
     const char* subname
@@ -1899,7 +1909,7 @@ bool Feature::getCameraAlignmentDirection(
     return GeoFeature::getCameraAlignmentDirection(directionZ, directionX, subname);
 }
 
-bool Feature::getCameraAlignmentDirection(
+bool ShapeFeature::getCameraAlignmentDirection(
     Base::Vector3d& directionZ,
     const std::vector<std::string>& subnames
 ) const
@@ -1958,9 +1968,9 @@ bool Feature::getCameraAlignmentDirection(
     return GeoFeature::getCameraAlignmentDirection(directionZ, subnames);
 }
 
-void Feature::guessNewLink(std::string& replacementName, DocumentObject* base, const char* oldLink)
+void ShapeFeature::guessNewLink(std::string& replacementName, DocumentObject* base, const char* oldLink)
 {
-    for (auto& element : Part::Feature::getRelatedElements(base, oldLink)) {
+    for (auto& element : Part::ShapeFeature::getRelatedElements(base, oldLink)) {
         replacementName.clear();
         element.index.appendToStringBuffer(replacementName);
         FC_WARN("Feature guess element reference " << oldLink << " -> " << replacementName);
@@ -1971,19 +1981,18 @@ void Feature::guessNewLink(std::string& replacementName, DocumentObject* base, c
 
 // ---------------------------------------------------------
 
-PROPERTY_SOURCE(Part::FilletBase, Part::Feature)
+PROPERTY_SOURCE_ABSTRACT(Part::FilletBase, Part::ShapeFeature)
 
 FilletBase::FilletBase()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Base, (nullptr));
-    ADD_PROPERTY(Edges, (0, 0, 0));
     ADD_PROPERTY_TYPE(EdgeLinks, (0), 0, (App::PropertyType)(App::Prop_ReadOnly | App::Prop_Hidden), 0);
-    Edges.setSize(0);
 }
 
 short FilletBase::mustExecute() const
 {
-    if (Base.isTouched() || Edges.isTouched() || EdgeLinks.isTouched()) {
+    if (Base.isTouched() || edgeMeasurements().isTouched() || EdgeLinks.isTouched()) {
         return 1;
     }
     return 0;
@@ -1995,20 +2004,20 @@ App::DocumentObjectExecReturn* FilletBase::execute()
     if (!link) {
         return new App::DocumentObjectExecReturn("No object linked");
     }
-    copyMaterial(link);
-    return Part::Feature::execute();
+    Part::inheritMaterial(this, link);
+    return Part::ShapeFeature::execute();
 }
 
 void FilletBase::onChanged(const App::Property* prop)
 {
     if (getDocument() && !getDocument()->testStatus(App::Document::Restoring)) {
-        if (prop == &Edges || prop == &Base) {
+        if (prop == &edgeMeasurements() || prop == &Base) {
             if (!prop->testStatus(App::Property::User3)) {
                 syncEdgeLink();
             }
         }
     }
-    Feature::onChanged(prop);
+    ShapeFeature::onChanged(prop);
 }
 
 void FilletBase::onDocumentRestored()
@@ -2016,18 +2025,18 @@ void FilletBase::onDocumentRestored()
     if (EdgeLinks.getSubValues().empty()) {
         syncEdgeLink();
     }
-    Feature::onDocumentRestored();
+    ShapeFeature::onDocumentRestored();
 }
 
 void FilletBase::syncEdgeLink()
 {
-    if (!Base.getValue() || !Edges.getSize()) {
+    if (!Base.getValue() || !edgeMeasurements().getSize()) {
         EdgeLinks.setValue(0);
         return;
     }
     std::vector<std::string> subs;
     std::string sub("Edge");
-    for (auto& info : Edges.getValues()) {
+    for (auto& info : edgeMeasurements().getValues()) {
         subs.emplace_back(sub + std::to_string(info.edgeid));
     }
     EdgeLinks.setValue(Base.getValue(), subs);
@@ -2038,7 +2047,7 @@ void FilletBase::onUpdateElementReference(const App::Property* prop)
     if (prop != &EdgeLinks || !getNameInDocument()) {
         return;
     }
-    auto values = Edges.getValues();
+    auto values = edgeMeasurements().getValues();
     const auto& subs = EdgeLinks.getSubValues();
     for (size_t i = 0; i < values.size(); ++i) {
         if (i >= subs.size()) {
@@ -2053,9 +2062,9 @@ void FilletBase::onUpdateElementReference(const App::Property* prop)
             FC_WARN("invalid fillet edge link '" << subs[i] << "' in object " << getFullName());
         }
     }
-    Edges.setStatus(App::Property::User3, true);
-    Edges.setValues(values);
-    Edges.setStatus(App::Property::User3, false);
+    edgeMeasurements().setStatus(App::Property::User3, true);
+    edgeMeasurements().setValues(values);
+    edgeMeasurements().setStatus(App::Property::User3, false);
 }
 
 // ---------------------------------------------------------
@@ -2278,4 +2287,17 @@ bool Part::checkIntersection(
         xp.Init(mkCommon.Shape(), TopAbs_SOLID);
         return (xp.More() == Standard_True);
     }
+}
+
+TopoDS_Shape Part::bakeLocationIntoGeometry(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull() || shape.Location().IsIdentity()) {
+        return shape;
+    }
+    BRepBuilderAPI_Transform mkTrf(
+        shape.Located(TopLoc_Location()),
+        shape.Location().Transformation(),
+        Standard_True
+    );
+    return mkTrf.Shape();
 }

@@ -24,6 +24,12 @@
 
 
 #include <BRep_Tool.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <algorithm>
+#include <cmath>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepCheck_Solid.hxx>
 #include <BRepCheck_Status.hxx>
@@ -46,7 +52,7 @@
 #include "Feature.h"
 #include "FeaturePy.h"
 #include "Body.h"
-#include "ShapeBinder.h"
+#include "FeatureTransformed.h"
 
 #include <BRep_Builder.hxx>
 
@@ -68,21 +74,35 @@ bool getPDRefineModelParameter()
 
 // ------------------------------------------------------------------------------------------------
 
-PROPERTY_SOURCE(PartDesign::Feature, Part::Feature)
+PROPERTY_SOURCE(PartDesign::Feature, Part::ShapeFeature)
 
 Feature::Feature()
 {
     ADD_PROPERTY(BaseFeature, (nullptr));
-    ADD_PROPERTY_TYPE(
-        _Body,
-        (nullptr),
-        "Base",
-        (App::PropertyType)(App::Prop_ReadOnly | App::Prop_Hidden | App::Prop_Output
-                            | App::Prop_Transient),
-        0
-    );
+    BaseFeature.setScope(App::LinkScope::Global);  // CoreCAD Phase 3: allow Part::Feature as base
     ADD_PROPERTY(SuppressedShape, (TopoShape()));
-    Placement.setStatus(App::Property::Hidden, true);
+    ADD_PROPERTY_TYPE(
+        GestureId,
+        (""),
+        "Base",
+        App::Prop_NoRecompute,
+        "Shared tag for the sibling features of one multi-body cut/common gesture (Amendment 5 "
+        "§5.3). Inert: changing it touches nothing for recompute and no membership derives from it."
+    );
+    ADD_PROPERTY_TYPE(
+        BaseInstance,
+        (-1),
+        "Base",
+        App::Prop_Hidden,
+        "The copy of a pattern this step builds on, by its ordinal; -1 for the whole base."
+    );
+    ADD_PROPERTY_TYPE(
+        NoEffectAcknowledged,
+        (false),
+        "Base",
+        App::Prop_NoRecompute,
+        "The user accepted that this step changes the shape it builds on in no way"
+    );
     BaseFeature.setStatus(App::Property::Hidden, true);
 
     App::SuppressibleExtension::initExtension(this);
@@ -91,8 +111,10 @@ Feature::Feature()
 
 App::DocumentObjectExecReturn* Feature::recompute()
 {
-    setMaterialToBodyMaterial();
-
+    // Past the roll-back marker: keep the last shape until the marker moves past this step.
+    if (Body::isRolledBackPast(this)) {
+        return App::DocumentObject::StdReturn;
+    }
     if (Suppressed.getValue()) {
         Shape.setValue(getBaseTopoShape(true));
         updateSuppressedShape();
@@ -100,7 +122,7 @@ App::DocumentObjectExecReturn* Feature::recompute()
     }
 
     SuppressedShape.setValue(TopoShape());
-    return Part::Feature::recompute();
+    return Part::ShapeFeature::recompute();
 }
 
 App::DocumentObjectExecReturn* Feature::recomputePreview()
@@ -108,18 +130,6 @@ App::DocumentObjectExecReturn* Feature::recomputePreview()
     updatePreviewShape();
 
     return StdReturn;
-}
-
-void Feature::setMaterialToBodyMaterial()
-{
-    auto body = getFeatureBody();
-    if (body) {
-        // Ensure the part has the same material as the body
-        auto feature = dynamic_cast<Part::Feature*>(body);
-        if (feature) {
-            copyMaterial(feature);
-        }
-    }
 }
 
 void Feature::updateSuppressedShape()
@@ -139,78 +149,96 @@ void Feature::updateSuppressedShape()
     }
     if (!generated.empty()) {
         res.makeElementCompound(generated);
-        res.setPlacement(Placement.getValue());
+        res.setPlacement(getPlacement());
     }
     SuppressedShape.setValue(res);
 }
 
-short Feature::mustExecute() const
+bool Feature::producesContentOf(const App::Property& prop) const
 {
-    if (BaseFeature.isTouched()) {
-        return 1;
-    }
-    return Part::Feature::mustExecute();
+    // A copy of the shape this step built before it was suppressed: made here, never authored.
+    return &prop == &SuppressedShape || Part::ShapeFeature::producesContentOf(prop);
 }
 
-TopoShape Feature::getSolid(const TopoShape& shape) const
+short Feature::mustExecute() const
 {
-    if (shape.isNull()) {
-        throw Part::NullShapeException("Null shape");
+    if (BaseFeature.isTouched() || BaseInstance.isTouched()) {
+        return 1;
+    }
+    return Part::ShapeFeature::mustExecute();
+}
+
+void Feature::onBaseFeatureRerouted(App::DocumentObject* /*oldBase*/, App::DocumentObject* /*newBase*/)
+{}
+
+bool Feature::relinkByLineage(
+    App::PropertyLinkSub& link,
+    App::DocumentObject* oldBase,
+    App::DocumentObject* newBase
+)
+{
+    if (!oldBase || !newBase || link.getValue() != oldBase) {
+        return false;
     }
 
-    // If single solid rule is not enforced  we simply return the shape as is
-    if (singleSolidRuleMode() != Feature::SingleSolidRuleMode::Enforced) {
-        return shape;
+    auto oldFeature = freecad_cast<Part::ShapeFeature*>(oldBase);
+    auto newFeature = freecad_cast<Part::ShapeFeature*>(newBase);
+    if (!oldFeature || !newFeature) {
+        return false;
     }
 
-    int count = shape.countSubShapes(TopAbs_SOLID);
-    if (count) {
-        auto res = shape.getSubTopoShape(TopAbs_SOLID, 1);
-        res.fixSolidOrientation();
-        return res;
+    const auto& oldShape = oldFeature->Shape.getShape();
+    const auto& newShape = newFeature->Shape.getShape();
+    if (oldShape.isNull() || newShape.isNull()) {
+        return false;
     }
 
-    return shape;
+    std::vector<std::string> newSubs;
+    for (const auto& sub : link.getSubValues()) {
+        std::string ancestor;
+        if (!sub.empty()) {
+            // oldBase's history names each element's ancestor in newBase. An element oldBase
+            // created has none there, so the step fails rather than guess.
+            Data::MappedName original;
+            auto mapped = oldShape.getElementName(sub.c_str()).name;
+            if (!mapped || oldShape.getElementHistory(mapped, &original) != newShape.Tag) {
+                return false;
+            }
+            auto index = newShape.getIndexedName(original);
+            if (!index) {
+                index = original.toIndexedName();
+            }
+            if (!index || newShape.getSubShape(index.toString().c_str(), true).IsNull()) {
+                return false;
+            }
+            ancestor = index.toString();
+        }
+        if (std::ranges::find(newSubs, ancestor) == newSubs.end()) {
+            newSubs.push_back(std::move(ancestor));
+        }
+    }
+
+    link.setValue(newBase, std::move(newSubs));
+    return true;
 }
 
 void Feature::onChanged(const App::Property* prop)
 {
     if (!this->isRestoring() && this->getDocument()
         && !this->getDocument()->isPerformingTransaction()) {
-        if (prop == &Visibility || prop == &BaseFeature) {
-            auto body = Body::findBodyOf(this);
-            if (body) {
-                if (prop == &BaseFeature && BaseFeature.getValue()) {
-                    int idx = -1;
-                    body->Group.find(this->getNameInDocument(), &idx);
-                    int baseidx = -1;
-                    body->Group.find(BaseFeature.getValue()->getNameInDocument(), &idx);
-                    if (idx >= 0 && baseidx >= 0 && baseidx + 1 != idx) {
-                        body->insertObject(BaseFeature.getValue(), this);
-                    }
-                }
-            }
-        }
-        else if (prop == &ShapeMaterial) {
-            auto body = Body::findBodyOf(this);
-            if (body) {
-                if (body->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID()) {
-                    body->ShapeMaterial.setValue(ShapeMaterial.getValue());
-                }
-            }
-        }
-        else if (prop == &Suppressed) {
+        // Cruth de-ownership: feature order follows the BaseFeature chain itself, so a
+        // BaseFeature change needs no Group reindexing (Group is empty). The former
+        // Visibility/BaseFeature reorder branch is retired here.
+        if (prop == &Suppressed) {
+            // Amendment 4: a derived feature holds no authored placement, so the
+            // suppress path no longer saves/restores one — its geometry already
+            // lives in the world frame.
             if (Suppressed.getValue()) {
-                SuppressedPlacement = Placement.getValue();
                 updateSuppressedShape();
-            }
-            else {
-                Placement.setValue(SuppressedPlacement);
-                SuppressedPlacement = Base::Placement();
             }
         }
     }
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 int Feature::countSolids(const TopoDS_Shape& shape, TopAbs_ShapeEnum type)
@@ -265,32 +293,6 @@ TopoShape Feature::fixSolids(const TopoShape& solids)
     return fixShape;
 }
 
-bool Feature::isSingleSolidRuleSatisfied(const TopoDS_Shape& shape, TopAbs_ShapeEnum type)
-{
-    if (singleSolidRuleMode() == Feature::SingleSolidRuleMode::Disabled) {
-        return true;
-    }
-
-    int solidCount = countSolids(shape, type);
-
-    return solidCount <= 1;
-}
-
-
-Feature::SingleSolidRuleMode Feature::singleSolidRuleMode() const
-{
-    auto body = getFeatureBody();
-
-    // When the feature is not part of an body (which should not happen) let's stay with the default
-    if (!body) {
-        return SingleSolidRuleMode::Enforced;
-    }
-
-    auto areCompoundSolidsAllowed = body->AllowCompound.getValue();
-
-    return areCompoundSolidsAllowed ? SingleSolidRuleMode::Disabled : SingleSolidRuleMode::Enforced;
-}
-
 const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)
 {
     if (!f.Infinite()) {
@@ -307,19 +309,22 @@ const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)
     throw Base::NotImplementedError("getPointFromFace(): Not implemented yet for this case");
 }
 
-Part::Feature* Feature::getBaseObject(bool silent) const
+App::DocumentObject* Feature::getBaseObject(bool silent) const
 {
     App::DocumentObject* BaseLink = BaseFeature.getValue();
-    Part::Feature* BaseObject = nullptr;
+    App::DocumentObject* BaseObject = nullptr;
     const char* err = nullptr;
 
     if (BaseLink) {
-        if (BaseLink->isDerivedFrom<Part::Feature>()) {
-            BaseObject = static_cast<Part::Feature*>(BaseLink);
+        if (Part::hasShape(BaseLink)) {
+            BaseObject = BaseLink;
         }
         if (!BaseObject) {
             err = "No base feature linked";
         }
+    }
+    else if (patternDeleted(silent)) {
+        return nullptr;
     }
     else {
         err = "Base property not set";
@@ -333,20 +338,16 @@ Part::Feature* Feature::getBaseObject(bool silent) const
     return BaseObject;
 }
 
-const TopoDS_Shape& Feature::getBaseShape() const
+TopoDS_Shape Feature::getBaseShape() const
 {
-    const Part::Feature* BaseObject = getBaseObject();
+    App::DocumentObject* BaseObject = getBaseObject();
 
     if (!BaseObject) {
         throw Base::ValueError("Base feature's shape is not defined");
     }
 
-    if (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
-        || BaseObject->isDerivedFrom<PartDesign::SubShapeBinder>()) {
-        throw Base::ValueError("Base shape of shape binder cannot be used");
-    }
-
-    const TopoDS_Shape& result = BaseObject->Shape.getValue();
+    const TopoDS_Shape result
+        = narrowToBaseInstance(BaseObject, Part::getShape(BaseObject), false).getShape();
     if (result.IsNull()) {
         throw Base::ValueError("Base feature's shape is invalid");
     }
@@ -358,11 +359,59 @@ const TopoDS_Shape& Feature::getBaseShape() const
     return result;
 }
 
+namespace
+{
+bool sameSolid(const TopoDS_Shape& a, const TopoDS_Shape& b)
+{
+    for (auto type : {TopAbs_SOLID, TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX}) {
+        TopTools_IndexedMapOfShape inA;
+        TopTools_IndexedMapOfShape inB;
+        TopExp::MapShapes(a, type, inA);
+        TopExp::MapShapes(b, type, inB);
+        if (inA.Extent() != inB.Extent()) {
+            return false;
+        }
+    }
+    // A boolean that changes nothing rebuilds the same faces, so its measures agree to rounding;
+    // any real change of material moves the volume or the area far past this.
+    auto agree = [](double x, double y) {
+        return std::abs(x - y) <= 1e-9 * std::max({std::abs(x), std::abs(y), 1.0});
+    };
+    GProp_GProps volumeA, volumeB, areaA, areaB;
+    BRepGProp::VolumeProperties(a, volumeA);
+    BRepGProp::VolumeProperties(b, volumeB);
+    BRepGProp::SurfaceProperties(a, areaA);
+    BRepGProp::SurfaceProperties(b, areaB);
+    return agree(volumeA.Mass(), volumeB.Mass()) && agree(areaA.Mass(), areaB.Mass());
+}
+}  // namespace
+
+bool Feature::hasNoEffect() const
+{
+    if (Suppressed.getValue() || isError() || Body::isRolledBackPast(this)) {
+        return false;
+    }
+    try {
+        const TopoDS_Shape base = getBaseTopoShape(true).getShape();
+        const TopoDS_Shape result = Shape.getShape().getShape();
+        if (base.IsNull() || result.IsNull()) {
+            return false;
+        }
+        return sameSolid(base, result);
+    }
+    catch (const Standard_Failure&) {
+        return false;
+    }
+    catch (const Base::Exception&) {
+        return false;
+    }
+}
+
 Part::TopoShape Feature::getBaseTopoShape(bool silent) const
 {
     Part::TopoShape result;
 
-    const Part::Feature* BaseObject = getBaseObject(silent);
+    App::DocumentObject* BaseObject = getBaseObject(silent);
     if (!BaseObject) {
         return result;
     }
@@ -375,16 +424,9 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
             }
             throw Base::RuntimeError("Missing container body");
         }
-        if (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
-            || BaseObject->isDerivedFrom<PartDesign::SubShapeBinder>()) {
-            if (silent) {
-                return result;
-            }
-            throw Base::ValueError("Base shape of shape binder cannot be used");
-        }
     }
 
-    result = BaseObject->Shape.getShape();
+    result = narrowToBaseInstance(BaseObject, Part::getShape(BaseObject), silent);
     if (!silent) {
         if (result.isNull()) {
             throw Base::ValueError("Base feature's TopoShape is invalid");
@@ -397,6 +439,60 @@ Part::TopoShape Feature::getBaseTopoShape(bool silent) const
         result.setShape(TopoDS_Shape());
     }
     return result;
+}
+
+bool Feature::patternDeleted(bool silent) const
+{
+    if (BaseFeature.getValue() || BaseInstance.getValue() < 0) {
+        return false;
+    }
+    if (!silent) {
+        throw Base::RuntimeError(
+            "The pattern this step was built on was deleted, so there is nothing for it to build on"
+        );
+    }
+    return true;
+}
+
+Part::TopoShape Feature::narrowToBaseInstance(
+    const App::DocumentObject* base,
+    const Part::TopoShape& shape,
+    bool silent
+) const
+{
+    const long ordinal = BaseInstance.getValue();
+    if (ordinal < 0 || !base || base != BaseFeature.getValue()) {
+        return shape;
+    }
+    const auto* pattern = freecad_cast<const Transformed*>(base);
+    const int index = pattern ? pattern->solidIndexOfInstance(ordinal) : 0;
+    if (index > 0) {
+        Part::TopoShape solid = shape.getSubTopoShape(TopAbs_SOLID, index, /*silent*/ true);
+        if (!solid.isNull()) {
+            // A pattern keeps each copy's offset in the solid's own placement, and a step
+            // resets its base's top-level placement. Hand the copy over inside a compound, as
+            // the pattern did, so the offset stays on the solid and survives that reset. A
+            // compound of one solid numbers its faces and edges exactly as the solid does, so
+            // the solid's element map carries over whole and the step still finds the edges it
+            // names. (Baking the offset into the geometry, or building the compound through
+            // the element-map machinery, renames every one of them.)
+            TopoDS_Compound holder;
+            BRep_Builder builder;
+            builder.MakeCompound(holder);
+            builder.Add(holder, solid.getShape());
+            Part::TopoShape compound(holder, solid.Tag, solid.Hasher);
+            solid.flushElementMap();  // a sub-shape's map is filled in lazily
+            compound.resetElementMap(solid.resetElementMap());
+            return compound;
+        }
+    }
+    if (silent) {
+        return {};
+    }
+    throw Base::ValueError(
+        "Copy " + std::to_string(ordinal + 1) + " of '" + base->Label.getValue()
+        + "' no longer exists, so there is nothing for this step to build on"
+    );
 }
 
 void Feature::getGeneratedShapes(
@@ -455,7 +551,7 @@ PyObject* Feature::getPyObject()
 
 bool Feature::isDatum(const App::DocumentObject* feature)
 {
-    return feature->isDerivedFrom<App::DatumElement>() || feature->isDerivedFrom<Part::Datum>();
+    return feature->isDerivedFrom<App::DatumElement>();
 }
 
 gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)
@@ -465,8 +561,8 @@ gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)
         throw Base::ValueError("Feature: Null object");
     }
 
-    Base::Vector3d pos = plane->Placement.getValue().getPosition();
-    Base::Rotation rot = plane->Placement.getValue().getRotation();
+    Base::Vector3d pos = plane->getPlacement().getPosition();
+    Base::Rotation rot = plane->getPlacement().getRotation();
     Base::Vector3d normal(0, 0, 1);
     rot.multVec(normal, normal);
     return gp_Pln(gp_Pnt(pos.x, pos.y, pos.z), gp_Dir(normal.x, normal.y, normal.z));
@@ -495,22 +591,8 @@ TopoShape Feature::makeTopoShapeFromPlane(const App::DocumentObject* obj)
 
 Body* Feature::getFeatureBody() const
 {
-
-    auto body = freecad_cast<Body*>(_Body.getValue());
-    if (body) {
-        return body;
-    }
-
-    auto list = getInList();
-    for (auto in : list) {
-        if (in->isDerivedFrom<Body>() &&                // is Body?
-            static_cast<Body*>(in)->hasObject(this)) {  // is part of this Body?
-
-            return static_cast<Body*>(in);
-        }
-    }
-
-    return nullptr;
+    // Derived from the BaseFeature chain; a feature stores no Body.
+    return Body::findBodyOf(this);
 }
 
 App::DocumentObject* Feature::getSubObject(
@@ -526,35 +608,19 @@ App::DocumentObject* Feature::getSubObject(
         if (dot) {
             auto body = PartDesign::Body::findBodyOf(this);
             if (body) {
-                auto feat = body->Group.findUsingMap(std::string(subname, dot));
+                auto feat = body->findOwnedFeature(std::string(subname, dot));
                 if (feat) {
-                    Base::Matrix4D _mat;
-                    if (!transform) {
-                        // Normally the parent object is supposed to transform
-                        // the sub-object using its own placement. So, if no
-                        // transform is requested, (i.e. no parent
-                        // transformation), we just need to NOT apply the
-                        // transformation.
-                        //
-                        // But PartDesign features (including sketch) are
-                        // supposed to be contained inside a body. It makes
-                        // little sense to transform its sub-object. So if 'no
-                        // transform' is requested, we need to actively apply
-                        // an inverse transform.
-                        _mat = Placement.getValue().inverse().toMatrix();
-                        if (pmat) {
-                            *pmat *= _mat;
-                        }
-                        else {
-                            pmat = &_mat;
-                        }
-                    }
+                    // Amendment 4, Clause 4.4: reference resolution through a
+                    // feature composes no feature transform. The feature holds
+                    // no authored placement, so there is no inverse to apply for
+                    // the no-transform case — resolve straight to the owned
+                    // feature.
                     return feat->getSubObject(dot + 1, pyObj, pmat, true, depth + 1);
                 }
             }
         }
     }
-    return Part::Feature::getSubObject(subname, pyObj, pmat, transform, depth);
+    return Part::ShapeFeature::getSubObject(subname, pyObj, pmat, transform, depth);
 }
 
 

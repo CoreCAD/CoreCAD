@@ -37,7 +37,6 @@ set(PartDesign_TestScripts
     PartDesignTests/__init__.py
     PartDesignTests/TestActiveObject.py
     PartDesignTests/TestDatum.py
-    PartDesignTests/TestShapeBinder.py
     PartDesignTests/TestPad.py
     PartDesignTests/TestPocket.py
     PartDesignTests/TestHelix.py
@@ -49,8 +48,14 @@ set(PartDesign_TestScripts
     PartDesignTests/TestMirrored.py
     PartDesignTests/TestLinearPattern.py
     PartDesignTests/TestPolarPattern.py
-    PartDesignTests/TestMultiTransform.py
     PartDesignTests/TestBoolean.py
+    PartDesignTests/TestBreakOut.py
+    PartDesignTests/TestKeepCopiesApart.py
+    PartDesignTests/TestNoEffect.py
+    PartDesignTests/TestPatternCopyBodies.py
+    PartDesignTests/TestFirstBuildElementNames.py
+    PartDesignTests/TestReopenElementNames.py
+    PartDesignTests/TestMultiOutputDelete.py
     PartDesignTests/TestFillet.py
     PartDesignTests/TestChamfer.py
     PartDesignTests/TestDraft.py
@@ -58,6 +63,12 @@ set(PartDesign_TestScripts
     PartDesignTests/TestTopologicalNamingProblem.py
     PartDesignTests/TestInvoluteGear.py
     PartDesignTests/TestSketch.py
+    PartDesignTests/TestBodyEmergence.py
+    PartDesignTests/TestOverlapAccess.py
+    PartDesignTests/TestStepDependencies.py
+    PartDesignTests/TestRollbackMarker.py
+    PartDesignTests/TestPatternChain.py
+    PartDesignTests/TestPointPattern.py
 )
 
 if(BUILD_GUI)

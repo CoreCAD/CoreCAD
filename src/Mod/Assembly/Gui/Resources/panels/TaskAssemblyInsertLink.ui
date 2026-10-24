@@ -52,7 +52,7 @@
    <item row="3" column="0">
     <widget class="Gui::PrefCheckBox" name="CheckBox_ShowOnlyParts">
      <property name="toolTip">
-      <string>Shows only parts in the list</string>
+      <string>Shows only whole parts -- bodies and standalone solids -- and hides the sketches and features they are built from</string>
      </property>
      <property name="text">
       <string>Show only parts</string>

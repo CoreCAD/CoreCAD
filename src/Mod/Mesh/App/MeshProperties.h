@@ -53,6 +53,12 @@ class MeshExport PropertyNormalList: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: one normal per mesh vertex.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyNormalList();
 
     void setSize(int newSize) override;
@@ -115,6 +121,12 @@ class MeshExport PropertyCurvatureList: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: one curvature measurement per mesh vertex.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     enum
     {
         MeanCurvature = 0,  /**< Mean curvature */
@@ -185,6 +197,12 @@ class MeshExport PropertyMaterial: public App::Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: per-facet mesh colouring, sized by the mesh.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyMaterial() = default;
 
     /** Sets the property

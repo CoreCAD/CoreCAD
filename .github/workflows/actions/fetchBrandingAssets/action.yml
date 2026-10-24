@@ -1,0 +1,39 @@
+name: fetchBrandingAssets
+description: "Downloads proprietary CoreCAD branding assets from the private corecad-assets repo and overlays them onto the workspace. Gracefully skips if the token is absent or the download fails."
+
+inputs:
+  token:
+    description: "GitHub PAT with Contents: Read-only access to CoreCAD/corecad-assets"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch CoreCAD branding assets
+      shell: bash
+      env:
+        CORECAD_ASSETS_TOKEN: ${{ inputs.token }}
+      run: |
+        if [ -z "$CORECAD_ASSETS_TOKEN" ]; then
+          echo "::notice::No CORECAD_ASSETS_TOKEN available — building with placeholder assets"
+          exit 0
+        fi
+
+        echo "Fetching CoreCAD branding assets..."
+        TMPFILE="${RUNNER_TEMP}/corecad-assets.tar.gz"
+
+        HTTP_STATUS=$(curl -s -o "$TMPFILE" -w "%{http_code}" \
+          -H "Authorization: Bearer $CORECAD_ASSETS_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          -L "https://api.github.com/repos/CoreCAD/corecad-assets/tarball/main")
+
+        if [ "$HTTP_STATUS" != "200" ]; then
+          echo "::warning::Failed to download branding assets (HTTP $HTTP_STATUS) — building with placeholder assets"
+          rm -f "$TMPFILE"
+          exit 0
+        fi
+
+        tar -xzf "$TMPFILE" --strip-components=1 -C "$GITHUB_WORKSPACE"
+        rm -f "$TMPFILE"
+        echo "CoreCAD branding assets applied."

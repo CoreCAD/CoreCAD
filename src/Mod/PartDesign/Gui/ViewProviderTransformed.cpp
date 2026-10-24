@@ -36,7 +36,7 @@
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Mod/Part/App/Tools.h>
-#include <Mod/PartDesign/App/FeatureMultiTransform.h>
+#include <Mod/PartDesign/App/FeatureTransformed.h>
 
 #include "ViewProviderTransformed.h"
 #include "TaskTransformedParameters.h"
@@ -67,27 +67,6 @@ void ViewProviderTransformed::setupContextMenu(QMenu* menu, QObject* receiver, c
     ViewProvider::setupContextMenu(menu, receiver, member);
 }
 
-Gui::ViewProvider* ViewProviderTransformed::startEditing(int ModNum)
-{
-    auto* pcTransformed = getObject<PartDesign::Transformed>();
-
-    if (!pcTransformed->Originals.getSize()) {
-        for (auto obj : pcTransformed->getInList()) {
-            if (!obj->isDerivedFrom<PartDesign::MultiTransform>()) {
-                continue;
-            }
-
-            if (auto vp = Gui::Application::Instance->getViewProvider(obj)) {
-                return vp->startEditing(ModNum);
-            }
-
-            return nullptr;
-        }
-    }
-
-    return ViewProvider::startEditing(ModNum);
-}
-
 bool ViewProviderTransformed::setEdit(int ModNum)
 {
     recomputeFeature(false);
@@ -106,8 +85,7 @@ void ViewProviderTransformed::updatePreview()
 
     try {
         if (auto feature = getObject<PartDesign::Transformed>()) {
-            auto originals = feature->getOriginals();
-            auto transforms = feature->getTransformations(originals);
+            auto transforms = feature->getTransformations();
 
             if (transforms.empty()) {
                 return;
@@ -143,31 +121,6 @@ void ViewProviderTransformed::updatePreview()
 
 void ViewProviderTransformed::handleTransformedResult(PartDesign::Transformed* pcTransformed)
 {
-    unsigned rejected = 0;
-
-    TopoDS_Shape cShape = pcTransformed->rejected;
-    TopExp_Explorer xp;
-    xp.Init(cShape, TopAbs_SOLID);
-    for (; xp.More(); xp.Next()) {
-        rejected++;
-    }
-
-    if (rejected > 0) {
-        if (rejected == 1) {
-            Base::Console().translatedUserWarning(
-                "ViewProviderTransformed",
-                "One transformed shape does not intersect the support"
-            );
-        }
-        else {
-            Base::Console().translatedUserWarning(
-                "ViewProviderTransformed",
-                "%d transformed shapes do not intersect the support",
-                rejected
-            );
-        }
-    }
-
     auto error = pcTransformed->getDocument()->getErrorDescription(pcTransformed);
     if (error) {
         Base::Console().translatedUserError("ViewProviderTransformed", error);

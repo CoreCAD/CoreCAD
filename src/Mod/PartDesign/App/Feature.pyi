@@ -30,3 +30,11 @@ class Feature(PartFeature):
         getBaseObject: returns feature this one fuses itself to, or None. Normally, this should be the same as BaseFeature property, except for legacy workflow. In legacy workflow, it will look up the support of referenced sketch.
         """
         ...
+
+    def hasNoEffect(self) -> bool:
+        """
+        hasNoEffect(): True when this step leaves the shape it builds on unchanged. Derived each
+        time it is asked. A first, suppressed, rolled-back or failed step returns False.
+        Acknowledging it is the NoEffectAcknowledged property.
+        """
+        ...

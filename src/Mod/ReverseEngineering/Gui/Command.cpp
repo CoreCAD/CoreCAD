@@ -394,7 +394,9 @@ void CmdApproxPolynomial::activated(int)
             grid.SetValue(3, 3, Base::convertTo<gp_Pnt>(poles.at(8)));
 
             Handle(Geom_BezierSurface) bezier(new Geom_BezierSurface(grid));
-            Part::Feature* part = static_cast<Part::Feature*>(doc->addObject("Part::Spline", "Bezier"));
+            Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(
+                doc->addObject("Part::Spline", "Bezier")
+            );
             part->Shape.setValue(Part::GeomBezierSurface(bezier).toShape());
         }
     }

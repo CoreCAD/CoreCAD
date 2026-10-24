@@ -26,19 +26,29 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QDir>
+#include <QComboBox>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QTextStream>
 #include <QTreeWidgetItem>
+#include <QVBoxLayout>
 
 #include <boost/regex.hpp>
 #include <boost/algorithm/string/replace.hpp>
 
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
+#include <App/Project.h>
 #include <App/DocumentObject.h>
 #include <App/Expression.h>
 #include <App/GeoFeature.h>
+#include <App/ObjectRecipe.h>
+#include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
 #include <Base/Stream.h>
@@ -54,9 +64,14 @@
 #include "MainWindow.h"
 #include "Selection.h"
 #include "Dialogs/DlgObjectSelection.h"
+#include "Dialogs/DlgHeldStatements.h"
+#include "Dialogs/DlgProjectCleanup.h"
 #include "Dialogs/DlgProjectInformationImp.h"
 #include "Dialogs/DlgProjectUtility.h"
 #include "GraphvizView.h"
+#include "HistoryPanel.h"
+#include "ProjectDialogs.h"
+#include "ProjectPanel.h"
 #include "ManualAlignment.h"
 #include "MergeDocuments.h"
 #include "Navigation/NavigationStyle.h"
@@ -230,15 +245,21 @@ void StdCmdImport::activated(int iMsg)
     FileDialog::Filter allSupportedFormats {QObject::tr("Supported formats"), {}};
     const auto filetypes = App::GetApplication().getImportTypes();
     for (const auto& type : filetypes) {
-        if (type != "FCStd") {
+        // A whole native document (.FCStd, .cpart, .cassembly) is opened, not imported.
+        if (!App::Document::isNativeFormatExtension(type.c_str())) {
             allSupportedFormats.patterns.append(QStringLiteral("*.") + QString::fromStdString(type));
         }
     }
     formatList.append(allSupportedFormats);
 
+    const auto nativeExts = App::Document::nativeFormatExtensions();
     const auto importFilters = App::GetApplication().getImportFilters();
     for (auto it = importFilters.cbegin(); it != importFilters.cend(); ++it) {
-        if (it->first.find("*.FCStd") == std::string::npos) {
+        const bool isNativeDoc
+            = std::any_of(nativeExts.cbegin(), nativeExts.cend(), [&](const std::string& ext) {
+                  return it->first.find("*." + ext) != std::string::npos;
+              });
+        if (!isNativeDoc) {
             formatList.append(FileDialog::Filter::fromFilterString(QString::fromStdString(it->first)));
         }
     }
@@ -614,11 +635,15 @@ void StdCmdMergeProjects::activated(int iMsg)
     Q_UNUSED(iMsg);
 
     QString exe = qApp->applicationName();
+    QStringList docPatterns;
+    for (const std::string& ext : App::Document::nativeFormatExtensions()) {
+        docPatterns.append(QStringLiteral("*.") + QString::fromStdString(ext));
+    }
     QString project = FileDialog::getOpenFileName(
         Gui::getMainWindow(),
         QObject::tr("Merge Document"),
         FileDialog::getWorkingDirectory(),
-        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), {"*.FCStd"}}}
+        FileDialog::FilterList {{QObject::tr("%1 document").arg(exe), docPatterns}}
     );
     if (!project.isEmpty()) {
         FileDialog::setWorkingDirectory(project);
@@ -647,6 +672,211 @@ void StdCmdMergeProjects::activated(int iMsg)
 bool StdCmdMergeProjects::isActive()
 {
     return this->hasActiveDocument();
+}
+
+//===========================================================================
+// Std_MergeDocumentVersions
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdMergeDocumentVersions)
+
+StdCmdMergeDocumentVersions::StdCmdMergeDocumentVersions()
+    : Command("Std_MergeDocumentVersions")
+{
+    sAppModule = "File";
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Merge Document &Versions...");
+    sToolTipText = QT_TR_NOOP(
+        "Three-way merge of a model's authored recipe: reconciles a common "
+        "ancestor with two edited copies and reports what merges cleanly, "
+        "what conflicts, and any references left dangling. Reads only — "
+        "it changes nothing."
+    );
+    sWhatsThis = "Std_MergeDocumentVersions";
+    sStatusTip = sToolTipText;
+}
+
+void StdCmdMergeDocumentVersions::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    const std::vector<App::Document*> docs = App::GetApplication().getDocuments();
+    if (docs.size() < 3) {  // guarded by isActive(), but stay honest
+        return;
+    }
+
+    QStringList labels;
+    labels.reserve(static_cast<int>(docs.size()));
+    for (auto* doc : docs) {
+        labels.append(QString::fromUtf8(doc->Label.getValue()));
+    }
+
+    QDialog dlg(getMainWindow());
+    dlg.setWindowTitle(QObject::tr("Merge Document Versions"));
+
+    auto* ancestorBox = new QComboBox(&dlg);
+    auto* branchABox = new QComboBox(&dlg);
+    auto* branchBBox = new QComboBox(&dlg);
+    for (auto* box : {ancestorBox, branchABox, branchBBox}) {
+        box->addItems(labels);
+    }
+    // Distinct defaults so the common case (three open versions) needs no fiddling.
+    ancestorBox->setCurrentIndex(0);
+    branchABox->setCurrentIndex(1);
+    branchBBox->setCurrentIndex(2);
+
+    auto* form = new QFormLayout;
+    form->addRow(QObject::tr("Common ancestor:"), ancestorBox);
+    form->addRow(QObject::tr("Branch A:"), branchABox);
+    form->addRow(QObject::tr("Branch B:"), branchBBox);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->addLayout(form);
+    layout->addWidget(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    App::Document* ancestor = docs[ancestorBox->currentIndex()];
+    App::Document* branchA = docs[branchABox->currentIndex()];
+    App::Document* branchB = docs[branchBBox->currentIndex()];
+
+    if (ancestor == branchA || ancestor == branchB || branchA == branchB) {
+        QMessageBox::warning(
+            getMainWindow(),
+            QObject::tr("Merge Document Versions"),
+            QObject::tr("Choose three different documents: one ancestor and two edited copies.")
+        );
+        return;
+    }
+
+    try {
+        App::DocumentMergeReport report = App::mergeDocuments(*ancestor, *branchA, *branchB);
+        Base::Console().message("%s\n", App::formatDocumentReport(report).c_str());
+        getMainWindow()->showMessage(QObject::tr("Merge report written to the Report view."));
+    }
+    catch (const Base::Exception& e) {
+        QMessageBox::critical(
+            getMainWindow(),
+            QObject::tr("Merge Document Versions"),
+            QString::fromUtf8(e.what())
+        );
+    }
+}
+
+bool StdCmdMergeDocumentVersions::isActive()
+{
+    return App::GetApplication().getDocuments().size() >= 3;
+}
+
+//===========================================================================
+// Std_ShowHistory
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdShowHistory)
+
+StdCmdShowHistory::StdCmdShowHistory()
+    : Command("Std_ShowHistory")
+{
+    sGroup = "View";
+    sMenuText = QT_TR_NOOP("&History");
+    sToolTipText = QT_TR_NOOP("Shows the committed versions of the active part and what each changed");
+    sStatusTip = sToolTipText;
+    sWhatsThis = "Std_ShowHistory";
+    sPixmap = "Std_ShowHistory";
+    eType = 0;
+}
+
+void StdCmdShowHistory::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    HistoryPanel::showPanel();
+}
+
+bool StdCmdShowHistory::isActive()
+{
+    return getActiveGuiDocument() != nullptr;
+}
+
+//===========================================================================
+// Std_NewProject
+//===========================================================================
+
+DEF_STD_CMD(StdCmdNewProject)
+
+StdCmdNewProject::StdCmdNewProject()
+    : Command("Std_NewProject")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("New pro&ject…");
+    sToolTipText = QT_TR_NOOP("Makes a new project: a folder that keeps the history of its parts");
+    sStatusTip = sToolTipText;
+    sWhatsThis = "Std_NewProject";
+    eType = NoTransaction;
+}
+
+void StdCmdNewProject::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    NewProjectDialog dialog(nullptr, getMainWindow());
+    if (dialog.exec() == QDialog::Accepted) {
+        getMainWindow()->showMessage(
+            QObject::tr("Made the project %1.").arg(QDir::toNativeSeparators(dialog.projectFile())),
+            5000
+        );
+    }
+}
+
+//===========================================================================
+// Std_OpenProject
+//===========================================================================
+
+DEF_STD_CMD(StdCmdOpenProject)
+
+StdCmdOpenProject::StdCmdOpenProject()
+    : Command("Std_OpenProject")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Open projec&t…");
+    sToolTipText = QT_TR_NOOP("Opens a project and lists its documents");
+    sStatusTip = sToolTipText;
+    sWhatsThis = "Std_OpenProject";
+    eType = NoTransaction;
+}
+
+void StdCmdOpenProject::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const QString chosen = FileDialog::getOpenFileName(
+        getMainWindow(),
+        QObject::tr("Open project"),
+        QString(),
+        {FileDialog::Filter(
+            QObject::tr("Projects"),
+            {QStringLiteral("*") + QLatin1String(App::projectFileExtension)}
+        )}
+    );
+    if (chosen.isEmpty()) {
+        return;
+    }
+    try {
+        App::projectName(chosen.toStdString());
+    }
+    catch (const Base::Exception&) {
+        QMessageBox::warning(
+            getMainWindow(),
+            QObject::tr("Open project"),
+            QObject::tr("%1 is not a project file, so it was not opened.")
+                .arg(QFileInfo(chosen).fileName())
+        );
+        return;
+    }
+    ProjectPanel::openProject(chosen);
 }
 
 //===========================================================================
@@ -738,8 +968,8 @@ StdCmdNew::StdCmdNew()
     : Command("Std_New")
 {
     sGroup = "File";
-    sMenuText = QT_TR_NOOP("&New Document");
-    sToolTipText = QT_TR_NOOP("Creates a new empty document");
+    sMenuText = QT_TR_NOOP("&New...");
+    sToolTipText = QT_TR_NOOP("Makes a new part, assembly or drawing");
     sWhatsThis = "Std_New";
     sStatusTip = sToolTipText;
     sPixmap = "document-new";
@@ -750,16 +980,24 @@ StdCmdNew::StdCmdNew()
 void StdCmdNew::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    QString cmd;
-    cmd = QStringLiteral("App.newDocument()");
-    runCommand(Command::Doc, cmd.toUtf8());
-    doCommand(Command::Gui, "Gui.activeDocument().activeView().viewDefaultOrientation()");
+    QMessageBox box(getMainWindow());
+    box.setWindowTitle(QObject::tr("New"));
+    box.setText(QObject::tr("What do you want to make?"));
+    auto* part = box.addButton(QObject::tr("New part"), QMessageBox::AcceptRole);
+    auto* assembly = box.addButton(QObject::tr("New assembly"), QMessageBox::AcceptRole);
+    auto* drawing = box.addButton(QObject::tr("New drawing"), QMessageBox::AcceptRole);
+    box.addButton(QMessageBox::Cancel);
+    box.exec();
 
-    ParameterGrp::handle hViewGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/View"
-    );
-    if (hViewGrp->GetBool("ShowAxisCross")) {
-        doCommand(Command::Gui, "Gui.ActiveDocument.ActiveView.setAxisCross(True)");
+    auto& commands = Application::Instance->commandManager();
+    if (box.clickedButton() == part) {
+        commands.runCommandByName("Std_Part");
+    }
+    else if (box.clickedButton() == assembly) {
+        commands.runCommandByName("Std_NewAssembly");
+    }
+    else if (box.clickedButton() == drawing) {
+        commands.runCommandByName("Std_NewDrawing");
     }
 }
 
@@ -958,6 +1196,103 @@ void StdCmdProjectInfo::activated(int iMsg)
 bool StdCmdProjectInfo::isActive()
 {
     return (getActiveGuiDocument() ? true : false);
+}
+
+//===========================================================================
+// Std_ProjectCleanup
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdProjectCleanup)
+
+StdCmdProjectCleanup::StdCmdProjectCleanup()
+    : Command("Std_ProjectCleanup")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Clean Up &Project...");
+    sToolTipText = QT_TR_NOOP(
+        "Shows what a project folder holds that nothing in it names any more -- kept "
+        "rebuild results, and source material the project was handed -- and lets you "
+        "remove them. Removes nothing until you say so"
+    );
+    sWhatsThis = "Std_ProjectCleanup";
+    sStatusTip = sToolTipText;
+    sPixmap = "document-properties";
+}
+
+void StdCmdProjectCleanup::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+
+    // The folder of whatever is in front of the person, where there is one. A project is a
+    // folder of parts, so the part they are looking at says which project they mean.
+    QString folder;
+    if (Gui::Document* active = getActiveGuiDocument()) {
+        const QString file = QString::fromUtf8(active->getDocument()->FileName.getValue());
+        if (!file.isEmpty()) {
+            folder = QFileInfo(file).absolutePath();
+        }
+    }
+
+    // And where there is none, the last folder asked about. This is not a convenience: the
+    // kept-results half cannot answer while a part in the folder is open, so the very thing it
+    // asks a person to do -- close the part -- is what takes the answer to "which project?"
+    // away. Measured in the window before it was fixed: close the part, ask again, and the
+    // dialog came up with no folder at all.
+    ParameterGrp::handle group = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/General"
+    );
+    if (folder.isEmpty()) {
+        folder = QString::fromUtf8(group->GetASCII("LastProjectCleanupFolder", "").c_str());
+    }
+
+    Gui::Dialog::DlgProjectCleanup dlg(folder, getMainWindow());
+    dlg.exec();
+    if (!dlg.projectFolder().isEmpty()) {
+        group->SetASCII("LastProjectCleanupFolder", dlg.projectFolder().toUtf8().constData());
+    }
+}
+
+bool StdCmdProjectCleanup::isActive()
+{
+    // Always. A project is a folder, not a document, and a person must be able to ask about one
+    // with nothing open -- which is also the state the kept-results half needs to be able to
+    // answer at all.
+    return true;
+}
+
+//===========================================================================
+// Std_HeldStatements
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdHeldStatements)
+
+StdCmdHeldStatements::StdCmdHeldStatements()
+    : Command("Std_HeldStatements")
+{
+    sGroup = "File";
+    sMenuText = QT_TR_NOOP("Statements This Document &Holds...");
+    sToolTipText = QT_TR_NOOP(
+        "Shows what the file states that this build could not honour, and lets you "
+        "discard one"
+    );
+    sWhatsThis = "Std_HeldStatements";
+    sStatusTip = sToolTipText;
+    sPixmap = "document-properties";
+}
+
+void StdCmdHeldStatements::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Dialog::DlgHeldStatements dlg(getActiveGuiDocument()->getDocument(), getMainWindow());
+    dlg.exec();
+}
+
+bool StdCmdHeldStatements::isActive()
+{
+    // Offered whenever there is a document to ask about, held or not: a person has to be able to
+    // find out that the answer is nothing, and a door that appears only once a document is stuck
+    // is a door nobody knows is there.
+    return getActiveGuiDocument() != nullptr;
 }
 
 //===========================================================================
@@ -1347,6 +1682,44 @@ void StdCmdDuplicateSelection::activated(int iMsg)
         return;
     }
 
+    // Duplicating mints fresh identities and rewires the references between the copies, which
+    // cannot be done for a reference that never resolved -- the copy would go on naming the
+    // original (Amendment 19 Clause 19.3). Asked here as well as at the document's own copy path,
+    // because this command renders the objects through the legacy archive and never reaches it.
+    try {
+        App::Document::refuseDuplicationThatCannotBeRewired(sel);
+    }
+    catch (const Base::Exception& e) {
+        // The refusal tells a person to discard the statement first. Telling someone to perform
+        // an act and leaving them no way to reach it is the half of P8 that was missing here, so
+        // the refusal carries the door to it (Amendment 19 Clause 19.4).
+        App::Document* frozen = nullptr;
+        for (const App::DocumentObject* obj : sel) {
+            if (obj->getDocument() != nullptr && !obj->getDocument()->seesEveryReference()) {
+                frozen = obj->getDocument();
+                break;
+            }
+        }
+        QMessageBox refused(getMainWindow());
+        refused.setIcon(QMessageBox::Warning);
+        refused.setWindowTitle(qApp->translate("Std_DuplicateSelection", "Duplicate"));
+        refused.setText(QString::fromUtf8(e.what()));
+        QPushButton* show = nullptr;
+        if (frozen != nullptr) {
+            show = refused.addButton(
+                qApp->translate("Std_DuplicateSelection", "Statements This Document Holds..."),
+                QMessageBox::ActionRole
+            );
+        }
+        refused.addButton(QMessageBox::Close);
+        refused.exec();
+        if (show != nullptr && refused.clickedButton() == show) {
+            Gui::Dialog::DlgHeldStatements dlg(frozen, getMainWindow());
+            dlg.exec();
+        }
+        return;
+    }
+
     bool hasXLink = false;
     Base::FileInfo fi(App::Application::getTempFileName());
     {
@@ -1417,6 +1790,49 @@ void StdCmdDuplicateSelection::activated(int iMsg)
 bool StdCmdDuplicateSelection::isActive()
 {
     return Gui::Selection().hasSelection();
+}
+
+//===========================================================================
+// Std_RollBackHere
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdRollBackHere)
+
+StdCmdRollBackHere::StdCmdRollBackHere()
+    : Command("Std_RollBackHere")
+{
+    sGroup = "Edit";
+    sMenuText = QT_TR_NOOP("Roll Back to Here");
+    sToolTipText = QT_TR_NOOP(
+        "Stops building the model after the selected step; select the last step to build it all"
+    );
+    sWhatsThis = "Std_RollBackHere";
+    sStatusTip = sToolTipText;
+    sPixmap = "Std_RollBackHere";
+}
+
+void StdCmdRollBackHere::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    if (selected.size() != 1 || !selected.front()->isRollbackStop()) {
+        return;
+    }
+    App::DocumentObject* step = selected.front();
+    // Moving the marker is not an undo step, as in most CAD tools.
+    doCommand(
+        Doc,
+        "App.getDocument('%s').rollBackTo(%s)",
+        step->getDocument()->getName(),
+        getObjectCmd(step).c_str()
+    );
+    updateActive();
+}
+
+bool StdCmdRollBackHere::isActive()
+{
+    const auto selected = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    return selected.size() == 1 && selected.front()->isRollbackStop();
 }
 
 //===========================================================================
@@ -1545,6 +1961,23 @@ void StdCmdDelete::activated(int iMsg)
             auto sels = Selection().getSelectionEx();
             bool autoDeletion = true;
             bool forceDeletion = false;
+            // Where the document holds a statement it could not honour, the list below is what
+            // this session can SEE referencing the object, which is not the same as what does:
+            // what could not be honoured may name anything, including this (Amendment 19
+            // Clause 19.3). So the question is asked rather than answered on the list's behalf.
+            std::set<QString> cannotSeeEveryReference;
+            for (auto& sel : sels) {
+                const App::DocumentObject* obj = sel.getObject();
+                if (obj != nullptr && obj->getDocument() != nullptr
+                    && !obj->getDocument()->seesEveryReference()) {
+                    cannotSeeEveryReference.insert(
+                        QString::fromUtf8(obj->getDocument()->whyReferencesAreFrozen().c_str())
+                    );
+                }
+            }
+            if (!cannotSeeEveryReference.empty()) {
+                autoDeletion = false;
+            }
             for (auto& sel : sels) {
                 auto obj = sel.getObject();
                 if (!obj) {
@@ -1587,16 +2020,31 @@ void StdCmdDelete::activated(int iMsg)
             if (!autoDeletion) {
                 QString bodyMessage;
                 QTextStream bodyMessageStream(&bodyMessage);
-                bodyMessageStream << qApp->translate(
-                    "Std_Delete",
-                    "The following referencing objects might break.\n\n"
-                    "Continue?\n"
-                );
-                for (const auto& currentLabel : affectedLabels) {
-                    bodyMessageStream << '\n' << currentLabel;
+                if (!affectedLabels.empty()) {
+                    bodyMessageStream << qApp->translate(
+                        "Std_Delete",
+                        "The following referencing objects might break.\n\n"
+                        "Continue?\n"
+                    );
+                    for (const auto& currentLabel : affectedLabels) {
+                        bodyMessageStream << '\n' << currentLabel;
+                    }
+                    if (more) {
+                        bodyMessageStream << "\n...";
+                    }
                 }
-                if (more) {
-                    bodyMessageStream << "\n...";
+                for (const QString& why : cannotSeeEveryReference) {
+                    if (!bodyMessage.isEmpty()) {
+                        bodyMessageStream << '\n';
+                    }
+                    bodyMessageStream
+                        << qApp->translate(
+                                   "Std_Delete",
+                                   "\nThis document cannot see every reference to what "
+                                   "you are deleting, because %1. Something it could not "
+                                   "read may name this object.\n\nContinue?\n"
+                           )
+                               .arg(why);
                 }
 
                 auto ret = QMessageBox::warning(
@@ -1889,7 +2337,7 @@ bool StdCmdPlacement::isActive()
     );
     return !(sel.empty() || std::ranges::any_of(sel, [](auto obj) {
                  auto* prop = obj->getPlacementProperty();
-                 return obj->isFreezed() || !prop || prop->isReadOnly();
+                 return !prop || prop->isReadOnly();
              }));
 }
 
@@ -1936,7 +2384,7 @@ bool StdCmdTransformManip::isActive()
         ResolveMode::FollowLink
     );
     return (
-        sel.size() == 1 && !sel.front()->isFreezed() && sel.front()->getPlacementProperty()
+        sel.size() == 1 && sel.front()->getPlacementProperty()
         && !sel.front()->getPlacementProperty()->isReadOnly()
     );
 }
@@ -2352,6 +2800,10 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdImport());
     rcCmdMgr.addCommand(new StdCmdExport());
     rcCmdMgr.addCommand(new StdCmdMergeProjects());
+    rcCmdMgr.addCommand(new StdCmdMergeDocumentVersions());
+    rcCmdMgr.addCommand(new StdCmdShowHistory());
+    rcCmdMgr.addCommand(new StdCmdNewProject());
+    rcCmdMgr.addCommand(new StdCmdOpenProject());
     rcCmdMgr.addCommand(new StdCmdDependencyGraph());
     rcCmdMgr.addCommand(new StdCmdExportDependencyGraph());
 
@@ -2361,6 +2813,8 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdSaveAll());
     rcCmdMgr.addCommand(new StdCmdRevert());
     rcCmdMgr.addCommand(new StdCmdProjectInfo());
+    rcCmdMgr.addCommand(new StdCmdHeldStatements());
+    rcCmdMgr.addCommand(new StdCmdProjectCleanup());
     rcCmdMgr.addCommand(new StdCmdProjectUtil());
     rcCmdMgr.addCommand(new StdCmdUndo());
     rcCmdMgr.addCommand(new StdCmdRedo());
@@ -2381,6 +2835,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdAlignment());
     rcCmdMgr.addCommand(new StdCmdEdit());
     rcCmdMgr.addCommand(new StdCmdProperties());
+    rcCmdMgr.addCommand(new StdCmdRollBackHere());
     rcCmdMgr.addCommand(new StdCmdExpression());
 }
 

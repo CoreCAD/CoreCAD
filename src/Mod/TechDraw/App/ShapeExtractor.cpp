@@ -37,11 +37,11 @@
 #include <App/FeaturePythonPyImp.h>
 #include <App/PropertyPythonObject.h>
 #include <App/Link.h>
-#include <App/Part.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
 #include <Base/Placement.h>
 #include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/PrimitiveFeature.h>
 #include <Mod/Part/App/FeaturePartCircle.h>
 #include <Mod/Part/App/TopoShapePy.h>
@@ -67,7 +67,7 @@ std::vector<TopoDS_Shape> ShapeExtractor::getShapes2d(const std::vector<App::Doc
 
     for (auto& l:links) {
         if (is2dObject(l)) {
-            if (l->isDerivedFrom<Part::Feature>()) {
+            if (Part::hasShape(l)) {
                 TopoDS_Shape temp = getLocatedShape(l);
                 // checkShape on 2d objs?
                 if (!temp.IsNull()) {
@@ -92,32 +92,6 @@ TopoDS_Shape ShapeExtractor::getShapes(const std::vector<App::DocumentObject*> l
 
         // Copy the pointer as not const so it can be changed if needed.
         App::DocumentObject* obj = l;
-
-        auto proxy = dynamic_cast<App::PropertyPythonObject*>(l->getPropertyByName("Proxy"));
-        Base::PyGILStateLocker lock;
-        if (proxy && proxy->getValue().hasAttr("getExplodedShape")) {
-            Py::Object explodedViewPy = proxy->getValue();
-            Py::Object attr = explodedViewPy.getAttr("getExplodedShape");
-
-            if (attr.ptr() && attr.isCallable()) {
-                Py::Tuple args(1);
-                args.setItem(0, Py::asObject(l->getPyObject()));
-                Py::Callable methode(attr);
-                Py::Object pyResult = methode.apply(args);
-
-                if (pyResult.ptr()
-                    && PyObject_TypeCheck(pyResult.ptr(), &(Part::TopoShapePy::Type))) {
-                    auto* shapepy = static_cast<Part::TopoShapePy*>(pyResult.ptr());
-                    const TopoDS_Shape& shape = shapepy->getTopoShapePtr()->getShape();
-
-                    // The python script returns the complete exploded view shape (parts + lines).
-                    // We add it and immediately continue to the next object in the source links,
-                    // skipping the default shape extraction logic below.
-                    sourceShapes.push_back(shape);
-                    continue;
-                }
-            }
-        }
 
         if (obj->isDerivedFrom<App::Link>()) {
             App::Link* xLink = static_cast<App::Link*>(obj);
@@ -302,7 +276,7 @@ std::vector<TopoDS_Shape> ShapeExtractor::getShapesFromObject(const App::Documen
     const App::GroupExtension* gex = dynamic_cast<const App::GroupExtension*>(docObj);
     App::Property* gProp = docObj->getPropertyByName("Group");
     App::Property* sProp = docObj->getPropertyByName("Shape");
-    if (docObj->isDerivedFrom<Part::Feature>()) {
+    if (Part::hasShape(docObj)) {
         if (checkShape(docObj, getLocatedShape(docObj))) {
             result.push_back(getLocatedShape(docObj));
         }
@@ -436,7 +410,7 @@ Base::Vector3d ShapeExtractor::getLocation3dFromFeat(const App::DocumentObject* 
 //        //Draft Points are not necc. Part::Feature??
 //        //if Draft option "use part primitives" is not set are Draft points still PartFeature?
 
-    const Part::Feature* pf = dynamic_cast<const Part::Feature*>(obj);
+    const Part::ShapeFeature* pf = dynamic_cast<const Part::ShapeFeature*>(obj);
     if (pf) {
         Part::TopoShape pts = pf->Shape.getShape();
         pts.setPlacement(pf->globalPlacement());
@@ -454,7 +428,7 @@ Base::Vector3d ShapeExtractor::getLocation3dFromFeat(const App::DocumentObject* 
 TopoDS_Shape ShapeExtractor::getLocatedShape(const App::DocumentObject* docObj)
 {
         Part::TopoShape shape = Part::Feature::getTopoShape(docObj, Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform);
-        const Part::Feature* pf = dynamic_cast<const Part::Feature*>(docObj);
+        const Part::ShapeFeature* pf = dynamic_cast<const Part::ShapeFeature*>(docObj);
         if (pf) {
             shape.setPlacement(pf->globalPlacement());
         }

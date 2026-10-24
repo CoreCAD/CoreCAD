@@ -963,6 +963,9 @@ CmdCreateSpreadsheet::CmdCreateSpreadsheet()
 void CmdCreateSpreadsheet::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (!ensureActiveDocument()) {
+        return;
+    }
     std::string FeatName = getUniqueObjectName("Spreadsheet");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Spreadsheet"));
@@ -974,7 +977,7 @@ void CmdCreateSpreadsheet::activated(int iMsg)
 
 bool CmdCreateSpreadsheet::isActive()
 {
-    return App::GetApplication().getActiveDocument();
+    return true;
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

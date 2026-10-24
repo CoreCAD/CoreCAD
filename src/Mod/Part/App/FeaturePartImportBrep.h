@@ -30,7 +30,7 @@
 namespace Part
 {
 
-class ImportBrep: public Part::Feature
+class ImportBrep: public Part::Feature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::ImportBrep);
 

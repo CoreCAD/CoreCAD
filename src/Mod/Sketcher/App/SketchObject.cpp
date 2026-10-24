@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 #include <algorithm>
+#include <map>
+#include <optional>
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
@@ -50,10 +52,12 @@
 #include <Base/Tools.h>
 #include <Base/Vector3D.h>
 #include <Mod/Part/App/PartPyCXX.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/GeometryMigrationExtension.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 #include <Mod/Part/App/WireJoiner.h>
 
+#include <iomanip>
 #include <memory>
 
 #include "GeoEnum.h"
@@ -123,7 +127,6 @@ SketchObject::SketchObject() : geoLastId(0)
 
     Geometry.setOrderRelevant(true);
 
-    allowOtherBody = true;
     allowUnaligned = true;
 
     initExternalGeo();
@@ -558,7 +561,7 @@ void SketchObject::updateGeoHistory() {
     for (auto geo : geos) {
         auto pstart = getPoint(geo, PointPos::start);
         auto pend = getPoint(geo, PointPos::end);
-        int id = GeometryFacade::getId(geo);
+        long id = GeometryFacade::getId(geo);
         geoHistory->update(pstart,id);
         if(pstart!=pend)
             geoHistory->update(pend,-id);
@@ -567,9 +570,55 @@ void SketchObject::updateGeoHistory() {
 }
 
 // clang-format on
+
+// The id is stamped into every edge and vertex name the sketch hands downstream. A running
+// count alone gives a shape added on one branch the same id as a different shape added on
+// another, so the low half is projected from the shape's durable tag. The count stays in the
+// high half because names are compared numerically and a face takes its lowest edge name:
+// newer shapes must sort after older ones, or a trim renames the face it trims.
+namespace
+{
+constexpr int geometryCountShift = 32;
+constexpr unsigned long geometryTagMask = 0xFFFFFFFFUL;
+
+// Written as "<count>h<tag part>": the string table splits a trailing number off a name and keeps
+// it in an int, so the whole 64-bit id may not end a name. Eight hex digits always fit.
+void writeGeometryId(std::ostream& out, long id)
+{
+    out << (id >> geometryCountShift) << 'h' << std::hex << std::setw(8) << std::setfill('0')
+        << (static_cast<unsigned long>(id) & geometryTagMask) << std::dec << std::setfill(' ');
+}
+
+bool readGeometryId(std::istream& in, long& id)
+{
+    long count = 0;
+    char separator = 0;
+    unsigned long tagPart = 0;
+    if (!(in >> count >> separator) || separator != 'h' || !(in >> std::hex >> tagPart)) {
+        return false;
+    }
+    in >> std::dec;
+    id = (count << geometryCountShift) | static_cast<long>(tagPart & geometryTagMask);
+    return true;
+}
+}  // namespace
+
+long SketchObject::mintGeometryId(const Part::Geometry* geo)
+{
+    const boost::uuids::uuid tag = geo->getTag();
+    uint32_t hash = 2166136261U;
+    for (const uint8_t byte : tag) {
+        hash ^= byte;
+        hash *= 16777619U;
+    }
+    const long count = (geoLastId >> geometryCountShift) + 1;
+    geoLastId = (count << geometryCountShift) | static_cast<long>(hash);
+    return geoLastId;
+}
+
 void SketchObject::generateId(const Part::Geometry* geo)
 {
-    auto preReturn = [this, &geo](auto& newId) {
+    auto preReturn = [this, &geo](long newId) {
         GeometryFacade::setId(geo, newId);
         geoMap[Sketcher::GeometryFacade::getId(geo)] = (long)Geometry.getSize();
     };
@@ -583,7 +632,7 @@ void SketchObject::generateId(const Part::Geometry* geo)
     };
 
     if (geoHistoryLevel == 0) {
-        preReturn(++geoLastId);
+        preReturn(mintGeometryId(geo));
         return;
     }
 
@@ -608,7 +657,7 @@ void SketchObject::generateId(const Part::Geometry* geo)
 
     if (geoHistoryLevel <= 1 && (it == geoHistory->end() || it2 == it)) {
         // level <= 1 means we only reuse id if both start and end matches
-        preReturn(++geoLastId);
+        preReturn(mintGeometryId(geo));
         return;
     }
 
@@ -624,7 +673,7 @@ void SketchObject::generateId(const Part::Geometry* geo)
     if (found.empty()) {
         // no candidate exists
         if (it2 == it) {
-            preReturn(++geoLastId);
+            preReturn(mintGeometryId(geo));
             return;
         }
         auto iterOfId = std::ranges::find_if(*it, isNotInGeoMap);
@@ -632,7 +681,7 @@ void SketchObject::generateId(const Part::Geometry* geo)
             preReturn(*iterOfId);
             return;
         }
-        preReturn(++geoLastId);
+        preReturn(mintGeometryId(geo));
         return;
     }
 
@@ -792,7 +841,7 @@ bool SketchObject::evaluateSupport()
 {
     // returns false if the shape is broken, null or non-planar
     App::DocumentObject* link = AttachmentSupport.getValue();
-    if (!link || !link->isDerivedFrom<Part::Feature>())
+    if (!link || !Part::hasShape(link))
         return false;
     return true;
 }
@@ -1007,15 +1056,14 @@ void SketchObject::onGeometryChanged()
         auto geo = vals[i];
         auto gf = GeometryFacade::getFacade(geo);
         if (gf->getId() == 0) {
-            gf->setId(++geoLastId);
+            gf->setId(mintGeometryId(geo));
         }
         else if (gf->getId() > geoLastId) {
             geoLastId = gf->getId();
         }
         while (!geoMap.insert(std::make_pair(gf->getId(), i)).second) {
-            FC_WARN("duplicate geometry id " << gf->getId() << " -> "
-                    << geoLastId + 1);  // NOLINT
-            gf->setId(++geoLastId);
+            FC_WARN("duplicate geometry id " << gf->getId());  // NOLINT
+            gf->setId(mintGeometryId(geo));
         }
     }
     updateGeoHistory();
@@ -1166,9 +1214,9 @@ void SketchObject::onExternalGeoChanged()
             geoLastId = egf->getId();
         }
         if (!externalGeoMap.emplace(egf->getId(), i).second) {
-            FC_WARN("duplicate geometry id " << egf->getId() << " -> "
-                    << geoLastId + 1);  // NOLINT
-            egf->setId(++geoLastId);
+            const long id = mintGeometryId(geo);
+            FC_WARN("duplicate geometry id " << egf->getId() << " -> " << id);  // NOLINT
+            egf->setId(id);
             externalGeoMap[egf->getId()] = i;
         }
         if (!egf->getRef().empty()) {
@@ -1342,9 +1390,88 @@ void SketchObject::restoreFinished()
     onSketchRestore();
 }
 
+void SketchObject::mintDurableIdentity()
+{
+    // What the geometry is called before it is reborn. Read in list order, which is the only
+    // thing the two sides have in common: the re-mint replaces each tag in place.
+    std::vector<boost::uuids::uuid> before;
+    const std::vector<Part::Geometry*>& geometry = getInternalGeometry();
+    before.reserve(geometry.size());
+    for (const Part::Geometry* geo : geometry) {
+        before.push_back(geo->getTag());
+    }
+
+    Part::Part2DObject::mintDurableIdentity();
+
+    std::map<boost::uuids::uuid, boost::uuids::uuid> renamed;
+    const std::vector<Part::Geometry*>& reborn = getInternalGeometry();
+    for (std::size_t i = 0; i < before.size() && i < reborn.size(); ++i) {
+        if (before[i] != reborn[i]->getTag()) {
+            renamed[before[i]] = reborn[i]->getTag();
+        }
+    }
+    if (renamed.empty()) {
+        return;
+    }
+
+    // No signal, for the same reason the property's own re-mint sends none: this runs mid-import
+    // on constraints nothing can see yet, and what changes is identity rather than the constraint.
+    for (Constraint* constraint : Constraints.getValues()) {
+        if (constraint != nullptr) {
+            constraint->carryElementReferencesTo(renamed);
+        }
+    }
+}
+
+void SketchObject::rebindConstraintsToDurableGeometry()
+{
+    // Geometry carries the durable identity a constraint reference resolves through. Build a
+    // tag -> current-GeoId map, then let each constraint rewrite its positional GeoIds from
+    // the durable tags it read on Restore. Only internal geometry (GeoId == list index) has
+    // a tag; axes and external geometry keep the GeoId loaded from the file.
+    const std::vector<Part::Geometry*>& geometry = getInternalGeometry();
+    std::map<boost::uuids::uuid, int> geoIdByTag;
+    for (int geoId = 0; geoId < static_cast<int>(geometry.size()); ++geoId) {
+        geoIdByTag[geometry[geoId]->getTag()] = geoId;
+    }
+
+    auto tagToGeoId = [&geoIdByTag](const boost::uuids::uuid& tag) -> std::optional<int> {
+        const auto it = geoIdByTag.find(tag);
+        if (it == geoIdByTag.end()) {
+            return std::nullopt;
+        }
+        return it->second;
+    };
+
+    int danglingCount = 0;
+    for (Constraint* constraint : Constraints.getValues()) {
+        if (constraint->bindElementsToDurableGeometry(tagToGeoId)) {
+            ++danglingCount;
+        }
+    }
+
+    // §10.1 / Amendment 15 (honest retirement, loud-drop): a reference whose durable target
+    // is gone is disclosed, never silently patched. The dangling elements were marked
+    // GeoUndef above, so validateConstraints/the solver will treat them as invalid rather
+    // than let a stale index alias a surviving element.
+    if (danglingCount > 0) {
+        FC_WARN(getFullName() << ": " << danglingCount
+                              << " constraint(s) reference geometry that no longer exists; "
+                                 "their references were dropped rather than rebound to a "
+                                 "different element");
+    }
+}
+
 void SketchObject::onSketchRestore()
 {
     try {
+        // First, before anything reads a constraint's references. Resolving a reference is part
+        // of reading it, not a repair afterwards: the file states the durable identity of the
+        // geometry a constraint holds and not the index it currently occupies, so until this has
+        // run every reference reads as GeoUndef. A pass that runs ahead of it is not looking at
+        // the sketch the file describes.
+        rebindConstraintsToDurableGeometry();
+
         migrateSketch();
 
         updateGeometryRefs();
@@ -1941,7 +2068,7 @@ Data::IndexedName SketchObject::checkSubName(const char *subname) const
     }
 
     bio::stream<bio::array_source> iss(mappedSubname+1, std::strlen(mappedSubname+1));
-    int id = -1;
+    long id = -1;
     bool valid = false;
     switch (mappedSubname[0]) {
         case '\0':  // check length != 0
@@ -1949,7 +2076,7 @@ Data::IndexedName SketchObject::checkSubName(const char *subname) const
 
         case 'g':  // = geometry
         case 'e':  // = external geometry
-            if (iss >> id) {
+            if (readGeometryId(iss, id)) {
                 valid = true;
             }
             break;
@@ -2065,7 +2192,8 @@ std::string SketchObject::convertSubName(const Data::IndexedName &indexedName, b
     }
     if (postfix)
         ss << Data::ELEMENT_MAP_PREFIX;
-    ss << (geoId >= 0 ? 'g' : 'e') << GeometryFacade::getFacade(geo)->getId();
+    ss << (geoId >= 0 ? 'g' : 'e');
+    writeGeometryId(ss, GeometryFacade::getFacade(geo)->getId());
     if (posId != PointPos::none)
         ss << 'v' << static_cast<int>(posId);
     if (postfix) {

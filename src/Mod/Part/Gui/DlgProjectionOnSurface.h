@@ -89,7 +89,7 @@ private:
         std::vector<TopoDS_Wire> aProjectedWireInParametricSpaceVec;
         TopoDS_Face aProjectedFace;
         TopoDS_Shape aProjectedSolid;
-        Part::Feature* partFeature = nullptr;
+        Part::ShapeFeature* partFeature = nullptr;
         std::string partName;
         bool is_selectable = false;
         long transparency = 0;
@@ -115,7 +115,7 @@ private:
     void disable_ui_elements(const std::vector<QWidget*>& iObjectVec, QWidget* iExceptThis);
     void enable_ui_elements(const std::vector<QWidget*>& iObjectVec, QWidget* iExceptThis);
     void higlight_object(
-        Part::Feature* iCurrentObject,
+        Part::ShapeFeature* iCurrentObject,
         const std::string& iShapeName,
         bool iHighlight,
         unsigned int iColor
@@ -135,7 +135,7 @@ private:
         unsigned int iColor
     );
     void set_xyz_dir_spinbox(QDoubleSpinBox* icurrentSpinBox);
-    void transform_shape_to_global_position(TopoDS_Shape& ioShape, Part::Feature* iPart);
+    void transform_shape_to_global_position(TopoDS_Shape& ioShape, Part::ShapeFeature* iPart);
 
 private:
     /** Checks if the given document is about to be closed */

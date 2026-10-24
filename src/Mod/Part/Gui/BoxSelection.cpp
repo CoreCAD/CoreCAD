@@ -112,7 +112,7 @@ void BoxSelection::selectionCallback(void* ud, SoEventCallback* cb)
     if (doc) {
         cb->setHandled();
 
-        std::vector<Part::Feature*> geom = doc->getObjectsOfType<Part::Feature>();
+        std::vector<Part::ShapeFeature*> geom = doc->getObjectsOfType<Part::ShapeFeature>();
         for (auto it : geom) {
             Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(it);
             if (!vp->isVisible()) {

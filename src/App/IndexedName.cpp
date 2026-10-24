@@ -88,6 +88,7 @@ void IndexedName::set(const char* name,
     // NOLINTNEXTLINE cppcoreguidelines-pro-bounds-pointer-arithmetic
     if (std::any_of(name, name + suffixPosition, isInvalidChar)) {
         this->type = "";
+        this->index = 0;
         return;
     }
 
@@ -114,5 +115,6 @@ void IndexedName::set(const char* name,
         // The passed-in type is not in the allowed list, and allowOthers was not true, so don't
         // store the type
         this->type = "";
+        this->index = 0;
     }
 }

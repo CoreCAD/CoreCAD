@@ -111,6 +111,7 @@ public:
     void afterRestore() override;
 
     friend class Feature;
+    friend class ShapeFeature;
 
 private:
     void saveToFile(Base::Writer& writer) const;
@@ -164,6 +165,12 @@ class PartExport PropertyShapeHistory: public App::PropertyLists
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: a per-sub-shape trace of what an operation did.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyShapeHistory();
     ~PropertyShapeHistory() override;
 
@@ -216,10 +223,30 @@ struct PartExport FilletElement
     int edgeid;
     double radius1, radius2;
 
-    FilletElement(int id = 0, double r1 = 1.0, double r2 = 1.0)
+    /** Which of the three kinds of chamfer this edge takes, and its angle when that is what the
+     * kind measures.
+     *
+     * Cruth: a chamfer takes one distance, two distances, or a distance and an angle, and the two
+     * numbers above cannot say which -- an angle written into a field a reader takes for a
+     * distance is a file saying something untrue about the operation a person performed. So the
+     * kind travels with the measurements it governs, one kind per edge, and the file states it.
+     * A fillet has no kinds: these two are unused there and a fillet states neither.
+     */
+    ChamferType kind;
+    double angle;
+
+    FilletElement(
+        int id = 0,
+        double r1 = 1.0,
+        double r2 = 1.0,
+        ChamferType chamferKind = ChamferType::twoDistances,
+        double chamferAngle = 45.0
+    )
         : edgeid(id)
         , radius1(r1)
         , radius2(r2)
+        , kind(chamferKind)
+        , angle(chamferAngle)
     {}
 
     bool operator<(const FilletElement& other) const
@@ -229,7 +256,8 @@ struct PartExport FilletElement
 
     bool operator==(const FilletElement& other) const
     {
-        return edgeid == other.edgeid && radius1 == other.radius1 && radius2 == other.radius2;
+        return edgeid == other.edgeid && radius1 == other.radius1 && radius2 == other.radius2
+            && kind == other.kind && angle == other.angle;
     }
 };
 
@@ -278,8 +306,73 @@ public:
         return _lValueList.size() * sizeof(FilletElement);
     }
 
-private:
+protected:
+    /** What one measured edge is called in the file, and what its two numbers are called.
+     *
+     * Cruth: the same two numbers mean different things to different operations, and a file that
+     * calls them by the wrong name says something untrue about a design. A fillet holds radii. A
+     * chamfer holds distances and is not a fillet at all, so it states its own words -- see
+     * PropertyChamferEdges. Sharing the storage is fine; sharing the vocabulary is not.
+     */
+    struct Words
+    {
+        const char* list;     ///< the element the measurements are listed inside
+        const char* element;  ///< one measured edge
+    };
+
+    virtual Words fileWords() const
+    {
+        return {"FilletEdges", "Fillet"};
+    }
+
+    /// One edge's measurements, written as the attributes this operation calls them by.
+    virtual void saveMeasurements(Base::Writer& writer, const FilletElement& measured) const;
+    /// The same measurements read back. The edge number is read by the caller.
+    virtual FilletElement restoreMeasurements(Base::XMLReader& reader, int edgeid) const;
+
+    // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
     std::vector<FilletElement> _lValueList;
+};
+
+/** The edges a chamfer measures, in a chamfer's own words.
+ *
+ * A chamfer takes a distance along each of the two faces an edge joins -- not a radius, and not a
+ * fillet. Measured before this existed: a chamfer's document stated
+ * `<Fillet edge="1" radius1="2" radius2="3"/>`, under a property typed `Part::PropertyFilletEdges`.
+ * Every word of that is wrong about the operation a person performed, and it is the file a merge
+ * reads and a person opens.
+ */
+class PartExport PropertyChamferEdges: public PropertyFilletEdges
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    App::Property* Copy() const override;
+    void Paste(const App::Property& from) override;
+
+    /** A chamfer's edges in Python say what the file says: the kind, then what the kind measures.
+     *
+     * `(edge, "Equal distance", size)`, `(edge, "Two distances", size, size2)`,
+     * `(edge, "Distance and Angle", size, angle)`. Three plain numbers are still accepted and mean
+     * two distances, which is what a chamfer set that way has always been built as.
+     */
+    PyObject* getPyObject() override;
+    void setPyObject(PyObject* value) override;
+
+protected:
+    Words fileWords() const override
+    {
+        return {"ChamferEdges", "Chamfer"};
+    }
+
+    /** A chamfer states which kind it takes, and then only the numbers that kind measures.
+     *
+     * Cruth: a second distance and an angle are different quantities, and an element that offered
+     * a field for each would state one of them as nothing at all on every edge. The kind is said
+     * first, in the words a person chose it by, and what follows is what the kind measures.
+     */
+    void saveMeasurements(Base::Writer& writer, const FilletElement& measured) const override;
+    FilletElement restoreMeasurements(Base::XMLReader& reader, int edgeid) const override;
 };
 
 

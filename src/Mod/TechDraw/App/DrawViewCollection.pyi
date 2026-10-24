@@ -28,3 +28,7 @@ class DrawViewCollection(DrawView):
     def removeView(self) -> Any:
         """removeView(DrawView object) - Remove specified Viewfrom this Group. Returns count of views in Group."""
         ...
+
+    def getViews(self) -> Any:
+        """getViews() - returns the list of views that are items of this collection"""
+        ...

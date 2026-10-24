@@ -137,7 +137,7 @@ public:
     //@}
 };
 
-class PartExport Sphere: public Primitive
+class PartExport Sphere: public Primitive, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Sphere);
 
@@ -162,7 +162,7 @@ public:
     //@}
 };
 
-class PartExport Ellipsoid: public Primitive
+class PartExport Ellipsoid: public Primitive, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Ellipsoid);
 
@@ -188,7 +188,7 @@ public:
     }
 };
 
-class PartExport Cylinder: public Primitive, public PrismExtension
+class PartExport Cylinder: public Primitive, public PrismExtension, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Cylinder);
 
@@ -212,7 +212,7 @@ public:
     //@}
 };
 
-class PartExport Prism: public Primitive, public PrismExtension
+class PartExport Prism: public Primitive, public PrismExtension, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Prism);
 
@@ -263,7 +263,7 @@ private:
     static App::PropertyIntegerConstraint::Constraints polygon;
 };
 
-class PartExport Cone: public Primitive
+class PartExport Cone: public Primitive, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Cone);
 
@@ -288,7 +288,7 @@ public:
     //@}
 };
 
-class PartExport Torus: public Primitive
+class PartExport Torus: public Primitive, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Torus);
 
@@ -379,7 +379,7 @@ protected:
     void onChanged(const App::Property* prop) override;
 };
 
-class PartExport Wedge: public Primitive
+class PartExport Wedge: public Primitive, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Wedge);
 

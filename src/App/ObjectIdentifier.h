@@ -31,6 +31,7 @@
 #include <limits>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 #include <boost/any.hpp>
 #include <FCConfig.h>
@@ -202,6 +203,7 @@ public:
             str = std::move(other.str);
             isString = other.isString;
             forceIdentifier = other.forceIdentifier;
+            uuid = std::move(other.uuid);
             return *this;
         }
 
@@ -241,6 +243,31 @@ public:
         bool isForceIdentifier() const
         {
             return forceIdentifier;
+        }
+
+        /**
+         * @brief Get the durable UUID this string is bound to, if any.
+         *
+         * For the object component of an identifier, the UUID is the durable
+         * binding to the referenced object (Amendment 3, Clause 3.8); the string
+         * text is the human-readable/authoring surface. Empty when no UUID is
+         * bound (name-only, legacy-free forward interop).
+         *
+         * @return The bound object UUID as a string, or empty.
+         */
+        const std::string& getUuid() const
+        {
+            return uuid;
+        }
+
+        /**
+         * @brief Bind this string to a durable object UUID.
+         *
+         * @param[in] _uuid The referenced object's UUID string.
+         */
+        void setUuid(const std::string& _uuid)
+        {
+            uuid = _uuid;
         }
 
         /**
@@ -372,6 +399,10 @@ public:
         std::string str;
         bool isString;
         bool forceIdentifier;
+        // Optional durable binding to the referenced object (Amendment 3,
+        // Clause 3.8). Only the object component of an identifier populates it;
+        // for all other Strings (property names, keys, subnames) it stays empty.
+        std::string uuid;
     };
 
     /**
@@ -1087,6 +1118,39 @@ public:
     String getDocumentObjectName() const;
 
     /**
+     * @brief Get the durable UUID bound to this identifier's object component.
+     *
+     * The referenced object is bound by durable UUID (Amendment 3, Clause 3.8);
+     * this returns that UUID as a string, or empty when none is bound. Used to
+     * persist the binding alongside the human-name surface.
+     *
+     * @return The bound object UUID, or empty.
+     * @see setBoundObjectUuid
+     */
+    std::string getBoundObjectUuid() const;
+
+    /**
+     * @brief Bind this identifier's object component to a durable UUID.
+     *
+     * Stamps @p uuid onto the object component — whichever of the forced
+     * document-object name or the leading path component names the object — so
+     * resolution binds through the UUID. The name stays as display/diagnostic
+     * only, never a resolution key (Amendment 3, Clause 3.2).
+     *
+     * @param[in] uuid The referenced object's UUID string.
+     * @see getBoundObjectUuid
+     */
+    void setBoundObjectUuid(const std::string& uuid);
+
+    /**
+     * @brief The object component as written, before anything resolves it.
+     *
+     * @return Its text, and whether it was written as a label (`<<...>>`); empty text when the
+     * identifier names no object.
+     */
+    std::pair<std::string, bool> getStatedObjectName() const;
+
+    /**
      * @brief Get the subobject name.
      *
      * @param[in] newStyle If true, use the new style of subobject name.
@@ -1580,6 +1644,17 @@ protected:
 private:
     static App::DocumentObject*
     getDocumentObject(const App::Document* doc, const String& name, std::bitset<32>& flags);
+
+    /**
+     * @brief Re-derive the object component's displayed name from its bound UUID.
+     *
+     * When the object component carries a durable UUID (Amendment 3, Clause 3.8),
+     * the name text is only a display cache. This refreshes that cache from the
+     * current name/label of the UUID-bound object so a rename propagates to the
+     * rendered formula with no rewriting pass. A no-op when no UUID is bound or
+     * the target is unresolvable (last-known name kept as diagnostic, P7).
+     */
+    void refreshDocumentObjectName() const;
 
 private:
     std::string _cache;  // Cached string represstation of this identifier

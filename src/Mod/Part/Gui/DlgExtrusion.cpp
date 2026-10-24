@@ -37,7 +37,6 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Link.h>
-#include <App/Part.h>
 #include <Base/UnitsApi.h>
 #include <Base/Tools.h>
 
@@ -133,9 +132,10 @@ DlgExtrusion::DlgExtrusion(QWidget* parent, Qt::WindowFlags fl)
     findShapes();
 
     Gui::ItemViewSelection sel(ui->treeWidget);
-    sel.applyFrom(Gui::Selection().getObjectsOfType(Part::Feature::getClassTypeId()));
+    auto shapeObjs = Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    std::erase_if(shapeObjs, [](App::DocumentObject* o) { return !Part::hasShape(o); });
+    sel.applyFrom(shapeObjs);
     sel.applyFrom(Gui::Selection().getObjectsOfType(App::Link::getClassTypeId()));
-    sel.applyFrom(Gui::Selection().getObjectsOfType(App::Part::getClassTypeId()));
 
     this->onDirModeChanged();
     ui->spinLenFwd->selectAll();

@@ -61,6 +61,10 @@ public:
     static PyObject* sGetHomePath            (PyObject *self, PyObject *args);
 
     static PyObject* sLoadFile               (PyObject *self,PyObject *args);
+    static PyObject* sSurveyProjectSourceMaterial(PyObject *self,PyObject *args);
+    static PyObject* sSurveyProjectRebuildStore(PyObject *self,PyObject *args);
+    static PyObject* sDiscardUnreferencedRebuildResults(PyObject *self,PyObject *args);
+    static PyObject* sDiscardSourceMaterial(PyObject *self,PyObject *args);
     static PyObject* sOpenDocument           (PyObject *self,PyObject *args, PyObject *kwd);
     static PyObject* sSaveDocument           (PyObject *self,PyObject *args);
     static PyObject* sWriteRecoverySnapshotToTransientDir
@@ -70,6 +74,21 @@ public:
     static PyObject* sActiveDocument         (PyObject *self,PyObject *args);
     static PyObject* sSetActiveDocument      (PyObject *self,PyObject *args);
     static PyObject* sGetDocument            (PyObject *self,PyObject *args);
+    static PyObject* sMergeDocuments         (PyObject *self,PyObject *args);
+    static PyObject* sDiffDocuments          (PyObject *self,PyObject *args);
+    static PyObject* sFileVersions           (PyObject *self,PyObject *args);
+    static PyObject* sOpenFileVersion        (PyObject *self,PyObject *args);
+    static PyObject* sIsKeptInHistory        (PyObject *self,PyObject *args);
+    static PyObject* sStartHistory           (PyObject *self,PyObject *args);
+    static PyObject* sCommitFile             (PyObject *self,PyObject *args);
+    static PyObject* sProjectFileOf          (PyObject *self,PyObject *args);
+    static PyObject* sProjectName            (PyObject *self,PyObject *args);
+    static PyObject* sCreateProject          (PyObject *self,PyObject *args);
+    static PyObject* sMoveIntoProject        (PyObject *self,PyObject *args);
+    static PyObject* sProjectDocuments(PyObject* self, PyObject* args);
+    static PyObject* sOutsideDocuments(PyObject* self, PyObject* args);
+    static PyObject* sAddOutsideDocument(PyObject* self, PyObject* args);
+    static PyObject* sUpdateOutsideDocument(PyObject* self, PyObject* args);
     static PyObject* sListDocuments          (PyObject *self,PyObject *args);
     static PyObject* sAddDocObserver         (PyObject *self,PyObject *args);
     static PyObject* sRemoveDocObserver      (PyObject *self,PyObject *args);

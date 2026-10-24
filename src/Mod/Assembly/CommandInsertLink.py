@@ -41,6 +41,36 @@ __author__ = "Ondsel"
 __url__ = "https://www.freecad.org"
 
 
+def _isSubAssembly(obj):
+    return obj.isDerivedFrom("Assembly::AssemblyObject")
+
+
+def _isFolder(obj):
+    return obj.isDerivedFrom("App::DocumentObjectGroup") and not _isSubAssembly(obj)
+
+
+def _isPart(obj):
+    """A part: a solid that stands on its own -- a Body, an imported solid, a standalone
+    primitive -- and that no other shape is built from. The features and sketches a Body is
+    made of are consumed by it, so they are not parts in their own right."""
+    if not obj.isDerivedFrom("Part::ShapeFeature"):
+        return False
+    shape = getattr(obj, "Shape", None)
+    if shape is None or shape.isNull() or not shape.Solids:
+        return False
+    return not any(user.isDerivedFrom("Part::ShapeFeature") for user in obj.InList)
+
+
+def _isCandidate(obj, onlyParts):
+    """Whether the insert list offers obj: every shape, or with onlyParts, only parts.
+    A sub-assembly is offered either way."""
+    if _isSubAssembly(obj):
+        return True
+    if onlyParts:
+        return _isPart(obj)
+    return obj.isDerivedFrom("Part::ShapeFeature")
+
+
 tooltip = QT_TRANSLATE_NOOP(
     "Assembly_InsertLink",
     "<p>Inserts a component into the active assembly. This will create dynamic links to parts, bodies, primitives, and assemblies. To insert external components, make sure that the file is <b>open in the current session</b></p>"
@@ -213,6 +243,11 @@ class TaskAssemblyInsertLink(QtCore.QObject):
             collapse = False
 
         for doc in docList:
+            if doc == self.assembly.Document:
+                # The assembly's own document can never supply a component: components are
+                # cross-document references only. (G1 invariant, ASSEMBLY_AUDIT §9)
+                continue
+
             # Create a new tree item for the document
             docItem = QtGui.QTreeWidgetItem()
             itemName = doc.Label
@@ -226,16 +261,13 @@ class TaskAssemblyInsertLink(QtCore.QObject):
             docItem.setIcon(0, icon)
             self.doc_item_map[docItem] = doc
 
-            if not any(
-                (child.isDerivedFrom("Part::Feature") or child.isDerivedFrom("App::Part"))
-                for child in doc.Objects
-            ):
-                continue  # Skip this doc if no relevant objects
+            onlyParts = self.form.CheckBox_ShowOnlyParts.isChecked()
+            if not any(_isCandidate(obj, onlyParts) for obj in doc.Objects):
+                continue  # Skip this doc if it has nothing that could be inserted
 
             self.form.partList.addTopLevelItem(docItem)
 
             def process_objects(objs, item):
-                onlyParts = self.form.CheckBox_ShowOnlyParts.isChecked()
                 for obj in objs:
                     if obj == self.assembly:
                         continue  # Skip current assembly
@@ -247,40 +279,28 @@ class TaskAssemblyInsertLink(QtCore.QObject):
                     if not obj.ViewObject.ShowInTree and not self.showHidden:
                         continue
 
-                    if (
-                        obj.isDerivedFrom("Part::Feature")
-                        or obj.isDerivedFrom("App::Part")
-                        or obj.isDerivedFrom("App::DocumentObjectGroup")
-                    ):
-                        # Special handling for DocumentObjectGroup: only add if it contains relevant child objects
-                        if obj.isDerivedFrom("App::DocumentObjectGroup"):
-                            if not any(
-                                (
-                                    (not onlyParts and child.isDerivedFrom("Part::Feature"))
-                                    or child.isDerivedFrom("App::Part")
-                                )
-                                for child in obj.ViewObject.claimChildrenRecursive()
-                            ):
-                                continue  # Skip this object if no relevant children
-
-                        if obj.isDerivedFrom("Part::Feature"):
-                            if onlyParts:
-                                continue  # Ignore solids if we show only Parts
-
-                        # Now add the object under the document item
-                        objItem = QtGui.QTreeWidgetItem(item)
-                        objItem.setText(0, obj.Label)
-                        objItem.setIcon(
-                            0, obj.ViewObject.Icon if hasattr(obj, "ViewObject") else QtGui.QIcon()
-                        )  # Use object's icon if available
-
-                        if not obj.isDerivedFrom("App::DocumentObjectGroup"):
-                            objItem.setData(0, QtCore.Qt.UserRole, obj)
-
-                        if obj.isDerivedFrom("App::Part") or obj.isDerivedFrom(
-                            "App::DocumentObjectGroup"
+                    isFolder = _isFolder(obj)
+                    if isFolder:
+                        # A folder is listed only when something inside it could be inserted
+                        if not any(
+                            _isCandidate(child, onlyParts)
+                            for child in obj.ViewObject.claimChildrenRecursive()
                         ):
-                            process_objects(obj.ViewObject.claimChildren(), objItem)
+                            continue
+                    elif not _isCandidate(obj, onlyParts):
+                        continue
+
+                    # Now add the object under the document item
+                    objItem = QtGui.QTreeWidgetItem(item)
+                    objItem.setText(0, obj.Label)
+                    objItem.setIcon(
+                        0, obj.ViewObject.Icon if hasattr(obj, "ViewObject") else QtGui.QIcon()
+                    )  # Use object's icon if available
+
+                    if isFolder:
+                        process_objects(obj.ViewObject.claimChildren(), objItem)
+                    else:
+                        objItem.setData(0, QtCore.Qt.UserRole, obj)
 
             guiDoc = Gui.getDocument(doc.Name)
             process_objects(guiDoc.TreeRootObjects, docItem)
@@ -360,6 +380,19 @@ class TaskAssemblyInsertLink(QtCore.QObject):
         if not selectedPart:
             # If there's no part associated, toggle the expanded state
             item.setExpanded(not item.isExpanded())
+            return
+
+        # A component is a reference to a part in another document; a target inside the
+        # assembly's own document would be owned geometry, which the model forbids.
+        # (G1 invariant, ASSEMBLY_AUDIT §9. The picker filters this document out, so this
+        # is a defensive net for any other selection path.)
+        if selectedPart.Document == self.doc:
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Same document",
+                "A component must be a part from another document. Create one with New "
+                "Part, or open the part's file and insert it.",
+            )
             return
 
         # check that the current document had been saved or that it's the same document as that of the selected part
@@ -509,9 +542,8 @@ class TaskAssemblyInsertLink(QtCore.QObject):
                 if linkedAsm and hasattr(linkedAsm, "Group"):
                     srcGrounded = None
                     # Attempt to find the grounded joint in the source assembly
-                    # We look for a joint where JointType is 'Grounded'
                     for obj in linkedAsm.InListRecursive:
-                        if hasattr(obj, "ObjectToGround"):
+                        if obj.isDerivedFrom("Assembly::GroundedJoint"):
                             srcGrounded = obj.ObjectToGround
                             break
 

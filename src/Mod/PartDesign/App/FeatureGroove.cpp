@@ -62,6 +62,7 @@ Groove::Groove()
     ADD_PROPERTY_TYPE(Angle2, (emptyAngle), "Groove", App::Prop_None, "Groove length in 2nd direction");
     ADD_PROPERTY_TYPE(UpToFace, (nullptr), "Groove", App::Prop_None, "Face where groove will end");
     ADD_PROPERTY_TYPE(ReferenceAxis, (nullptr), "Groove", (App::Prop_None), "Reference axis of groove");
+    ReferenceAxis.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body axis refs
 }
 
 App::DocumentObjectExecReturn* Groove::execute()

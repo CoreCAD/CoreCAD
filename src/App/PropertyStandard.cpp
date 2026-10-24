@@ -304,6 +304,7 @@ void PropertyEnumeration::setEnums(const char** plEnums)
         aboutToSetValue();
     }
     _enum.setEnums(plEnums);
+    applyNameAwaitingItsList();
     if (notify) {
         hasSetValue();
     }
@@ -318,6 +319,7 @@ void PropertyEnumeration::setValue(const char* value)
 {
     aboutToSetValue();
     _enum.setValue(value);
+    _statedName.clear();
     hasSetValue();
 }
 
@@ -325,6 +327,7 @@ void PropertyEnumeration::setValue(long value)
 {
     aboutToSetValue();
     _enum.setValue(value);
+    _statedName.clear();
     hasSetValue();
 }
 
@@ -378,8 +381,23 @@ void PropertyEnumeration::setEnumVector(const std::vector<std::string>& values)
         aboutToSetValue();
     }
     _enum.setEnums(values);
+    applyNameAwaitingItsList();
     if (notify) {
         hasSetValue();
+    }
+}
+
+void PropertyEnumeration::applyNameAwaitingItsList()
+{
+    // The list a file's name is measured against is the one this property ends up offering, so
+    // every arriving list is an opportunity to honour a name that could not be looked up when it
+    // was read. Nothing is touched while no name is waiting, which is every case but a restore.
+    if (_statedName.empty()) {
+        return;
+    }
+    if (_enum.contains(_statedName.c_str())) {
+        _enum.setValue(_statedName);
+        _statedName.clear();
     }
 }
 
@@ -395,15 +413,22 @@ bool PropertyEnumeration::isValid() const
 
 void PropertyEnumeration::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<Integer value=\"" << _enum.getInt() << "\"";
+    // Cruth: the name that was chosen, never its position in this build's list. An enumeration's
+    // values live in C++ source, so inserting one moves every index after it, and a file written
+    // before that insertion goes on stating the same number while meaning a different value --
+    // in every document ever saved, with nothing to notice it by. A name cannot drift that way,
+    // and a person reading the file sees the choice instead of a number to look up elsewhere.
+    const char* chosen = _enum.getCStr();
+    writer.Stream() << writer.ind() << "<Enum value=\""
+                    << (chosen != nullptr ? encodeAttribute(chosen) : std::string {}) << "\"";
     if (_enum.isCustom()) {
         writer.Stream() << " CustomEnum=\"true\"";
     }
     writer.Stream() << "/>" << std::endl;
     if (_enum.isCustom()) {
         std::vector<std::string> items = getEnumVector();
-        writer.Stream() << writer.ind() << "<CustomEnumList count=\"" << items.size() << "\">"
-                        << endl;
+        // Cruth: stated without a declared length -- see the note on the list properties below.
+        writer.Stream() << writer.ind() << "<CustomEnumList>" << endl;
         writer.incInd();
         for (auto& item : items) {
             std::string val = encodeAttribute(item);
@@ -416,39 +441,72 @@ void PropertyEnumeration::Save(Base::Writer& writer) const
 
 void PropertyEnumeration::Restore(Base::XMLReader& reader)
 {
-    // read my Element
-    reader.readElement("Integer");
-    // get the value of my Attribute
-    long val = reader.getAttribute<long>("value");
+    reader.readElement();
+    const std::string element = reader.localName();
+
+    // A document this build wrote states the name that was chosen. A file written before the form
+    // changed -- an upstream document being imported -- states a position in the list instead.
+    // That one is read the only way an index can be read, positionally, and the next save states
+    // it by name.
+    const bool byName = (element == "Enum");
+    if (!byName && element != "Integer") {
+        throw Base::XMLParseException("Expected either an 'Enum' or an 'Integer' element");
+    }
+
+    const std::string stated =
+        byName ? reader.getAttribute<const char*>("value", "") : std::string {};
+    const bool custom = reader.hasAttribute("CustomEnum");
+
+    // A custom enumeration carries its own list, so the name is looked up in what the file
+    // states; a compiled one is looked up in what this build offers.
+    std::vector<std::string> values;
+    if (custom) {
+        reader.readElement("CustomEnumList");
+        const int list = reader.level();
+        while (nextChildElement(reader, list)) {
+            expectElement(reader, "Enum");
+            values.emplace_back(reader.getAttribute<const char*>("value"));
+        }
+    }
+    const std::vector<std::string> list = custom ? values : _enum.getEnumVector();
+
+    const bool offered = std::find(list.begin(), list.end(), stated) != list.end();
 
     aboutToSetValue();
-
-    if (reader.hasAttribute("CustomEnum")) {
-        reader.readElement("CustomEnumList");
-        int count = reader.getAttribute<long>("count");
-        std::vector<std::string> values(count);
-
-        for (int i = 0; i < count; i++) {
-            reader.readElement("Enum");
-            values[i] = reader.getAttribute<const char*>("value");
-        }
-
-        reader.readEndElement("CustomEnumList");
-
+    if (custom) {
         _enum.setEnums(values);
     }
-
-    if (val < 0) {
-        // If the enum is empty at this stage do not print a warning
-        if (_enum.hasEnums()) {
-            Base::Console().developerWarning(std::string("PropertyEnumeration"),
-                                             "Enumeration index %d is out of range, ignore it\n",
-                                             val);
+    if (byName) {
+        if (stated.empty()) {
+            // Nothing was chosen, which is what a property with no list of its own states. Not a
+            // failure, and not something to hold: it restores to nothing chosen.
         }
-        val = getValue();
+        else if (offered) {
+            _enum.setValue(stated);
+            _statedName.clear();
+        }
+        else {
+            // Held rather than refused here. The list this property offers may still be built --
+            // it can be assembled from another property of the same object, which the file may
+            // state further down. The name is applied the moment a list arrives that has it, and
+            // the reader asks what is still waiting once the object has been read in full.
+            _statedName = stated;
+        }
     }
-
-    _enum.setValue(val);
+    else {
+        long index = reader.getAttribute<long>("value");
+        if (index < 0) {
+            // If the enum is empty at this stage do not print a warning
+            if (_enum.hasEnums()) {
+                Base::Console().developerWarning(std::string("PropertyEnumeration"),
+                                                 "Enumeration index %ld is out of range, ignore "
+                                                 "it\n",
+                                                 index);
+            }
+            index = getValue();
+        }
+        _enum.setValue(index);
+    }
     hasSetValue();
 }
 
@@ -877,7 +935,11 @@ long PropertyIntegerList::getPyValue(PyObject* item) const
 
 void PropertyIntegerList::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<IntegerList count=\"" << getSize() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<IntegerList>" << endl;
     writer.incInd();
     for (int i = 0; i < getSize(); i++) {
         writer.Stream() << writer.ind() << "<I v=\"" << _lValueList[i] << "\"/>" << endl;
@@ -888,18 +950,14 @@ void PropertyIntegerList::Save(Base::Writer& writer) const
 
 void PropertyIntegerList::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("IntegerList");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
-    std::vector<long> values(count);
-    for (int i = 0; i < count; i++) {
-        reader.readElement("I");
-        values[i] = reader.getAttribute<long>("v");
+    std::vector<long> values;
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "I");
+        values.push_back(reader.getAttribute<long>("v"));
     }
-
-    reader.readEndElement("IntegerList");
 
     // assignment
     setValues(values);
@@ -998,7 +1056,11 @@ void PropertyIntegerSet::setPyObject(PyObject* value)
 
 void PropertyIntegerSet::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<IntegerSet count=\"" << _lValueSet.size() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<IntegerSet>" << endl;
     writer.incInd();
     for (long it : _lValueSet) {
         writer.Stream() << writer.ind() << "<I v=\"" << it << "\"/>" << endl;
@@ -1009,18 +1071,14 @@ void PropertyIntegerSet::Save(Base::Writer& writer) const
 
 void PropertyIntegerSet::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("IntegerSet");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
     std::set<long> values;
-    for (int i = 0; i < count; i++) {
-        reader.readElement("I");
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "I");
         values.insert(reader.getAttribute<long>("v"));
     }
-
-    reader.readEndElement("IntegerSet");
 
     // assignment
     setValues(values);
@@ -1432,7 +1490,11 @@ double PropertyFloatList::getPyValue(PyObject* item) const
 void PropertyFloatList::Save(Base::Writer& writer) const
 {
     if (writer.isForceXML()) {
-        writer.Stream() << writer.ind() << "<FloatList count=\"" << getSize() << "\">" << endl;
+        // Cruth: stated in full, and without a declared length. These numbers are authored, so
+        // a record that named a file instead could lose them while still looking complete; and a
+        // count is a second statement of what the same element already holds, which two people
+        // merging a file would both raise and neither would be warned about.
+        writer.Stream() << writer.ind() << "<FloatList>" << endl;
         writer.incInd();
         for (int i = 0; i < getSize(); i++) {
             writer.Stream() << writer.ind() << "<F v=\"" << _lValueList[i] << "\"/>" << endl;
@@ -1450,6 +1512,20 @@ void PropertyFloatList::Save(Base::Writer& writer) const
 void PropertyFloatList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("FloatList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the values stated in the element itself. Without this the form the writer has
+        // always been able to produce could not be read back at all, so a value written that way
+        // restored as nothing.
+        std::vector<double> values;
+        const int list = reader.level();
+        while (nextChildElement(reader, list)) {
+            expectElement(reader, "F");
+            values.push_back(reader.getAttribute<double>("v"));
+        }
+        setValues(values);
+        return;
+    }
+
     string file(reader.getAttribute<const char*>("file"));
 
     if (!file.empty()) {
@@ -1898,7 +1974,11 @@ unsigned int PropertyStringList::getMemSize() const
 
 void PropertyStringList::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<StringList count=\"" << getSize() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<StringList>" << endl;
     writer.incInd();
     for (int i = 0; i < getSize(); i++) {
         std::string val = encodeAttribute(_lValueList[i]);
@@ -1910,18 +1990,14 @@ void PropertyStringList::Save(Base::Writer& writer) const
 
 void PropertyStringList::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("StringList");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
-    std::vector<std::string> values(count);
-    for (int i = 0; i < count; i++) {
-        reader.readElement("String");
-        values[i] = reader.getAttribute<const char*>("value");
+    std::vector<std::string> values;
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "String");
+        values.emplace_back(reader.getAttribute<const char*>("value"));
     }
-
-    reader.readEndElement("StringList");
 
     // assignment
     setValues(values);
@@ -2098,7 +2174,11 @@ unsigned int PropertyMap::getMemSize() const
 
 void PropertyMap::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<Map count=\"" << getSize() << "\">" << endl;
+    // Cruth: stated without a declared length. A count is a second statement of what the same
+    // element already holds, and in a file people merge, two people each adding an item both
+    // raise it to the same number -- a textual merge takes that without a conflict and a reader
+    // that loops the stated number of times drops one addition without a word.
+    writer.Stream() << writer.ind() << "<Map>" << endl;
     writer.incInd();
     for (const auto& it : _lValueList) {
         writer.Stream() << writer.ind() << "<Item key=\"" << encodeAttribute(it.first)
@@ -2111,18 +2191,14 @@ void PropertyMap::Save(Base::Writer& writer) const
 
 void PropertyMap::Restore(Base::XMLReader& reader)
 {
-    // read my Element
     reader.readElement("Map");
-    // get the value of my Attribute
-    int count = reader.getAttribute<long>("count");
 
     std::map<std::string, std::string> values;
-    for (int i = 0; i < count; i++) {
-        reader.readElement("Item");
+    const int list = reader.level();
+    while (nextChildElement(reader, list)) {
+        expectElement(reader, "Item");
         values[reader.getAttribute<const char*>("key")] = reader.getAttribute<const char*>("value");
     }
-
-    reader.readEndElement("Map");
 
     // assignment
     setValues(values);
@@ -2595,6 +2671,22 @@ Base::Color PropertyColorList::getPyValue(PyObject* item) const
 
 void PropertyColorList::Save(Base::Writer& writer) const
 {
+    if (writer.isForceXML()) {
+        // Cruth: a colour a person chose is authored content and is stated in the record itself.
+        // Naming a file for it instead left the record looking complete while the colours could
+        // go missing, and this property wrote no element at all when asked for text -- so every
+        // per-face colour left the record without a word.
+        writer.Stream() << writer.ind() << "<ColorList>" << std::endl;
+        writer.incInd();
+        for (const auto& colour : _lValueList) {
+            writer.Stream() << writer.ind() << "<Color value=\"" << colour.getPackedValue()
+                            << "\"/>" << std::endl;
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</ColorList>" << std::endl;
+        return;
+    }
+
     if (!writer.isForceXML()) {
         writer.Stream() << writer.ind() << "<ColorList file=\""
                         << (getSize() ? writer.addFile(getName(), this) : "") << "\"/>"
@@ -2605,6 +2697,27 @@ void PropertyColorList::Save(Base::Writer& writer) const
 void PropertyColorList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("ColorList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the colours stated in the element itself.
+        const bool convertAlpha = readerRequiresAlphaConversion(reader);
+        std::vector<Base::Color> colours;
+        const int list = reader.level();
+        while (App::nextChildElement(reader, list)) {
+            App::expectElement(reader, "Color");
+            unsigned long rgba = reader.getAttribute<unsigned long>("value");
+            if (convertAlpha) {
+                constexpr unsigned long alphaMax = 0xff;
+                const unsigned long alpha = alphaMax - (rgba & alphaMax);
+                rgba = rgba - (rgba & alphaMax) + alpha;
+            }
+            Base::Color colour;
+            colour.setPackedValue(static_cast<uint32_t>(rgba));
+            colours.push_back(colour);
+        }
+        setValues(colours);
+        return;
+    }
+
     if (reader.hasAttribute("file")) {
         std::string file(reader.getAttribute<const char*>("file"));
 
@@ -3403,6 +3516,31 @@ Material PropertyMaterialList::getPyValue(PyObject* value) const
 
 void PropertyMaterialList::Save(Base::Writer& writer) const
 {
+    if (writer.isForceXML()) {
+        // Cruth: an appearance a person chose is authored content and is stated in the record
+        // itself, in the same words the single-valued material property uses.
+        writer.Stream() << writer.ind() << "<MaterialList>" << std::endl;
+        writer.incInd();
+        for (const auto& material : _lValueList) {
+            writer.Stream() << writer.ind() << "<Material"
+                            << " ambientColor=\"" << material.ambientColor.getPackedValue() << "\""
+                            << " diffuseColor=\"" << material.diffuseColor.getPackedValue() << "\""
+                            << " specularColor=\"" << material.specularColor.getPackedValue()
+                            << "\""
+                            << " emissiveColor=\"" << material.emissiveColor.getPackedValue()
+                            << "\""
+                            << " shininess=\"" << material.shininess << "\""
+                            << " transparency=\"" << material.transparency << "\""
+                            << " image=\"" << encodeAttribute(material.image) << "\""
+                            << " imagePath=\"" << encodeAttribute(material.imagePath) << "\""
+                            << " uuid=\"" << encodeAttribute(material.uuid) << "\""
+                            << "/>" << std::endl;
+        }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</MaterialList>" << std::endl;
+        return;
+    }
+
     if (!writer.isForceXML()) {
         writer.Stream() << writer.ind() << "<MaterialList file=\""
                         << (getSize() ? writer.addFile(getName(), this) : "") << "\""
@@ -3413,6 +3551,36 @@ void PropertyMaterialList::Save(Base::Writer& writer) const
 void PropertyMaterialList::Restore(Base::XMLReader& reader)
 {
     reader.readElement("MaterialList");
+    if (!reader.hasAttribute("file")) {
+        // Cruth: the appearances stated in the element itself.
+        const bool convertAlpha = readerRequiresAlphaConversion(reader);
+        std::vector<Material> materials;
+        const int list = reader.level();
+        while (App::nextChildElement(reader, list)) {
+            App::expectElement(reader, "Material");
+            Material material;
+            material.ambientColor.setPackedValue(
+                reader.getAttribute<unsigned long>("ambientColor"));
+            material.diffuseColor.setPackedValue(
+                reader.getAttribute<unsigned long>("diffuseColor"));
+            material.specularColor.setPackedValue(
+                reader.getAttribute<unsigned long>("specularColor"));
+            material.emissiveColor.setPackedValue(
+                reader.getAttribute<unsigned long>("emissiveColor"));
+            material.shininess = static_cast<float>(reader.getAttribute<double>("shininess"));
+            material.transparency = static_cast<float>(reader.getAttribute<double>("transparency"));
+            material.image = reader.getAttribute<const char*>("image", "");
+            material.imagePath = reader.getAttribute<const char*>("imagePath", "");
+            material.uuid = reader.getAttribute<const char*>("uuid", "");
+            materials.push_back(material);
+        }
+        if (convertAlpha) {
+            this->convertAlpha(materials);
+        }
+        setValues(materials);
+        return;
+    }
+
     if (reader.hasAttribute("file")) {
         std::string file(reader.getAttribute<const char*>("file"));
         if (reader.hasAttribute("version")) {
