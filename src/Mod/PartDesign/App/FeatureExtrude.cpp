@@ -741,12 +741,8 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             }
             // we have to get the solids (fuse sometimes creates compounds)
             auto solRes = result;
-            // lets check if the result is a solid. Cruth Amendment 5 / P7: a subtractive extrude
-            // whose tool consumes the whole base (a ThroughAll Pocket covering the entire Body)
-            // yields a *successful* empty compound from OCCT, not an exception and not a null shape
-            // — so isNull() alone lets a phantom zero-solid Tip through. Guard on solid count too,
-            // the same fix Boolean::execute carries, so a fully-consumed Body fails loud instead of
-            // silently emptying.
+            // A cut that consumes the whole base returns an empty compound, not a null shape,
+            // so isNull() alone would let a zero-solid result through.
             if (solRes.isNull() || countSolids(solRes.getShape()) == 0) {
                 return new App::DocumentObjectExecReturn(
                     QT_TRANSLATE_NOOP("Exception", "Resulting shape is not a solid")
