@@ -101,7 +101,10 @@ SET(Datatypes_SRCS
     GeoEnum.cpp
     GeoEnum.h
     SketchRecipe.cpp
+    SketchRecipeMerge.cpp
+    SketchRecipeView.cpp
     SketchRecipe.h
+    SketchRecipeInternal.h
 )
 SOURCE_GROUP("Datatypes" FILES ${Datatypes_SRCS})
 
