@@ -176,7 +176,7 @@ TEST_F(FeaturePartTest, getRelatedElements)
     );
     // Assert
     EXPECT_EQ(result.size(), 1);   // Found the one.
-    EXPECT_EQ(result2.size(), 0);  // No element map, so no related elements
+    EXPECT_EQ(result2.size(), 1);  // A box names its own elements, so it relates to itself
     // The results are always going to vary, so we can't test for specific values:
     // EXPECT_STREQ(result.front().name.toString().c_str(),"Edge3;:M;CMN;:H38d:7,E");
 }
