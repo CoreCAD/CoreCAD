@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <functional>
 #include <vector>
 
 #include <Gui/Command.h>
@@ -110,6 +111,10 @@ void finishDatumConstraint(Gui::Command* cmd,
                            bool isDriving = true,
                            unsigned int numberofconstraints = 1);
 bool removeRedundantPointOnObject(Sketcher::SketchObject* Obj, int GeoId1, int GeoId2, int GeoId3);
+void showNoConstraintBetweenExternal(const App::DocumentObject* obj);
+void showNoConstraintBetweenFixedGeometry(const App::DocumentObject* obj);
+bool isGeoConcentricCompatible(const Part::Geometry* geo);
+bool addConstraintSafely(Sketcher::SketchObject* obj, std::function<void()> constraintadditionfunction);
 
 namespace SketcherGui
 {
