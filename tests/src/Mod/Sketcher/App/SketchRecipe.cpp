@@ -18,6 +18,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/PropertyUnits.h>
 #include <App/ObjectRecipe.h>
 #include <App/Recipe.h>
 #include <Mod/Part/App/Geometry.h>
@@ -1188,6 +1189,48 @@ TEST_F(SketchRecipeMergeTest, aTieToGeometryTheOtherSideStoppedBorrowingIsAConfl
     ASSERT_EQ(report.conflicts.size(), 1U);
     EXPECT_EQ(report.conflicts.front().kind, App::MergeConflict::Kind::Referential);
     EXPECT_EQ(report.conflicts.front().type, "Coincident");
+}
+
+// A sketch drawn on the top of a box.
+void sketchOnABoxTop(Sketcher::SketchObject* s)
+{
+    App::Document* doc = s->getDocument();
+    auto* box = doc->addObject("Part::Box", "Box");
+    s->AttachmentSupport.setValue(box, std::vector<std::string> {"Face6"});
+    s->MapMode.setValue("FlatFace");
+    addLine(s, 2, 2, 8, 2);
+}
+
+// A raises the box and B shifts the sketch off its face, so the sketch sits somewhere new on both
+// sides. Where it sits is worked out again from the support and the offset, never combined.
+TEST_F(SketchRecipeMergeTest, aMergedPartPlacesASketchBothSidesMovedFromItsSupport)
+{
+    Branches br = makeBranches(sketchOnABoxTop);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    auto* height = dynamic_cast<App::PropertyLength*>(
+        br.a->getDocument()->getObject("Box")->getPropertyByName("Height")
+    );
+    ASSERT_NE(height, nullptr);
+    height->setValue(20.0);
+    br.a->getDocument()->recompute();
+    br.b->AttachmentOffset.setValue(Base::Placement(Base::Vector3d(1, 0, 0), Base::Rotation()));
+    br.b->getDocument()->recompute();
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const App::MergedDocument made = App::buildMergedDocument(
+        *ancestor->getDocument(),
+        *br.a->getDocument(),
+        *br.b->getDocument()
+    );
+
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    auto* sketch = dynamic_cast<Sketcher::SketchObject*>(made.document->getObject("S"));
+    ASSERT_NE(sketch, nullptr);
+    EXPECT_TRUE(sketch->Placement.getValue().getPosition().IsEqual(Base::Vector3d(1, 0, 20), 1e-9));
+
+    App::GetApplication().closeDocument(made.document->getName());
 }
 
 }  // namespace
