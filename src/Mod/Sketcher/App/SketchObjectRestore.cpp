@@ -210,7 +210,7 @@ void SketchObject::rebindConstraintsToDurableGeometry()
         }
     }
 
-    // §10.1 / Amendment 15 (honest retirement, loud-drop): a reference whose durable target
+    // A reference whose durable target
     // is gone is disclosed, never silently patched. The dangling elements were marked
     // GeoUndef above, so validateConstraints/the solver will treat them as invalid rather
     // than let a stale index alias a surviving element.
