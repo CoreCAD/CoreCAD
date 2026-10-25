@@ -314,6 +314,8 @@ SET(FreeCADApp_CPP_SRCS
     ApplicationDirectories.cpp
     ApplicationDirectoriesPyImp.cpp
     ApplicationPy.cpp
+    ApplicationPyHistory.cpp
+    ApplicationPyProject.cpp
     AutoTransaction.cpp
     Branding.cpp
     CleanupProcess.cpp
