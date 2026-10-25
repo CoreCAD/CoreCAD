@@ -36,6 +36,12 @@ def addGeometry(sketch):
     sketch.addGeometry(Part.ArcOfCircle(Part.Circle(V(60, 0, 0), V(0, 0, 1), 4), 0.2, 1.4))  # 4
 
 
+def addSplineWithPoles(sketch):
+    spline = Part.BSplineCurve()
+    spline.buildFromPoles([V(100, 0, 0), V(115, 30, 0), V(130, -30, 0), V(145, 0, 0)])
+    sketch.exposeInternalGeometry(sketch.addGeometry(spline, False))  # 5, poles from 6
+
+
 @unittest.skipIf(not GUI_AVAILABLE, "GUI not available")
 class TestConstraintCommandsGui(unittest.TestCase):
     def setUp(self):
@@ -45,6 +51,7 @@ class TestConstraintCommandsGui(unittest.TestCase):
         self.prefs.SetBool("ShowDialogOnDistanceConstraint", False)
         self.doc = FreeCAD.newDocument("TestConstraintCommandsGui")
         self.sketch = None
+        self.withPoles = False
 
     def tearDown(self):
         self.prefs.SetBool("ShowDialogOnDistanceConstraint", self.showDialog)
@@ -67,6 +74,8 @@ class TestConstraintCommandsGui(unittest.TestCase):
         FreeCADGui.Selection.clearSelection()
         self.sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
         addGeometry(self.sketch)
+        if self.withPoles:
+            addSplineWithPoles(self.sketch)
         self.doc.recompute()
         FreeCADGui.ActiveDocument.setEdit(self.sketch.Name)
         self.pump(150)
@@ -186,8 +195,28 @@ class TestConstraintCommandsGui(unittest.TestCase):
     def test_fixedYOnABlockedPointIsAReference(self):
         self.assertCoordinateOnBlockedPointIsReference("Sketcher_ConstrainDistanceY")
 
+    def test_sizingSeveralCirclesMakesThemEqual(self):
+        picks = [("edge", CIRCLE), ("edge", ARC)]
+        for command, size in (
+            ("Sketcher_ConstrainRadius", ("Radius", 3, 0, -2000, 0, 5.0)),
+            ("Sketcher_ConstrainDiameter", ("Diameter", 3, 0, -2000, 0, 10.0)),
+            ("Sketcher_ConstrainRadiam", ("Diameter", 3, 0, -2000, 0, 10.0)),
+        ):
+            self.assertEqual(
+                self.selectionFirst(command, picks),
+                [("Equal", 3, 0, 4, 0, 0.0), size],
+                command,
+            )
 
-L0, L1, L2, CIRCLE, ARC = 0, 1, 2, 3, 4
+    def test_sizingAPoleTogetherWithACircleIsRefused(self):
+        self.withPoles = True
+        for command in ("Sketcher_ConstrainRadius", "Sketcher_ConstrainRadiam"):
+            self.assertEqual(
+                self.selectionFirst(command, [("edge", POLE), ("edge", CIRCLE)]), [], command
+            )
+
+
+L0, L1, L2, CIRCLE, ARC, SPLINE, POLE = 0, 1, 2, 3, 4, 5, 6
 
 # name: (command, picks in tool-first order,
 #        expected constraints as (Type, First, FirstPos, Second, SecondPos, Value))
@@ -361,8 +390,25 @@ CASES = {
 }
 
 
-def addCase(name, command, picks, expected):
+# picks on a sketch that also holds a B-spline with its poles shown
+POLE_CASES = {
+    "radiusOnAPoleSetsItsWeight": (
+        "Sketcher_ConstrainRadius",
+        [("edge", POLE)],
+        [("Weight", 6, 0, -2000, 0, 1.0)],
+    ),
+    "diameterRefusesAPole": ("Sketcher_ConstrainDiameter", [("edge", POLE)], []),
+    "radiusOrDiameterOnAPoleSetsItsWeight": (
+        "Sketcher_ConstrainRadiam",
+        [("edge", POLE)],
+        [("Weight", 6, 0, -2000, 0, 1.0)],
+    ),
+}
+
+
+def addCase(name, command, picks, expected, withPoles=False):
     def test(self):
+        self.withPoles = withPoles
         self.assertBothWays(command, picks, expected)
 
     test.__name__ = "test_" + name
@@ -371,3 +417,6 @@ def addCase(name, command, picks, expected):
 
 for _name, (_command, _picks, _expected) in CASES.items():
     addCase(_name, _command, _picks, _expected)
+
+for _name, (_command, _picks, _expected) in POLE_CASES.items():
+    addCase(_name, _command, _picks, _expected, withPoles=True)
