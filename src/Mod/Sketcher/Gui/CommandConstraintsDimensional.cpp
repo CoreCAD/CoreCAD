@@ -23,6 +23,7 @@
  ***************************************************************************/
 
 #include <limits>
+#include <optional>
 #include <cmath>
 
 #include <Precision.hxx>
@@ -1030,403 +1031,146 @@ void CmdSketcherConstrainAxisDistance::updateAction(int mode)
 
 // ======================================================================================
 
-class CmdSketcherConstrainRadius: public CmdSketcherConstraint
+class CmdSketcherConstrainCircleSize: public CmdSketcherConstraint
 {
 public:
-    CmdSketcherConstrainRadius();
-    ~CmdSketcherConstrainRadius() override
+    enum class Measure
+    {
+        Radius,
+        Diameter,
+        Radiam
+    };
+
+    explicit CmdSketcherConstrainCircleSize(Measure measure);
+    ~CmdSketcherConstrainCircleSize() override
     {}
     void updateAction(int mode) override;
-    const char* className() const override
-    {
-        return "CmdSketcherConstrainRadius";
-    }
+    const char* className() const override;
 
 protected:
     void activated(int iMsg) override;
     void applyConstraint(std::vector<SelIdPair>& selSeq, int seqIndex) override;
+
+private:
+    struct Size
+    {
+        int geoId;
+        const char* type;
+        double value;
+    };
+
+    std::optional<Size> sizeOf(const Sketcher::SketchObject* Obj, int GeoId) const;
+    bool refusesPoles() const
+    {
+        return measure == Measure::Diameter;
+    }
+    const char* undoText() const;
+    void addSize(Sketcher::SketchObject* Obj, const Size& size);
+
+    Measure measure;
 };
 
-CmdSketcherConstrainRadius::CmdSketcherConstrainRadius()
-    : CmdSketcherConstraint("Sketcher_ConstrainRadius")
+CmdSketcherConstrainCircleSize::CmdSketcherConstrainCircleSize(Measure measure)
+    : CmdSketcherConstraint(measure == Measure::Radius     ? "Sketcher_ConstrainRadius"
+                            : measure == Measure::Diameter ? "Sketcher_ConstrainDiameter"
+                                                           : "Sketcher_ConstrainRadiam")
+    , measure(measure)
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Radius Dimension");
-    sToolTipText = QT_TR_NOOP("Constrains the radius of the selected circle or arc");
-    sWhatsThis = "Sketcher_ConstrainRadius";
+    switch (measure) {
+        case Measure::Radius:
+            sMenuText = QT_TRANSLATE_NOOP("CmdSketcherConstrainRadius", "Radius Dimension");
+            sToolTipText = QT_TRANSLATE_NOOP("CmdSketcherConstrainRadius", "Constrains the radius of the selected circle or arc");
+            sWhatsThis = "Sketcher_ConstrainRadius";
+            sPixmap = "Constraint_Radius";
+            sAccel = "K, R";
+            break;
+        case Measure::Diameter:
+            sMenuText = QT_TRANSLATE_NOOP("CmdSketcherConstrainDiameter", "Diameter Dimension");
+            sToolTipText = QT_TRANSLATE_NOOP("CmdSketcherConstrainDiameter", "Constrains the diameter of the selected circle or arc");
+            sWhatsThis = "Sketcher_ConstrainDiameter";
+            sPixmap = "Constraint_Diameter";
+            sAccel = "K, O";
+            break;
+        case Measure::Radiam:
+            sMenuText = QT_TRANSLATE_NOOP("CmdSketcherConstrainRadiam", "Radius/Diameter Dimension");
+            sToolTipText = QT_TRANSLATE_NOOP("CmdSketcherConstrainRadiam", "Constrains the radius of the selected arc or the diameter of the selected circle");
+            sWhatsThis = "Sketcher_ConstrainRadiam";
+            sPixmap = "Constraint_Radiam";
+            sAccel = "K, S";
+            break;
+    }
     sStatusTip = sToolTipText;
-    sPixmap = "Constraint_Radius";
-    sAccel = "K, R";
     eType = ForEdit;
 
     allowedSelSequences = {{SelEdge}, {SelExternalEdge}};
 }
 
-void CmdSketcherConstrainRadius::activated(int iMsg)
+const char* CmdSketcherConstrainCircleSize::className() const
 {
-    Q_UNUSED(iMsg);
-    // get the selection
-    std::vector<Gui::SelectionObject> selection = getSelection().getSelectionEx();
-
-    // only one sketch with its subelements are allowed to be selected
-    if (selection.size() != 1
-        || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
-
-        if (constraintMode) {
-            ActivateHandler(getActiveGuiDocument(), std::make_unique<DrawSketchHandlerGenConstraint>(this));
-            getSelection().clearSelection();
-        }
-        else {
-            // TODO: Get the exact message from git history and put it here
-            Gui::TranslatedUserWarning(getActiveGuiDocument(),
-                                       QObject::tr("Wrong selection"),
-                                       QObject::tr("Select the right things from the sketch."));
-        }
-        return;
+    switch (measure) {
+        case Measure::Radius:
+            return "CmdSketcherConstrainRadius";
+        case Measure::Diameter:
+            return "CmdSketcherConstrainDiameter";
+        case Measure::Radiam:
+            break;
     }
-
-    // get the needed lists and objects
-    const std::vector<std::string>& SubNames = selection[0].getSubNames();
-    auto* Obj = static_cast<Sketcher::SketchObject*>(selection[0].getObject());
-
-    if (SubNames.empty()) {
-        Gui::TranslatedUserWarning(
-            Obj,
-            QObject::tr("Wrong selection"),
-            QObject::tr("Select one or more arcs or circles from the sketch."));
-        return;
-    }
-
-    // check for which selected geometry the constraint can be applied
-    std::vector<std::pair<int, double>> geoIdRadiusMap;
-    std::vector<std::pair<int, double>> externalGeoIdRadiusMap;
-
-    bool poles = false;
-    bool nonpoles = false;
-
-    for (auto& subname : SubNames) {
-        bool issegmentfixed = false;
-        int GeoId;
-
-        if (subname.size() > 4 && subname.substr(0, 4) == "Edge") {
-            GeoId = std::atoi(subname.substr(4, 4000).c_str()) - 1;
-            issegmentfixed = isPointOrSegmentFixed(Obj, GeoId);
-        }
-        else if (subname.size() > 4 && subname.substr(0, 12) == "ExternalEdge") {
-            GeoId = -std::atoi(subname.substr(12, 4000).c_str()) - 2;
-            issegmentfixed = true;
-        }
-        else {
-            continue;
-        }
-
-        const Part::Geometry* geom = Obj->getGeometry(GeoId);
-
-        if (geom && isArcOfCircle(*geom)) {
-            auto arc = static_cast<const Part::GeomArcOfCircle*>(geom);
-            double radius = arc->getRadius();
-
-            if (issegmentfixed) {
-                externalGeoIdRadiusMap.emplace_back(GeoId, radius);
-            }
-            else {
-                geoIdRadiusMap.emplace_back(GeoId, radius);
-            }
-
-            nonpoles = true;
-        }
-        else if (geom && isCircle(*geom)) {
-            auto circle = static_cast<const Part::GeomCircle*>(geom);
-            double radius = circle->getRadius();
-
-            if (issegmentfixed) {
-                externalGeoIdRadiusMap.emplace_back(GeoId, radius);
-            }
-            else {
-                geoIdRadiusMap.emplace_back(GeoId, radius);
-            }
-
-            if (isBsplinePole(geom)) {
-                poles = true;
-            }
-            else {
-                nonpoles = true;
-            }
-        }
-    }
-
-    if (geoIdRadiusMap.empty() && externalGeoIdRadiusMap.empty()) {
-        Gui::TranslatedUserWarning(
-            Obj,
-            QObject::tr("Wrong selection"),
-            QObject::tr("Select one or more arcs or circles from the sketch."));
-        return;
-    }
-
-    if (poles && nonpoles) {
-        Gui::TranslatedUserWarning(
-            Obj,
-            QObject::tr("Wrong selection"),
-            QObject::tr("Select either only one or more B-spline poles or only one or more arcs or "
-                        "circles from the sketch, but not mixed."));
-        return;
-    }
-
-    bool commitNeeded = false;
-    bool updateNeeded = false;
-    bool commandopened = false;
-
-    if (!externalGeoIdRadiusMap.empty()) {
-        // Create the non-driving radius constraints now
-        openCommand(QT_TRANSLATE_NOOP("Command", "Add radius constraint"));
-        commandopened = true;
-        unsigned int constrSize = 0;
-
-        for (std::vector<std::pair<int, double>>::iterator it = externalGeoIdRadiusMap.begin();
-             it != externalGeoIdRadiusMap.end();
-             ++it) {
-
-            if (nonpoles) {
-                Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                      "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                      it->first,
-                                      it->second);
-            }
-            else {
-                Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                      "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                      it->first,
-                                      it->second);
-            }
-
-            const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-
-            constrSize = ConStr.size();
-
-            Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                  "setDriving(%d,%s)",
-                                  constrSize - 1,
-                                  "False");
-        }
-
-        finishDatumConstraint(this, Obj, false, externalGeoIdRadiusMap.size());
-
-        commitNeeded = true;
-        updateNeeded = true;
-    }
-
-    if (!geoIdRadiusMap.empty()) {
-        if (geoIdRadiusMap.size() > 1 && constraintCreationMode == Driving) {
-
-            int refGeoId = geoIdRadiusMap.front().first;
-            double radius = geoIdRadiusMap.front().second;
-
-            if (!commandopened) {
-                openCommand(QT_TRANSLATE_NOOP("Command", "Add radius constraint"));
-            }
-
-            // Add the equality constraints
-            for (std::vector<std::pair<int, double>>::iterator it = geoIdRadiusMap.begin() + 1;
-                 it != geoIdRadiusMap.end();
-                 ++it) {
-                Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                      "addConstraint(Sketcher.Constraint('Equal',%d,%d))",
-                                      refGeoId,
-                                      it->first);
-            }
-
-            if (nonpoles) {
-                Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                      "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                      refGeoId,
-                                      radius);
-            }
-            else {
-                Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                      "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                      refGeoId,
-                                      radius);
-            }
-        }
-        else {
-            // Create the radius constraints now
-            if (!commandopened) {
-                openCommand(QT_TRANSLATE_NOOP("Command", "Add radius constraint"));
-            }
-            for (std::vector<std::pair<int, double>>::iterator it = geoIdRadiusMap.begin();
-                 it != geoIdRadiusMap.end();
-                 ++it) {
-                if (nonpoles) {
-                    Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                          "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                          it->first,
-                                          it->second);
-                }
-                else {
-                    Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                          "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                          it->first,
-                                          it->second);
-                }
-
-                if (constraintCreationMode == Reference) {
-                    const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-                    Gui::cmdAppObjectArgs(selection[0].getObject(),
-                                          "setDriving(%d,%s)",
-                                          ConStr.size() - 1,
-                                          "False");
-                }
-            }
-        }
-
-        finishDatumConstraint(this, Obj, constraintCreationMode == Driving);
-
-        // updateActive();
-        getSelection().clearSelection();
-    }
-
-    if (commitNeeded) {
-        commitCommand();
-    }
-
-    if (updateNeeded) {
-        tryAutoRecomputeIfNotSolve(Obj);// we have to update the solver after this aborted addition.
-    }
+    return "CmdSketcherConstrainRadiam";
 }
 
-void CmdSketcherConstrainRadius::applyConstraint(std::vector<SelIdPair>& selSeq, int seqIndex)
+const char* CmdSketcherConstrainCircleSize::undoText() const
 {
-    SketcherGui::ViewProviderSketch* sketchgui =
-        static_cast<SketcherGui::ViewProviderSketch*>(getActiveGuiDocument()->getInEdit());
-    Sketcher::SketchObject* Obj = sketchgui->getSketchObject();
+    switch (measure) {
+        case Measure::Radius:
+            return QT_TRANSLATE_NOOP("Command", "Add radius constraint");
+        case Measure::Diameter:
+            return QT_TRANSLATE_NOOP("Command", "Add diameter constraint");
+        case Measure::Radiam:
+            break;
+    }
+    return QT_TRANSLATE_NOOP("Command", "Add radiam constraint");
+}
 
-    int GeoId = selSeq.at(0).GeoId;
+std::optional<CmdSketcherConstrainCircleSize::Size>
+CmdSketcherConstrainCircleSize::sizeOf(const Sketcher::SketchObject* Obj, int GeoId) const
+{
+    const Part::Geometry* geom = Obj->getGeometry(GeoId);
     double radius = 0.0;
+    bool isArc = false;
 
-    bool updateNeeded = false;
-
-    switch (seqIndex) {
-        case 0:// {SelEdge}
-        case 1:// {SelExternalEdge}
-        {
-            const Part::Geometry* geom = Obj->getGeometry(GeoId);
-
-            if (geom && isArcOfCircle(*geom)) {
-                auto arc = static_cast<const Part::GeomArcOfCircle*>(geom);
-                radius = arc->getRadius();
-            }
-            else if (geom && isCircle(*geom)) {
-                auto circle = static_cast<const Part::GeomCircle*>(geom);
-                radius = circle->getRadius();
-            }
-            else {
-                Gui::TranslatedUserWarning(
-                    Obj,
-                    QObject::tr("Wrong selection"),
-                    QObject::tr("Constraint only applies to arcs or circles."));
-                return;
-            }
-
-            // Create the radius constraint now
-            openCommand(QT_TRANSLATE_NOOP("Command", "Add radius constraint"));
-
-            bool ispole = isBsplinePole(geom);
-
-            if (ispole) {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                      GeoId,
-                                      radius);
-            }
-            else {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                      GeoId,
-                                      radius);
-            }
-
-            const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-
-            bool fixed = isPointOrSegmentFixed(Obj, GeoId);
-            if (fixed || constraintCreationMode == Reference) {
-                Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", ConStr.size() - 1, "False");
-
-                updateNeeded = true;// We do need to update the solver DoF after setting the
-                                    // constraint driving.
-            }
-
-            finishDatumConstraint(this, Obj, constraintCreationMode == Driving && !fixed);
-
-            // updateActive();
-            getSelection().clearSelection();
-
-            commitCommand();
-
-            if (updateNeeded) {
-                tryAutoRecomputeIfNotSolve(
-                    Obj);// we have to update the solver after this aborted addition.
-            }
-        }
+    if (geom && isArcOfCircle(*geom)) {
+        radius = static_cast<const Part::GeomArcOfCircle*>(geom)->getRadius();
+        isArc = true;
     }
-}
-
-void CmdSketcherConstrainRadius::updateAction(int mode)
-{
-    switch (mode) {
-        case Reference:
-            if (getAction()) {
-                getAction()->setIcon(
-                    Gui::BitmapFactory().iconFromTheme("Constraint_Radius_Driven"));
-            }
-            break;
-        case Driving:
-            if (getAction()) {
-                getAction()->setIcon(Gui::BitmapFactory().iconFromTheme("Constraint_Radius"));
-            }
-            break;
+    else if (geom && isCircle(*geom)) {
+        radius = static_cast<const Part::GeomCircle*>(geom)->getRadius();
     }
-}
-
-// ======================================================================================
-
-class CmdSketcherConstrainDiameter: public CmdSketcherConstraint
-{
-public:
-    CmdSketcherConstrainDiameter();
-    ~CmdSketcherConstrainDiameter() override
-    {}
-    void updateAction(int mode) override;
-    const char* className() const override
-    {
-        return "CmdSketcherConstrainDiameter";
+    else {
+        return std::nullopt;
     }
 
-protected:
-    void activated(int iMsg) override;
-    void applyConstraint(std::vector<SelIdPair>& selSeq, int seqIndex) override;
-};
-
-CmdSketcherConstrainDiameter::CmdSketcherConstrainDiameter()
-    : CmdSketcherConstraint("Sketcher_ConstrainDiameter")
-{
-    sAppModule = "Sketcher";
-    sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Diameter Dimension");
-    sToolTipText = QT_TR_NOOP("Constrains the diameter of the selected circle or arc");
-    sWhatsThis = "Sketcher_ConstrainDiameter";
-    sStatusTip = sToolTipText;
-    sPixmap = "Constraint_Diameter";
-    sAccel = "K, O";
-    eType = ForEdit;
-
-    allowedSelSequences = {{SelEdge}, {SelExternalEdge}};
+    // a B-spline pole is sized by its weight
+    if (isBsplinePole(geom)) {
+        return Size {GeoId, "Weight", radius};
+    }
+    if (measure == Measure::Radius || (measure == Measure::Radiam && isArc)) {
+        return Size {GeoId, "Radius", radius};
+    }
+    return Size {GeoId, "Diameter", 2 * radius};
 }
 
-void CmdSketcherConstrainDiameter::activated(int iMsg)
+void CmdSketcherConstrainCircleSize::addSize(Sketcher::SketchObject* Obj, const Size& size)
+{
+    Gui::cmdAppObjectArgs(Obj,
+                          "addConstraint(Sketcher.Constraint('%s',%d,%f))",
+                          size.type,
+                          size.geoId,
+                          size.value);
+}
+
+void CmdSketcherConstrainCircleSize::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     // get the selection
@@ -1465,326 +1209,8 @@ void CmdSketcherConstrainDiameter::activated(int iMsg)
     }
 
     // check for which selected geometry the constraint can be applied
-    std::vector<std::pair<int, double>> geoIdDiameterMap;
-    std::vector<std::pair<int, double>> externalGeoIdDiameterMap;
-
-    for (auto& subname : SubNames) {
-        bool issegmentfixed = false;
-        int GeoId;
-
-        if (subname.size() > 4 && subname.substr(0, 4) == "Edge") {
-            GeoId = std::atoi(subname.substr(4, 4000).c_str()) - 1;
-            issegmentfixed = isPointOrSegmentFixed(Obj, GeoId);
-        }
-        else if (subname.size() > 4 && subname.substr(0, 12) == "ExternalEdge") {
-            GeoId = -std::atoi(subname.substr(12, 4000).c_str()) - 2;
-            issegmentfixed = true;
-        }
-        else {
-            continue;
-        }
-
-        const Part::Geometry* geom = Obj->getGeometry(GeoId);
-
-        if (geom && isArcOfCircle(*geom)) {
-            auto arc = static_cast<const Part::GeomArcOfCircle*>(geom);
-            double radius = arc->getRadius();
-
-            if (issegmentfixed) {
-                externalGeoIdDiameterMap.emplace_back(GeoId, 2 * radius);
-            }
-            else {
-                geoIdDiameterMap.emplace_back(GeoId, 2 * radius);
-            }
-        }
-        else if (geom && isCircle(*geom)) {
-            auto circle = static_cast<const Part::GeomCircle*>(geom);
-            double radius = circle->getRadius();
-
-            if (isBsplinePole(geom)) {
-                Gui::TranslatedUserWarning(
-                    Obj,
-                    QObject::tr("Wrong selection"),
-                    QObject::tr("Select an edge that is not a B-spline weight."));
-
-                continue;
-            }
-
-            if (issegmentfixed) {
-                externalGeoIdDiameterMap.emplace_back(GeoId, 2 * radius);
-            }
-            else {
-                geoIdDiameterMap.emplace_back(GeoId, 2 * radius);
-            }
-        }
-    }
-
-    if (geoIdDiameterMap.empty() && externalGeoIdDiameterMap.empty()) {
-        Gui::TranslatedUserWarning(
-            Obj,
-            QObject::tr("Wrong selection"),
-            QObject::tr("Select one or more arcs or circles from the sketch."));
-        return;
-    }
-
-    bool commitNeeded = false;
-    bool updateNeeded = false;
-    bool commandopened = false;
-
-    if (!externalGeoIdDiameterMap.empty()) {
-        // Create the non-driving radius constraints now
-        openCommand(QT_TRANSLATE_NOOP("Command", "Add diameter constraint"));
-        commandopened = true;
-        unsigned int constrSize = 0;
-
-        for (std::vector<std::pair<int, double>>::iterator it = externalGeoIdDiameterMap.begin();
-             it != externalGeoIdDiameterMap.end();
-             ++it) {
-            Gui::cmdAppObjectArgs(Obj,
-                                  "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                  it->first,
-                                  it->second);
-
-            const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-
-            constrSize = ConStr.size();
-
-            Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", constrSize - 1, "False");
-        }
-
-        finishDatumConstraint(this, Obj, false, externalGeoIdDiameterMap.size());
-
-        commitNeeded = true;
-        updateNeeded = true;
-    }
-
-    if (!geoIdDiameterMap.empty()) {
-        if (geoIdDiameterMap.size() > 1 && constraintCreationMode == Driving) {
-
-            int refGeoId = geoIdDiameterMap.front().first;
-            double diameter = geoIdDiameterMap.front().second;
-
-            if (!commandopened) {
-                openCommand(QT_TRANSLATE_NOOP("Command", "Add diameter constraint"));
-            }
-
-            // Add the equality constraints
-            for (std::vector<std::pair<int, double>>::iterator it = geoIdDiameterMap.begin() + 1;
-                 it != geoIdDiameterMap.end();
-                 ++it) {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Equal',%d,%d))",
-                                      refGeoId,
-                                      it->first);
-            }
-
-            Gui::cmdAppObjectArgs(Obj,
-                                  "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                  refGeoId,
-                                  diameter);
-        }
-        else {
-            // Create the diameter constraints now
-            if (!commandopened) {
-                openCommand(QT_TRANSLATE_NOOP("Command", "Add diameter constraint"));
-            }
-            for (std::vector<std::pair<int, double>>::iterator it = geoIdDiameterMap.begin();
-                 it != geoIdDiameterMap.end();
-                 ++it) {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                      it->first,
-                                      it->second);
-
-                if (constraintCreationMode == Reference) {
-
-                    const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-
-                    Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", ConStr.size() - 1, "False");
-                }
-            }
-        }
-
-        finishDatumConstraint(this, Obj, constraintCreationMode == Driving);
-
-        // updateActive();
-        getSelection().clearSelection();
-    }
-
-    if (commitNeeded) {
-        commitCommand();
-    }
-
-    if (updateNeeded) {
-        tryAutoRecomputeIfNotSolve(Obj);// we have to update the solver after this aborted addition.
-    }
-}
-
-void CmdSketcherConstrainDiameter::applyConstraint(std::vector<SelIdPair>& selSeq, int seqIndex)
-{
-    SketcherGui::ViewProviderSketch* sketchgui =
-        static_cast<SketcherGui::ViewProviderSketch*>(getActiveGuiDocument()->getInEdit());
-    Sketcher::SketchObject* Obj = sketchgui->getSketchObject();
-
-    int GeoId = selSeq.at(0).GeoId;
-    double diameter = 0.0;
-
-    bool updateNeeded = false;
-
-    switch (seqIndex) {
-        case 0:// {SelEdge}
-        case 1:// {SelExternalEdge}
-        {
-            const Part::Geometry* geom = Obj->getGeometry(GeoId);
-
-            if (geom && isArcOfCircle(*geom)) {
-                auto arc = static_cast<const Part::GeomArcOfCircle*>(geom);
-                diameter = 2 * arc->getRadius();
-            }
-            else if (geom && isCircle(*geom)) {
-                auto circle = static_cast<const Part::GeomCircle*>(geom);
-                diameter = 2 * circle->getRadius();
-            }
-            else {
-                Gui::TranslatedUserWarning(
-                    Obj,
-                    QObject::tr("Wrong selection"),
-                    QObject::tr("Constraint only applies to arcs or circles."));
-                return;
-            }
-
-            if (isBsplinePole(geom)) {
-                Gui::TranslatedUserWarning(
-                    Obj,
-                    QObject::tr("Wrong selection"),
-                    QObject::tr("Select an edge that is not a B-spline weight."));
-                return;
-            }
-
-            // Create the diameter constraint now
-            openCommand(QT_TRANSLATE_NOOP("Command", "Add diameter constraint"));
-            Gui::cmdAppObjectArgs(Obj,
-                                  "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                  GeoId,
-                                  diameter);
-
-            const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-
-            bool fixed = isPointOrSegmentFixed(Obj, GeoId);
-            if (fixed || constraintCreationMode == Reference) {
-                Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", ConStr.size() - 1, "False");
-                updateNeeded = true;// We do need to update the solver DoF after setting the
-                                    // constraint driving.
-            }
-
-            finishDatumConstraint(this, Obj, constraintCreationMode == Driving && !fixed);
-
-            // updateActive();
-            getSelection().clearSelection();
-
-            commitCommand();
-
-            if (updateNeeded) {
-                tryAutoRecomputeIfNotSolve(
-                    Obj);// we have to update the solver after this aborted addition.
-            }
-        }
-    }
-}
-
-void CmdSketcherConstrainDiameter::updateAction(int mode)
-{
-    switch (mode) {
-        case Reference:
-            if (getAction()) {
-                getAction()->setIcon(
-                    Gui::BitmapFactory().iconFromTheme("Constraint_Diameter_Driven"));
-            }
-            break;
-        case Driving:
-            if (getAction()) {
-                getAction()->setIcon(Gui::BitmapFactory().iconFromTheme("Constraint_Diameter"));
-            }
-            break;
-    }
-}
-
-// ======================================================================================
-
-class CmdSketcherConstrainRadiam: public CmdSketcherConstraint
-{
-public:
-    CmdSketcherConstrainRadiam();
-    ~CmdSketcherConstrainRadiam() override
-    {}
-    void updateAction(int mode) override;
-    const char* className() const override
-    {
-        return "CmdSketcherConstrainRadiam";
-    }
-
-protected:
-    void activated(int iMsg) override;
-    void applyConstraint(std::vector<SelIdPair>& selSeq, int seqIndex) override;
-};
-
-CmdSketcherConstrainRadiam::CmdSketcherConstrainRadiam()
-    : CmdSketcherConstraint("Sketcher_ConstrainRadiam")
-{
-    sAppModule = "Sketcher";
-    sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Radius/Diameter Dimension");
-    sToolTipText = QT_TR_NOOP("Constrains the radius of the selected arc or the diameter of the selected circle");
-    sWhatsThis = "Sketcher_ConstrainRadiam";
-    sStatusTip = sToolTipText;
-    sPixmap = "Constraint_Radiam";
-    sAccel = "K, S";
-    eType = ForEdit;
-
-    allowedSelSequences = {{SelEdge}, {SelExternalEdge}};
-}
-
-void CmdSketcherConstrainRadiam::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    // get the selection
-    std::vector<Gui::SelectionObject> selection = getSelection().getSelectionEx();
-
-    // only one sketch with its subelements are allowed to be selected
-    if (selection.size() != 1
-        || !selection[0].isObjectTypeOf(Sketcher::SketchObject::getClassTypeId())) {
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Mod/Sketcher");
-        bool constraintMode = hGrp->GetBool("ContinuousConstraintMode", true);
-
-        if (constraintMode) {
-            ActivateHandler(getActiveGuiDocument(), std::make_unique<DrawSketchHandlerGenConstraint>(this));
-            getSelection().clearSelection();
-        }
-        else {
-            // TODO: Get the exact message from git history and put it here
-            Gui::TranslatedUserWarning(getActiveGuiDocument(),
-                                       QObject::tr("Wrong selection"),
-                                       QObject::tr("Select the right things from the sketch."));
-        }
-        return;
-    }
-
-    // get the needed lists and objects
-    const std::vector<std::string>& SubNames = selection[0].getSubNames();
-    auto* Obj = static_cast<Sketcher::SketchObject*>(selection[0].getObject());
-
-    if (SubNames.empty()) {
-        Gui::TranslatedUserWarning(
-            Obj,
-            QObject::tr("Wrong selection"),
-            QObject::tr("Select one or more arcs or circles from the sketch."));
-        return;
-    }
-
-    // check for which selected geometry the constraint can be applied
-    std::vector<std::pair<int, double>> geoIdRadiamMap;
-    std::vector<std::pair<int, double>> externalGeoIdRadiamMap;
+    std::vector<Size> sizes;
+    std::vector<Size> externalSizes;
 
     bool poles = false;
     bool nonpoles = false;
@@ -1805,37 +1231,25 @@ void CmdSketcherConstrainRadiam::activated(int iMsg)
             continue;
         }
 
-        const Part::Geometry* geom = Obj->getGeometry(GeoId);
-        double radius;
-
-        if (geom && isArcOfCircle(*geom)) {
-            auto arcir = static_cast<const Part::GeomArcOfCircle*>(geom);
-            radius = arcir->getRadius();
-            nonpoles = true;
-        }
-        else if (geom && isCircle(*geom)) {
-            auto arcir = static_cast<const Part::GeomCircle*>(geom);
-            radius = arcir->getRadius();
-            if (isBsplinePole(geom)) {
-                poles = true;
-            }
-            else {
-                nonpoles = true;
-            }
-        }
-        else {
+        std::optional<Size> size = sizeOf(Obj, GeoId);
+        if (!size) {
             continue;
         }
 
-        if (issegmentfixed) {
-            externalGeoIdRadiamMap.emplace_back(GeoId, radius);
+        bool pole = isBsplinePole(Obj->getGeometry(GeoId));
+        if (pole && refusesPoles()) {
+            Gui::TranslatedUserWarning(
+                Obj,
+                QObject::tr("Wrong selection"),
+                QObject::tr("Select an edge that is not a B-spline weight."));
+            continue;
         }
-        else {
-            geoIdRadiamMap.emplace_back(GeoId, radius);
-        }
+        (pole ? poles : nonpoles) = true;
+
+        (issegmentfixed ? externalSizes : sizes).push_back(*size);
     }
 
-    if (geoIdRadiamMap.empty() && externalGeoIdRadiamMap.empty()) {
+    if (sizes.empty() && externalSizes.empty()) {
         Gui::TranslatedUserWarning(
             Obj,
             QObject::tr("Wrong selection"),
@@ -1856,119 +1270,48 @@ void CmdSketcherConstrainRadiam::activated(int iMsg)
     bool updateNeeded = false;
     bool commandopened = false;
 
-    if (!externalGeoIdRadiamMap.empty()) {
-        // Create the non-driving radiam constraints now
-        openCommand(QT_TRANSLATE_NOOP("Command", "Add radiam constraint"));
+    if (!externalSizes.empty()) {
+        // Create the non-driving constraints now
+        openCommand(undoText());
         commandopened = true;
-        unsigned int constrSize = 0;
 
-        for (std::vector<std::pair<int, double>>::iterator it = externalGeoIdRadiamMap.begin();
-             it != externalGeoIdRadiamMap.end();
-             ++it) {
-            if (isArcOfCircle(*(Obj->getGeometry(it->first)))) {
-                if (nonpoles) {
-                    Gui::cmdAppObjectArgs(Obj,
-                                          "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                          it->first,
-                                          it->second);
-                }
-                else {
-                    Gui::cmdAppObjectArgs(Obj,
-                                          "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                          it->first,
-                                          it->second);
-                }
-            }
-            else {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                      it->first,
-                                      it->second * 2);
-            }
+        for (const Size& size : externalSizes) {
+            addSize(Obj, size);
 
             const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-
-            constrSize = ConStr.size();
-
-            Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", constrSize - 1, "False");
+            Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", ConStr.size() - 1, "False");
         }
 
-        finishDatumConstraint(this, Obj, false, externalGeoIdRadiamMap.size());
+        finishDatumConstraint(this, Obj, false, externalSizes.size());
 
         commitNeeded = true;
         updateNeeded = true;
     }
 
-    if (!geoIdRadiamMap.empty()) {
-        if (geoIdRadiamMap.size() > 1 && constraintCreationMode == Driving) {
+    if (!sizes.empty()) {
+        if (!commandopened) {
+            openCommand(undoText());
+        }
 
-            int refGeoId = geoIdRadiamMap.front().first;
-            double radiam = geoIdRadiamMap.front().second;
-
-            if (!commandopened) {
-                openCommand(QT_TRANSLATE_NOOP("Command", "Add radiam constraint"));
-            }
+        if (sizes.size() > 1 && constraintCreationMode == Driving) {
+            int refGeoId = sizes.front().geoId;
 
             // Add the equality constraints
-            for (std::vector<std::pair<int, double>>::iterator it = geoIdRadiamMap.begin() + 1;
-                 it != geoIdRadiamMap.end();
-                 ++it) {
+            for (auto it = sizes.begin() + 1; it != sizes.end(); ++it) {
                 Gui::cmdAppObjectArgs(Obj,
                                       "addConstraint(Sketcher.Constraint('Equal',%d,%d))",
                                       refGeoId,
-                                      it->first);
+                                      it->geoId);
             }
 
-            if (poles) {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                      refGeoId,
-                                      radiam);
-            }
-            else if (isCircle(*(Obj->getGeometry(refGeoId)))) {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                      refGeoId,
-                                      radiam * 2);
-            }
-            else {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                      refGeoId,
-                                      radiam);
-            }
+            addSize(Obj, sizes.front());
         }
         else {
-            // Create the radiam constraints now
-            if (!commandopened) {
-                openCommand(QT_TRANSLATE_NOOP("Command", "Add radiam constraint"));
-            }
-            for (std::vector<std::pair<int, double>>::iterator it = geoIdRadiamMap.begin();
-                 it != geoIdRadiamMap.end();
-                 ++it) {
-                if (poles) {
-                    Gui::cmdAppObjectArgs(Obj,
-                                          "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                          it->first,
-                                          it->second);
-                }
-                else if (isCircle(*(Obj->getGeometry(it->first)))){
-                    Gui::cmdAppObjectArgs(Obj,
-                                          "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                          it->first,
-                                          it->second * 2);
-                }
-                else {
-                    Gui::cmdAppObjectArgs(Obj,
-                                          "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                          it->first,
-                                          it->second);
-                }
+            for (const Size& size : sizes) {
+                addSize(Obj, size);
 
                 if (constraintCreationMode == Reference) {
-
                     const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
-
                     Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", ConStr.size() - 1, "False");
                 }
             }
@@ -1976,7 +1319,6 @@ void CmdSketcherConstrainRadiam::activated(int iMsg)
 
         finishDatumConstraint(this, Obj, constraintCreationMode == Driving);
 
-        // updateActive();
         getSelection().clearSelection();
     }
 
@@ -1989,39 +1331,20 @@ void CmdSketcherConstrainRadiam::activated(int iMsg)
     }
 }
 
-void CmdSketcherConstrainRadiam::applyConstraint(std::vector<SelIdPair>& selSeq, int seqIndex)
+void CmdSketcherConstrainCircleSize::applyConstraint(std::vector<SelIdPair>& selSeq, int seqIndex)
 {
     SketcherGui::ViewProviderSketch* sketchgui =
         static_cast<SketcherGui::ViewProviderSketch*>(getActiveGuiDocument()->getInEdit());
     Sketcher::SketchObject* Obj = sketchgui->getSketchObject();
 
     int GeoId = selSeq.at(0).GeoId;
-    double radiam = 0.0;
-
-    bool updateNeeded = false;
-
-    bool isCircleGeom = false;
-    bool isPole = false;
 
     switch (seqIndex) {
         case 0:// {SelEdge}
         case 1:// {SelExternalEdge}
         {
-            const Part::Geometry* geom = Obj->getGeometry(GeoId);
-
-            if (geom && isArcOfCircle(*geom)) {
-                auto arc = static_cast<const Part::GeomArcOfCircle*>(geom);
-                radiam = arc->getRadius();
-            }
-            else if (geom && isCircle(*geom)) {
-                auto circle = static_cast<const Part::GeomCircle*>(geom);
-                radiam = circle->getRadius();
-                isCircleGeom= true;
-                if (isBsplinePole(geom)) {
-                    isPole = true;
-                }
-            }
-            else {
+            std::optional<Size> size = sizeOf(Obj, GeoId);
+            if (!size) {
                 Gui::TranslatedUserWarning(
                     Obj,
                     QObject::tr("Wrong selection"),
@@ -2029,40 +1352,30 @@ void CmdSketcherConstrainRadiam::applyConstraint(std::vector<SelIdPair>& selSeq,
                 return;
             }
 
-            // Create the radiam constraint now
-            openCommand(QT_TRANSLATE_NOOP("Command", "Add radiam constraint"));
+            if (refusesPoles() && isBsplinePole(Obj->getGeometry(GeoId))) {
+                Gui::TranslatedUserWarning(
+                    Obj,
+                    QObject::tr("Wrong selection"),
+                    QObject::tr("Select an edge that is not a B-spline weight."));
+                return;
+            }
 
-            if (isPole) {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Weight',%d,%f))",
-                                      GeoId,
-                                      radiam);
-            }
-            else if (isCircleGeom) {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Diameter',%d,%f))",
-                                      GeoId,
-                                      radiam * 2);
-            }
-            else {
-                Gui::cmdAppObjectArgs(Obj,
-                                      "addConstraint(Sketcher.Constraint('Radius',%d,%f))",
-                                      GeoId,
-                                      radiam);
-            }
+            openCommand(undoText());
+            addSize(Obj, *size);
 
             const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
 
             bool fixed = isPointOrSegmentFixed(Obj, GeoId);
+            bool updateNeeded = false;
             if (fixed || constraintCreationMode == Reference) {
                 Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", ConStr.size() - 1, "False");
+
                 updateNeeded = true;// We do need to update the solver DoF after setting the
                                     // constraint driving.
             }
 
             finishDatumConstraint(this, Obj, constraintCreationMode == Driving && !fixed);
 
-            // updateActive();
             getSelection().clearSelection();
 
             commitCommand();
@@ -2075,19 +1388,18 @@ void CmdSketcherConstrainRadiam::applyConstraint(std::vector<SelIdPair>& selSeq,
     }
 }
 
-void CmdSketcherConstrainRadiam::updateAction(int mode)
+void CmdSketcherConstrainCircleSize::updateAction(int mode)
 {
+    if (!getAction()) {
+        return;
+    }
+    std::string icon = sPixmap;
     switch (mode) {
         case Reference:
-            if (getAction()) {
-                getAction()->setIcon(
-                    Gui::BitmapFactory().iconFromTheme("Constraint_Radiam_Driven"));
-            }
+            getAction()->setIcon(Gui::BitmapFactory().iconFromTheme((icon + "_Driven").c_str()));
             break;
         case Driving:
-            if (getAction()) {
-                getAction()->setIcon(Gui::BitmapFactory().iconFromTheme("Constraint_Radiam"));
-            }
+            getAction()->setIcon(Gui::BitmapFactory().iconFromTheme(icon.c_str()));
             break;
     }
 }
@@ -2697,9 +2009,9 @@ void SketcherGui::addDimensionalConstraintCommands(Gui::CommandManager& rcCmdMgr
     rcCmdMgr.addCommand(new CmdSketcherConstrainDistance());
     rcCmdMgr.addCommand(new CmdSketcherConstrainAxisDistance(false));
     rcCmdMgr.addCommand(new CmdSketcherConstrainAxisDistance(true));
-    rcCmdMgr.addCommand(new CmdSketcherConstrainRadius());
-    rcCmdMgr.addCommand(new CmdSketcherConstrainDiameter());
-    rcCmdMgr.addCommand(new CmdSketcherConstrainRadiam());
+    rcCmdMgr.addCommand(new CmdSketcherConstrainCircleSize(CmdSketcherConstrainCircleSize::Measure::Radius));
+    rcCmdMgr.addCommand(new CmdSketcherConstrainCircleSize(CmdSketcherConstrainCircleSize::Measure::Diameter));
+    rcCmdMgr.addCommand(new CmdSketcherConstrainCircleSize(CmdSketcherConstrainCircleSize::Measure::Radiam));
     rcCmdMgr.addCommand(new CmdSketcherCompConstrainRadDia());
     rcCmdMgr.addCommand(new CmdSketcherConstrainAngle());
 }
