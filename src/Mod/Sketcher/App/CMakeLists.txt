@@ -72,6 +72,9 @@ SET(Features_SRCS
     SketchObjectExternal.cpp
     SketchObjectConstraints.cpp
     SketchObjectOperations.cpp
+    SketchObjectElementNames.cpp
+    SketchObjectRestore.cpp
+    SketchObjectAnalysis.cpp
     SketchObjectFillet.cpp
     SketchObjectTrim.cpp
     SketchObjectCopy.cpp
