@@ -775,15 +775,15 @@ CmdSketcherConstrainAxisDistance::CmdSketcherConstrainAxisDistance(bool vertical
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
     if (vertical) {
-        sMenuText = QT_TR_NOOP("Vertical Dimension");
-        sToolTipText = QT_TR_NOOP("Constrains the vertical distance between two points, or from a point to the origin if only one is selected");
+        sMenuText = QT_TRANSLATE_NOOP("CmdSketcherConstrainDistanceY", "Vertical Dimension");
+        sToolTipText = QT_TRANSLATE_NOOP("CmdSketcherConstrainDistanceY", "Constrains the vertical distance between two points, or from a point to the origin if only one is selected");
         sWhatsThis = "Sketcher_ConstrainDistanceY";
         sPixmap = "Constraint_VerticalDistance";
         sAccel = "I";
     }
     else {
-        sMenuText = QT_TR_NOOP("Horizontal Dimension");
-        sToolTipText = QT_TR_NOOP("Constrains the horizontal distance between two points, or from a point to the origin if only one is selected");
+        sMenuText = QT_TRANSLATE_NOOP("CmdSketcherConstrainDistanceX", "Horizontal Dimension");
+        sToolTipText = QT_TRANSLATE_NOOP("CmdSketcherConstrainDistanceX", "Constrains the horizontal distance between two points, or from a point to the origin if only one is selected");
         sWhatsThis = "Sketcher_ConstrainDistanceX";
         sPixmap = "Constraint_HorizontalDistance";
         sAccel = "L";
