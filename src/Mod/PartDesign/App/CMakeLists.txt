@@ -67,6 +67,7 @@ SET(FeaturesSketchBased_SRCS
     FeatureExtrude.cpp
     FeatureExtrude.h
     FeatureSketchBased.cpp
+    FeatureSketchBasedUpTo.cpp
     FeatureSketchBased.h
     FeaturePad.cpp
     FeaturePad.h
