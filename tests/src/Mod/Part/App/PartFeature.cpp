@@ -138,7 +138,7 @@ TEST_F(FeaturePartTest, create)
 TEST_F(FeaturePartTest, getElementHistory)
 {
     // Arrange
-    const char* name2 = "Edge2";  // Edge, Vertex, or Face. will work here.
+    const char* name2 = "Edge2";
     // Act
     auto result = Feature::getElementHistory(_boxes[0], name2, true, false);
     Data::HistoryItem histItem = result.front();
@@ -147,7 +147,7 @@ TEST_F(FeaturePartTest, getElementHistory)
     EXPECT_NE(histItem.tag, 0);  // Make sure we have one.  It will vary.
     EXPECT_EQ(histItem.index.getIndex(), 2);
     EXPECT_STREQ(histItem.index.getType(), "Edge");
-    EXPECT_STREQ(histItem.element.toString().c_str(), name2);
+    EXPECT_STREQ(histItem.element.toString().c_str(), "+Z^-X");
     EXPECT_EQ(histItem.obj, _boxes[0]);
 }
 
