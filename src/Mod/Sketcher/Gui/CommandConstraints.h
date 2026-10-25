@@ -50,6 +50,7 @@ struct SelIdPair
 };
 
 void addDimensionCommand(Gui::CommandManager& rcCmdMgr);
+void addDimensionalConstraintCommands(Gui::CommandManager& rcCmdMgr);
 
 // These functions are declared here to promote code reuse from other modules
 
