@@ -51,6 +51,7 @@ struct SelIdPair
 
 void addDimensionCommand(Gui::CommandManager& rcCmdMgr);
 void addDimensionalConstraintCommands(Gui::CommandManager& rcCmdMgr);
+void addRelationConstraintCommands(Gui::CommandManager& rcCmdMgr);
 void addTangencyConstraintCommands(Gui::CommandManager& rcCmdMgr);
 void addPositionConstraintCommands(Gui::CommandManager& rcCmdMgr);
 

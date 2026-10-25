@@ -82,6 +82,7 @@ SET(SketcherGui_SRCS
     CommandConstraintsCommon.h
     CommandConstraintsDimension.cpp
     CommandConstraintsDimensional.cpp
+    CommandConstraintsRelation.cpp
     CommandConstraintsTangency.cpp
     CommandConstraintsPosition.cpp
     CommandSketcherTools.h

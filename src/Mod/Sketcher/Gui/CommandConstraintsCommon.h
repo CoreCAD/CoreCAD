@@ -111,6 +111,7 @@ void finishDatumConstraint(Gui::Command* cmd,
                            bool isDriving = true,
                            unsigned int numberofconstraints = 1);
 bool removeRedundantPointOnObject(Sketcher::SketchObject* Obj, int GeoId1, int GeoId2, int GeoId3);
+bool isCreateConstraintActive(Gui::Document* doc);
 void showNoConstraintBetweenExternal(const App::DocumentObject* obj);
 void showNoConstraintBetweenFixedGeometry(const App::DocumentObject* obj);
 bool isGeoConcentricCompatible(const Part::Geometry* geo);
