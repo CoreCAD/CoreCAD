@@ -35,30 +35,38 @@
 namespace App::PropertyLinksDetail
 {
 
-std::string fullNameOf(DocumentObject* target,
-                       const std::vector<PropertyLinkBase::ShadowSub>& shadows,
-                       std::size_t index);
+std::string fullNameOf(
+    DocumentObject* target,
+    const std::vector<PropertyLinkBase::ShadowSub>& shadows,
+    std::size_t index
+);
 
-App::DocumentObject*
-resolveLinkTarget(App::Document* document, const std::string& uuid, const std::string& name);
+App::DocumentObject* resolveLinkTarget(
+    App::Document* document,
+    const std::string& uuid,
+    const std::string& name
+);
 
 std::string propertyName(const Property* prop);
 
-bool updateLinkReference(App::PropertyLinkBase* prop,
-                         App::DocumentObject* feature,
-                         bool reverse,
-                         bool notify,
-                         App::DocumentObject* link,
-                         std::vector<std::string>& subs,
-                         std::vector<int>& mapped,
-                         std::vector<PropertyLinkBase::ShadowSub>& shadows);
+bool updateLinkReference(
+    App::PropertyLinkBase* prop,
+    App::DocumentObject* feature,
+    bool reverse,
+    bool notify,
+    App::DocumentObject* link,
+    std::vector<std::string>& subs,
+    std::vector<int>& mapped,
+    std::vector<PropertyLinkBase::ShadowSub>& shadows
+);
 
-App::DocumentObject*
-adjustLinkSubs(App::PropertyLinkBase* prop,
-               const std::set<App::DocumentObject*>& inList,
-               App::DocumentObject* link,
-               std::vector<std::string>& subs,
-               std::map<App::DocumentObject*, std::vector<std::string>>* links = nullptr);
+App::DocumentObject* adjustLinkSubs(
+    App::PropertyLinkBase* prop,
+    const std::set<App::DocumentObject*>& inList,
+    App::DocumentObject* link,
+    std::vector<std::string>& subs,
+    std::map<App::DocumentObject*, std::vector<std::string>>* links = nullptr
+);
 
 class StringGuard
 {
@@ -82,10 +90,12 @@ public:
     char v2;
 };
 
-inline const std::string& getSubNameWithStyle(const std::string& subName,
-                                                     const PropertyLinkBase::ShadowSub& shadow,
-                                                     bool newStyle,
-                                                     std::string& tmp)
+inline const std::string& getSubNameWithStyle(
+    const std::string& subName,
+    const PropertyLinkBase::ShadowSub& shadow,
+    bool newStyle,
+    std::string& tmp
+)
 {
     if (!newStyle) {
         if (!shadow.oldName.empty()) {
@@ -107,10 +117,12 @@ inline const std::string& getSubNameWithStyle(const std::string& subName,
 }
 
 template<class Func, class... Args>
-std::vector<std::string> updateLinkSubs(const App::DocumentObject* obj,
-                                        const std::vector<std::string>& subs,
-                                        Func* f,
-                                        Args&&... args)
+std::vector<std::string> updateLinkSubs(
+    const App::DocumentObject* obj,
+    const std::vector<std::string>& subs,
+    Func* f,
+    Args&&... args
+)
 {
     if (!obj || !obj->isAttachedToDocument()) {
         return {};

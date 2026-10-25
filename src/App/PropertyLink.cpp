@@ -183,8 +183,7 @@ void PropertyLink::setPyObject(PyObject* value)
 
 void PropertyLink::Save(Base::Writer& writer) const
 {
-    // The durable binding is the target's UUID (Amendment 3, Clause 3.2); the
-    // name is written as display/diagnostic and as a resolution fallback.
+    // The UUID is the binding; the name is for display and a fallback.
     writer.Stream() << writer.ind() << "<Link value=\"" << (_pcLink ? _pcLink->getExportName() : "")
                     << "\" uuid=\"" << (_pcLink ? _pcLink->Uid.getValueStr() : "") << "\"/>"
                     << std::endl;

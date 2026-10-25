@@ -294,14 +294,16 @@ void PropertyLinkSub::setPyObject(PyObject* value)
     }
 }
 
-bool App::PropertyLinksDetail::updateLinkReference(App::PropertyLinkBase* prop,
-                                App::DocumentObject* feature,
-                                bool reverse,
-                                bool notify,
-                                App::DocumentObject* link,
-                                std::vector<std::string>& subs,
-                                std::vector<int>& mapped,
-                                std::vector<PropertyLinkBase::ShadowSub>& shadows)
+bool App::PropertyLinksDetail::updateLinkReference(
+    App::PropertyLinkBase* prop,
+    App::DocumentObject* feature,
+    bool reverse,
+    bool notify,
+    App::DocumentObject* link,
+    std::vector<std::string>& subs,
+    std::vector<int>& mapped,
+    std::vector<PropertyLinkBase::ShadowSub>& shadows
+)
 {
     if (!feature) {
         shadows.clear();
@@ -628,8 +630,7 @@ void PropertyLinkSub::Save(Base::Writer& writer) const
         internal_name = _pcLinkSub->getExportName();
         uuid = _pcLinkSub->Uid.getValueStr();
     }
-    // The durable binding is the object's UUID (Clause 3.2); the subname text
-    // stays a name (element identity, scope fence 0.1).
+    // The object binds by UUID; the subname text stays a name.
     writer.Stream() << writer.ind() << "<LinkSub value=\"" << internal_name << "\" uuid=\"" << uuid
                     << "\" count=\"" << _cSubList.size();
     writer.Stream() << "\">" << std::endl;
@@ -853,12 +854,13 @@ void PropertyLinkSub::breakLink(App::DocumentObject* obj, bool clear)
     }
 }
 
-App::DocumentObject*
-App::PropertyLinksDetail::adjustLinkSubs(App::PropertyLinkBase* prop,
-               const std::set<App::DocumentObject*>& inList,
-               App::DocumentObject* link,
-               std::vector<std::string>& subs,
-               std::map<App::DocumentObject*, std::vector<std::string>>* links)
+App::DocumentObject* App::PropertyLinksDetail::adjustLinkSubs(
+    App::PropertyLinkBase* prop,
+    const std::set<App::DocumentObject*>& inList,
+    App::DocumentObject* link,
+    std::vector<std::string>& subs,
+    std::map<App::DocumentObject*, std::vector<std::string>>* links
+)
 {
     App::DocumentObject* newLink = nullptr;
     for (auto& sub : subs) {

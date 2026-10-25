@@ -271,7 +271,7 @@ public:
     void attach(Document* doc)
     {
         assert(!pcDoc);
-        // Durable validation (Clause 3.7 step 3): when a link at this path
+        // When a link at this path
         // expects a specific target-document UUID, refuse to bind a file that
         // carries a different one. Leaving pcDoc unset keeps the info
         // unresolved so path recovery can locate the right file by UUID.
@@ -769,7 +769,7 @@ void PropertyXLink::setValue(App::DocumentObject* lValue,
 
 namespace
 {
-// Read a document file's own durable UUID (Clause 3.7 step 3b) without opening the whole
+// Read a document file's own durable UUID without opening the whole
 // document. A document written by this program is a recipe in plain text and names its uuid in
 // the first few lines; a sealed archive -- a release, or a file from an older version -- keeps
 // the same fact inside Document.xml. Both are read here, because a link has to find its target
@@ -844,13 +844,13 @@ std::string peekDocumentUuid(const QString& filePath)
     }
 }
 
-// Recover the path of a cross-document reference target that has moved
-// (Clause 3.7 step 3b). If the file at the stored path is absent or now carries
+// Recover the path of a cross-document reference target that has moved.
+// If the file at the stored path is absent or now carries
 // a different document UUID, scan the referring document's directory for a file
 // whose document UUID matches docUuid; on a hit return its absolute path (the
 // caller adopts it and the stored path locator refreshes). Returns empty when no
-// recovery is needed or none is found. Search scope is the referring document's
-// directory only; wider search paths are tracked as a follow-on (#57).
+// recovery is needed or none is found. Searches the referring document's
+// directory only.
 std::string recoverXLinkPath(App::Document* ownerDoc,
                              const std::string& filename,
                              const std::string& docUuid)
@@ -908,7 +908,7 @@ void PropertyXLink::setValue(std::string&& filename,
         throw Base::RuntimeError("invalid container");
     }
 
-    // Remember the durable target-document UUID (Clause 3.7): it is the real
+    // Remember the target-document UUID: it is the real
     // binding, validated against the file the path locator resolves to.
     this->docUuid = docUuid;
 
@@ -917,13 +917,13 @@ void PropertyXLink::setValue(std::string&& filename,
     if (!filename.empty()) {
         owner->getDocument()->signalLinkXsetValue(filename);
         info = DocInfo::get(filename.c_str(), owner->getDocument(), this, name.c_str());
-        // Durable resolution (Clause 3.7): bind the object through its UUID
+        // Bind the object through its UUID
         // within the target document, name as fallback. Prefer the document
         // opened via the stored path; when that path yields nothing, fall back
         // to a document already open under the target UUID.
         App::Document* targetDoc = info->pcDoc;
         // A path that resolves to the WRONG document UUID must not bind
-        // (Clause 3.7 step 3): treat it as unresolved and defer to the UUID.
+        // treat it as unresolved and defer to the UUID.
         if (targetDoc && !docUuid.empty() && targetDoc->Uid.getValueStr() != docUuid) {
             targetDoc = nullptr;
         }
@@ -932,7 +932,7 @@ void PropertyXLink::setValue(std::string&& filename,
             targetDocUuid.setValue(docUuid);
             targetDoc = App::GetApplication().getDocumentByUuid(targetDocUuid);
         }
-        // Path recovery (Clause 3.7 step 3b): the stored path is gone or now
+        // The stored path is gone or now
         // holds a different document, and no open document carries the target
         // UUID. Search the referring document's directory for the moved target
         // by UUID and adopt its path, so the correct file is opened and the
@@ -1164,7 +1164,7 @@ void PropertyXLink::Save(Base::Writer& writer) const
                                                       : "")
                         << "\" name=\"" << objectName;
 
-        // Durable identity (Clause 3.7): persist the target document's and
+        // Persist the target document's and
         // object's UUIDs as the real binding; file/name stay locator hints.
         std::string docUuid;
         std::string objUuid;
@@ -1266,7 +1266,7 @@ void PropertyXLink::restoreFromCurrentElement(Base::XMLReader& reader)
     if (reader.hasAttribute("file")) {
         file = reader.getAttribute<const char*>("file");
     }
-    // Durable identity (Clause 3.7): the target document / object UUIDs are the
+    // The target document / object UUIDs are the
     // real binding, resolved ahead of the path / name locator hints below.
     std::string docUuid = reader.getAttribute<const char*>("docUuid", "");
     std::string objUuid = reader.getAttribute<const char*>("uuid", "");

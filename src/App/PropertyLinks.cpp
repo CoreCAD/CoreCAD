@@ -119,9 +119,11 @@ bool shortenToSessionName(DocumentObject* target, std::string& name)
 
 /// The name kept beside the part at `index`, written out in full so it means the same thing in
 /// the next session. Empty when there is none, rather than one only this session can read.
-std::string App::PropertyLinksDetail::fullNameOf(DocumentObject* target,
-                       const std::vector<PropertyLinkBase::ShadowSub>& shadows,
-                       std::size_t index)
+std::string App::PropertyLinksDetail::fullNameOf(
+    DocumentObject* target,
+    const std::vector<PropertyLinkBase::ShadowSub>& shadows,
+    std::size_t index
+)
 {
     if (index >= shadows.size()) {
         return {};
@@ -135,11 +137,12 @@ std::string App::PropertyLinksDetail::fullNameOf(DocumentObject* target,
         + elements->fullElementName(parts->mapped).toString() + '.' + parts->position;
 }
 
-// Resolve a link target the durable way (Amendment 3, Clause 3.2/3.6): by UUID
-// first, falling back to the cached name only when no UUID was stored (forward
-// interop, not legacy migration). The name remains display/diagnostic.
-App::DocumentObject*
-App::PropertyLinksDetail::resolveLinkTarget(App::Document* document, const std::string& uuid, const std::string& name)
+// By UUID first; the cached name is used only when no UUID was stored.
+App::DocumentObject* App::PropertyLinksDetail::resolveLinkTarget(
+    App::Document* document,
+    const std::string& uuid,
+    const std::string& name
+)
 {
     if (!document) {
         return nullptr;
