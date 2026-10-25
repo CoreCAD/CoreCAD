@@ -208,6 +208,22 @@ class TestConstraintCommandsGui(unittest.TestCase):
                 command,
             )
 
+    def test_sizingABlockedPoleSetsAReferenceWeight(self):
+        self.withPoles = True
+        for command in ("Sketcher_ConstrainRadius", "Sketcher_ConstrainRadiam"):
+            self.freshSketch()
+            self.sketch.addConstraint(Sketcher.Constraint("Block", POLE))
+            self.doc.recompute()
+            before = len(self.sketch.Constraints)
+            FreeCADGui.Selection.addSelection(
+                self.doc.Name, self.sketch.Name, self.subName(("edge", POLE))
+            )
+            FreeCADGui.runCommand(command)
+            self.pump(100)
+            self.doc.recompute()
+            added = self.sketch.Constraints[before:]
+            self.assertEqual([(c.Type, c.Driving) for c in added], [("Weight", False)], command)
+
     def test_sizingAPoleTogetherWithACircleIsRefused(self):
         self.withPoles = True
         for command in ("Sketcher_ConstrainRadius", "Sketcher_ConstrainRadiam"):
