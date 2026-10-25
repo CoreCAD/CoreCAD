@@ -122,7 +122,8 @@ void takeFormulas(DocumentObject& into, const DocumentObject& from, const std::s
     }
 }
 
-/// The names the stored form could carry for either version of the object.
+/// The names the stored form could carry for either version of the object, less any the object
+/// works out again itself.
 std::set<std::string> carriedNames(const DocumentObject& a, const DocumentObject* b)
 {
     std::set<std::string> names;
@@ -133,7 +134,8 @@ std::set<std::string> carriedNames(const DocumentObject& a, const DocumentObject
         std::map<std::string, Property*> properties;
         version->getPropertyMap(properties);
         for (const auto& [name, prop] : properties) {
-            if (prop != nullptr && theRecipeCarries(*prop, *version)) {
+            if (prop != nullptr && theRecipeCarries(*prop, *version)
+                && !version->producesContentOf(*prop)) {
                 names.insert(name);
             }
         }
