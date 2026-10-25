@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
 #include <limits>
 #include <map>
 #include <string>
@@ -87,10 +88,11 @@ short Primitive::mustExecute() const
 namespace
 {
 
-/// Name each face of a one-solid primitive for the part it plays (+Z, Side, ...), so a reference
-/// to a face a new parameter removes fails instead of landing on whichever face now has its number.
-/// A role two faces share names neither; they, the edges and the vertices keep their numbers.
-void nameFacesByRole(TopoShape& shape, long tag)
+/// Name each face of a one-solid primitive for the part it plays (+Z, Side, ...), and each edge for
+/// the faces it joins (+Z^Side), so a reference to one a new parameter removes fails instead of
+/// landing on whichever now has its number. A name two share names neither; they, an edge on an
+/// unnamed face and the vertices keep their numbers.
+void nameElementsByRole(TopoShape& shape, long tag)
 {
     if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) != 1) {
         return;
@@ -115,14 +117,38 @@ void nameFacesByRole(TopoShape& shape, long tag)
         const Data::IndexedName face("Face", i);
         const bool ownsRole = !roles[i].empty() && facesPerRole[roles[i]] == 1;
         setName(face, ownsRole ? Data::MappedName(roles[i]) : Data::MappedName(face));
-    }
-    for (const auto& [type, kind] :
-         {std::pair {"Edge", TopAbs_EDGE}, std::pair {"Vertex", TopAbs_VERTEX}}) {
-        const int count = static_cast<int>(shape.countSubShapes(kind));
-        for (int i = 1; i <= count; ++i) {
-            const Data::IndexedName element(type, i);
-            setName(element, Data::MappedName(element));
+        if (!ownsRole) {
+            roles[i].clear();
         }
+    }
+
+    const int edgeCount = static_cast<int>(shape.countSubShapes(TopAbs_EDGE));
+    std::vector<std::string> edgeRoles(edgeCount + 1);
+    std::map<std::string, int> edgesPerRole;
+    for (int i = 1; i <= edgeCount; ++i) {
+        std::vector<std::string> joined;
+        for (int face : shape.findAncestors(shape.getSubShape(TopAbs_EDGE, i), TopAbs_FACE)) {
+            joined.push_back(roles[face]);
+        }
+        if (joined.size() == 1) {
+            joined.push_back(joined.front());
+        }
+        if (joined.size() != 2 || joined[0].empty() || joined[1].empty()) {
+            continue;
+        }
+        std::sort(joined.begin(), joined.end());
+        edgeRoles[i] = joined[0] + "^" + joined[1];
+        ++edgesPerRole[edgeRoles[i]];
+    }
+    for (int i = 1; i <= edgeCount; ++i) {
+        const Data::IndexedName edge("Edge", i);
+        const bool ownsRole = !edgeRoles[i].empty() && edgesPerRole[edgeRoles[i]] == 1;
+        setName(edge, ownsRole ? Data::MappedName(edgeRoles[i]) : Data::MappedName(edge));
+    }
+    const int vertexCount = static_cast<int>(shape.countSubShapes(TopAbs_VERTEX));
+    for (int i = 1; i <= vertexCount; ++i) {
+        const Data::IndexedName vertex("Vertex", i);
+        setName(vertex, Data::MappedName(vertex));
     }
 }
 
@@ -131,7 +157,7 @@ void nameFacesByRole(TopoShape& shape, long tag)
 App::DocumentObjectExecReturn* Primitive::execute()
 {
     TopoShape shape = Shape.getShape();
-    nameFacesByRole(shape, getID());
+    nameElementsByRole(shape, getID());
     Shape.setValue(shape);
     return Part::Feature::execute();
 }
