@@ -79,6 +79,7 @@ SET(SketcherGui_SRCS
     CommandCreateGeo.cpp
     CommandConstraints.h
     CommandConstraints.cpp
+    CommandConstraintsDimension.cpp
     CommandSketcherTools.h
     CommandSketcherTools.cpp
     CommandSketcherBSpline.cpp

@@ -31,10 +31,25 @@
 namespace Gui
 {
 class Command;
-}
+class CommandManager;
+}  // namespace Gui
 
 namespace SketcherGui
 {
+
+enum ConstraintCreationMode
+{
+    Driving,
+    Reference
+};
+
+struct SelIdPair
+{
+    int GeoId;
+    Sketcher::PointPos PosId;
+};
+
+void addDimensionCommand(Gui::CommandManager& rcCmdMgr);
 
 // These functions are declared here to promote code reuse from other modules
 
@@ -153,3 +168,5 @@ bool addListConstraint(
     const std::string& font = ""
 );
 }  // namespace SketcherGui
+
+extern SketcherGui::ConstraintCreationMode constraintCreationMode;
