@@ -97,7 +97,7 @@ bool SketchObject::convertToNURBS(int GeoId)
             newVals[GeoId] = bspline;
             GeometryFacade::copyId(geo, bspline);
             // 1->1 reparametrise: the B-spline is the same sketch entity, so it keeps its durable
-            // tag as well as its solver-local id (Amendment 6, Clause 6.3).
+            // tag as well as its solver-local id.
             GeometryFacade::copyTag(geo, bspline);
 
             const std::vector<Sketcher::Constraint*>& cvals = Constraints.getValues();
@@ -229,7 +229,7 @@ bool SketchObject::increaseBSplineDegree(int GeoId, int degreeincrement /*= 1*/)
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
-    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too.
     GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
@@ -289,7 +289,7 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
     std::vector<Part::Geometry*> newVals(getInternalGeometry());
 
     GeometryFacade::copyId(geo, bspline.get());
-    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too.
     GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
@@ -417,7 +417,7 @@ bool SketchObject::modifyBSplineKnotMultiplicity(int GeoId, int knotIndex, int m
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
-    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too.
     GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 
@@ -572,7 +572,7 @@ bool SketchObject::insertBSplineKnot(int GeoId, double param, int multiplicity)
     std::vector<Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
-    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too (Amendment 6, 6.3).
+    // 1->1 reparametrise: same sketch entity, so it keeps its durable tag too.
     GeometryFacade::copyTag(geo, bspline.get());
     newVals[GeoId] = bspline.release();
 

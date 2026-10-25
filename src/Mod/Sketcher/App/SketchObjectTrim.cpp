@@ -403,7 +403,7 @@ void createNewConstraintsForTrim(
         for (size_t i = sizeBefore; i < newConstraints.size(); ++i) {
             newToOldConstraintMap[newConstraints[i]] = oldConstrId;
         }
-        // §4.7 / P7: a sever-trim (newIds.size() > 1) retires the entity into two pieces. A
+        // A sever-trim (newIds.size() > 1) retires the entity into two pieces. A
         // constraint that produced no replacement is residue — its subject was the whole retired
         // entity, so it has no piece to bind to and is dropped below. Unlike a delete the user did
         // not ask to retire it, so surface the loss loudly rather than silently (see split).
@@ -412,7 +412,7 @@ void createNewConstraintsForTrim(
         }
         // A constraint that was carried but could equally have gone to more than one piece (its
         // point sits exactly on the cut boundary) was attached to one piece arbitrarily. Disclose
-        // that forced choice too rather than making it silently (§4.7 / P7; see split).
+        // that forced choice too rather than making it silently (see split).
         else if (forcedPick) {
             forcedPickLabels.push_back(con->Name.empty() ? con->typeToString() : con->Name);
         }
@@ -629,7 +629,7 @@ int SketchObject::trim(int GeoId, const Base::Vector3d& point)
         }
     }
 
-    // Architecture §4.7: a shorten-only trim keeps the entity as one entity, so it keeps its
+    // A shorten-only trim keeps the entity as one entity, so it keeps its
     // durable id. replaceGeometries already carries the solver-local integer id (copyId); the
     // durable tag must ride along too, but only in the 1->1 case (paramsOfNewGeos.size() == 1). A
     // middle-removal trim (paramsOfNewGeos.size() == 2) severs the entity in two: the parent tag
@@ -776,15 +776,14 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
         return !allConstraints[i]->involvesGeoIdAndPosId(GeoId, PointPos::none);
     });
 
-    // Architecture §4.7 / P7: a split retires the parent entity; constraints that referenced it
+    // A split retires the parent entity; constraints that referenced it
     // are carried to the pieces where that is decidable without resemblance. The residue — a
     // dimension or relation whose subject was the whole retired entity — has no piece to bind to
     // and is dropped. Dropping it is honest (its subject genuinely ceased to exist), but the user
     // did not directly ask to retire it, so the loss is surfaced loudly rather than silently.
     // A constraint may also be carried to a piece that was chosen arbitrarily because more than
     // one piece could equally have taken it (a point sitting exactly on the split boundary). That
-    // pick is disclosed too (§4.7 / P7: a forced choice is surfaced, not made silently), so the
-    // user can reattach it if the wrong piece was chosen.
+    // pick is disclosed too, so the user can reattach it if the wrong piece was chosen.
     std::vector<std::string> retiredConstraintLabels;
     std::vector<std::string> forcedPickLabels;
     for (const auto& oldConstrId : idsOfOldConstraints) {
@@ -832,7 +831,7 @@ int SketchObject::split(int GeoId, const Base::Vector3d& point)
         transferConstraints(GeoId, PointPos::mid, newIds.front(), PointPos::mid);
     }
 
-    // Architecture §4.7: splitting a closed curve (circle/ellipse) at one point yields a single
+    // Splitting a closed curve (circle/ellipse) at one point yields a single
     // open arc — the entity stays one entity, so it keeps its durable id (paramsOfNewGeos.size()
     // == 1). Splitting an open curve is a 1->N count-changing event: the parent tag retires and
     // every child mints fresh (the constructor already does this, and replaceGeometries carries
