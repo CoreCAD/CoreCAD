@@ -552,7 +552,7 @@ PyObject* ApplicationPy::sOpenDocument(PyObject* /*self*/, PyObject* args, PyObj
     }
     catch (const DocumentContentScopeError& e) {
         // A content-scope violation is not an I/O error: surface it as the same
-        // catchable RuntimeError the creation door raises (Amendment 8 Clause 8.1, P7),
+        // catchable RuntimeError the creation door raises,
         // not the generic IOError the open path uses for corrupt/missing files.
         e.setPyException();
         return nullptr;
@@ -561,7 +561,7 @@ PyObject* ApplicationPy::sOpenDocument(PyObject* /*self*/, PyObject* args, PyObj
         // Told apart from a file that is missing or unreadable, which is what the generic
         // IOError below means. A script is entitled to know that the file IS there and states
         // something it cannot determine, and to read where -- that is the difference between
-        // retrying and opening a text editor (Amendment 19 Clause 19.2, P8).
+        // retrying and opening a text editor.
         e.setPyException();
         return nullptr;
     }
