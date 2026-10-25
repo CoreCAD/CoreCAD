@@ -23,6 +23,9 @@
  ***************************************************************************/
 
 #include <limits>
+#include <map>
+#include <string>
+#include <vector>
 
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -51,6 +54,7 @@
 
 #include "PrimitiveFeature.h"
 #include "PartFeaturePy.h"
+#include "PrimitiveFaceRole.h"
 
 namespace Part
 {
@@ -80,8 +84,55 @@ short Primitive::mustExecute() const
     return Feature::mustExecute();
 }
 
+namespace
+{
+
+/// Name each face of a one-solid primitive for the part it plays (+Z, Side, ...), so a reference
+/// to a face a new parameter removes fails instead of landing on whichever face now has its number.
+/// A role two faces share names neither; they, the edges and the vertices keep their numbers.
+void nameFacesByRole(TopoShape& shape, long tag)
+{
+    if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) != 1) {
+        return;
+    }
+    const TopoDS_Shape& solid = shape.getShape();
+    const gp_Trsf localToWorld = solid.Location().Transformation();
+    const int faceCount = static_cast<int>(shape.countSubShapes(TopAbs_FACE));
+    std::vector<std::string> roles(faceCount + 1);
+    std::map<std::string, int> facesPerRole;
+    for (int i = 1; i <= faceCount; ++i) {
+        roles[i] = primitiveFaceRole(shape.getSubShape(TopAbs_FACE, i), solid, localToWorld);
+        ++facesPerRole[roles[i]];
+    }
+
+    const auto map = std::make_shared<Data::ElementMap>();
+    shape.resetElementMap(map);
+    shape.Tag = tag;
+    auto setName = [&](const Data::IndexedName& element, const Data::MappedName& name) {
+        map->setElementName(element, name, tag);
+    };
+    for (int i = 1; i <= faceCount; ++i) {
+        const Data::IndexedName face("Face", i);
+        const bool ownsRole = !roles[i].empty() && facesPerRole[roles[i]] == 1;
+        setName(face, ownsRole ? Data::MappedName(roles[i]) : Data::MappedName(face));
+    }
+    for (const auto& [type, kind] :
+         {std::pair {"Edge", TopAbs_EDGE}, std::pair {"Vertex", TopAbs_VERTEX}}) {
+        const int count = static_cast<int>(shape.countSubShapes(kind));
+        for (int i = 1; i <= count; ++i) {
+            const Data::IndexedName element(type, i);
+            setName(element, Data::MappedName(element));
+        }
+    }
+}
+
+}  // namespace
+
 App::DocumentObjectExecReturn* Primitive::execute()
 {
+    TopoShape shape = Shape.getShape();
+    nameFacesByRole(shape, getID());
+    Shape.setValue(shape);
     return Part::Feature::execute();
 }
 

@@ -93,12 +93,6 @@ class TopoShapeTest(unittest.TestCase, TopoShapeAssertions):
             ["CenterOfMass", App.Vector(1, 0.5, 1)],
             ["CompSolids", []],
             ["Compounds", []],
-            [
-                "Content",
-                "<ElementMap/>\n",
-            ],  # Our element map is empty, or there would be more here.
-            ["ElementMap", {}],
-            ["ElementReverseMap", {}],
             ["Hasher", None],
             [
                 "MatrixOfInertia",
@@ -138,11 +132,15 @@ class TopoShapeTest(unittest.TestCase, TopoShapeAssertions):
         ]
         # Assert all the expected values match when converted to strings.
         self.assertAttrEqual(box2_toposhape, attr_value_list)
+        # Each face is named for the side it faces; the rest of each name varies with the object.
+        mapped = [box2_toposhape.getElementMappedName("Face%d" % i) for i in range(1, 7)]
+        roles = {(name[0] if isinstance(name, tuple) else name).split(";")[0] for name in mapped}
+        self.assertEqual(roles, {"+X", "-X", "+Y", "-Y", "+Z", "-Z"})
 
         # Arrange list of attributes and values to match within 5 decimal places
         attr_value_list = [
             ["Area", 16.0],
-            ["ElementMapSize", 0],
+            ["ElementMapSize", 26],
             # ['ElementMapVersion', 4 ], # Todo: Not until TNP on.
             ["Length", 40.0],  # Sum of all edges of each face, so some redundancy.
             ["Mass", 4.0],

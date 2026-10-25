@@ -65,16 +65,24 @@ std::string planarAxisRole(const TopoDS_Shape& face, const TopoDS_Shape& solid, 
     gp_Vec outward(solidCentre, faceCentre);
     outward.Transform(localToWorld.Inverted());
 
+    // A face as far along two axes (a square prism's side, at 45 degrees) has no axis of its own;
+    // rounding in the placement would pick one, and a different one once the part is turned.
+    const double tie = 1e-7 * outward.Magnitude();
     const char* best = "";
     double bestDot = 0.0;
+    double runnerUpDot = 0.0;
     for (const auto& [name, axis] : boxAxes) {
         const double dot = outward.X() * axis[0] + outward.Y() * axis[1] + outward.Z() * axis[2];
         if (dot > bestDot) {
+            runnerUpDot = bestDot;
             bestDot = dot;
             best = name;
         }
+        else if (dot > runnerUpDot) {
+            runnerUpDot = dot;
+        }
     }
-    return best;
+    return bestDot - runnerUpDot > tie ? best : "";
 }
 
 }  // namespace

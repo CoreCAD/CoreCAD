@@ -4,7 +4,11 @@
 
 #include <src/App/InitApplication.h>
 #include <App/Document.h>
+#include <Base/Tools.h>
+#include <Mod/Part/App/FeaturePartBox.h>
 #include <Mod/Part/App/PrimitiveFeature.h>
+
+#include <set>
 
 
 class AttachExtensionTest: public ::testing::Test
@@ -95,4 +99,78 @@ TEST_F(AttachExtensionTest, testAttacherTypeEngine)
     plane->AttacherType.setValue("Attacher::AttachEngine3D");
     plane->Part::AttachExtension::onExtendedDocumentRestored();
     EXPECT_STREQ(plane->AttacherEngine.getValueAsString(), "Engine 3D");
+}
+
+// A plane on a cone's top, and the top shrinks to a point. Without names the bottom face took the
+// top's number and the plane moved there without a word.
+TEST_F(AttachExtensionTest, aShapeOnAFaceThatIsGoneStopsInsteadOfMoving)
+{
+    auto cone = getDocument()->addObject<Part::Cone>("Cone");
+    cone->Radius1.setValue(2.0);
+    cone->Radius2.setValue(1.0);
+    cone->Height.setValue(10.0);
+    auto plane = getDocument()->addObject<Part::Plane>("Plane");
+    plane->AttachmentSupport.setValue(cone, std::vector<std::string> {"Face2"});
+    plane->MapMode.setValue("FlatFace");
+    getDocument()->recompute();
+    ASSERT_DOUBLE_EQ(plane->Placement.getValue().getPosition().z, 10.0);
+
+    cone->Radius2.setValue(0.0);
+    getDocument()->recompute();
+
+    EXPECT_TRUE(plane->isError());
+    EXPECT_DOUBLE_EQ(plane->Placement.getValue().getPosition().z, 10.0);
+}
+
+// Each face of a box is named for the side it faces, and keeps that name wherever the box is put.
+TEST_F(AttachExtensionTest, aBoxNamesEachFaceForTheSideItFaces)
+{
+    auto box = getDocument()->addObject<Part::Box>("Box");
+    getDocument()->recompute();
+    std::set<std::string> names;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string face = "Face" + std::to_string(i);
+        names.insert(box->getElementName(face.c_str()).newName);
+    }
+    EXPECT_EQ(names.size(), 6U);
+    EXPECT_EQ(names.count(""), 0U);
+
+    box->Placement.setValue(
+        Base::Placement(Base::Vector3d(5, 0, 0), Base::Rotation(Base::Vector3d(0, 0, 1), 1.0))
+    );
+    getDocument()->recompute();
+    std::set<std::string> moved;
+    for (int i = 1; i <= 6; ++i) {
+        const std::string face = "Face" + std::to_string(i);
+        moved.insert(box->getElementName(face.c_str()).newName);
+    }
+    EXPECT_EQ(moved, names);
+}
+
+// A square prism's sides sit at 45 degrees to the axes, so none faces one axis more than another.
+// Each face keeps one name however the prism is turned, so turning it never moves what is on it.
+TEST_F(AttachExtensionTest, aFaceKeepsItsNameHoweverThePartIsTurned)
+{
+    auto prism = getDocument()->addObject<Part::Prism>("Prism");
+    prism->Polygon.setValue(4);
+    auto namesAt = [&](double degrees) {
+        prism->Placement.setValue(
+            Base::Placement(
+                Base::Vector3d(3, 0, 0),
+                Base::Rotation(Base::Vector3d(0, 0, 1), Base::toRadians(degrees))
+            )
+        );
+        getDocument()->recompute();
+        std::vector<std::string> names;
+        for (int i = 1; i <= 6; ++i) {
+            const std::string face = "Face" + std::to_string(i);
+            names.push_back(prism->getElementName(face.c_str()).newName);
+        }
+        return names;
+    };
+
+    const std::vector<std::string> unturned = namesAt(0.0);
+    EXPECT_EQ(namesAt(10.0), unturned);
+    EXPECT_EQ(namesAt(33.0), unturned);
+    EXPECT_EQ(namesAt(77.0), unturned);
 }
