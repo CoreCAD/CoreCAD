@@ -215,8 +215,7 @@ PyObject* BodyPy::shownSubElement(PyObject* args)
 
 Py::Object BodyPy::getVisibleFeature() const
 {
-    // Derived membership (§9.1-inverse): the Group is empty under de-ownership, so read the
-    // Body's features through getFullModel, which computes them from the feature graph.
+    // The Group is empty, so read the Body's features from the feature graph.
     for (auto obj : getBodyPtr()->getFullModel()) {
         if (obj->Visibility.getValue() && obj->isDerivedFrom<PartDesign::Feature>()) {
             return Py::Object(obj->getPyObject(), true);
