@@ -264,7 +264,7 @@ std::string displayAngle(double radians)
 }
 
 /// The two coordinates a person reads a sketch by. The merge deliberately does not carry these
-/// (DESIGN §4 treats an undimensioned position as a regenerable seed, which is right for
+/// (it treats an undimensioned position as a regenerable seed, which is right for
 /// reconciling two people's edits and wrong for one person asking what moved), so they are
 /// added here, on the view's side of that line, and nowhere else -- rounded, per displayNumber,
 /// because where the solver put a point is not a statement anyone made.
@@ -491,7 +491,7 @@ SketchRecipe Sketcher::emitSketchRecipe(const SketchObject& sketch)
 
     // Geometry: one node per internal entity, keyed by its durable Part::Geometry Tag. The
     // GeoId (== list index) is a readable position, never the identity, so a renumber is
-    // invisible to the merge. Coordinates are regenerable seeds (DESIGN §4), not emitted.
+    // invisible to the merge. Coordinates are regenerable seeds, not emitted.
     const std::vector<Part::Geometry*>& geometry = sketch.getInternalGeometry();
     std::map<int, std::string> geoIdToTag;
     for (int geoId = 0; geoId < static_cast<int>(geometry.size()); ++geoId) {
@@ -586,7 +586,7 @@ RegenResult Sketcher::regenerateSketch(
         const auto it = node.fields.find("construction");
         const bool construction = it != node.fields.end() && it->second == "true";
         const int geoId = target.addGeometry(seed, construction);
-        // The entity is the one the recipe names, so it keeps that identity (§4.7).
+        // The entity is the one the recipe names, so it keeps that identity.
         target.Geometry.getValues()[geoId]->copyTagFrom(seed);
         tagToGeoId[tag] = geoId;
     }
