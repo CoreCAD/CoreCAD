@@ -30,6 +30,7 @@ if(BUILD_GUI)
     )
     list (APPEND Sketcher_TestScripts
           SketcherTests/TestPlacementUpdate.py
+          SketcherTests/TestConstraintCommandsGui.py
           SketcherTests/TestOnViewParameterGui.py
     )
 endif(BUILD_GUI)
