@@ -109,7 +109,7 @@ std::string frameName(int geoId, int pos)
 }
 
 /// The live geometry carrying `tag` among the seed sources, or nullptr. The recipe holds no
-/// coordinates (§4); a surviving entity's starting coordinates are pulled from a branch that
+/// coordinates; a surviving entity's starting coordinates are pulled from a branch that
 /// still has it, keyed by the same durable tag the merge reasoned over.
 const Part::Geometry* findSeedGeometry(
     const std::string& tag,
