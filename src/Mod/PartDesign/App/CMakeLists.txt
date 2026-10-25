@@ -85,6 +85,7 @@ SET(FeaturesSketchBased_SRCS
     FeatureAddSub.h
     FeatureHole.h
     FeatureHole.cpp
+    FeatureHoleCutDefinitions.cpp
     FeatureHoleTables.cpp
     FeatureHoleThread.cpp
     FeatureBoolean.h
