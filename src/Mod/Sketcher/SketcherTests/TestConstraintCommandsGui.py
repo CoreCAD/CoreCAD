@@ -11,6 +11,7 @@ import unittest
 
 import FreeCAD
 import Part
+import Sketcher
 
 try:
     import FreeCADGui
@@ -163,6 +164,27 @@ class TestConstraintCommandsGui(unittest.TestCase):
             return
         self.assertEqual(byTool, expected, f"{command} tool-first")
         self.assertEqual(bySelection, expected, f"{command} selection-first")
+
+    def assertCoordinateOnBlockedPointIsReference(self, command):
+        self.freshSketch()
+        self.sketch.addConstraint(Sketcher.Constraint("Block", L0))
+        self.doc.recompute()
+        before = len(self.sketch.Constraints)
+        FreeCADGui.Selection.addSelection(
+            self.doc.Name, self.sketch.Name, self.subName(("vertex", L0, END))
+        )
+        FreeCADGui.runCommand(command)
+        self.pump(100)
+        self.doc.recompute()
+        added = self.sketch.Constraints[before:]
+        self.assertEqual(len(added), 1, command)
+        self.assertFalse(added[0].Driving, command)
+
+    def test_fixedXOnABlockedPointIsAReference(self):
+        self.assertCoordinateOnBlockedPointIsReference("Sketcher_ConstrainDistanceX")
+
+    def test_fixedYOnABlockedPointIsAReference(self):
+        self.assertCoordinateOnBlockedPointIsReference("Sketcher_ConstrainDistanceY")
 
 
 L0, L1, L2, CIRCLE, ARC = 0, 1, 2, 3, 4
