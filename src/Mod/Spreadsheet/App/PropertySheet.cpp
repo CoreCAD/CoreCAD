@@ -39,6 +39,7 @@
 #include <Base/Interpreter.h>
 #include <Base/Reader.h>
 #include <Base/Tools.h>
+#include <Base/Uuid.h>
 #include <Base/Writer.h>
 
 #include "PropertySheet.h"
@@ -67,6 +68,8 @@ void PropertySheet::clear()
     data.clear();
 
     mergedCells.clear();
+    rowIds.clear();
+    columnIds.clear();
 
     propertyNameToCellMap.clear();
     cellToPropertyNameMap.clear();
@@ -266,11 +269,66 @@ void PropertySheet::setDirty()
     }
 }
 
+namespace
+{
+// Renumber ids for `count` lines inserted at `at`, or for -count lines removed from it.
+void shiftIds(std::map<int, std::string>& ids, int at, int count)
+{
+    std::map<int, std::string> shifted;
+    for (auto& [index, id] : ids) {
+        if (index < at) {
+            shifted.emplace(index, std::move(id));
+        }
+        else if (count > 0 || index >= at - count) {
+            shifted.emplace(index + count, std::move(id));
+        }
+    }
+    ids = std::move(shifted);
+}
+
+std::string idAt(const std::map<int, std::string>& ids, int index)
+{
+    const auto found = ids.find(index);
+    return found != ids.end() ? found->second : std::string();
+}
+}  // namespace
+
+std::string PropertySheet::rowId(int row) const
+{
+    return idAt(rowIds, row);
+}
+
+std::string PropertySheet::columnId(int col) const
+{
+    return idAt(columnIds, col);
+}
+
+void PropertySheet::mintMissingIds(CellAddress address)
+{
+    if (!rowIds.count(address.row())) {
+        rowIds[address.row()] = Base::Uuid::createUuid();
+    }
+    if (!columnIds.count(address.col())) {
+        columnIds[address.col()] = Base::Uuid::createUuid();
+    }
+}
+
+void PropertySheet::mintDurableIdentity()
+{
+    for (auto& entry : rowIds) {
+        entry.second = Base::Uuid::createUuid();
+    }
+    for (auto& entry : columnIds) {
+        entry.second = Base::Uuid::createUuid();
+    }
+}
+
 Cell* PropertySheet::createCell(CellAddress address)
 {
     Cell* cell = new Cell(address, this);
 
     data[address] = cell;
+    mintMissingIds(address);
 
     return cell;
 }
@@ -283,6 +341,8 @@ PropertySheet::PropertySheet(const PropertySheet& other)
     : dirty(other.dirty)
     , mergedCells(other.mergedCells)
     , owner(other.owner)
+    , rowIds(other.rowIds)
+    , columnIds(other.columnIds)
     , propertyNameToCellMap(other.propertyNameToCellMap)
     , cellToPropertyNameMap(other.cellToPropertyNameMap)
     , documentObjectToCellMap(other.documentObjectToCellMap)
@@ -315,6 +375,9 @@ void PropertySheet::Paste(const Property& from)
     const PropertySheet& froms = dynamic_cast<const PropertySheet&>(from);
 
     AtomicPropertyChange signaller(*this);
+
+    rowIds = froms.rowIds;
+    columnIds = froms.columnIds;
 
     std::map<CellAddress, Cell*>::iterator icurr = data.begin();
 
@@ -391,20 +454,36 @@ void PropertySheet::Save(Base::Writer& writer) const
 {
     // Save cell contents
     int count = 0;
+    std::set<int> usedRows;
+    std::set<int> usedColumns;
 
     std::map<CellAddress, Cell*>::const_iterator ci = data.begin();
     while (ci != data.end()) {
         if (ci->second->isUsed()) {
             ++count;
+            usedRows.insert(ci->first.row());
+            usedColumns.insert(ci->first.col());
         }
         ++ci;
     }
 
-    writer.Stream() << writer.ind() << "<Cells Count=\"" << count << R"(" xlink="1">)" << std::endl;
+    writer.Stream() << writer.ind() << "<Cells Count=\"" << count << "\" rows=\"" << usedRows.size()
+                    << "\" columns=\"" << usedColumns.size() << R"(" xlink="1">)" << std::endl;
 
     writer.incInd();
 
     PropertyExpressionContainer::Save(writer);
+
+    for (int row : usedRows) {
+        writer.Stream() << writer.ind() << "<Row row=\""
+                        << CellAddress(row, 0).toString(CellAddress::Cell::ShowRow) << "\" id=\""
+                        << rowId(row) << "\"/>" << std::endl;
+    }
+    for (int col : usedColumns) {
+        writer.Stream() << writer.ind() << "<Column column=\""
+                        << CellAddress(0, col).toString(CellAddress::Cell::ShowColumn) << "\" id=\""
+                        << columnId(col) << "\"/>" << std::endl;
+    }
 
     ci = data.begin();
     while (ci != data.end()) {
@@ -425,9 +504,36 @@ void PropertySheet::Restore(Base::XMLReader& reader)
     reader.readElement("Cells");
     Cnt = reader.getAttribute<long>("Count");
 
+    const long rowCount = reader.hasAttribute("rows") ? reader.getAttribute<long>("rows") : 0;
+    const long columnCount = reader.hasAttribute("columns") ? reader.getAttribute<long>("columns")
+                                                            : 0;
+
     if (reader.hasAttribute("xlink") && reader.getAttribute<bool>("xlink")) {
         PropertyExpressionContainer::Restore(reader);
     }
+
+    rowIds.clear();
+    columnIds.clear();
+
+    // Two rows or columns may never share an id; a repeat keeps the one minted for it.
+    std::set<std::string> statedIds;
+    auto readIds = [&](long count, const char* element, const char* line, auto decode, auto& ids) {
+        for (long i = 0; i < count; ++i) {
+            reader.readElement(element);
+            const std::string id = reader.getAttribute<const char*>("id");
+            const std::string at = reader.getAttribute<const char*>(line);
+            if (id.empty() || !statedIds.insert(id).second) {
+                FC_WARN(
+                    getFullName() << ": " << element << ' ' << at << " id '" << id
+                                  << "' is empty or already used; it is given a new one"
+                );
+                continue;
+            }
+            ids[decode(at, false)] = id;
+        }
+    };
+    readIds(rowCount, "Row", "row", decodeRow, rowIds);
+    readIds(columnCount, "Column", "column", decodeColumn, columnIds);
 
     for (int i = 0; i < Cnt; i++) {
         reader.readElement("Cell");
@@ -976,6 +1082,8 @@ void PropertySheet::insertRows(int row, int count)
         }
     }
 
+    shiftIds(rowIds, row, count);
+
     const App::DocumentObject* docObj = static_cast<const App::DocumentObject*>(getContainer());
     owner->getDocument()->renameObjectIdentifiers(renames, [docObj](const App::DocumentObject* obj) {
         return obj != docObj;
@@ -1073,6 +1181,8 @@ void PropertySheet::removeRows(int row, int count)
         }
     }
 
+    shiftIds(rowIds, row, -count);
+
     const App::DocumentObject* docObj = static_cast<const App::DocumentObject*>(getContainer());
     owner->getDocument()->renameObjectIdentifiers(renames, [docObj](const App::DocumentObject* obj) {
         return obj != docObj;
@@ -1122,6 +1232,8 @@ void PropertySheet::insertColumns(int col, int count)
             moveCell(*i, CellAddress(i->row(), i->col() + count), renames);
         }
     }
+
+    shiftIds(columnIds, col, count);
 
     const App::DocumentObject* docObj = static_cast<const App::DocumentObject*>(getContainer());
     owner->getDocument()->renameObjectIdentifiers(renames, [docObj](const App::DocumentObject* obj) {
@@ -1219,6 +1331,8 @@ void PropertySheet::removeColumns(int col, int count)
             );
         }
     }
+
+    shiftIds(columnIds, col, -count);
 
     const App::DocumentObject* docObj = static_cast<const App::DocumentObject*>(getContainer());
     owner->getDocument()->renameObjectIdentifiers(renames, [docObj](const App::DocumentObject* obj) {
@@ -1961,6 +2075,7 @@ void PropertySheet::setExpressions(std::map<App::ObjectIdentifier, App::Expressi
                 continue;
             }
             cell = new Cell(addr, this);
+            mintMissingIds(addr);
         }
         if (!v.second) {
             clear(addr);
