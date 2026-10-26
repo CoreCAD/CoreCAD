@@ -200,6 +200,13 @@ public:
 
     void removeColumns(int col, int count);
 
+    /// A row's durable id: it stays with the row while inserts and removals renumber it.
+    /// Empty for a row that has never held a cell.
+    std::string rowId(int row) const;
+    std::string columnId(int col) const;
+
+    void mintDurableIdentity() override;
+
     unsigned int getMemSize() const override;
 
     bool mergeCells(App::CellAddress from, App::CellAddress to);
@@ -309,6 +316,12 @@ private:
 
     /*! Owner of this property */
     Sheet* owner;
+
+    /*! Durable ids of the rows and columns that hold cells; a cell is the pair */
+    std::map<int, std::string> rowIds;
+    std::map<int, std::string> columnIds;
+
+    void mintMissingIds(App::CellAddress address);
 
     void clearAlias(App::CellAddress address);
 
