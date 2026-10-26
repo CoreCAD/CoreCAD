@@ -29,6 +29,7 @@
 #include <Base/PyObjectBase.h>
 
 #include "Sheet.h"
+#include "SheetMerge.h"
 #include "SheetRecipe.h"
 
 
@@ -66,6 +67,7 @@ PyMOD_INIT_FUNC(Spreadsheet)
     // emitter walked for its references and drew no content out of. This teaches the readable
     // document recipe to say what is in it, without App having to know what a cell is.
     Spreadsheet::registerSheetRecipeDetail();
+    Spreadsheet::registerSheetMerge();
     Spreadsheet::SheetPython::init();
 
     PyObject* mod = Spreadsheet::initModule();

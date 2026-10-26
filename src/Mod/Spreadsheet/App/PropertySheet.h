@@ -204,6 +204,14 @@ public:
     /// Empty for a row that has never held a cell.
     std::string rowId(int row) const;
     std::string columnId(int col) const;
+    const std::map<int, std::string>& rowIdMap() const
+    {
+        return rowIds;
+    }
+    const std::map<int, std::string>& columnIdMap() const
+    {
+        return columnIds;
+    }
 
     void mintDurableIdentity() override;
 

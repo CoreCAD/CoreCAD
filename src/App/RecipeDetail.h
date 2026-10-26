@@ -40,6 +40,7 @@
 namespace App
 {
 
+class Document;
 class DocumentObject;
 
 /** Authored content an object holds *inside* a property, which the generic emitter can only
@@ -147,5 +148,27 @@ AppExport void registerRecipeMerge(Base::Type type,
 
 /// The merger registered against the nearest of the object's types, or null when none is.
 AppExport const RegisteredContentMerge* recipeMerger(const DocumentObject& obj);
+
+/** What one side did to a layout the other side's statements are written against.
+ *
+ *  A formula names a sheet cell by its address. When one side inserts a row, the other side's
+ *  formulas still count rows the old way, and a merge that took them as written would read the
+ *  wrong cells without any conflict. A rebase replays the moving side's insertions and removals
+ *  on copies of the ancestor and the other side, which rewrites that side's formulas the way the
+ *  insertion rewrote the moving side's own, so the merge then compares like with like.
+ */
+struct MergeRebase
+{
+    /// What cannot be replayed, such as an address in rows that moved by an unknown amount.
+    std::vector<MergeConflict> conflicts;
+    /// Replays the moves on copies of the three versions; null when nothing moved.
+    std::function<void(Document& ancestor, Document& branchA, Document& branchB)> apply;
+};
+
+using MergeRebaser = std::function<MergeRebase(
+    const Document& ancestor, const Document& branchA, const Document& branchB)>;
+
+AppExport void registerMergeRebase(MergeRebaser rebaser);
+AppExport const std::vector<MergeRebaser>& mergeRebasers();
 
 }  // namespace App

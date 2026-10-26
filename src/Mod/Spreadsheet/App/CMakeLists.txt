@@ -29,6 +29,8 @@ set(Spreadsheet_SRCS
     Sheet.h
     SheetRecipe.cpp
     SheetRecipe.h
+    SheetMerge.cpp
+    SheetMerge.h
     Sheet.pyi
     SheetPyImp.cpp
     SheetObserver.cpp

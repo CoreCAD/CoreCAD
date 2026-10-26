@@ -305,12 +305,10 @@ Rebuilt rebuildCopyOf(const Document& version)
     return done;
 }
 
-}  // namespace
-
-MergedDocument App::buildMergedDocument(const Document& ancestor,
-                                        const Document& branchA,
-                                        const Document& branchB,
-                                        bool createView)
+MergedDocument buildFrom(const Document& ancestor,
+                         const Document& branchA,
+                         const Document& branchB,
+                         bool createView)
 {
     MergedDocument result;
     result.report = mergeDocuments(ancestor, branchA, branchB);
@@ -450,4 +448,18 @@ MergedDocument App::buildMergedDocument(const Document& ancestor,
 
     result.document = merged;
     return result;
+}
+
+}  // namespace
+
+MergedDocument App::buildMergedDocument(const Document& ancestor,
+                                        const Document& branchA,
+                                        const Document& branchB,
+                                        bool createView)
+{
+    const RebasedVersions rebased = rebaseVersions(ancestor, branchA, branchB);
+    if (rebased.ancestor) {
+        return buildFrom(*rebased.ancestor, *rebased.branchA, *rebased.branchB, createView);
+    }
+    return buildFrom(ancestor, branchA, branchB, createView);
 }

@@ -55,6 +55,12 @@ std::map<Base::Type, RegisteredContentMerge>& contentMergers()
     return registry;
 }
 
+std::vector<MergeRebaser>& rebasers()
+{
+    static std::vector<MergeRebaser> registry;
+    return registry;
+}
+
 }  // namespace
 
 void App::registerRecipeDetail(Base::Type type, RecipeDetailProvider provider)
@@ -112,4 +118,14 @@ const RegisteredContentMerge* App::recipeMerger(const DocumentObject& obj)
     }
 
     return nullptr;
+}
+
+void App::registerMergeRebase(MergeRebaser rebaser)
+{
+    rebasers().push_back(std::move(rebaser));
+}
+
+const std::vector<App::MergeRebaser>& App::mergeRebasers()
+{
+    return rebasers();
 }
