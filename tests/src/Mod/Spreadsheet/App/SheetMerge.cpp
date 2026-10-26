@@ -15,6 +15,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/ObjectRecipe.h>
+#include <App/Range.h>
 #include <App/StoredRecipe.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
@@ -318,6 +319,48 @@ TEST_F(SheetMergeTest, oneAliasGivenToTwoCellsIsAConflict)
     EXPECT_EQ(merged.document, nullptr);
     ASSERT_EQ(merged.report.conflicts.size(), 1U);
     EXPECT_NE(merged.report.conflicts.front().detail.find("alias len"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, mergedCellsThatOverlapAreAConflict)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->mergeCells(App::Range("E1:F2"));
+    sheetOf(b)->mergeCells(App::Range("F2:G3"));
+
+    const App::MergedDocument merged = merge(a, b);
+
+    EXPECT_EQ(merged.document, nullptr);
+    ASSERT_EQ(merged.report.conflicts.size(), 1U);
+    EXPECT_NE(merged.report.conflicts.front().detail.find("E1"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, aCellWrittenUnderTheOtherSidesMergedCellsIsAConflict)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->mergeCells(App::Range("E1:F2"));
+    sheetOf(b)->setCell("F2", "hidden");
+
+    const App::MergedDocument merged = merge(a, b);
+
+    EXPECT_EQ(merged.document, nullptr);
+    ASSERT_EQ(merged.report.conflicts.size(), 1U);
+    EXPECT_NE(merged.report.conflicts.front().detail.find("F2 lies under"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, cellsMergedBesideTheOtherSidesEditsBothLand)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->mergeCells(App::Range("A1:B2"));
+    sheetOf(b)->setCell("C1", "beside");
+
+    const App::MergedDocument merged = merge(a, b);
+
+    ASSERT_NE(merged.document, nullptr) << merged.refusal;
+    EXPECT_TRUE(sheetOf(merged.document)->isMergedCell(App::CellAddress("B2")));
+    EXPECT_EQ(contents(merged.document, "C1"), "'beside");
 }
 
 }  // namespace
