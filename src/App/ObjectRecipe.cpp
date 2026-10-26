@@ -26,6 +26,7 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <functional>
 # include <iomanip>
 # include <limits>
 # include <locale>
@@ -44,6 +45,7 @@
 
 #include "ObjectRecipe.h"
 
+#include "Application.h"
 #include "Document.h"
 #include "ElementNamingUtils.h"
 #include "DocumentObject.h"
@@ -627,16 +629,24 @@ void refuseWhatCannotBeHonoured(const Document& doc, const char* which)
                              + what);
 }
 
-}  // namespace
-
-DocumentMergeReport App::mergeDocuments(const Document& ancestor,
-                                        const Document& branchA,
-                                        const Document& branchB)
+TemporaryDocument copyOf(const Document& version)
 {
-    refuseWhatCannotBeHonoured(ancestor, "the ancestor");
-    refuseWhatCannotBeHonoured(branchA, "the first version");
-    refuseWhatCannotBeHonoured(branchB, "the second version");
+    DocumentInitFlags flags;
+    flags.createView = false;
+    flags.temporary = true;
+    Application& app = GetApplication();
+    TemporaryDocument copy(
+        app.newDocument(app.getUniqueDocumentName("Rebased").c_str(), nullptr, flags));
+    std::istringstream recipe(formatStoredRecipe(version));
+    restoreStoredRecipe(*copy, recipe);
+    copy->Label.setValue(version.Label.getValue());
+    return copy;
+}
 
+DocumentMergeReport mergeVersions(const Document& ancestor,
+                                  const Document& branchA,
+                                  const Document& branchB)
+{
     DocumentMergeReport report;
 
     RecipeSection base = emitDocumentRecipe(ancestor);
@@ -674,6 +684,59 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
     report.overridden = std::move(inside.overridden);
     report.undetermined = std::move(inside.undetermined);
 
+    return report;
+}
+
+}  // namespace
+
+void App::ClosesDocument::operator()(Document* doc) const
+{
+    GetApplication().closeDocument(doc->getName());
+}
+
+RebasedVersions App::rebaseVersions(const Document& ancestor,
+                                    const Document& branchA,
+                                    const Document& branchB)
+{
+    refuseWhatCannotBeHonoured(ancestor, "the ancestor");
+    refuseWhatCannotBeHonoured(branchA, "the first version");
+    refuseWhatCannotBeHonoured(branchB, "the second version");
+
+    RebasedVersions result;
+    std::vector<std::function<void(Document&, Document&, Document&)>> replays;
+    for (const MergeRebaser& rebaser : mergeRebasers()) {
+        MergeRebase rebase = rebaser(ancestor, branchA, branchB);
+        result.conflicts.insert(result.conflicts.end(),
+                                rebase.conflicts.begin(),
+                                rebase.conflicts.end());
+        if (rebase.apply) {
+            replays.push_back(std::move(rebase.apply));
+        }
+    }
+    if (!result.conflicts.empty() || replays.empty()) {
+        return result;
+    }
+    result.ancestor = copyOf(ancestor);
+    result.branchA = copyOf(branchA);
+    result.branchB = copyOf(branchB);
+    for (const auto& replay : replays) {
+        replay(*result.ancestor, *result.branchA, *result.branchB);
+    }
+    return result;
+}
+
+DocumentMergeReport App::mergeDocuments(const Document& ancestor,
+                                        const Document& branchA,
+                                        const Document& branchB)
+{
+    const RebasedVersions rebased = rebaseVersions(ancestor, branchA, branchB);
+    if (rebased.ancestor) {
+        return mergeVersions(*rebased.ancestor, *rebased.branchA, *rebased.branchB);
+    }
+    DocumentMergeReport report = mergeVersions(ancestor, branchA, branchB);
+    report.conflicts.insert(report.conflicts.end(),
+                            rebased.conflicts.begin(),
+                            rebased.conflicts.end());
     return report;
 }
 

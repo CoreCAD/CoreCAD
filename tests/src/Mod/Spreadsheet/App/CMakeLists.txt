@@ -5,6 +5,7 @@ add_executable(Spreadsheet_tests_run
             SheetRecipe.cpp
             RenameProperty.cpp
             CellIdentity.cpp
+            SheetMerge.cpp
 )
 
 target_include_directories(Spreadsheet_tests_run PUBLIC

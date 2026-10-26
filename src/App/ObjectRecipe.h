@@ -27,6 +27,7 @@
 #include <FCGlobal.h>
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -131,6 +132,30 @@ struct DocumentMergeReport
 /// statement this build cannot honour.
 AppExport DocumentMergeReport
 mergeDocuments(const Document& ancestor, const Document& branchA, const Document& branchB);
+
+struct ClosesDocument
+{
+    void operator()(Document* doc) const;
+};
+using TemporaryDocument = std::unique_ptr<Document, ClosesDocument>;
+
+/// Copies of three versions with each module's rebase replayed on them, or the conflicts that
+/// stopped it. No copies when nothing moved.
+struct RebasedVersions
+{
+    std::vector<MergeConflict> conflicts;
+    TemporaryDocument ancestor;
+    TemporaryDocument branchA;
+    TemporaryDocument branchB;
+};
+
+/// Ask each registered rebase whether one side moved what the other side's statements are written
+/// against (see MergeRebase), and replay those moves on copies. mergeDocuments and
+/// buildMergedDocument do this themselves. Throws, as they do, when a version holds what this build
+/// cannot honour.
+AppExport RebasedVersions rebaseVersions(const Document& ancestor,
+                                         const Document& branchA,
+                                         const Document& branchB);
 
 /// A merge made into a document of its own, or why it was not.
 struct MergedDocument
