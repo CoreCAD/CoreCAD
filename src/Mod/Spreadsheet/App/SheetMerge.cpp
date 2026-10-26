@@ -399,9 +399,9 @@ struct SheetMergeResult
     std::map<App::CellAddress, TakenCell> cells;
 };
 
-std::optional<std::string> aliasOf(const std::string& stated)
+std::optional<std::string> attributeOf(const std::string& stated, const std::string& name)
 {
-    const std::string opening = "alias=\"";
+    const std::string opening = " " + name + "=\"";
     const auto start = stated.find(opening);
     if (start == std::string::npos) {
         return std::nullopt;
@@ -411,6 +411,35 @@ std::optional<std::string> aliasOf(const std::string& stated)
         stated.find('"', start + opening.size()) - start - opening.size()
     );
 }
+
+/// The cells one merged cell covers, its own address first.
+struct Span
+{
+    App::CellAddress anchor;
+    int rows;
+    int cols;
+    const App::DocumentObject* from;
+
+    bool covers(const App::CellAddress& address) const
+    {
+        return address.row() >= anchor.row() && address.row() < anchor.row() + rows
+            && address.col() >= anchor.col() && address.col() < anchor.col() + cols;
+    }
+
+    bool overlaps(const Span& other) const
+    {
+        return anchor.row() < other.anchor.row() + other.rows
+            && other.anchor.row() < anchor.row() + rows
+            && anchor.col() < other.anchor.col() + other.cols
+            && other.anchor.col() < anchor.col() + cols;
+    }
+
+    std::string named() const
+    {
+        return App::CellAddress(anchor.row(), anchor.col()).toString() + ":"
+            + App::CellAddress(anchor.row() + rows - 1, anchor.col() + cols - 1).toString();
+    }
+};
 
 /// Cells merged by address. A merge replays one side's inserted and removed rows on the other
 /// side first (rebaseSheets), so by now an address names the same cell in all three versions.
@@ -464,13 +493,50 @@ SheetMergeResult mergeSheets(
 
     std::map<std::string, App::CellAddress> aliases;
     for (const auto& [address, cell] : result.cells) {
-        if (const auto alias = aliasOf(cell.stated)) {
+        if (const auto alias = attributeOf(cell.stated, "alias")) {
             const auto [named, fresh] = aliases.emplace(*alias, address);
             if (!fresh) {
                 result.conflicts.push_back(conflict(
                     uid,
                     "the alias " + *alias + " names both " + named->second.toString() + " and "
                         + address.toString()
+                ));
+            }
+        }
+    }
+
+    // Cells merged on one side must not swallow what the other side merged or wrote.
+    std::vector<Span> spans;
+    for (const auto& [address, cell] : result.cells) {
+        const auto rows = attributeOf(cell.stated, "rowSpan");
+        const auto cols = attributeOf(cell.stated, "colSpan");
+        if (rows && cols && (std::stoi(*rows) > 1 || std::stoi(*cols) > 1)) {
+            spans.push_back({address, std::stoi(*rows), std::stoi(*cols), cell.from});
+        }
+    }
+    for (std::size_t i = 0; i < spans.size(); ++i) {
+        for (std::size_t j = i + 1; j < spans.size(); ++j) {
+            if (spans[i].overlaps(spans[j])) {
+                result.conflicts.push_back(conflict(
+                    uid,
+                    "the merged cells " + spans[i].named() + " and " + spans[j].named() + " overlap"
+                ));
+            }
+        }
+        const auto& sameSide = spans[i].from == &branchA ? a : b;
+        for (const auto& [address, cell] : result.cells) {
+            const bool anchorsASpan = std::any_of(spans.begin(), spans.end(), [&](const Span& span) {
+                return span.anchor == address;
+            });
+            if (anchorsASpan || !spans[i].covers(address)) {
+                continue;
+            }
+            const auto there = sameSide.find(address);
+            if (there == sameSide.end() || there->second != cell.stated) {
+                result.conflicts.push_back(conflict(
+                    uid,
+                    "cell " + address.toString() + " lies under the merged cells "
+                        + spans[i].named() + " the other side made"
                 ));
             }
         }
