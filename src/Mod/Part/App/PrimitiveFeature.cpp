@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -88,10 +89,10 @@ short Primitive::mustExecute() const
 namespace
 {
 
-/// Name each face of a one-solid primitive for the part it plays (+Z, Side, ...), and each edge for
-/// the faces it joins (+Z^Side), so a reference to one a new parameter removes fails instead of
-/// landing on whichever now has its number. A name two share names neither; they, an edge on an
-/// unnamed face and the vertices keep their numbers.
+/// Name each face of a one-solid primitive for the part it plays (+Z, Side, ...), each edge for the
+/// two faces it joins (+Z^Side) and each corner for the three or more it touches (+X^+Y^+Z), so a
+/// reference to one a new parameter removes fails instead of landing on whichever now has its
+/// number. A name two share names neither; they and anything on an unnamed face keep their numbers.
 void nameElementsByRole(TopoShape& shape, long tag)
 {
     if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) != 1) {
@@ -145,10 +146,29 @@ void nameElementsByRole(TopoShape& shape, long tag)
         const bool ownsRole = !edgeRoles[i].empty() && edgesPerRole[edgeRoles[i]] == 1;
         setName(edge, ownsRole ? Data::MappedName(edgeRoles[i]) : Data::MappedName(edge));
     }
+
     const int vertexCount = static_cast<int>(shape.countSubShapes(TopAbs_VERTEX));
+    std::vector<std::string> vertexRoles(vertexCount + 1);
+    std::map<std::string, int> verticesPerRole;
+    for (int i = 1; i <= vertexCount; ++i) {
+        std::set<std::string> touched;
+        bool allNamed = true;
+        for (int face : shape.findAncestors(shape.getSubShape(TopAbs_VERTEX, i), TopAbs_FACE)) {
+            allNamed = allNamed && !roles[face].empty();
+            touched.insert(roles[face]);
+        }
+        if (!allNamed || touched.size() < 3) {
+            continue;
+        }
+        for (const std::string& role : touched) {
+            vertexRoles[i] += (vertexRoles[i].empty() ? "" : "^") + role;
+        }
+        ++verticesPerRole[vertexRoles[i]];
+    }
     for (int i = 1; i <= vertexCount; ++i) {
         const Data::IndexedName vertex("Vertex", i);
-        setName(vertex, Data::MappedName(vertex));
+        const bool ownsRole = !vertexRoles[i].empty() && verticesPerRole[vertexRoles[i]] == 1;
+        setName(vertex, ownsRole ? Data::MappedName(vertexRoles[i]) : Data::MappedName(vertex));
     }
 }
 

@@ -224,3 +224,60 @@ TEST_F(AttachExtensionTest, aBoxNamesEachEdgeForTheSidesItJoins)
     );
     EXPECT_EQ(names(), unmoved);
 }
+
+// A plane on a corner of a wedge's top, and the top narrows to a line. Without names another corner
+// took the gone corner's number and the plane moved there without a word.
+TEST_F(AttachExtensionTest, aShapeOnACornerThatIsGoneStopsInsteadOfMoving)
+{
+    auto wedge = getDocument()->addObject<Part::Wedge>("Wedge");
+    getDocument()->recompute();
+    const Part::TopoShape shape = wedge->Shape.getShape();
+    std::string corner;
+    for (int i = 1; i <= static_cast<int>(shape.countSubShapes(TopAbs_VERTEX)); ++i) {
+        const Base::BoundBox3d box = shape.getSubTopoShape(TopAbs_VERTEX, i).getBoundBox();
+        if (box.MaxX < 3.0 && box.MinY > 9.0 && box.MinZ > 7.0) {
+            corner = "Vertex" + std::to_string(i);
+        }
+    }
+    ASSERT_FALSE(corner.empty());
+    auto plane = getDocument()->addObject<Part::Plane>("Plane");
+    plane->AttachmentSupport.setValue(wedge, std::vector<std::string> {corner});
+    plane->MapMode.setValue("Translate");
+    getDocument()->recompute();
+    ASSERT_FALSE(plane->isError());
+    const Base::Vector3d onCorner = plane->Placement.getValue().getPosition();
+    ASSERT_DOUBLE_EQ(onCorner.x, 2.0);
+
+    wedge->X2min.setValue(5.0);
+    wedge->X2max.setValue(5.0);
+    getDocument()->recompute();
+
+    EXPECT_TRUE(plane->isError());
+    EXPECT_EQ(plane->Placement.getValue().getPosition(), onCorner);
+}
+
+// Each corner of a box is named for the three sides it touches, and keeps that name wherever the
+// box is put.
+TEST_F(AttachExtensionTest, aBoxNamesEachCornerForTheSidesItTouches)
+{
+    auto box = getDocument()->addObject<Part::Box>("Box");
+    auto names = [&]() {
+        getDocument()->recompute();
+        std::set<std::string> found;
+        for (int i = 1; i <= 8; ++i) {
+            const std::string vertex = "Vertex" + std::to_string(i);
+            found.insert(box->getElementName(vertex.c_str()).newName);
+        }
+        return found;
+    };
+    const std::set<std::string> unmoved = names();
+    EXPECT_EQ(unmoved.size(), 8U);
+    for (const std::string& name : unmoved) {
+        EXPECT_EQ(name.substr(0, name.rfind('.')).find("Vertex"), std::string::npos) << name;
+    }
+
+    box->Placement.setValue(
+        Base::Placement(Base::Vector3d(5, 0, 0), Base::Rotation(Base::Vector3d(0, 0, 1), 1.0))
+    );
+    EXPECT_EQ(names(), unmoved);
+}
