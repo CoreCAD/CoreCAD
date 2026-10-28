@@ -90,3 +90,4 @@ tsupdate_stdout.log
 
 # Geometry cache written next to a document saved at the repo root
 /assets/
+.cortex/

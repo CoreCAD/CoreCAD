@@ -146,3 +146,7 @@ GitHub Actions workflows in `.github/workflows/`:
 - `sub_buildWindows.yml` — Windows build + GTest
 
 PRs must pass all CI checks on Linux, macOS, and Windows.
+
+## Cortex working state
+
+This project keeps durable memory in Cortex (MCP server `cortex`; database `.cortex/cortex.db`). Keep its working state current while you work: the current task, next actions, open questions and preferences learned. Use the MCP tool `update_working_state` whenever one of them changes; each field you give replaces the stored one. The next session's packet starts from it, so a `/clear` is safe at any moment. Search with `search_memories` before re-deriving something the project may have settled, and record verified decisions, constraints and lessons with `record_memory`. After a piece of work is committed, say it's a good point to `/clear`.
