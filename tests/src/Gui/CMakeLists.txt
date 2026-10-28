@@ -25,6 +25,7 @@ setup_qt_test(Transaction)
 setup_qt_test(Tree)
 setup_qt_test(SelectionFilter)
 setup_qt_test(ProjectDialogs)
+setup_qt_test(ProjectPanel)
 
 target_link_libraries(Gui_tests_run PRIVATE
     GTest::gtest_main
