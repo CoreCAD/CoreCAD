@@ -94,7 +94,7 @@ static std::optional<std::vector<std::string>> shownElementsOf(
 )
 {
     if (picked.empty() && edgesByDefault) {
-        picked = allEdgeNames(body->Shape.getShape());
+        picked = allEdgeNames(body->shownShape());
     }
     std::vector<std::string> onShown;
     for (const auto& element : picked) {

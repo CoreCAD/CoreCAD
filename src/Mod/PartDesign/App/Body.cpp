@@ -219,21 +219,11 @@ Body::Body()
         static_cast<App::PropertyType>(App::Prop_Hidden | App::Prop_NoRecompute),
         "Uids of Bodies whose overlap with this one the user acknowledged"
     );
-
-    // Derived from the Tip on every recompute and on load, never authored or saved.
-    Shape.setStatus(App::Property::Transient, true);
-    Shape.setStatus(App::Property::ReadOnly, true);
 }
 
 short Body::mustExecute() const
 {
     if (Tip.isTouched()) {
-        return 1;
-    }
-    // A step handed its geometry from the build cache is not recomputed, so nothing else would
-    // fill the mirror of a body whose steps all came back that way.
-    const auto* shown = freecad_cast<Part::ShapeFeature*>(shownStep());
-    if (Shape.getShape().isNull() && shown && !shown->Shape.getShape().isNull()) {
         return 1;
     }
     return Part::BodyBase::mustExecute();
@@ -483,18 +473,12 @@ App::DocumentObjectExecReturn* Body::execute()
     if (shown->Shape.getShape().isNull()) {
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Tip shape is empty"));
     }
-    // Empty here means this Body's copy is gone: the reconciler retires it after this
-    // recompute, so keep the last good shape rather than report an error.
-    Part::TopoShape shape = shownShape();
-    if (!shape.isNull()) {
-        Shape.setValue(shape);
-    }
     return App::DocumentObject::StdReturn;
 }
 
 void Body::onChanged(const App::Property* prop)
 {
-    if (prop == &Tip || prop == &TipComponentId || prop == &Shape) {
+    if (prop == &Tip || prop == &TipComponentId) {
         copier.reset();
     }
     const bool userEdit = !isRestoring() && getDocument()
@@ -739,11 +723,6 @@ App::DocumentObject* Body::getSubObject(
 
 void Body::onDocumentRestored()
 {
-    // The Tip's shape is already loaded, so the unsaved Shape can be filled without a recompute.
-    Part::TopoShape restoredShape = shownShape();
-    if (!restoredShape.isNull()) {
-        Shape.setValue(restoredShape);
-    }
     // Lets the view provider copy the Tip's colours.
     if (Tip.getValue()) {
         Tip.touch();

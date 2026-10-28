@@ -33,12 +33,13 @@
 namespace Part
 {
 
-PROPERTY_SOURCE(Part::BodyBase, Part::ShapeFeature)
+PROPERTY_SOURCE(Part::BodyBase, App::GeoFeature)
 
 BodyBase::BodyBase()
 {
     // #121: a Body is what stands as a part, so a Body is what is made of something.
     // Its features are not: they build the part, they are not parts themselves.
+    Part::ShapeExtension::initExtension(this);
     Part::MaterialExtension::initExtension(this);
 
     ADD_PROPERTY(Tip, (nullptr));
@@ -152,7 +153,7 @@ void BodyBase::onBeforeChange(const App::Property* prop)
     if ( prop == &BaseFeature && BaseFeature.getValue() == Tip.getValue() && BaseFeature.getValue()
     ) { Tip.setValue( nullptr );
     }*/
-    Part::ShapeFeature::onBeforeChange(prop);
+    App::GeoFeature::onBeforeChange(prop);
 }
 
 void BodyBase::onChanged(const App::Property* prop)
@@ -162,7 +163,7 @@ void BodyBase::onChanged(const App::Property* prop)
     if ( prop == &BaseFeature && !Tip.getValue() && BaseFeature.getValue() ) {
         Tip.setValue( BaseFeature.getValue () );
     }*/
-    Part::ShapeFeature::onChanged(prop);
+    App::GeoFeature::onChanged(prop);
 }
 
 PyObject* BodyBase::getPyObject()

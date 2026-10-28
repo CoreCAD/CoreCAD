@@ -72,7 +72,7 @@ TEST_F(BodyShapeCapabilityTest, carriesElementMap)
     // the Body's Shape mirror and never touches the extension, so it is an independent reference
     // for what the routed path must reproduce — the same style of oracle the Part::Box parity uses.
     PyObject* pyOracle = nullptr;
-    auto* oracleOwner = _body->ShapeFeature::getSubObject(ref, &pyOracle, nullptr, false, 10);
+    auto* oracleOwner = _body->getSubObject(ref, &pyOracle, nullptr, false, 10);
     ASSERT_NE(oracleOwner, nullptr);
     ASSERT_NE(pyOracle, nullptr);
     auto oracleMap = static_cast<Part::TopoShapePy*>(pyOracle)->getTopoShapePtr()->getElementMap();
@@ -104,7 +104,7 @@ TEST_F(BodyShapeCapabilityTest, carriesElementMap)
     // Negative control: a *different* face's map must NOT match the routed Face1 map, or the
     // equality above would be blind and pass even if the extension returned the wrong sub-shape.
     PyObject* pyWrong = nullptr;
-    _body->ShapeFeature::getSubObject("Face2", &pyWrong, nullptr, false, 10);
+    _body->getSubObject("Face2", &pyWrong, nullptr, false, 10);
     ASSERT_NE(pyWrong, nullptr);
     auto wrongMap = static_cast<Part::TopoShapePy*>(pyWrong)->getTopoShapePtr()->getElementMap();
     std::sort(wrongMap.begin(), wrongMap.end());
