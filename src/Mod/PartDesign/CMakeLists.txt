@@ -71,6 +71,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestPointPattern.py
     PartDesignTests/TestCurvePattern.py
     PartDesignTests/TestFillPattern.py
+    PartDesignTests/TestTablePattern.py
 )
 
 if(BUILD_GUI)
