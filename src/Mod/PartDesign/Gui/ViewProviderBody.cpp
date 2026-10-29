@@ -272,9 +272,8 @@ bool ViewProviderBody::doubleClicked()
 
 bool ViewProviderBody::onDelete(const std::vector<std::string>&)
 {
-    // TODO May be do it conditionally? (2015-09-05, Fat-Zer)
-    FCMD_OBJ_CMD(getObject(), "removeObjectsFromDocument()");
-    return true;
+    // A body is what its steps make; it goes when they do.
+    return false;
 }
 
 void ViewProviderBody::updateData(const App::Property* prop)

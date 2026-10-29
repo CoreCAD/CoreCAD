@@ -1363,6 +1363,73 @@ class TestBodyColumn(unittest.TestCase):
         self.assertEqual(selected, [pad.Label])
 
 
+class TestDeleteInABody(unittest.TestCase):
+    """A Body is a marker its steps produce, so Delete does not remove it; a body goes when its
+    steps go, and deleting a step another body leans on names that body's steps first."""
+
+    def setUp(self):
+        self.Doc = App.newDocument("DeleteInABody", type="Part")
+        Gui.activateWorkbench("PartDesignWorkbench")
+        self.dialogs = []
+        self.answer = QtGui.QMessageBox.No
+        self.watcher = QtCore.QTimer()
+        self.watcher.timeout.connect(self.closeDialog)
+        self.watcher.start(50)
+
+    def tearDown(self):
+        self.watcher.stop()
+        App.closeDocument(self.Doc.Name)
+
+    def closeDialog(self):
+        box = QApplication.activeModalWidget()
+        if isinstance(box, QtGui.QMessageBox):
+            self.dialogs.append(box.text())
+            button = box.button(self.answer)
+            (button or box.defaultButton() or box.buttons()[0]).click()
+
+    def square(self, name):
+        sketch = self.Doc.addObject("Sketcher::SketchObject", name)
+        pts = [(0, 0), (10, 0), (10, 10), (0, 10)]
+        for i in range(4):
+            a, b = pts[i], pts[(i + 1) % 4]
+            sketch.addGeometry(Part.LineSegment(App.Vector(*a, 0), App.Vector(*b, 0)))
+        self.Doc.recompute()
+        return sketch
+
+    def twoBodiesOneOnTheOther(self):
+        base = PartDesign.makeFeature(self.square("S1"), "Pad")
+        self.Doc.recompute()
+        top = self.square("S2")
+        top.AttachmentSupport = [(base, "Face6")]
+        top.MapMode = "FlatFace"
+        PartDesign.makeFeature(top, "Pad")
+        self.Doc.recompute()
+        return base
+
+    def delete(self, obj):
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(obj)
+        Gui.runCommand("Std_Delete")
+        Gui.Selection.clearSelection()
+
+    def testDeleteLeavesABodyAndItsSteps(self):
+        base = self.twoBodiesOneOnTheOther()
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        before = sorted(o.Uid for o in self.Doc.Objects)
+        self.delete(body)
+        self.assertEqual(self.dialogs, [])
+        self.assertEqual(sorted(o.Uid for o in self.Doc.Objects), before)
+        self.assertTrue(base.isValid())
+
+    def testDeletingAStepNamesTheStepsThatLeanOnIt(self):
+        base = self.twoBodiesOneOnTheOther()
+        before = sorted(o.Uid for o in self.Doc.Objects)
+        self.delete(base)
+        self.assertEqual(len(self.dialogs), 1)
+        self.assertIn("S2", self.dialogs[0])
+        self.assertEqual(sorted(o.Uid for o in self.Doc.Objects), before)
+
+
 class TestDatumPlane(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane", type="Part")
