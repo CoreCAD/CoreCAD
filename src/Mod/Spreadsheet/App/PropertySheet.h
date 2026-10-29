@@ -246,6 +246,9 @@ public:
 
     void renameObjectIdentifiers(const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths);
 
+    /// Moves this sheet's references to the cells of another sheet whose rows or columns moved.
+    void shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift);
+
     void deletedDocumentObject(const App::DocumentObject* docObj);
 
     void documentSet();
@@ -335,11 +338,7 @@ private:
 
     void moveAlias(App::CellAddress currPos, App::CellAddress newPos);
 
-    void moveCell(
-        App::CellAddress currPos,
-        App::CellAddress newPos,
-        std::map<App::ObjectIdentifier, App::ObjectIdentifier>& renames
-    );
+    void moveCell(App::CellAddress currPos, App::CellAddress newPos);
 
     /*
      * Cell dependency tracking

@@ -1081,6 +1081,32 @@ class SpreadsheetCases(unittest.TestCase):
         sheet.insertRows("2", 1)
         self.assertEqual(sheet.getContents("B4"), "=B3")
 
+    def testInsertRowsMovesAnotherSheetsReferenceToAnEmptyCell(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        other.set("A1", "=Spreadsheet.A5")
+        sheet.insertRows("2", 2)
+        self.assertEqual(other.getContents("A1"), "=Spreadsheet.A7")
+
+    def testRemoveRowsMovesAnotherSheetsReferenceToAnEmptyCell(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        other.set("A1", "=Spreadsheet.C5")
+        sheet.removeRows("2", 2)
+        self.assertEqual(other.getContents("A1"), "=Spreadsheet.C3")
+
+    def testInsertColumnsMovesAPropertyFormulaOnAnotherObject(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("B2", "7")
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyFloat", "Value")
+        feature.setExpression("Value", "Spreadsheet.B2")
+        self.doc.recompute()
+        sheet.insertColumns("A", 1)
+        self.doc.recompute()
+        self.assertEqual(feature.ExpressionEngine[0][1], "Spreadsheet.C2")
+        self.assertEqual(feature.Value, 7)
+
     def testRenameAlias(self):
         """Test renaming of alias1 to alias2 in a spreadsheet"""
         sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
