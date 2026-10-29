@@ -347,6 +347,12 @@ public:
      * @return          true if the deletion is approved by the view provider.
      */
     virtual bool onDelete(const std::vector<std::string>& subNames);
+    /// False for an object that is never removed by hand, even when the user confirms
+    /// deleting what depends on it.
+    virtual bool canBeDeleted() const
+    {
+        return true;
+    }
     /** Called before deletion
      *
      * Unlike onDelete(), this function is guaranteed to be called before

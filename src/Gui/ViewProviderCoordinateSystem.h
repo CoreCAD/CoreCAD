@@ -106,6 +106,7 @@ public:
 
 protected:
     bool onDelete(const std::vector<std::string>&) override;
+    bool canBeDeleted() const override;
 
 private:
     using DatumObjectFunc = std::function<void(ViewProviderDatum*)>;

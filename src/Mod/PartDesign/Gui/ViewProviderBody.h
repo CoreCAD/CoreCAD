@@ -72,6 +72,10 @@ public:
     void setOverrideMode(const std::string& mode) override;
 
     bool onDelete(const std::vector<std::string>&) override;
+    bool canBeDeleted() const override
+    {
+        return false;
+    }
 
     /// Update the children's highlighting when triggered
     void updateData(const App::Property* prop) override;

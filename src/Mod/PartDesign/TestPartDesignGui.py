@@ -1429,6 +1429,23 @@ class TestDeleteInABody(unittest.TestCase):
         self.assertIn("S2", self.dialogs[0])
         self.assertEqual(sorted(o.Uid for o in self.Doc.Objects), before)
 
+    def testConfirmingTheWarningStillLeavesABody(self):
+        base = self.twoBodiesOneOnTheOther()
+        body = [o for o in self.Doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        origin = [o for o in self.Doc.Objects if o.TypeId == "App::Origin"][0]
+        bodyUid, originUid = body.Uid, origin.Uid
+        self.answer = QtGui.QMessageBox.Yes
+        Gui.Selection.clearSelection()
+        for obj in (body, base, origin):
+            Gui.Selection.addSelection(obj)
+        Gui.runCommand("Std_Delete")
+        Gui.Selection.clearSelection()
+        self.assertEqual(len(self.dialogs), 1)
+        uids = [o.Uid for o in self.Doc.Objects]
+        self.assertNotIn(base.Uid, uids)
+        self.assertIn(bodyUid, uids)
+        self.assertIn(originUid, uids)
+
 
 class TestDatumPlane(unittest.TestCase):
     def setUp(self):
