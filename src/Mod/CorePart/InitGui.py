@@ -149,6 +149,7 @@ class CorePartWorkbench(Gui.Workbench):
                 "PartDesign_LinearPattern",
                 "PartDesign_PolarPattern",
                 "PartDesign_PointPattern",
+                "PartDesign_CurvePattern",
             ],
         )
 
@@ -280,6 +281,7 @@ class CorePartWorkbench(Gui.Workbench):
                 "PartDesign_LinearPattern",
                 "PartDesign_PolarPattern",
                 "PartDesign_PointPattern",
+                "PartDesign_CurvePattern",
             ],
         )
         self.appendMenu(
@@ -658,6 +660,7 @@ class CorePartWorkbench(Gui.Workbench):
                     "PartDesign_LinearPattern",
                     "PartDesign_PolarPattern",
                     "PartDesign_PointPattern",
+                    "PartDesign_CurvePattern",
                 ],
                 "Transformation Tools",
                 "PartDesign_LinearPattern",

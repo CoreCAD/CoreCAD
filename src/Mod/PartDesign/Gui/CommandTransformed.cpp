@@ -33,6 +33,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QVBoxLayout>
+#include <Standard_Failure.hxx>
 #include <TopoDS.hxx>
 
 
@@ -52,6 +53,7 @@
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
+#include <Mod/PartDesign/App/FeatureCurvePattern.h>
 #include <Mod/PartDesign/App/FeaturePointPattern.h>
 
 #include "ReferenceSelection.h"
@@ -304,10 +306,102 @@ bool CmdPartDesignPointPattern::isActive()
     return hasAnyBody();
 }
 
+//===========================================================================
+// PartDesign_CurvePattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignCurvePattern)
+
+CmdPartDesignCurvePattern::CmdPartDesignCurvePattern()
+    : Command("PartDesign_CurvePattern")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Curve Pattern");
+    sToolTipText = QT_TR_NOOP("Duplicates the selected features or the active body along a curve");
+    sWhatsThis = "PartDesign_CurvePattern";
+    sStatusTip = sToolTipText;
+    sPixmap = "PartDesign_CurvePattern";
+}
+
+static bool isProfile(const App::DocumentObject* sketch)
+{
+    return std::ranges::any_of(sketch->getInList(), [sketch](App::DocumentObject* user) {
+        auto* profileBased = freecad_cast<PartDesign::ProfileBased*>(user);
+        return profileBased && profileBased->Profile.getValue() == sketch;
+    });
+}
+
+// Edges or a sketch selected with the features make the path; without them, the newest
+// sketch that is one curve and not a feature's profile does.
+static std::pair<App::DocumentObject*, std::vector<std::string>> pathOf(
+    Gui::Command* cmd,
+    App::Document* doc
+)
+{
+    for (auto& selected : cmd->getSelection().getSelectionEx()) {
+        std::vector<std::string> edges;
+        for (const std::string& sub : selected.getSubNames()) {
+            if (sub.compare(0, 4, "Edge") == 0) {
+                edges.push_back(sub);
+            }
+        }
+        if (!edges.empty()) {
+            return {selected.getObject(), edges};
+        }
+        App::DocumentObject* obj = selected.getObject();
+        if (obj->isDerivedFrom<Part::Part2DObject>() && PartDesign::CurvePattern::isPath(obj)) {
+            return {obj, {}};
+        }
+    }
+    const std::vector<App::DocumentObject*> objects = doc->getObjects();
+    for (auto it = objects.rbegin(); it != objects.rend(); ++it) {
+        if ((*it)->isDerivedFrom<Part::Part2DObject>() && !isProfile(*it)
+            && PartDesign::CurvePattern::isPath(*it)) {
+            return {*it, {}};
+        }
+    }
+    return {nullptr, {}};
+}
+
+void CmdPartDesignCurvePattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
+        return;
+    }
+    const auto [path, edges] = pathOf(this, body->getDocument());
+    makeTransformed(this, body, "CurvePattern", [path, edges](auto* feature, const auto&) {
+        FCMD_OBJ_CMD(feature, "Occurrences = 3");
+        if (!path) {
+            return;
+        }
+        FCMD_OBJ_CMD(
+            feature,
+            "Path = (" << getObjectCmd(path) << ", "
+                       << PartDesignGui::buildLinkSubPythonStr(path, edges) << ")"
+        );
+        try {
+            const double ahead = static_cast<PartDesign::CurvePattern*>(feature)->lengthAhead();
+            FCMD_OBJ_CMD(feature, "Length = " << ahead);
+        }
+        catch (const Base::Exception&) {
+        }
+        catch (const Standard_Failure&) {
+        }
+    });
+}
+
+bool CmdPartDesignCurvePattern::isActive()
+{
+    return hasAnyBody();
+}
+
 void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
 {
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
     rcCmdMgr.addCommand(new CmdPartDesignLinearPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPolarPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPointPattern());
+    rcCmdMgr.addCommand(new CmdPartDesignCurvePattern());
 }
