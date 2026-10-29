@@ -242,6 +242,58 @@ class TestTablePattern(unittest.TestCase):
         self.assertTrue(pattern.isValid(), pattern.getStatusString())
         self.assertAlmostEqual(self.body.Shape.Volume, PLATE - 3 * HOLE)
 
+    def testRangeWithEmptyCornersFollowsInsertedRows(self):
+        sheet = self._sheet({"A2": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A2:C10")
+        sheet.insertRows("1", 2)
+        self.assertEqual(pattern.Cells, "A4:C12")
+
+    def testRangeGrowsWithRowsInsertedInsideIt(self):
+        sheet = self._sheet({"A2": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A2:C10")
+        sheet.insertRows("5", 3)
+        self.assertEqual(pattern.Cells, "A2:C13")
+
+    def testRangeFollowsInsertedColumns(self):
+        sheet = self._sheet({"A2": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A2:C10")
+        sheet.insertColumns("A", 1)
+        self.assertEqual(pattern.Cells, "B2:D10")
+        self.Doc.recompute()
+        self.assertTrue(self._holeAt(23, 3))
+
+    def testRangeFollowsRowsRemovedAboveIt(self):
+        sheet = self._sheet({"A3": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A3:C10")
+        sheet.removeRows("1", 1)
+        self.assertEqual(pattern.Cells, "A2:C9")
+
+    def testRangeShrinksWhenItsLastRowsAreRemoved(self):
+        sheet = self._sheet({"A2": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A2:C10")
+        sheet.removeRows("8", 5)
+        self.assertEqual(pattern.Cells, "A2:C7")
+
+    def testRangeShrinksWhenItsFirstColumnIsRemoved(self):
+        sheet = self._sheet({"B2": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A2:C10")
+        sheet.removeColumns("A", 1)
+        self.assertEqual(pattern.Cells, "A2:B10")
+
+    def testRangeRemovedWholeLeavesNoCellsAndFails(self):
+        sheet = self._sheet({"A2": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A2:C3")
+        sheet.removeRows("2", 2)
+        self.assertEqual(pattern.Cells, "")
+        self.Doc.recompute()
+        self.assertFalse(pattern.isValid())
+
+    def testAnotherSpreadsheetsRowsLeaveTheRangeAlone(self):
+        sheet = self._sheet({"A2": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A2:C10")
+        self.Doc.addObject("Spreadsheet::Sheet", "Other").insertRows("1", 2)
+        self.assertEqual(pattern.Cells, "A2:C10")
+
     def testSpreadsheetPositionsOnAPlane(self):
         sheet = self._sheet({"A1": "20 mm", "B1": "20 mm"})
         self._sheetPattern(sheet, "A1:B1", plane=self._sketch(Placement()))

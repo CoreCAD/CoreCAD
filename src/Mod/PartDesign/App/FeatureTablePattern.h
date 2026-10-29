@@ -40,9 +40,7 @@ public:
     }
 
     std::list<gp_Trsf> getTransformations() override;
-    void renameObjectIdentifiers(
-        const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths
-    ) override;
+    void shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift) override;
 
     /// The rows the cells give, one per range row that holds a value; columns are X, Y and Z
     /// in order, and an empty cell in a used row is zero. Every value must be a length.

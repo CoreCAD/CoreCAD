@@ -9,7 +9,6 @@
 #include <gp_Vec.hxx>
 
 #include <App/Datums.h>
-#include <App/ObjectIdentifier.h>
 #include <App/PropertyUnits.h>
 #include <App/Range.h>
 #include <Base/Exception.h>
@@ -166,6 +165,9 @@ std::vector<Base::Vector3d> TablePattern::rowsFromSpreadsheet() const
     if (!sheet->getTypeId().isDerivedFrom(Base::Type::fromName("Spreadsheet::Sheet"))) {
         throw Base::ValueError("The rows must be read from a spreadsheet");
     }
+    if (Cells.getStrValue().empty()) {
+        throw Base::ValueError("No spreadsheet cells are chosen for the rows");
+    }
     const App::Range range = rangeOf(Cells.getStrValue());
     if (range.colCount() > 3) {
         throw Base::ValueError("The cells span more than three columns; a row is X, Y and Z");
@@ -197,14 +199,11 @@ std::vector<Base::Vector3d> TablePattern::rowsFromSpreadsheet() const
     return rows;
 }
 
-// Rows or columns inserted in the spreadsheet move the cells; the range moves with them.
-void TablePattern::renameObjectIdentifiers(
-    const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths
-)
+// Removed rows or columns shrink the range; a range removed whole leaves no cells chosen.
+void TablePattern::shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift)
 {
-    Transformed::renameObjectIdentifiers(paths);
-    App::DocumentObject* sheet = Spreadsheet.getValue();
-    if (!sheet) {
+    Transformed::shiftCellReferences(sheet, shift);
+    if (sheet != Spreadsheet.getValue()) {
         return;
     }
     std::optional<App::Range> range;
@@ -214,20 +213,25 @@ void TablePattern::renameObjectIdentifiers(
     catch (const Base::Exception&) {
         return;
     }
-    bool changed = false;
-    auto moved = [&](const App::CellAddress& cell) {
-        auto it = paths.find(App::ObjectIdentifier(sheet, cell.toString()));
-        if (it == paths.end()) {
-            return cell.toString();
+    auto at = [&](App::CellAddress cell, int edge) {
+        if (shift.rows) {
+            cell.setRow(edge);
         }
-        changed = true;
-        return it->second.getPropertyName();
+        else {
+            cell.setCol(edge);
+        }
+        return cell;
     };
-    const std::string from = moved(range->from());
-    const std::string to = moved(range->to());
-    if (changed) {
-        Cells.setValue(range->size() == 1 ? from : from + ":" + to);
+    const App::CellAddress from = shift.moved(range->from()).value_or(at(range->from(), shift.first));
+    const App::CellAddress to = shift.moved(range->to()).value_or(at(range->to(), shift.first - 1));
+    if (from == range->from() && to == range->to()) {
+        return;
     }
+    std::string cells;
+    if (from.row() <= to.row() && from.col() <= to.col()) {
+        cells = from == to ? from.toString() : from.toString() + ":" + to.toString();
+    }
+    Cells.setValue(cells);
 }
 
 std::list<gp_Trsf> TablePattern::getTransformations()
