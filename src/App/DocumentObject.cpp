@@ -1191,14 +1191,7 @@ void DocumentObject::renameObjectIdentifiers(
 
 void DocumentObject::shiftCellReferences(const DocumentObject* sheet, const CellShift& shift)
 {
-    std::map<ObjectIdentifier, ObjectIdentifier> renames;
-    for (const auto& [path, expression] : ExpressionEngine.getExpressions()) {
-        (void)path;
-        shift.addRenames(sheet, expression->getIdentifiers(), renames);
-    }
-    if (!renames.empty()) {
-        ExpressionEngine.renameObjectIdentifiers(renames);
-    }
+    ExpressionEngine.shiftCellReferences(sheet, shift);
 }
 
 void DocumentObject::mintDurableIdentity()

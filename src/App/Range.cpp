@@ -31,8 +31,6 @@
 
 #include <string_view>
 #include <Base/Exception.h>
-#include "DocumentObject.h"
-#include "ObjectIdentifier.h"
 #include "Range.h"
 
 
@@ -345,24 +343,22 @@ std::optional<App::CellAddress> App::CellShift::moved(CellAddress address) const
     return address;
 }
 
-void App::CellShift::addRenames(
-    const DocumentObject* sheet,
-    const std::map<ObjectIdentifier, bool>& ids,
-    std::map<ObjectIdentifier, ObjectIdentifier>& renames
-) const
+std::optional<std::pair<App::CellAddress, App::CellAddress>>
+App::CellShift::moved(CellAddress from, CellAddress to) const
 {
-    for (const auto& [id, hidden] : ids) {
-        (void)hidden;
-        if (id.getDocumentObject() != sheet) {
-            continue;
+    auto at = [&](CellAddress cell, int edge) {
+        if (rows) {
+            cell.setRow(edge);
         }
-        CellAddress cell = stringToAddress(id.getPropertyName().c_str(), true);
-        if (!cell.isValid()) {
-            continue;
+        else {
+            cell.setCol(edge);
         }
-        const std::optional<CellAddress> now = moved(cell);
-        if (now && *now != cell) {
-            renames[id.canonicalPath()] = ObjectIdentifier(sheet, now->toString());
-        }
+        return cell;
+    };
+    from = moved(from).value_or(at(from, first));
+    to = moved(to).value_or(at(to, first - 1));
+    if (from.row() > to.row() || from.col() > to.col()) {
+        return std::nullopt;
     }
+    return std::make_pair(from, to);
 }
