@@ -247,7 +247,8 @@ std::vector<std::string> unplacedWrites(
     const App::Document& placed,
     const App::DocumentObject& sheet,
     const AxisMoves& rows,
-    const AxisMoves& columns
+    const AxisMoves& columns,
+    const App::DocumentObject* clearedBothWays
 )
 {
     std::vector<std::string> found;
@@ -268,7 +269,8 @@ std::vector<std::string> unplacedWrites(
     }
     for (const auto& [address, stated] : before) {
         (void)stated;
-        if (cellsOf(sheet).getValue(address) == nullptr && unplaced(address)) {
+        if (cellsOf(sheet).getValue(address) == nullptr && unplaced(address)
+            && (clearedBothWays == nullptr || cellsOf(*clearedBothWays).getValue(address) != nullptr)) {
             found.push_back(
                 "cell " + address.toString()
                 + " cleared where the other side inserted or removed rows or columns"
@@ -343,34 +345,45 @@ App::MergeRebase rebaseSheets(
         const bool bShifted = moved(*sheetO, *sheetB);
         const bool aLeads = aShifted || (!bShifted && lostAnId(*sheetO, *sheetA));
         const bool bLeads = bShifted || (!aShifted && lostAnId(*sheetO, *sheetB));
-        if (aLeads == bLeads) {
+        if (aShifted && bShifted) {
             continue;
         }
-        const bool aMoved = aLeads;
-        const App::DocumentObject& leading = aMoved ? *sheetA : *sheetB;
-        const App::DocumentObject& placedSheet = aMoved ? *sheetB : *sheetA;
-        SheetReplay replayed {
-            uid,
-            aMoved,
-            movesOf(rowsOf(*sheetO), rowsOf(leading)),
-            movesOf(columnsOf(*sheetO), columnsOf(leading))
-        };
         const std::string label = sheetO->Label.getValue();
-        if (replayed.rows.reordered || replayed.columns.reordered) {
-            rebase.conflicts.push_back(conflict(uid, label + ": one side reordered rows or columns"));
-            continue;
-        }
-        for (const std::string& why : unplacedWrites(
-                 ancestor,
-                 aMoved ? branchB : branchA,
-                 placedSheet,
-                 replayed.rows,
-                 replayed.columns
-             )) {
-            rebase.conflicts.push_back(conflict(uid, label + ": " + why));
-        }
-        if (!replayed.rows.steps.empty() || !replayed.columns.steps.empty()) {
-            replays.push_back(std::move(replayed));
+        const bool neitherShifted = !aShifted && !bShifted;
+        const auto lead = [&](bool aMoved) {
+            const App::DocumentObject& leading = aMoved ? *sheetA : *sheetB;
+            const App::DocumentObject& placedSheet = aMoved ? *sheetB : *sheetA;
+            SheetReplay replayed {
+                uid,
+                aMoved,
+                movesOf(rowsOf(*sheetO), rowsOf(leading)),
+                movesOf(columnsOf(*sheetO), columnsOf(leading))
+            };
+            if (replayed.rows.reordered || replayed.columns.reordered) {
+                rebase.conflicts.push_back(
+                    conflict(uid, label + ": one side reordered rows or columns")
+                );
+                return;
+            }
+            for (const std::string& why : unplacedWrites(
+                     ancestor,
+                     aMoved ? branchB : branchA,
+                     placedSheet,
+                     replayed.rows,
+                     replayed.columns,
+                     neitherShifted ? &leading : nullptr
+                 )) {
+                rebase.conflicts.push_back(conflict(uid, label + ": " + why));
+            }
+            if (!replayed.rows.steps.empty() || !replayed.columns.steps.empty()) {
+                replays.push_back(std::move(replayed));
+            }
+        };
+        // Both only lost ids: neither moved a row, so each is checked against the other.
+        for (const bool aMoved : {true, false}) {
+            if (aMoved ? aLeads : bLeads) {
+                lead(aMoved);
+            }
         }
     }
     if (rebase.conflicts.empty() && !replays.empty()) {
