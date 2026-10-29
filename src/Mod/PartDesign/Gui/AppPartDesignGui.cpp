@@ -54,6 +54,7 @@
 #include "ViewProviderCurvePattern.h"
 #include "ViewProviderFillPattern.h"
 #include "ViewProviderTablePattern.h"
+#include "ViewProviderFormulaPattern.h"
 #include "ViewProviderPrimitive.h"
 #include "ViewProviderRevolution.h"
 #include "ViewProviderSketchBased.h"
@@ -146,6 +147,7 @@ PyMOD_INIT_FUNC(PartDesignGui)
     PartDesignGui::ViewProviderCurvePattern  ::init();
     PartDesignGui::ViewProviderFillPattern   ::init();
     PartDesignGui::ViewProviderTablePattern   ::init();
+    PartDesignGui::ViewProviderFormulaPattern ::init();
     PartDesignGui::ViewProviderBoolean       ::init();
     PartDesignGui::ViewProviderPrimitive     ::init();
     PartDesignGui::ViewProviderPipe          ::init();

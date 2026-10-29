@@ -77,6 +77,7 @@ from PartDesignTests.TestPointPattern import TestPointPattern
 from PartDesignTests.TestCurvePattern import TestCurvePattern
 from PartDesignTests.TestFillPattern import TestFillPattern
 from PartDesignTests.TestTablePattern import TestTablePattern
+from PartDesignTests.TestFormulaPattern import TestFormulaPattern
 
 # Topological naming problem
 from PartDesignTests.TestTopologicalNamingProblem import TestTopologicalNamingProblem

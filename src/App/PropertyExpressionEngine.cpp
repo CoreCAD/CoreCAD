@@ -619,7 +619,9 @@ std::string App::formulaStatedByUid(const Expression& expression)
     for (auto* variable : collector.nodes) {
         const ObjectIdentifier path = variable->getPath();
         const DocumentObject* object = path.getDocumentObject();
-        if (object == nullptr || owner == nullptr || object->getDocument() != owner->getDocument()) {
+        // A property of the formula's own object is read as a bare name, which never needs a UUID.
+        if (object == nullptr || owner == nullptr || object == owner
+            || object->getDocument() != owner->getDocument()) {
             continue;
         }
         std::string uuid = path.getBoundObjectUuid();
