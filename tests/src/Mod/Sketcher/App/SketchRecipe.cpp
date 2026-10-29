@@ -1191,6 +1191,26 @@ TEST_F(SketchRecipeMergeTest, aTieToGeometryTheOtherSideStoppedBorrowingIsAConfl
     EXPECT_EQ(report.conflicts.front().type, "Coincident");
 }
 
+// Only B's solve moved the line, so naming the sides the other way round must report the same.
+TEST_F(SketchRecipeMergeTest, aMergeReportsTheSameWhicheverSideIsNamedFirst)
+{
+    Branches br = makeBranches(lineBesideABorrowedPoint);
+    ASSERT_NE(br.a, nullptr);
+    ASSERT_NE(br.b, nullptr);
+    ASSERT_EQ(br.a->delExternal(0), 0);
+    br.a->getDocument()->recompute();
+    addCoincident(br.b, 0, Sketcher::PointPos::start, firstBorrowed, Sketcher::PointPos::start);
+
+    auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+    ASSERT_NE(ancestor, nullptr);
+    const Sketcher::MergeReport ab = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
+    const Sketcher::MergeReport ba = Sketcher::mergeSketches(*ancestor, *br.b, *br.a);
+
+    EXPECT_TRUE(ab.undetermined.empty());
+    EXPECT_TRUE(ba.undetermined.empty());
+    EXPECT_EQ(ab.solvedPositions, ba.solvedPositions);
+}
+
 // A sketch drawn on the top of a box.
 void sketchOnABoxTop(Sketcher::SketchObject* s)
 {
