@@ -730,8 +730,10 @@ DocumentMergeReport App::mergeDocuments(const Document& ancestor,
                                         const Document& branchB)
 {
     const RebasedVersions rebased = rebaseVersions(ancestor, branchA, branchB);
+    // Once the moves are replayed, a side that only lost rows at the end leads, and what the
+    // moving side wrote below them is checked.
     if (rebased.ancestor) {
-        return mergeVersions(*rebased.ancestor, *rebased.branchA, *rebased.branchB);
+        return mergeDocuments(*rebased.ancestor, *rebased.branchA, *rebased.branchB);
     }
     DocumentMergeReport report = mergeVersions(ancestor, branchA, branchB);
     report.conflicts.insert(report.conflicts.end(),

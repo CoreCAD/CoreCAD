@@ -242,6 +242,116 @@ TEST_F(SheetMergeTest, bothSidesMovingRowsIsAConflict)
     EXPECT_NE(merged.report.conflicts.front().detail.find("both sides"), std::string::npos);
 }
 
+TEST_F(SheetMergeTest, bothSidesRemovingRowsIsAConflict)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->removeRows(0, 1);
+    sheetOf(b)->removeRows(1, 1);
+
+    const App::MergedDocument merged = merge(a, b);
+
+    EXPECT_EQ(merged.document, nullptr);
+    ASSERT_EQ(merged.report.conflicts.size(), 1U);
+    EXPECT_NE(merged.report.conflicts.front().detail.find("both sides"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, oneSideInsertingWhileTheOtherRemovesIsAConflict)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->insertRows(0, 1);
+    sheetOf(b)->removeRows(0, 1);
+
+    const App::MergedDocument merged = merge(a, b);
+
+    EXPECT_EQ(merged.document, nullptr);
+    ASSERT_EQ(merged.report.conflicts.size(), 1U);
+    EXPECT_NE(merged.report.conflicts.front().detail.find("both sides"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, bothSidesInsertingTheSameRowIsAConflict)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->insertRows(0, 1);
+    sheetOf(b)->insertRows(0, 1);
+
+    const App::MergedDocument merged = merge(a, b);
+
+    EXPECT_EQ(merged.document, nullptr);
+    ASSERT_EQ(merged.report.conflicts.size(), 1U);
+    EXPECT_NE(merged.report.conflicts.front().detail.find("both sides"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, rowsMovedOnOneSideAndColumnsOnTheOtherIsAConflict)
+{
+    sheetOf(_ancestor)->setCell("C1", "3");
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->insertRows(0, 1);
+    sheetOf(b)->insertColumns(0, 1);
+
+    const App::MergedDocument merged = merge(a, b);
+
+    EXPECT_EQ(merged.document, nullptr);
+    ASSERT_EQ(merged.report.conflicts.size(), 1U);
+    EXPECT_NE(merged.report.conflicts.front().detail.find("both sides"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, aFormulaBelowRowsBothSidesLostIsAConflict)
+{
+    addSheet(_ancestor, "Other")->setCell("A1", "0");
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->removeRows(1, 2);
+    reopen(a);
+    sheetOf(b)->clear(App::CellAddress("A3"));
+    reopen(b);
+    sheetOf(b, "Other")->setCell("A1", "=Sheet.A5");
+
+    const App::MergedDocument merged = merge(a, b);
+
+    EXPECT_EQ(merged.document, nullptr);
+    ASSERT_EQ(merged.report.conflicts.size(), 1U);
+    EXPECT_NE(merged.report.conflicts.front().detail.find("names A5"), std::string::npos);
+}
+
+TEST_F(SheetMergeTest, bothSidesLosingTheLastRowWithNothingWrittenBelowMerges)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->removeRows(2, 1);
+    reopen(a);
+    sheetOf(b)->clear(App::CellAddress("A3"));
+    reopen(b);
+    sheetOf(b)->setCell("A1", "9");
+
+    const App::MergedDocument merged = merge(a, b);
+
+    ASSERT_NE(merged.document, nullptr) << merged.refusal;
+    EXPECT_EQ(contents(merged.document, "A1"), "9");
+    EXPECT_EQ(contents(merged.document, "A2"), "2");
+    EXPECT_EQ(contents(merged.document, "A3"), "");
+}
+
+TEST_F(SheetMergeTest, aWriteBelowRowsTheOtherSideLostIsAConflictWhenOnlyReported)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(b)->removeRows(1, 2);
+    reopen(b);
+    sheetOf(a)->insertRows(0, 1);
+    sheetOf(a)->setCell("A6", "6");
+    a->recompute();
+    b->recompute();
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_ancestor, *a, *b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U);
+    EXPECT_NE(report.conflicts.front().detail.find("A6"), std::string::npos);
+}
+
 TEST_F(SheetMergeTest, anEditLandsBesideARowTheOtherSideRemoved)
 {
     App::Document* a = branch("a");
