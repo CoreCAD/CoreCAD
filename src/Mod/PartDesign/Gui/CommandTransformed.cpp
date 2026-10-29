@@ -54,6 +54,7 @@
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 #include <Mod/PartDesign/App/FeatureCurvePattern.h>
+#include <Mod/PartDesign/App/FeatureFillPattern.h>
 #include <Mod/PartDesign/App/FeaturePointPattern.h>
 
 #include "ReferenceSelection.h"
@@ -397,6 +398,81 @@ bool CmdPartDesignCurvePattern::isActive()
     return hasAnyBody();
 }
 
+//===========================================================================
+// PartDesign_FillPattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignFillPattern)
+
+CmdPartDesignFillPattern::CmdPartDesignFillPattern()
+    : Command("PartDesign_FillPattern")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Fill Pattern");
+    sToolTipText = QT_TR_NOOP(
+        "Fills a flat region with copies of the selected features or the active body"
+    );
+    sWhatsThis = "PartDesign_FillPattern";
+    sStatusTip = sToolTipText;
+    sPixmap = "PartDesign_FillPattern";
+}
+
+// Faces or a sketch selected with the features make the boundary; without them, the newest
+// sketch that outlines a region and is not a feature's profile does.
+static std::pair<App::DocumentObject*, std::vector<std::string>> boundaryOf(
+    Gui::Command* cmd,
+    App::Document* doc
+)
+{
+    for (auto& selected : cmd->getSelection().getSelectionEx()) {
+        std::vector<std::string> faces;
+        for (const std::string& sub : selected.getSubNames()) {
+            if (sub.compare(0, 4, "Face") == 0) {
+                faces.push_back(sub);
+            }
+        }
+        if (!faces.empty()) {
+            return {selected.getObject(), faces};
+        }
+        App::DocumentObject* obj = selected.getObject();
+        if (obj->isDerivedFrom<Part::Part2DObject>() && PartDesign::FillPattern::isBoundary(obj)) {
+            return {obj, {}};
+        }
+    }
+    const std::vector<App::DocumentObject*> objects = doc->getObjects();
+    for (auto it = objects.rbegin(); it != objects.rend(); ++it) {
+        if ((*it)->isDerivedFrom<Part::Part2DObject>() && !isProfile(*it)
+            && PartDesign::FillPattern::isBoundary(*it)) {
+            return {*it, {}};
+        }
+    }
+    return {nullptr, {}};
+}
+
+void CmdPartDesignFillPattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
+        return;
+    }
+    const auto [boundary, faces] = boundaryOf(this, body->getDocument());
+    makeTransformed(this, body, "FillPattern", [boundary, faces](auto* feature, const auto&) {
+        if (boundary) {
+            FCMD_OBJ_CMD(
+                feature,
+                "Boundary = (" << getObjectCmd(boundary) << ", "
+                               << PartDesignGui::buildLinkSubPythonStr(boundary, faces) << ")"
+            );
+        }
+    });
+}
+
+bool CmdPartDesignFillPattern::isActive()
+{
+    return hasAnyBody();
+}
+
 void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
 {
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
@@ -404,4 +480,5 @@ void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
     rcCmdMgr.addCommand(new CmdPartDesignPolarPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPointPattern());
     rcCmdMgr.addCommand(new CmdPartDesignCurvePattern());
+    rcCmdMgr.addCommand(new CmdPartDesignFillPattern());
 }
