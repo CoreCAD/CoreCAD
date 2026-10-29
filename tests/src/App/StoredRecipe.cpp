@@ -741,6 +741,31 @@ TEST_F(StoredRecipeTest, aFormulaReturnsAsAFormula)
     EXPECT_EQ(info.expression->toString(), std::string("Driver.Length * 2"));
 }
 
+TEST_F(StoredRecipeTest, aFormulaReadingItsOwnObjectReturnsAsWritten)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    box->setExpression(
+        App::ObjectIdentifier::parse(box, "Width"),
+        std::shared_ptr<App::Expression>(App::Expression::parse(box, "Length * 2"))
+    );
+    _source->recompute();
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    const App::PropertyExpressionEngine::ExpressionInfo info = rebuilt->getExpression(
+        App::ObjectIdentifier::parse(rebuilt, "Width")
+    );
+    ASSERT_NE(info.expression, nullptr);
+    EXPECT_EQ(info.expression->toString(), std::string("Length * 2"));
+}
+
 // The file states its content and never a count of it, because a count is a landmine in a file
 // whose whole purpose is that people diff and merge it.
 //
