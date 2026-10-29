@@ -37,6 +37,7 @@
 #include <Base/Writer.h>
 
 #include "Expression.h"
+#include "Range.h"
 #include "Application.h"
 #include "ElementNamingUtils.h"
 #include "Document.h"
@@ -1186,6 +1187,18 @@ void DocumentObject::renameObjectIdentifiers(
     const std::map<ObjectIdentifier, ObjectIdentifier>& paths)
 {
     ExpressionEngine.renameObjectIdentifiers(paths);
+}
+
+void DocumentObject::shiftCellReferences(const DocumentObject* sheet, const CellShift& shift)
+{
+    std::map<ObjectIdentifier, ObjectIdentifier> renames;
+    for (const auto& [path, expression] : ExpressionEngine.getExpressions()) {
+        (void)path;
+        shift.addRenames(sheet, expression->getIdentifiers(), renames);
+    }
+    if (!renames.empty()) {
+        ExpressionEngine.renameObjectIdentifiers(renames);
+    }
 }
 
 void DocumentObject::mintDurableIdentity()

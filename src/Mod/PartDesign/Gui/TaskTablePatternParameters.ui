@@ -48,6 +48,45 @@
     </layout>
    </item>
    <item>
+    <layout class="QHBoxLayout" name="horizontalLayoutRowsFrom">
+     <item>
+      <widget class="QLabel" name="labelRowsFrom">
+       <property name="text">
+        <string>Rows from</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboRowsFrom">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayoutCells">
+     <item>
+      <widget class="QLabel" name="labelCells">
+       <property name="text">
+        <string>Cells</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="editCells">
+       <property name="toolTip">
+        <string>The cells holding the rows, such as A2:C10. Each row is X, Y and Z, written with a unit</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QTableWidget" name="tableRows">
      <property name="toolTip">
       <string>One row for each copy. Cells copied from a spreadsheet can be pasted here</string>
@@ -100,6 +139,8 @@
  </widget>
  <tabstops>
   <tabstop>comboMeasuredFrom</tabstop>
+  <tabstop>comboRowsFrom</tabstop>
+  <tabstop>editCells</tabstop>
   <tabstop>tableRows</tabstop>
   <tabstop>buttonAddRow</tabstop>
   <tabstop>buttonRemoveRow</tabstop>

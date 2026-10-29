@@ -168,6 +168,15 @@ void Document::renameObjectIdentifiers(
     }
 }
 
+void Document::shiftCellReferences(const DocumentObject* sheet, const CellShift& shift)
+{
+    for (const auto object : d->objectArray) {
+        if (object != sheet) {
+            object->shiftCellReferences(sheet, shift);
+        }
+    }
+}
+
 DocumentObject* Document::addReadObject(const char* sType,
                                         const char* pObjectName,
                                         const std::string& uuid)

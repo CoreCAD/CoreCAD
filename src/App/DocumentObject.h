@@ -50,6 +50,7 @@ class Matrix4D;
 namespace App
 {
 class Document;
+struct CellShift;
 class DocumentObjectGroup;
 class DocumentObjectPy;
 class Expression;
@@ -1128,6 +1129,10 @@ public:
      */
     virtual void
     renameObjectIdentifiers(const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths);
+
+    /// Rows or columns of `sheet` moved: move every reference to its cells, empty ones included,
+    /// along with them. By default this covers the cells named in expressions.
+    virtual void shiftCellReferences(const DocumentObject* sheet, const CellShift& shift);
 
     /// Get the old label of the object.
     const std::string& getOldLabel() const

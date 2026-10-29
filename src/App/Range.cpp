@@ -31,6 +31,8 @@
 
 #include <string_view>
 #include <Base/Exception.h>
+#include "DocumentObject.h"
+#include "ObjectIdentifier.h"
 #include "Range.h"
 
 
@@ -323,4 +325,44 @@ bool App::CellAddress::parseAbsoluteAddress(const char* address)
         }
     }
     return false;
+}
+
+std::optional<App::CellAddress> App::CellShift::moved(CellAddress address) const
+{
+    const int at = rows ? address.row() : address.col();
+    if (at < first) {
+        return address;
+    }
+    if (at < first - count) {
+        return std::nullopt;
+    }
+    if (rows) {
+        address.setRow(at + count);
+    }
+    else {
+        address.setCol(at + count);
+    }
+    return address;
+}
+
+void App::CellShift::addRenames(
+    const DocumentObject* sheet,
+    const std::map<ObjectIdentifier, bool>& ids,
+    std::map<ObjectIdentifier, ObjectIdentifier>& renames
+) const
+{
+    for (const auto& [id, hidden] : ids) {
+        (void)hidden;
+        if (id.getDocumentObject() != sheet) {
+            continue;
+        }
+        CellAddress cell = stringToAddress(id.getPropertyName().c_str(), true);
+        if (!cell.isValid()) {
+            continue;
+        }
+        const std::optional<CellAddress> now = moved(cell);
+        if (now && *now != cell) {
+            renames[id.canonicalPath()] = ObjectIdentifier(sheet, now->toString());
+        }
+    }
 }

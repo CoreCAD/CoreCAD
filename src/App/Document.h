@@ -84,6 +84,7 @@ namespace App
 class TransactionalObject;
 class DocumentObject;
 class DocumentObjectExecReturn;
+struct CellShift;
 class Document;
 class DocumentPy;
 class Application;
@@ -1664,6 +1665,9 @@ public:
             [](const DocumentObject*) {
                 return true;
             });
+
+    /// Tells every object but `sheet` that its rows or columns moved by `shift`.
+    void shiftCellReferences(const DocumentObject* sheet, const CellShift& shift);
 
     PyObject* getPyObject() override;
 

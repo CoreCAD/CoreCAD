@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include <map>
+#include <optional>
 #include <string>
 #include <Base/Bitmask.h>
 #include <FCGlobal.h>
@@ -32,6 +34,8 @@ namespace App
 {
 
 struct CellAddress;
+class DocumentObject;
+class ObjectIdentifier;
 
 AppExport CellAddress stringToAddress(const char* strAddress, bool silent = false);
 AppExport int decodeColumn(const std::string& colstr, bool silent = false);
@@ -258,6 +262,25 @@ private:
     int row_curr, col_curr;
     int row_begin, col_begin;
     int row_end, col_end;
+};
+
+/// Rows or columns inserted into or removed from a spreadsheet. Every row (or column) at or
+/// past `first` moves by `count`; a negative count removes the -count of them from `first` on.
+struct AppExport CellShift
+{
+    bool rows;
+    int first;
+    int count;
+
+    /// Where the cell at `address` is now, or nothing if its row or column was removed.
+    std::optional<CellAddress> moved(CellAddress address) const;
+
+    /// Adds a rename for each of `ids` that names a cell of `sheet` this shift moves.
+    void addRenames(
+        const DocumentObject* sheet,
+        const std::map<ObjectIdentifier, bool>& ids,
+        std::map<ObjectIdentifier, ObjectIdentifier>& renames
+    ) const;
 };
 
 }  // namespace App
