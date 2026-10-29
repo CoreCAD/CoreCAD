@@ -177,6 +177,9 @@ public:
     void onChanged(const App::Property* prop) override;
 
 protected:
+    /// The centre of what is copied: the originals, or the whole base shape.
+    Base::Vector3d centreOfOriginals();
+
     void Restore(Base::XMLReader& reader) override;
     void handleChangedPropertyType(
         Base::XMLReader& reader,

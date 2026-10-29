@@ -42,9 +42,6 @@ public:
 
     /// The points a copy can be placed on, in the world.
     static std::vector<gp_Pnt> pointsOf(const Part::Part2DObject* sketch);
-
-private:
-    Base::Vector3d centreOfOriginals();
 };
 
 }  // namespace PartDesign

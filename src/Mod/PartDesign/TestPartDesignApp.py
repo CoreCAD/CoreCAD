@@ -74,6 +74,7 @@ from PartDesignTests.TestBodyEmergence import TestBodyEmergence
 from PartDesignTests.TestRollbackMarker import TestRollbackMarker
 from PartDesignTests.TestPatternChain import TestPatternChain
 from PartDesignTests.TestPointPattern import TestPointPattern
+from PartDesignTests.TestCurvePattern import TestCurvePattern
 
 # Topological naming problem
 from PartDesignTests.TestTopologicalNamingProblem import TestTopologicalNamingProblem

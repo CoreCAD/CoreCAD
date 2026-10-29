@@ -34,37 +34,6 @@ short PointPattern::mustExecute() const
     return Transformed::mustExecute();
 }
 
-Base::Vector3d PointPattern::centreOfOriginals()
-{
-    std::vector<Part::TopoShape> pieces;
-    if (static_cast<Mode>(TransformMode.getValue()) == Mode::WholeShape) {
-        pieces.push_back(getBaseTopoShape());
-    }
-    else {
-        for (auto* original : getOriginals()) {
-            auto* feature = freecad_cast<PartDesign::FeatureAddSub*>(original);
-            if (!feature) {
-                continue;
-            }
-            Part::TopoShape added;
-            Part::TopoShape cut;
-            feature->getAddSubShape(added, cut);
-            const gp_Trsf location = feature->getLocation().Transformation();
-            for (Part::TopoShape* half : {&added, &cut}) {
-                if (!half->isNull()) {
-                    pieces.push_back(half->makeElementTransform(location));
-                }
-            }
-        }
-    }
-
-    Base::Vector3d centre;
-    if (pieces.empty() || !Part::TopoShape().makeElementCompound(pieces).getCenterOfGravity(centre)) {
-        throw Base::ValueError("Cannot find the centre of the features to copy");
-    }
-    return centre;
-}
-
 std::vector<gp_Pnt> PointPattern::pointsOf(const Part::Part2DObject* sketch)
 {
     // A sketch shape is a compound whose loose vertex children are its points; the
