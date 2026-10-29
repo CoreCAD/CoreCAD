@@ -26,6 +26,7 @@ setup_qt_test(Tree)
 setup_qt_test(SelectionFilter)
 setup_qt_test(ProjectDialogs)
 setup_qt_test(ProjectPanel)
+setup_qt_test(MergeDocumentVersions)
 
 target_link_libraries(Gui_tests_run PRIVATE
     GTest::gtest_main
