@@ -226,3 +226,53 @@ class TestJointViewProvider(SceneGraphAssertions, unittest.TestCase):
 
         self.joint.ViewObject.hidePreviewJcs()
         self.assertEqual(self._markerSwitches()[2].whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+
+@unittest.skipIf(not App.GuiUp, "view providers need a running GUI")
+class TestGroundedJointViewProvider(SceneGraphAssertions, unittest.TestCase):
+    """The padlock sits in the middle of the component it holds, whenever it is drawn."""
+
+    def setUp(self):
+        import FreeCADGui as Gui
+
+        self.gui = Gui
+        self.doc = App.newDocument("groundedvptest")
+        self.assembly = self.doc.addObject("Assembly::AssemblyObject", "Assembly")
+
+        self.box = self.doc.addObject("Part::Box", "Box")
+        self.box.Placement = App.Placement(App.Vector(100, 0, 0), App.Rotation())
+        self.assembly.addObject(self.box)
+
+        # Grounded before the box is built, as when a saved assembly is opened.
+        jointGroup = UtilsAssembly.getJointGroup(self.assembly)
+        self.grounded = jointGroup.newObject("Assembly::GroundedJoint", "GroundedJoint")
+        self.grounded.ObjectToGround = self.box
+
+        self.doc.recompute()
+        Gui.updateGui()
+
+    def tearDown(self):
+        App.closeDocument(self.doc.Name)
+
+    def _lockPosition(self):
+        from AssemblyTests.scene_graph import find_nodes
+
+        transform = find_nodes(self.grounded.ViewObject.RootNode, "SoTransform")[-1]
+        return tuple(transform.translation.getValue().getValue())
+
+    def testThePadlockSitsInTheMiddleOfAComponentBuiltAfterIt(self):
+        self.assertEqual(self._lockPosition(), (105.0, 5.0, 5.0))
+
+    def testThePadlockFollowsAComponentThatMoved(self):
+        self.box.Placement = App.Placement(App.Vector(0, 200, 0), App.Rotation())
+        self.doc.recompute()
+        self.gui.updateGui()
+
+        self.assertEqual(self._lockPosition(), (5.0, 205.0, 5.0))
+
+    def testThePadlockFollowsAComponentThatChangedSize(self):
+        self.box.Length = 30
+        self.doc.recompute()
+        self.gui.updateGui()
+
+        self.assertEqual(self._lockPosition(), (115.0, 5.0, 5.0))
