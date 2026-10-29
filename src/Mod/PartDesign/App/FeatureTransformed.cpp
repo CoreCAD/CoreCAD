@@ -643,9 +643,15 @@ std::vector<Transformed::Piece> Transformed::piecesOf(
             n.setValue(1);
         }
     } reset {n};
+    // Every copy's values are worked out before any is built, so a formula that reads the
+    // measurement it sets reads the value as stated.
+    std::vector<std::vector<App::any>> valuesByCopy(1);
+    for (std::size_t copy = 1; copy < count; ++copy) {
+        valuesByCopy.push_back(valuesForCopy(varied, static_cast<long>(copy)));
+    }
     App::OverriddenBuild build(original, targets);
     for (std::size_t copy = 1; copy < count; ++copy) {
-        build.build(valuesForCopy(varied, static_cast<long>(copy)));
+        build.build(valuesByCopy[copy]);
         Piece piece = pieceNow();
         if (piece.added.isNull() != pieces.front().added.isNull()
             || piece.cut.isNull() != pieces.front().cut.isNull()) {

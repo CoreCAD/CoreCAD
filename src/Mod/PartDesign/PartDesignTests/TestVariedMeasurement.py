@@ -84,6 +84,11 @@ class TestVariedMeasurement(unittest.TestCase):
         for obj in (self.sketch, self.pocket):
             self.assertNotIn("Touched", obj.State, obj.Label)
 
+    def testAFormulaReadingTheMeasurementItSetsReadsItAsStated(self):
+        self._pattern(varied=[("Hole.Constraints.Radius", "Hole.Constraints.Radius + n * 0.5 mm")])
+        for x, radius in ((10, 1), (25, 1.5), (40, 2), (55, 2.5)):
+            self.assertAlmostEqual(self._radiusAt(x, 10), radius, places=3)
+
     def testAMeasurementOfTheStepItself(self):
         pattern = self._pattern(3, varied=[("Pocket.Length", "4 mm + n * 1 mm")])
         self.assertTrue(pattern.isValid(), pattern.getStatusString())
