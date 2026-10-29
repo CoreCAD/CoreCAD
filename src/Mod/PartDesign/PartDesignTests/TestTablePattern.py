@@ -156,3 +156,93 @@ class TestTablePattern(unittest.TestCase):
         pattern.MeasuredFrom = "Plane"
         self.Doc.recompute()
         self.assertFalse(pattern.isValid())
+
+    def _sheet(self, cells):
+        sheet = self.Doc.addObject("Spreadsheet::Sheet", "Positions")
+        for address, content in cells.items():
+            sheet.set(address, content)
+        self.Doc.recompute()
+        return sheet
+
+    def _sheetPattern(self, sheet, cells, plane=None):
+        pattern = self._pattern([], plane=plane)
+        pattern.Spreadsheet = sheet
+        pattern.Cells = cells
+        self.Doc.recompute()
+        return pattern
+
+    def testRowsFromSpreadsheetCells(self):
+        sheet = self._sheet({"A1": "20 mm", "B1": "0 mm", "A2": "0 mm", "B2": "25 mm"})
+        pattern = self._sheetPattern(sheet, "A1:B2")
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertAlmostEqual(self.body.Shape.Volume, PLATE - 3 * HOLE)
+        self.assertTrue(self._holeAt(23, 3))
+        self.assertTrue(self._holeAt(3, 28))
+
+    def testTypedRowsAreIgnoredWhileASpreadsheetIsLinked(self):
+        sheet = self._sheet({"A1": "20 mm"})
+        pattern = self._sheetPattern(sheet, "A1")
+        pattern.Rows = [Vector(0, 25, 0)]
+        self.Doc.recompute()
+        self.assertTrue(self._holeAt(23, 3))
+        self.assertFalse(self._holeAt(3, 28))
+
+    def testAFormulaInTheSheetDrivesTheCopy(self):
+        sheet = self._sheet({"A1": "10 mm", "A2": "=A1 * 2"})
+        self._sheetPattern(sheet, "A2")
+        self.assertTrue(self._holeAt(23, 3))
+        sheet.set("A1", "15 mm")
+        self.Doc.recompute()
+        self.assertTrue(self._holeAt(33, 3))
+        self.assertFalse(self._holeAt(23, 3))
+
+    def testEmptyRowsInTheRangeAreSkipped(self):
+        sheet = self._sheet({"A1": "20 mm", "B3": "25 mm"})
+        pattern = self._sheetPattern(sheet, "A1:C10")
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertAlmostEqual(self.body.Shape.Volume, PLATE - 3 * HOLE)
+        self.assertTrue(self._holeAt(3, 28))
+
+    def testACellWithAnAliasIsRead(self):
+        sheet = self._sheet({"A1": "20 mm"})
+        sheet.setAlias("A1", "first")
+        self.Doc.recompute()
+        pattern = self._sheetPattern(sheet, "A1")
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertTrue(self._holeAt(23, 3))
+
+    def testRowsFromSomethingThatIsNotASpreadsheetFail(self):
+        pattern = self._sheetPattern(self.pad, "A1")
+        self.assertFalse(pattern.isValid())
+
+    def testACellWithoutAUnitFails(self):
+        sheet = self._sheet({"A1": "20"})
+        pattern = self._sheetPattern(sheet, "A1")
+        self.assertFalse(pattern.isValid())
+        self.assertIn("A1", pattern.getStatusString())
+
+    def testACellOfAnotherKindFails(self):
+        sheet = self._sheet({"A1": "20 deg"})
+        self.assertFalse(self._sheetPattern(sheet, "A1").isValid())
+
+    def testMoreThanThreeColumnsFails(self):
+        sheet = self._sheet({"A1": "20 mm"})
+        self.assertFalse(self._sheetPattern(sheet, "A1:D1").isValid())
+
+    def testAnUnreadableRangeFails(self):
+        sheet = self._sheet({"A1": "20 mm"})
+        self.assertFalse(self._sheetPattern(sheet, "here").isValid())
+
+    def testRangeFollowsRowsInsertedAboveIt(self):
+        sheet = self._sheet({"A2": "20 mm", "A3": "0 mm", "B3": "25 mm"})
+        pattern = self._sheetPattern(sheet, "A2:B3")
+        sheet.insertRows("1", 2)
+        self.Doc.recompute()
+        self.assertEqual(pattern.Cells, "A4:B5")
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertAlmostEqual(self.body.Shape.Volume, PLATE - 3 * HOLE)
+
+    def testSpreadsheetPositionsOnAPlane(self):
+        sheet = self._sheet({"A1": "20 mm", "B1": "20 mm"})
+        self._sheetPattern(sheet, "A1:B1", plane=self._sketch(Placement()))
+        self.assertTrue(self._holeAt(18, 18))

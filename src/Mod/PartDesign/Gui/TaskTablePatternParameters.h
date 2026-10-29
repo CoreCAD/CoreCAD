@@ -40,6 +40,8 @@ protected:
 
 private Q_SLOTS:
     void onMeasuredFromChosen(int index);
+    void onRowsFromChosen(int index);
+    void onCellsEdited();
     void onCellEdited(int row, int column);
     void onAddRow();
     void onRemoveRow();
@@ -49,6 +51,7 @@ private:
     void setupParameterUI(QWidget* widget) override;
     void retranslateParameterUI(QWidget* widget) override;
     void fillPlanes();
+    void fillSpreadsheets();
     void updateUI();
     void useRows(const std::vector<Base::Vector3d>& rows);
     void usePlane(App::DocumentObject* obj, const std::vector<std::string>& subs);
@@ -57,6 +60,8 @@ private:
     /// The combo's entries in order: first null for the original, last null for
     /// "Select face…".
     std::vector<App::DocumentObject*> planes;
+    /// The rows' sources in order: first null for the typed rows.
+    std::vector<App::DocumentObject*> spreadsheets;
     bool preview = true;
     std::unique_ptr<Ui_TaskTablePatternParameters> ui;
 };

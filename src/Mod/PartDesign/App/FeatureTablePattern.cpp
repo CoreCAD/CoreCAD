@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // SPDX-FileCopyrightText: 2026 Cruth contributors
 
+#include <optional>
+
 #include <BRepAdaptor_Surface.hxx>
 #include <Precision.hxx>
 #include <TopoDS.hxx>
 #include <gp_Vec.hxx>
 
 #include <App/Datums.h>
+#include <App/ObjectIdentifier.h>
+#include <App/PropertyUnits.h>
+#include <App/Range.h>
 #include <Base/Exception.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PartFeature.h>
@@ -38,11 +43,26 @@ TablePattern::TablePattern()
         "The sketch, datum plane or flat face the positions are measured on"
     );
     ADD_PROPERTY_TYPE(Rows, (), "TablePattern", App::Prop_None, "One row for each copy");
+    ADD_PROPERTY_TYPE(
+        Spreadsheet,
+        (nullptr),
+        "TablePattern",
+        App::Prop_None,
+        "A spreadsheet whose cells give the rows instead of the typed ones"
+    );
+    ADD_PROPERTY_TYPE(
+        Cells,
+        (""),
+        "TablePattern",
+        App::Prop_None,
+        "The spreadsheet's cells holding the rows, such as A2:C10"
+    );
 }
 
 short TablePattern::mustExecute() const
 {
-    if (MeasuredFrom.isTouched() || Plane.isTouched() || Rows.isTouched()) {
+    if (MeasuredFrom.isTouched() || Plane.isTouched() || Rows.isTouched() || Spreadsheet.isTouched()
+        || Cells.isTouched()) {
         return 1;
     }
     return Transformed::mustExecute();
@@ -128,9 +148,92 @@ std::vector<gp_Vec> TablePattern::movesFromPlane(const std::vector<Base::Vector3
     return moves;
 }
 
+static App::Range rangeOf(const std::string& cells)
+{
+    try {
+        return App::Range(cells.c_str(), true);
+    }
+    catch (const Base::Exception&) {
+        throw Base::ValueError(
+            "The cells \"" + cells + "\" are not a cell or a range of cells such as A2:C10"
+        );
+    }
+}
+
+std::vector<Base::Vector3d> TablePattern::rowsFromSpreadsheet() const
+{
+    const App::DocumentObject* sheet = Spreadsheet.getValue();
+    if (!sheet->getTypeId().isDerivedFrom(Base::Type::fromName("Spreadsheet::Sheet"))) {
+        throw Base::ValueError("The rows must be read from a spreadsheet");
+    }
+    const App::Range range = rangeOf(Cells.getStrValue());
+    if (range.colCount() > 3) {
+        throw Base::ValueError("The cells span more than three columns; a row is X, Y and Z");
+    }
+
+    std::vector<Base::Vector3d> rows;
+    for (int row = range.from().row(); row <= range.to().row(); ++row) {
+        double values[3] = {0, 0, 0};
+        bool used = false;
+        for (int column = 0; column < range.colCount(); ++column) {
+            const std::string address = App::CellAddress(row, range.from().col() + column).toString();
+            const App::Property* cell = sheet->getPropertyByName(address.c_str());
+            if (!cell) {
+                continue;
+            }
+            const auto* quantity = freecad_cast<const App::PropertyQuantity*>(cell);
+            if (!quantity || quantity->getQuantityValue().getUnit() != Base::Unit::Length) {
+                throw Base::ValueError(
+                    "Cell " + address + " does not hold a length; write it with a unit, such as 10 mm"
+                );
+            }
+            values[column] = quantity->getValue();
+            used = true;
+        }
+        if (used) {
+            rows.emplace_back(values[0], values[1], values[2]);
+        }
+    }
+    return rows;
+}
+
+// Rows or columns inserted in the spreadsheet move the cells; the range moves with them.
+void TablePattern::renameObjectIdentifiers(
+    const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths
+)
+{
+    Transformed::renameObjectIdentifiers(paths);
+    App::DocumentObject* sheet = Spreadsheet.getValue();
+    if (!sheet) {
+        return;
+    }
+    std::optional<App::Range> range;
+    try {
+        range = rangeOf(Cells.getStrValue());
+    }
+    catch (const Base::Exception&) {
+        return;
+    }
+    bool changed = false;
+    auto moved = [&](const App::CellAddress& cell) {
+        auto it = paths.find(App::ObjectIdentifier(sheet, cell.toString()));
+        if (it == paths.end()) {
+            return cell.toString();
+        }
+        changed = true;
+        return it->second.getPropertyName();
+    };
+    const std::string from = moved(range->from());
+    const std::string to = moved(range->to());
+    if (changed) {
+        Cells.setValue(range->size() == 1 ? from : from + ":" + to);
+    }
+}
+
 std::list<gp_Trsf> TablePattern::getTransformations()
 {
-    const std::vector<Base::Vector3d>& rows = Rows.getValues();
+    const std::vector<Base::Vector3d> rows = Spreadsheet.getValue() ? rowsFromSpreadsheet()
+                                                                    : Rows.getValues();
     if (rows.empty()) {
         throw Base::ValueError("The table has no rows to place copies with");
     }

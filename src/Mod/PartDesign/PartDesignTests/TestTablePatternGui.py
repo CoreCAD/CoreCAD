@@ -127,6 +127,55 @@ class TestTablePatternGui(unittest.TestCase):
         combo.activated.emit(index)
         self.assertEqual(list(self.pattern.Plane[1]), [top])
 
+    def _reopenWithSheet(self, cells):
+        FreeCADGui.Control.activeTaskDialog().accept()
+        QtWidgets.QApplication.processEvents()
+        sheet = self.Doc.addObject("Spreadsheet::Sheet", "Positions")
+        for address, content in cells.items():
+            sheet.set(address, content)
+        self.Doc.recompute()
+        FreeCADGui.ActiveDocument.setEdit(self.pattern)
+        QtWidgets.QApplication.processEvents()
+        self.table = _widget("tableRows")
+        return sheet
+
+    def _chooseRowsFrom(self, text):
+        combo = _widget("comboRowsFrom")
+        index = combo.findText(text)
+        combo.setCurrentIndex(index)
+        combo.activated.emit(index)
+
+    def testChoosingASpreadsheetReadsItsLengths(self):
+        sheet = self._reopenWithSheet({"A1": "X", "B2": "20 mm", "C2": "0 mm", "B3": "5 mm"})
+        self.assertFalse(_widget("editCells").isVisibleTo(self.table.parentWidget()))
+        self._chooseRowsFrom("Positions")
+        self.assertEqual(self.pattern.Spreadsheet, sheet)
+        self.assertEqual(self.pattern.Cells, "B2:C3")
+        self.assertTrue(self.pattern.isValid(), self.pattern.getStatusString())
+        self.assertEqual(self.table.rowCount(), 2)
+        self.assertEqual(self.table.item(1, 0).text(), "5.00 mm")
+        self.assertFalse(_widget("buttonAddRow").isVisibleTo(self.table.parentWidget()))
+
+    def testEditedCellsAreKeptOnOK(self):
+        self._reopenWithSheet({"A1": "20 mm", "A2": "30 mm"})
+        self._chooseRowsFrom("Positions")
+        edit = _widget("editCells")
+        edit.setText("a2")
+        edit.editingFinished.emit()
+        self.assertEqual(self.table.rowCount(), 1)
+        FreeCADGui.Control.activeTaskDialog().accept()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(self.pattern.Cells, "A2")
+        self.assertTrue(self.pattern.isValid(), self.pattern.getStatusString())
+
+    def testChoosingTypedRowsAgainUnlinksTheSheet(self):
+        self._reopenWithSheet({"A1": "20 mm"})
+        self._chooseRowsFrom("Positions")
+        self._chooseRowsFrom("Typed rows")
+        self.assertIsNone(self.pattern.Spreadsheet)
+        self.assertEqual(self._rows(), [(10, 0, 0)])
+        self.assertTrue(_widget("buttonAddRow").isVisibleTo(self.table.parentWidget()))
+
 
 class TestTablePatternCommand(unittest.TestCase):
     def setUp(self):

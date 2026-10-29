@@ -7,8 +7,11 @@
 #include <QRegularExpression>
 
 #include <App/Datums.h>
+#include <App/PropertyUnits.h>
+#include <App/Range.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <Base/Interpreter.h>
 #include <Base/Quantity.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
@@ -68,6 +71,40 @@ double& component(Base::Vector3d& row, int column)
     return column == 0 ? row.x : column == 1 ? row.y : row.z;
 }
 
+bool isSpreadsheet(const App::DocumentObject* obj)
+{
+    return obj->getTypeId().isDerivedFrom(Base::Type::fromName("Spreadsheet::Sheet"));
+}
+
+// The smallest range holding the sheet's lengths, at most three columns wide from the first.
+std::string cellsHoldingLengths(const App::DocumentObject* sheet)
+{
+    std::vector<std::pair<const char*, App::Property*>> properties;
+    sheet->getPropertyNamedList(properties);
+    std::optional<App::Range> found;
+    for (const auto& [name, property] : properties) {
+        App::CellAddress cell = App::stringToAddress(name, true);
+        const auto* quantity = freecad_cast<App::PropertyQuantity*>(property);
+        if (!cell.isValid() || !quantity
+            || quantity->getQuantityValue().getUnit() != Base::Unit::Length) {
+            continue;
+        }
+        found = found ? App::Range(
+                            std::min(found->from().row(), cell.row()),
+                            std::min(found->from().col(), cell.col()),
+                            std::max(found->to().row(), cell.row()),
+                            std::max(found->to().col(), cell.col())
+                        )
+                      : App::Range(cell.row(), cell.col(), cell.row(), cell.col());
+    }
+    if (!found) {
+        return "A1:C1";
+    }
+    const int lastColumn = std::min(found->to().col(), found->from().col() + 2);
+    return App::Range(found->from().row(), found->from().col(), found->to().row(), lastColumn)
+        .rangeString();
+}
+
 }  // namespace
 
 TaskTablePatternParameters::TaskTablePatternParameters(
@@ -93,6 +130,13 @@ void TaskTablePatternParameters::setupParameterUI(QWidget* widget)
         this,
         &TaskTablePatternParameters::onMeasuredFromChosen
     );
+    connect(
+        ui->comboRowsFrom,
+        qOverload<int>(&QComboBox::activated),
+        this,
+        &TaskTablePatternParameters::onRowsFromChosen
+    );
+    connect(ui->editCells, &QLineEdit::editingFinished, this, &TaskTablePatternParameters::onCellsEdited);
     connect(ui->tableRows, &QTableWidget::cellChanged, this, &TaskTablePatternParameters::onCellEdited);
     connect(ui->buttonAddRow, &QPushButton::clicked, this, &TaskTablePatternParameters::onAddRow);
     connect(ui->buttonRemoveRow, &QPushButton::clicked, this, &TaskTablePatternParameters::onRemoveRow);
@@ -153,6 +197,29 @@ void TaskTablePatternParameters::fillPlanes()
     ui->comboMeasuredFrom->addItem(tr("Select face…"));
 }
 
+void TaskTablePatternParameters::fillSpreadsheets()
+{
+    auto* pattern = getObject();
+    spreadsheets.clear();
+    ui->comboRowsFrom->clear();
+    if (!pattern) {
+        return;
+    }
+    spreadsheets.push_back(nullptr);
+    ui->comboRowsFrom->addItem(tr("Typed rows"));
+    for (auto* obj : pattern->getDocument()->getObjects()) {
+        if (!isSpreadsheet(obj)) {
+            continue;
+        }
+        spreadsheets.push_back(obj);
+        QIcon icon;
+        if (auto* vp = Gui::Application::Instance->getViewProvider(obj)) {
+            icon = vp->getIcon();
+        }
+        ui->comboRowsFrom->addItem(icon, QString::fromUtf8(obj->Label.getValue()));
+    }
+}
+
 void TaskTablePatternParameters::updateUI()
 {
     if (blockUpdate) {
@@ -185,7 +252,32 @@ void TaskTablePatternParameters::updateUI()
     }
     ui->comboMeasuredFrom->setCurrentIndex(index);
 
-    const std::vector<Base::Vector3d>& rows = pattern->Rows.getValues();
+    fillSpreadsheets();
+    App::DocumentObject* sheet = pattern->Spreadsheet.getValue();
+    const auto source = std::ranges::find(spreadsheets, sheet);
+    ui->comboRowsFrom->setCurrentIndex(
+        source == spreadsheets.end() ? -1 : static_cast<int>(source - spreadsheets.begin())
+    );
+    ui->labelCells->setVisible(sheet);
+    ui->editCells->setVisible(sheet);
+    ui->editCells->setText(QString::fromStdString(pattern->Cells.getStrValue()));
+    ui->buttonAddRow->setVisible(!sheet);
+    ui->buttonRemoveRow->setVisible(!sheet);
+    ui->tableRows->setEditTriggers(
+        sheet ? QAbstractItemView::NoEditTriggers : QAbstractItemView::AllEditTriggers
+    );
+
+    std::vector<Base::Vector3d> rows;
+    if (sheet) {
+        try {
+            rows = pattern->rowsFromSpreadsheet();
+        }
+        catch (const Base::Exception&) {
+        }
+    }
+    else {
+        rows = pattern->Rows.getValues();
+    }
     ui->tableRows->setColumnHidden(2, onPlane);
     ui->tableRows->setRowCount(static_cast<int>(rows.size()));
     for (int row = 0; row < static_cast<int>(rows.size()); ++row) {
@@ -242,6 +334,42 @@ void TaskTablePatternParameters::onMeasuredFromChosen(int index)
     addReferenceSelectionGate(AllowSelection::FACE | AllowSelection::PLANAR);
     Gui::Selection().clearSelection();
     Gui::getMainWindow()->showMessage(tr("Select a flat face to measure the positions on"));
+}
+
+void TaskTablePatternParameters::onRowsFromChosen(int index)
+{
+    if (blockUpdate || index < 0 || index >= static_cast<int>(spreadsheets.size())) {
+        return;
+    }
+    auto* pattern = getObject<PartDesign::TablePattern>();
+    App::DocumentObject* sheet = spreadsheets[index];
+    if (pattern->Spreadsheet.getValue() == sheet) {
+        return;
+    }
+    setupTransaction();
+    pattern->Spreadsheet.setValue(sheet);
+    if (sheet && pattern->Cells.getStrValue().empty()) {
+        pattern->Cells.setValue(cellsHoldingLengths(sheet));
+    }
+    if (preview) {
+        recomputeFeature();
+    }
+    updateUI();
+}
+
+void TaskTablePatternParameters::onCellsEdited()
+{
+    auto* pattern = getObject<PartDesign::TablePattern>();
+    const std::string cells = ui->editCells->text().trimmed().toUpper().toStdString();
+    if (blockUpdate || cells == pattern->Cells.getStrValue()) {
+        return;
+    }
+    setupTransaction();
+    pattern->Cells.setValue(cells);
+    if (preview) {
+        recomputeFeature();
+    }
+    updateUI();
 }
 
 void TaskTablePatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
@@ -401,6 +529,15 @@ void TaskTablePatternParameters::apply()
     }
     rows << "]";
     FCMD_OBJ_CMD(pattern, "Rows = " << rows.str());
+    App::DocumentObject* sheet = pattern->Spreadsheet.getValue();
+    FCMD_OBJ_CMD(
+        pattern,
+        "Spreadsheet = " << (sheet ? Gui::Command::getObjectCmd(sheet) : std::string("None"))
+    );
+    FCMD_OBJ_CMD(
+        pattern,
+        "Cells = \"" << Base::InterpreterSingleton::strToPython(pattern->Cells.getValue()) << "\""
+    );
 }
 
 
