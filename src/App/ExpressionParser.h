@@ -369,6 +369,8 @@ public:
         TUPLE,         // Create Python tuple.
         VECTOR,        // Create vector object.
 
+        INDEX,  // the k-th cell of a range or item of a list, counting from 1
+
         HIDDENREF,  // hidden reference that has no dependency check
         HREF,       // deprecated alias of HIDDENREF
 
@@ -419,6 +421,7 @@ public:
 protected:
     static Py::Object
     evalAggregate(const Expression* owner, int type, const std::vector<Expression*>& args);
+    static Py::Object evalIndex(const Expression* expr, const std::vector<Expression*>& args);
     static Base::Vector3d evaluateSecondVectorArgument(const Expression* expression,
                                                        const std::vector<Expression*>& arguments);
     static double extractLengthValueArgument(const Expression* expression,
@@ -629,6 +632,39 @@ protected:
     std::string begin;
     std::string end;
     bool missing = false;
+};
+
+/// A cell range on a named sheet, written `Sheet.B2:B9`. Its path names the first cell, so the
+/// sheet is saved, renamed and bound like any other object a formula reads.
+class AppExport SheetRangeExpression: public VariableExpression
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    explicit SheetRangeExpression(const App::DocumentObject* _owner = nullptr,
+                                  const ObjectIdentifier& first = ObjectIdentifier(),
+                                  const std::string& last = std::string());
+
+    bool isTouched() const override;
+
+    ExpressionPtr simplify() const override;
+
+    /// Each cell of the range down each column, then across; an empty cell is nullptr.
+    std::vector<const Property*> getCells(std::vector<std::string>* addresses = nullptr) const;
+
+protected:
+    Expression* _copy() const override;
+    Py::Object _getPyValue() const override;
+    void _toString(std::ostream& ss, bool persistent, int indent) const override;
+    void _getIdentifiers(std::map<App::ObjectIdentifier, bool>&) const override;
+    void _shiftCells(const DocumentObject*, const CellShift&, ExpressionVisitor&) override;
+
+private:
+    const DocumentObject* sheet() const;
+    Range getRange() const;
+    ObjectIdentifier pathOf(const std::string& cell) const;
+
+    std::string last;
 };
 
 /**

@@ -135,6 +135,53 @@ class TestVariedMeasurement(unittest.TestCase):
         self.assertTrue(pattern.isValid(), pattern.getStatusString())
         self.assertAlmostEqual(self._radiusAt(25, 10), 3, places=3)
 
+    def testReadsEachCopysRowFromASpreadsheetColumn(self):
+        sheet = self.Doc.addObject("Spreadsheet::Sheet", "Sheet")
+        for row, radius in ((2, "3 mm"), (3, "2 mm")):
+            sheet.set(f"B{row}", radius)
+        self.Doc.recompute()
+        pattern = self._pattern(3, varied=[("Hole.Constraints.Radius", "index(Sheet.B2:B3; n)")])
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        for x, radius in ((10, 1), (25, 3), (40, 2)):
+            self.assertAlmostEqual(self._radiusAt(x, 10), radius, places=3)
+        sheet.set("B2", "1.5 mm")
+        sheet.insertRows("1", 1)
+        self.Doc.recompute()
+        self.assertEqual(
+            PartDesign.variedMeasurements(pattern),
+            [("Hole.Constraints.Radius", "index(Sheet.B3:B4; n)")],
+        )
+        self.assertAlmostEqual(self._radiusAt(25, 10), 1.5, places=3)
+
+    def testASpreadsheetColumnSurvivesSaveAndReopen(self):
+        sheet = self.Doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("B2", "3 mm")
+        self.Doc.recompute()
+        pattern = self._pattern(2, varied=[("Hole.Constraints.Radius", "index(Sheet.B2:B2; n)")])
+        uid = pattern.Uid
+        path = os.path.join(tempfile.mkdtemp(), "column.cpart")
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        pattern = next(o for o in self.Doc.Objects if o.Uid == uid)
+        self.assertEqual(
+            PartDesign.variedMeasurements(pattern),
+            [("Hole.Constraints.Radius", "index(Sheet.B2:B2; n)")],
+        )
+        pattern.touch()
+        self.Doc.recompute()
+        self.body = PartDesign.findBodyOf(pattern)
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertAlmostEqual(self._radiusAt(25, 10), 3, places=3)
+
+    def testACopyWithNoRowFails(self):
+        sheet = self.Doc.addObject("Spreadsheet::Sheet", "Sheet")
+        sheet.set("B2", "2 mm")
+        self.Doc.recompute()
+        pattern = self._pattern(3, varied=[("Hole.Constraints.Radius", "index(Sheet.B2:B2; n)")])
+        self.assertFalse(pattern.isValid())
+        self.assertIn("outside", pattern.getStatusString())
+
     def testABareNumberIsRefused(self):
         pattern = self._pattern(3, varied=[("Pocket.Length", "4 + n")])
         self.assertFalse(pattern.isValid())
