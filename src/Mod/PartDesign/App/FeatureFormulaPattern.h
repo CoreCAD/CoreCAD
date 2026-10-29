@@ -14,7 +14,9 @@ namespace PartDesign
 /// Copies placed by formulas of the copy number. X, Y and Z are the copy's offset from the
 /// original along the world's axes; a formula on one is worked out again for each copy with
 /// n set to that copy's number, 1 for the first copy. Without a formula the value is the same
-/// for every copy. Occurrences counts the original, as in the other patterns.
+/// for every copy. Angle turns the copy about a line through the original's centre, parallel
+/// to the world axis Axis, before it is moved. Occurrences counts the original, as in the other
+/// patterns.
 class PartDesignExport FormulaPattern: public PartDesign::Transformed
 {
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::FormulaPattern);
@@ -26,6 +28,8 @@ public:
     App::PropertyDistance X;
     App::PropertyDistance Y;
     App::PropertyDistance Z;
+    App::PropertyAngle Angle;
+    App::PropertyEnumeration Axis;
 
     short mustExecute() const override;
 
@@ -40,9 +44,10 @@ protected:
     void setupObject() override;
 
 private:
-    double offsetOf(App::PropertyDistance& axis) const;
+    double valueOf(App::PropertyQuantity& prop, const Base::Unit& unit, const char* example) const;
 
     static const App::PropertyIntegerConstraint::Constraints intOccurrences;
+    static const char* AxisEnums[];
 };
 
 }  // namespace PartDesign

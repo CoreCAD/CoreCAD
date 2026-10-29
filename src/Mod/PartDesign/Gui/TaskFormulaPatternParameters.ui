@@ -115,6 +115,55 @@
      </property>
     </widget>
    </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="labelAngle">
+     <property name="text">
+      <string>Angle</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="Gui::QuantitySpinBox" name="spinAngle">
+     <property name="keyboardTracking">
+      <bool>false</bool>
+     </property>
+     <property name="unit" stdset="0">
+      <string notr="true">deg</string>
+     </property>
+     <property name="minimum">
+      <double>-2147483647.000000000000000</double>
+     </property>
+     <property name="maximum">
+      <double>2147483647.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="labelAxis">
+     <property name="text">
+      <string>Turn about</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QComboBox" name="comboAxis">
+     <item>
+      <property name="text">
+       <string>X axis</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Y axis</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Z axis</string>
+      </property>
+     </item>
+    </widget>
+   </item>
   </layout>
  </widget>
  <customwidgets>
@@ -129,6 +178,8 @@
   <tabstop>spinX</tabstop>
   <tabstop>spinY</tabstop>
   <tabstop>spinZ</tabstop>
+  <tabstop>spinAngle</tabstop>
+  <tabstop>comboAxis</tabstop>
  </tabstops>
  <resources/>
  <connections/>

@@ -46,6 +46,13 @@ void TaskFormulaPatternParameters::setupParameterUI(QWidget* widget)
     bindSpin(ui->spinX, pattern->X);
     bindSpin(ui->spinY, pattern->Y);
     bindSpin(ui->spinZ, pattern->Z);
+    bindSpin(ui->spinAngle, pattern->Angle);
+    connect(
+        ui->comboAxis,
+        qOverload<int>(&QComboBox::currentIndexChanged),
+        this,
+        &TaskFormulaPatternParameters::onAxisChanged
+    );
     connect(
         ui->spinOccurrences,
         qOverload<int>(&QSpinBox::valueChanged),
@@ -74,6 +81,8 @@ void TaskFormulaPatternParameters::updateUI()
     ui->spinX->setValue(pattern->X.getValue());
     ui->spinY->setValue(pattern->Y.getValue());
     ui->spinZ->setValue(pattern->Z.getValue());
+    ui->spinAngle->setValue(pattern->Angle.getValue());
+    ui->comboAxis->setCurrentIndex(pattern->Axis.getValue());
 
     blockUpdate = false;
 }
@@ -94,6 +103,16 @@ void TaskFormulaPatternParameters::onOccurrencesChanged(int occurrences)
     changed();
 }
 
+void TaskFormulaPatternParameters::onAxisChanged(int axis)
+{
+    if (blockUpdate) {
+        return;
+    }
+    setupTransaction();
+    getObject<PartDesign::FormulaPattern>()->Axis.setValue(axis);
+    changed();
+}
+
 void TaskFormulaPatternParameters::onUpdateView(bool on)
 {
     blockUpdate = !on;
@@ -107,9 +126,11 @@ void TaskFormulaPatternParameters::apply()
 {
     auto* pattern = getObject<PartDesign::FormulaPattern>();
     FCMD_OBJ_CMD(pattern, "Occurrences = " << pattern->Occurrences.getValue());
+    FCMD_OBJ_CMD(pattern, "Axis = " << pattern->Axis.getValue());
     ui->spinX->apply();
     ui->spinY->apply();
     ui->spinZ->apply();
+    ui->spinAngle->apply();
 }
 
 

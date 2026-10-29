@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Cruth contributors
 
 # #165: copies placed by formulas of the copy number n; X, Y and Z are the copy's offset from
-# the original along the world's axes.
+# the original along the world's axes, and Angle turns it about its own centre.
 
 import os
 import tempfile
@@ -13,6 +13,7 @@ import Part
 import PartDesign
 from FreeCAD import Vector
 from PartDesignTests.TestBodyEmergence import _square
+from PartDesignTests.TestCurvePattern import _rectangle
 
 PLATE = 60 * 60 * 10
 HOLE = 4 * 4 * 4
@@ -48,8 +49,20 @@ class TestFormulaPattern(unittest.TestCase):
         return pattern
 
     def _holeAt(self, x, y):
-        cut = self.body.Shape.common(Part.makeBox(4, 4, 4, Vector(x, y, 0)))
+        return self._emptyBox(x, y, 0, 4, 4, 4)
+
+    def _emptyBox(self, x, y, z, dx, dy, dz):
+        cut = self.body.Shape.common(Part.makeBox(dx, dy, dz, Vector(x, y, z)))
         return cut.Volume < 1e-6
+
+    def _slotPattern(self, occurrences, axis="Z", **formulas):
+        # An 8 by 2 mm slot from (3, 3) to (11, 5), 4 mm deep, centred on (7, 4, 2).
+        self.pocket.Profile = _rectangle(self.Doc, "Slot", 3, 3, 8, 2)
+        self.Doc.recompute()
+        pattern = self._pattern(occurrences, **formulas)
+        pattern.Axis = axis
+        self.Doc.recompute()
+        return pattern
 
     def testStartsWithAStepAlongX(self):
         pattern = self.Doc.addObject("PartDesign::FormulaPattern", "FormulaPattern")
@@ -130,3 +143,25 @@ class TestFormulaPattern(unittest.TestCase):
         self.body = PartDesign.findBodyOf(pattern)
         self.assertTrue(pattern.isValid(), pattern.getStatusString())
         self.assertTrue(self._holeAt(43, 13))
+
+    def testTurnsEachCopyAboutItsOwnCentre(self):
+        # Copy 1 is moved 20 mm and stood upright; copy 2 is moved 40 mm and lies flat again.
+        pattern = self._slotPattern(3, X="n * 20 mm", Angle="n * 90 deg")
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertTrue(self._emptyBox(26, 0, 0, 2, 8, 4))
+        self.assertFalse(self._emptyBox(23, 3, 0, 8, 2, 4))
+        self.assertTrue(self._emptyBox(43, 3, 0, 8, 2, 4))
+
+    def testTurnsAboutTheChosenAxis(self):
+        pattern = self._slotPattern(2, axis="X", X="n * 20 mm", Angle="90 deg")
+        self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertTrue(self._emptyBox(23, 2, 1, 8, 4, 2))
+        self.assertFalse(self._emptyBox(23, 3, 0, 8, 2, 4))
+
+    def testABareTurnIsRefused(self):
+        pattern = self._slotPattern(2, X="n * 20 mm", Angle="n * 90")
+        self.assertFalse(pattern.isValid())
+        self.assertIn("Angle", pattern.getStatusString())
+
+    def testAFullTurnOnTheOriginalAddsNothing(self):
+        self.assertFalse(self._pattern(3, X="0 mm", Angle="n * 360 deg").isValid())
