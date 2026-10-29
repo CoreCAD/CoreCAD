@@ -33,6 +33,7 @@ from AssemblyTests.TestCommandInsertLink import TestCommandInsertLink
 from AssemblyTests.TestStepAssemblyImportDraw import TestStepAssemblyImportDraw
 from AssemblyTests.TestAssemblyViewProviders import (
     TestAssemblyViewProviders,
+    TestGroundedJointViewProvider,
     TestJointViewProvider,
 )
 
@@ -41,3 +42,4 @@ True if TestCommandInsertLink else False
 True if TestStepAssemblyImportDraw else False
 True if TestAssemblyViewProviders else False
 True if TestJointViewProvider else False
+True if TestGroundedJointViewProvider else False

@@ -47,6 +47,7 @@
 
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
+#include <Gui/Document.h>
 #include <Gui/Inventor/SoAxisCrossKit.h>
 #include <Gui/ViewProvider.h>
 
@@ -177,6 +178,12 @@ void ViewProviderGroundedJoint::attach(App::DocumentObject* obj)
 
     addDisplayMaskMode(pcLockRoot, "Wireframe");
 
+    connectObjectRedrawn = getDocument()->signalChangedObject.connect(
+        [this](const Gui::ViewProviderDocumentObject& vp, const App::Property&) {
+            onObjectRedrawn(vp);
+        }
+    );
+
     updateLockPosition();
 }
 
@@ -201,6 +208,14 @@ void ViewProviderGroundedJoint::updateData(const App::Property* prop)
     }
 
     Gui::ViewProviderDocumentObject::updateData(prop);
+}
+
+void ViewProviderGroundedJoint::onObjectRedrawn(const Gui::ViewProviderDocumentObject& vp)
+{
+    auto* joint = dynamic_cast<Assembly::GroundedJoint*>(getObject());
+    if (joint && vp.getObject() == joint->ObjectToGround.getValue()) {
+        updateLockPosition();
+    }
 }
 
 void ViewProviderGroundedJoint::updateLockPosition()

@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 
+#include <fastsignals/signal.h>
+
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <Gui/ViewProviderDocumentObject.h>
@@ -45,10 +47,8 @@ namespace AssemblyGui
  * The typed replacement for the former Python ViewProviderGroundedJoint proxy. The
  * padlock always faces the camera and keeps its size on screen, as before.
  *
- * It is placed on the component when the view provider is built and when the joint
- * is pointed at a different component. It does not follow a component that moves --
- * the same as the Python version, which watched for a "Placement" property the
- * grounded joint has never had.
+ * It is placed again whenever the component it holds is redrawn, so it follows a
+ * component that moves, changes or is built after the joint.
  */
 class AssemblyGuiExport ViewProviderGroundedJoint: public Gui::ViewProviderDocumentObject
 {
@@ -69,9 +69,11 @@ public:
 private:
     /// Put the padlock on the component this joint grounds.
     void updateLockPosition();
+    void onObjectRedrawn(const Gui::ViewProviderDocumentObject& vp);
 
     SoSeparator* pcLockRoot;
     SoTransform* pcTransform;
+    fastsignals::scoped_connection connectObjectRedrawn;
 };
 
 }  // namespace AssemblyGui
