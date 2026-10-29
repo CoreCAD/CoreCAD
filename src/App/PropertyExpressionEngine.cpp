@@ -70,6 +70,17 @@ public:
     std::vector<App::VariableExpression*> nodes;
 };
 
+/// @p path made canonical but still owned by the formula's object. canonicalPath() hands it to the
+/// object it reads, and a sub-path such as Constraints.Width owned there prints without the object.
+ObjectIdentifier canonicalPathOwnedBy(const DocumentObject* owner, const ObjectIdentifier& path)
+{
+    ObjectIdentifier owned(owner);
+    for (const auto& component : path.canonicalPath().getPropertyComponents()) {
+        owned << component;
+    }
+    return owned;
+}
+
 /// Binds each object a restored formula states by UUID (formulaStatedByUid). The name it then
 /// shows is the object's current label. A UUID no object in this document carries is said, never
 /// dropped (Amendment 19, Clause 19.1): the formula keeps it as written and fails when computed.
@@ -105,7 +116,7 @@ void bindObjectsStatedByUid(const DocumentObject& owner,
         path.setBoundObjectUuid(stated);
         if (std::string(object->Label.getValue()) == object->getNameInDocument()) {
             // Shown as a plain name, not <<label>>, while the two are the same.
-            ObjectIdentifier plain = path.canonicalPath();
+            ObjectIdentifier plain = canonicalPathOwnedBy(&owner, path);
             ObjectIdentifier::String name(object->getNameInDocument(), false, true);
             name.setUuid(stated);
             plain.setDocumentObjectName(std::move(name),
@@ -628,7 +639,7 @@ std::string App::formulaStatedByUid(const Expression& expression)
         if (uuid.empty()) {
             uuid = object->Uid.getValueStr();
         }
-        ObjectIdentifier stated = path.canonicalPath();
+        ObjectIdentifier stated = canonicalPathOwnedBy(owner, path);
         stated.setDocumentObjectName(ObjectIdentifier::String(uuid, true),
                                      true,
                                      ObjectIdentifier::String(path.getSubObjectName()));
