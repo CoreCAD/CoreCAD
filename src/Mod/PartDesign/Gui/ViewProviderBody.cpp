@@ -120,6 +120,8 @@ void ViewProviderBody::attach(App::DocumentObject* pcFeat)
                 this->afterRecompute(doc, recomputedObjs);
             }
         );
+        m_UndoConn = doc->signalUndo.connect([this](const App::Document&) { redrawShape(); });
+        m_RedoConn = doc->signalRedo.connect([this](const App::Document&) { redrawShape(); });
     }
     m_ChangedConn = Gui::Application::Instance->signalChangedObject.connect(
         [this](const Gui::ViewProvider& vp, const App::Property& prop) {
@@ -164,15 +166,25 @@ void ViewProviderBody::onChangedObject(const Gui::ViewProvider& vp, const App::P
 
 void ViewProviderBody::afterRecompute(
     const App::Document& /* doc */,
-    const std::vector<App::DocumentObject*>& /* recomputedObjs */
+    const std::vector<App::DocumentObject*>& recomputedObjs
 )
 {
-    // Cruth §3.3 (issue #79-interim): the Coin rebuild is driven by the base
-    // ViewProviderPartExt on a "Shape" property change again — Body::execute() now refreshes its
-    // Transient derived Shape each recompute, so the normal updateData("Shape") path fires. Do
-    // NOT also call updateVisual() here or the Body would draw twice per recompute (cf. #77).
-    // This hook keeps only its pre-existing job: refresh the Body's overlays on recompute.
+    if (std::ranges::find(recomputedObjs, getObject()) != recomputedObjs.end()) {
+        redrawShape();
+    }
     refreshOverlays();
+}
+
+// A Body stores no shape, so no Shape property announces a change: it redraws when it rebuilds
+// and after an undo or redo.
+void ViewProviderBody::redrawShape()
+{
+    if (isUpdateForced() || Visibility.getValue()) {
+        updateVisual();
+    }
+    else {
+        VisualTouched = true;
+    }
 }
 
 void ViewProviderBody::refreshOverlays()
@@ -322,6 +334,7 @@ void ViewProviderBody::hideHeldBack()
 void ViewProviderBody::finishRestoring()
 {
     PartGui::ViewProviderPart::finishRestoring();
+    redrawShape();
     // Re-open of a multi-output document: TipComponentId is loaded but the feature-
     // hide step is skipped during restore, so apply it once restore has settled.
     applyMultiOutputDisplay();

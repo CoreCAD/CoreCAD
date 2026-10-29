@@ -45,18 +45,22 @@ namespace Part
  * in edit or active on a workbench, the body shows only the
  * resulting shape to the outside (Tip link).
  */
-// Cruth §3.3/§4 (issue #12): a Body is an unplaced marker, not a placed feature. It derives
-// from the *unplaced* Part::ShapeFeature — which carries the shape-source identity every
-// consumer resolves a Body through (isDerivedFrom<Part::ShapeFeature>) — but NOT from
-// Part::Feature, which would mix in App::PlacementExtension (Amendment 4). A Body therefore
-// carries no Placement slot of its own: its features derive their frame from their own
-// attachments, never from Body containment, so there is nothing to pin to identity.
-class PartExport BodyBase: public Part::ShapeFeature, public Part::MaterialExtension
+// A Body is an unplaced marker (§3.3/§4): it stores neither a placement nor a shape. It carries
+// the shape capability (Part::ShapeExtension), which answers with the shape of its shown step
+// (Amendment 17.2); consumers ask Part::hasShape / Part::getShape, never its type.
+class PartExport BodyBase: public App::GeoFeature,
+                           public Part::ShapeExtension,
+                           public Part::MaterialExtension
 {
     PROPERTY_HEADER(Part::BodyBase);
 
 public:
     BodyBase();
+
+    App::ElementNamePair getElementName(  // NOLINT(google-default-arguments)
+        const char* name,
+        ElementNameType type = Normal
+    ) const override;
 
     /**
      * The final feature of the body it is associated with.
@@ -136,6 +140,7 @@ public:
     PyObject* getPyObject() override;
 
 protected:
+    App::DocumentObjectExecReturn* recompute() override;
     /// If BaseFeature is getting changed and Tip points to it reset the Tip
     void onBeforeChange(const App::Property* prop) override;
     /// If BaseFeature is set and Tip is null set the Tip to it

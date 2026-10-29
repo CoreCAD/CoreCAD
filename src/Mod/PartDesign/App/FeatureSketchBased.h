@@ -89,7 +89,7 @@ public:
      *               silently returns nullptr, otherwise throw a Base::Exception.
      *               Default is false.
      */
-    Part::ShapeFeature* getVerifiedObject(bool silent = false) const;
+    App::GeoFeature* getVerifiedObject(bool silent = false) const;
 
     /**
      * Verifies the linked Object and returns the shape used as profile

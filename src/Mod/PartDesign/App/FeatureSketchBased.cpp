@@ -158,7 +158,7 @@ Part::Part2DObject* ProfileBased::getVerifiedSketch(bool silent) const
     return static_cast<Part::Part2DObject*>(result);
 }
 
-Part::ShapeFeature* ProfileBased::getVerifiedObject(bool silent) const
+App::GeoFeature* ProfileBased::getVerifiedObject(bool silent) const
 {
 
     App::DocumentObject* result = Profile.getValue();
@@ -177,7 +177,7 @@ Part::ShapeFeature* ProfileBased::getVerifiedObject(bool silent) const
         throw Base::RuntimeError(err);
     }
 
-    return static_cast<Part::ShapeFeature*>(result);
+    return Part::shapeCarrier(result);
 }
 TopoShape ProfileBased::getTopoShapeVerifiedFace(
     bool silent,
@@ -404,8 +404,7 @@ TopoDS_Shape ProfileBased::getVerifiedFace(bool silent) const
             }
             else {
 
-                const Part::TopoShape& shape
-                    = Profile.getValue<Part::ShapeFeature*>()->Shape.getShape();
+                const Part::TopoShape shape = Part::getShape(result);
                 TopoDS_Shape sub = shape.getSubShape(Profile.getSubValues()[0].c_str());
                 if (sub.ShapeType() == TopAbs_FACE) {
                     return TopoDS::Face(sub);
@@ -482,9 +481,7 @@ std::vector<TopoDS_Wire> ProfileBased::getProfileWires() const
             throw Base::ValueError("No valid subelement linked in Part::Feature");
         }
 
-        shape = Profile.getValue<Part::ShapeFeature*>()->Shape.getShape().getSubShape(
-            Profile.getSubValues().front().c_str()
-        );
+        shape = Part::getShape(Profile.getValue()).getSubShape(Profile.getSubValues().front().c_str());
     }
 
     if (shape.IsNull()) {
@@ -552,8 +549,7 @@ TopoDS_Face ProfileBased::getSupportFace(const Part::Part2DObject* sketch) const
         const auto& AttachmentSupport = sketch->AttachmentSupport;
         App::DocumentObject* ref = AttachmentSupport.getValue();
 
-        Part::ShapeFeature* part = dynamic_cast<Part::ShapeFeature*>(ref);
-        if (part) {
+        if (Part::hasShape(ref)) {
             const std::vector<std::string>& sub = AttachmentSupport.getSubValues();
             assert(sub.size() == 1);
 
@@ -563,7 +559,7 @@ TopoDS_Face ProfileBased::getSupportFace(const Part::Part2DObject* sketch) const
             }
 
             // get the selected sub shape (a Face)
-            const Part::TopoShape& shape = part->Shape.getShape();
+            const Part::TopoShape shape = Part::getShape(ref);
             if (shape.getShape().IsNull()) {
                 throw Base::ValueError("Sketch support shape is empty!");
             }
@@ -888,7 +884,7 @@ bool ProfileBased::isParallelPlane(const TopoDS_Shape& s1, const TopoDS_Shape& s
 double ProfileBased::getReversedAngle(const Base::Vector3d& b, const Base::Vector3d& v) const
 {
     try {
-        Part::ShapeFeature* obj = getVerifiedObject();
+        App::GeoFeature* obj = getVerifiedObject();
         TopoShape sketchshape = getTopoShapeVerifiedFace();
 
         // get centre of gravity of the sketch face

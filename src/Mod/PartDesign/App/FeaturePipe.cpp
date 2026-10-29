@@ -145,9 +145,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
             if (subName.empty()) {
                 throw Base::ValueError("Pipe: No valid subelement linked in Part::Feature");
             }
-            return static_cast<Part::ShapeFeature*>(feature)->Shape.getShape().getSubShape(
-                subName.c_str()
-            );
+            return Part::getShape(feature).getSubShape(subName.c_str());
         }
     };
 
@@ -212,7 +210,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
 
         std::vector<std::string> subedge = Spine.getSubValues();
         TopoDS_Shape path;
-        const Part::TopoShape& shape = static_cast<Part::ShapeFeature*>(spine)->Shape.getValue();
+        const Part::TopoShape shape = Part::getShape(spine);
         buildPipePath(shape, subedge, path);
 
         // auxiliary
@@ -226,8 +224,7 @@ App::DocumentObjectExecReturn* Pipe::execute()
             }
             std::vector<std::string> auxsubedge = AuxiliarySpine.getSubValues();
 
-            const Part::TopoShape& auxshape
-                = static_cast<Part::ShapeFeature*>(auxspine)->Shape.getValue();
+            const Part::TopoShape auxshape = Part::getShape(auxspine);
             buildPipePath(auxshape, auxsubedge, auxpath);
         }
 

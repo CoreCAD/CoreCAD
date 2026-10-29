@@ -629,9 +629,7 @@ bool SelectionView::supportPart(App::DocumentObject* obj, const QString& part) c
 {
     if (obj->isDerivedFrom<App::GeoFeature>()) {
         App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
-        const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
-        if (data) {
-            const Data::ComplexGeoData* geometry = data->getComplexData();
+        if (const Data::ComplexGeoData* geometry = geo->getElementData()) {
             std::vector<const char*> types = geometry->getElementTypes();
             for (auto it : types) {
                 if (part.startsWith(QString::fromUtf8(it))) {

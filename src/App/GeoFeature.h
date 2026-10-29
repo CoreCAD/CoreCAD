@@ -78,6 +78,9 @@ public:
      * The default implementation returns null.
      */
     virtual const PropertyComplexGeoData* getPropertyOfGeometry() const;
+    /// The geometry whose elements this object names: its stored geometry by default. An
+    /// object that derives its geometry instead of storing it overrides this.
+    virtual const Data::ComplexGeoData* getElementData() const;
     /**
      * @brief getPyObject returns the Python binding object
      * @return the Python binding object
@@ -207,7 +210,7 @@ protected:
     void updateElementReference();
 
 protected:
-    ElementNamePair _getElementName(const char* name, const Data::MappedElement& mapped) const;
+    static ElementNamePair _getElementName(const char* name, const Data::MappedElement& mapped);
 };
 
 }  // namespace App

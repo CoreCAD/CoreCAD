@@ -320,7 +320,8 @@ void CmdSurfaceExtendFace::activated(int)
 
 bool CmdSurfaceExtendFace::isActive()
 {
-    return Gui::Selection().countObjectsOfType<Part::ShapeFeature>() == 1;
+    const auto objs = Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    return std::ranges::count_if(objs, Part::hasShape) == 1;
 }
 
 DEF_STD_CMD_A(CmdSurfaceSections)

@@ -104,7 +104,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
             ));
         }
 
-        baseTopShape = static_cast<Part::ShapeFeature*>(feature)->Shape.getShape();
+        baseTopShape = Part::getShape(feature);
         tools.pop_back();
     }
 

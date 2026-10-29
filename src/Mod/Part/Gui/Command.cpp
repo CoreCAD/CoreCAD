@@ -452,7 +452,7 @@ void CmdShapeInfo::activated(int iMsg)
 bool CmdShapeInfo::isActive()
 {
     App::Document* doc = App::GetApplication().getActiveDocument();
-    if (!doc || doc->countObjectsOfType<Part::ShapeFeature>() == 0) {
+    if (!doc || Part::getShapeObjects(doc).empty()) {
         return false;
     }
 

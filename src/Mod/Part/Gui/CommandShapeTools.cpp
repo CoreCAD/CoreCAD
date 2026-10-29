@@ -968,11 +968,12 @@ void CmdPartThickness::activated(int iMsg)
 
 bool CmdPartThickness::isActive()
 {
-    bool objectsSelected = Gui::Selection().countObjectsOfType<Part::ShapeFeature>(
-                               nullptr,
-                               Gui::ResolveMode::FollowLink
-                           )
-        > 0;
+    const auto objs = Gui::Selection().getObjectsOfType(
+        App::DocumentObject::getClassTypeId(),
+        nullptr,
+        Gui::ResolveMode::FollowLink
+    );
+    bool objectsSelected = std::ranges::any_of(objs, Part::hasShape);
     return (objectsSelected && !Gui::Control().activeDialog());
 }
 

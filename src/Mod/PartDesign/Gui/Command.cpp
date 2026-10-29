@@ -132,7 +132,8 @@ void CmdPartDesignClone::activated(int iMsg)
 
 bool CmdPartDesignClone::isActive()
 {
-    return getSelection().countObjectsOfType<Part::ShapeFeature>() == 1;
+    const auto objs = getSelection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    return std::ranges::count_if(objs, Part::hasShape) == 1;
 }
 
 //===========================================================================

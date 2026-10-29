@@ -396,6 +396,8 @@ public:
     static PropertyShapeCache* get(const App::DocumentObject* obj, bool create);
     static bool getShape(const App::DocumentObject* obj, TopoShape& shape, const char* subname = 0);
     static void setShape(const App::DocumentObject* obj, const TopoShape& shape, const char* subname = 0);
+    /// Drops what is cached for @p obj, for an object whose shape changed without a Shape property.
+    static void clear(const App::DocumentObject* obj);
 
 private:
     void slotChanged(const App::DocumentObject&, const App::Property& prop);

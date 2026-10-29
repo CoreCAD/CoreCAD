@@ -361,7 +361,7 @@ App::DocumentObjectExecReturn* FeatureExtrude::buildExtrusion(ExtrudeOptions opt
         }
     }
 
-    Part::ShapeFeature* obj = nullptr;
+    App::GeoFeature* obj = nullptr;
     TopoShape sketchshape;
     try {
         obj = getVerifiedObject();

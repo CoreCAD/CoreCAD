@@ -412,11 +412,11 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
         Base::Vector3d d = line->getDirection();
         dir = gp_Dir(d.x, d.y, d.z);
     }
-    else if (auto* refFeature = freecad_cast<Part::ShapeFeature*>(refObject)) {
+    else if (Part::hasShape(refObject)) {
         if (subStrings[0].empty()) {
             throw Base::ValueError("No direction reference specified");
         }
-        Part::TopoShape refShape = refFeature->Shape.getShape();
+        Part::TopoShape refShape = Part::getShape(refObject);
         TopoDS_Shape ref = refShape.getSubShape(subStrings[0].c_str());
 
         if (ref.ShapeType() == TopAbs_FACE) {

@@ -1291,9 +1291,7 @@ void SketchObject::validateExternalLinks()
                 // do nothing - shape will be calculated later during rebuild
             }
             else {
-                const auto* refObj = static_cast<const Part::ShapeFeature*>(Obj);
-                const Part::TopoShape& refShape = refObj->Shape.getShape();
-                refSubShape = refShape.getSubShape(SubElement.c_str());
+                refSubShape = Part::getShape(Obj).getSubShape(SubElement.c_str());
             }
             continue; // no bad link needs to be removed
         }
@@ -2400,8 +2398,8 @@ void SketchObject::rebuildExternalGeometry(std::optional<ExternalToAdd> extToAdd
                 }
             }
 
-            if (auto* refObj = freecad_cast<const Part::ShapeFeature*>(resolvedObj)) {
-                const Part::TopoShape& refShape = refObj->Shape.getShape();
+            if (Part::hasShape(resolvedObj)) {
+                const Part::TopoShape refShape = Part::getShape(resolvedObj);
                 refSubShape = refShape.getSubShape(SubElement.c_str());
             }
             else if (auto* pl = freecad_cast<const App::Plane*>(resolvedObj)) {

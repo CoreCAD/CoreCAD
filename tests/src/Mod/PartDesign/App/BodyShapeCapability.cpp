@@ -9,19 +9,18 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureBoolean.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
+#include <Mod/PartDesign/App/FeaturePrimitive.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 // NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
 
-// #79 step 3a: a Body carries its shape as a composed Part::ShapeExtension and routes the own-shape
-// half of getSubObject through it (App::DocumentObject::getSubObject dispatches to the extension),
-// instead of resolving derivedTipShape() in line. These tests assert the routed capability path
-// returns the same element-mapped geometry as the derived Tip shape it is backed by — the
-// derived-backed counterpart of the stored-backed Part::Box parity proof.
+// A Body stores no shape: it carries the shape capability backed by its shown step (Amendment 17.2).
 class BodyShapeCapabilityTest: public ::testing::Test
 {
 protected:
@@ -67,22 +66,15 @@ TEST_F(BodyShapeCapabilityTest, carriesElementMap)
     // A padded circle is a cylinder — Face1 is the lateral face; Face2/Face3 are the caps.
     const char* ref = "Face1";
 
-    // Oracle: the inheritance-based path, invoked explicitly past Body's own getSubObject override
-    // (which the extension now backs). ShapeFeature::getSubObject resolves the sub-element against
-    // the Body's Shape mirror and never touches the extension, so it is an independent reference
-    // for what the routed path must reproduce — the same style of oracle the Part::Box parity uses.
-    PyObject* pyOracle = nullptr;
-    auto* oracleOwner = _body->ShapeFeature::getSubObject(ref, &pyOracle, nullptr, false, 10);
-    ASSERT_NE(oracleOwner, nullptr);
-    ASSERT_NE(pyOracle, nullptr);
-    auto oracleMap = static_cast<Part::TopoShapePy*>(pyOracle)->getTopoShapePtr()->getElementMap();
+    // Oracle: the capability read, which getSubObject does not go through.
+    auto oracleMap = Part::getShape(_body).getSubTopoShape(ref).getElementMap();
 
     // Actual: the live getSubObject, now dispatched to the composed Part::ShapeExtension.
     PyObject* pyActual = nullptr;
     auto* actualOwner = _body->getSubObject(ref, &pyActual, nullptr, false, 10);
     ASSERT_NE(actualOwner, nullptr);
     ASSERT_NE(pyActual, nullptr);
-    ASSERT_EQ(actualOwner, oracleOwner);
+    ASSERT_EQ(actualOwner, static_cast<App::DocumentObject*>(_body));
 
     auto actualMap = static_cast<Part::TopoShapePy*>(pyActual)->getTopoShapePtr()->getElementMap();
 
@@ -104,15 +96,39 @@ TEST_F(BodyShapeCapabilityTest, carriesElementMap)
     // Negative control: a *different* face's map must NOT match the routed Face1 map, or the
     // equality above would be blind and pass even if the extension returned the wrong sub-shape.
     PyObject* pyWrong = nullptr;
-    _body->ShapeFeature::getSubObject("Face2", &pyWrong, nullptr, false, 10);
+    _body->getSubObject("Face2", &pyWrong, nullptr, false, 10);
     ASSERT_NE(pyWrong, nullptr);
     auto wrongMap = static_cast<Part::TopoShapePy*>(pyWrong)->getTopoShapePtr()->getElementMap();
     std::sort(wrongMap.begin(), wrongMap.end());
     EXPECT_FALSE(wrongMap == actualMap);
 
-    Py_XDECREF(pyOracle);
     Py_XDECREF(pyActual);
     Py_XDECREF(pyWrong);
+}
+
+TEST_F(BodyShapeCapabilityTest, storesNoShape)
+{
+    EXPECT_EQ(_body->getPropertyByName("Shape"), nullptr);
+    const auto box = Part::getShape(_body).getBoundBox();
+    EXPECT_NEAR(box.MaxZ - box.MinZ, 10.0, 1e-7);
+}
+
+TEST_F(BodyShapeCapabilityTest, followsItsTipBeforeItIsRecomputed)
+{
+    _pad->Length.setValue(20.0);
+    _pad->recomputeFeature();
+
+    const auto box = Part::getShape(_body).getBoundBox();
+    EXPECT_NEAR(box.MaxZ - box.MinZ, 20.0, 1e-7);
+}
+
+TEST_F(BodyShapeCapabilityTest, namesTheElementsOfItsShape)
+{
+    // A mapped name comes back only when the Body answers for the elements of its shape.
+    const auto names = _body->getElementName("Face1");
+    EXPECT_FALSE(names.newName.empty());
+    EXPECT_EQ(names.oldName, "Face1");
+    EXPECT_FALSE(_body->getElementTypes().empty());
 }
 
 TEST_F(BodyShapeCapabilityTest, wholeShapeParity)
@@ -142,6 +158,60 @@ TEST_F(BodyShapeCapabilityTest, wholeShapeParity)
     EXPECT_NEAR(bbDerived.MaxZ, bbActual.MaxZ, 1e-7);
 
     Py_XDECREF(pyActual);
+}
+
+TEST_F(BodyShapeCapabilityTest, fusesBodiesWithNoBase)
+{
+    auto* other = _doc->addObject<PartDesign::Body>();
+    auto* box = _doc->addObject<PartDesign::AdditiveBox>("Box");
+    other->addFeature(box);
+    box->Placement.setValue(Base::Placement(Base::Vector3d(5, 0, 0), Base::Rotation()));
+
+    auto* host = _doc->addObject<PartDesign::Body>();
+    auto* fuse = static_cast<PartDesign::Boolean*>(_doc->addObject("PartDesign::Boolean", "Fuse"));
+    fuse->Tools.setValues({_body, other});
+    host->addFeature(fuse);
+    _doc->recompute();
+
+    ASSERT_TRUE(fuse->isValid()) << fuse->getStatusString();
+    // A radius-10 cylinder at the origin and a 10 mm box from x = 5 span x = -10 to 15.
+    EXPECT_NEAR(fuse->Shape.getShape().getBoundBox().LengthX(), 25.0, 1e-6);
+}
+
+TEST_F(BodyShapeCapabilityTest, padsUpToAFaceOfABody)
+{
+    auto* other = _doc->addObject<PartDesign::Body>();
+    auto* sketch = _doc->addObject<Sketcher::SketchObject>("Sketch2");
+    sketch->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
+    sketch->MapMode.setValue("FlatFace");
+    sketch->AttachmentOffset.setValue(Base::Placement(Base::Vector3d(0, 0, -10), Base::Rotation()));
+    Part::GeomCircle circle;
+    circle.setRadius(2.0);
+    sketch->addGeometry(&circle, false);
+
+    auto* pad = _doc->addObject<PartDesign::Pad>("UpToPad");
+    other->addFeature(pad);
+    pad->Profile.setValue(sketch, {""});
+    pad->Type.setValue("UpToFace");
+    pad->UpToFace.setValue(_body, {"Face3"});
+    _doc->recompute();
+
+    ASSERT_TRUE(pad->isValid()) << pad->getStatusString();
+    const auto box = pad->Shape.getShape().getBoundBox();
+    EXPECT_GT(box.MaxZ - box.MinZ, 1.0);
+}
+
+TEST_F(BodyShapeCapabilityTest, sketchKeepsAnEdgeOfABody)
+{
+    auto* sketch = _doc->addObject<Sketcher::SketchObject>("Sketch2");
+    sketch->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
+    sketch->MapMode.setValue("FlatFace");
+    _doc->recompute();
+    ASSERT_GE(sketch->addExternal(_body, "Edge1"), 0);
+
+    sketch->validateExternalLinks();
+
+    EXPECT_EQ(sketch->ExternalGeometry.getValues().size(), 1u);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

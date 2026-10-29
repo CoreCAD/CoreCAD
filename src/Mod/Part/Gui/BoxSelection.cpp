@@ -112,13 +112,12 @@ void BoxSelection::selectionCallback(void* ud, SoEventCallback* cb)
     if (doc) {
         cb->setHandled();
 
-        std::vector<Part::ShapeFeature*> geom = doc->getObjectsOfType<Part::ShapeFeature>();
-        for (auto it : geom) {
+        for (auto it : Part::getShapeObjects(doc)) {
             Gui::ViewProvider* vp = Gui::Application::Instance->getViewProvider(it);
             if (!vp->isVisible()) {
                 continue;
             }
-            const TopoDS_Shape& shape = it->Shape.getValue();
+            const TopoDS_Shape shape = Part::getShape(it).getShape();
             self->addShapeToSelection(
                 doc->getName(),
                 it->getNameInDocument(),

@@ -49,16 +49,20 @@ def _isFolder(obj):
     return obj.isDerivedFrom("App::DocumentObjectGroup") and not _isSubAssembly(obj)
 
 
+def _carriesShape(obj):
+    return obj.hasExtension("Part::ShapeExtension")
+
+
 def _isPart(obj):
     """A part: a solid that stands on its own -- a Body, an imported solid, a standalone
     primitive -- and that no other shape is built from. The features and sketches a Body is
     made of are consumed by it, so they are not parts in their own right."""
-    if not obj.isDerivedFrom("Part::ShapeFeature"):
+    if not _carriesShape(obj):
         return False
     shape = getattr(obj, "Shape", None)
     if shape is None or shape.isNull() or not shape.Solids:
         return False
-    return not any(user.isDerivedFrom("Part::ShapeFeature") for user in obj.InList)
+    return not any(_carriesShape(user) for user in obj.InList)
 
 
 def _isCandidate(obj, onlyParts):
@@ -68,7 +72,7 @@ def _isCandidate(obj, onlyParts):
         return True
     if onlyParts:
         return _isPart(obj)
-    return obj.isDerivedFrom("Part::ShapeFeature")
+    return _carriesShape(obj)
 
 
 tooltip = QT_TRANSLATE_NOOP(

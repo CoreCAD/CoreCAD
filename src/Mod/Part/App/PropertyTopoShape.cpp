@@ -1389,6 +1389,13 @@ void PropertyShapeCache::setShape(const App::DocumentObject* obj, const TopoShap
     prop->cache[subname] = shape;
 }
 
+void PropertyShapeCache::clear(const App::DocumentObject* obj)
+{
+    if (auto prop = get(obj, false)) {
+        prop->cache.clear();
+    }
+}
+
 void PropertyShapeCache::slotChanged(const App::DocumentObject&, const App::Property& prop)
 {
     auto propName = prop.getName();

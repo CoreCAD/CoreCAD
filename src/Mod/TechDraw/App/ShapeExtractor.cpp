@@ -410,9 +410,9 @@ Base::Vector3d ShapeExtractor::getLocation3dFromFeat(const App::DocumentObject* 
 //        //Draft Points are not necc. Part::Feature??
 //        //if Draft option "use part primitives" is not set are Draft points still PartFeature?
 
-    const Part::ShapeFeature* pf = dynamic_cast<const Part::ShapeFeature*>(obj);
-    if (pf) {
-        Part::TopoShape pts = pf->Shape.getShape();
+    const auto* pf = dynamic_cast<const App::GeoFeature*>(obj);
+    if (pf && Part::hasShape(pf)) {
+        Part::TopoShape pts = Part::getShape(pf);
         pts.setPlacement(pf->globalPlacement());
         TopoDS_Shape ts = pts.getShape();
         if (ts.ShapeType() == TopAbs_VERTEX)  {
@@ -428,8 +428,8 @@ Base::Vector3d ShapeExtractor::getLocation3dFromFeat(const App::DocumentObject* 
 TopoDS_Shape ShapeExtractor::getLocatedShape(const App::DocumentObject* docObj)
 {
         Part::TopoShape shape = Part::Feature::getTopoShape(docObj, Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform);
-        const Part::ShapeFeature* pf = dynamic_cast<const Part::ShapeFeature*>(docObj);
-        if (pf) {
+        const auto* pf = dynamic_cast<const App::GeoFeature*>(docObj);
+        if (pf && Part::hasShape(pf)) {
             shape.setPlacement(pf->globalPlacement());
         }
         return shape.getShape();

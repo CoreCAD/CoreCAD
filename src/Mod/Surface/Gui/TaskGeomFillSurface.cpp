@@ -114,7 +114,7 @@ void ViewProviderGeomFillSurface::highlightReferences(bool on)
     Surface::GeomFillSurface* surface = getObject<Surface::GeomFillSurface>();
     auto bounds = surface->BoundaryList.getSubListValues();
     for (const auto& it : bounds) {
-        Part::ShapeFeature* base = dynamic_cast<Part::ShapeFeature*>(it.first);
+        App::GeoFeature* base = Part::shapeCarrier(it.first);
         if (base) {
             PartGui::ViewProviderPartExt* svp = dynamic_cast<PartGui::ViewProviderPartExt*>(
                 Gui::Application::Instance->getViewProvider(base)
@@ -123,7 +123,7 @@ void ViewProviderGeomFillSurface::highlightReferences(bool on)
                 if (on) {
                     std::vector<Base::Color> colors;
                     TopTools_IndexedMapOfShape eMap;
-                    TopExp::MapShapes(base->Shape.getValue(), TopAbs_EDGE, eMap);
+                    TopExp::MapShapes(Part::getShape(base).getShape(), TopAbs_EDGE, eMap);
                     colors.resize(eMap.Extent(), svp->LineColor.getValue());
 
                     for (const auto& jt : it.second) {

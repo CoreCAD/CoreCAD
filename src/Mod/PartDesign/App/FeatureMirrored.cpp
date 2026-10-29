@@ -129,7 +129,7 @@ std::list<gp_Trsf> Mirrored::getTransformations()
         App::DocumentObject* refObject = MirrorPlane.getValue();
         std::vector<std::string> subStrings = MirrorPlane.getSubValues();
 
-        if (auto feature = dynamic_cast<Part::ShapeFeature*>(refObject)) {
+        if (Part::hasShape(refObject)) {
             if (subStrings.empty()) {
                 throw Base::ValueError("No mirror plane reference specified");
             }
@@ -137,7 +137,7 @@ std::list<gp_Trsf> Mirrored::getTransformations()
                 throw Base::ValueError("No direction reference specified");
             }
 
-            Part::TopoShape baseShape = feature->Shape.getShape();
+            Part::TopoShape baseShape = Part::getShape(refObject);
             // TODO: Check for multiple mirror planes?
             TopoDS_Shape shape = baseShape.getSubShape(subStrings[0].c_str());
             TopoDS_Face face = TopoDS::Face(shape);

@@ -119,7 +119,7 @@ bool answeredForElsewhere(const App::DocumentObject* obj)
 {
     return std::ranges::any_of(obj->getInList(), [](const App::DocumentObject* user) {
         return user
-            && (user->isDerivedFrom<Part::ShapeFeature>()
+            && (Part::hasShape(user)
                 || user->hasExtension(App::LinkBaseExtension::getExtensionClassTypeId()));
     });
 }

@@ -93,7 +93,7 @@ namespace
 bool isConsumed(const App::DocumentObject* obj)
 {
     for (const App::DocumentObject* user : obj->getInList()) {
-        if (user && user->isDerivedFrom<ShapeFeature>()) {
+        if (hasShape(user)) {
             return true;
         }
     }
@@ -109,15 +109,11 @@ std::vector<App::DocumentObject*> independentSolids(App::Document* doc)
         return solids;
     }
 
-    for (auto* obj : doc->getObjectsOfType(ShapeFeature::getClassTypeId())) {
+    for (auto* obj : getShapeObjects(doc)) {
         if (isConsumed(obj)) {
             continue;
         }
-        // A body reads its own shape here, the mirror it refreshes from its tip on
-        // every recompute. Should that mirror ever go, a body would need asking in
-        // its own terms -- there is nothing else in this sweep that is not simply
-        // the shape the object is holding.
-        const TopoShape& shape = static_cast<ShapeFeature*>(obj)->Shape.getShape();
+        const TopoShape shape = getShape(obj);
         if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) == 0) {
             continue;
         }
@@ -135,7 +131,7 @@ std::vector<std::pair<App::DocumentObject*, App::DocumentObject*>> overlappingPa
     std::vector<Bnd_Box> boxes;
     std::vector<App::DocumentObject*> kept;
     for (auto* obj : solids) {
-        TopoShape shape = static_cast<ShapeFeature*>(obj)->Shape.getShape();
+        TopoShape shape = getShape(obj);
         Bnd_Box box;
         try {
             BRepBndLib::Add(shape.getShape(), box);

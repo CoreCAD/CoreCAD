@@ -219,21 +219,11 @@ Body::Body()
         static_cast<App::PropertyType>(App::Prop_Hidden | App::Prop_NoRecompute),
         "Uids of Bodies whose overlap with this one the user acknowledged"
     );
-
-    // Derived from the Tip on every recompute and on load, never authored or saved.
-    Shape.setStatus(App::Property::Transient, true);
-    Shape.setStatus(App::Property::ReadOnly, true);
 }
 
 short Body::mustExecute() const
 {
     if (Tip.isTouched()) {
-        return 1;
-    }
-    // A step handed its geometry from the build cache is not recomputed, so nothing else would
-    // fill the mirror of a body whose steps all came back that way.
-    const auto* shown = freecad_cast<Part::ShapeFeature*>(shownStep());
-    if (Shape.getShape().isNull() && shown && !shown->Shape.getShape().isNull()) {
         return 1;
     }
     return Part::BodyBase::mustExecute();
@@ -460,6 +450,8 @@ void Body::removeFeatures(const std::vector<App::DocumentObject*>& features)
 App::DocumentObjectExecReturn* Body::execute()
 {
     copier.reset();
+    Part::PropertyShapeCache::clear(this);
+    updateElementReference();
     Part::BodyBase::execute();
 
     App::DocumentObject* tip = Tip.getValue();
@@ -483,18 +475,12 @@ App::DocumentObjectExecReturn* Body::execute()
     if (shown->Shape.getShape().isNull()) {
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Tip shape is empty"));
     }
-    // Empty here means this Body's copy is gone: the reconciler retires it after this
-    // recompute, so keep the last good shape rather than report an error.
-    Part::TopoShape shape = shownShape();
-    if (!shape.isNull()) {
-        Shape.setValue(shape);
-    }
     return App::DocumentObject::StdReturn;
 }
 
 void Body::onChanged(const App::Property* prop)
 {
-    if (prop == &Tip || prop == &TipComponentId || prop == &Shape) {
+    if (prop == &Tip || prop == &TipComponentId) {
         copier.reset();
     }
     const bool userEdit = !isRestoring() && getDocument()
@@ -662,7 +648,9 @@ Part::TopoShape Body::placedShapeOf(const App::DocumentObject* step) const
         solid.transformShape(Base::Matrix4D(), true);
         shape = solid;
     }
+    // Baking keeps the location, which would then apply twice.
     shape.transformShape(shape.getTransform(), true);
+    shape.setTransform(Base::Matrix4D());
     return shape;
 }
 
@@ -671,9 +659,73 @@ Part::TopoShape Body::derivedTipShape() const
     return placedShapeOf(Tip.getValue());
 }
 
+App::DocumentObject* Body::shownStepWithShape() const
+{
+    App::DocumentObject* step = shownStep();
+    const auto unbuilt = [](const App::DocumentObject* obj) {
+        return static_cast<const Part::ShapeFeature*>(obj)->Shape.getShape().isNull();
+    };
+    if (!step || !isSolidFeature(step) || !unbuilt(step)) {
+        return step;
+    }
+    // A step that failed or was never built leaves the Body as the step before it did.
+    const auto steps = ownSolids();
+    auto it = std::ranges::find(steps, step);
+    while (it != steps.begin()) {
+        --it;
+        if (!unbuilt(*it)) {
+            return *it;
+        }
+    }
+    return nullptr;
+}
+
 Part::TopoShape Body::shownShape() const
 {
-    return placedShapeOf(shownStep());
+    App::DocumentObject* step = shownStepWithShape();
+    if (!step || !isSolidFeature(step)) {
+        shownCache = {};
+        return {};
+    }
+    const TopoDS_Shape& stepShape = static_cast<const Part::ShapeFeature*>(step)->Shape.getValue();
+    const std::string cid = TipComponentId.getStrValue();
+    long copy = chain::WholeOutput;
+    if (step == stopStep()) {
+        const PartDesign::Feature* next = stepAfterMarker();
+        copy = next ? next->BaseInstance.getValue() : chain::WholeOutput;
+    }
+    if (shownCache.step == step && shownCache.stepShape.IsEqual(stepShape)
+        && shownCache.componentId == cid && shownCache.copy == copy) {
+        return shownCache.shape;
+    }
+    Part::TopoShape shape = placedShapeOf(step);
+    // Names read through the Body carry the Body's tag, as for any shape-carrying object.
+    if (!shape.isNull() && getDocument()) {
+        const long tag = getID();
+        if (shape.Tag && shape.Tag != tag) {
+            shape.reTagElementMap(tag, shape.Hasher ? shape.Hasher : getDocument()->getStringHasher());
+        }
+        else {
+            shape.Tag = tag;
+        }
+        if (!shape.Hasher && shape.hasChildElementMap()) {
+            shape.Hasher = getDocument()->getStringHasher();
+            shape.hashChildMaps();
+        }
+    }
+    shownCache = {step, stepShape, cid, copy, shape};
+    return shape;
+}
+
+Part::TopoShape Body::backingShape() const
+{
+    return shownShape();
+}
+
+const Data::ComplexGeoData* Body::getElementData() const
+{
+    shownShape();
+    return shownCache.shape.isNull() ? nullptr : &shownCache.shape;
 }
 
 std::string Body::shownSubElement(const char* bodySub) const
@@ -739,11 +791,6 @@ App::DocumentObject* Body::getSubObject(
 
 void Body::onDocumentRestored()
 {
-    // The Tip's shape is already loaded, so the unsaved Shape can be filled without a recompute.
-    Part::TopoShape restoredShape = shownShape();
-    if (!restoredShape.isNull()) {
-        Shape.setValue(restoredShape);
-    }
     // Lets the view provider copy the Tip's colours.
     if (Tip.getValue()) {
         Tip.touch();

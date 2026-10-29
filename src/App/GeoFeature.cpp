@@ -79,6 +79,12 @@ const PropertyComplexGeoData* GeoFeature::getPropertyOfGeometry() const
     return nullptr;
 }
 
+const Data::ComplexGeoData* GeoFeature::getElementData() const
+{
+    const auto* prop = getPropertyOfGeometry();
+    return prop ? prop->getComplexData() : nullptr;
+}
+
 bool GeoFeature::holdsAuthoredPlacement() const
 {
     // Structural, post member-removal (Amendment 4): an object authors a
@@ -105,12 +111,7 @@ ElementNamePair GeoFeature::getElementName(const char* name, ElementNameType typ
         return {};
     }
 
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
-        return ElementNamePair("", name);
-    }
-
-    auto geo = prop->getComplexData();
+    const auto* geo = getElementData();
     if (!geo) {
         return ElementNamePair("", name);
     }
@@ -119,7 +120,7 @@ ElementNamePair GeoFeature::getElementName(const char* name, ElementNameType typ
 }
 
 ElementNamePair GeoFeature::_getElementName(const char* name,
-                                            const Data::MappedElement& mapped) const
+                                            const Data::MappedElement& mapped)
 {
     ElementNamePair ret;
     if (mapped.index && mapped.name) {
@@ -252,17 +253,14 @@ bool GeoFeature::hasMissingElement(const char* subname)
 
 void GeoFeature::updateElementReference()
 {
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
-        return;
-    }
-    auto geo = prop->getComplexData();
+    const auto* geo = getElementData();
     if (!geo) {
         return;
     }
     bool reset = false;
 
-    auto version = getElementMapVersion(prop);
+    const auto* prop = getPropertyOfGeometry();
+    auto version = prop ? getElementMapVersion(prop) : geo->getElementMapVersion();
     if (_ElementMapVersion.getStrValue().empty()) {
         _ElementMapVersion.setValue(version);
     }
@@ -310,20 +308,20 @@ const std::vector<std::string>& GeoFeature::searchElementCache(const std::string
 std::vector<const char*> GeoFeature::getElementTypes(bool /*all*/) const
 {
     static std::vector<const char*> nil;
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
+    const auto* geo = getElementData();
+    if (!geo) {
         return nil;
     }
-    return prop->getComplexData()->getElementTypes();
+    return geo->getElementTypes();
 }
 
 std::vector<Data::IndexedName> GeoFeature::getHigherElements(const char* element, bool silent) const
 {
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
+    const auto* geo = getElementData();
+    if (!geo) {
         return {};
     }
-    return prop->getComplexData()->getHigherElements(element, silent);
+    return geo->getHigherElements(element, silent);
 }
 
 Base::Placement GeoFeature::getPlacementFromProp(App::DocumentObject* obj, const char* propName)

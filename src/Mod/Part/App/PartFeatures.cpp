@@ -456,7 +456,8 @@ App::DocumentObjectExecReturn* Thickness::execute()
     // yet -- the first execute, before anything was captured -- falls back to the
     // stored selection, and that is not a guess: it is the only record there is.
     std::vector<std::string> subs = Faces.getSubValues();
-    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
+    auto* baseFeat = hasShape(Faces.getValue()) ? freecad_cast<App::GeoFeature*>(Faces.getValue())
+                                                : nullptr;
     const std::vector<std::string>& refs = FaceRefs.getValues();
     if (baseFeat != nullptr && refs.size() == subs.size()) {
         const std::string baseName = baseFeat->Label.getStrValue();
@@ -520,7 +521,8 @@ App::DocumentObjectExecReturn* Thickness::execute()
 
 int Thickness::rebindFacesFromRefs()
 {
-    auto* baseFeat = dynamic_cast<Part::ShapeFeature*>(Faces.getValue());
+    auto* baseFeat = hasShape(Faces.getValue()) ? freecad_cast<App::GeoFeature*>(Faces.getValue())
+                                                : nullptr;
     const std::vector<std::string>& refs = FaceRefs.getValues();
     std::vector<std::string> subs = Faces.getSubValues();
     if (baseFeat == nullptr || refs.size() != subs.size()) {

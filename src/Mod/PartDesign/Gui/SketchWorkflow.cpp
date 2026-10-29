@@ -115,8 +115,7 @@ public:
         App::DocumentObject* object = faceSelection.getObject();
         std::vector<std::string> elements = faceSelection.getSubNames();
 
-        Part::ShapeFeature* partobject = dynamic_cast<Part::ShapeFeature*>(object);
-        if (!partobject) {
+        if (!Part::hasShape(object)) {
             throw WrongSelectionException();
         }
 
@@ -125,7 +124,7 @@ public:
         }
 
         // get the selected sub shape (a Face)
-        const Part::TopoShape& shape = partobject->Shape.getValue();
+        const Part::TopoShape shape = Part::getShape(object);
         Part::TopoShape subshape(shape.getSubShape(elements[0].c_str()));
         if (subshape.isNull()) {
             throw WrongSupportException();
