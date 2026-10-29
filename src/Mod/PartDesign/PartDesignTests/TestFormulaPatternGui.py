@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 # SPDX-FileCopyrightText: 2026 Cruth contributors
 
-# #165: the Formula Pattern panel. X, Y and Z take formulas of the copy number n the way any
+# #165: the Formula Pattern panel. X, Y, Z and Angle take formulas of the copy number n the way any
 # value box takes a formula.
 
 import unittest
@@ -72,3 +72,11 @@ class TestFormulaPatternGui(unittest.TestCase):
         spin = _widget("spinX")
         self.assertEqual(spin.property("expression"), "n * 7 mm + 3 mm")
         self.assertAlmostEqual(spin.property("rawValue"), 10)
+
+    def testTurnAndAxisAreKeptOnOK(self):
+        _widget("spinAngle").setProperty("rawValue", 90)
+        _widget("comboAxis").setCurrentIndex(0)
+        self._accept()
+        self.assertAlmostEqual(self.pattern.Angle.Value, 90)
+        self.assertEqual(self.pattern.Axis, "X")
+        self.assertTrue(self.pattern.isValid(), self.pattern.getStatusString())
