@@ -335,6 +335,23 @@ TEST_F(SheetMergeTest, bothSidesLosingTheLastRowWithNothingWrittenBelowMerges)
     EXPECT_EQ(contents(merged.document, "A3"), "");
 }
 
+TEST_F(SheetMergeTest, aWriteBelowRowsTheOtherSideLostIsAConflictWhenOnlyReported)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(b)->removeRows(1, 2);
+    reopen(b);
+    sheetOf(a)->insertRows(0, 1);
+    sheetOf(a)->setCell("A6", "6");
+    a->recompute();
+    b->recompute();
+
+    const App::DocumentMergeReport report = App::mergeDocuments(*_ancestor, *a, *b);
+
+    ASSERT_EQ(report.conflicts.size(), 1U);
+    EXPECT_NE(report.conflicts.front().detail.find("A6"), std::string::npos);
+}
+
 TEST_F(SheetMergeTest, anEditLandsBesideARowTheOtherSideRemoved)
 {
     App::Document* a = branch("a");
