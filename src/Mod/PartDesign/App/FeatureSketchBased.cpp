@@ -552,8 +552,7 @@ TopoDS_Face ProfileBased::getSupportFace(const Part::Part2DObject* sketch) const
         const auto& AttachmentSupport = sketch->AttachmentSupport;
         App::DocumentObject* ref = AttachmentSupport.getValue();
 
-        Part::ShapeFeature* part = dynamic_cast<Part::ShapeFeature*>(ref);
-        if (part) {
+        if (Part::hasShape(ref)) {
             const std::vector<std::string>& sub = AttachmentSupport.getSubValues();
             assert(sub.size() == 1);
 
@@ -563,7 +562,7 @@ TopoDS_Face ProfileBased::getSupportFace(const Part::Part2DObject* sketch) const
             }
 
             // get the selected sub shape (a Face)
-            const Part::TopoShape& shape = part->Shape.getShape();
+            const Part::TopoShape shape = Part::getShape(ref);
             if (shape.getShape().IsNull()) {
                 throw Base::ValueError("Sketch support shape is empty!");
             }

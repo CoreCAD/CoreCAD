@@ -259,6 +259,9 @@ public:
     Part::TopoShape derivedTipShape() const;
     /// As derivedTipShape, for the shown step.
     Part::TopoShape shownShape() const;
+    /// The Body's shape is its shown step's (Amendment 17.2): derived, never stored.
+    Part::TopoShape backingShape() const override;
+    const Data::ComplexGeoData* getElementData() const override;
     /// The name on the shown step's shape of the element @p bodySub names on this Body's shape;
     /// empty when none. For a pattern copy the numbers differ, so the element is matched by
     /// itself.
@@ -300,7 +303,19 @@ protected:
 private:
     /// copiedBy(), kept until this Body's Tip, its component or its shape changes.
     mutable std::optional<App::DocumentObject*> copier;
+    /// shownShape() and what it was made from, so a repeated read does not copy the solid.
+    struct ShownShapeCache
+    {
+        const App::DocumentObject* step = nullptr;
+        TopoDS_Shape stepShape;
+        std::string componentId;
+        long copy = 0;
+        Part::TopoShape shape;
+    };
+    mutable ShownShapeCache shownCache;
     App::DocumentObject* findCopier() const;
+    /// shownStep(), or when that has no shape, the last step before it that has one.
+    App::DocumentObject* shownStepWithShape() const;
     /// The pattern copy this Body stands for, or chain::WholeOutput.
     long tipCopy() const;
     void appendAtTip(PartDesign::Feature* feature, long copy);

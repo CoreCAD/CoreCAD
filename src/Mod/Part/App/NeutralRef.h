@@ -10,12 +10,12 @@
 namespace App
 {
 class Document;
-}
+class GeoFeature;
+}  // namespace App
 
 namespace Part
 {
 
-class ShapeFeature;
 
 /**
  * A kernel-neutral reference to a sub-shape of a feature -- the stored form a
@@ -59,7 +59,7 @@ struct PartExport NRef
  * @return the captured NRef; a null ref (empty @c kind) if @p subName names no
  *         sub-shape of @p feature's shape
  */
-PartExport NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName);
+PartExport NRef captureFaceRef(const App::GeoFeature& feature, const std::string& subName);
 
 /**
  * What became of a reference when it was resolved.
@@ -106,7 +106,7 @@ struct PartExport NRefResolution
  * @param feature the feature to resolve against (recomputed or moved)
  * @return the outcome, carrying a sub-name only when exactly one face matched
  */
-PartExport NRefResolution resolveFaceRef(const NRef& ref, const ShapeFeature& feature);
+PartExport NRefResolution resolveFaceRef(const NRef& ref, const App::GeoFeature& feature);
 
 /**
  * Serialize an NRef to its neutral string form -- the shape it takes when written
@@ -137,8 +137,8 @@ PartExport NRef fromNeutralString(const std::string& text);
  */
 struct PartExport NRefBinding
 {
-    const ShapeFeature* feature {nullptr};  ///< the located owning feature; null if unbound
-    std::string subName;                    ///< its current sub-name for the ref; empty if unbound
+    const App::GeoFeature* feature {nullptr};  ///< the located owning feature; null if unbound
+    std::string subName;  ///< its current sub-name for the ref; empty if unbound
 };
 
 /**

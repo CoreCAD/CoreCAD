@@ -131,7 +131,7 @@ void ViewProviderCompound::updateData(const App::Property* prop)
             std::set<App::DocumentObject*> tempSources;
             std::vector<App::DocumentObject*> filter;
             for (auto source : sources) {
-                Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(source);
+                App::GeoFeature* objBase = Part::shapeCarrier(source);
                 if (objBase) {
                     auto pos = tempSources.insert(objBase);
                     if (pos.second) {
@@ -156,14 +156,12 @@ void ViewProviderCompound::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
-                Part::Feature::getShapeOwner(*it)
-            );
+            App::GeoFeature* objBase = Part::shapeCarrier(Part::Feature::getShapeOwner(*it));
             if (!objBase) {
                 continue;
             }
 
-            const TopoDS_Shape& baseShape = objBase->Shape.getValue();
+            const TopoDS_Shape baseShape = Part::getShape(objBase).getShape();
 
             TopTools_IndexedMapOfShape baseMap;
             TopExp::MapShapes(baseShape, TopAbs_FACE, baseMap);

@@ -90,21 +90,21 @@ void ViewProviderPipe::highlightReferences(ViewProviderPipe::Reference mode, boo
     switch (mode) {
         case Spine:
             highlightReferences(
-                dynamic_cast<Part::ShapeFeature*>(pcPipe->Spine.getValue()),
+                Part::shapeCarrier(pcPipe->Spine.getValue()),
                 pcPipe->Spine.getSubValuesStartsWith("Edge"),
                 on
             );
             break;
         case AuxiliarySpine:
             highlightReferences(
-                dynamic_cast<Part::ShapeFeature*>(pcPipe->AuxiliarySpine.getValue()),
+                Part::shapeCarrier(pcPipe->AuxiliarySpine.getValue()),
                 pcPipe->AuxiliarySpine.getSubValuesStartsWith("Edge"),
                 on
             );
             break;
         case Profile:
             highlightReferences(
-                dynamic_cast<Part::ShapeFeature*>(pcPipe->Profile.getValue()),
+                Part::shapeCarrier(pcPipe->Profile.getValue()),
                 pcPipe->Profile.getSubValuesStartsWith("Edge"),
                 on
             );
@@ -112,11 +112,7 @@ void ViewProviderPipe::highlightReferences(ViewProviderPipe::Reference mode, boo
         case Section: {
             std::vector<App::DocumentObject*> sections = pcPipe->Sections.getValues();
             for (auto it : sections) {
-                highlightReferences(
-                    dynamic_cast<Part::ShapeFeature*>(it),
-                    std::vector<std::string>(),
-                    on
-                );
+                highlightReferences(Part::shapeCarrier(it), std::vector<std::string>(), on);
             }
         } break;
         default:
@@ -125,7 +121,7 @@ void ViewProviderPipe::highlightReferences(ViewProviderPipe::Reference mode, boo
 }
 
 void ViewProviderPipe::highlightReferences(
-    Part::ShapeFeature* base,
+    App::GeoFeature* base,
     const std::vector<std::string>& edges,
     bool on
 )
@@ -148,7 +144,10 @@ void ViewProviderPipe::highlightReferences(
             edgeColors = svp->LineColorArray.getValues();
             std::vector<Base::Color> colors = edgeColors;
 
-            PartGui::ReferenceHighlighter highlighter(base->Shape.getValue(), svp->LineColor.getValue());
+            PartGui::ReferenceHighlighter highlighter(
+                Part::getShape(base).getShape(),
+                svp->LineColor.getValue()
+            );
             highlighter.getEdgeColors(edges, colors);
             svp->LineColorArray.setValues(colors);
         }

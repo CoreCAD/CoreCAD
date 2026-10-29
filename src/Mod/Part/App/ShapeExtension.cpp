@@ -85,12 +85,6 @@ bool ShapeExtension::extensionGetSubObject(
         return false;
     }
 
-    // The backing geometry, obtained through the object's own delegation hook: a
-    // stored Shape for a normal feature, a derived Tip shape for a Body.
-    auto* geomProp = freecad_cast<const PropertyPartShape*>(owner->getPropertyOfGeometry());
-    if (!geomProp) {
-        return false;
-    }
 
     Base::Matrix4D _mat;
     auto& matref = mat ? *mat : _mat;
@@ -107,7 +101,7 @@ bool ShapeExtension::extensionGetSubObject(
     }
 
     try {
-        TopoShape ts(geomProp->getShape());
+        TopoShape ts(backingShape());
         bool doTransform = matref != ts.getTransform();
         if (doTransform) {
             ts.setShape(ts.getShape().Located(TopLoc_Location()), false);
@@ -158,6 +152,18 @@ bool ShapeExtension::extensionGetSubObject(
     }
 }
 
+TopoShape ShapeExtension::backingShape() const
+{
+    const auto* owner = freecad_cast<const App::GeoFeature*>(getExtendedContainer());
+    if (!owner) {
+        return {};
+    }
+    if (const auto* prop = freecad_cast<const PropertyPartShape*>(owner->getPropertyOfGeometry())) {
+        return prop->getShape();
+    }
+    return {};
+}
+
 namespace Part
 {
 
@@ -168,12 +174,18 @@ bool hasShape(const App::DocumentObject* obj)
 
 TopoShape getShape(const App::DocumentObject* obj)
 {
-    if (const auto* geo = freecad_cast<const App::GeoFeature*>(obj)) {
-        if (const auto* prop = freecad_cast<const PropertyPartShape*>(geo->getPropertyOfGeometry())) {
-            return prop->getShape();
-        }
-    }
-    return {};
+    const auto* ext = obj ? obj->getExtensionByType<ShapeExtension>(true) : nullptr;
+    return ext ? ext->backingShape() : TopoShape();
+}
+
+App::GeoFeature* shapeCarrier(App::DocumentObject* obj)
+{
+    return hasShape(obj) ? freecad_cast<App::GeoFeature*>(obj) : nullptr;
+}
+
+const App::GeoFeature* shapeCarrier(const App::DocumentObject* obj)
+{
+    return hasShape(obj) ? freecad_cast<const App::GeoFeature*>(obj) : nullptr;
 }
 
 std::vector<App::DocumentObject*> getShapeObjects(const App::Document* doc)

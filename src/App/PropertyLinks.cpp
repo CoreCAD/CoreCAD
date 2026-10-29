@@ -89,8 +89,7 @@ const Data::ComplexGeoData* elementsOf(DocumentObject* target, const std::string
 {
     DocumentObject* owner = path.empty() ? target : target->getSubObject(path.c_str());
     const auto* geo = freecad_cast<GeoFeature*>(owner);
-    const PropertyComplexGeoData* shape = geo != nullptr ? geo->getPropertyOfGeometry() : nullptr;
-    return shape != nullptr ? shape->getComplexData() : nullptr;
+    return geo != nullptr ? geo->getElementData() : nullptr;
 }
 
 /// A name read from a file is in full; the target's own names may be shortened through this

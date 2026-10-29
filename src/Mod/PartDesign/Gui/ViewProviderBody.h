@@ -182,6 +182,7 @@ private:
     void onChangedObject(const Gui::ViewProvider& vp, const App::Property& prop);
     fastsignals::scoped_connection m_ChangedConn;
     void refreshOverlays();
+    void redrawShape();
 };
 
 }  // namespace PartDesignGui

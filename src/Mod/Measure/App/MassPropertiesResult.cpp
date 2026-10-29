@@ -79,12 +79,11 @@ MassPropertiesData CalculateMassProperties(
 
         TopoDS_Shape shape = object.shape;
         if (shape.IsNull()) {
-            auto* part = freecad_cast<Part::ShapeFeature*>(obj);
-            if (!part) {
+            if (!Part::hasShape(obj)) {
                 continue;
             }
 
-            shape = part->Shape.getShape().getShape();
+            shape = Part::getShape(obj).getShape();
         }
 
         if (shape.IsNull()) {

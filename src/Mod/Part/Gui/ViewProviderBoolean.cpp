@@ -141,15 +141,15 @@ void ViewProviderBoolean::updateData(const App::Property* prop)
         if (!objBool) {
             return;
         }
-        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
+        App::GeoFeature* objBase = Part::shapeCarrier(
             Part::Feature::getShapeOwner(objBool->Base.getValue())
         );
-        Part::ShapeFeature* objTool = dynamic_cast<Part::ShapeFeature*>(
+        App::GeoFeature* objTool = Part::shapeCarrier(
             Part::Feature::getShapeOwner(objBool->Tool.getValue())
         );
         if (objBase && objTool) {
-            const TopoDS_Shape& baseShape = objBase->Shape.getValue();
-            const TopoDS_Shape& toolShape = objTool->Shape.getValue();
+            const TopoDS_Shape baseShape = Part::getShape(objBase).getShape();
+            const TopoDS_Shape toolShape = Part::getShape(objTool).getShape();
             const TopoDS_Shape& boolShape = objBool->Shape.getValue();
 
             TopTools_IndexedMapOfShape baseMap, toolMap, boolMap;
@@ -275,13 +275,11 @@ void ViewProviderMultiFuse::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
-                Part::Feature::getShapeOwner(*it)
-            );
+            App::GeoFeature* objBase = Part::shapeCarrier(Part::Feature::getShapeOwner(*it));
             if (!objBase) {
                 continue;
             }
-            const TopoDS_Shape& baseShape = objBase->Shape.getValue();
+            const TopoDS_Shape baseShape = Part::getShape(objBase).getShape();
 
             TopTools_IndexedMapOfShape baseMap;
             TopExp::MapShapes(baseShape, TopAbs_FACE, baseMap);
@@ -416,13 +414,11 @@ void ViewProviderMultiCommon::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
-                Part::Feature::getShapeOwner(*it)
-            );
+            App::GeoFeature* objBase = Part::shapeCarrier(Part::Feature::getShapeOwner(*it));
             if (!objBase) {
                 continue;
             }
-            const TopoDS_Shape& baseShape = objBase->Shape.getValue();
+            const TopoDS_Shape baseShape = Part::getShape(objBase).getShape();
 
             TopTools_IndexedMapOfShape baseMap;
             TopExp::MapShapes(baseShape, TopAbs_FACE, baseMap);

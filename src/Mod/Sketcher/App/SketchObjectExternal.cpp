@@ -2400,8 +2400,8 @@ void SketchObject::rebuildExternalGeometry(std::optional<ExternalToAdd> extToAdd
                 }
             }
 
-            if (auto* refObj = freecad_cast<const Part::ShapeFeature*>(resolvedObj)) {
-                const Part::TopoShape& refShape = refObj->Shape.getShape();
+            if (Part::hasShape(resolvedObj)) {
+                const Part::TopoShape refShape = Part::getShape(resolvedObj);
                 refSubShape = refShape.getSubShape(SubElement.c_str());
             }
             else if (auto* pl = freecad_cast<const App::Plane*>(resolvedObj)) {

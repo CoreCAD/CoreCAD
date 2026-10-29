@@ -43,26 +43,12 @@ namespace Part
 class TopoShape;
 
 /**
- * @brief The opt-in "is a shape source" capability (spike for #79).
+ * @brief The "carries a shape" capability (Amendment 17).
  *
- * FreeCAD models "this object carries a shape" as inheritance from the fat
- * Part::Feature / Part::ShapeFeature base, which bundles the stored geometry,
- * the topological-naming element map, material, and — the load-bearing part —
- * the type identity that ~88 sites test with isDerivedFrom<Part::ShapeFeature>
- * to mean "can I pull a shape from this object?".
- *
- * This extension is the same peel Amendment 4 already performed for placement
- * (App::PlacementExtension): it makes "is a shape source" a capability an object
- * *composes and answers* rather than a rung it inherits. The extension hosts the
- * shape-source half of the getSubObject contract, sourcing the backing geometry
- * through the object's existing App::GeoFeature::getPropertyOfGeometry() hook —
- * so a normal feature backs it with a stored Shape it computes, and a Body backs
- * it with its derived Tip shape, with no special-casing on either side.
- *
- * Spike scope: additive only. It does not yet replace any concrete class's own
- * getSubObject override, nor migrate any consumer off isDerivedFrom; it exists to
- * prove the extension can carry the element map faithfully before the full
- * migration is drafted as an amendment.
+ * An object composes this extension instead of inheriting a shape base class. It hosts the
+ * shape-source half of the getSubObject contract and answers through backingShape(): a normal
+ * feature with the Shape it stores, a Body with the shape of its shown step (17.2). Ask
+ * Part::hasShape / Part::getShape, not isDerivedFrom<Part::ShapeFeature>, which misses a Body.
  */
 class PartExport ShapeExtension: public App::DocumentObjectExtension
 {
@@ -89,20 +75,28 @@ public:
         bool transform,
         int depth
     ) const override;
+
+    /// The shape this object carries: its stored geometry by default. An object that derives
+    /// its shape instead of storing one overrides this.
+    virtual TopoShape backingShape() const;
 };
 
 /// Capability check: does this object provide the shape-source contract?
 /// The extension-based successor to isDerivedFrom<Part::ShapeFeature>().
 PartExport bool hasShape(const App::DocumentObject* obj);
 
-/// Capability read: the object's own backing shape, sourced through its
-/// App::GeoFeature::getPropertyOfGeometry() hook — a stored Shape for a normal
-/// feature, the derived Tip shape for a Body — or an empty TopoShape when the
-/// object carries no shape. Returns the raw, local-frame geometry (no placement
+/// Capability read: the object's ShapeExtension::backingShape() — a stored Shape for a
+/// normal feature, the derived shown-step shape for a Body — or an empty TopoShape when
+/// the object carries no shape. Returns the raw, local-frame geometry (no placement
 /// transform, no sub-element resolution): the extension-based successor to the
 /// bare static_cast<Part::ShapeFeature*>(obj)->Shape.getShape() property read.
 /// For transform- or sub-element-aware reads, use Part::Feature::getTopoShape().
 PartExport TopoShape getShape(const App::DocumentObject* obj);
+
+/// @p obj when it provides the shape-source contract, else null: the extension-based
+/// successor to dynamic_cast<Part::ShapeFeature*>(obj).
+PartExport App::GeoFeature* shapeCarrier(App::DocumentObject* obj);
+PartExport const App::GeoFeature* shapeCarrier(const App::DocumentObject* obj);
 
 /// Capability enumeration: every object in the document that provides the
 /// shape-source contract (Part::hasShape). The extension-based successor to

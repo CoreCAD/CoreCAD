@@ -76,8 +76,7 @@ public:
 
     bool allow(App::Document* /*pDoc*/, App::DocumentObject* iPObj, const char* sSubName) override
     {
-        auto aPart = dynamic_cast<Part::ShapeFeature*>(iPObj);
-        if (!aPart) {
+        if (!Part::hasShape(iPObj)) {
             return false;
         }
         if (!sSubName) {
@@ -88,7 +87,7 @@ public:
             return false;
         }
 
-        auto subShape = aPart->Shape.getShape().getSubShape(sSubName, true);
+        auto subShape = Part::getShape(iPObj).getSubShape(sSubName, true);
         if (subShape.IsNull()) {
             return false;
         }
@@ -109,8 +108,7 @@ public:
 
     bool allow(App::Document* /*pDoc*/, App::DocumentObject* iPObj, const char* sSubName) override
     {
-        auto aPart = dynamic_cast<Part::ShapeFeature*>(iPObj);
-        if (!aPart) {
+        if (!Part::hasShape(iPObj)) {
             return false;
         }
         if (!sSubName) {
@@ -121,7 +119,7 @@ public:
             return false;
         }
 
-        auto subShape = aPart->Shape.getShape().getSubShape(sSubName, true);
+        auto subShape = Part::getShape(iPObj).getSubShape(sSubName, true);
         if (subShape.IsNull()) {
             return false;
         }
@@ -428,14 +426,14 @@ void PartGui::DlgProjectionOnSurface::store_current_selected_parts(
     std::vector<Gui::SelectionObject> selObj = Gui::Selection().getSelectionEx();
     if (!selObj.empty()) {
         for (auto it = selObj.begin(); it != selObj.end(); ++it) {
-            auto aPart = it->getObject<Part::ShapeFeature>();
-            if (!aPart) {
+            auto aPart = it->getObject<App::GeoFeature>();
+            if (!aPart || !Part::hasShape(aPart)) {
                 continue;
             }
 
             if (aPart) {
                 SShapeStore currentShapeStore;
-                currentShapeStore.inputShape = aPart->Shape.getShape().getShape();
+                currentShapeStore.inputShape = Part::getShape(aPart).getShape();
                 currentShapeStore.partFeature = aPart;
                 currentShapeStore.partName = aPart->getNameInDocument();
 
@@ -449,7 +447,7 @@ void PartGui::DlgProjectionOnSurface::store_current_selected_parts(
                 if (!it->getSubNames().empty()) {
                     auto parentShape = currentShapeStore.inputShape;
                     for (const auto& itName : selObj.front().getSubNames()) {
-                        auto currentShape = aPart->Shape.getShape().getSubShape(itName.c_str(), true);
+                        auto currentShape = Part::getShape(aPart).getSubShape(itName.c_str(), true);
                         if (currentShape.IsNull()) {
                             continue;
                         }
@@ -469,7 +467,7 @@ void PartGui::DlgProjectionOnSurface::store_current_selected_parts(
                         currentShapeStore.partFeature
                     );
                     auto store = store_part_in_vector(currentShapeStore, iStoreVec);
-                    higlight_object(aPart, aPart->Shape.getName(), store, iColor);
+                    higlight_object(aPart, "Shape", store, iColor);
                 }
                 Gui::Selection().clearSelection(m_partDocument->getName());
                 Gui::Selection().rmvPreselect();
@@ -723,7 +721,7 @@ void PartGui::DlgProjectionOnSurface::enable_ui_elements(
 }
 
 void PartGui::DlgProjectionOnSurface::higlight_object(
-    Part::ShapeFeature* iCurrentObject,
+    App::GeoFeature* iCurrentObject,
     const std::string& iShapeName,
     bool iHighlight,
     unsigned int iColor
@@ -732,8 +730,8 @@ void PartGui::DlgProjectionOnSurface::higlight_object(
     if (!iCurrentObject) {
         return;
     }
-    auto partenShape = iCurrentObject->Shape.getShape().getShape();
-    auto subShape = iCurrentObject->Shape.getShape().getSubShape(iShapeName.c_str(), true);
+    auto partenShape = Part::getShape(iCurrentObject).getShape();
+    auto subShape = Part::getShape(iCurrentObject).getSubShape(iShapeName.c_str(), true);
 
     TopoDS_Shape currentShape = subShape;
     if (subShape.IsNull()) {
@@ -1086,7 +1084,7 @@ void PartGui::DlgProjectionOnSurface::set_xyz_dir_spinbox(QDoubleSpinBox* icurre
 
 void PartGui::DlgProjectionOnSurface::transform_shape_to_global_position(
     TopoDS_Shape& ioShape,
-    Part::ShapeFeature* iPart
+    App::GeoFeature* iPart
 )
 {
     // getPlacement() answers identity for a feature that authors no placement of

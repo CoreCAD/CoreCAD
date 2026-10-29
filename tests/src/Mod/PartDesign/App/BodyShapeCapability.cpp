@@ -9,6 +9,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/PartDesign/App/Body.h>
@@ -17,11 +18,7 @@
 
 // NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
 
-// #79 step 3a: a Body carries its shape as a composed Part::ShapeExtension and routes the own-shape
-// half of getSubObject through it (App::DocumentObject::getSubObject dispatches to the extension),
-// instead of resolving derivedTipShape() in line. These tests assert the routed capability path
-// returns the same element-mapped geometry as the derived Tip shape it is backed by — the
-// derived-backed counterpart of the stored-backed Part::Box parity proof.
+// A Body stores no shape: it carries the shape capability backed by its shown step (Amendment 17.2).
 class BodyShapeCapabilityTest: public ::testing::Test
 {
 protected:
@@ -67,22 +64,15 @@ TEST_F(BodyShapeCapabilityTest, carriesElementMap)
     // A padded circle is a cylinder — Face1 is the lateral face; Face2/Face3 are the caps.
     const char* ref = "Face1";
 
-    // Oracle: the inheritance-based path, invoked explicitly past Body's own getSubObject override
-    // (which the extension now backs). ShapeFeature::getSubObject resolves the sub-element against
-    // the Body's Shape mirror and never touches the extension, so it is an independent reference
-    // for what the routed path must reproduce — the same style of oracle the Part::Box parity uses.
-    PyObject* pyOracle = nullptr;
-    auto* oracleOwner = _body->ShapeFeature::getSubObject(ref, &pyOracle, nullptr, false, 10);
-    ASSERT_NE(oracleOwner, nullptr);
-    ASSERT_NE(pyOracle, nullptr);
-    auto oracleMap = static_cast<Part::TopoShapePy*>(pyOracle)->getTopoShapePtr()->getElementMap();
+    // Oracle: the capability read, which getSubObject does not go through.
+    auto oracleMap = Part::getShape(_body).getSubTopoShape(ref).getElementMap();
 
     // Actual: the live getSubObject, now dispatched to the composed Part::ShapeExtension.
     PyObject* pyActual = nullptr;
     auto* actualOwner = _body->getSubObject(ref, &pyActual, nullptr, false, 10);
     ASSERT_NE(actualOwner, nullptr);
     ASSERT_NE(pyActual, nullptr);
-    ASSERT_EQ(actualOwner, oracleOwner);
+    ASSERT_EQ(actualOwner, static_cast<App::DocumentObject*>(_body));
 
     auto actualMap = static_cast<Part::TopoShapePy*>(pyActual)->getTopoShapePtr()->getElementMap();
 
@@ -104,15 +94,39 @@ TEST_F(BodyShapeCapabilityTest, carriesElementMap)
     // Negative control: a *different* face's map must NOT match the routed Face1 map, or the
     // equality above would be blind and pass even if the extension returned the wrong sub-shape.
     PyObject* pyWrong = nullptr;
-    _body->ShapeFeature::getSubObject("Face2", &pyWrong, nullptr, false, 10);
+    _body->getSubObject("Face2", &pyWrong, nullptr, false, 10);
     ASSERT_NE(pyWrong, nullptr);
     auto wrongMap = static_cast<Part::TopoShapePy*>(pyWrong)->getTopoShapePtr()->getElementMap();
     std::sort(wrongMap.begin(), wrongMap.end());
     EXPECT_FALSE(wrongMap == actualMap);
 
-    Py_XDECREF(pyOracle);
     Py_XDECREF(pyActual);
     Py_XDECREF(pyWrong);
+}
+
+TEST_F(BodyShapeCapabilityTest, storesNoShape)
+{
+    EXPECT_EQ(_body->getPropertyByName("Shape"), nullptr);
+    const auto box = Part::getShape(_body).getBoundBox();
+    EXPECT_NEAR(box.MaxZ - box.MinZ, 10.0, 1e-7);
+}
+
+TEST_F(BodyShapeCapabilityTest, followsItsTipBeforeItIsRecomputed)
+{
+    _pad->Length.setValue(20.0);
+    _pad->recomputeFeature();
+
+    const auto box = Part::getShape(_body).getBoundBox();
+    EXPECT_NEAR(box.MaxZ - box.MinZ, 20.0, 1e-7);
+}
+
+TEST_F(BodyShapeCapabilityTest, namesTheElementsOfItsShape)
+{
+    // A mapped name comes back only when the Body answers for the elements of its shape.
+    const auto names = _body->getElementName("Face1");
+    EXPECT_FALSE(names.newName.empty());
+    EXPECT_EQ(names.oldName, "Face1");
+    EXPECT_FALSE(_body->getElementTypes().empty());
 }
 
 TEST_F(BodyShapeCapabilityTest, wholeShapeParity)

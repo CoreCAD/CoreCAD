@@ -34,7 +34,7 @@ namespace
 // The primitives whose faces carry a parametric role. An explicit allow-list, not
 // "derives from Primitive": that base also covers leaves with no clean per-face
 // role (a wedge, a helix, a regular polygon), which stay signature-only.
-bool isRoleBearingPrimitive(const ShapeFeature& feature)
+bool isRoleBearingPrimitive(const App::GeoFeature& feature)
 {
     return feature.isDerivedFrom<Box>() || feature.isDerivedFrom<Cylinder>()
         || feature.isDerivedFrom<Sphere>() || feature.isDerivedFrom<Cone>()
@@ -140,9 +140,9 @@ std::string denormalizeProv(const std::string& prov, const App::Document& doc)
 }
 }  // namespace
 
-NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName)
+NRef captureFaceRef(const App::GeoFeature& feature, const std::string& subName)
 {
-    const TopoShape& stored = feature.Shape.getShape();
+    const TopoShape stored = getShape(&feature);
     if (stored.isNull() || subName.empty()) {
         return {};
     }
@@ -189,7 +189,7 @@ NRef captureFaceRef(const ShapeFeature& feature, const std::string& subName)
     return ref;
 }
 
-NRefResolution resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
+NRefResolution resolveFaceRef(const NRef& ref, const App::GeoFeature& feature)
 {
     // A ref that names no face asks nothing, which is not the same as asking and
     // getting no answer: a feature holding one has simply never captured a
@@ -212,7 +212,7 @@ NRefResolution resolveFaceRef(const NRef& ref, const ShapeFeature& feature)
         return {RefMatch::Matched, std::move(sub)};
     }
 
-    const TopoShape& stored = feature.Shape.getShape();
+    const TopoShape stored = getShape(&feature);
     if (stored.isNull()) {
         return {RefMatch::Lost, {}};
     }
@@ -309,8 +309,9 @@ NRefBinding bindInDocument(const NRef& ref, const App::Document& doc)
 
     // The Uid is the join key: find the feature that carries this identity, whatever
     // face ordinals its own rebuild produced, and resolve the sub-name on it.
-    for (const ShapeFeature* feature : doc.getObjectsOfType<ShapeFeature>()) {
-        if (feature->Uid.getValueStr() != ref.featureUid) {
+    for (const App::DocumentObject* obj : getShapeObjects(&doc)) {
+        const auto* feature = freecad_cast<const App::GeoFeature*>(obj);
+        if (!feature || feature->Uid.getValueStr() != ref.featureUid) {
             continue;
         }
         const NRefResolution resolved = resolveFaceRef(ref, *feature);

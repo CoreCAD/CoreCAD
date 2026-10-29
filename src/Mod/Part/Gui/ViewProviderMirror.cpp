@@ -76,7 +76,7 @@ void ViewProviderMirror::setupContextMenu(QMenu* menu, QObject* receiver, const 
     // don't add plane editor to context menu if MirrorPlane is set because it would override any
     // changes, anyway
     Part::Mirroring* mf = getObject<Part::Mirroring>();
-    Part::ShapeFeature* ref = static_cast<Part::ShapeFeature*>(mf->MirrorPlane.getValue());
+    App::DocumentObject* ref = mf->MirrorPlane.getValue();
     bool enabled = true;
     if (ref) {
         enabled = false;
@@ -94,7 +94,7 @@ bool ViewProviderMirror::setEdit(int ModNum)
     if (ModNum == ViewProvider::Default) {
         // get the properties from the mirror feature
         Part::Mirroring* mf = getObject<Part::Mirroring>();
-        Part::ShapeFeature* ref = static_cast<Part::ShapeFeature*>(mf->MirrorPlane.getValue());
+        App::DocumentObject* ref = mf->MirrorPlane.getValue();
         if (ref) {  // skip this editor if MirrorPlane property is set
             return false;
         }
@@ -249,11 +249,11 @@ void ViewProviderFillet::updateData(const App::Property* prop)
         if (!objFill) {
             return;
         }
-        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
+        App::GeoFeature* objBase = Part::shapeCarrier(
             Part::Feature::getShapeOwner(objFill->Base.getValue())
         );
         if (objBase) {
-            const TopoDS_Shape& baseShape = objBase->Shape.getValue();
+            const TopoDS_Shape baseShape = Part::getShape(objBase).getShape();
             const TopoDS_Shape& fillShape = objFill->Shape.getValue();
 
             TopTools_IndexedMapOfShape baseMap, fillMap;
@@ -363,11 +363,11 @@ void ViewProviderChamfer::updateData(const App::Property* prop)
         if (!objCham) {
             return;
         }
-        Part::ShapeFeature* objBase = dynamic_cast<Part::ShapeFeature*>(
+        App::GeoFeature* objBase = Part::shapeCarrier(
             Part::Feature::getShapeOwner(objCham->Base.getValue())
         );
         if (objBase) {
-            const TopoDS_Shape& baseShape = objBase->Shape.getValue();
+            const TopoDS_Shape baseShape = Part::getShape(objBase).getShape();
             const TopoDS_Shape& chamShape = objCham->Shape.getValue();
 
             TopTools_IndexedMapOfShape baseMap, chamMap;

@@ -162,13 +162,11 @@ void ViewProviderBoolean::updatePreview()
     }
 
     const auto addToolPreview = [this, toolTransparency](App::DocumentObject* tool) {
-        const auto feature = freecad_cast<Part::ShapeFeature*>(tool);
-
-        if (!feature) {
+        if (!Part::hasShape(tool)) {
             return;
         }
 
-        Part::TopoShape toolShape = feature->Shape.getShape();
+        Part::TopoShape toolShape = Part::getShape(tool);
 
         auto pcToolPreview = new PartGui::SoPreviewShape;
         updatePreviewShape(toolShape, pcToolPreview);

@@ -21,7 +21,9 @@
  *                                                                          *
  ***************************************************************************/
 
+#include <App/GeoFeature.h>
 #include <Base/Interpreter.h>
+#include <Mod/Part/App/PartPyCXX.h>
 #include <Mod/Part/App/ShapeExtension.h>
 #include <Base/Vector3D.h>
 
@@ -47,8 +49,9 @@ Base::Placement AttacherSubObjectPlacement::calculate(
 
 std::optional<Base::Vector3d> PartCenterOfMass::ofDocumentObject(App::DocumentObject* object) const
 {
-    if (const auto* feature = freecad_cast<Part::ShapeFeature*>(object)) {
-        const auto shape = feature->Shape.getShape();
+    const auto* feature = freecad_cast<App::GeoFeature*>(object);
+    if (feature && Part::hasShape(feature)) {
+        const auto shape = Part::getShape(feature);
 
         if (const auto cog = shape.centerOfGravity()) {
             const Base::Placement comPlacement {*cog, Base::Rotation {}};
@@ -72,6 +75,10 @@ std::optional<PyObject*> ShapeAttributeProvider::getAttribute(
 {
     if (Base::streq(attr, "Shape")) {
         Base::PyGILStateLocker lock;
+        // An object that carries a shape without storing one answers even when it is empty.
+        if (Part::hasShape(object)) {
+            return Py::new_reference_to(Part::shape2pyshape(Part::getShape(object)));
+        }
         // Special treatment of Shape property
         static PyObject* getShape = nullptr;
         if (!getShape) {

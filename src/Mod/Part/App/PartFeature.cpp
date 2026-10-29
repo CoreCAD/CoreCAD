@@ -174,6 +174,15 @@ App::ElementNamePair ShapeFeature::getElementName(const char* name, ElementNameT
 
 App::ElementNamePair ShapeFeature::getExportElementName(TopoShape shape, const char* name) const
 {
+    return exportElementName(std::move(shape), Shape.getShape(), name);
+}
+
+App::ElementNamePair ShapeFeature::exportElementName(
+    TopoShape shape,
+    const TopoShape& searchShape_,
+    const char* name
+)
+{
     Data::MappedElement mapped = shape.getElementName(name);
     auto res = shape.shapeTypeAndIndex(mapped.index);
     static const int MinLowerTopoNames = 3;
@@ -338,7 +347,7 @@ App::ElementNamePair ShapeFeature::getExportElementName(TopoShape shape, const c
                 if (names.empty()) {
                     // Naming based heuristic has failed to find the element.  Let's see if we can
                     // find it by matching either planes for faces or lines for edges.
-                    auto searchShape = this->Shape.getShape();
+                    auto searchShape = searchShape_;
                     // If we're still out at a Shell, Solid, CompSolid, or Compound drill in
                     while (!searchShape.getShape().IsNull()
                            && searchShape.getShape().ShapeType() < TopAbs_FACE) {

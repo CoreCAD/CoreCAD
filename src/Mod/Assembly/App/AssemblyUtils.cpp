@@ -1072,12 +1072,11 @@ ResolvedReference resolveReference(App::DocumentObject* value, const std::vector
     splitTypeAndNumber(eltName, r.eltType, r.eltIndex);
     splitTypeAndNumber(r.vtxName, r.vtxType, dummy);
 
-    const auto* base = dynamic_cast<const Part::ShapeFeature*>(r.geoObj);
-    if (!base) {
+    if (!Part::hasShape(r.geoObj)) {
         r.valid = false;
         return r;
     }
-    r.eltShape = subShape(base->Shape.getShape(), eltName);
+    r.eltShape = subShape(Part::getShape(r.geoObj), eltName);
     if (r.eltShape.IsNull()) {
         r.valid = false;
     }
@@ -1155,10 +1154,9 @@ Base::Vector3d axisIntersection(
     return toVec(hit);
 }
 
-const Part::TopoShape* objTopoShape(const App::DocumentObject* obj)
+Part::TopoShape objTopoShape(const App::DocumentObject* obj)
 {
-    const auto* base = dynamic_cast<const Part::ShapeFeature*>(obj);
-    return base ? &base->Shape.getShape() : nullptr;
+    return Part::getShape(obj);
 }
 
 Base::Placement objPlacement(const App::DocumentObject* obj)
@@ -1217,8 +1215,8 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
             }
         }
         else {
-            const Part::TopoShape* shape = objTopoShape(r.geoObj);
-            const TopoDS_Shape vtx = shape ? subShape(*shape, r.vtxName) : TopoDS_Shape();
+            const Part::TopoShape shape = objTopoShape(r.geoObj);
+            const TopoDS_Shape vtx = shape.isNull() ? TopoDS_Shape() : subShape(shape, r.vtxName);
             if (vtx.IsNull()) {
                 return {};
             }
@@ -1277,13 +1275,13 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
                     Base::Vector3d hit(toVec(cyl.Location()));
                     for (int i = 1;; ++i) {
                         const std::string name = "Face" + std::to_string(i);
-                        const Part::TopoShape* shp = objTopoShape(r.geoObj);
-                        if (!shp) {
+                        const Part::TopoShape shp = objTopoShape(r.geoObj);
+                        if (shp.isNull()) {
                             break;
                         }
                         TopoDS_Shape fj;
                         try {
-                            fj = shp->getSubShape(name.c_str());
+                            fj = shp.getSubShape(name.c_str());
                         }
                         catch (const Base::Exception&) {
                             break;  // ran past the last face
@@ -1310,8 +1308,8 @@ Base::Placement computePlacement(const ResolvedReference& r, bool ignoreVertex)
             }
         }
         else {
-            const Part::TopoShape* shape = objTopoShape(r.geoObj);
-            const TopoDS_Shape vtx = shape ? subShape(*shape, r.vtxName) : TopoDS_Shape();
+            const Part::TopoShape shape = objTopoShape(r.geoObj);
+            const TopoDS_Shape vtx = shape.isNull() ? TopoDS_Shape() : subShape(shape, r.vtxName);
             if (vtx.IsNull()) {
                 return {};
             }

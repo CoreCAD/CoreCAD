@@ -139,6 +139,13 @@ public:
     PyObject* getPyObject() override;
 
     App::ElementNamePair getElementName(const char* name, ElementNameType type = Normal) const override;
+    /// The export name of @p name on any shape; a face or edge the names no longer find is
+    /// searched for by geometry on @p searchShape.
+    static App::ElementNamePair exportElementName(
+        TopoShape shape,
+        const TopoShape& searchShape,
+        const char* name
+    );
 
     static std::list<Data::HistoryItem> getElementHistory(
         App::DocumentObject* obj,

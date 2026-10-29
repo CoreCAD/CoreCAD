@@ -202,7 +202,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(box.Shape.childShapes()), 1)
         self.assertEqual(box.Shape.childShapes()[0].ElementMapSize, 26)
         body.addFeature(box)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         self.assertEqual(len(body.Shape.childShapes()), 1)
         self.assertEqual(body.Shape.childShapes()[0].ElementMapSize, 26)
@@ -219,7 +219,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(cylinder.Shape.childShapes()), 1)
         self.assertEqual(cylinder.Shape.childShapes()[0].ElementMapSize, 8)
         body.addFeature(cylinder)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -244,7 +244,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(sphere.Shape.childShapes()), 1)
         self.assertEqual(sphere.Shape.childShapes()[0].ElementMapSize, 6)
         body.addFeature(sphere)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -269,7 +269,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(cone.Shape.childShapes()), 1)
         self.assertEqual(cone.Shape.childShapes()[0].ElementMapSize, 8)
         body.addFeature(cone)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -294,7 +294,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(ellipsoid.Shape.childShapes()), 1)
         self.assertEqual(ellipsoid.Shape.childShapes()[0].ElementMapSize, 6)
         body.addFeature(ellipsoid)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -319,7 +319,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(torus.Shape.childShapes()), 1)
         self.assertEqual(torus.Shape.childShapes()[0].ElementMapSize, 4)
         body.addFeature(torus)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -344,7 +344,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(prism.Shape.childShapes()), 1)
         self.assertEqual(prism.Shape.childShapes()[0].ElementMapSize, 38)
         body.addFeature(prism)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -369,7 +369,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.assertEqual(len(wedge.Shape.childShapes()), 1)
         self.assertEqual(wedge.Shape.childShapes()[0].ElementMapSize, 26)
         body.addFeature(wedge)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         reverseMap = body.Shape.childShapes()[0].ElementReverseMap
         faces = [name for name in reverseMap.keys() if name.startswith("Face")]
@@ -1002,7 +1002,7 @@ class TestTopologicalNamingProblem(unittest.TestCase):
         self.Doc.recompute()
         body.addFeature(box)
         body.addFeature(pattern)
-        self.assertEqual(len(body.Shape.childShapes()), 0)
+        self.assertEqual(len(body.Shape.childShapes()), 1)
         self.Doc.recompute()
         self.assertEqual(len(body.Shape.childShapes()), 1)
         self.assertEqual(body.Shape.childShapes()[0].ElementMapSize, 26)
