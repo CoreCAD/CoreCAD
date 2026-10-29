@@ -1206,7 +1206,8 @@ TEST_F(SketchRecipeMergeTest, aMergeReportsTheSameWhicheverSideIsNamedFirst)
     const Sketcher::MergeReport ab = Sketcher::mergeSketches(*ancestor, *br.a, *br.b);
     const Sketcher::MergeReport ba = Sketcher::mergeSketches(*ancestor, *br.b, *br.a);
 
-    EXPECT_EQ(ab.undetermined.size(), ba.undetermined.size());
+    EXPECT_TRUE(ab.undetermined.empty());
+    EXPECT_TRUE(ba.undetermined.empty());
     EXPECT_EQ(ab.solvedPositions, ba.solvedPositions);
 }
 
