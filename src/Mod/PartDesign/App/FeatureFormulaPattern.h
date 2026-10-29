@@ -26,7 +26,6 @@ public:
     App::PropertyDistance X;
     App::PropertyDistance Y;
     App::PropertyDistance Z;
-    App::PropertyInteger n;
 
     short mustExecute() const override;
 

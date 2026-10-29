@@ -29,6 +29,7 @@
 #include <gp_Trsf.hxx>
 
 #include <App/DocumentObserver.h>
+#include <App/ObjectIdentifier.h>
 #include <App/PropertyStandard.h>
 #include "FeatureAddSub.h"
 
@@ -103,6 +104,28 @@ public:
     /// time. Break-out translates the selected Body's component-id to its ordinal once, against
     /// the pattern's stored shape where the ids are self-consistent, then stores the ordinal.
     App::PropertyIntegerList SkipInstances;
+
+    /// The number of the copy formulas are being worked out for, 1 for the first copy placed.
+    App::PropertyInteger n;
+
+    /// A measurement of a copied step that is set again for each copy, so each copy is that
+    /// step rebuilt with its own value. Stored as two properties of this pattern: VariedK, whose
+    /// formula names the measurement, and VariedKPerCopy, whose formula gives its value.
+    struct VariedMeasurement
+    {
+        App::ObjectIdentifier target;
+        App::Property* perCopy;
+    };
+    /// In the order they were added. Throws when a VariedK formula does not name one value.
+    std::vector<VariedMeasurement> variedMeasurements() const;
+    bool variesMeasurements() const;
+    /// @p target names the measurement as a formula would, e.g. "Sketch.Constraints.Width";
+    /// @p formula gives its value for each copy and may use n.
+    void varyMeasurement(const std::string& target, const std::string& formula);
+    void stopVarying(std::size_t index);
+    /// What varyMeasurement() can be given for the current originals, each named as a formula
+    /// names it: the originals' own measurements and their sketches' named dimensions.
+    std::vector<std::string> measurementsToVary() const;
 
     /// The 1-based index, among this pattern's output solids, of the copy with @p ordinal, or 0
     /// when that copy is skipped or out of range. Copies are emitted in ordinal order with the
@@ -188,6 +211,17 @@ protected:
     ) override;
 
 private:
+    struct Piece
+    {
+        Part::TopoShape added;
+        Part::TopoShape cut;
+    };
+    /// The original's piece for each of @p count members, moved by @p toSupport: the same piece
+    /// for every member unless measurements vary, when member k is the original rebuilt with
+    /// copy k's values.
+    std::vector<Piece> piecesOf(FeatureAddSub* original, std::size_t count, const gp_Trsf& toSupport);
+    std::vector<App::any> valuesForCopy(const std::vector<VariedMeasurement>& varied, long copy);
+
     /// leavesOriginalAsIs(), kept until the pattern's shape or its base changes.
     mutable std::optional<bool> originalAsIs;
     bool checkOriginalAsIs() const;

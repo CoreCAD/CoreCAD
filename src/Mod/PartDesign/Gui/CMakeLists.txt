@@ -161,6 +161,8 @@ SET(PartDesignGuiTaskDlgs_SRCS
     OriginDisplay.h
     TaskTransformedParameters.cpp
     TaskTransformedParameters.h
+    TaskVariedMeasurements.cpp
+    TaskVariedMeasurements.h
     TaskMirroredParameters.ui
     TaskMirroredParameters.cpp
     TaskMirroredParameters.h

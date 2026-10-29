@@ -6,6 +6,7 @@
 #include <Mod/PartDesign/App/FeatureFormulaPattern.h>
 
 #include "ui_TaskFormulaPatternParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskFormulaPatternParameters.h"
 
 using namespace PartDesignGui;
@@ -120,6 +121,7 @@ TaskDlgFormulaPatternParameters::TaskDlgFormulaPatternParameters(
     parameter = new TaskFormulaPatternParameters(FormulaPatternView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(FormulaPatternView));
     Content.push_back(new TaskMergeResultParameters(FormulaPatternView));
     Content.push_back(preview);
 }

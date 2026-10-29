@@ -34,6 +34,12 @@ acknowledgeOverlap = _PartDesign.acknowledgeOverlap
 stepsUsedBy = _PartDesign.stepsUsedBy
 stepsUsing = _PartDesign.stepsUsing
 
+# #165: each copy of a pattern rebuilt with chosen measurements changed by a formula of n.
+varyMeasurement = _PartDesign.varyMeasurement
+variedMeasurements = _PartDesign.variedMeasurements
+stopVarying = _PartDesign.stopVarying
+measurementsToVary = _PartDesign.measurementsToVary
+
 
 def makeFeature(profile, featureType, subs=None, body=None, recompute=True):
     """Create a PartDesign feature the GUI's way: the Body EMERGES from the feature.

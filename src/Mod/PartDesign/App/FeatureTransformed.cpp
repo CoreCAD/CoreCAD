@@ -37,6 +37,9 @@
 #include <algorithm>
 #include <array>
 
+#include <App/Expression.h>
+#include <App/ExpressionParser.h>
+#include <App/OverriddenBuild.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
@@ -111,6 +114,141 @@ Transformed::Transformed()
         derivedCount,
         "Cruth P7 (#34): how many connected pieces those copies formed among themselves"
     );
+    ADD_PROPERTY_TYPE(
+        n,
+        (1),
+        "Base",
+        App::PropertyType(App::Prop_Hidden | App::Prop_ReadOnly | App::Prop_Output),
+        "The number of the copy the formulas are being worked out for"
+    );
+}
+
+namespace
+{
+constexpr const char* variedGroup = "Varied measurements";
+
+std::string variedName(std::size_t k)
+{
+    return "Varied" + std::to_string(k);
+}
+
+std::string perCopyName(std::size_t k)
+{
+    return variedName(k) + "PerCopy";
+}
+}  // namespace
+
+std::vector<Transformed::VariedMeasurement> Transformed::variedMeasurements() const
+{
+    std::vector<VariedMeasurement> varied;
+    for (std::size_t k = 1;; ++k) {
+        App::Property* measured = getPropertyByName(variedName(k).c_str());
+        App::Property* perCopy = getPropertyByName(perCopyName(k).c_str());
+        if (!measured || !perCopy) {
+            return varied;
+        }
+        const auto naming = getExpression(App::ObjectIdentifier(*measured)).expression;
+        const auto* variable = freecad_cast<App::VariableExpression*>(naming.get());
+        if (!variable) {
+            throw Base::ValueError(variedName(k) + " does not name one measurement");
+        }
+        varied.push_back({variable->getPath(), perCopy});
+    }
+}
+
+bool Transformed::variesMeasurements() const
+{
+    return getPropertyByName(variedName(1).c_str()) != nullptr;
+}
+
+void Transformed::varyMeasurement(const std::string& target, const std::string& formula)
+{
+    std::shared_ptr<App::Expression> naming = App::Expression::parse(this, target);
+    if (!freecad_cast<App::VariableExpression*>(naming.get())) {
+        throw Base::ValueError("'" + target + "' does not name one measurement");
+    }
+    std::shared_ptr<App::Expression> perCopyFormula = App::Expression::parse(this, formula);
+
+    std::size_t k = 1;
+    while (getPropertyByName(variedName(k).c_str())) {
+        ++k;
+    }
+    App::Property* measured = addDynamicProperty(
+        "App::PropertyQuantity",
+        variedName(k).c_str(),
+        variedGroup,
+        "A measurement of a copied step that changes for each copy",
+        App::Prop_None,
+        true
+    );
+    App::Property* perCopy = addDynamicProperty(
+        "App::PropertyQuantity",
+        perCopyName(k).c_str(),
+        variedGroup,
+        "The measurement's value for each copy; a formula may use n, the copy's number"
+    );
+    setExpression(App::ObjectIdentifier(*measured), naming);
+    setExpression(App::ObjectIdentifier(*perCopy), perCopyFormula);
+}
+
+std::vector<std::string> Transformed::measurementsToVary() const
+{
+    std::vector<std::string> found;
+    const auto addPath =
+        [&found](const App::DocumentObject* object, const App::ObjectIdentifier& path) {
+            found.push_back(
+                std::string(object->getNameInDocument()) + "." + path.getPropertyName()
+                + path.getSubPathStr()
+            );
+        };
+    for (App::DocumentObject* original : getOriginals()) {
+        std::vector<App::Property*> props;
+        original->getPropertyList(props);
+        for (App::Property* prop : props) {
+            if (freecad_cast<App::PropertyQuantity*>(prop) && !original->isHidden(prop)
+                && !original->isReadOnly(prop) && !prop->testStatus(App::Property::Output)) {
+                addPath(original, App::ObjectIdentifier(*prop));
+            }
+        }
+        const auto* profileBased = freecad_cast<ProfileBased*>(original);
+        App::DocumentObject* sketch = profileBased ? profileBased->getVerifiedSketch(true) : nullptr;
+        if (App::Property* constraints = sketch ? sketch->getPropertyByName("Constraints") : nullptr) {
+            std::vector<App::ObjectIdentifier> paths;
+            constraints->getPaths(paths);
+            for (const App::ObjectIdentifier& path : paths) {
+                addPath(sketch, path);
+            }
+        }
+    }
+    return found;
+}
+
+void Transformed::stopVarying(std::size_t index)
+{
+    std::vector<std::pair<std::string, std::string>> kept;
+    for (std::size_t k = 1; getPropertyByName(variedName(k).c_str()); ++k) {
+        App::Property* measured = getPropertyByName(variedName(k).c_str());
+        auto* perCopy = freecad_cast<App::PropertyQuantity*>(getPropertyByName(perCopyName(k).c_str()));
+        const auto naming = getExpression(App::ObjectIdentifier(*measured)).expression;
+        if (k - 1 != index && naming && perCopy) {
+            const auto formula = getExpression(App::ObjectIdentifier(*perCopy)).expression;
+            kept.emplace_back(
+                naming->toString(),
+                formula ? formula->toString() : perCopy->getQuantityValue().getSafeUserString()
+            );
+        }
+        setExpression(App::ObjectIdentifier(*measured), nullptr);
+        if (perCopy) {
+            setExpression(App::ObjectIdentifier(*perCopy), nullptr);
+        }
+    }
+    for (std::size_t k = 1; getPropertyByName(variedName(k).c_str()); ++k) {
+        removeDynamicProperty(perCopyName(k).c_str());
+        removeDynamicProperty(variedName(k).c_str());
+    }
+    for (const auto& [target, formula] : kept) {
+        varyMeasurement(target, formula);
+    }
 }
 
 int Transformed::solidIndexOfInstance(long ordinal) const
@@ -366,6 +504,12 @@ short Transformed::mustExecute() const
         || SkipInstances.isTouched()) {
         return 1;
     }
+    for (std::size_t k = 1; App::Property* measured = getPropertyByName(variedName(k).c_str()); ++k) {
+        const App::Property* perCopy = getPropertyByName(perCopyName(k).c_str());
+        if (measured->isTouched() || (perCopy && perCopy->isTouched())) {
+            return 1;
+        }
+    }
     return FeatureAddSub::mustExecute();
 }
 
@@ -419,6 +563,12 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
 
     switch (mode) {
         case Mode::Features:
+            // Copies built differently cannot be shown as one shape moved about, so the preview
+            // is the pieces the last build placed.
+            if (variesMeasurements() && !AddSubShape.getShape().isNull()) {
+                PreviewShape.setValue(AddSubShape.getShape().getShape());
+                return StdReturn;
+            }
             PreviewShape.setValue(makeCompoundOfToolShapes());
             return StdReturn;
 
@@ -447,6 +597,110 @@ void Transformed::onChanged(const App::Property* prop)
     }
 
     FeatureAddSub::onChanged(prop);
+}
+
+std::vector<App::any> Transformed::valuesForCopy(const std::vector<VariedMeasurement>& varied, long copy)
+{
+    n.setValue(copy);
+    std::vector<App::any> values;
+    for (const VariedMeasurement& measurement : varied) {
+        const App::ObjectIdentifier perCopyPath(*measurement.perCopy);
+        const auto formula = getExpression(perCopyPath).expression;
+        Base::Quantity value = App::anyToQuantity(measurement.perCopy->getPathValue(perCopyPath));
+        if (formula) {
+            const App::ExpressionPtr result = formula->eval();
+            const auto* number = freecad_cast<App::NumberExpression*>(result.get());
+            if (!number) {
+                throw Base::ValueError(
+                    "The formula for " + measurement.target.toString()
+                    + " does not give a number for copy " + std::to_string(copy)
+                );
+            }
+            value = number->getQuantity();
+        }
+        const App::Property* target = measurement.target.getProperty();
+        const App::any stated = target ? target->getPathValue(measurement.target) : App::any();
+        if (stated.type() == typeid(Base::Quantity)
+            && App::any_cast<Base::Quantity>(stated).getUnit() != value.getUnit()) {
+            throw Base::ValueError(
+                "The formula for " + measurement.target.toString() + " gives "
+                + value.getSafeUserString() + " for copy " + std::to_string(copy)
+                + ", but it needs " + App::any_cast<Base::Quantity>(stated).getUnit().getTypeString()
+                + "; write it with a unit, such as 5 mm + n * 1 mm"
+            );
+        }
+        values.emplace_back(value);
+    }
+    return values;
+}
+
+std::vector<Transformed::Piece> Transformed::piecesOf(
+    FeatureAddSub* original,
+    std::size_t count,
+    const gp_Trsf& toSupport
+)
+{
+    const auto pieceNow = [&]() {
+        Piece piece;
+        original->getAddSubShape(piece.added, piece.cut);
+        if (piece.added.isNull() && piece.cut.isNull()) {
+            throw Base::ValueError("Shape of additive/subtractive feature is empty");
+        }
+        const gp_Trsf trsf = original->getLocation().Transformation().Multiplied(toSupport);
+        for (Part::TopoShape* half : {&piece.added, &piece.cut}) {
+            if (!half->isNull()) {
+                *half = half->makeElementTransform(trsf);
+            }
+        }
+        return piece;
+    };
+
+    std::vector<Piece> pieces {pieceNow()};
+    std::vector<VariedMeasurement> varied;
+    for (const VariedMeasurement& measurement : variedMeasurements()) {
+        App::DocumentObject* owner = measurement.target.getDocumentObject();
+        const std::vector<App::DocumentObject*> builtFrom = original->getOutListRecursive();
+        if (owner == original || std::ranges::find(builtFrom, owner) != builtFrom.end()) {
+            varied.push_back(measurement);
+        }
+    }
+    if (varied.empty()) {
+        pieces.resize(count, pieces.front());
+        return pieces;
+    }
+
+    std::vector<App::ObjectIdentifier> targets;
+    for (const VariedMeasurement& measurement : varied) {
+        targets.push_back(measurement.target);
+    }
+    struct CopyNumberReset
+    {
+        App::PropertyInteger& n;
+        ~CopyNumberReset()
+        {
+            n.setValue(1);
+        }
+    } reset {n};
+    // Every copy's values are worked out before any is built, so a formula that reads the
+    // measurement it sets reads the value as stated.
+    std::vector<std::vector<App::any>> valuesByCopy(1);
+    for (std::size_t copy = 1; copy < count; ++copy) {
+        valuesByCopy.push_back(valuesForCopy(varied, static_cast<long>(copy)));
+    }
+    App::OverriddenBuild build(original, targets);
+    for (std::size_t copy = 1; copy < count; ++copy) {
+        build.build(valuesByCopy[copy]);
+        Piece piece = pieceNow();
+        if (piece.added.isNull() != pieces.front().added.isNull()
+            || piece.cut.isNull() != pieces.front().cut.isNull()) {
+            throw Base::ValueError(
+                "Copy " + std::to_string(copy) + " of " + original->Label.getValue()
+                + " no longer adds and cuts as the original does"
+            );
+        }
+        pieces.push_back(std::move(piece));
+    }
+    return pieces;
 }
 
 App::DocumentObjectExecReturn* Transformed::execute()
@@ -485,6 +739,24 @@ App::DocumentObjectExecReturn* Transformed::execute()
         return App::DocumentObject::StdReturn;
     }
 
+    try {
+        for (const VariedMeasurement& measurement : variedMeasurements()) {
+            App::DocumentObject* owner = measurement.target.getDocumentObject();
+            const bool used = std::ranges::any_of(originals, [owner](App::DocumentObject* original) {
+                const std::vector<App::DocumentObject*> builtFrom = original->getOutListRecursive();
+                return owner == original || std::ranges::find(builtFrom, owner) != builtFrom.end();
+            });
+            if (!owner || !used) {
+                return new App::DocumentObjectExecReturn(
+                    measurement.target.toString() + " is not used to build what this pattern copies"
+                );
+            }
+        }
+    }
+    catch (const Base::Exception& e) {
+        return new App::DocumentObjectExecReturn(e.what());
+    }
+
     // Get the support
     App::DocumentObject* supportFeature = nullptr;
 
@@ -515,18 +787,17 @@ App::DocumentObjectExecReturn* Transformed::execute()
 
     supportShape.setTransform(Base::Matrix4D());
 
-    auto getTransformedCompShape = [&](const auto& supportShape, const auto& origShape) {
+    // memberShape(k) is what member k of the pattern places before it is moved.
+    auto getTransformedCompShape = [&](const auto& supportShape, const auto& memberShape) {
         std::vector<TopoShape> shapes = {supportShape};
-        TopoShape shape(origShape);
-        int idx = 1;
-        auto transformIter = transformations.cbegin();
-        transformIter++;
-        for (; transformIter != transformations.end(); transformIter++) {
+        for (std::size_t idx = 1; idx < transformations.size(); ++idx) {
             if (Base::Sequencer().wasCanceled()) {
                 return std::vector<TopoShape>();
             }
-            auto opName = Data::indexSuffix(idx++);
-            shapes.emplace_back(shape.makeElementTransform(*transformIter, opName.c_str()));
+            auto opName = Data::indexSuffix(static_cast<int>(idx));
+            shapes.emplace_back(
+                TopoShape(memberShape(idx)).makeElementTransform(transformations[idx], opName.c_str())
+            );
         }
         return shapes;
     };
@@ -557,10 +828,6 @@ App::DocumentObjectExecReturn* Transformed::execute()
             // there are many originals. But it seems safe to assume that in most cases there are
             // few originals and many transformations
             for (auto original : originals) {
-                // Extract the original shape and determine whether to cut or to fuse
-                Part::TopoShape fuseShape;
-                Part::TopoShape cutShape;
-
                 auto feature = freecad_cast<PartDesign::FeatureAddSub*>(original);
                 if (!feature) {
                     return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
@@ -569,21 +836,19 @@ App::DocumentObjectExecReturn* Transformed::execute()
                     ));
                 }
 
-                feature->getAddSubShape(fuseShape, cutShape);
-                if (fuseShape.isNull() && cutShape.isNull()) {
-                    return new App::DocumentObjectExecReturn(
-                        QT_TRANSLATE_NOOP("Exception", "Shape of additive/subtractive feature is empty")
-                    );
+                std::vector<Piece> pieces;
+                try {
+                    pieces = piecesOf(feature, transformations.size(), trsfInv);
                 }
-                gp_Trsf trsf = feature->getLocation().Transformation().Multiplied(trsfInv);
+                catch (const Base::Exception& e) {
+                    return new App::DocumentObjectExecReturn(e.what());
+                }
+                const Part::TopoShape& fuseShape = pieces.front().added;
+                const Part::TopoShape& cutShape = pieces.front().cut;
                 if (!fuseShape.isNull()) {
-                    fuseShape = fuseShape.makeElementTransform(trsf);
-                }
-                if (!cutShape.isNull()) {
-                    cutShape = cutShape.makeElementTransform(trsf);
-                }
-                if (!fuseShape.isNull()) {
-                    auto shapes = getTransformedCompShape(supportShape, fuseShape);
+                    auto shapes = getTransformedCompShape(supportShape, [&](std::size_t k) {
+                        return pieces[k].added;
+                    });
                     if (Base::Sequencer().wasCanceled()) {
                         return new App::DocumentObjectExecReturn("User aborted");
                     }
@@ -619,7 +884,9 @@ App::DocumentObjectExecReturn* Transformed::execute()
                     }
                 }
                 if (!cutShape.isNull()) {
-                    auto shapes = getTransformedCompShape(supportShape, cutShape);
+                    auto shapes = getTransformedCompShape(supportShape, [&](std::size_t k) {
+                        return pieces[k].cut;
+                    });
                     if (Base::Sequencer().wasCanceled()) {
                         return new App::DocumentObjectExecReturn("User aborted");
                     }
@@ -630,7 +897,15 @@ App::DocumentObjectExecReturn* Transformed::execute()
             }
             break;
         case Mode::WholeShape: {
-            auto shapes = getTransformedCompShape(supportShape, supportShape);
+            if (variesMeasurements()) {
+                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
+                    "Exception",
+                    "Measurements can change for each copy only when the pattern copies steps"
+                ));
+            }
+            auto shapes = getTransformedCompShape(supportShape, [&](std::size_t) {
+                return supportShape;
+            });
             if (Base::Sequencer().wasCanceled()) {
                 return new App::DocumentObjectExecReturn("User aborted");
             }

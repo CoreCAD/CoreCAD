@@ -38,6 +38,7 @@
 #include <Mod/PartDesign/App/FeatureMirrored.h>
 
 #include "ui_TaskMirroredParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskMirroredParameters.h"
 #include "ReferenceSelection.h"
 
@@ -212,6 +213,7 @@ TaskDlgMirroredParameters::TaskDlgMirroredParameters(ViewProviderMirrored* Mirro
     parameter = new TaskMirroredParameters(MirroredView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(MirroredView));
     Content.push_back(new TaskMergeResultParameters(MirroredView));
     Content.push_back(preview);
 }

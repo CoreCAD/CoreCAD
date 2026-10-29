@@ -85,7 +85,9 @@ void ViewProviderTransformed::updatePreview()
 
     try {
         if (auto feature = getObject<PartDesign::Transformed>()) {
-            auto transforms = feature->getTransformations();
+            // A pattern that varies measurements previews its placed pieces as they are.
+            auto transforms = feature->variesMeasurements() ? std::list<gp_Trsf> {gp_Trsf()}
+                                                            : feature->getTransformations();
 
             if (transforms.empty()) {
                 return;

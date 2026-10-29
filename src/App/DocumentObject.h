@@ -1077,6 +1077,7 @@ public:
     friend class Document;
     friend class Transaction;
     friend class ObjectExecution;
+    friend class OverriddenBuild;
 
     /**
      * @brief The standard return object for document object execution.

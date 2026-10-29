@@ -32,7 +32,9 @@
 #include <Base/Tools.h>
 
 #include <Mod/Part/App/Part2DObject.h>
+#include <App/Expression.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureTransformed.h>
 
 
 namespace PartDesign
@@ -129,6 +131,34 @@ public:
             "stepsUsing(step) -> list\n\n"
             "What directly uses the step, including through a Body that shows it."
         );
+        add_varargs_method(
+            "varyMeasurement",
+            &Module::varyMeasurement,
+            "varyMeasurement(pattern, target, formula)\n\n"
+            "Make each copy of the pattern its original rebuilt with one measurement changed.\n"
+            "target names the measurement as a formula would, e.g. 'Sketch.Constraints.Width'\n"
+            "or 'Pocket.Length'; formula gives its value for each copy and may use n, the\n"
+            "copy's number (1 for the first copy)."
+        );
+        add_varargs_method(
+            "variedMeasurements",
+            &Module::variedMeasurements,
+            "variedMeasurements(pattern) -> list of (target, formula)\n\n"
+            "The measurements the pattern changes for each copy, in the order they were added."
+        );
+        add_varargs_method(
+            "measurementsToVary",
+            &Module::measurementsToVary,
+            "measurementsToVary(pattern) -> list of str\n\n"
+            "What varyMeasurement can be given for the pattern's originals: their own\n"
+            "measurements and their sketches' named dimensions."
+        );
+        add_varargs_method(
+            "stopVarying",
+            &Module::stopVarying,
+            "stopVarying(pattern, index)\n\n"
+            "Stop changing the measurement at index (from variedMeasurements) for each copy."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
@@ -212,6 +242,90 @@ private:
             throw Py::ValueError("acknowledgeOverlap expects two different Bodies");
         }
         Body::dismissInterference(static_cast<Body*>(a), static_cast<Body*>(b));
+        return Py::None();
+    }
+
+    static Transformed* patternFrom(PyObject* pyPattern)
+    {
+        auto* pattern = freecad_cast<Transformed*>(
+            static_cast<App::DocumentObjectPy*>(pyPattern)->getDocumentObjectPtr()
+        );
+        if (!pattern) {
+            throw Py::TypeError("Expects a pattern");
+        }
+        return pattern;
+    }
+
+    Py::Object varyMeasurement(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        const char* target = nullptr;
+        const char* formula = nullptr;
+        if (
+            !PyArg_ParseTuple(args.ptr(), "O!ss", &(App::DocumentObjectPy::Type), &pyPattern, &target, &formula)
+        ) {
+            throw Py::Exception();
+        }
+        try {
+            patternFrom(pyPattern)->varyMeasurement(target, formula);
+        }
+        catch (const Base::Exception& e) {
+            throw Py::ValueError(e.what());
+        }
+        return Py::None();
+    }
+
+    Py::Object variedMeasurements(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyPattern)) {
+            throw Py::Exception();
+        }
+        Transformed* pattern = patternFrom(pyPattern);
+        Py::List list;
+        try {
+            for (const auto& measurement : pattern->variedMeasurements()) {
+                const auto formula
+                    = pattern->getExpression(App::ObjectIdentifier(*measurement.perCopy)).expression;
+                list.append(
+                    Py::TupleN(
+                        Py::String(measurement.target.toString()),
+                        formula ? Py::Object(Py::String(formula->toString())) : Py::None()
+                    )
+                );
+            }
+        }
+        catch (const Base::Exception& e) {
+            throw Py::ValueError(e.what());
+        }
+        return list;
+    }
+
+    Py::Object measurementsToVary(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyPattern)) {
+            throw Py::Exception();
+        }
+        Py::List list;
+        for (const std::string& target : patternFrom(pyPattern)->measurementsToVary()) {
+            list.append(Py::String(target));
+        }
+        return list;
+    }
+
+    Py::Object stopVarying(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        int index = 0;
+        if (!PyArg_ParseTuple(args.ptr(), "O!i", &(App::DocumentObjectPy::Type), &pyPattern, &index)) {
+            throw Py::Exception();
+        }
+        Transformed* pattern = patternFrom(pyPattern);
+        if (index < 0 || static_cast<std::size_t>(index) >= pattern->variedMeasurements().size()) {
+            throw Py::IndexError("No varied measurement at that index");
+        }
+        pattern->stopVarying(static_cast<std::size_t>(index));
         return Py::None();
     }
 
