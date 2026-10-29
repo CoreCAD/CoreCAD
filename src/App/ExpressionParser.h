@@ -460,6 +460,14 @@ public:
     explicit VariableExpression(const App::DocumentObject* _owner = nullptr,
                                 const ObjectIdentifier& _var = ObjectIdentifier());
 
+    /// A reference to a cell whose row or column was removed, written `#REF!`.
+    static VariableExpression* missingReference(const App::DocumentObject* owner);
+
+    bool isMissing() const
+    {
+        return missing;
+    }
+
     ~VariableExpression() override;
 
     bool isTouched() const override;
@@ -513,11 +521,12 @@ protected:
                              const App::DocumentObject* parent,
                              App::DocumentObject* oldObj,
                              App::DocumentObject* newObj) const override;
-    void _moveCells(const CellAddress&, int, int, ExpressionVisitor&) override;
+    void _shiftCells(const DocumentObject*, const CellShift&, ExpressionVisitor&) override;
     void _offsetCells(int, int, ExpressionVisitor&) override;
 
 protected:
     ObjectIdentifier var; /**< Variable name  */
+    bool missing = false;
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -613,12 +622,13 @@ protected:
     bool _renameObjectIdentifier(const std::map<ObjectIdentifier, ObjectIdentifier>&,
                                  const ObjectIdentifier&,
                                  ExpressionVisitor&) override;
-    void _moveCells(const CellAddress&, int, int, ExpressionVisitor&) override;
+    void _shiftCells(const DocumentObject*, const CellShift&, ExpressionVisitor&) override;
     void _offsetCells(int, int, ExpressionVisitor&) override;
 
 protected:
     std::string begin;
     std::string end;
+    bool missing = false;
 };
 
 /**

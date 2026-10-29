@@ -1095,6 +1095,86 @@ class SpreadsheetCases(unittest.TestCase):
         sheet.removeRows("2", 2)
         self.assertEqual(other.getContents("A1"), "=Spreadsheet.C3")
 
+    def testRemoveRowsMakesAReferenceToARemovedCellMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A3", "5")
+        sheet.set("A4", "9")
+        sheet.set("A1", "=A3 + 1")
+        sheet.removeRows("3", 1)
+        self.doc.recompute()
+        self.assertEqual(sheet.getContents("A1"), "=#REF! + 1")
+        self.assertTrue(sheet.A1.startswith("ERR: Missing reference"))
+
+    def testRemoveRowsMakesAReferenceToTheLastRemovedRowMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "=A4")
+        sheet.set("A2", "=A5")
+        sheet.removeRows("3", 2)
+        self.assertEqual(sheet.getContents("A1"), "=#REF!")
+        self.assertEqual(sheet.getContents("A2"), "=A3")
+
+    def testRemoveColumnsMakesAQualifiedReferenceInTheSameSheetMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "=Spreadsheet.C1")
+        sheet.set("A2", "=Spreadsheet.D1")
+        sheet.removeColumns("C", 1)
+        self.assertEqual(sheet.getContents("A1"), "=#REF!")
+        self.assertEqual(sheet.getContents("A2"), "=C1")
+
+    def testRemoveRowsShrinksARangeAndMakesARemovedRangeMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        for row in range(2, 7):
+            sheet.set(f"A{row}", str(row))
+        sheet.set("B1", "=sum(A2:A5)")
+        sheet.set("C1", "=sum(A3:A4)")
+        sheet.removeRows("3", 2)
+        self.doc.recompute()
+        self.assertEqual(sheet.getContents("B1"), "=sum(A2:A3)")
+        self.assertEqual(sheet.B1, 2 + 5)
+        self.assertEqual(sheet.getContents("C1"), "=sum(#REF!)")
+        self.assertTrue(sheet.C1.startswith("ERR: Missing reference"))
+
+    def testRemoveRowsMakesAnotherSheetsReferenceMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        sheet.set("C4", "7")
+        other.set("A1", "=Spreadsheet.C3")
+        other.set("A2", "=Spreadsheet.C4")
+        sheet.removeRows("3", 1)
+        self.doc.recompute()
+        self.assertEqual(other.getContents("A1"), "=#REF!")
+        self.assertEqual(other.getContents("A2"), "=Spreadsheet.C3")
+        self.assertEqual(other.A2, 7)
+
+    def testRemoveColumnsMakesAPropertyFormulaOnAnotherObjectMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("B2", "7")
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyFloat", "Value")
+        feature.setExpression("Value", "Spreadsheet.B2 * 2")
+        self.doc.recompute()
+        sheet.removeColumns("B", 1)
+        self.doc.recompute()
+        self.assertEqual(feature.ExpressionEngine[0][1], "#REF! * 2")
+        self.assertIn("Invalid", feature.State)
+
+    def testAMissingReferenceSurvivesSaveAndReopen(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "=#REF! + 1")
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyFloat", "Value")
+        feature.setExpression("Value", "#REF!")
+        path = os.path.join(tempfile.gettempdir(), "MissingReference.FCStd")
+        self.doc.saveAs(path)
+        name = self.doc.Name
+        FreeCAD.closeDocument(name)
+        self.doc = FreeCAD.openDocument(path)
+        self.doc.recompute()
+        sheet = self.doc.getObject("Spreadsheet")
+        self.assertEqual(sheet.getContents("A1"), "=#REF! + 1")
+        self.assertTrue(sheet.A1.startswith("ERR: Missing reference"))
+        self.assertEqual(self.doc.getObject("Feature").ExpressionEngine[0][1], "#REF!")
+
     def testInsertColumnsMovesAPropertyFormulaOnAnotherObject(self):
         sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
         sheet.set("B2", "7")

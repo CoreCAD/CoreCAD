@@ -47,6 +47,7 @@ class DocumentObject;
 class DocumentObjectExecReturn;
 class ObjectIdentifier;
 class Expression;
+struct CellShift;
 using ExpressionPtr = std::unique_ptr<Expression>;
 
 class AppExport PropertyExpressionContainer: public App::PropertyXLinkContainer
@@ -289,6 +290,8 @@ public:
      */
     void
     renameObjectIdentifiers(const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths);
+
+    void shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift);
 
     /**
      * @brief Create a canonical object identifier of the given object \a p.

@@ -1041,8 +1041,8 @@ void PropertySheet::insertRows(int row, int count)
     /* Sort them */
     std::sort(keys.begin(), keys.end(), std::bind(&PropertySheet::rowSortFunc, this, sp::_1, sp::_2));  // NOLINT
 
-    MoveCellsExpressionVisitor<PropertySheet>
-        visitor(*this, CellAddress(row, CellAddress::MAX_COLUMNS), count, 0);
+    const App::CellShift shift {true, row, count};
+    ShiftCellsExpressionVisitor<PropertySheet> visitor(*this, owner, shift);
 
     AtomicPropertyChange signaller(*this);
 
@@ -1075,7 +1075,7 @@ void PropertySheet::insertRows(int row, int count)
 
     shiftIds(rowIds, row, count);
 
-    owner->getDocument()->shiftCellReferences(owner, App::CellShift {true, row, count});
+    owner->getDocument()->shiftCellReferences(owner, shift);
     signaller.tryInvoke();
 }
 
@@ -1116,8 +1116,8 @@ void PropertySheet::removeRows(int row, int count)
     /* Sort them */
     std::sort(keys.begin(), keys.end(), std::bind(&PropertySheet::rowSortFunc, this, sp::_1, sp::_2));
 
-    MoveCellsExpressionVisitor<PropertySheet>
-        visitor(*this, CellAddress(row + count - 1, CellAddress::MAX_COLUMNS), -count, 0);
+    const App::CellShift shift {true, row, -count};
+    ShiftCellsExpressionVisitor<PropertySheet> visitor(*this, owner, shift);
 
     AtomicPropertyChange signaller(*this);
 
@@ -1169,7 +1169,7 @@ void PropertySheet::removeRows(int row, int count)
 
     shiftIds(rowIds, row, -count);
 
-    owner->getDocument()->shiftCellReferences(owner, App::CellShift {true, row, -count});
+    owner->getDocument()->shiftCellReferences(owner, shift);
     signaller.tryInvoke();
 }
 
@@ -1182,8 +1182,8 @@ void PropertySheet::insertColumns(int col, int count)
     /* Sort them */
     std::sort(keys.begin(), keys.end());
 
-    MoveCellsExpressionVisitor<PropertySheet>
-        visitor(*this, CellAddress(CellAddress::MAX_ROWS, col), 0, count);
+    const App::CellShift shift {false, col, count};
+    ShiftCellsExpressionVisitor<PropertySheet> visitor(*this, owner, shift);
 
     AtomicPropertyChange signaller(*this);
 
@@ -1216,7 +1216,7 @@ void PropertySheet::insertColumns(int col, int count)
 
     shiftIds(columnIds, col, count);
 
-    owner->getDocument()->shiftCellReferences(owner, App::CellShift {false, col, count});
+    owner->getDocument()->shiftCellReferences(owner, shift);
     signaller.tryInvoke();
 }
 
@@ -1257,8 +1257,8 @@ void PropertySheet::removeColumns(int col, int count)
     /* Sort them */
     std::sort(keys.begin(), keys.end(), std::bind(&PropertySheet::colSortFunc, this, sp::_1, sp::_2));  // NOLINT
 
-    MoveCellsExpressionVisitor<PropertySheet>
-        visitor(*this, CellAddress(CellAddress::MAX_ROWS, col + count - 1), 0, -count);
+    const App::CellShift shift {false, col, -count};
+    ShiftCellsExpressionVisitor<PropertySheet> visitor(*this, owner, shift);
 
     AtomicPropertyChange signaller(*this);
 
@@ -1310,7 +1310,7 @@ void PropertySheet::removeColumns(int col, int count)
 
     shiftIds(columnIds, col, -count);
 
-    owner->getDocument()->shiftCellReferences(owner, App::CellShift {false, col, -count});
+    owner->getDocument()->shiftCellReferences(owner, shift);
     signaller.tryInvoke();
 }
 
@@ -1697,15 +1697,14 @@ void PropertySheet::renameObjectIdentifiers(
 
 void PropertySheet::shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift)
 {
-    std::map<App::ObjectIdentifier, App::ObjectIdentifier> renames;
+    ShiftCellsExpressionVisitor<PropertySheet> visitor(*this, sheet, shift);
     for (const auto& [address, cell] : data) {
-        (void)address;
-        if (const App::Expression* expression = cell->getExpression()) {
-            shift.addRenames(sheet, expression->getIdentifiers(), renames);
+        visitor.reset();
+        cell->visit(visitor);
+        if (visitor.changed()) {
+            setDirty(address);
+            recomputeDependencies(address);
         }
-    }
-    if (!renames.empty()) {
-        renameObjectIdentifiers(renames);
     }
 }
 

@@ -169,6 +169,8 @@ EXPO    [eE][-+]?[0-9]+
 
 \<\<(\\(.|\n)|[^\\>\n])*\>\> COUNTCHARS; yylval.string = unquote(yytext); return STRING;
 
+"#REF!"                      COUNTCHARS; return MISSINGREF;
+
 [%+()=/*^,\.\{\}\[\]:;@\?#]  COUNTCHARS; return *yytext;
 
 "=="                         COUNTCHARS; return EQ;

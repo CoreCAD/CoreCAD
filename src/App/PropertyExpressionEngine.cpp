@@ -1062,6 +1062,15 @@ void PropertyExpressionEngine::renameObjectIdentifiers(
     }
 }
 
+void PropertyExpressionEngine::shiftCellReferences(const App::DocumentObject* sheet,
+                                                   const App::CellShift& shift)
+{
+    ShiftCellsExpressionVisitor<PropertyExpressionEngine> visitor(*this, sheet, shift);
+    for (const auto& it : expressions) {
+        it.second.expression->visit(visitor);
+    }
+}
+
 PyObject* PropertyExpressionEngine::getPyObject()
 {
     Py::List list;

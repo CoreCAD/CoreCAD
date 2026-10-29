@@ -117,6 +117,12 @@ static inline std::ostream &operator<<(std::ostream &os, const App::Expression *
     return os;
 }
 
+static const char *MissingReferenceText = "#REF!";
+
+[[noreturn]] static void throwMissingReference(const App::Expression *expr) {
+    _EXPR_THROW("Missing reference: the row or column it named was removed", expr);
+}
+
 template<typename T>
 void copy_vector(T &dst, const T& src) {
     dst.clear();
@@ -272,8 +278,8 @@ void ExpressionVisitor::collectReplacement(Expression &e,
     return e._collectReplacement(paths,parent,oldObj,newObj);
 }
 
-void ExpressionVisitor::moveCells(Expression &e, const CellAddress &address, int rowCount, int colCount) {
-    e._moveCells(address,rowCount,colCount,*this);
+void ExpressionVisitor::shiftCells(Expression &e, const DocumentObject *sheet, const CellShift &shift) {
+    e._shiftCells(sheet,shift,*this);
 }
 
 void ExpressionVisitor::offsetCells(Expression &e, int rowOffset, int colOffset) {
@@ -2805,13 +2811,22 @@ VariableExpression::VariableExpression(const DocumentObject *_owner, const Objec
 
 VariableExpression::~VariableExpression() = default;
 
+VariableExpression* VariableExpression::missingReference(const DocumentObject* owner)
+{
+    auto expression = new VariableExpression(owner);
+    expression->missing = true;
+    return expression;
+}
+
 bool VariableExpression::isTouched() const
 {
-    return var.isTouched();
+    return !missing && var.isTouched();
 }
 
 const Property * VariableExpression::getProperty() const
 {
+    if (missing)
+        throwMissingReference(this);
     const Property * prop = var.getProperty();
 
     if (prop)
@@ -2871,11 +2886,15 @@ bool VariableExpression::_isIndexable() const {
 }
 
 Py::Object VariableExpression::_getPyValue() const {
+    if (missing)
+        throwMissingReference(this);
     return var.getPyValue(true);
 }
 
 void VariableExpression::_toString(std::ostream &ss, bool persistent,int) const {
-    if(persistent)
+    if (missing)
+        ss << MissingReferenceText;
+    else if(persistent)
         ss << var.toPersistentString();
     else
         ss << var.toString();
@@ -2888,11 +2907,15 @@ ExpressionPtr VariableExpression::simplify() const
 
 Expression *VariableExpression::_copy() const
 {
-    return new VariableExpression(owner, var);
+    auto expression = new VariableExpression(owner, var);
+    expression->missing = missing;
+    return expression;
 }
 
 void VariableExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
+    if (missing)
+        return;
     bool hidden = HiddenReference::isHidden();
     auto res = deps.insert(std::make_pair(var,hidden));
     if(!hidden || res.second)
@@ -2967,10 +2990,13 @@ void VariableExpression::_collectReplacement(
         paths[var.canonicalPath()] = std::move(path);
 }
 
-void VariableExpression::_moveCells(const CellAddress &address,
-        int rowCount, int colCount, ExpressionVisitor &v)
+void VariableExpression::_shiftCells(const DocumentObject *sheet,
+        const CellShift &shift, ExpressionVisitor &v)
 {
-    if(var.hasDocumentObjectName(true))
+    if (missing)
+        return;
+    const DocumentObject *target = var.hasDocumentObjectName(true) ? var.getDocumentObject() : owner;
+    if (target != sheet)
         return;
 
     int idx = 0;
@@ -2979,18 +3005,22 @@ void VariableExpression::_moveCells(const CellAddress &address,
     if(!addr.isValid())
         return;
 
-    int thisRow = addr.row();
-    int thisCol = addr.col();
-    if (thisRow >= address.row() || thisCol >= address.col()) {
-        v.aboutToChange();
-        addr.setRow(thisRow + rowCount);
-        addr.setCol(thisCol + colCount);
-        var.setComponent(idx,ObjectIdentifier::SimpleComponent(addr.toString()));
+    const std::optional<CellAddress> now = shift.moved(addr);
+    if (now == addr)
+        return;
+    v.aboutToChange();
+    if (now) {
+        var.setComponent(idx,ObjectIdentifier::SimpleComponent(now->toString()));
+    }
+    else {
+        missing = true;
+        var = ObjectIdentifier();
+        components.clear();
     }
 }
 
 void VariableExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisitor &v) {
-    if(var.hasDocumentObjectName(true))
+    if(missing || var.hasDocumentObjectName(true))
         return;
 
     int idx = 0;
@@ -3248,6 +3278,8 @@ RangeExpression::RangeExpression(const DocumentObject *_owner, const std::string
 
 bool RangeExpression::isTouched() const
 {
+    if (missing)
+        return false;
     Range i(getRange());
 
     do {
@@ -3273,12 +3305,17 @@ Py::Object RangeExpression::_getPyValue() const {
 
 void RangeExpression::_toString(std::ostream &ss, bool,int) const
 {
-    ss << begin << ":" << end;
+    if (missing)
+        ss << MissingReferenceText;
+    else
+        ss << begin << ":" << end;
 }
 
 Expression *RangeExpression::_copy() const
 {
-    return new RangeExpression(owner, begin, end);
+    auto expression = new RangeExpression(owner, begin, end);
+    expression->missing = missing;
+    return expression;
 }
 
 ExpressionPtr RangeExpression::simplify() const
@@ -3288,6 +3325,8 @@ ExpressionPtr RangeExpression::simplify() const
 
 void RangeExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
+    if (missing)
+        return;
     bool hidden = HiddenReference::isHidden();
 
     assert(owner);
@@ -3304,6 +3343,8 @@ void RangeExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps
 
 Range RangeExpression::getRange() const
 {
+    if (missing)
+        throwMissingReference(this);
     auto c1 = stringToAddress(begin.c_str(),true);
     auto c2 = stringToAddress(end.c_str(),true);
     if(c1.isValid() && c2.isValid())
@@ -3361,35 +3402,33 @@ bool RangeExpression::_renameObjectIdentifier(
     return touched;
 }
 
-void RangeExpression::_moveCells(const CellAddress &address,
-        int rowCount, int colCount, ExpressionVisitor &v)
+void RangeExpression::_shiftCells(const DocumentObject *sheet,
+        const CellShift &shift, ExpressionVisitor &v)
 {
-    CellAddress addr = stringToAddress(begin.c_str(),true);
-    if(addr.isValid()) {
-        int thisRow = addr.row();
-        int thisCol = addr.col();
-        if (thisRow >= address.row() || thisCol >= address.col()) {
-            v.aboutToChange();
-            addr.setRow(thisRow+rowCount);
-            addr.setCol(thisCol+colCount);
-            begin = addr.toString();
-        }
+    if (missing || owner != sheet)
+        return;
+    CellAddress from = stringToAddress(begin.c_str(),true);
+    CellAddress to = stringToAddress(end.c_str(),true);
+    if (!from.isValid() || !to.isValid())
+        return;
+
+    const auto now = shift.moved(from, to);
+    if (now && now->first == from && now->second == to)
+        return;
+    v.aboutToChange();
+    if (now) {
+        begin = now->first.toString();
+        end = now->second.toString();
     }
-    addr = stringToAddress(end.c_str(),true);
-    if(addr.isValid()) {
-        int thisRow = addr.row();
-        int thisCol = addr.col();
-        if (thisRow >= address.row() || thisCol >= address.col()) {
-            v.aboutToChange();
-            addr.setRow(thisRow + rowCount);
-            addr.setCol(thisCol + colCount);
-            end = addr.toString();
-        }
+    else {
+        missing = true;
     }
 }
 
 void RangeExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisitor &v)
 {
+    if (missing)
+        return;
     CellAddress addr = stringToAddress(begin.c_str(),true);
     if(addr.isValid() && (!addr.isAbsoluteRow() || !addr.isAbsoluteCol())) {
         v.aboutToChange();

@@ -213,22 +213,13 @@ void TablePattern::shiftCellReferences(const App::DocumentObject* sheet, const A
     catch (const Base::Exception&) {
         return;
     }
-    auto at = [&](App::CellAddress cell, int edge) {
-        if (shift.rows) {
-            cell.setRow(edge);
-        }
-        else {
-            cell.setCol(edge);
-        }
-        return cell;
-    };
-    const App::CellAddress from = shift.moved(range->from()).value_or(at(range->from(), shift.first));
-    const App::CellAddress to = shift.moved(range->to()).value_or(at(range->to(), shift.first - 1));
-    if (from == range->from() && to == range->to()) {
+    const auto now = shift.moved(range->from(), range->to());
+    if (now && now->first == range->from() && now->second == range->to()) {
         return;
     }
     std::string cells;
-    if (from.row() <= to.row() && from.col() <= to.col()) {
+    if (now) {
+        const auto& [from, to] = *now;
         cells = from == to ? from.toString() : from.toString() + ":" + to.toString();
     }
     Cells.setValue(cells);
