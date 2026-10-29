@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PartDesignGui::TaskTablePatternParameters</class>
+ <widget class="QWidget" name="PartDesignGui::TaskTablePatternParameters">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>253</width>
+    <height>240</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string notr="true">Form</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QLabel" name="labelMeasuredFrom">
+       <property name="text">
+        <string>Measured from</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboMeasuredFrom">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="tableRows">
+     <property name="toolTip">
+      <string>One row for each copy. Cells copied from a spreadsheet can be pasted here</string>
+     </property>
+     <property name="columnCount">
+      <number>3</number>
+     </property>
+     <attribute name="verticalHeaderVisible">
+      <bool>false</bool>
+     </attribute>
+     <attribute name="horizontalHeaderStretchLastSection">
+      <bool>true</bool>
+     </attribute>
+     <column>
+      <property name="text">
+       <string notr="true">X</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string notr="true">Y</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string notr="true">Z</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayoutButtons">
+     <item>
+      <widget class="QPushButton" name="buttonAddRow">
+       <property name="text">
+        <string>Add row</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="buttonRemoveRow">
+       <property name="text">
+        <string>Remove row</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>comboMeasuredFrom</tabstop>
+  <tabstop>tableRows</tabstop>
+  <tabstop>buttonAddRow</tabstop>
+  <tabstop>buttonRemoveRow</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

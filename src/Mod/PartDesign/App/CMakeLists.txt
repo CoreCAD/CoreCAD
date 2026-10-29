@@ -48,6 +48,8 @@ SET(FeaturesTransformed_SRCS
     FeatureCurvePattern.cpp
     FeatureFillPattern.h
     FeatureFillPattern.cpp
+    FeatureTablePattern.h
+    FeatureTablePattern.cpp
     FeaturePointPattern.h
     FeaturePointPattern.cpp
 )

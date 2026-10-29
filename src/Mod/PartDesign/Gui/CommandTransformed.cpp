@@ -55,6 +55,7 @@
 #include <Mod/PartDesign/App/FeatureDressUp.h>
 #include <Mod/PartDesign/App/FeatureCurvePattern.h>
 #include <Mod/PartDesign/App/FeatureFillPattern.h>
+#include <Mod/PartDesign/App/FeatureTablePattern.h>
 #include <Mod/PartDesign/App/FeaturePointPattern.h>
 
 #include "ReferenceSelection.h"
@@ -473,6 +474,62 @@ bool CmdPartDesignFillPattern::isActive()
     return hasAnyBody();
 }
 
+//===========================================================================
+// PartDesign_TablePattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignTablePattern)
+
+CmdPartDesignTablePattern::CmdPartDesignTablePattern()
+    : Command("PartDesign_TablePattern")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Table Pattern");
+    sToolTipText = QT_TR_NOOP(
+        "Places copies of the selected features or the active body from a table of positions"
+    );
+    sWhatsThis = "PartDesign_TablePattern";
+    sStatusTip = sToolTipText;
+    sPixmap = "PartDesign_TablePattern";
+}
+
+// A selected sketch that is not a feature's profile, or a datum plane, is the plane the
+// positions are measured on; without one, rows are offsets from the original. A face is
+// picked in the panel, since a selected face's feature becomes an original.
+static App::DocumentObject* planeOf(Gui::Command* cmd)
+{
+    for (auto& selected : cmd->getSelection().getSelectionEx()) {
+        App::DocumentObject* obj = selected.getObject();
+        if ((obj->isDerivedFrom<Part::Part2DObject>() && !isProfile(obj))
+            || obj->isDerivedFrom<App::Plane>()) {
+            return obj;
+        }
+    }
+    return nullptr;
+}
+
+void CmdPartDesignTablePattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
+        return;
+    }
+    App::DocumentObject* plane = planeOf(this);
+    makeTransformed(this, body, "TablePattern", [plane](auto* feature, const auto&) {
+        if (plane) {
+            FCMD_OBJ_CMD(feature, "Plane = " << getObjectCmd(plane));
+            FCMD_OBJ_CMD(feature, "MeasuredFrom = \"Plane\"");
+        }
+        FCMD_OBJ_CMD(feature, "Rows = [FreeCAD.Vector(10, 0, 0)]");
+    });
+}
+
+bool CmdPartDesignTablePattern::isActive()
+{
+    return hasAnyBody();
+}
+
 void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
 {
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
@@ -481,4 +538,5 @@ void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
     rcCmdMgr.addCommand(new CmdPartDesignPointPattern());
     rcCmdMgr.addCommand(new CmdPartDesignCurvePattern());
     rcCmdMgr.addCommand(new CmdPartDesignFillPattern());
+    rcCmdMgr.addCommand(new CmdPartDesignTablePattern());
 }

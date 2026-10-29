@@ -48,6 +48,7 @@
 #include "FeaturePolarPattern.h"
 #include "FeatureCurvePattern.h"
 #include "FeatureFillPattern.h"
+#include "FeatureTablePattern.h"
 #include "FeaturePointPattern.h"
 #include "FeaturePrimitive.h"
 #include "FeatureRevolution.h"
@@ -103,6 +104,7 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::PointPattern                ::init();
     PartDesign::CurvePattern                ::init();
     PartDesign::FillPattern                 ::init();
+    PartDesign::TablePattern                 ::init();
     PartDesign::Hole                        ::init();
     PartDesign::Body                        ::init();
     PartDesign::FeatureExtrude              ::init();
