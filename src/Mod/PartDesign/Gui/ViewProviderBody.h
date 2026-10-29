@@ -179,6 +179,8 @@ private:
 
     void afterRecompute(const App::Document&, const std::vector<App::DocumentObject*>& recomputedObjs);
     fastsignals::scoped_connection m_RecomputedConn;
+    fastsignals::scoped_connection m_UndoConn;
+    fastsignals::scoped_connection m_RedoConn;
     void onChangedObject(const Gui::ViewProvider& vp, const App::Property& prop);
     fastsignals::scoped_connection m_ChangedConn;
     void refreshOverlays();

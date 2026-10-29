@@ -140,6 +140,7 @@ public:
     PyObject* getPyObject() override;
 
 protected:
+    App::DocumentObjectExecReturn* recompute() override;
     /// If BaseFeature is getting changed and Tip points to it reset the Tip
     void onBeforeChange(const App::Property* prop) override;
     /// If BaseFeature is set and Tip is null set the Tip to it

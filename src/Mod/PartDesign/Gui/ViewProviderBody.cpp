@@ -120,6 +120,8 @@ void ViewProviderBody::attach(App::DocumentObject* pcFeat)
                 this->afterRecompute(doc, recomputedObjs);
             }
         );
+        m_UndoConn = doc->signalUndo.connect([this](const App::Document&) { redrawShape(); });
+        m_RedoConn = doc->signalRedo.connect([this](const App::Document&) { redrawShape(); });
     }
     m_ChangedConn = Gui::Application::Instance->signalChangedObject.connect(
         [this](const Gui::ViewProvider& vp, const App::Property& prop) {
@@ -173,7 +175,8 @@ void ViewProviderBody::afterRecompute(
     refreshOverlays();
 }
 
-// A Body stores no shape, so no Shape property announces a change: it redraws when it rebuilds.
+// A Body stores no shape, so no Shape property announces a change: it redraws when it rebuilds
+// and after an undo or redo.
 void ViewProviderBody::redrawShape()
 {
     if (isUpdateForced() || Visibility.getValue()) {

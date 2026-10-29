@@ -655,7 +655,7 @@ void TaskExtrudeParameters::onTaperChanged(double angle, Side side)
 bool TaskExtrudeParameters::hasProfileFace(PartDesign::ProfileBased* profile) const
 {
     try {
-        Part::ShapeFeature* pcFeature = profile->getVerifiedObject();
+        App::GeoFeature* pcFeature = profile->getVerifiedObject();
         Base::Vector3d SketchVector = profile->getProfileNormal();
         Q_UNUSED(pcFeature)
         Q_UNUSED(SketchVector)

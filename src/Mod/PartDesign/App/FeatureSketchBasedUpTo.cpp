@@ -148,7 +148,7 @@ void ProfileBased::getFaceFromLinkSub(TopoDS_Face& upToFace, const App::Property
     if (!Part::hasShape(ref)) {
         throw Base::TypeError("SketchBased: Must be face of a feature");
     }
-    Part::TopoShape baseShape = static_cast<Part::ShapeFeature*>(ref)->Shape.getShape();
+    Part::TopoShape baseShape = Part::getShape(ref);
 
     // Allow an empty sub here - example is a sketch reference (no sub) that creates a face.
     if (subStrings.empty()) {

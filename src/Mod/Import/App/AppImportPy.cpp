@@ -62,7 +62,7 @@
 #include <Mod/Part/App/Interface.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
 #include <Mod/Part/App/PartFeature.h>
-#include <Mod/Part/App/PartFeaturePy.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/Part/App/encodeFilename.h>
 
@@ -678,10 +678,13 @@ private:
                 writer.init();
                 Py::Sequence list(docObj);
                 for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                    if (PyObject_TypeCheck((*it).ptr(), &(Part::PartFeaturePy::Type))) {
+                    if (PyObject_TypeCheck((*it).ptr(), &(App::DocumentObjectPy::Type))) {
                         PyObject* item = (*it).ptr();
                         App::DocumentObject* obj
                             = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+                        if (!Part::hasShape(obj)) {
+                            continue;
+                        }
                         layerName = obj->getNameInDocument();
                         writer.setLayerName(layerName);
                         TopoDS_Shape shapeToExport;
@@ -691,10 +694,7 @@ private:
                             shapeToExport = SketchExportHelper::getFlatSketchXY(obj);
                         }
                         else {
-                            // do we know that obj is a Part::Feature? is this checked somewhere
-                            // before this? this should be a located shape??
-                            Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(obj);
-                            shapeToExport = part->Shape.getValue();
+                            shapeToExport = Part::getShape(obj).getShape();
                         }
                         writer.exportShape(shapeToExport);
                     }
@@ -757,11 +757,7 @@ private:
                     shapeToExport = SketchExportHelper::getFlatSketchXY(obj);
                 }
                 else {
-                    // TODO: do we know that obj is a Part::Feature? is this checked somewhere
-                    // before this?
-                    // TODO: this should be a located shape??
-                    Part::ShapeFeature* part = static_cast<Part::ShapeFeature*>(obj);
-                    shapeToExport = part->Shape.getValue();
+                    shapeToExport = Part::getShape(obj).getShape();
                 }
                 writer.exportShape(shapeToExport);
                 writer.endRun();

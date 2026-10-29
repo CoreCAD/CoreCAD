@@ -80,7 +80,7 @@ struct DressupKind
 
 struct DressupPick
 {
-    Part::ShapeFeature* base = nullptr;
+    App::GeoFeature* base = nullptr;
     std::vector<std::string> elements;
     bool allEdges = false;
 };
@@ -126,7 +126,7 @@ static std::optional<DressupPick> pickForDressup(Gui::Command* cmd, const Dressu
         return std::nullopt;
     }
     if (selection.empty()) {
-        return DressupPick {.base = static_cast<Part::ShapeFeature*>(body->shownStep()), .elements = {}};
+        return DressupPick {.base = Part::shapeCarrier(body->shownStep()), .elements = {}};
     }
 
     App::DocumentObject* picked = selection.front().getObject();
@@ -153,8 +153,8 @@ static std::optional<DressupPick> pickForDressup(Gui::Command* cmd, const Dressu
         return std::nullopt;
     }
 
-    DressupPick pick {.base = static_cast<Part::ShapeFeature*>(picked), .elements = std::move(elements)};
-    const Part::TopoShape& shape = pick.base->Shape.getShape();
+    DressupPick pick {.base = Part::shapeCarrier(picked), .elements = std::move(elements)};
+    const Part::TopoShape shape = Part::getShape(pick.base);
     if (shape.getShape().IsNull()) {
         warnWrongSelection(QObject::tr("Shape of the selected part is empty"));
         return std::nullopt;
@@ -218,7 +218,7 @@ static void makeDressup(Gui::Command* cmd, const DressupKind& kind)
         return;
     }
     if (kind.keeps) {
-        const Part::TopoShape& shape = pick->base->Shape.getShape();
+        const Part::TopoShape shape = Part::getShape(pick->base);
         std::erase_if(pick->elements, [&](const std::string& element) {
             return !kind.keeps(shape, element);
         });

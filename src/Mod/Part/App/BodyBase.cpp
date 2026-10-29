@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 
+#include <Standard_Failure.hxx>
+
 #include <App/Document.h>
 #include <App/PropertyLinks.h>
 
@@ -173,6 +175,20 @@ App::ElementNamePair BodyBase::getElementName(const char* name, ElementNameType 
     }
     const TopoShape shape = backingShape();
     return ShapeFeature::exportElementName(shape, shape, name);
+}
+
+App::DocumentObjectExecReturn* BodyBase::recompute()
+{
+    try {
+        return App::GeoFeature::recompute();
+    }
+    catch (Standard_Failure& e) {
+        auto* ret = new App::DocumentObjectExecReturn(e.GetMessageString());
+        if (ret->Why.empty()) {
+            ret->Why = "Unknown OCC exception";
+        }
+        return ret;
+    }
 }
 
 PyObject* BodyBase::getPyObject()

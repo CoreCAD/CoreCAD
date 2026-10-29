@@ -258,7 +258,7 @@ struct ProfileKind
 {
     const char* type;  // after "PartDesign::"; also names the feature and its undo step
     bool subtractive;
-    std::function<void(Part::ShapeFeature* profile, App::DocumentObject* feature)> configure;
+    std::function<void(App::GeoFeature* profile, App::DocumentObject* feature)> configure;
     TakeSelection takeSelection = takeProfile;
 };
 
@@ -346,12 +346,12 @@ static void makeProfileFeature(Gui::Command* cmd, const ProfileKind& kind)
         elements = profileBased->Profile.getSubValues();
     }
     kind.takeSelection(feature, profile, elements, selection);
-    kind.configure(static_cast<Part::ShapeFeature*>(profile), feature);
+    kind.configure(Part::shapeCarrier(profile), feature);
 }
 
 static void finishProfileBased(
     const Gui::Command* cmd,
-    const Part::ShapeFeature* profile,
+    const App::GeoFeature* profile,
     App::DocumentObject* feature
 )
 {
@@ -362,7 +362,7 @@ static void finishProfileBased(
 }
 
 // A sketch's own vertical axis; anything else has none, so the document origin's Y axis.
-static void setVerticalReferenceAxis(App::DocumentObject* feature, Part::ShapeFeature* profile)
+static void setVerticalReferenceAxis(App::DocumentObject* feature, App::GeoFeature* profile)
 {
     if (profile->isDerivedFrom<Part::Part2DObject>()) {
         FCMD_OBJ_CMD(
@@ -380,7 +380,7 @@ static void setVerticalReferenceAxis(App::DocumentObject* feature, Part::ShapeFe
 
 static auto extrude(const Gui::Command* cmd, double length)
 {
-    return [cmd, length](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+    return [cmd, length](App::GeoFeature* profile, App::DocumentObject* feature) {
         FCMD_OBJ_CMD(feature, "Length = " << length);
         Gui::Command::updateActive();
         if (profile->isDerivedFrom<Part::Part2DObject>()) {
@@ -395,7 +395,7 @@ static auto extrude(const Gui::Command* cmd, double length)
 
 static auto sweep(const Gui::Command* cmd)
 {
-    return [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+    return [cmd](App::GeoFeature* profile, App::DocumentObject* feature) {
         Gui::Command::updateActive();
         finishProfileBased(cmd, profile, feature);
     };
@@ -403,7 +403,7 @@ static auto sweep(const Gui::Command* cmd)
 
 static auto helix(const Gui::Command* cmd)
 {
-    return [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+    return [cmd](App::GeoFeature* profile, App::DocumentObject* feature) {
         // A helix with default values is often invalid until the user sets more of them.
         Base::ObjectStatusLocker<App::Document::Status, App::Document> guard(
             App::Document::IgnoreErrorOnRecompute,
@@ -511,7 +511,7 @@ void CmdPartDesignHole::activated(int iMsg)
         this,
         {.type = "Hole",
          .subtractive = true,
-         .configure = [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+         .configure = [cmd](App::GeoFeature* profile, App::DocumentObject* feature) {
              finishProfileBased(cmd, profile, feature);
          }}
     );
@@ -545,7 +545,7 @@ void CmdPartDesignRevolution::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     const Gui::Command* cmd = this;
-    auto configure = [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+    auto configure = [cmd](App::GeoFeature* profile, App::DocumentObject* feature) {
         setVerticalReferenceAxis(feature, profile);
         FCMD_OBJ_CMD(feature, "Angle = 360.0");
         auto* revolution = dynamic_cast<PartDesign::Revolution*>(feature);
@@ -585,7 +585,7 @@ void CmdPartDesignGroove::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     const Gui::Command* cmd = this;
-    auto configure = [cmd](Part::ShapeFeature* profile, App::DocumentObject* feature) {
+    auto configure = [cmd](App::GeoFeature* profile, App::DocumentObject* feature) {
         setVerticalReferenceAxis(feature, profile);
         FCMD_OBJ_CMD(feature, "Angle = 360.0");
         try {

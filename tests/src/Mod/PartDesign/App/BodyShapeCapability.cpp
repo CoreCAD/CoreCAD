@@ -13,7 +13,9 @@
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureBoolean.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
+#include <Mod/PartDesign/App/FeaturePrimitive.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 // NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
@@ -156,6 +158,60 @@ TEST_F(BodyShapeCapabilityTest, wholeShapeParity)
     EXPECT_NEAR(bbDerived.MaxZ, bbActual.MaxZ, 1e-7);
 
     Py_XDECREF(pyActual);
+}
+
+TEST_F(BodyShapeCapabilityTest, fusesBodiesWithNoBase)
+{
+    auto* other = _doc->addObject<PartDesign::Body>();
+    auto* box = _doc->addObject<PartDesign::AdditiveBox>("Box");
+    other->addFeature(box);
+    box->Placement.setValue(Base::Placement(Base::Vector3d(5, 0, 0), Base::Rotation()));
+
+    auto* host = _doc->addObject<PartDesign::Body>();
+    auto* fuse = static_cast<PartDesign::Boolean*>(_doc->addObject("PartDesign::Boolean", "Fuse"));
+    fuse->Tools.setValues({_body, other});
+    host->addFeature(fuse);
+    _doc->recompute();
+
+    ASSERT_TRUE(fuse->isValid()) << fuse->getStatusString();
+    // A radius-10 cylinder at the origin and a 10 mm box from x = 5 span x = -10 to 15.
+    EXPECT_NEAR(fuse->Shape.getShape().getBoundBox().LengthX(), 25.0, 1e-6);
+}
+
+TEST_F(BodyShapeCapabilityTest, padsUpToAFaceOfABody)
+{
+    auto* other = _doc->addObject<PartDesign::Body>();
+    auto* sketch = _doc->addObject<Sketcher::SketchObject>("Sketch2");
+    sketch->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
+    sketch->MapMode.setValue("FlatFace");
+    sketch->AttachmentOffset.setValue(Base::Placement(Base::Vector3d(0, 0, -10), Base::Rotation()));
+    Part::GeomCircle circle;
+    circle.setRadius(2.0);
+    sketch->addGeometry(&circle, false);
+
+    auto* pad = _doc->addObject<PartDesign::Pad>("UpToPad");
+    other->addFeature(pad);
+    pad->Profile.setValue(sketch, {""});
+    pad->Type.setValue("UpToFace");
+    pad->UpToFace.setValue(_body, {"Face3"});
+    _doc->recompute();
+
+    ASSERT_TRUE(pad->isValid()) << pad->getStatusString();
+    const auto box = pad->Shape.getShape().getBoundBox();
+    EXPECT_GT(box.MaxZ - box.MinZ, 1.0);
+}
+
+TEST_F(BodyShapeCapabilityTest, sketchKeepsAnEdgeOfABody)
+{
+    auto* sketch = _doc->addObject<Sketcher::SketchObject>("Sketch2");
+    sketch->AttachmentSupport.setValue(_doc->getObject("XY_Plane"), "");
+    sketch->MapMode.setValue("FlatFace");
+    _doc->recompute();
+    ASSERT_GE(sketch->addExternal(_body, "Edge1"), 0);
+
+    sketch->validateExternalLinks();
+
+    EXPECT_EQ(sketch->ExternalGeometry.getValues().size(), 1u);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

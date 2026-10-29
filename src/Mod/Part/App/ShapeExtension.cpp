@@ -85,7 +85,6 @@ bool ShapeExtension::extensionGetSubObject(
         return false;
     }
 
-
     Base::Matrix4D _mat;
     auto& matref = mat ? *mat : _mat;
     if (transform) {
