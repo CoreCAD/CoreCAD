@@ -36,6 +36,8 @@ import UtilsAssembly
 import Preferences
 import CommandCreateJoint
 
+translate = App.Qt.translate
+
 __title__ = "Assembly Command Insert Component"
 __author__ = "Ondsel"
 __url__ = "https://www.freecad.org"
@@ -361,23 +363,28 @@ class TaskAssemblyInsertLink(QtCore.QObject):
     def openFiles(self):
         selected_files, _ = QtGui.QFileDialog.getOpenFileNames(
             None,
-            "Select FreeCAD documents to import parts from",
+            translate("Assembly", "Select parts or assemblies to insert"),
             "",
-            "Supported Formats (*.FCStd *.fcstd);;All files (*)",
+            translate("Assembly", "Parts and assemblies")
+            + " (*.cpart *.cassembly *.FCStd *.fcstd);;"
+            + translate("Assembly", "All files")
+            + " (*)",
         )
 
+        openPaths = {
+            os.path.realpath(doc.FileName) for doc in App.listDocuments().values() if doc.FileName
+        }
         for filename in selected_files:
-            requested_file = os.path.split(filename)[1]
-            import_doc_is_open = any(
-                requested_file == os.path.split(doc.FileName)[1]
-                for doc in App.listDocuments().values()
-            )
+            if os.path.realpath(filename) in openPaths:
+                continue
+            try:
+                App.openDocument(filename, True)
+            except Exception as e:
+                App.Console.PrintError(f"{filename}: {e}\n")
+            App.setActiveDocument(self.doc.Name)
 
-            if not import_doc_is_open:
-                if filename.lower().endswith(".fcstd"):
-                    App.openDocument(filename, True)
-                    App.setActiveDocument(self.doc.Name)
-                    self.buildPartList()
+        if selected_files:
+            self.buildPartList()
 
     def onItemClicked(self, item):
         selectedPart = item.data(0, QtCore.Qt.UserRole)

@@ -29,6 +29,7 @@
 
 import TestApp
 
+from AssemblyTests.TestCommandInsertLink import TestCommandInsertLink
 from AssemblyTests.TestStepAssemblyImportDraw import TestStepAssemblyImportDraw
 from AssemblyTests.TestAssemblyViewProviders import (
     TestAssemblyViewProviders,
@@ -36,6 +37,7 @@ from AssemblyTests.TestAssemblyViewProviders import (
 )
 
 # Use the modules so that code checkers don't complain (flake8)
+True if TestCommandInsertLink else False
 True if TestStepAssemblyImportDraw else False
 True if TestAssemblyViewProviders else False
 True if TestJointViewProvider else False

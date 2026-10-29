@@ -24,7 +24,6 @@
 import TestApp
 
 from AssemblyTests.TestCore import TestCore
-from AssemblyTests.TestCommandInsertLink import TestCommandInsertLink
 from AssemblyTests.TestSubAssembly import TestSubAssembly
 from AssemblyTests.TestAssemblyBuilder import TestAssemblyBuilder
 from AssemblyTests.TestStepAssemblyImport import TestStepAssemblyImport
@@ -37,7 +36,6 @@ from AssemblyTests.TestCreatePart import TestCreatePart
 
 # Use the modules so that code checkers don't complain (flake8)
 True if TestCore else False
-True if TestCommandInsertLink else False
 True if TestSubAssembly else False
 True if TestAssemblyBuilder else False
 True if TestStepAssemblyImport else False
