@@ -42,6 +42,7 @@
 #include <Mod/Part/Gui/PatternParametersWidget.h>
 
 #include "ui_TaskPatternParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskPatternParameters.h"
 #include "ReferenceSelection.h"
 
@@ -388,6 +389,7 @@ TaskDlgLinearPatternParameters::TaskDlgLinearPatternParameters(
     parameter = new TaskPatternParameters(LinearPatternView);
     // Add it to the dialog's content list
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(LinearPatternView));
     Content.push_back(new TaskMergeResultParameters(LinearPatternView));
     Content.push_back(preview);
 }

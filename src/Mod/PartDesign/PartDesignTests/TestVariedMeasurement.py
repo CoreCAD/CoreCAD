@@ -153,6 +153,12 @@ class TestVariedMeasurement(unittest.TestCase):
         with self.assertRaises(ValueError):
             PartDesign.varyMeasurement(pattern, "Pocket.Length + 1 mm", "n * 1 mm")
 
+    def testOffersTheOriginalsMeasurementsAndNamedDimensions(self):
+        offered = PartDesign.measurementsToVary(self._pattern(3))
+        self.assertIn("Pocket.Length", offered)
+        self.assertIn("Hole.Constraints.Radius", offered)
+        self.assertNotIn("Plate.Constraints.Radius", offered)
+
     def testStopVarying(self):
         pattern = self._pattern(
             3,

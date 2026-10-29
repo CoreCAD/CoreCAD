@@ -123,6 +123,9 @@ public:
     /// @p formula gives its value for each copy and may use n.
     void varyMeasurement(const std::string& target, const std::string& formula);
     void stopVarying(std::size_t index);
+    /// What varyMeasurement() can be given for the current originals, each named as a formula
+    /// names it: the originals' own measurements and their sketches' named dimensions.
+    std::vector<std::string> measurementsToVary() const;
 
     /// The 1-based index, among this pattern's output solids, of the copy with @p ordinal, or 0
     /// when that copy is skipped or out of range. Copies are emitted in ordinal order with the

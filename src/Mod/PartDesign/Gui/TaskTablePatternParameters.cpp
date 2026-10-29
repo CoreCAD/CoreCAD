@@ -24,6 +24,7 @@
 
 #include "ReferenceSelection.h"
 #include "ui_TaskTablePatternParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskTablePatternParameters.h"
 
 using namespace PartDesignGui;
@@ -547,6 +548,7 @@ TaskDlgTablePatternParameters::TaskDlgTablePatternParameters(ViewProviderTablePa
     parameter = new TaskTablePatternParameters(TablePatternView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(TablePatternView));
     Content.push_back(new TaskMergeResultParameters(TablePatternView));
     Content.push_back(preview);
 }

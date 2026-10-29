@@ -43,6 +43,7 @@ from PartDesignTests.TestActiveObject import TestActiveObject
 from PartDesignTests.TestSuppressed import TestSuppressedStrikethrough
 from PartDesignTests.TestTablePatternGui import TestTablePatternCommand, TestTablePatternGui
 from PartDesignTests.TestFormulaPatternGui import TestFormulaPatternGui
+from PartDesignTests.TestVariedMeasurementGui import TestVariedMeasurementGui
 
 
 class CallableCheckWarning:

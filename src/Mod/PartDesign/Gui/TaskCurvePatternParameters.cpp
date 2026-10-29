@@ -11,6 +11,7 @@
 
 #include "ReferenceSelection.h"
 #include "ui_TaskCurvePatternParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskCurvePatternParameters.h"
 
 using namespace PartDesignGui;
@@ -314,6 +315,7 @@ TaskDlgCurvePatternParameters::TaskDlgCurvePatternParameters(ViewProviderCurvePa
     parameter = new TaskCurvePatternParameters(CurvePatternView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(CurvePatternView));
     Content.push_back(new TaskMergeResultParameters(CurvePatternView));
     Content.push_back(preview);
 }

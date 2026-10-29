@@ -11,6 +11,7 @@
 
 #include "ReferenceSelection.h"
 #include "ui_TaskFillPatternParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskFillPatternParameters.h"
 
 using namespace PartDesignGui;
@@ -254,6 +255,7 @@ TaskDlgFillPatternParameters::TaskDlgFillPatternParameters(ViewProviderFillPatte
     parameter = new TaskFillPatternParameters(FillPatternView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(FillPatternView));
     Content.push_back(new TaskMergeResultParameters(FillPatternView));
     Content.push_back(preview);
 }

@@ -191,6 +191,38 @@ void Transformed::varyMeasurement(const std::string& target, const std::string& 
     setExpression(App::ObjectIdentifier(*perCopy), perCopyFormula);
 }
 
+std::vector<std::string> Transformed::measurementsToVary() const
+{
+    std::vector<std::string> found;
+    const auto addPath =
+        [&found](const App::DocumentObject* object, const App::ObjectIdentifier& path) {
+            found.push_back(
+                std::string(object->getNameInDocument()) + "." + path.getPropertyName()
+                + path.getSubPathStr()
+            );
+        };
+    for (App::DocumentObject* original : getOriginals()) {
+        std::vector<App::Property*> props;
+        original->getPropertyList(props);
+        for (App::Property* prop : props) {
+            if (freecad_cast<App::PropertyQuantity*>(prop) && !original->isHidden(prop)
+                && !original->isReadOnly(prop) && !prop->testStatus(App::Property::Output)) {
+                addPath(original, App::ObjectIdentifier(*prop));
+            }
+        }
+        const auto* profileBased = freecad_cast<ProfileBased*>(original);
+        App::DocumentObject* sketch = profileBased ? profileBased->getVerifiedSketch(true) : nullptr;
+        if (App::Property* constraints = sketch ? sketch->getPropertyByName("Constraints") : nullptr) {
+            std::vector<App::ObjectIdentifier> paths;
+            constraints->getPaths(paths);
+            for (const App::ObjectIdentifier& path : paths) {
+                addPath(sketch, path);
+            }
+        }
+    }
+    return found;
+}
+
 void Transformed::stopVarying(std::size_t index)
 {
     std::vector<std::pair<std::string, std::string>> kept;
@@ -531,6 +563,12 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
 
     switch (mode) {
         case Mode::Features:
+            // Copies built differently cannot be shown as one shape moved about, so the preview
+            // is the pieces the last build placed.
+            if (variesMeasurements() && !AddSubShape.getShape().isNull()) {
+                PreviewShape.setValue(AddSubShape.getShape().getShape());
+                return StdReturn;
+            }
             PreviewShape.setValue(makeCompoundOfToolShapes());
             return StdReturn;
 

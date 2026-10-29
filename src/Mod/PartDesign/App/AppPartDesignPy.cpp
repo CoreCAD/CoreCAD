@@ -147,6 +147,13 @@ public:
             "The measurements the pattern changes for each copy, in the order they were added."
         );
         add_varargs_method(
+            "measurementsToVary",
+            &Module::measurementsToVary,
+            "measurementsToVary(pattern) -> list of str\n\n"
+            "What varyMeasurement can be given for the pattern's originals: their own\n"
+            "measurements and their sketches' named dimensions."
+        );
+        add_varargs_method(
             "stopVarying",
             &Module::stopVarying,
             "stopVarying(pattern, index)\n\n"
@@ -290,6 +297,19 @@ private:
         }
         catch (const Base::Exception& e) {
             throw Py::ValueError(e.what());
+        }
+        return list;
+    }
+
+    Py::Object measurementsToVary(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyPattern)) {
+            throw Py::Exception();
+        }
+        Py::List list;
+        for (const std::string& target : patternFrom(pyPattern)->measurementsToVary()) {
+            list.append(Py::String(target));
         }
         return list;
     }

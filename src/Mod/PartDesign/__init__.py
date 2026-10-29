@@ -38,6 +38,7 @@ stepsUsing = _PartDesign.stepsUsing
 varyMeasurement = _PartDesign.varyMeasurement
 variedMeasurements = _PartDesign.variedMeasurements
 stopVarying = _PartDesign.stopVarying
+measurementsToVary = _PartDesign.measurementsToVary
 
 
 def makeFeature(profile, featureType, subs=None, body=None, recompute=True):

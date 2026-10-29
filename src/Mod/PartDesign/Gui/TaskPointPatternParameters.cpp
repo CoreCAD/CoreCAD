@@ -10,6 +10,7 @@
 #include <Mod/PartDesign/App/FeaturePointPattern.h>
 
 #include "ui_TaskPointPatternParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskPointPatternParameters.h"
 
 using namespace PartDesignGui;
@@ -174,6 +175,7 @@ TaskDlgPointPatternParameters::TaskDlgPointPatternParameters(ViewProviderPointPa
     parameter = new TaskPointPatternParameters(PointPatternView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(PointPatternView));
     Content.push_back(new TaskMergeResultParameters(PointPatternView));
     Content.push_back(preview);
 }
