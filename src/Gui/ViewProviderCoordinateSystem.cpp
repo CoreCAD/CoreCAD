@@ -227,6 +227,12 @@ void ViewProviderCoordinateSystem::resetTemporarySize()
     applyDatumObjects([](ViewProviderDatum* vp) { vp->resetTemporarySize(); });
 }
 
+bool ViewProviderCoordinateSystem::canBeDeleted() const
+{
+    auto* lcs = getObject<App::LocalCoordinateSystem>();
+    return !lcs || !lcs->is<App::Origin>();
+}
+
 bool ViewProviderCoordinateSystem::onDelete(const std::vector<std::string>&)
 {
     auto* lcs = getObject<App::LocalCoordinateSystem>();
@@ -234,8 +240,8 @@ bool ViewProviderCoordinateSystem::onDelete(const std::vector<std::string>&)
         return false;
     }
 
-    if (lcs->is<App::Origin>() && !lcs->getInList().empty()) {
-        // Do not allow deletion of origin objects that are not lost.
+    if (lcs->is<App::Origin>()) {
+        // The world frame belongs to the document, not to the user.
         return false;
     }
 
