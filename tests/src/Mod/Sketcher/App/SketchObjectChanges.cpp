@@ -1211,6 +1211,33 @@ TEST_F(SketchObjectTest, testJoinCurvesWhenTangent)
     EXPECT_TRUE(std::all_of(mults.begin(), mults.end(), [](auto mult) { return mult >= 1; }));
 }
 
+namespace
+{
+double farthestDeparture(const Part::GeomBSplineCurve& from, const Part::GeomBSplineCurve& to)
+{
+    constexpr int samples = 50;
+    double first = from.getFirstParameter();
+    double step = (from.getLastParameter() - first) / samples;
+    double farthest = 0.0;
+    for (int i = 0; i <= samples; ++i) {
+        Base::Vector3d point = from.value(first + i * step);
+        double u = 0.0;
+        if (!to.closestParameter(point, u)) {
+            return std::numeric_limits<double>::infinity();
+        }
+        farthest = std::max(farthest, (to.value(u) - point).Length());
+    }
+    return farthest;
+}
+
+std::unique_ptr<Part::GeomBSplineCurve> copyOfCurve(const Sketcher::SketchObject& sketch, int geoId)
+{
+    return std::unique_ptr<Part::GeomBSplineCurve>(
+        static_cast<Part::GeomBSplineCurve*>(sketch.getGeometry(geoId)->copy())
+    );
+}
+}  // namespace
+
 TEST_F(SketchObjectTest, testDecreaseBSplineDegreeKeepsTheCurveAndItsConstraints)
 {
     auto bspline = createTypicalNonPeriodicBSpline();
@@ -1249,4 +1276,100 @@ TEST_F(SketchObjectTest, testDecreaseBSplineDegreeKeepsTheCurveAndItsConstraints
         }
     }
     EXPECT_EQ(alignedPoles, poles);
+}
+
+
+TEST_F(SketchObjectTest, testDecreaseBSplineDegreeThenSolveStillHoldsTheConstraints)
+{
+    auto bspline = createTypicalNonPeriodicBSpline();
+    int geoId = getObject()->addGeometry(bspline.get());
+    getObject()->exposeInternalGeometry(geoId);
+    Part::GeomLineSegment line;
+    line.setPoints(Base::Vector3d(5, 5, 0), Base::Vector3d(3, 3, 0));
+    getObject()->addGeometry(&line);
+    auto* coincident = new Sketcher::Constraint();
+    coincident->Type = Sketcher::Coincident;
+    coincident->First = getObject()->getHighestCurveIndex();
+    coincident->FirstPos = Sketcher::PointPos::end;
+    coincident->Second = geoId;
+    coincident->SecondPos = Sketcher::PointPos::start;
+    getObject()->addConstraint(coincident);
+    ASSERT_EQ(getObject()->solve(), 0);
+
+    ASSERT_TRUE(getObject()->decreaseBSplineDegree(geoId));
+    auto refit = copyOfCurve(*getObject(), geoId);
+    ASSERT_EQ(getObject()->solve(), 0);
+
+    const auto* curve = static_cast<const Part::GeomBSplineCurve*>(getObject()->getGeometry(geoId));
+    EXPECT_EQ(curve->getDegree(), 2);
+    EXPECT_LT(farthestDeparture(*refit, *curve), Precision::Confusion());
+    const auto& geometry = getObject()->Geometry.getValues();
+    auto lineIt = std::ranges::find_if(geometry, [](const Part::Geometry* g) {
+        return g->is<Part::GeomLineSegment>();
+    });
+    ASSERT_NE(lineIt, geometry.end());
+    int lineId = static_cast<int>(lineIt - geometry.begin());
+    EXPECT_LT(
+        (getObject()->getPoint(lineId, Sketcher::PointPos::end)
+         - getObject()->getPoint(geoId, Sketcher::PointPos::start))
+            .Length(),
+        Precision::Confusion()
+    );
+}
+
+TEST_F(SketchObjectTest, testDecreaseBSplineDegreeOfAWeightedCurveCarriesNoOldWeight)
+{
+    auto bspline = createTypicalNonPeriodicBSpline();
+    int geoId = getObject()->addGeometry(bspline.get());
+    getObject()->exposeInternalGeometry(geoId);
+    // Equal weights everywhere would leave the curve non-rational, so free the other poles first.
+    std::vector<int> equalities;
+    for (int i = 0; const auto* constraint : getObject()->Constraints.getValues()) {
+        if (constraint->Type == Sketcher::Equal) {
+            equalities.push_back(i);
+        }
+        ++i;
+    }
+    ASSERT_FALSE(equalities.empty());
+    ASSERT_EQ(getObject()->delConstraints(equalities), 0);
+    const auto& constraints = getObject()->Constraints.getValues();
+    auto weight = std::ranges::find(constraints, Sketcher::Weight, &Sketcher::Constraint::Type);
+    ASSERT_NE(weight, constraints.end());
+    ASSERT_EQ(getObject()->setDatum(static_cast<int>(weight - constraints.begin()), 3.0), 0);
+    ASSERT_EQ(getObject()->solve(), 0);
+    ASSERT_DOUBLE_EQ(
+        static_cast<const Part::GeomBSplineCurve*>(getObject()->getGeometry(geoId))->getWeights()[0],
+        3.0
+    );
+
+    ASSERT_TRUE(getObject()->decreaseBSplineDegree(geoId));
+    auto refit = copyOfCurve(*getObject(), geoId);
+    ASSERT_EQ(getObject()->solve(), 0);
+
+    const auto* curve = static_cast<const Part::GeomBSplineCurve*>(getObject()->getGeometry(geoId));
+    EXPECT_EQ(curve->getDegree(), 2);
+    EXPECT_EQ(curve->getWeights(), refit->getWeights());
+    EXPECT_LT(farthestDeparture(*refit, *curve), Precision::Confusion());
+}
+
+TEST_F(SketchObjectTest, testDecreaseBSplineDegreeOfAPeriodicCurveKeepsItClosed)
+{
+    auto bspline = createTypicalPeriodicBSpline();
+    int geoId = getObject()->addGeometry(bspline.get());
+    getObject()->exposeInternalGeometry(geoId);
+    long curveId = GeometryFacade::getFacade(getObject()->getGeometry(geoId))->getId();
+    ASSERT_EQ(getObject()->solve(), 0);
+
+    ASSERT_TRUE(getObject()->decreaseBSplineDegree(geoId));
+    auto refit = copyOfCurve(*getObject(), geoId);
+    ASSERT_EQ(getObject()->solve(), 0);
+
+    const auto* curve = static_cast<const Part::GeomBSplineCurve*>(getObject()->getGeometry(geoId));
+    EXPECT_EQ(curve->getDegree(), 2);
+    EXPECT_EQ(GeometryFacade::getFacade(curve)->getId(), curveId);
+    EXPECT_LT(
+        (curve->value(curve->getFirstParameter()) - curve->value(curve->getLastParameter())).Length(),
+        Precision::Confusion()
+    );
+    EXPECT_LT(farthestDeparture(*refit, *curve), Precision::Confusion());
 }
