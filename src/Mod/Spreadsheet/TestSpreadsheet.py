@@ -1175,6 +1175,50 @@ class SpreadsheetCases(unittest.TestCase):
         self.assertTrue(sheet.A1.startswith("ERR: Missing reference"))
         self.assertEqual(self.doc.getObject("Feature").ExpressionEngine[0][1], "#REF!")
 
+    def testIndexReadsTheKthCellOfARange(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        for row, value in ((2, "4"), (3, "5"), (4, "6")):
+            sheet.set(f"A{row}", value)
+        sheet.set("B1", "=index(A2:A4; 2)")
+        sheet.set("B2", "=index(list(7; 8; 9); 3)")
+        sheet.set("B3", "=index(A2:A4; 4)")
+        sheet.set("B4", "=index(A2:A5; 4)")
+        self.doc.recompute()
+        self.assertEqual(sheet.B1, 5)
+        self.assertEqual(sheet.B2, 9)
+        self.assertIn("outside the range's 3 cells", sheet.B3)
+        self.assertIn("A5, which is empty", sheet.B4)
+
+    def testAFormulaReadsARangeOnAnotherSheet(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        for row, value in ((2, "4 mm"), (3, "5 mm"), (4, "6 mm")):
+            sheet.set(f"A{row}", value)
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyInteger", "Row")
+        feature.addProperty("App::PropertyLength", "Picked")
+        feature.addProperty("App::PropertyLength", "Total")
+        feature.Row = 2
+        feature.setExpression("Picked", "index(Spreadsheet.A2:A4; Row)")
+        feature.setExpression("Total", "sum(Spreadsheet.A2:A4)")
+        self.doc.recompute()
+        self.assertEqual(feature.Picked.Value, 5)
+        self.assertEqual(feature.Total.Value, 15)
+        self.assertIn(sheet, feature.OutList)
+        sheet.set("A3", "8 mm")
+        self.doc.recompute()
+        self.assertEqual(feature.Picked.Value, 8)
+
+    def testARangeOnAnotherSheetFollowsRowEdits(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        other.set("A1", "=sum(Spreadsheet.C2:C5)")
+        sheet.insertRows("1", 2)
+        self.assertEqual(other.getContents("A1"), "=sum(Spreadsheet.C4:C7)")
+        sheet.removeRows("5", 1)
+        self.assertEqual(other.getContents("A1"), "=sum(Spreadsheet.C4:C6)")
+        sheet.removeRows("4", 3)
+        self.assertEqual(other.getContents("A1"), "=sum(#REF!)")
+
     def testInsertColumnsMovesAPropertyFormulaOnAnotherObject(self):
         sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
         sheet.set("B2", "7")

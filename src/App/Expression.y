@@ -129,6 +129,7 @@ args: exp                                       { $$.push_back($1);             
     ;
 
 range: id_or_cell ':' id_or_cell                { $$ = new RangeExpression(DocumentObject, $1, $3);                               }
+     | iden ':' id_or_cell                      { $$ = new SheetRangeExpression(DocumentObject, $1, $3);                          }
      ;
 
 
