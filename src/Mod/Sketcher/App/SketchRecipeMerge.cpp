@@ -368,8 +368,8 @@ MergeReport Sketcher::mergeSketches(
     );
     // Each entity starts the solve where the side that chose its position left it.
     std::map<std::string, const SketchObject*> seedFor;
-    // Where neither side chose it, it starts where B's solve alone moved it, since that may be a
-    // drag the merge cannot tell apart; otherwise A's copy seeds it.
+    // Where neither side chose it, it starts where B alone moved it, or B's solve alone, since that
+    // may be a drag the merge cannot tell apart; otherwise A's copy seeds it.
     const auto movedBySolveOnly = [](const HeldBack& heldBack, const std::string& tag) {
         const auto first = heldBack.lower_bound({tag, std::string()});
         return first != heldBack.end() && first->first.first == tag;
@@ -423,7 +423,10 @@ MergeReport Sketcher::mergeSketches(
             seedFor[tag] = &branchB;
         }
         else if (
-            !aChose && !bChose && movedBySolveOnly(bHeldBack, tag) && !movedBySolveOnly(aHeldBack, tag)
+            !aChose && !bChose
+            && ((movedBySolveOnly(bHeldBack, tag) && !movedBySolveOnly(aHeldBack, tag))
+                || (movedFromAncestor(tag, ancestor, branchB)
+                    && !movedFromAncestor(tag, ancestor, branchA)))
         ) {
             seedFor[tag] = &branchB;
         }
