@@ -295,6 +295,7 @@ void Workbench::activated()
         "PartDesign_CurvePattern",
         "PartDesign_FillPattern",
         "PartDesign_TablePattern",
+        "PartDesign_FormulaPattern",
         nullptr
     };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
@@ -377,7 +378,8 @@ Gui::MenuItem* Workbench::setupMenuBar() const
                      << "PartDesign_PointPattern"
                      << "PartDesign_CurvePattern"
                      << "PartDesign_FillPattern"
-                     << "PartDesign_TablePattern";
+                     << "PartDesign_TablePattern"
+                     << "PartDesign_FormulaPattern";
 
     // dressups
     Gui::MenuItem* dressups = new Gui::MenuItem;
@@ -464,7 +466,8 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
           << "PartDesign_PointPattern"
           << "PartDesign_CurvePattern"
           << "PartDesign_FillPattern"
-          << "PartDesign_TablePattern";
+          << "PartDesign_TablePattern"
+          << "PartDesign_FormulaPattern";
 
     return root;
 }

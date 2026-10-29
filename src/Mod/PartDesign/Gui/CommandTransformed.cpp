@@ -530,6 +530,41 @@ bool CmdPartDesignTablePattern::isActive()
     return hasAnyBody();
 }
 
+//===========================================================================
+// PartDesign_FormulaPattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignFormulaPattern)
+
+CmdPartDesignFormulaPattern::CmdPartDesignFormulaPattern()
+    : Command("PartDesign_FormulaPattern")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Formula Pattern");
+    sToolTipText = QT_TR_NOOP(
+        "Places copies of the selected features or the active body by formulas of the copy "
+        "number n"
+    );
+    sWhatsThis = "PartDesign_FormulaPattern";
+    sStatusTip = sToolTipText;
+    sPixmap = "PartDesign_FormulaPattern";
+}
+
+void CmdPartDesignFormulaPattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    PartDesign::Body* body = selectedBody(this);
+    if (!body) {
+        return;
+    }
+    makeTransformed(this, body, "FormulaPattern", [](auto*, const auto&) {});
+}
+
+bool CmdPartDesignFormulaPattern::isActive()
+{
+    return hasAnyBody();
+}
+
 void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
 {
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
@@ -539,4 +574,5 @@ void CreatePartDesignTransformedCommands(Gui::CommandManager& rcCmdMgr)
     rcCmdMgr.addCommand(new CmdPartDesignCurvePattern());
     rcCmdMgr.addCommand(new CmdPartDesignFillPattern());
     rcCmdMgr.addCommand(new CmdPartDesignTablePattern());
+    rcCmdMgr.addCommand(new CmdPartDesignFormulaPattern());
 }
