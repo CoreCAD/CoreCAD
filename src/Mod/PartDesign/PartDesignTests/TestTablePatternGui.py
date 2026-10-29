@@ -90,3 +90,75 @@ class TestTablePatternGui(unittest.TestCase):
         self.assertEqual(self.pattern.MeasuredFrom, "Original")
         self.assertIsNone(self.pattern.Plane)
         self.assertFalse(self.table.isColumnHidden(2))
+
+    def _paste(self, text):
+        QtWidgets.QApplication.clipboard().setText(text)
+        QtWidgets.QApplication.sendEvent(
+            self.table,
+            QtGui.QKeyEvent(QtCore.QEvent.KeyPress, QtCore.Qt.Key_V, QtCore.Qt.ControlModifier),
+        )
+
+    def testPastedCellThatIsNotALengthKeepsItsColumn(self):
+        self.table.setCurrentCell(0, 0)
+        self._paste("20;abc;5\n")
+        self.assertEqual(self._rows(), [(20, 0, 5)])
+
+    def testEditsAreKeptWithLivePreviewOff(self):
+        _widget("checkBoxUpdateView").setChecked(False)
+        self.table.item(0, 1).setText("15")
+        _widget("buttonAddRow").click()
+        self.assertEqual(self._rows(), [(10, 15, 0), (20, 15, 0)])
+
+    def testChoosingThePickedFaceAgainKeepsIt(self):
+        top = next(
+            "Face%d" % (i + 1)
+            for i, f in enumerate(self.Doc.getObject("Pad").Shape.Faces)
+            if abs(f.CenterOfMass.z - 10) < 1e-6
+        )
+        FreeCADGui.Control.activeTaskDialog().accept()
+        QtWidgets.QApplication.processEvents()
+        self.pattern.Plane = (self.Doc.getObject("Pad"), [top])
+        self.pattern.MeasuredFrom = "Plane"
+        FreeCADGui.ActiveDocument.setEdit(self.pattern)
+        QtWidgets.QApplication.processEvents()
+        combo = _widget("comboMeasuredFrom")
+        index = combo.currentIndex()
+        self.assertTrue(combo.itemText(index).endswith(top), combo.itemText(index))
+        combo.activated.emit(index)
+        self.assertEqual(list(self.pattern.Plane[1]), [top])
+
+
+class TestTablePatternCommand(unittest.TestCase):
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("PartDesignTestTablePatternCommand", type="Part")
+        pad = PartDesign.makeFeature(_square(self.Doc, "Plate", side=40), "Pad")
+        self.Doc.recompute()
+        self.body = PartDesign.findBodyOf(pad)
+        self.hole = _square(self.Doc, "Hole", x0=3, y0=3, side=4)
+        self.pocket = PartDesign.makeFeature(self.hole, "Pocket", body=self.body)
+        self.Doc.recompute()
+
+    def tearDown(self):
+        if FreeCADGui.Control.activeDialog():
+            FreeCADGui.Control.closeDialog()
+        FreeCAD.closeDocument(self.Doc.Name)
+
+    def _run(self, *selected):
+        FreeCADGui.Selection.clearSelection()
+        for obj in selected:
+            FreeCADGui.Selection.addSelection(obj)
+        FreeCADGui.runCommand("PartDesign_TablePattern")
+        QtWidgets.QApplication.processEvents()
+        return self.Doc.getObject("TablePattern")
+
+    def testTheOriginalsOwnSketchIsNotAPlane(self):
+        pattern = self._run(self.pocket, self.hole)
+        self.assertEqual(pattern.MeasuredFrom, "Original")
+        self.assertIsNone(pattern.Plane)
+
+    def testASelectedSketchIsThePlane(self):
+        positions = self.Doc.addObject("Sketcher::SketchObject", "Positions")
+        self.Doc.recompute()
+        pattern = self._run(self.pocket, positions)
+        self.assertEqual(pattern.MeasuredFrom, "Plane")
+        self.assertEqual(pattern.Plane[0], positions)

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <Base/Vector3D.h>
 
 #include "TaskTransformedParameters.h"
@@ -27,10 +29,10 @@ public:
 
     void apply() override;
 
-    /// Rows read from text copied out of a spreadsheet: one line per row, cells split by tabs,
-    /// commas or semicolons. A bare number is in the document's length unit; a line without
-    /// a number is skipped.
-    static std::vector<std::vector<double>> parseCells(const QString& text);
+    /// Rows read from text copied out of a spreadsheet, one line per row. A bare number is in
+    /// the document's length unit; a cell that is not a length is empty, and a line without
+    /// a length is skipped.
+    static std::vector<std::vector<std::optional<double>>> parseCells(const QString& text);
 
 protected:
     void onSelectionChanged(const Gui::SelectionChanges& msg) override;
@@ -55,6 +57,7 @@ private:
     /// The combo's entries in order: first null for the original, last null for
     /// "Select face…".
     std::vector<App::DocumentObject*> planes;
+    bool preview = true;
     std::unique_ptr<Ui_TaskTablePatternParameters> ui;
 };
 

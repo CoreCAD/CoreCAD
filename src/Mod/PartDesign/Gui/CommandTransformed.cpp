@@ -493,27 +493,19 @@ CmdPartDesignTablePattern::CmdPartDesignTablePattern()
     sPixmap = "PartDesign_TablePattern";
 }
 
-// A sketch, datum plane or flat face selected with the features is the plane the positions
-// are measured on; without one, rows are offsets from the original.
-static std::pair<App::DocumentObject*, std::vector<std::string>> planeOf(Gui::Command* cmd)
+// A selected sketch that is not a feature's profile, or a datum plane, is the plane the
+// positions are measured on; without one, rows are offsets from the original. A face is
+// picked in the panel, since a selected face's feature becomes an original.
+static App::DocumentObject* planeOf(Gui::Command* cmd)
 {
     for (auto& selected : cmd->getSelection().getSelectionEx()) {
         App::DocumentObject* obj = selected.getObject();
-        for (const std::string& sub : selected.getSubNames()) {
-            if (sub.compare(0, 4, "Face") == 0) {
-                try {
-                    PartDesign::TablePattern::frameOf(obj, {sub});
-                    return {obj, {sub}};
-                }
-                catch (const Base::Exception&) {
-                }
-            }
-        }
-        if (obj->isDerivedFrom<Part::Part2DObject>() || obj->isDerivedFrom<App::Plane>()) {
-            return {obj, {}};
+        if ((obj->isDerivedFrom<Part::Part2DObject>() && !isProfile(obj))
+            || obj->isDerivedFrom<App::Plane>()) {
+            return obj;
         }
     }
-    return {nullptr, {}};
+    return nullptr;
 }
 
 void CmdPartDesignTablePattern::activated(int iMsg)
@@ -523,14 +515,10 @@ void CmdPartDesignTablePattern::activated(int iMsg)
     if (!body) {
         return;
     }
-    const auto [plane, faces] = planeOf(this);
-    makeTransformed(this, body, "TablePattern", [plane, faces](auto* feature, const auto&) {
+    App::DocumentObject* plane = planeOf(this);
+    makeTransformed(this, body, "TablePattern", [plane](auto* feature, const auto&) {
         if (plane) {
-            FCMD_OBJ_CMD(
-                feature,
-                "Plane = (" << getObjectCmd(plane) << ", "
-                            << PartDesignGui::buildLinkSubPythonStr(plane, faces) << ")"
-            );
+            FCMD_OBJ_CMD(feature, "Plane = " << getObjectCmd(plane));
             FCMD_OBJ_CMD(feature, "MeasuredFrom = \"Plane\"");
         }
         FCMD_OBJ_CMD(feature, "Rows = [FreeCAD.Vector(10, 0, 0)]");

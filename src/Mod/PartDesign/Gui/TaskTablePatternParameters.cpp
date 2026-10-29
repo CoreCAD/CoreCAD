@@ -204,7 +204,9 @@ void TaskTablePatternParameters::useRows(const std::vector<Base::Vector3d>& rows
 {
     setupTransaction();
     getObject<PartDesign::TablePattern>()->Rows.setValues(rows);
-    recomputeFeature();
+    if (preview) {
+        recomputeFeature();
+    }
     updateUI();
 }
 
@@ -214,7 +216,9 @@ void TaskTablePatternParameters::usePlane(App::DocumentObject* obj, const std::v
     auto* pattern = getObject<PartDesign::TablePattern>();
     pattern->Plane.setValue(obj, subs);
     pattern->MeasuredFrom.setValue(obj ? fromPlane : 0);
-    recomputeFeature();
+    if (preview) {
+        recomputeFeature();
+    }
     updateUI();
 }
 
@@ -225,7 +229,11 @@ void TaskTablePatternParameters::onMeasuredFromChosen(int index)
     }
     if (index == 0 || planes[index]) {
         exitSelectionMode();
-        usePlane(planes[index], {});
+        auto* pattern = getObject<PartDesign::TablePattern>();
+        const bool onPlane = pattern->MeasuredFrom.getValue() == fromPlane;
+        if ((onPlane ? pattern->Plane.getValue() : nullptr) != planes[index]) {
+            usePlane(planes[index], {});
+        }
         return;
     }
     hideObject();
@@ -305,28 +313,33 @@ void TaskTablePatternParameters::onRemoveRow()
     useRows(rows);
 }
 
-std::vector<std::vector<double>> TaskTablePatternParameters::parseCells(const QString& text)
+// Spreadsheets copy cells split by tabs; text files use semicolons where a comma is the
+// decimal mark, else commas.
+std::vector<std::vector<std::optional<double>>> TaskTablePatternParameters::parseCells(
+    const QString& text
+)
 {
-    static const QRegularExpression cellBreak(QStringLiteral("[\t,;]"));
-    std::vector<std::vector<double>> cells;
+    std::vector<std::vector<std::optional<double>>> cells;
     for (const QString& line : text.split(QLatin1Char('\n'))) {
-        std::vector<double> values;
+        const QChar cellBreak = line.contains(QLatin1Char('\t')) ? QLatin1Char('\t')
+            : line.contains(QLatin1Char(';'))                    ? QLatin1Char(';')
+                                                                 : QLatin1Char(',');
+        std::vector<std::optional<double>> values;
         for (const QString& cell : line.split(cellBreak)) {
-            if (const std::optional<double> value = parseLength(cell)) {
-                values.push_back(*value);
-            }
+            values.push_back(parseLength(cell));
         }
-        if (!values.empty()) {
+        if (std::ranges::any_of(values, [](const auto& value) { return value.has_value(); })) {
             cells.push_back(values);
         }
     }
     return cells;
 }
 
-// Pasted cells overwrite from the current cell rightward and down, adding rows as needed.
+// Pasted cells overwrite from the current cell rightward and down, adding rows as needed; a
+// cell that is not a length leaves its place unchanged.
 void TaskTablePatternParameters::paste()
 {
-    const std::vector<std::vector<double>> cells = parseCells(QApplication::clipboard()->text());
+    const auto cells = parseCells(QApplication::clipboard()->text());
     if (cells.empty()) {
         return;
     }
@@ -341,7 +354,9 @@ void TaskTablePatternParameters::paste()
             rows.resize(row + 1);
         }
         for (std::size_t j = 0; j < cells[i].size() && firstColumn + j < std::size_t(columns); ++j) {
-            component(rows[row], firstColumn + static_cast<int>(j)) = cells[i][j];
+            if (cells[i][j]) {
+                component(rows[row], firstColumn + static_cast<int>(j)) = *cells[i][j];
+            }
         }
     }
     useRows(rows);
@@ -359,7 +374,7 @@ bool TaskTablePatternParameters::eventFilter(QObject* watched, QEvent* event)
 
 void TaskTablePatternParameters::onUpdateView(bool on)
 {
-    blockUpdate = !on;
+    preview = on;
     if (on) {
         setupTransaction();
         recomputeFeature();

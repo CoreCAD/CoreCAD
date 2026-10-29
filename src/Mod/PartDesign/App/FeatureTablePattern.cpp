@@ -90,7 +90,22 @@ gp_Ax3 TablePattern::frameOf(const App::DocumentObject* obj, const std::vector<s
     if (surface.GetType() != GeomAbs_Plane) {
         throw Base::ValueError("The face the positions are measured on must be flat");
     }
-    return surface.Plane().Position();
+    // A face has no axes of its own a person can see, so positions are measured from the
+    // world's origin and X laid onto it (the world's Y where X stands upright on the face),
+    // as seen from the face's outer side.
+    const gp_Pln plane = surface.Plane();
+    gp_Dir normal = plane.Axis().Direction();
+    if (shape.Orientation() == TopAbs_REVERSED) {
+        normal.Reverse();
+    }
+    gp_Vec along(1, 0, 0);
+    if (gp_Dir(along).IsParallel(normal, Precision::Angular())) {
+        along = gp_Vec(0, 1, 0);
+    }
+    along -= gp_Vec(normal) * along.Dot(gp_Vec(normal));
+    const gp_Pnt origin(0, 0, 0);
+    const gp_Vec toPlane = gp_Vec(normal) * gp_Vec(origin, plane.Location()).Dot(gp_Vec(normal));
+    return {origin.Translated(toPlane), normal, gp_Dir(along)};
 }
 
 // Each position is read on the plane; the original's centre slides there across the plane

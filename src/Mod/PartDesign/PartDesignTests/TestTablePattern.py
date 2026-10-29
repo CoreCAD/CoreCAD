@@ -132,15 +132,24 @@ class TestTablePattern(unittest.TestCase):
         self._pattern([(20, 20, 0)], plane=_origin_feature(self.Doc, "XY_Plane"))
         self.assertTrue(self._holeAt(18, 18))
 
-    def testPositionsOnAFace(self):
-        # The plate's top face; whatever its own axes, the copy lands on the plate.
-        top = [
-            "Face%d" % (i + 1)
-            for i, f in enumerate(self.pad.Shape.Faces)
-            if abs(f.CenterOfMass.z - 10) < 1e-6
+    def _face(self, test):
+        return [
+            "Face%d" % (i + 1) for i, f in enumerate(self.pad.Shape.Faces) if test(f.CenterOfMass)
         ][0]
-        pattern = self._pattern([(10, 0, 0)], plane=(self.pad, [top]))
+
+    def testPositionsOnAFaceAreMeasuredFromTheWorldsAxes(self):
+        top = self._face(lambda c: abs(c.z - 10) < 1e-6)
+        pattern = self._pattern([(20, 30, 0)], plane=(self.pad, [top]))
         self.assertTrue(pattern.isValid(), pattern.getStatusString())
+        self.assertTrue(self._holeAt(18, 28))
+
+    def testPositionsOnAnUprightFace(self):
+        # Seen from outside the face at y = 0, X runs along the world's X and Y runs up. The
+        # hole's centre is 2 mm up, so (25, 2) moves it only along X.
+        front = self._face(lambda c: abs(c.y) < 1e-6)
+        self._pattern([(25, 2, 0)], plane=(self.pad, [front]))
+        self.assertTrue(self._holeAt(23, 3))
+        self.assertAlmostEqual(self.body.Shape.Volume, PLATE - 2 * HOLE)
 
     def testPlaneModeWithoutAPlaneFails(self):
         pattern = self._pattern([(20, 20, 0)])
