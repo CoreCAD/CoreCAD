@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // SPDX-FileCopyrightText: 2026 Cruth contributors
 
+#include <functional>
+
 #include <QDateTime>
 #include <QFile>
+#include <QFileDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 #include <QTreeWidget>
 
 #include <App/Application.h>
@@ -81,6 +86,30 @@ private:
         return Gui::getMainWindow()->findChild<QLabel*>(QStringLiteral("ProjectProblem"));
     }
 
+    // Cancels when given no file to choose.
+    static QString chooseFromOutside(const QString& file)
+    {
+        QString shownFolder;
+        std::function<void()> answer;
+        answer = [&]() {
+            auto* dialog = qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
+            if (!dialog) {
+                QTimer::singleShot(10, answer);
+                return;
+            }
+            shownFolder = dialog->directory().absolutePath();
+            if (file.isEmpty()) {
+                dialog->reject();
+                return;
+            }
+            dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"))->setText(file);
+            static_cast<QDialog*>(dialog)->accept();  // QFileDialog hides it
+        };
+        QTimer::singleShot(10, answer);
+        Gui::getMainWindow()->findChild<QPushButton*>(QStringLiteral("ProjectAddFromOutside"))->click();
+        return shownFolder;
+    }
+
     static QString secondsAgo(qint64 seconds)
     {
         return Gui::timeAgo(QDateTime::currentSecsSinceEpoch() - seconds);
@@ -91,6 +120,12 @@ private Q_SLOTS:
     {
         tests::initGuiApplication();
         QVERIFY(dir.isValid());
+        App::GetApplication()
+            .GetUserParameter()
+            .GetGroup("BaseApp")
+            ->GetGroup("Preferences")
+            ->GetGroup("Dialog")
+            ->SetBool("DontUseNativeDialog", true);
     }
 
     void cleanup()  // NOLINT
@@ -198,6 +233,51 @@ private Q_SLOTS:
         QVERIFY(lines().isEmpty());
         QVERIFY(!problem()->isHidden());
         QVERIFY(problem()->text().contains(QStringLiteral("can no longer be read")));
+    }
+
+    void addFromOutsideStartsInTheProjectFolderAndCancelAddsNothing()  // NOLINT
+    {
+        const std::string file = project(QStringLiteral("Lathe"));
+        Gui::ProjectPanel::openProject(QString::fromStdString(file));
+
+        QCOMPARE(
+            chooseFromOutside(QString()),
+            QFileInfo(path(QStringLiteral("Lathe"))).absoluteFilePath()
+        );
+        QVERIFY(App::outsideDocuments(file).empty());
+        QCOMPARE(lines(), QStringList {QStringLiteral("This project has no documents yet.")});
+    }
+
+    void aDocumentChosenFromOutsideIsListed()  // NOLINT
+    {
+        const std::string file = project(QStringLiteral("Mill"));
+        savedPart(QStringLiteral("Stock/Vise.cpart"));
+        Gui::ProjectPanel::openProject(QString::fromStdString(file));
+
+        chooseFromOutside(path(QStringLiteral("Stock/Vise.cpart")));
+        QVERIFY(problem()->isHidden());
+        QCOMPARE(App::outsideDocuments(file).size(), std::size_t {1});
+        QVERIFY(rowNamed(QStringLiteral("From outside (1)")));
+        QCOMPARE(
+            rowNamed(QStringLiteral("Vise.cpart"))->text(0),
+            QStringLiteral("Vise.cpart\n../Stock · not versioned")
+        );
+    }
+
+    void aDocumentAlreadyInTheProjectIsReportedNotAdded()  // NOLINT
+    {
+        const std::string file = project(QStringLiteral("Drill"));
+        savedPart(QStringLiteral("Drill/Chuck.cpart"));
+        Gui::ProjectPanel::openProject(QString::fromStdString(file));
+
+        chooseFromOutside(path(QStringLiteral("Drill/Chuck.cpart")));
+        QVERIFY(App::outsideDocuments(file).empty());
+        QVERIFY(!problem()->isHidden());
+        QVERIFY2(
+            problem()->text().startsWith(QStringLiteral("Chuck.cpart was not added.")),
+            qPrintable(problem()->text())
+        );
+        QVERIFY(problem()->text().contains(QStringLiteral("in this project already")));
     }
 
     void timeAgoCountsUpInMinutesHoursAndDays()  // NOLINT
