@@ -292,6 +292,7 @@ void Workbench::activated()
         "PartDesign_LinearPattern",
         "PartDesign_PolarPattern",
         "PartDesign_PointPattern",
+        "PartDesign_CurvePattern",
         nullptr
     };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
@@ -371,7 +372,8 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     *transformations << "PartDesign_Mirrored"
                      << "PartDesign_LinearPattern"
                      << "PartDesign_PolarPattern"
-                     << "PartDesign_PointPattern";
+                     << "PartDesign_PointPattern"
+                     << "PartDesign_CurvePattern";
 
     // dressups
     Gui::MenuItem* dressups = new Gui::MenuItem;
@@ -455,7 +457,8 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
     *part << "PartDesign_Mirrored"
           << "PartDesign_LinearPattern"
           << "PartDesign_PolarPattern"
-          << "PartDesign_PointPattern";
+          << "PartDesign_PointPattern"
+          << "PartDesign_CurvePattern";
 
     return root;
 }

@@ -47,6 +47,7 @@ set(PartDesignGui_UIC_SRCS
     TaskMirroredParameters.ui
     TaskPatternParameters.ui
     TaskPointPatternParameters.ui
+    TaskCurvePatternParameters.ui
     TaskPreviewParameters.ui
     TaskPrimitiveParameters.ui
     TaskPipeParameters.ui
@@ -96,6 +97,8 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderPolarPattern.h
     ViewProviderPointPattern.cpp
     ViewProviderPointPattern.h
+    ViewProviderCurvePattern.cpp
+    ViewProviderCurvePattern.h
     ViewProviderBoolean.cpp
     ViewProviderBoolean.h
     ViewProviderPrimitive.h
@@ -158,6 +161,9 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskPointPatternParameters.ui
     TaskPointPatternParameters.cpp
     TaskPointPatternParameters.h
+    TaskCurvePatternParameters.ui
+    TaskCurvePatternParameters.cpp
+    TaskCurvePatternParameters.h
     TaskHoleParameters.ui
     TaskHoleParameters.cpp
     TaskHoleParameters.h
