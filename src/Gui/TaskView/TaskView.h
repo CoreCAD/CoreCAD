@@ -128,6 +128,8 @@ public:
     explicit TaskPanel(QWidget* parent = nullptr);
     ~TaskPanel() override;
 
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 public:
     QVBoxLayout* mainLayout;
     QScrollArea* scrollArea;
@@ -135,6 +137,9 @@ public:
     QVBoxLayout* dialogLayout;
     QList<QWidget*> contextualPanels;
     QSint::ActionPanel* actionPanel;
+
+private:
+    void fitWidthToContent();
 };
 
 /// Father class of content of a Free widget (without header and Icon), shut be an exception!

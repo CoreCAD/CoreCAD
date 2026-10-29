@@ -21,6 +21,8 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
+
 #include <QAbstractSpinBox>
 #include <QActionEvent>
 #include <QApplication>
@@ -29,6 +31,8 @@
 #include <QLineEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -260,6 +264,34 @@ TaskPanel::TaskPanel(QWidget* parent)
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setMinimumWidth(200);
     dialogLayout->addWidget(scrollArea, 1);
+
+    scrollArea->verticalScrollBar()->installEventFilter(this);
+    actionPanel->installEventFilter(this);
+}
+
+bool TaskPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    switch (event->type()) {
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::LayoutRequest:
+            fitWidthToContent();
+            break;
+        default:
+            break;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+// With no horizontal scrollbar, a vertical one would otherwise cover the panel's right edge.
+void TaskPanel::fitWidthToContent()
+{
+    QScrollBar* bar = scrollArea->verticalScrollBar();
+    const int barWidth = bar->isVisibleTo(scrollArea) ? bar->sizeHint().width() : 0;
+    const int frame = 2 * scrollArea->frameWidth();
+    scrollArea->setMinimumWidth(
+        std::max(200, actionPanel->minimumSizeHint().width() + barWidth + frame)
+    );
 }
 
 TaskPanel::~TaskPanel()
