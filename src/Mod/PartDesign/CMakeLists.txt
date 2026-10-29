@@ -73,6 +73,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestFillPattern.py
     PartDesignTests/TestTablePattern.py
     PartDesignTests/TestFormulaPattern.py
+    PartDesignTests/TestVariedMeasurement.py
     PartDesignTests/TestTablePatternGui.py
     PartDesignTests/TestFormulaPatternGui.py
 )

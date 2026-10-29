@@ -51,13 +51,6 @@ FormulaPattern::FormulaPattern()
         App::Prop_None,
         "The copy's offset along Z; a formula may use n, the copy's number"
     );
-    ADD_PROPERTY_TYPE(
-        n,
-        (1),
-        "FormulaPattern",
-        App::PropertyType(App::Prop_Hidden | App::Prop_ReadOnly | App::Prop_Output),
-        "The number of the copy the formulas are being worked out for"
-    );
 }
 
 void FormulaPattern::setupObject()
@@ -99,7 +92,8 @@ std::list<gp_Trsf> FormulaPattern::getTransformations()
         for (int copy = 1; copy < Occurrences.getValue(); ++copy) {
             n.setValue(copy);
             const gp_Vec move(offsetOf(X), offsetOf(Y), offsetOf(Z));
-            if (move.Magnitude() < Precision::Confusion()) {
+            // A copy left on the original adds something only when it is built differently.
+            if (move.Magnitude() < Precision::Confusion() && !variesMeasurements()) {
                 continue;
             }
             gp_Trsf trsf;

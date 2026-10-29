@@ -338,6 +338,7 @@ SET(FreeCADApp_CPP_SRCS
     Recipe.cpp
     ObjectRecipe.cpp
     MergedDocument.cpp
+    OverriddenBuild.cpp
     RecipeText.cpp
     GeometryCache.cpp
     SealedArchive.cpp
@@ -378,6 +379,7 @@ SET(FreeCADApp_HPP_SRCS
     Metadata.h
     Recipe.h
     ObjectRecipe.h
+    OverriddenBuild.h
     RecipeText.h
     GeometryCache.h
     SealedArchive.h
