@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include <QGridLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -12,11 +13,16 @@
 #include <App/Expression.h>
 #include <App/Transactions.h>
 #include <App/ObjectIdentifier.h>
+#include <App/PropertyStandard.h>
+#include <App/PropertyUnits.h>
+#include <App/Range.h>
 #include <Base/Quantity.h>
 #include <Base/Tools.h>
+#include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
 #include <Gui/QuantitySpinBox.h>
+#include <Gui/ViewProvider.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 
 #include "TaskVariedMeasurements.h"
@@ -66,6 +72,59 @@ std::string startingFormula(const std::string& target, PartDesign::Transformed* 
         }
     }
     return target + " + n * " + step;
+}
+
+/// The measurement's unit, or none when it is a plain number.
+Base::Unit unitOf(const App::ObjectIdentifier& target)
+{
+    const App::Property* prop = target.getProperty();
+    const App::any value = prop ? prop->getPathValue(target) : App::any();
+    return value.type() == typeid(Base::Quantity) ? App::any_cast<Base::Quantity>(value).getUnit()
+                                                  : Base::Unit();
+}
+
+bool holdsUnit(const App::Property* cell, const Base::Unit& unit)
+{
+    if (const auto* quantity = freecad_cast<const App::PropertyQuantity*>(cell)) {
+        return quantity->getQuantityValue().getUnit() == unit;
+    }
+    return unit == Base::Unit()
+        && (freecad_cast<const App::PropertyFloat*>(cell)
+            || freecad_cast<const App::PropertyInteger*>(cell));
+}
+
+struct SheetColumn
+{
+    App::DocumentObject* sheet;
+    App::Range cells;
+};
+
+/// Each sheet column holding values in the measurement's unit, from its first such cell to its
+/// last, so a header above the values is left out.
+std::vector<SheetColumn> columnsHolding(const App::Document* document, const Base::Unit& unit)
+{
+    std::vector<SheetColumn> found;
+    for (App::DocumentObject* obj : document->getObjects()) {
+        if (!obj->getTypeId().isDerivedFrom(Base::Type::fromName("Spreadsheet::Sheet"))) {
+            continue;
+        }
+        std::map<int, std::pair<int, int>> rowsByColumn;
+        std::vector<std::pair<const char*, App::Property*>> properties;
+        obj->getPropertyNamedList(properties);
+        for (const auto& [name, property] : properties) {
+            App::CellAddress cell = App::stringToAddress(name, true);
+            if (!cell.isValid() || !holdsUnit(property, unit)) {
+                continue;
+            }
+            auto [entry, added] = rowsByColumn.try_emplace(cell.col(), cell.row(), cell.row());
+            entry->second.first = std::min(entry->second.first, cell.row());
+            entry->second.second = std::max(entry->second.second, cell.row());
+        }
+        for (const auto& [column, rows] : rowsByColumn) {
+            found.push_back({obj, App::Range(rows.first, column, rows.second, column)});
+        }
+    }
+    return found;
 }
 }  // namespace
 
@@ -154,6 +213,34 @@ void TaskVariedMeasurements::showRows()
                 rebuild();
             }
         );
+        auto* fromSheet = new QToolButton(this);
+        fromSheet->setObjectName(QStringLiteral("buttonFromSheet%1").arg(index + 1));
+        fromSheet->setToolTip(tr("Read each copy's value from a spreadsheet column"));
+        fromSheet->setPopupMode(QToolButton::InstantPopup);
+        auto* columns = new QMenu(fromSheet);
+        for (const SheetColumn& column :
+             columnsHolding(pattern->getDocument(), unitOf(measurement.target))) {
+            QIcon icon;
+            if (auto* vp = Gui::Application::Instance->getViewProvider(column.sheet)) {
+                icon = vp->getIcon();
+                fromSheet->setIcon(icon);
+            }
+            const std::string cells = column.cells.rangeString();
+            const std::string formula = std::string("index(") + column.sheet->getNameInDocument()
+                + "." + cells + "; n)";
+            columns->addAction(
+                icon,
+                QStringLiteral("%1, %2").arg(
+                    QString::fromUtf8(column.sheet->Label.getValue()),
+                    QString::fromStdString(cells)
+                ),
+                this,
+                [this, perCopy = measurement.perCopy, formula]() { readFromSheet(perCopy, formula); }
+            );
+        }
+        fromSheet->setMenu(columns);
+        fromSheet->setVisible(!columns->isEmpty());
+
         auto* remove = new QToolButton(this);
         remove->setObjectName(QStringLiteral("buttonStopVarying%1").arg(index + 1));
         remove->setIcon(Gui::BitmapFactory().iconFromTheme("list-remove"));
@@ -162,7 +249,8 @@ void TaskVariedMeasurements::showRows()
 
         rows->addWidget(name, index, 0);
         rows->addWidget(formula, index, 1);
-        rows->addWidget(remove, index, 2);
+        rows->addWidget(fromSheet, index, 2);
+        rows->addWidget(remove, index, 3);
     }
     emptyLabel->setVisible(varied.empty());
 
@@ -195,6 +283,23 @@ void TaskVariedMeasurements::onChosen(int index)
         pattern->getNameInDocument(),
         Base::Tools::escapeQuotesFromString(target).c_str(),
         Base::Tools::escapeQuotesFromString(startingFormula(target, pattern)).c_str()
+    );
+    rebuild();
+}
+
+void TaskVariedMeasurements::readFromSheet(App::Property* perCopy, const std::string& formula)
+{
+    PartDesign::Transformed* pattern = this->pattern();
+    if (!pattern) {
+        return;
+    }
+    openEditTransaction(pattern);
+    Gui::Command::doCommand(
+        Gui::Command::Doc,
+        "%s.setExpression('%s', '%s')",
+        Gui::Command::getObjectCmd(pattern).c_str(),
+        perCopy->getName(),
+        Base::Tools::escapeQuotesFromString(formula).c_str()
     );
     rebuild();
 }

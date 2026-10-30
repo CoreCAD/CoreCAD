@@ -11,6 +11,11 @@ class QComboBox;
 class QGridLayout;
 class QLabel;
 
+namespace App
+{
+class Property;
+}
+
 namespace PartDesign
 {
 class Transformed;
@@ -34,6 +39,7 @@ private:
     PartDesign::Transformed* pattern() const;
     void showRows();
     void onChosen(int index);
+    void readFromSheet(App::Property* perCopy, const std::string& formula);
     void stopVarying(int index);
     void rebuild();
 
