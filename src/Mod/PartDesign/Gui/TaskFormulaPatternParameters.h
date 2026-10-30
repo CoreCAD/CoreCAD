@@ -38,7 +38,6 @@ public:
 private Q_SLOTS:
     void onOccurrencesChanged(int occurrences);
     void onAxisChanged(int axis);
-    void onUpdateView(bool on) override;
 
 private:
     void setupParameterUI(QWidget* widget) override;

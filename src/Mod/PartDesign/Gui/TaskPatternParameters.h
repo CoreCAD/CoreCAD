@@ -61,7 +61,6 @@ private Q_SLOTS:
     // Slot to handle parameter changes from the widget
     void onParameterWidgetParametersChanged();
     // Update view signal (might be redundant now)
-    void onUpdateView(bool on) override;
 
 
 private:

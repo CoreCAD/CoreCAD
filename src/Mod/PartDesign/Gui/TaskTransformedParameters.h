@@ -125,13 +125,10 @@ protected:
     void setupTransaction();
 
 private Q_SLOTS:
-    virtual void onUpdateView(bool /*unused*/) = 0;
-
     void onButtonAddFeature(bool checked);
     void onButtonRemoveFeature(bool checked);
     void onFeatureDeleted();
     void indexesMoved();
-    void onModeChanged(int mode_id);
 
 private:
     /** Setup the parameter UI.

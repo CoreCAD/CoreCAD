@@ -116,29 +116,7 @@ void TaskTransformedParameters::setupUI()
         &TaskTransformedParameters::indexesMoved
     );
 
-    connect(ui->checkBoxUpdateView, &QCheckBox::toggled, this, &TaskTransformedParameters::onUpdateView);
-
-    // Get the feature data
     auto pcTransformed = getObject<PartDesign::Transformed>();
-
-    using Mode = PartDesign::Transformed::Mode;
-
-    ui->buttonGroupMode->setId(ui->radioTransformBody, static_cast<int>(Mode::WholeShape));
-    ui->buttonGroupMode->setId(ui->radioTransformToolShapes, static_cast<int>(Mode::Features));
-
-    connect(ui->buttonGroupMode, &QButtonGroup::idClicked, this, &TaskTransformedParameters::onModeChanged);
-
-    auto const mode = static_cast<Mode>(pcTransformed->TransformMode.getValue());
-    ui->groupFeatureList->setEnabled(mode == Mode::Features);
-    switch (mode) {
-        case Mode::WholeShape:
-            ui->radioTransformBody->setChecked(true);
-            break;
-        case Mode::Features:
-            ui->radioTransformToolShapes->setChecked(true);
-            break;
-    }
-
     std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();
     // Fill data into dialog elements
     for (auto obj : originals) {
@@ -242,6 +220,9 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
                 }
             }
             setupTransaction();
+            pcTransformed->TransformMode.setValue(
+                static_cast<long>(PartDesign::Transformed::Mode::Features)
+            );
             pcTransformed->Originals.setValues(originals);
             recomputeFeature();
 
@@ -269,26 +250,6 @@ void TaskTransformedParameters::setupTransaction()
     std::string name("Edit ");
     name += obj->Label.getValue();
     transactionID = obj->getDocument()->openTransaction(name.c_str());
-}
-
-void TaskTransformedParameters::onModeChanged(int mode_id)
-{
-    if (mode_id < 0) {
-        return;
-    }
-
-    auto pcTransformed = getObject<PartDesign::Transformed>();
-    pcTransformed->TransformMode.setValue(mode_id);
-
-    using Mode = PartDesign::Transformed::Mode;
-    Mode const mode = static_cast<Mode>(mode_id);
-
-    ui->groupFeatureList->setEnabled(mode == Mode::Features);
-    if (mode == Mode::WholeShape) {
-        ui->listWidgetFeatures->clear();
-    }
-    setupTransaction();
-    recomputeFeature();
 }
 
 void TaskTransformedParameters::onButtonAddFeature(bool checked)

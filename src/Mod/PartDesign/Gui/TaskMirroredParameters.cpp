@@ -166,23 +166,6 @@ void TaskMirroredParameters::onPlaneChanged(int /*num*/)
     recomputeFeature();
 }
 
-void TaskMirroredParameters::onUpdateView(bool on)
-{
-    blockUpdate = !on;
-    if (on) {
-        setupTransaction();
-        // Do the same like in TaskDlgMirroredParameters::accept() but without doCommand
-        auto pcMirrored = getObject<PartDesign::Mirrored>();
-        std::vector<std::string> mirrorPlanes;
-        App::DocumentObject* obj = nullptr;
-
-        getMirrorPlane(obj, mirrorPlanes);
-        pcMirrored->MirrorPlane.setValue(obj, mirrorPlanes);
-
-        recomputeFeature();
-    }
-}
-
 void TaskMirroredParameters::getMirrorPlane(App::DocumentObject*& obj, std::vector<std::string>& sub) const
 {
     const App::PropertyLinkSub& lnk = planeLinks.getCurrentLink();

@@ -34,7 +34,6 @@ private Q_SLOTS:
     void onOccurrencesChanged(int value);
     void onReversedChanged(bool on);
     void onKeepOrientationChanged(bool on);
-    void onUpdateView(bool on) override;
 
 private:
     void setupParameterUI(QWidget* widget) override;

@@ -277,15 +277,6 @@ void TaskCurvePatternParameters::onKeepOrientationChanged(bool on)
     changed();
 }
 
-void TaskCurvePatternParameters::onUpdateView(bool on)
-{
-    blockUpdate = !on;
-    if (on) {
-        setupTransaction();
-        recomputeFeature();
-    }
-}
-
 void TaskCurvePatternParameters::apply()
 {
     auto* pattern = getObject<PartDesign::CurvePattern>();

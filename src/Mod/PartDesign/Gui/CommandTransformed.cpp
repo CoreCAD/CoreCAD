@@ -79,7 +79,18 @@ using namespace PartDesignGui::CommandSupport;
 using ConfigureTransformed
     = std::function<void(App::DocumentObject* feature, const std::vector<App::DocumentObject*>& originals)>;
 
-// The selected features are the originals; with none, the pattern repeats the whole shape.
+static App::DocumentObject* lastCopyableStep(PartDesign::Body* body)
+{
+    for (auto* step = freecad_cast<PartDesign::Feature*>(body->Tip.getValue()); step;
+         step = freecad_cast<PartDesign::Feature*>(step->BaseFeature.getValue())) {
+        if (step->isDerivedFrom<PartDesign::FeatureAddSub>()) {
+            return step;
+        }
+    }
+    return nullptr;
+}
+
+// The selected features are the originals; with none, the step just before the pattern.
 static void makeTransformed(
     Gui::Command* cmd,
     PartDesign::Body* body,
@@ -87,9 +98,14 @@ static void makeTransformed(
     const ConfigureTransformed& configure
 )
 {
-    const std::vector<App::DocumentObject*> originals = cmd->getSelection().getObjectsOfType(
+    std::vector<App::DocumentObject*> originals = cmd->getSelection().getObjectsOfType(
         PartDesign::Feature::getClassTypeId()
     );
+    if (originals.empty()) {
+        if (App::DocumentObject* last = lastCopyableStep(body)) {
+            originals.push_back(last);
+        }
+    }
     for (auto* original : originals) {
         if (PartDesignGui::getBodyFor(original, false) != body) {
             warnWrongSelection(QObject::tr("Select features from a single body."));
@@ -103,10 +119,7 @@ static void makeTransformed(
         return;
     }
     Gui::Command::updateActive();
-    if (originals.empty()) {
-        FCMD_OBJ_CMD(feature, "TransformMode = \"Whole shape\"");
-    }
-    else {
+    if (!originals.empty()) {
         FCMD_OBJ_CMD(feature, "Originals = " << PartDesignGui::buildLinkListPythonStr(originals));
     }
     configure(feature, originals);
