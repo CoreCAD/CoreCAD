@@ -96,3 +96,36 @@ class TestVariedMeasurementGui(unittest.TestCase):
             [("Pocket.Length", "Pocket.Length + n * 1 mm")],
         )
         self.assertTrue(self.pattern.isValid(), self.pattern.getStatusString())
+
+    def _sheet(self):
+        sheet = self.Doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "Radius")
+        for row, radius in ((2, "2 mm"), (3, "3 mm")):
+            sheet.set(f"A{row}", radius)
+        sheet.set("B2", "5 deg")
+        self.Doc.recompute()
+        return sheet
+
+    def testASheetColumnOfLengthsIsOfferedForARadius(self):
+        self._sheet()
+        self._choose("Radius (Hole)")
+        button = _widget("buttonFromSheet1")
+        offered = [a.text() for a in button.menu().actions()]
+        self.assertEqual(offered, ["Spreadsheet, A2:A3"])
+
+    def testPickingAColumnReadsEachCopysValueFromIt(self):
+        self._sheet()
+        self._choose("Radius (Hole)")
+        button = _widget("buttonFromSheet1")
+        button.menu().actions()[0].trigger()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(
+            PartDesign.variedMeasurements(self.pattern),
+            [("Hole.Constraints.Radius", "index(Spreadsheet.A2:A3; n)")],
+        )
+        self.assertTrue(self.pattern.isValid(), self.pattern.getStatusString())
+        self.assertAlmostEqual(_widget("spinVaried1").property("rawValue"), 2)
+
+    def testWithoutASheetThereIsNoPicker(self):
+        self._choose("Radius (Hole)")
+        self.assertFalse(_widget("buttonFromSheet1").isVisibleTo(_widget("spinVaried1").parent()))
