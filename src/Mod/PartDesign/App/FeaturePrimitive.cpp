@@ -67,6 +67,7 @@ PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::FeaturePrimitive, PartDesign::Featur
 FeaturePrimitive::FeaturePrimitive()
 {
     Part::AttachExtension::initExtension(this);
+    App::PlacementExtension::initExtension(this);
 }
 
 App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& primitive)
@@ -97,7 +98,7 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
             AddSubShape.setValue(primitiveShape);
 
             if (getAddSubType() == FeatureAddSub::Additive) {
-                Shape.setValue(getSolid(primitiveShape));
+                Shape.setValue(primitiveShape);
             }
             else {
                 return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
@@ -134,7 +135,7 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
             );
         }
 
-        TopoShape solidBoolOp = getSolid(boolOp);
+        TopoShape solidBoolOp = boolOp;
         // lets check if the result is a solid
         if (solidBoolOp.isNull()) {
             return new App::DocumentObjectExecReturn(
@@ -150,7 +151,7 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
             return App::DocumentObject::StdReturn;
         }
         solidBoolOp = refineShapeIfActive(solidBoolOp);
-        Shape.setValue(getSolid(solidBoolOp));
+        Shape.setValue(solidBoolOp);
     }
     catch (Standard_Failure& e) {
 

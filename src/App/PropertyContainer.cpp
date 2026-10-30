@@ -22,7 +22,9 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
 #include <map>
+#include <utility>
 #include <vector>
 #include <string>
 
@@ -38,6 +40,7 @@
 #include <Base/Writer.h>
 
 #include "Property.h"
+#include "Document.h"
 #include "PropertyContainer.h"
 
 
@@ -186,6 +189,219 @@ const char* PropertyContainer::getPropertyName(const Property* prop)const
     return res;
 }
 
+void PropertyContainer::rememberMissingSource(const char* name, const std::string& id)
+{
+    if (name == nullptr || id.empty()) {
+        return;
+    }
+    _missingSources[name] = id;
+}
+
+std::string PropertyContainer::missingSource(const char* name) const
+{
+    if (name == nullptr) {
+        return {};
+    }
+    const auto found = _missingSources.find(name);
+    return found == _missingSources.end() ? std::string {} : found->second;
+}
+
+void PropertyContainer::rememberUnresolvedReference(const char* name,
+                                                    std::vector<StatedTarget> stated)
+{
+    if (name == nullptr || stated.empty()) {
+        return;
+    }
+    _unresolvedReferences[name] = std::move(stated);
+}
+
+const std::vector<PropertyContainer::StatedTarget>*
+PropertyContainer::unresolvedReference(const char* name) const
+{
+    if (name == nullptr) {
+        return nullptr;
+    }
+    const auto found = _unresolvedReferences.find(name);
+    return found == _unresolvedReferences.end() ? nullptr : &found->second;
+}
+
+void PropertyContainer::rememberStatedProperty(const char* name,
+                                               std::string words,
+                                               std::string why)
+{
+    if (name == nullptr || words.empty()) {
+        return;
+    }
+    _statedProperties[name] = StatedProperty {std::move(words), std::move(why)};
+}
+
+std::vector<std::pair<std::string, std::string>> PropertyContainer::unhonouredStatements() const
+{
+    std::vector<std::pair<std::string, std::string>> said;
+    for (const auto& [name, id] : _missingSources) {
+        said.emplace_back(name, "the source material '" + id + "' named for it was not found");
+    }
+    for (const auto& [name, targets] : _unresolvedReferences) {
+        said.emplace_back(name, "it names an object this document does not hold");
+    }
+    for (const auto& [name, stated] : _statedProperties) {
+        // The reason the reader composed, not a guess made here: a block is kept for more than
+        // one kind of failure, and a person deciding whether to discard it is deciding on the
+        // reason (Amendment 19 Clause 19.4).
+        said.emplace_back(name, stated.why);
+    }
+    std::sort(said.begin(), said.end());
+    return said;
+}
+
+void PropertyContainer::rememberStatementSetFromElsewhere(StatedElsewhere stated)
+{
+    if (stated.holder.empty() || stated.property.empty()) {
+        return;
+    }
+    // One holder says one thing about one property. Saying it again replaces what it said before,
+    // so a holder that is re-read never accumulates the failures it has since stopped having.
+    const auto same = [&stated](const StatedElsewhere& held) {
+        return held.holder == stated.holder && held.property == stated.property;
+    };
+    const auto found = std::find_if(_statedElsewhere.begin(), _statedElsewhere.end(), same);
+    if (found != _statedElsewhere.end()) {
+        *found = std::move(stated);
+        return;
+    }
+    _statedElsewhere.push_back(std::move(stated));
+}
+
+void PropertyContainer::forgetStatementsSetFrom(const std::string& holder)
+{
+    _statedElsewhere.erase(std::remove_if(_statedElsewhere.begin(),
+                                          _statedElsewhere.end(),
+                                          [&holder](const StatedElsewhere& held) {
+                                              return held.holder == holder;
+                                          }),
+                           _statedElsewhere.end());
+}
+
+std::vector<std::pair<std::string, std::string>> PropertyContainer::whatCouldNotBeHonoured() const
+{
+    std::vector<std::pair<std::string, std::string>> said = unhonouredStatements();
+    for (const StatedElsewhere& held : _statedElsewhere) {
+        // Named, and the holder named with it: the value is changed where it is stated, which is
+        // not here, and a report that did not say where would send a person looking in the wrong
+        // place (§3.6).
+        said.emplace_back(held.property, held.why + " ('" + held.holder + "' states it)");
+    }
+    std::sort(said.begin(), said.end());
+    return said;
+}
+
+PropertyContainer::KeptStatement
+PropertyContainer::keptStatementFor(const Property* prop) const
+{
+    KeptStatement kept;
+    const char* name = getPropertyName(prop);
+    if (name == nullptr) {
+        return kept;
+    }
+    if (const auto found = _missingSources.find(name); found != _missingSources.end()) {
+        kept.missingSource = found->second;
+    }
+    if (const auto found = _unresolvedReferences.find(name); found != _unresolvedReferences.end()) {
+        kept.unresolvedTargets = found->second;
+    }
+    if (const auto found = _statedProperties.find(name); found != _statedProperties.end()) {
+        kept.statedWords = found->second.words;
+        kept.statedReason = found->second.why;
+    }
+    return kept;
+}
+
+PropertyContainer::KeptStatement
+PropertyContainer::keptStatementFor(const std::string& name) const
+{
+    KeptStatement kept;
+    if (const auto found = _missingSources.find(name); found != _missingSources.end()) {
+        kept.missingSource = found->second;
+    }
+    if (const auto found = _unresolvedReferences.find(name); found != _unresolvedReferences.end()) {
+        kept.unresolvedTargets = found->second;
+    }
+    if (const auto found = _statedProperties.find(name); found != _statedProperties.end()) {
+        kept.statedWords = found->second.words;
+        kept.statedReason = found->second.why;
+    }
+    return kept;
+}
+
+void PropertyContainer::restoreKeptStatement(const std::string& name, const KeptStatement& kept)
+{
+    // Cleared first, so restoring an empty statement arrives at exactly the state that was
+    // captured -- the same rule as the property form.
+    _missingSources.erase(name);
+    _unresolvedReferences.erase(name);
+    _statedProperties.erase(name);
+    if (!kept.missingSource.empty()) {
+        _missingSources[name] = kept.missingSource;
+    }
+    if (!kept.unresolvedTargets.empty()) {
+        _unresolvedReferences[name] = kept.unresolvedTargets;
+    }
+    if (!kept.statedWords.empty()) {
+        _statedProperties[name] = StatedProperty {kept.statedWords, kept.statedReason};
+    }
+}
+
+PropertyContainer::KeptStatement PropertyContainer::dropStatement(const std::string& name)
+{
+    KeptStatement dropped = keptStatementFor(name);
+    _missingSources.erase(name);
+    _unresolvedReferences.erase(name);
+    _statedProperties.erase(name);
+    return dropped;
+}
+
+void PropertyContainer::restoreKeptStatement(const Property* prop, const KeptStatement& kept)
+{
+    const char* name = getPropertyName(prop);
+    if (name == nullptr) {
+        return;
+    }
+    // Cleared first, so restoring an empty statement arrives at exactly the state that was
+    // captured. A property's own Paste may or may not discharge the note on the way through.
+    eraseUnhonouredStatement(prop);
+    if (!kept.missingSource.empty()) {
+        _missingSources[name] = kept.missingSource;
+    }
+    if (!kept.unresolvedTargets.empty()) {
+        _unresolvedReferences[name] = kept.unresolvedTargets;
+    }
+    if (!kept.statedWords.empty()) {
+        _statedProperties[name] = StatedProperty {kept.statedWords, kept.statedReason};
+    }
+}
+
+void PropertyContainer::forgetUnhonouredStatement(const Property* prop)
+{
+    if (_missingSources.empty() && _unresolvedReferences.empty() && _statedProperties.empty()) {
+        return;
+    }
+    if (Document::isAnyRestoring()) {
+        // The read is still finishing itself, and what a read does is not what a person does.
+        return;
+    }
+    eraseUnhonouredStatement(prop);
+}
+
+void PropertyContainer::eraseUnhonouredStatement(const Property* prop)
+{
+    const char* name = getPropertyName(prop);
+    if (name != nullptr) {
+        _missingSources.erase(name);
+        _unresolvedReferences.erase(name);
+        _statedProperties.erase(name);
+    }
+}
+
 const PropertyData * PropertyContainer::getPropertyDataPtr(){return &propertyData;}
 const PropertyData & PropertyContainer::getPropertyData() const{return propertyData;}
 
@@ -223,6 +439,21 @@ void PropertyContainer::beforeSave() const
     }
 }
 
+namespace
+{
+/// Cruth: the status a document records, with the runtime dirty flag taken out.
+///
+/// Touched means "this property has changed since the last recompute" -- it describes the
+/// session, not the design. Written into the file it made a saved document depend on how it got
+/// there: build a part and save, and the flag is clear; open that same file and save it again,
+/// and it is set, so the bytes differ though nothing was designed. A document restored from
+/// disk is not dirty, and its file should not claim it is.
+unsigned long persistedStatus(const App::Property* prop)
+{
+    return prop->getStatus() & ~(1UL << App::Property::Touched);
+}
+}  // namespace
+
 void PropertyContainer::Save (Base::Writer &writer) const
 {
     std::map<std::string,Property*> Map;
@@ -257,7 +488,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
     for(auto prop : transients) {
         writer.Stream() << writer.ind() << "<_Property name=\"" << prop->getName()
             << "\" type=\"" << prop->getTypeId().getName()
-            << "\" status=\"" << prop->getStatus() << "\"/>" << std::endl;
+            << "\" status=\"" << persistedStatus(prop) << "\"/>" << std::endl;
     }
     writer.decInd();
 
@@ -270,7 +501,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
 
         dynamicProps.save(it.second,writer);
 
-        auto status = it.second->getStatus();
+        auto status = persistedStatus(it.second);
         if(status)
             writer.Stream() << "\" status=\"" << status;
         writer.Stream() << "\">";
@@ -314,6 +545,24 @@ void PropertyContainer::Save (Base::Writer &writer) const
     writer.Stream() << writer.ind() << "</Properties>" << endl;
     writer.decInd(); // indentation for 'Properties Count'
 }
+
+namespace
+{
+/// A property the file states and this read could not bring back: said out loud, marked on the
+/// read, and named so a write from this document can say what it would lose (Amendment 19).
+void lostThisProperty(Base::XMLReader& reader,
+                      const std::string& name,
+                      const std::string& type)
+{
+    reader.setPartialRestore(true);
+    reader.clearPartialRestoreProperty();
+    Base::Console().error("Property %s of type %s was subject to a partial restore.\n",
+                          name.c_str(),
+                          type.c_str());
+    reader.recordUnreadStatement("'" + name + "' (" + type + "), which this session could not "
+                                 "read back");
+}
+}  // namespace
 
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {
@@ -384,23 +633,31 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
         catch (const Base::XMLParseException&) {
             throw; // re-throw
         }
+        // Cruth (Amendment 19): every way of failing to read a property ends the same way -- the
+        // value the file states is not in this document, and an ordinary save would write its
+        // absence over the file. Each of these swallowed the failure and carried on, and only the
+        // first of them said so; a document cannot name what a save would cost if the read did
+        // not record it.
         catch (const Base::RestoreError &) {
-            reader.setPartialRestore(true);
             reader.clearPartialRestoreProperty();
-            Base::Console().error("Property %s of type %s was subject to a partial restore.\n",PropName.c_str(),TypeName.c_str());
+            lostThisProperty(reader, PropName, TypeName);
         }
         catch (const Base::Exception &e) {
             Base::Console().error("%s\n", e.what());
+            lostThisProperty(reader, PropName, TypeName);
         }
         catch (const std::exception &e) {
             Base::Console().error("%s\n", e.what());
+            lostThisProperty(reader, PropName, TypeName);
         }
         catch (const char* e) {
             Base::Console().error("%s\n", e);
+            lostThisProperty(reader, PropName, TypeName);
         }
 #ifndef FC_DEBUG
         catch (...) {
             Base::Console().error("PropertyContainer::Restore: Unknown C++ exception thrown\n");
+            lostThisProperty(reader, PropName, TypeName);
         }
 #endif
         reader.readEndElement("Property");
@@ -449,26 +706,28 @@ PropertyData::~PropertyData() = default;
 
 void PropertyData::addProperty(OffsetBase offsetBase,const char* PropName, Property *Prop, const char* PropertyGroup , PropertyType Type, const char* PropertyDocu)
 {
-#ifdef FC_DEBUG
-    if(!parentMerged)
-#endif
-    {
-        short offset = offsetBase.getOffsetTo(Prop);
-        if(offset < 0)
-            throw Base::RuntimeError("Invalid static property");
-        auto &index = impl->propertyData.get<1>();
-        auto it = index.find(PropName);
-        if(it == index.end()) {
-            if(parentMerged)
-                throw Base::RuntimeError("Cannot add static property");
-            index.emplace(PropName, PropertyGroup, PropertyDocu, offset, Type);
-        } else{
-#ifdef FC_DEBUG
-            if(it->Offset != offset) {
-                FC_ERR("Duplicate property '" << PropName << "'");
-            }
-#endif
+    short offset = offsetBase.getOffsetTo(Prop);
+    if(offset < 0)
+        throw Base::RuntimeError("Invalid static property");
+    auto &index = impl->propertyData.get<1>();
+    auto it = index.find(PropName);
+    if(it == index.end()) {
+        if(parentMerged) {
+            // Cruth #42: the table was sealed (a by-name lookup merged the parent's
+            // entries) before this class finished registering. Skipping would make the
+            // property silently vanish, so fail loudly, in every build type.
+            auto* container = Prop->getContainer();
+            throw Base::RuntimeError(std::string("Cannot add static property '") + PropName
+                + "' to " + (container ? container->getTypeId().getName() : "a container")
+                + ": its property table was sealed by a lookup during construction");
         }
+        index.emplace(PropName, PropertyGroup, PropertyDocu, offset, Type);
+    } else{
+#ifdef FC_DEBUG
+        if(it->Offset != offset) {
+            FC_ERR("Duplicate property '" << PropName << "'");
+        }
+#endif
     }
 
     Prop->syncType(Type);

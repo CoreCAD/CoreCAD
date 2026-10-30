@@ -96,7 +96,7 @@ public:
     /** @name additional file writing */
     //@{
     /// add a write request of a persistent object
-    std::string addFile(const char* Name, const Base::Persistence* Object);
+    virtual std::string addFile(const char* Name, const Base::Persistence* Object);
     /// process the requested file storing
     virtual void writeFiles() = 0;
     /// Set mode

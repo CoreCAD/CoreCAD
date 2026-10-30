@@ -89,6 +89,14 @@ public:
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
 
+    /** Give every geometry a fresh tag when the owning object has been duplicated.
+     *
+     * Tags are persisted, and the copy path routes through save/restore, so
+     * without this a pasted sketch comes back carrying the source's tags — two
+     * coexisting entities sharing one identity.
+     */
+    void mintDurableIdentity() override;
+
     App::Property* Copy() const override;
     void Paste(const App::Property& from) override;
 

@@ -1706,6 +1706,12 @@ void Sheet::renameObjectIdentifiers(const std::map<ObjectIdentifier, ObjectIdent
 
     cells.renameObjectIdentifiers(paths);
 }
+
+void Sheet::shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift)
+{
+    DocumentObject::shiftCellReferences(sheet, shift);
+    cells.shiftCellReferences(sheet, shift);
+}
 bool Sheet::hasCell(const std::vector<App::Range>& ranges) const
 {
     for (auto range : ranges) {

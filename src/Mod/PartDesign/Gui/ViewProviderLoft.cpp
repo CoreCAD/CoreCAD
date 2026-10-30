@@ -42,7 +42,7 @@ ViewProviderLoft::ViewProviderLoft() = default;
 
 ViewProviderLoft::~ViewProviderLoft() = default;
 
-std::vector<App::DocumentObject*> ViewProviderLoft::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderLoft::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
 
@@ -77,7 +77,7 @@ void ViewProviderLoft::highlightProfile(bool on)
 {
     PartDesign::Loft* pcLoft = getObject<PartDesign::Loft>();
     highlightReferences(
-        dynamic_cast<Part::Feature*>(pcLoft->Profile.getValue()),
+        Part::shapeCarrier(pcLoft->Profile.getValue()),
         pcLoft->Profile.getSubValues(),
         on
     );
@@ -94,7 +94,7 @@ void ViewProviderLoft::highlightSection(bool on)
         if (it.first->isDerivedFrom<Part::Part2DObject>() && subName.compare(0, 6, "Vertex") != 0) {
             it.second.clear();
         }
-        highlightReferences(dynamic_cast<Part::Feature*>(it.first), it.second, on);
+        highlightReferences(Part::shapeCarrier(it.first), it.second, on);
     }
 }
 
@@ -117,7 +117,7 @@ void ViewProviderLoft::highlightReferences(ViewProviderLoft::Reference mode, boo
 }
 
 void ViewProviderLoft::highlightReferences(
-    Part::Feature* base,
+    App::GeoFeature* base,
     const std::vector<std::string>& elements,
     bool on
 )
@@ -139,7 +139,10 @@ void ViewProviderLoft::highlightReferences(
         edgeColors = svp->LineColorArray.getValues();
         std::vector<Base::Color> colors = edgeColors;
 
-        PartGui::ReferenceHighlighter highlighter(base->Shape.getValue(), svp->LineColor.getValue());
+        PartGui::ReferenceHighlighter highlighter(
+            Part::getShape(base).getShape(),
+            svp->LineColor.getValue()
+        );
         highlighter.getEdgeColors(elements, colors);
         svp->LineColorArray.setValues(colors);
     }

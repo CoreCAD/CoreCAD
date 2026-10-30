@@ -91,31 +91,9 @@ TaskRevolutionParameters::TaskRevolutionParameters(
 
     setFocus();
 
-    // show the parts coordinate system axis for selection
-    try {
-        if (auto vpOrigin = getOriginView()) {
-            vpOrigin->setTemporaryVisibility(Gui::DatumElement::Axes);
-        }
-    }
-    catch (const Base::Exception& ex) {
-        ex.reportException();
-    }
+    originDisplay.show(getObject(), Gui::DatumElement::Axes);
 
     setupGizmos(RevolutionView);
-}
-
-Gui::ViewProviderCoordinateSystem* TaskRevolutionParameters::getOriginView() const
-{
-    // show the parts coordinate system axis for selection
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-    if (body) {
-        App::Origin* origin = body->getOrigin();
-        return freecad_cast<ViewProviderCoordinateSystem*>(
-            Gui::Application::Instance->getViewProvider(origin)
-        );
-    }
-
-    return nullptr;
 }
 
 void TaskRevolutionParameters::setupDialog()
@@ -216,9 +194,9 @@ void TaskRevolutionParameters::fillAxisCombo(bool forceRefill)
         }
 
         // add origin axes
-        if (PartDesign::Body* body = PartDesign::Body::findBodyOf(pcFeat)) {
+        // Reference axes come from the shared document Origin (Cruth §11 step 5e), not a body.
+        if (App::Origin* orig = PartDesign::Body::findDocumentOrigin(pcFeat->getDocument())) {
             try {
-                App::Origin* orig = body->getOrigin();
                 addAxisToCombo(orig->getX(), std::string(), tr("Base X-axis"));
                 addAxisToCombo(orig->getY(), std::string(), tr("Base Y-axis"));
                 addAxisToCombo(orig->getZ(), std::string(), tr("Base Z-axis"));
@@ -659,16 +637,6 @@ bool TaskRevolutionParameters::getReversed() const
 
 TaskRevolutionParameters::~TaskRevolutionParameters()
 {
-    // hide the parts coordinate system axis for selection
-    try {
-        if (auto vpOrigin = getOriginView()) {
-            vpOrigin->resetTemporaryVisibility();
-        }
-    }
-    catch (const Base::Exception& ex) {
-        ex.reportException();
-    }
-
     axesInList.clear();
 }
 
@@ -801,6 +769,7 @@ TaskDlgRevolutionParameters::TaskDlgRevolutionParameters(ViewProviderRevolution*
     Content.push_back(
         new TaskRevolutionParameters(RevolutionView, "PartDesign_Revolution", tr("Revolution Parameters"))
     );
+    Content.push_back(new TaskMergeResultParameters(RevolutionView));
     Content.push_back(preview);
 }
 
@@ -811,6 +780,7 @@ TaskDlgGrooveParameters::TaskDlgGrooveParameters(ViewProviderGroove* GrooveView)
     Content.push_back(
         new TaskRevolutionParameters(GrooveView, "PartDesign_Groove", tr("Groove Parameters"))
     );
+    Content.push_back(new TaskMergeResultParameters(GrooveView));
     Content.push_back(preview);
 }
 

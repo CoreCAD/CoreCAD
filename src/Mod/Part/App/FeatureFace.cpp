@@ -33,7 +33,7 @@
 using namespace Part;
 
 
-PROPERTY_SOURCE(Part::Face, Part::Feature)
+PROPERTY_SOURCE(Part::Face, Part::ShapeFeature)
 
 Face::Face()
 {
@@ -52,13 +52,13 @@ short Face::mustExecute() const
     if (Sources.isTouched()) {
         return 1;
     }
-    return Part::Feature::mustExecute();
+    return Part::ShapeFeature::mustExecute();
 }
 
 void Face::setupObject()
 {
     this->FaceMakerClass.setValue("Part::FaceMakerBullseye");
-    Feature::setupObject();
+    ShapeFeature::setupObject();
 }
 
 App::DocumentObjectExecReturn* Face::execute()

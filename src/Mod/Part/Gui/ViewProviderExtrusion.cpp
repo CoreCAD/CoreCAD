@@ -37,11 +37,3 @@ ViewProviderExtrusion::ViewProviderExtrusion()
 }
 
 ViewProviderExtrusion::~ViewProviderExtrusion() = default;
-
-std::vector<App::DocumentObject*> ViewProviderExtrusion::claimChildren() const
-{
-    std::vector<App::DocumentObject*> temp;
-    temp.push_back(getObject<Part::Extrusion>()->Base.getValue());
-
-    return temp;
-}

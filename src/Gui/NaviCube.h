@@ -24,6 +24,7 @@
 
 #include <CXX/Extensions.hxx>
 #include <QColor>
+#include <QRect>
 #include <FCGlobal.h>
 
 class SoEvent;
@@ -73,6 +74,8 @@ public:
     void setNaviCubeLabels(const std::vector<std::string>& labels);
     static void setNaviCubeCommands(const std::vector<std::string>& cmd);
     static int getNaviCubeSize();
+    /// Where the cube is drawn, in the viewer's viewport, in logical pixels.
+    QRect area() const;
     SoNode* getCoinNode() const;
 
 private:

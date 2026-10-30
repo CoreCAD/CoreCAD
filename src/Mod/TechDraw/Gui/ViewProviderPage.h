@@ -107,10 +107,12 @@ public:
 
     //slots & connections
     void onGuiRepaint(const TechDraw::DrawPage* dp);
+    void onMembershipChanged(const TechDraw::DrawPage* dp);
 
 // NOLINTBEGIN
     using Connection = fastsignals::scoped_connection;
     Connection connectGuiRepaint;
+    Connection connectMembershipChanged;
 // NOLINTEND
 
     void unsetEdit(int ModNum) override;

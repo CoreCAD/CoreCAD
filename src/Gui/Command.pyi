@@ -97,7 +97,7 @@ class Command(PyObjectBase):
 
     def getAction(self) -> List[Any]:
         """
-        Return the associated QAction object.
+        Return the associated QAction objects, creating them if the command has none yet.
         """
         ...
 

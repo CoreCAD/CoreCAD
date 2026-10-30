@@ -46,6 +46,7 @@ std::stack<FunctionExpression::Function> functions;                /**< Function
      %token STRING MINUSSIGN PROPERTY_REF
      %token DOCUMENT OBJECT
      %token EXPONENT
+     %token MISSINGREF
      %type <arguments> args
      %type <expr> input unit_num us_building_unit other_unit exp unit_exp indexable
      %type <quantity> UNIT USUNIT
@@ -92,6 +93,7 @@ exp:      num                                   { $$ = $1;                      
         | unit_num                              { $$ = $1;                                                                        }
         | STRING                                { $$ = new StringExpression(DocumentObject, $1);                                  }
         | identifier                            { $$ = new VariableExpression(DocumentObject, $1);                                }
+        | MISSINGREF                            { $$ = VariableExpression::missingReference(DocumentObject);                     }
         | MINUSSIGN exp %prec NEG               { $$ = new OperatorExpression(DocumentObject, $2, OperatorExpression::NEG, new NumberExpression(DocumentObject, Quantity(-1))); }
         | '+' exp %prec POS                     { $$ = new OperatorExpression(DocumentObject, $2, OperatorExpression::POS, new NumberExpression(DocumentObject, Quantity(1))); }
         | exp '+' exp                           { $$ = new OperatorExpression(DocumentObject, $1, OperatorExpression::ADD, $3);   }
@@ -127,6 +129,7 @@ args: exp                                       { $$.push_back($1);             
     ;
 
 range: id_or_cell ':' id_or_cell                { $$ = new RangeExpression(DocumentObject, $1, $3);                               }
+     | iden ':' id_or_cell                      { $$ = new SheetRangeExpression(DocumentObject, $1, $3);                          }
      ;
 
 

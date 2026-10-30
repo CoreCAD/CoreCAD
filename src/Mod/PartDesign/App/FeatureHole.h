@@ -112,7 +112,7 @@ public:
         double pitch;
         double TapDrill;
     };
-    static const std::vector<Hole::ThreadDescription> threadDescription[];
+    static const std::vector<Hole::ThreadDescription> threadDescription[11];
 
     static const double metricHoleDiameters[51][4];
 

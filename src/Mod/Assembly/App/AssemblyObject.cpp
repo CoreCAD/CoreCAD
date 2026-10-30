@@ -30,9 +30,11 @@
 #include <App/Application.h>
 #include <App/Datums.h>
 #include <App/Document.h>
+#include <App/GeoFeature.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/FeaturePythonPyImp.h>
 #include <App/Link.h>
+#include <App/Origin.h>
 #include <App/PropertyPythonObject.h>
 #include <Base/Console.h>
 #include <Base/Placement.h>
@@ -81,7 +83,10 @@
 #include "AssemblyObject.h"
 #include "AssemblyObjectPy.h"
 #include "AssemblyUtils.h"
+#include "Joint.h"
 #include "JointGroup.h"
+#include "Motion.h"
+#include "Simulation.h"
 #include "ViewGroup.h"
 
 FC_LOG_LEVEL_INIT("Assembly", true, true, true)
@@ -95,7 +100,7 @@ namespace PartApp = Part;
 
 // ================================ Assembly Object ============================
 
-PROPERTY_SOURCE(Assembly::AssemblyObject, App::Part)
+PROPERTY_SOURCE(Assembly::AssemblyObject, App::DocumentObjectGroup)
 
 AssemblyObject::AssemblyObject()
     : mbdAssembly(std::make_shared<ASMTAssembly>())
@@ -126,7 +131,7 @@ PyObject* AssemblyObject::getPyObject()
 
 App::DocumentObjectExecReturn* AssemblyObject::execute()
 {
-    App::DocumentObjectExecReturn* ret = App::Part::execute();
+    App::DocumentObjectExecReturn* ret = App::DocumentObjectGroup::execute();
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Assembly"
@@ -142,7 +147,7 @@ void AssemblyObject::onChanged(const App::Property* prop)
     if (prop == &Group) {
         updateSolveStatus();
     }
-    App::Part::onChanged(prop);
+    App::DocumentObjectGroup::onChanged(prop);
 }
 
 int AssemblyObject::solve(bool enableRedo)
@@ -306,18 +311,14 @@ int AssemblyObject::generateSimulation(App::DocumentObject* sim)
     return 0;
 }
 
-std::vector<App::DocumentObject*> AssemblyObject::getMotionsFromSimulation(App::DocumentObject* sim)
+std::vector<Motion*> AssemblyObject::getMotionsFromSimulation(App::DocumentObject* sim)
 {
-    if (!sim) {
+    auto* simulation = freecad_cast<Simulation*>(sim);
+    if (!simulation) {
         return {};
     }
 
-    auto* prop = dynamic_cast<App::PropertyLinkList*>(sim->getPropertyByName("Group"));
-    if (!prop) {
-        return {};
-    }
-
-    return prop->getValue();
+    return simulation->getMotions();
 }
 
 int Assembly::AssemblyObject::updateForFrame(size_t index)
@@ -394,8 +395,9 @@ void AssemblyObject::doDragStep()
             auto mbdPart = getMbDPart(part);
             dragMbdParts.push_back(mbdPart);
 
-            // Update the MBD part's position
-            Base::Placement plc = getPlacementFromProp(part, "Placement");
+            // Update the MBD part's position. The ASMTPart lives in the world frame, so drag
+            // from the part's global placement (identity group for a top-level part).
+            Base::Placement plc = App::GeoFeature::getGlobalPlacement(part);
             Base::Vector3d pos = plc.getPosition();
             mbdPart->updateMbDFromPosition3D(
                 std::make_shared<FullColumn<double>>(ListD {pos.x, pos.y, pos.z})
@@ -465,6 +467,10 @@ bool AssemblyObject::validateNewPlacements()
                 Base::Placement newPlacement = getMbdPlacement(mbdPart);
                 if (!it->second.offsetPlc.isIdentity()) {
                     newPlacement = newPlacement * it->second.offsetPlc;
+                }
+                // oldPlc is the local Placement; bring the solved world pose back to local.
+                if (!it->second.groupPlc.isIdentity()) {
+                    newPlacement = it->second.groupPlc.inverse() * newPlacement;
                 }
 
                 if (!oldPlc.isSame(newPlacement, Precision::Confusion())) {
@@ -574,9 +580,14 @@ void AssemblyObject::setNewPlacements()
         }
 
 
+        // getMbdPlacement returns the solved pose in the world frame. Divide out the
+        // enclosing group's global placement to recover the local Placement to store.
         Base::Placement newPlacement = getMbdPlacement(mbdPart);
         if (!pair.second.offsetPlc.isIdentity()) {
             newPlacement = newPlacement * pair.second.offsetPlc;
+        }
+        if (!pair.second.groupPlc.isIdentity()) {
+            newPlacement = pair.second.groupPlc.inverse() * newPlacement;
         }
         if (!propPlacement->getValue().isSame(newPlacement)) {
             propPlacement->setValue(newPlacement);
@@ -598,32 +609,9 @@ void AssemblyObject::redrawJointPlacements(std::vector<App::DocumentObject*> joi
 
 void AssemblyObject::redrawJointPlacement(App::DocumentObject* joint)
 {
-    if (!joint) {
-        return;
-    }
-
-    Base::PyGILStateLocker lock;
-
-    App::PropertyPythonObject* proxy = joint
-        ? dynamic_cast<App::PropertyPythonObject*>(joint->getPropertyByName("Proxy"))
-        : nullptr;
-
-    if (!proxy) {
-        return;
-    }
-
-    Py::Object jointPy = proxy->getValue();
-
-    if (!jointPy.hasAttr("redrawJointPlacements")) {
-        return;
-    }
-
-    Py::Object attr = jointPy.getAttr("redrawJointPlacements");
-    if (attr.ptr() && attr.isCallable()) {
-        Py::Tuple args(1);
-        args.setItem(0, Py::asObject(joint->getPyObject()));
-        Py::Callable(attr).apply(args);
-    }
+    // A joint's frames sit where its components are, so moving a component moves
+    // them. The view layer registers how; headless this does nothing.
+    redrawJointViewProvider(joint);
 }
 
 std::shared_ptr<ASMTAssembly> AssemblyObject::makeMbdAssembly()
@@ -682,18 +670,13 @@ App::DocumentObject* AssemblyObject::getJointOfPartConnectingToGround(
 template<typename T>
 T* AssemblyObject::getGroup()
 {
-    App::Document* doc = getDocument();
-
-    std::vector<DocumentObject*> groups = doc->getObjectsOfType(T::getClassTypeId());
+    // One assembly per document: the sole group of type T in the document belongs
+    // to this assembly, so a typed document query needs no membership filter.
+    std::vector<DocumentObject*> groups = getDocument()->getObjectsOfType(T::getClassTypeId());
     if (groups.empty()) {
         return nullptr;
     }
-    for (auto group : groups) {
-        if (hasObject(group)) {
-            return freecad_cast<T*>(group);
-        }
-    }
-    return nullptr;
+    return freecad_cast<T*>(groups.front());
 }
 
 JointGroup* AssemblyObject::getJointGroup() const
@@ -703,18 +686,14 @@ JointGroup* AssemblyObject::getJointGroup() const
 
 ViewGroup* AssemblyObject::getExplodedViewGroup() const
 {
-    App::Document* doc = getDocument();
-
-    std::vector<DocumentObject*> viewGroups = doc->getObjectsOfType(ViewGroup::getClassTypeId());
+    // One assembly per document: the sole ViewGroup belongs to this assembly.
+    std::vector<DocumentObject*> viewGroups = getDocument()->getObjectsOfType(
+        ViewGroup::getClassTypeId()
+    );
     if (viewGroups.empty()) {
         return nullptr;
     }
-    for (auto viewGroup : viewGroups) {
-        if (hasObject(viewGroup)) {
-            return freecad_cast<ViewGroup*>(viewGroup);
-        }
-    }
-    return nullptr;
+    return freecad_cast<ViewGroup*>(viewGroups.front());
 }
 
 std::vector<App::DocumentObject*> AssemblyObject::getJoints(bool delBadJoints, bool subJoints)
@@ -749,11 +728,10 @@ std::vector<App::DocumentObject*> AssemblyObject::getJoints(bool delBadJoints, b
             continue;
         }
 
-        auto proxy = dynamic_cast<App::PropertyPythonObject*>(joint->getPropertyByName("Proxy"));
-        if (proxy) {
-            if (proxy->getValue().hasAttr("setJointConnectors")) {
-                joints.push_back(joint);
-            }
+        // Mate joints participate in the solve; grounded joints (a distinct type) do
+        // not. Select on the typed class rather than probing the Python proxy (#59).
+        if (joint->isDerivedFrom<Joint>()) {
+            joints.push_back(joint);
         }
     }
 
@@ -857,25 +835,42 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::getGroundedParts()
         }
     }
 
-    // We also need to add all the root-level datums objects that are not attached.
-    std::vector<App::DocumentObject*> objs = Group.getValues();
-    for (auto* obj : objs) {
-        if (obj->isDerivedFrom<App::LocalCoordinateSystem>()
-            || obj->isDerivedFrom<App::DatumElement>()) {
-            auto* pcAttach = obj->getExtensionByType<PartApp::AttachExtension>();
-            if (pcAttach) {
-                // If it's a Part datums, we check if it's attached. If yes then we ignore it.
-                std::string mode = pcAttach->MapMode.getValueAsString();
-                if (mode != "Deactivated") {
-                    continue;
-                }
-            }
-            groundedSet.insert(obj);
+    // Unattached root-level datums / coordinate systems are implicitly grounded (fixed
+    // reference geometry). One assembly per document, no owned geometry: query the document
+    // by type instead of walking a container Group. Exclude the Origin's own
+    // X/Y/Z datum features -- they live in the document (in OriginFeatures, never in the
+    // Group the old scan read), are positioned by the Origin, and the Origin is added
+    // separately below; grounding them individually would double-anchor the frame.
+    for (auto* obj : getDocument()->getObjects()) {
+        const bool isLcs = obj->isDerivedFrom<App::LocalCoordinateSystem>();
+        const bool isDatum = obj->isDerivedFrom<App::DatumElement>();
+        if (!isLcs && !isDatum) {
+            continue;
         }
+        if (isDatum && static_cast<App::DatumElement*>(obj)->isOriginFeature()) {
+            continue;
+        }
+        // no_except: the document scan reaches coordinate systems without an
+        // AttachExtension (e.g. the Origin itself), which the old Group scan never saw.
+        auto* pcAttach = obj->getExtensionByType<PartApp::AttachExtension>(true);
+        if (pcAttach) {
+            // If it's a Part datums, we check if it's attached. If yes then we ignore it.
+            std::string mode = pcAttach->MapMode.getValueAsString();
+            if (mode != "Deactivated") {
+                continue;
+            }
+        }
+        groundedSet.insert(obj);
     }
 
-    // Origin is not in Group so we add it separately
-    groundedSet.insert(Origin.getValue());
+    // Ground the document-owned world frame (Amendment 9). The assembly no longer owns an
+    // Origin of its own -- it is a plain group, not an OriginGroup, and looks the document's
+    // frame up. No object in an assembly document owns an Origin, so the sole App::Origin
+    // present is the document-minted world frame. An untyped document owns none; there is
+    // then simply nothing to ground.
+    for (auto* origin : getDocument()->getObjectsOfType<App::Origin>()) {
+        groundedSet.insert(origin);
+    }
 
     return groundedSet;
 }
@@ -889,7 +884,10 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::fixGroundedParts()
             continue;
         }
 
-        Base::Placement plc = getPlacementFromProp(obj, "Placement");
+        // Grounded parts are pinned in the world frame, consistent with the global seed of
+        // every ASMTPart (a grounded internal part of a nested sub-assembly carries the
+        // enclosing group transform).
+        Base::Placement plc = App::GeoFeature::getGlobalPlacement(obj);
         std::string str = obj->getFullName();
         fixGroundedPart(obj, plc, str);
     }
@@ -1158,22 +1156,16 @@ void AssemblyObject::jointParts(std::vector<App::DocumentObject*> joints)
 void Assembly::AssemblyObject::create_mbdSimulationParameters(App::DocumentObject* sim)
 {
     auto mbdSim = mbdAssembly->simulationParameters;
-    if (!sim) {
+    auto* simulation = freecad_cast<Simulation*>(sim);
+    if (!simulation) {
         return;
     }
-    auto valueOf = [](DocumentObject* docObj, const char* propName) {
-        auto* prop = dynamic_cast<App::PropertyFloat*>(docObj->getPropertyByName(propName));
-        if (!prop) {
-            return 0.0;
-        }
-        return prop->getValue();
-    };
-    mbdSim->settstart(valueOf(sim, "aTimeStart"));
-    mbdSim->settend(valueOf(sim, "bTimeEnd"));
-    mbdSim->sethout(valueOf(sim, "cTimeStepOutput"));
+    mbdSim->settstart(simulation->TimeStart.getValue());
+    mbdSim->settend(simulation->TimeEnd.getValue());
+    mbdSim->sethout(simulation->TimeStepOutput.getValue());
     mbdSim->sethmin(1.0e-9);
     mbdSim->sethmax(1.0);
-    mbdSim->seterrorTol(valueOf(sim, "fGlobalErrorTolerance"));
+    mbdSim->seterrorTol(simulation->GlobalErrorTolerance.getValue());
 }
 
 std::shared_ptr<ASMTJoint> AssemblyObject::makeMbdJointOfType(App::DocumentObject* joint, JointType type)
@@ -1550,7 +1542,7 @@ std::vector<std::shared_ptr<MbD::ASMTJoint>> AssemblyObject::makeMbdJoint(App::D
             }
         }
     }
-    std::vector<App::DocumentObject*> done;
+    std::vector<Motion*> done;
 
     auto replaceInitialValue =
         [](std::string& form, App::DocumentObject* jnt, const std::string& mType) {
@@ -1575,52 +1567,30 @@ std::vector<std::shared_ptr<MbD::ASMTJoint>> AssemblyObject::makeMbdJoint(App::D
             continue;  // don't process twice (can happen in case of cylindrical)
         }
 
-        auto* pJoint = dynamic_cast<App::PropertyXLinkSub*>(motion->getPropertyByName("Joint"));
-        if (!pJoint) {
-            continue;
-        }
-        App::DocumentObject* motionJoint = pJoint->getValue();
-        if (joint != motionJoint) {
+        if (joint != motion->getJoint()) {
             continue;
         }
 
-        auto* pType = dynamic_cast<App::PropertyEnumeration*>(motion->getPropertyByName("MotionType"));
-        auto* pFormula = dynamic_cast<App::PropertyString*>(motion->getPropertyByName("Formula"));
-        if (!pType || !pFormula) {
+        std::string formula = motion->Formula.getValue();
+        if (formula.empty()) {
             continue;
         }
-        std::string formula = pFormula->getValue();
-        if (formula == "") {
-            continue;
-        }
-        std::string motionType = pType->getValueAsString();
+        std::string motionType = motion->MotionType.getValueAsString();
 
         replaceInitialValue(formula, joint, motionType);
 
         // check if there is a second motion as cylindrical can have both,
         // in which case the solver needs a general motion.
         for (auto* motion2 : motions) {
-            pJoint = dynamic_cast<App::PropertyXLinkSub*>(motion2->getPropertyByName("Joint"));
-            if (!pJoint) {
-                continue;
-            }
-            motionJoint = pJoint->getValue();
-            if (joint != motionJoint || motion2 == motion) {
+            if (joint != motion2->getJoint() || motion2 == motion) {
                 continue;
             }
 
-            auto* pType2 = dynamic_cast<App::PropertyEnumeration*>(
-                motion2->getPropertyByName("MotionType")
-            );
-            auto* pFormula2 = dynamic_cast<App::PropertyString*>(motion2->getPropertyByName("Formula"));
-            if (!pType2 || !pFormula2) {
+            std::string formula2 = motion2->Formula.getValue();
+            if (formula2.empty()) {
                 continue;
             }
-            std::string formula2 = pFormula2->getValue();
-            if (formula2 == "") {
-                continue;
-            }
-            std::string motionType2 = pType2->getValueAsString();
+            std::string motionType2 = motion2->MotionType.getValueAsString();
             if (motionType2 == motionType) {
                 continue;  // only if both motions are different. ie one angular and one linear.
             }
@@ -1676,7 +1646,7 @@ std::string AssemblyObject::handleOneSideOfJoint(
 
     MbDPartData data = getMbDData(part);
     std::shared_ptr<ASMTPart> mbdPart = data.part;
-    Base::Placement plc = getPlacementFromProp(joint, propPlcName);
+    Base::Placement plc = App::GeoFeature::getPlacementFromProp(joint, propPlcName);
     // Now we have plc which is the JCS placement, but its relative to the Object, not to the
     // containing Part.
     auto* ref = dynamic_cast<App::PropertyXLinkSub*>(joint->getPropertyByName(propRefName));
@@ -1687,10 +1657,10 @@ std::string AssemblyObject::handleOneSideOfJoint(
     // This plc adjustment should be necessary only if obj != part. But for some objects like
     // draft links, we can have obj == part and still need to get global placement to adjust
     // by the element placement.
-    Base::Placement obj_global_plc = getGlobalPlacement(nullptr, ref);
+    Base::Placement obj_global_plc = App::GeoFeature::getGlobalPlacement(nullptr, ref);
     plc = obj_global_plc * plc;
     // Note part is supposed to be root of ref, so we could use part.Placement directly.
-    Base::Placement part_global_plc = getGlobalPlacement(part, ref);
+    Base::Placement part_global_plc = App::GeoFeature::getGlobalPlacement(part, ref);
     plc = part_global_plc.inverse() * plc;
 
     // check if we need to add an offset in case of bundled parts.
@@ -1728,10 +1698,10 @@ void AssemblyObject::getRackPinionMarkers(
 
     App::DocumentObject* part1 = getMovingPartFromRef(joint, "Reference1");
     App::DocumentObject* obj1 = getObjFromJointRef(joint, "Reference1");
-    Base::Placement plc1 = getPlacementFromProp(joint, "Placement1");
+    Base::Placement plc1 = App::GeoFeature::getPlacementFromProp(joint, "Placement1");
 
     App::DocumentObject* obj2 = getObjFromJointRef(joint, "Reference2");
-    Base::Placement plc2 = getPlacementFromProp(joint, "Placement2");
+    Base::Placement plc2 = App::GeoFeature::getPlacementFromProp(joint, "Placement2");
 
     if (!part1 || !obj1) {
         Base::Console().warning("Reference1 of Joint %s is bad.\n", joint->getFullName());
@@ -1748,9 +1718,9 @@ void AssemblyObject::getRackPinionMarkers(
     if (!ref1 || !ref2) {
         return;
     }
-    Base::Placement pinion_global_plc = getGlobalPlacement(obj2, ref2);
+    Base::Placement pinion_global_plc = App::GeoFeature::getGlobalPlacement(obj2, ref2);
     plc2 = pinion_global_plc * plc2;
-    Base::Placement rack_global_plc = getGlobalPlacement(obj1, ref1);
+    Base::Placement rack_global_plc = App::GeoFeature::getGlobalPlacement(obj1, ref1);
     plc2 = rack_global_plc.inverse() * plc2;
 
     // The rot of the rack placement should be the same as the pinion, but with X axis along the
@@ -1783,7 +1753,7 @@ void AssemblyObject::getRackPinionMarkers(
     if (obj1->getNameInDocument() != part1->getNameInDocument()) {
         plc1 = rack_global_plc * plc1;
 
-        Base::Placement part_global_plc = getGlobalPlacement(part1, ref1);
+        Base::Placement part_global_plc = App::GeoFeature::getGlobalPlacement(part1, ref1);
         plc1 = part_global_plc.inverse() * plc1;
     }
     // check if we need to add an offset in case of bundled parts.
@@ -1803,12 +1773,12 @@ int AssemblyObject::slidingPartIndex(App::DocumentObject* joint)
     App::DocumentObject* part1 = getMovingPartFromRef(joint, "Reference1");
     App::DocumentObject* obj1 = getObjFromJointRef(joint, "Reference1");
     boost::ignore_unused(obj1);
-    Base::Placement plc1 = getPlacementFromProp(joint, "Placement1");
+    Base::Placement plc1 = App::GeoFeature::getPlacementFromProp(joint, "Placement1");
 
     App::DocumentObject* part2 = getMovingPartFromRef(joint, "Reference2");
     App::DocumentObject* obj2 = getObjFromJointRef(joint, "Reference2");
     boost::ignore_unused(obj2);
-    Base::Placement plc2 = getPlacementFromProp(joint, "Placement2");
+    Base::Placement plc2 = App::GeoFeature::getPlacementFromProp(joint, "Placement2");
 
     int slidingFound = 0;
     for (auto* jt : getJoints()) {
@@ -1820,12 +1790,12 @@ int AssemblyObject::slidingPartIndex(App::DocumentObject* joint)
             if (jpart1 == part1 || jpart1 == part2) {
                 found = (jpart1 == part1) ? 1 : 2;
                 plci = (jpart1 == part1) ? plc1 : plc2;
-                plcjt = getPlacementFromProp(jt, "Placement1");
+                plcjt = App::GeoFeature::getPlacementFromProp(jt, "Placement1");
             }
             else if (jpart2 == part1 || jpart2 == part2) {
                 found = (jpart2 == part1) ? 1 : 2;
                 plci = (jpart2 == part1) ? plc1 : plc2;
-                plcjt = getPlacementFromProp(jt, "Placement2");
+                plcjt = App::GeoFeature::getPlacementFromProp(jt, "Placement2");
             }
 
             if (found != 0) {
@@ -1874,12 +1844,17 @@ AssemblyObject::MbDPartData AssemblyObject::getMbDData(App::DocumentObject* part
         return it->second;
     }
 
-    // part has not been associated with an ASMTPart before
+    // part has not been associated with an ASMTPart before. The solver works in the world
+    // frame, so seed the ASMTPart with the part's global placement (joint markers are already
+    // expressed relative to the part's global frame). groupPlc is the enclosing group chain's
+    // global placement, divided out when the solved pose is written back to the local Placement.
     std::string str = part->getFullName();
-    Base::Placement plc = getPlacementFromProp(part, "Placement");
+    Base::Placement localPlc = App::GeoFeature::getPlacementFromProp(part, "Placement");
+    Base::Placement plc = App::GeoFeature::getGlobalPlacement(part);
+    Base::Placement groupPlc = plc * localPlc.inverse();
     std::shared_ptr<ASMTPart> mbdPart = makeMbdPart(str, plc);
     mbdAssembly->addPart(mbdPart);
-    MbDPartData data = {mbdPart, Base::Placement()};
+    MbDPartData data = {mbdPart, Base::Placement(), groupPlc};
     objectPartMap[part] = data;  // Store the association
 
     // Associate other objects connected with fixed joints
@@ -1898,8 +1873,13 @@ AssemblyObject::MbDPartData AssemblyObject::getMbDData(App::DocumentObject* part
                         continue;
                     }
 
-                    Base::Placement plci = getPlacementFromProp(partToAdd, "Placement");
-                    MbDPartData partData = {mbdPart, plc.inverse() * plci};
+                    Base::Placement localPlci
+                        = App::GeoFeature::getPlacementFromProp(partToAdd, "Placement");
+                    Base::Placement plci = App::GeoFeature::getGlobalPlacement(partToAdd);
+                    Base::Placement groupPlci = plci * localPlci.inverse();
+                    // offsetPlc is the member's pose relative to the bundle representative,
+                    // in the world frame (both plc and plci are global here).
+                    MbDPartData partData = {mbdPart, plc.inverse() * plci, groupPlci};
                     objectPartMap[partToAdd] = partData;  // Store the association
 
                     // Recursively call for partToAdd
@@ -2049,15 +2029,13 @@ std::vector<AssemblyLink*> AssemblyObject::getSubAssemblies()
 {
     std::vector<AssemblyLink*> subAssemblies = {};
 
-    App::Document* doc = getDocument();
-
-    std::vector<DocumentObject*> assemblies = doc->getObjectsOfType(
+    // One assembly per document: every AssemblyLink in the document is a
+    // sub-assembly reference held by this assembly.
+    std::vector<DocumentObject*> assemblies = getDocument()->getObjectsOfType(
         Assembly::AssemblyLink::getClassTypeId()
     );
     for (auto assembly : assemblies) {
-        if (hasObject(assembly)) {
-            subAssemblies.push_back(freecad_cast<AssemblyLink*>(assembly));
-        }
+        subAssemblies.push_back(freecad_cast<AssemblyLink*>(assembly));
     }
 
     return subAssemblies;
@@ -2065,10 +2043,16 @@ std::vector<AssemblyLink*> AssemblyObject::getSubAssemblies()
 
 void AssemblyObject::ensureIdentityPlacements()
 {
-    std::vector<App::DocumentObject*> group = Group.getValues();
-    for (auto* obj : group) {
+    // One assembly per document, and the assembly document holds no geometry of its own, so
+    // every link group in the document is a component of this assembly. Query the document by
+    // type instead of walking a container Group.
+    App::Document* doc = getDocument();
+    if (doc == nullptr) {
+        return;
+    }
+    for (auto* obj : doc->getObjects()) {
         // When used in assembly, link groups must have identity placements.
-        if (obj->isLinkGroup()) {
+        if (obj != nullptr && obj->isLinkGroup()) {
             auto* link = dynamic_cast<App::Link*>(obj);
             auto* pPlc = obj->getPlacementProperty();
             if (!pPlc || !link) {

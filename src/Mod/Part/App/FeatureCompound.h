@@ -34,7 +34,13 @@
 namespace Part
 {
 
-class PartExport Compound: public Part::Feature
+/** A bundle of the shapes it links, kept side by side without merging them.
+ *
+ * Derived, not an anchor (Amendment 4): each member is gathered in world
+ * coordinates and keeps its own position inside the bundle, so the bundle
+ * itself authors no position.
+ */
+class PartExport Compound: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Compound);
 

@@ -2,6 +2,7 @@
 
 /**************************************************************************
  *   Copyright (c) 2022 Werner Mayer <wmayer[at]users.sourceforge.net>     *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -33,16 +34,11 @@
 
 
 #include "SketchWorkflow.h"
-#include "DlgActiveBody.h"
-#include "TaskFeaturePick.h"
 #include "Utils.h"
 #include "ViewProviderBody.h"
-#include "WorkflowManager.h"
-#include "ui_DlgReference.h"
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
-#include <Mod/PartDesign/App/ShapeBinder.h>
 #include <Mod/Part/App/AttachExtension.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/Attacher.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/TopoShape.h>
@@ -52,14 +48,12 @@
 #include <App/Link.h>
 #include <App/Origin.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
-#include <Gui/ViewParams.h>
-#include <Gui/ViewProviderPlane.h>
+#include <Gui/ViewProviderCoordinateSystem.h>
 #include <Gui/Selection/SelectionFilter.h>
 
 using namespace PartDesignGui;
@@ -82,10 +76,6 @@ struct SupportNotPlanarException
 {
 };
 
-struct MissingPlanesException
-{
-};
-
 class SupportFaceValidator
 {
 public:
@@ -104,8 +94,8 @@ public:
         // dependency. So, instead we use the tip object as reference.
         // https://forum.freecad.org/viewtopic.php?f=3&t=37448
         if (object == activeBody) {
-            App::DocumentObject* tip = activeBody->Tip.getValue();
-            if (tip && tip->isDerivedFrom<Part::Feature>() && elements.size() == 1) {
+            App::DocumentObject* tip = activeBody->shownStep();
+            if (tip && Part::hasShape(tip) && elements.size() == 1) {
                 Gui::SelectionChanges msg;
                 msg.pDocName = faceSelection.getDocName();
                 msg.pObjectName = tip->getNameInDocument();
@@ -125,8 +115,7 @@ public:
         App::DocumentObject* object = faceSelection.getObject();
         std::vector<std::string> elements = faceSelection.getSubNames();
 
-        Part::Feature* partobject = dynamic_cast<Part::Feature*>(object);
-        if (!partobject) {
+        if (!Part::hasShape(object)) {
             throw WrongSelectionException();
         }
 
@@ -135,7 +124,7 @@ public:
         }
 
         // get the selected sub shape (a Face)
-        const Part::TopoShape& shape = partobject->Shape.getValue();
+        const Part::TopoShape shape = Part::getShape(object);
         Part::TopoShape subshape(shape.getSubShape(elements[0].c_str()));
         if (subshape.isNull()) {
             throw WrongSupportException();
@@ -227,33 +216,33 @@ public:
 
     void createSupport()
     {
-        createBodyOrThrow();
-
-        // get the selected object
-        App::DocumentObject* selectedObject {};
-
         if (faceFilter.match()) {
             Gui::SelectionObject faceSelObject = faceFilter.Result[0][0];
             SupportFaceValidator validator {faceSelObject};
             validator.handleSelectedBody(activeBody);
             validator.throwIfInvalid();
-
-            selectedObject = validator.getObject();
             supportString = validator.getSupport();
+
+            // Guard: if activeBody is a transitive dependency of the support object,
+            // splicing the sketch into that Body's pipeline creates a DAG cycle. Cruth
+            // feature-first: rather than manufacture an empty Body to hold the sketch,
+            // detach and let the sketch be born free at document level — the Pad anchor
+            // walk decides which Body (new or existing) claims it later.
+            App::DocumentObject* supportObj = validator.getObject();
+            if (activeBody && activeBody->getInListEx(true).count(supportObj)) {
+                activeBody = nullptr;
+            }
         }
         else if (planeFilter.match()) {
             SupportPlaneValidator validator(planeFilter.Result[0][0]);
-            selectedObject = validator.getObject();
             supportString = validator.getSupport();
         }
         else {
             // For a sketch, the support is the object itself with no sub-element.
             Gui::SelectionObject sketchSelObject = sketchFilter.Result[0][0];
-            selectedObject = sketchSelObject.getObject();
             supportString = sketchSelObject.getAsPropertyLinkSubString();
         }
-
-        handleIfSupportOutOfBody(selectedObject);
+        // CoreCAD Phase 2: cross-Body face references are valid. No copy needed.
     }
 
     void createSketchOnSupport(const std::string& supportString)
@@ -263,8 +252,23 @@ public:
         std::string FeatName = appdocument->getUniqueObjectName("Sketch");
 
         guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Sketch on Face"));
-        FCMD_OBJ_CMD(activeBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
-        auto Feat = activeBody->getDocument()->getObject(FeatName.c_str());
+        App::DocumentObject* Feat = nullptr;
+        if (activeBody) {
+            Feat = PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
+        }
+        else {
+            // Born free: the document is the container (ARCHITECTURE §7.1).
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "App.getDocument('%s').addObject('Sketcher::SketchObject','%s')",
+                appdocument->getName(),
+                FeatName.c_str()
+            );
+            Feat = appdocument->getObject(FeatName.c_str());
+        }
+        if (!Feat) {
+            throw RejectException();
+        }
         FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << supportString);
         if (sketchFilter.match()) {
             FCMD_OBJ_CMD(
@@ -283,234 +287,12 @@ public:
     }
 
 private:
-    void createBodyOrThrow()
-    {
-        if (!activeBody) {
-            activeBody = PartDesignGui::getBody(/* messageIfNot = */ true);
-            if (activeBody) {
-                tryAddNewBodyToActivePart();
-            }
-            else {
-                throw RejectException();
-            }
-        }
-    }
-
-    void tryAddNewBodyToActivePart()
-    {
-        App::Part* activePart = PartDesignGui::getActivePart();
-        if (activePart) {
-            activePart->addObject(activeBody);
-        }
-    }
-
-    void handleIfSupportOutOfBody(App::DocumentObject* selectedObject)
-    {
-        if (!activeBody->hasObject(selectedObject)) {
-            if (!selectedObject->isDerivedFrom(App::Plane::getClassTypeId())) {
-                // TODO check here if the plane associated with right part/body (2015-09-01, Fat-Zer)
-
-                // check the prerequisites for the selected objects
-                // the user has to decide which option we should take if external references are used
-                //  TODO share this with UnifiedDatumCommand() (2015-10-20, Fat-Zer)
-                QDialog dia(Gui::getMainWindow());
-                PartDesignGui::Ui_DlgReference dlg;
-                dlg.setupUi(&dia);
-                dia.setModal(true);
-                int result = dia.exec();
-                if (result == QDialog::Rejected) {
-                    throw RejectException();
-                }
-
-                if (!dlg.radioXRef->isChecked()) {
-                    guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Make copy"));
-                    auto copy = makeCopy(selectedObject, dlg.radioIndependent->isChecked());
-                    supportString = supportFromCopy(copy);
-                    guidocument->commitCommand();
-                }
-            }
-        }
-    }
-
-    App::DocumentObject* makeCopy(App::DocumentObject* selectedObject, bool independent)
-    {
-        std::string sub;
-        if (faceFilter.match()) {
-            sub = faceFilter.Result[0][0].getSubNames()[0];
-        }
-        auto copy = PartDesignGui::TaskFeaturePick::makeCopy(selectedObject, sub, independent);
-
-        addToBodyOrPart(copy);
-
-        return copy;
-    }
-
-    std::string supportFromCopy(App::DocumentObject* copy)
-    {
-        std::string supportString;
-        if (planeFilter.match()) {
-            supportString = Gui::Command::getObjectCmd(copy, "(", ",'')");
-        }
-        else {
-            // it is ensured that only a single face is selected, hence it must always be Face1 of
-            // the shapebinder
-            supportString = Gui::Command::getObjectCmd(copy, "(", ",'Face1')");
-        }
-        return supportString;
-    }
-
-    void addToBodyOrPart(App::DocumentObject* object)
-    {
-        auto activePart = PartDesignGui::getPartFor(activeBody, false);
-        if (activeBody) {
-            activeBody->addObject(object);
-        }
-        else if (activePart) {
-            activePart->addObject(object);
-        }
-    }
-
-private:
     Gui::Document* guidocument;
     PartDesign::Body* activeBody;
     Gui::SelectionFilter faceFilter;
     Gui::SelectionFilter planeFilter;
     Gui::SelectionFilter sketchFilter;
     std::string supportString;
-};
-
-class PlaneFinder
-{
-public:
-    PlaneFinder(App::Document* appdocument, PartDesign::Body* activeBody)
-        : appdocument(appdocument)
-        , activeBody(activeBody)
-    {}
-
-    std::vector<App::DocumentObject*> getPlanes() const
-    {
-        return planes;
-    }
-
-    std::vector<PartDesignGui::TaskFeaturePick::featureStatus> getStatus() const
-    {
-        return status;
-    }
-
-    unsigned countValidPlanes() const
-    {
-        return validPlaneCount;
-    }
-
-    void findBasePlanes()
-    {
-        try {
-            tryFindBasePlanes();
-        }
-        catch (const Base::Exception& ex) {
-            Base::Console().error("%s\n", ex.what());
-        }
-    }
-
-    void findDatumPlanes()
-    {
-        App::GeoFeatureGroupExtension* geoGroup = getGroupExtensionOfBody();
-        const std::vector<Base::Type> types
-            = {PartDesign::Plane::getClassTypeId(), App::Plane::getClassTypeId()};
-        auto datumPlanes = appdocument->getObjectsOfType(types);
-
-        for (auto plane : datumPlanes) {
-            if (std::find(planes.begin(), planes.end(), plane) != planes.end()) {
-                continue;  // Skip if already in planes (for base planes)
-            }
-
-            planes.push_back(plane);
-            // Check whether this plane belongs to the active body
-            if (activeBody->hasObject(plane, true)) {
-                if (!activeBody->isAfterInsertPoint(plane)) {
-                    validPlaneCount++;
-                    status.push_back(PartDesignGui::TaskFeaturePick::validFeature);
-                }
-                else {
-                    status.push_back(PartDesignGui::TaskFeaturePick::afterTip);
-                }
-            }
-            else {
-                PartDesign::Body* planeBody = PartDesign::Body::findBodyOf(plane);
-                if (planeBody) {
-                    if ((geoGroup && geoGroup->hasObject(planeBody, true))
-                        || !App::GeoFeatureGroupExtension::getGroupOfObject(planeBody)) {
-                        status.push_back(PartDesignGui::TaskFeaturePick::otherBody);
-                    }
-                    else {
-                        status.push_back(PartDesignGui::TaskFeaturePick::otherPart);
-                    }
-                }
-                else {
-                    if ((geoGroup && geoGroup->hasObject(plane, true))
-                        || App::GeoFeatureGroupExtension::getGroupOfObject(plane)) {
-                        status.push_back(PartDesignGui::TaskFeaturePick::otherPart);
-                    }
-                    else {
-                        status.push_back(PartDesignGui::TaskFeaturePick::notInBody);
-                    }
-                }
-            }
-        }
-    }
-
-    void findShapeBinderPlanes()
-    {
-
-        // Collect also shape binders consisting of a single planar face
-        auto shapeBinders(appdocument->getObjectsOfType(PartDesign::ShapeBinder::getClassTypeId()));
-        auto binders(appdocument->getObjectsOfType(PartDesign::SubShapeBinder::getClassTypeId()));
-        shapeBinders.insert(shapeBinders.end(), binders.begin(), binders.end());
-        for (auto binder : shapeBinders) {
-            // Check whether this plane belongs to the active body
-            if (activeBody->hasObject(binder)) {
-                Part::TopoShape shape = static_cast<Part::Feature*>(binder)->Shape.getShape();
-                if (shape.isPlanar()) {
-                    if (!activeBody->isAfterInsertPoint(binder)) {
-                        validPlaneCount++;
-                        planes.push_back(binder);
-                        status.push_back(PartDesignGui::TaskFeaturePick::validFeature);
-                    }
-                }
-            }
-        }
-    }
-
-private:
-    void tryFindBasePlanes()
-    {
-        auto* origin = activeBody->getOrigin();
-        for (auto plane : origin->planes()) {
-            planes.push_back(plane);
-            status.push_back(PartDesignGui::TaskFeaturePick::basePlane);
-            validPlaneCount++;
-        }
-    }
-
-    App::GeoFeatureGroupExtension* getGroupExtensionOfBody() const
-    {
-        App::GeoFeatureGroupExtension* geoGroup {nullptr};
-        if (activeBody) {
-            auto group(App::GeoFeatureGroupExtension::getGroupOfObject(activeBody));
-            if (group) {
-                geoGroup = group->getExtensionByType<App::GeoFeatureGroupExtension>();
-            }
-        }
-
-        return geoGroup;
-    }
-
-private:
-    App::Document* appdocument;
-    PartDesign::Body* activeBody;
-    unsigned validPlaneCount = 0;
-    std::vector<App::DocumentObject*> planes;
-    std::vector<PartDesignGui::TaskFeaturePick::featureStatus> status;
 };
 
 class SketchRequestSelection
@@ -532,45 +314,27 @@ public:
             guidocument->abortCommand();
             throw;
         }
-        catch (const MissingPlanesException&) {
-            guidocument->abortCommand();
-            throw;
-        }
     }
 
 private:
     void tryFindSupport()
     {
-        createBodyOrThrow();
-
+        // CoreCAD POC: no Body is created here. The sketch is born free and the
+        // Pad anchor walk later decides which Body (new or existing) owns it.
         createSketchAndShowAttachment();
-    }
-
-    void createBodyOrThrow()
-    {
-        if (!activeBody) {
-            App::Document* appdocument = guidocument->getDocument();
-            activeBody = PartDesignGui::makeBody(appdocument);
-            if (activeBody) {
-                tryAddNewBodyToActivePart();
-            }
-            else {
-                throw RejectException();
-            }
-        }
-    }
-
-    void tryAddNewBodyToActivePart()
-    {
-        App::Part* activePart = PartDesignGui::getActivePart();
-        if (activePart) {
-            activePart->addObject(activeBody);
-        }
     }
 
     void setOriginTemporaryVisibility()
     {
-        auto* origin = activeBody->getOrigin();
+        // Cruth substrate flip: the base planes belong to the shared document-level
+        // Origin, not to any Body, so highlight them for picking whether or not a Body
+        // is active. On an empty doc / no-active-body the planes are the ONLY thing the
+        // user can attach a sketch to (no solid faces yet); the old !activeBody
+        // early-return left the attachment dialog with nothing selectable ("no picker").
+        auto* origin = PartDesign::Body::findDocumentOrigin(guidocument->getDocument());
+        if (!origin) {
+            return;
+        }
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -588,7 +352,9 @@ private:
         // This mirrors UnifiedDatumCommand: use attacher to find the best fit mode.
         App::PropertyLinkSubList support;
         Gui::Selection().getAsPropertyLinkSubList(support);
-        support.removeValue(activeBody);
+        if (activeBody) {
+            support.removeValue(activeBody);
+        }
 
         // Don't pre-populate when the selection contains sketches. A sketch selected
         // from prior work should not automatically become the attachment reference —
@@ -597,10 +363,22 @@ private:
             return obj && obj->isDerivedFrom<Part::Part2DObject>();
         });
 
-        // Create sketch
-        App::Document* doc = activeBody->getDocument();
+        // Create sketch: linked to the body the selection points at, otherwise free at
+        // document level. The Pad anchor walk decides the body later.
+        App::Document* doc = guidocument->getDocument();
         std::string FeatName = doc->getUniqueObjectName("Sketch");
-        FCMD_OBJ_CMD(activeBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
+        if (activeBody) {
+            PartDesignGui::createFeature(activeBody, "Sketcher::SketchObject", FeatName);
+        }
+        else {
+            // No body: the sketch lives directly in the document (the document is the
+            // container, ARCHITECTURE §7.1).
+            Gui::Command::doCommand(
+                Gui::Command::Doc,
+                "App.activeDocument().addObject('Sketcher::SketchObject','%s')",
+                FeatName.c_str()
+            );
+        }
         auto sketch = doc->getObject(FeatName.c_str());
 
         if (!hasSketch && support.getSize() > 0) {
@@ -620,15 +398,15 @@ private:
         }
 
         PartDesign::Body* partDesignBody = activeBody;
-        auto onAccept = [partDesignBody, sketch]() {
-            resetOriginVisibility(partDesignBody);
+        auto onAccept = [partDesignBody, sketch, doc]() {
+            resetOriginVisibility(doc);
 
             Gui::Selection().clearSelection();
 
             PartDesignGui::setEdit(sketch, partDesignBody);
         };
-        auto onReject = [partDesignBody]() {
-            resetOriginVisibility(partDesignBody);
+        auto onReject = [doc]() {
+            resetOriginVisibility(doc);
         };
 
         Gui::Selection().clearSelection();
@@ -640,9 +418,14 @@ private:
         vps->showAttachmentEditor(onAccept, onReject);
     }
 
-    static void resetOriginVisibility(PartDesign::Body* partDesignBody)
+    static void resetOriginVisibility(App::Document* doc)
     {
-        auto* origin = partDesignBody->getOrigin();
+        // Must match the Origin made visible in setOriginTemporaryVisibility() — the
+        // shared document-level one — and, like it, run whether or not a Body is active.
+        auto* origin = PartDesign::Body::findDocumentOrigin(doc);
+        if (!origin) {
+            return;
+        }
         auto* vpo = dynamic_cast<Gui::ViewProviderCoordinateSystem*>(
             Gui::Application::Instance->getViewProvider(origin)
         );
@@ -651,168 +434,6 @@ private:
             vpo->resetTemporarySize();
             vpo->setPlaneLabelVisibility(false);
         }
-    }
-
-    void findAndSelectPlane()
-    {
-        App::Document* appdocument = guidocument->getDocument();
-        PlaneFinder planeFinder {appdocument, activeBody};
-
-        planeFinder.findBasePlanes();
-        planeFinder.findDatumPlanes();
-        planeFinder.findShapeBinderPlanes();
-
-        std::vector<App::DocumentObject*> planes = planeFinder.getPlanes();
-        std::vector<PartDesignGui::TaskFeaturePick::featureStatus> status = planeFinder.getStatus();
-        unsigned validPlaneCount = planeFinder.countValidPlanes();
-
-        for (auto& plane : planes) {
-            auto* planeViewProvider
-                = Gui::Application::Instance->getViewProvider<Gui::ViewProviderPlane>(plane);
-
-            // skip updating planes from coordinate systems
-            if (!planeViewProvider || !planeViewProvider->getRole().empty()) {
-                continue;
-            }
-
-            planeViewProvider->setLabelVisibility(true);
-            planeViewProvider->setTemporaryScale(
-                Gui::ViewParams::instance()->getDatumTemporaryScaleFactor()
-            );
-        }
-
-        //
-        // Lambda definitions
-        //
-        App::Document* documentOfBody = appdocument;
-        PartDesign::Body* partDesignBody = activeBody;
-
-        auto restorePlaneVisibility = [planes]() {
-            for (auto& plane : planes) {
-                auto* planeViewProvider
-                    = Gui::Application::Instance->getViewProvider<Gui::ViewProviderPlane>(plane);
-                if (!planeViewProvider) {
-                    continue;
-                }
-
-                planeViewProvider->resetTemporarySize();
-                planeViewProvider->setLabelVisibility(false);
-            }
-        };
-
-        // Determines if user made a valid selection in dialog
-        auto acceptFunction =
-            [restorePlaneVisibility](const std::vector<App::DocumentObject*>& features) -> bool {
-            restorePlaneVisibility();
-            return !features.empty();
-        };
-
-        // Called by dialog when user hits "OK" and accepter returns true
-        auto processFunction = [documentOfBody,
-                                partDesignBody](const std::vector<App::DocumentObject*>& features) {
-            SketchRequestSelection::createSketch(documentOfBody, partDesignBody, features);
-        };
-
-        // Called by dialog for "Cancel", or "OK" if accepter returns false
-        std::string docname = documentOfBody->getName();
-        auto rejectFunction = [docname, restorePlaneVisibility]() {
-            restorePlaneVisibility();
-            Gui::Document* document = Gui::Application::Instance->getDocument(docname.c_str());
-            if (document) {
-                document->abortCommand();
-            }
-        };
-
-        //
-        // End of lambda definitions
-        //
-
-        if (validPlaneCount == 0) {
-            throw MissingPlanesException();
-        }
-        else if (validPlaneCount == 1) {
-            processFunction(planes);
-        }
-        else if (validPlaneCount > 1) {
-            checkForShownDialog();
-            Gui::Selection().clearSelection();
-
-            // Show dialog and let user pick plane
-            Gui::Control().showDialog(new PartDesignGui::TaskDlgFeaturePick(
-                planes,
-                status,
-                acceptFunction,
-                processFunction,
-                true,
-                rejectFunction
-            ));
-        }
-    }
-
-    void checkForShownDialog()
-    {
-        App::Document* appdocument = guidocument->getDocument();
-        Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog(appdocument);
-        PartDesignGui::TaskDlgFeaturePick* pickDlg
-            = qobject_cast<PartDesignGui::TaskDlgFeaturePick*>(dlg);
-        if (dlg && !pickDlg) {
-            QMessageBox msgBox(Gui::getMainWindow());
-            msgBox.setText(QObject::tr("A dialog is already open in the task panel"));
-            msgBox.setInformativeText(QObject::tr("Close this dialog?"));
-            msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-            msgBox.setDefaultButton(QMessageBox::Yes);
-            int ret = msgBox.exec();
-            if (ret == QMessageBox::Yes) {
-                Gui::Control().closeDialog();
-            }
-            else {
-                throw RejectException();
-            }
-        }
-
-        if (dlg) {
-            Gui::Control().closeDialog();
-        }
-    }
-
-    static void createSketch(
-        App::Document* documentOfBody,
-        PartDesign::Body* partDesignBody,
-        const std::vector<App::DocumentObject*>& features
-    )
-    {
-        // may happen when the user switched to an empty document while the
-        // dialog is open
-        if (features.empty()) {
-            return;
-        }
-        std::string FeatName = documentOfBody->getUniqueObjectName("Sketch");
-        auto* plane = static_cast<App::Plane*>(features.front());
-        auto* lcs = plane->getLCS();
-
-        std::string supportString;
-        if (lcs) {
-            supportString = Gui::Command::getObjectCmd(lcs, "(") + ",['"
-                + plane->getNameInDocument() + "'])";
-        }
-        else {
-            supportString = Gui::Command::getObjectCmd(plane, "(", ",[''])");
-        }
-
-        App::Document* doc = partDesignBody->getDocument();
-        if (!doc->hasPendingTransaction()) {
-            doc->openTransaction(QT_TRANSLATE_NOOP("Command", "New Sketch"));
-        }
-
-        FCMD_OBJ_CMD(partDesignBody, "newObject('Sketcher::SketchObject','" << FeatName << "')");
-        auto Feat = doc->getObject(FeatName.c_str());
-        FCMD_OBJ_CMD(Feat, "AttachmentSupport = " << supportString);
-        FCMD_OBJ_CMD(
-            Feat,
-            "MapMode = '" << Attacher::AttachEngine::getModeName(Attacher::mmFlatFace) << "'"
-        );
-        Gui::Command::updateActive();  // Make sure the AttachmentSupport's Placement property is updated
-        PartDesignGui::setEdit(Feat, partDesignBody);
     }
 
 private:
@@ -856,13 +477,6 @@ void SketchWorkflow::createSketch()
             QObject::tr("Need a planar face as support for a sketch!")
         );
     }
-    catch (const MissingPlanesException&) {
-        QMessageBox::warning(
-            Gui::getMainWindow(),
-            QObject::tr("No valid planes in this document"),
-            QObject::tr("Create a plane first or select a face to sketch on")
-        );
-    }
 }
 
 void SketchWorkflow::tryCreateSketch()
@@ -874,11 +488,14 @@ void SketchWorkflow::tryCreateSketch()
         return;
     }
 
+    // CoreCAD POC: route every PartDesign sketch creation through the attachment
+    // dialog by default. The Phase 4 attempt at this default was reverted because
+    // of a "body disappears" UX glitch — re-evaluate under the auto-spawn flow.
     bool useAttachment = App::GetApplication()
                              .GetParameterGroupByPath(
                                  "User parameter:BaseApp/Preferences/Mod/PartDesign"
                              )
-                             ->GetBool("NewSketchUseAttachmentDialog", false);
+                             ->GetBool("NewSketchUseAttachmentDialog", true);
 
     bool shiftHeld = QApplication::queryKeyboardModifiers() & Qt::ShiftModifier;
 
@@ -890,6 +507,7 @@ void SketchWorkflow::tryCreateSketch()
     // to the attachment dialog instead of showing an error.
     // A selected sketch, multiple references, no selection, Shift, or preference on
     // all go through the attachment dialog.
+    // A sketch with no body is born free (see createSketchOnSupport).
     if (!useAttachment && !shiftHeld && sketchOnFace.isSingleFaceOrPlane()) {
         try {
             sketchOnFace.createSupport();
@@ -913,36 +531,24 @@ void SketchWorkflow::tryCreateSketch()
 
 std::tuple<bool, PartDesign::Body*> SketchWorkflow::shouldCreateBody()
 {
-    auto shouldMakeBody {false};
+    // Sketches are born free: sketch creation never spawns a Body and never asks for one — the
+    // Pad anchor walk is the single thing that decides Body spawn-vs-extend. The body reported
+    // here is the one the selection points at (a face of that body, say), or none (Cruth #132:
+    // there is no active body to fall back on).
+    //
+    // (issue #12) A de-owned Body carries no frame of its own, so the former "sketch inside a
+    // Link: copy the Link's placement onto the Body" step is gone — a Body has no Placement to
+    // write. When editing inside a Link, the sketch resolves its own world position through its
+    // attachment and the Link's global placement, not through a mutated Body frame.
+    PartDesign::Body* pdBody = PartDesignGui::soleSelectedBody(guidocument->getDocument());
 
-    // We need either an active Body, or for there to be no Body
-    // objects (in which case, just make one) to make a new sketch.
-    // If we are inside a link, we need to use its placement.
-    App::DocumentObject* topParent;
-    PartDesign::Body* pdBody
-        = PartDesignGui::getBody(/* messageIfNot = */ false, true, true, &topParent);
-    if (pdBody && topParent->isLink()) {
-        auto* xLink = dynamic_cast<App::Link*>(topParent);
-        pdBody->Placement.setValue(xLink->Placement.getValue());
-    }
-    if (!pdBody) {
-        if (appdocument->countObjectsOfType<PartDesign::Body>() == 0) {
-            shouldMakeBody = true;
-        }
-        else {
-            PartDesignGui::DlgActiveBody dia(Gui::getMainWindow(), appdocument);
-            if (dia.exec() == QDialog::Accepted) {
-                pdBody = dia.getActiveBody();
-            }
-        }
-    }
-
-    return std::make_tuple(shouldMakeBody, pdBody);
+    return std::make_tuple(false, pdBody);
 }
 
-bool SketchWorkflow::shouldAbort(bool shouldMakeBody) const
+bool SketchWorkflow::shouldAbort(bool) const
 {
-    return !shouldMakeBody && !activeBody;
+    // CoreCAD POC: a missing Body no longer aborts sketch creation.
+    return false;
 }
 
 std::tuple<Gui::SelectionFilter, Gui::SelectionFilter, Gui::SelectionFilter> SketchWorkflow::getFilters() const
@@ -955,7 +561,7 @@ std::tuple<Gui::SelectionFilter, Gui::SelectionFilter, Gui::SelectionFilter> Ske
 
     Gui::SelectionFilter FaceFilter("SELECT Part::Feature SUBELEMENT Face COUNT 1");
     Gui::SelectionFilter PlaneFilter("SELECT App::Plane COUNT 1", activeBody);
-    Gui::SelectionFilter PlaneFilter2("SELECT PartDesign::Plane COUNT 1", activeBody);
+    Gui::SelectionFilter PlaneFilter2("SELECT Part::DatumPlane COUNT 1", activeBody);
     Gui::SelectionFilter SketchFilter("SELECT Part::Part2DObject COUNT 1", activeBody);
 
     if (PlaneFilter2.match()) {

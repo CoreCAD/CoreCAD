@@ -23,10 +23,18 @@
  ***************************************************************************/
 
 
+#include <App/DocumentObjectPy.h>
+#include <App/DocumentPy.h>
+#include <Base/Exception.h>
 #include <Base/GeometryPyCXX.h>
 #include <Base/Interpreter.h>
 #include <Base/VectorPy.h>
 #include <Base/Tools.h>
+
+#include <Mod/Part/App/Part2DObject.h>
+#include <App/Expression.h>
+#include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureTransformed.h>
 
 
 namespace PartDesign
@@ -38,10 +46,430 @@ public:
         : Py::ExtensionModule<Module>("_PartDesign")
     {
         add_varargs_method("makeFilletArc", &Module::makeFilletArc, "makeFilletArc(...) -- Fillet arc.");
+        add_varargs_method(
+            "resolveBaseBody",
+            &Module::resolveBaseBody,
+            "resolveBaseBody(sketch) -> Body or None\n\n"
+            "Cruth §8.5/§4.6: PURE query — resolve the base Body for a sketch-based\n"
+            "feature by walking the sketch's anchor chain. No side effects. Returns the\n"
+            "single Body the chain reaches, or None when it reaches no Body (the\n"
+            "auto-spawn case — create one explicitly with spawnBody()). Raises if the\n"
+            "chain reaches more than one Body (ambiguous). Shared with the GUI command\n"
+            "(P8 UI/API equivalence): both resolve purely, then spawn explicitly."
+        );
+        add_varargs_method(
+            "spawnBody",
+            &Module::spawnBody,
+            "spawnBody(doc) -> Body\n\n"
+            "Cruth §4.6: explicitly create a document-level Body (the auto-spawn step,\n"
+            "separated from resolveBaseBody so the lookup stays side-effect free — #17).\n"
+            "The GUI runs this inside the feature's undo transaction; scripts call it\n"
+            "when resolveBaseBody returns None. Applies the per-document palette colour,\n"
+            "matching the GUI auto-spawn."
+        );
+        add_varargs_method(
+            "findBodyOf",
+            &Module::findBodyOf,
+            "findBodyOf(feature) -> Body or None\n\n"
+            "Cruth §11: reverse lookup from a feature to the Body whose pipeline emits it.\n"
+            "Body membership is DERIVED (walked along the BaseFeature chain), never stored —\n"
+            "the mirror image of the de-owned Group. Returns None if the feature belongs to\n"
+            "no Body. This is the Python entry point for the C++ static Body::findBodyOf."
+        );
+        add_varargs_method(
+            "bodiesOf",
+            &Module::bodiesOf,
+            "bodiesOf(feature) -> list of Body\n\n"
+            "Cruth ownership-query contract: the honest, N-valued reverse lookup. A single\n"
+            "Tip feature can back several Bodies at once (one per output component of a\n"
+            "pattern or a severed solid), so this returns EVERY Body the feature backs,\n"
+            "derived from the feature graph. Empty when the feature belongs to no Body."
+        );
+        add_varargs_method(
+            "bodyOf",
+            &Module::bodyOf,
+            "bodyOf(feature, sub='') -> Body or None\n\n"
+            "Cruth ownership-query contract (P7 fail-loud): resolve a feature plus the\n"
+            "picked sub-element (e.g. 'Face5') to the single Body meant. With one candidate\n"
+            "the sub-element is ignored. With several, the sub-element names the component.\n"
+            "Asking for 'the' Body of a multi-output feature with no sub-element RAISES\n"
+            "rather than guessing. Returns None only when the feature backs no Body."
+        );
+        add_varargs_method(
+            "moveFeatureToBody",
+            &Module::moveFeatureToBody,
+            "moveFeatureToBody(feature, target) -> Body\n\n"
+            "Cruth §8.5 (Merge Result, #27): re-home a feature onto another Body's\n"
+            "pipeline. target may be a Body (extend it) or None (spawn a fresh Body for\n"
+            "the feature — the 'Merge result off' case). Detaches the feature from its\n"
+            "current Body first, retiring that Body if it empties (§4.7). Returns the\n"
+            "Body the feature now belongs to. Shared with the GUI control (P8)."
+        );
+        add_varargs_method(
+            "overlappingPairs",
+            &Module::overlappingPairs,
+            "overlappingPairs(doc, includeAcknowledged=False) -> list of (a, b)\n\n"
+            "The pairs of separate solids that share volume, as the Check Interference\n"
+            "command lists them. Acknowledged pairs are left out unless asked for. Costly."
+        );
+        add_varargs_method(
+            "acknowledgeOverlap",
+            &Module::acknowledgeOverlap,
+            "acknowledgeOverlap(a, b)\n\n"
+            "Record that two overlapping bodies are meant to stay separate, as the Check\n"
+            "Interference dialog does. Only a pair of Bodies can be acknowledged."
+        );
+        add_varargs_method(
+            "stepsUsedBy",
+            &Module::stepsUsedBy,
+            "stepsUsedBy(step) -> list\n\n"
+            "What the step directly uses. A Body it uses is read as the step that Body shows."
+        );
+        add_varargs_method(
+            "stepsUsing",
+            &Module::stepsUsing,
+            "stepsUsing(step) -> list\n\n"
+            "What directly uses the step, including through a Body that shows it."
+        );
+        add_varargs_method(
+            "varyMeasurement",
+            &Module::varyMeasurement,
+            "varyMeasurement(pattern, target, formula)\n\n"
+            "Make each copy of the pattern its original rebuilt with one measurement changed.\n"
+            "target names the measurement as a formula would, e.g. 'Sketch.Constraints.Width'\n"
+            "or 'Pocket.Length'; formula gives its value for each copy and may use n, the\n"
+            "copy's number (1 for the first copy)."
+        );
+        add_varargs_method(
+            "variedMeasurements",
+            &Module::variedMeasurements,
+            "variedMeasurements(pattern) -> list of (target, formula)\n\n"
+            "The measurements the pattern changes for each copy, in the order they were added."
+        );
+        add_varargs_method(
+            "measurementsToVary",
+            &Module::measurementsToVary,
+            "measurementsToVary(pattern) -> list of str\n\n"
+            "What varyMeasurement can be given for the pattern's originals: their own\n"
+            "measurements and their sketches' named dimensions."
+        );
+        add_varargs_method(
+            "stopVarying",
+            &Module::stopVarying,
+            "stopVarying(pattern, index)\n\n"
+            "Stop changing the measurement at index (from variedMeasurements) for each copy."
+        );
         initialize("This module is the PartDesign module.");  // register with Python
     }
 
 private:
+    Py::Object moveFeatureToBody(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        PyObject* pyTarget = nullptr;  // Body or None
+        if (!PyArg_ParseTuple(args.ptr(), "O!O", &(App::DocumentObjectPy::Type), &pyFeature, &pyTarget)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* feature
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+
+        Body* target = nullptr;
+        if (pyTarget != Py_None) {
+            if (!PyObject_TypeCheck(pyTarget, &(App::DocumentObjectPy::Type))) {
+                throw Py::TypeError("moveFeatureToBody expects a Body or None as target");
+            }
+            auto* obj = static_cast<App::DocumentObjectPy*>(pyTarget)->getDocumentObjectPtr();
+            target = freecad_cast<Body*>(obj);
+            if (!target) {
+                throw Py::TypeError("moveFeatureToBody expects a Body or None as target");
+            }
+        }
+
+        Body* result = Body::moveFeatureToBody(feature, target);
+        if (!result) {
+            return Py::None();
+        }
+        return Py::asObject(result->getPyObject());
+    }
+
+    Py::Object overlappingPairs(const Py::Tuple& args)
+    {
+        PyObject* pyDoc = nullptr;
+        PyObject* includeAcknowledged = Py_False;
+        if (!PyArg_ParseTuple(
+                args.ptr(),
+                "O!|O!",
+                &(App::DocumentPy::Type),
+                &pyDoc,
+                &PyBool_Type,
+                &includeAcknowledged
+            )) {
+            throw Py::Exception();
+        }
+
+        App::Document* doc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+        const auto pairs = Base::asBoolean(includeAcknowledged) ? Body::findInterferingPairs(doc)
+                                                                : Body::liveInterferingPairs(doc);
+        Py::List list;
+        for (const auto& [a, b] : pairs) {
+            list.append(Py::TupleN(Py::asObject(a->getPyObject()), Py::asObject(b->getPyObject())));
+        }
+        return list;
+    }
+
+    Py::Object acknowledgeOverlap(const Py::Tuple& args)
+    {
+        PyObject* pyA = nullptr;
+        PyObject* pyB = nullptr;
+        if (!PyArg_ParseTuple(
+                args.ptr(),
+                "O!O!",
+                &(App::DocumentObjectPy::Type),
+                &pyA,
+                &(App::DocumentObjectPy::Type),
+                &pyB
+            )) {
+            throw Py::Exception();
+        }
+
+        auto* a = static_cast<App::DocumentObjectPy*>(pyA)->getDocumentObjectPtr();
+        auto* b = static_cast<App::DocumentObjectPy*>(pyB)->getDocumentObjectPtr();
+        if (!Body::isInterferenceDismissable(a, b)) {
+            throw Py::TypeError("acknowledgeOverlap expects two Bodies");
+        }
+        if (a == b) {
+            throw Py::ValueError("acknowledgeOverlap expects two different Bodies");
+        }
+        Body::dismissInterference(static_cast<Body*>(a), static_cast<Body*>(b));
+        return Py::None();
+    }
+
+    static Transformed* patternFrom(PyObject* pyPattern)
+    {
+        auto* pattern = freecad_cast<Transformed*>(
+            static_cast<App::DocumentObjectPy*>(pyPattern)->getDocumentObjectPtr()
+        );
+        if (!pattern) {
+            throw Py::TypeError("Expects a pattern");
+        }
+        return pattern;
+    }
+
+    Py::Object varyMeasurement(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        const char* target = nullptr;
+        const char* formula = nullptr;
+        if (
+            !PyArg_ParseTuple(args.ptr(), "O!ss", &(App::DocumentObjectPy::Type), &pyPattern, &target, &formula)
+        ) {
+            throw Py::Exception();
+        }
+        try {
+            patternFrom(pyPattern)->varyMeasurement(target, formula);
+        }
+        catch (const Base::Exception& e) {
+            throw Py::ValueError(e.what());
+        }
+        return Py::None();
+    }
+
+    Py::Object variedMeasurements(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyPattern)) {
+            throw Py::Exception();
+        }
+        Transformed* pattern = patternFrom(pyPattern);
+        Py::List list;
+        try {
+            for (const auto& measurement : pattern->variedMeasurements()) {
+                const auto formula
+                    = pattern->getExpression(App::ObjectIdentifier(*measurement.perCopy)).expression;
+                list.append(
+                    Py::TupleN(
+                        Py::String(measurement.target.toString()),
+                        formula ? Py::Object(Py::String(formula->toString())) : Py::None()
+                    )
+                );
+            }
+        }
+        catch (const Base::Exception& e) {
+            throw Py::ValueError(e.what());
+        }
+        return list;
+    }
+
+    Py::Object measurementsToVary(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyPattern)) {
+            throw Py::Exception();
+        }
+        Py::List list;
+        for (const std::string& target : patternFrom(pyPattern)->measurementsToVary()) {
+            list.append(Py::String(target));
+        }
+        return list;
+    }
+
+    Py::Object stopVarying(const Py::Tuple& args)
+    {
+        PyObject* pyPattern = nullptr;
+        int index = 0;
+        if (!PyArg_ParseTuple(args.ptr(), "O!i", &(App::DocumentObjectPy::Type), &pyPattern, &index)) {
+            throw Py::Exception();
+        }
+        Transformed* pattern = patternFrom(pyPattern);
+        if (index < 0 || static_cast<std::size_t>(index) >= pattern->variedMeasurements().size()) {
+            throw Py::IndexError("No varied measurement at that index");
+        }
+        pattern->stopVarying(static_cast<std::size_t>(index));
+        return Py::None();
+    }
+
+    static Py::List asList(const std::vector<App::DocumentObject*>& objects)
+    {
+        Py::List list;
+        for (auto* obj : objects) {
+            list.append(Py::asObject(obj->getPyObject()));
+        }
+        return list;
+    }
+
+    Py::Object stepsUsedBy(const Py::Tuple& args)
+    {
+        PyObject* pyStep = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyStep)) {
+            throw Py::Exception();
+        }
+        return asList(
+            Body::stepsUsedBy(static_cast<App::DocumentObjectPy*>(pyStep)->getDocumentObjectPtr())
+        );
+    }
+
+    Py::Object stepsUsing(const Py::Tuple& args)
+    {
+        PyObject* pyStep = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyStep)) {
+            throw Py::Exception();
+        }
+        return asList(
+            Body::stepsUsing(static_cast<App::DocumentObjectPy*>(pyStep)->getDocumentObjectPtr())
+        );
+    }
+
+    Py::Object findBodyOf(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyFeature)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+        Body* body = Body::findBodyOf(obj);
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
+    Py::Object bodiesOf(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pyFeature)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+        Py::List list;
+        for (auto* body : Body::bodiesOf(obj)) {
+            list.append(Py::asObject(body->getPyObject()));
+        }
+        return list;
+    }
+
+    Py::Object bodyOf(const Py::Tuple& args)
+    {
+        PyObject* pyFeature = nullptr;
+        const char* sub = "";
+        if (!PyArg_ParseTuple(args.ptr(), "O!|s", &(App::DocumentObjectPy::Type), &pyFeature, &sub)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pyFeature)->getDocumentObjectPtr();
+        Body* body = nullptr;
+        try {
+            body = Body::bodyOf(obj, sub);
+        }
+        catch (const Base::Exception& e) {
+            // bodyOf throws on ambiguity (a multi-output feature asked for "the" Body with
+            // no sub-element). Surface it as a catchable Python exception rather than
+            // letting the C++ exception escape uncaught (P7 fail-loud, P8 UI/API parity).
+            throw Py::RuntimeError(e.what());
+        }
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
+    Py::Object resolveBaseBody(const Py::Tuple& args)
+    {
+        PyObject* pySketch = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentObjectPy::Type), &pySketch)) {
+            throw Py::Exception();
+        }
+
+        App::DocumentObject* obj
+            = static_cast<App::DocumentObjectPy*>(pySketch)->getDocumentObjectPtr();
+        auto* sketch = freecad_cast<Part::Part2DObject*>(obj);
+        if (!sketch) {
+            throw Py::TypeError("resolveBaseBody expects a sketch (Part::Part2DObject)");
+        }
+
+        bool ambiguous = false;
+        Body* body = Body::resolveBaseBody(sketch, ambiguous);
+        if (ambiguous) {
+            throw Py::RuntimeError(
+                "This sketch's attachment chain reaches more than one Body. "
+                "Pick a single Body explicitly before continuing."
+            );
+        }
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
+    Py::Object spawnBody(const Py::Tuple& args)
+    {
+        PyObject* pyDoc = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &(App::DocumentPy::Type), &pyDoc)) {
+            throw Py::Exception();
+        }
+
+        App::Document* doc = static_cast<App::DocumentPy*>(pyDoc)->getDocumentPtr();
+        Body* body = nullptr;
+        try {
+            body = Body::spawnAutoBody(doc);
+        }
+        catch (const Base::Exception& e) {
+            // spawnAutoBody throws when the document has no world frame (a Body in a non-CAD
+            // document). Surface it as a catchable Python exception rather than letting the
+            // C++ exception escape uncaught to the interpreter's top-level handler.
+            throw Py::RuntimeError(e.what());
+        }
+        if (!body) {
+            return Py::None();
+        }
+        return Py::asObject(body->getPyObject());
+    }
+
     Py::Object makeFilletArc(const Py::Tuple& args)
     {
         PyObject* pM1;

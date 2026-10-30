@@ -43,8 +43,6 @@ class ViewProvider;
 namespace PartDesignGui
 {
 
-class TaskMultiTransformParameters;
-
 class TaskMirroredParameters: public TaskTransformedParameters
 {
     Q_OBJECT
@@ -52,8 +50,6 @@ class TaskMirroredParameters: public TaskTransformedParameters
 public:
     /// Constructor for task with ViewProvider
     explicit TaskMirroredParameters(ViewProviderTransformed* TransformedView, QWidget* parent = nullptr);
-    /// Constructor for task with parent task (MultiTransform mode)
-    TaskMirroredParameters(TaskMultiTransformParameters* parentTask, QWidget* parameterWidget);
 
     ~TaskMirroredParameters() override;
 
@@ -64,7 +60,6 @@ protected:
 
 private Q_SLOTS:
     void onPlaneChanged(int num);
-    void onUpdateView(bool /*unused*/) override;
 
 private:
     void setupParameterUI(QWidget* widget) override;

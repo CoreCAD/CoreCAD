@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CoreCAD is an open-source mechanical CAD platform forked from FreeCAD. The project name in CMake and code remains `FreeCAD` (the upstream name); branding to `CoreCAD` is an ongoing effort tracked in `.local/BRANDING_CHECKLIST.md`. The internal executable names are `FreeCAD` (GUI) and `FreeCADCmd` (CLI).
+CoreCAD is an open-source mechanical CAD platform forked from FreeCAD. The project name in CMake and code remains `FreeCAD` (the upstream name); branding is an ongoing effort. The internal executable names are `FreeCAD` (GUI) and `FreeCADCmd` (CLI).
 
 ## Build System
 
@@ -12,20 +12,29 @@ The recommended build method is **Pixi** (conda-based). CMake presets are also s
 
 ```bash
 # Recommended: Pixi tasks
-pixi task configure        # Configure debug build
-pixi task build            # Build debug
-pixi task install          # Install to build/debug
-pixi task freecad          # Run the application
-pixi task configure-release
-pixi task build-release
+pixi run configure-debug   # Configure debug build (output: build/debug/)
+pixi run build-debug       # Build debug
+pixi run install-debug     # Install to build/debug/
+pixi run freecad-debug     # Run the application (alias: pixi run freecad)
+pixi run freecad-test      # Run for testing: clean-room launch, throwaway user.cfg
+pixi run configure-release
+pixi run build-release
 
 # Direct CMake (alternative)
-cmake --preset debug
+cmake --preset conda-linux-debug
 cmake --build build/debug
 cmake --install build/debug
 ```
 
-Build output goes to `build/debug/` or `build/release/`. Key build config files: `pixi.toml`, `CMakePresets.json`, `CMakeLists.txt`.
+Build output goes to `build/debug/` or `build/release/`. Binary at `build/debug/bin/FreeCAD`.
+Key build config files: `pixi.toml`, `CMakePresets.json`, `CMakeLists.txt`.
+
+For live GUI/MCP verification, prefer `pixi run freecad-test`. It launches the debug
+build with a throwaway `--user-cfg` wiped each run, so every session starts from pristine
+code defaults — a persisted preference in `user.cfg` can otherwise silently override a
+source-code default (e.g. a feature flag changed in C++ appears to have no effect). The MCP
+bridge is unaffected (its auto-start setting lives in a separate JSON under the app-data
+dir, not `user.cfg`).
 
 ## Testing
 
@@ -33,7 +42,7 @@ Tests use **Google Test** (GTest + GMock). Test sources live in `tests/src/`.
 
 ```bash
 # All tests via pixi
-pixi task test
+pixi run test
 
 # All tests via ctest
 ctest --test-dir build/debug
@@ -137,3 +146,7 @@ GitHub Actions workflows in `.github/workflows/`:
 - `sub_buildWindows.yml` — Windows build + GTest
 
 PRs must pass all CI checks on Linux, macOS, and Windows.
+
+## Cortex working state
+
+This project keeps durable memory in Cortex (MCP server `cortex`; database `.cortex/cortex.db`). Keep its working state current while you work: the current task, next actions, open questions and preferences learned. Use the MCP tool `update_working_state` whenever one of them changes; each field you give replaces the stored one. The next session's packet starts from it, so a `/clear` is safe at any moment. Search with `search_memories` before re-deriving something the project may have settled, and record verified decisions, constraints and lessons with `record_memory`. After a piece of work is committed, say it's a good point to `/clear`.

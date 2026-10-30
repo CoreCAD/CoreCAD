@@ -132,7 +132,11 @@ std::ostream& Writer::beginCharStream(CharStreamFormat format)
         auto* filteredStream = dynamic_cast<boost::iostreams::filtering_ostream*>(CharStream.get());
         filteredStream->push(cdata_filter());
         filteredStream->push(Stream());
-        *filteredStream << std::setprecision(std::numeric_limits<double>::digits10 + 1);
+        // Cruth: max_digits10 (17), not digits10 + 1 (16). Sixteen significant digits is enough
+        // to identify a double but not always to reproduce it -- a value written at 16 can read
+        // back as its neighbour, so a document saved and reopened was not always the document
+        // that was saved. Seventeen round-trips every double exactly.
+        *filteredStream << std::setprecision(std::numeric_limits<double>::max_digits10);
     }
 
     checkErrNo();
@@ -345,7 +349,7 @@ ZipWriter::ZipWriter(const char* FileName)
     : ZipStream(FileName)
 {
     ZipStream.imbue(std::locale::classic());
-    ZipStream.precision(std::numeric_limits<double>::digits10 + 1);
+    ZipStream.precision(std::numeric_limits<double>::max_digits10);
     ZipStream.setf(std::ios::fixed, std::ios::floatfield);
 }
 
@@ -353,7 +357,7 @@ ZipWriter::ZipWriter(std::ostream& os)
     : ZipStream(os)
 {
     ZipStream.imbue(std::locale::classic());
-    ZipStream.precision(std::numeric_limits<double>::digits10 + 1);
+    ZipStream.precision(std::numeric_limits<double>::max_digits10);
     ZipStream.setf(std::ios::fixed, std::ios::floatfield);
 }
 

@@ -9,16 +9,14 @@ set(Import_LIBS
 SET(Import_SRCS
     AppImport.cpp
     AppImportPy.cpp
-    ExportOCAF.cpp
-    ExportOCAF.h
+    Feature.cpp
+    Feature.h
     ExportOCAF2.cpp
     ExportOCAF2.h
-    ImportOCAF.cpp
-    ImportOCAF.h
     ImportOCAF2.cpp
     ImportOCAF2.h
-    #ImportOCAFAssembly.cpp
-    #ImportOCAFAssembly.h
+    ReadAssemblyStructure.cpp
+    ReadAssemblyStructure.h
     ReaderGltf.cpp
     ReaderGltf.h
     ReaderIges.cpp
@@ -67,7 +65,6 @@ SET(SCL_Resources
     SCL_output/automotive_design.py     # AP214e3
     SCL_output/ifc2x3.py                # IFC
     SCL_output/ifc4.py                  # IFC 4
-    PlmXmlParser.py
 )
 SOURCE_GROUP("SCL" FILES ${SCL_Resources})
 

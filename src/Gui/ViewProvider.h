@@ -26,7 +26,9 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <QColor>
 #include <QIcon>
+#include <QString>
 #include <fastsignals/signal.h>
 #include <boost/intrusive_ptr.hpp>
 
@@ -345,6 +347,12 @@ public:
      * @return          true if the deletion is approved by the view provider.
      */
     virtual bool onDelete(const std::vector<std::string>& subNames);
+    /// False for an object that is never removed by hand, even when the user confirms
+    /// deleting what depends on it.
+    virtual bool canBeDeleted() const
+    {
+        return true;
+    }
     /** Called before deletion
      *
      * Unlike onDelete(), this function is guaranteed to be called before
@@ -369,6 +377,12 @@ public:
     //@{
     /// deliver the icon shown in the tree view
     virtual QIcon getIcon() const;
+    /// The hover text of the object's tree row; empty for none. A change is announced with
+    /// signalChangeToolTip, and a row created later reads it here.
+    virtual QString getToolTip() const
+    {
+        return {};
+    }
 
     /**
      * @brief Whether the viewprovider should allow to toggle the visibility.
@@ -515,6 +529,38 @@ public:
      */
     virtual int replaceObject(App::DocumentObject* oldObj, App::DocumentObject* newObj);
     //@}
+
+    /** What the tree's Bodies column shows for this object (Cruth ARCHITECTURE §8.7): a colour
+     *  swatch for each body it builds. The bodies one pattern emits are a single swatch with
+     *  their count (§5.5). The names are in the tooltip. @c references, the bodies it only uses,
+     *  is not drawn: a row can already hold several swatches; it feeds a body's *Used by* list. The
+     * core knows nothing of bodies; a module that has them answers. Empty shows nothing.
+     */
+    /// One swatch, or for the bodies one pattern emits, all their colours: drawn as a stack
+    /// with a count when there are more than three. @c bodies runs alongside @c colors, so a
+    /// click on a square finds the body it stands for.
+    struct BodySwatch
+    {
+        std::vector<QColor> colors;
+        std::vector<App::DocumentObject*> bodies;
+        bool operator==(const BodySwatch&) const = default;
+    };
+    struct TreeBodyColumn
+    {
+        /// The swatches drawn on this row.
+        std::vector<BodySwatch> builds;
+        /// Every body this object builds, whether or not its swatch stands on this row.
+        std::vector<BodySwatch> partOf;
+        std::vector<BodySwatch> references;
+        /// On a body's own row, the row its swatch stands on.
+        App::DocumentObject* swatchRow = nullptr;
+        QString tooltip;
+        bool operator==(const TreeBodyColumn&) const = default;
+    };
+    virtual TreeBodyColumn getTreeBodyColumn() const
+    {
+        return {};
+    }
 
     /** Tell the tree view if this object should appear there */
     virtual bool showInTree() const

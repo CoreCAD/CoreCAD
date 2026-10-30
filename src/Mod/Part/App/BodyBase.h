@@ -25,12 +25,17 @@
 #pragma once
 
 #include <App/PropertyStandard.h>
-#include <App/OriginGroupExtension.h>
+#include <Base/Color.h>
 
 #include <Mod/Part/PartGlobal.h>
 
 #include "PartFeature.h"
 
+
+namespace App
+{
+class PropertyLinkSubList;
+}
 
 namespace Part
 {
@@ -40,12 +45,22 @@ namespace Part
  * in edit or active on a workbench, the body shows only the
  * resulting shape to the outside (Tip link).
  */
-class PartExport BodyBase: public Part::Feature, public App::OriginGroupExtension
+// A Body is an unplaced marker (§3.3/§4): it stores neither a placement nor a shape. It carries
+// the shape capability (Part::ShapeExtension), which answers with the shape of its shown step
+// (Amendment 17.2); consumers ask Part::hasShape / Part::getShape, never its type.
+class PartExport BodyBase: public App::GeoFeature,
+                           public Part::ShapeExtension,
+                           public Part::MaterialExtension
 {
-    PROPERTY_HEADER_WITH_EXTENSIONS(Part::BodyBase);
+    PROPERTY_HEADER(Part::BodyBase);
 
 public:
     BodyBase();
+
+    App::ElementNamePair getElementName(  // NOLINT(google-default-arguments)
+        const char* name,
+        ElementNameType type = Normal
+    ) const override;
 
     /**
      * The final feature of the body it is associated with.
@@ -59,14 +74,15 @@ public:
      */
     App::PropertyLink BaseFeature;
 
-    /// Returns all Group objects prepanded by BaseFeature (if any)
-    std::vector<App::DocumentObject*> getFullModel()
+    /// Base member list: just the BaseFeature (if any). The OriginGroup extension and its
+    /// Group container were retired (Cruth §11 step 5e); a de-owned Body derives its real
+    /// member list from the feature graph — the override in PartDesign::Body.
+    virtual std::vector<App::DocumentObject*> getFullModel()
     {
         std::vector<App::DocumentObject*> rv;
         if (BaseFeature.getValue()) {
             rv.push_back(BaseFeature.getValue());
         }
-        std::copy(Group.getValues().begin(), Group.getValues().end(), std::back_inserter(rv));
         return rv;
     }
 
@@ -81,18 +97,54 @@ public:
      * TODO introduce a findBodiesOf() if needed (2015-08-04, Fat-Zer)
      */
     static BodyBase* findBodyOf(const App::DocumentObject* f);
+
+    /// Every body that \a f builds (isBuiltBy). More than one when several bodies share a
+    /// feature (a multi-output feature, §5.6).
+    static std::vector<BodyBase*> findBodiesBuiltBy(const App::DocumentObject* f);
+
+    /// Whether \a f is a step that builds this body's solid, not merely an input to one (a
+    /// profile sketch, a datum). The base answers by membership; a body with a chain refines it.
+    virtual bool isBuiltBy(const App::DocumentObject* f);
+
+    /// The step that last changed this body's shape, where its swatch stands. The base answers
+    /// with the Tip; a body with a chain refines it.
+    virtual App::DocumentObject* lastShapedBy() const
+    {
+        return Tip.getValue();
+    }
+
+    /// The body's identity colour (§4.6), shown wherever the body is named. Default grey.
+    virtual Base::Color getIdentityColor() const;
+
+    /**
+     * Re-anchor sub-element references off a Body marker onto the Body's Tip feature.
+     *
+     * ARCHITECTURE §8: a sub-element reference (a picked face/edge/vertex) is
+     * feature-anchored, while only a whole-object Body reference tracks the Tip. A face
+     * pick on a Body's displayed solid resolves the selection to the Body, producing a
+     * malformed "(Body, Face6)" reference that both tracks the Tip and carries a
+     * sub-element. Left as-is it forms a dependency cycle the moment a new feature becomes
+     * the Tip (the profile chases the very feature being built) and it drives the
+     * getFullModel anchor-walk into recursion. This rewrites every "(Body, non-empty-sub)"
+     * entry to "(Body.Tip, same-sub)" — the Tip's shape is the Body's shape, so the element
+     * name is unchanged — while leaving whole-Body entries (empty sub) and non-Body targets
+     * untouched. Every UI site that records an attachment/support reference from a selection
+     * calls this before storing it.
+     */
+    static void rebaseBodySubReferencesToTip(
+        std::vector<App::DocumentObject*>& objs,
+        std::vector<std::string>& subs
+    );
+    static void rebaseBodySubReferencesToTip(App::PropertyLinkSubList& links);
+
     PyObject* getPyObject() override;
 
 protected:
+    App::DocumentObjectExecReturn* recompute() override;
     /// If BaseFeature is getting changed and Tip points to it reset the Tip
     void onBeforeChange(const App::Property* prop) override;
     /// If BaseFeature is set and Tip is null set the Tip to it
     void onChanged(const App::Property* prop) override;
-    void handleChangedPropertyName(
-        Base::XMLReader& reader,
-        const char* TypeName,
-        const char* PropName
-    ) override;
 };
 
 }  // namespace Part

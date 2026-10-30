@@ -31,6 +31,7 @@
 #include <Gui/View3DInventorViewer.h>
 
 #include "ViewProviderDatum.h"
+#include "ViewProviderExt.h"
 
 
 using namespace PartGui;
@@ -48,6 +49,11 @@ bool ViewProviderLine::doubleClicked()
     return true;
 }
 
+Gui::ViewProvider::TreeBodyColumn ViewProviderLine::getTreeBodyColumn() const
+{
+    return treeBodyColumnOf(getObject());
+}
+
 PROPERTY_SOURCE_WITH_EXTENSIONS(PartGui::ViewProviderPlane, Gui::ViewProviderPlane)
 
 ViewProviderPlane::ViewProviderPlane()
@@ -59,6 +65,11 @@ bool ViewProviderPlane::doubleClicked()
 {
     showAttachmentEditor();
     return true;
+}
+
+Gui::ViewProvider::TreeBodyColumn ViewProviderPlane::getTreeBodyColumn() const
+{
+    return treeBodyColumnOf(getObject());
 }
 
 
@@ -75,6 +86,11 @@ bool ViewProviderPoint::doubleClicked()
     return true;
 }
 
+Gui::ViewProvider::TreeBodyColumn ViewProviderPoint::getTreeBodyColumn() const
+{
+    return treeBodyColumnOf(getObject());
+}
+
 
 PROPERTY_SOURCE_WITH_EXTENSIONS(PartGui::ViewProviderLCS, Gui::ViewProviderCoordinateSystem)
 
@@ -87,4 +103,9 @@ bool ViewProviderLCS::doubleClicked()
 {
     showAttachmentEditor();
     return true;
+}
+
+Gui::ViewProvider::TreeBodyColumn ViewProviderLCS::getTreeBodyColumn() const
+{
+    return treeBodyColumnOf(getObject());
 }

@@ -33,7 +33,6 @@
 #include "ExpressionParser.h"
 #include "GeoFeatureGroupExtension.h"
 #include "Origin.h"
-#include "OriginGroupExtension.h"
 #include "ObjectIdentifier.h"
 
 using namespace App;
@@ -295,13 +294,7 @@ void Document::exportGraphviz(std::ostream& out) const
                 if (!sgraph) {
                     auto group = GeoFeatureGroupExtension::getGroupOfObject(docObj);
                     if (group) {
-                        if (docObj->isDerivedFrom<App::DatumElement>()) {
-                            sgraph = GraphList[group->getExtensionByType<OriginGroupExtension>()
-                                                   ->Origin.getValue()];
-                        }
-                        else {
-                            sgraph = GraphList[group];
-                        }
+                        sgraph = GraphList[group];
                     }
                 }
                 if (!sgraph) {
@@ -417,20 +410,6 @@ void Document::exportGraphviz(std::ostream& out) const
                         recursiveCSSubgraphs(obj, cs);
                     }
                 }
-            }
-
-            // setup the origin if available
-            if (cs->hasExtension(App::OriginGroupExtension::getExtensionClassTypeId())) {
-                auto origin = cs->getExtensionByType<OriginGroupExtension>()->Origin.getValue();
-                if (!origin) {
-                    std::cerr << "Origin feature not found" << std::endl;
-                    return;
-                }
-                auto& osub = sub.create_subgraph();
-                GraphList[origin] = &osub;
-                get_property(osub, graph_name) = getClusterName(origin);
-                get_property(osub, graph_graph_attribute)["bgcolor"] = "none";
-                setGraphLabel(osub, origin);
             }
         }
 

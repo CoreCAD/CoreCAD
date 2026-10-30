@@ -25,6 +25,7 @@
 #pragma once
 
 #include <CXX/Objects.hxx>
+#include <Base/Exception.h>
 #include <Base/Observer.h>
 #include <Base/Persistence.h>
 #include <Base/Type.h>
@@ -38,6 +39,7 @@
 #include "ExportInfo.h"
 #include "TransactionDefs.h"
 
+#include <array>
 #include <map>
 #include <vector>
 #include <utility>
@@ -47,6 +49,7 @@
 namespace Base
 {
 class Writer;
+class Uuid;
 }
 
 namespace App
@@ -81,12 +84,87 @@ namespace App
 class TransactionalObject;
 class DocumentObject;
 class DocumentObjectExecReturn;
+struct CellShift;
 class Document;
 class DocumentPy;
 class Application;
 class Transaction;
 class StringHasher;
 using StringHasherRef = Base::Reference<StringHasher>;
+
+/**
+ * @brief Thrown when a typed document refuses an out-of-scope object at its
+ * admission door (ARCHITECTURE §7.1, Amendment 8 Clause 8.1).
+ *
+ * A distinct type so the load door can tell a scope violation apart from an
+ * ordinary object-creation failure (a missing module, a corrupt object) and
+ * fail the whole open loudly, rather than logging and dropping the object the
+ * way it leniently does for recoverable per-object failures. Reaches Python as
+ * a catchable RuntimeError (P7).
+ */
+class DocumentContentScopeError: public Base::RuntimeError
+{
+public:
+    using Base::RuntimeError::RuntimeError;
+};
+
+/**
+ * @brief Thrown when a file states a record that cannot be determined from it
+ * (Amendment 19 Clause 19.2).
+ *
+ * A refusal is total. Where the reader genuinely cannot continue -- a truncated
+ * file, one still carrying the markers of an unfinished merge, anything whose
+ * structure is broken such that what was written cannot be read back -- the
+ * document does not open: not as the part that was read before the failure, and
+ * not as an empty document. A partially-read document standing in for the record
+ * is how the record is destroyed, because it looks like a document and a save
+ * publishes it.
+ *
+ * A distinct type so the open door can tell this apart from the ordinary
+ * failures it is right to be lenient about, and discard the half-built document
+ * rather than hand it over. The message says what was wrong and where, because
+ * refusing to open a file is not refusing to say anything about it. Reaches
+ * Python as a catchable RuntimeError (P7).
+ */
+class DocumentMalformedError: public Base::RuntimeError
+{
+public:
+    using Base::RuntimeError::RuntimeError;
+};
+
+/**
+ * @brief Thrown when a file is written to a format this build does not read
+ * (Amendment 19 Clause 19.7).
+ *
+ * A file states the version of the format it was written to, and a reader
+ * consults it before interpreting. This is the version that answers the question
+ * a person actually has when a document will not open -- whether this build can
+ * read this file at all -- and answering it once, at the top, is what stops every
+ * other rule from having to catch the damage one case at a time.
+ *
+ * A refusal here is total for the same reason Clause 19.2's is: a file read as a
+ * format it was not written to yields a document that looks like the part and is
+ * not it. Hence the derivation -- every door that already discards a half-built
+ * document on a malformed file does the same on an unreadable format, without
+ * having to learn about this separately. The two say different things, though,
+ * and the message is the difference: the file is not broken, this build is not
+ * the one that reads it.
+ */
+class DocumentFormatUnknownError: public DocumentMalformedError
+{
+public:
+    using DocumentMalformedError::DocumentMalformedError;
+};
+
+/**
+ * @brief Thrown when a file is a copy of a document already open and nobody said whether it is
+ * the same part or a new one. The identity is never changed without that answer.
+ */
+class DocumentDuplicateError: public Base::RuntimeError
+{
+public:
+    using Base::RuntimeError::RuntimeError;
+};
 
 /**
  * @brief A class that represents a FreeCAD document.
@@ -140,7 +218,18 @@ public:
         /// Whether a recompute is necessary on restore for migration purposes.
         RecomputeOnRestore = 13,
         /// Whether the local coordinate system of older versions should be migrated.
-        MigrateLCS = 14
+        MigrateLCS = 14,
+        /** Whether the objects currently being imported are a relocation rather
+         * than a duplication. Import is the copy path, so it mints fresh durable
+         * identity by default (§10.7); a move is not duplication and must keep
+         * the identity it already has, at every grain.
+         */
+        Relocating = 15,
+        /// Whether opening gave this copy a fresh identity, so it now differs from its file.
+        GivenNewIdentity = 16,
+        /// Whether the document is building the geometry its file states the steps for, as part
+        /// of being opened; nothing this build changes differs from the file.
+        BuildingOnOpen = 17
     };
     // clang-format on
 
@@ -165,14 +254,17 @@ public:
     PropertyString LastModifiedDate;
     /// The company name (utf-8, optional).
     PropertyString Company;
-    /// The Unit System for this document.
-    PropertyEnumeration UnitSystem;
     /// A long comment or description (utf-8 with line breaks).
     PropertyString Comment;
     /// The Id, e.g. a Part number.
     PropertyString Id;
     /// A unique identifier of the document.
     PropertyUUID Uid;
+    /// Cruth document-type marker (e.g. "Part"); drives content scoping and workbench
+    /// selection. Empty on legacy/untyped documents. Set-once: writable while empty,
+    /// frozen the moment it is stamped (enforced in onBeforeChange, Amendment 8 Clause 8.2).
+    /// (CPART_DESIGN §8.2 / ARCHITECTURE §7.4)
+    PropertyString DocumentType;
     /// The full name of the licence e.g. "Creative Commons Attribution". See https://spdx.org/licenses/.
     PropertyString License;
     /// The URL to the license description or contract.
@@ -187,6 +279,8 @@ public:
     PropertyLink Tip;
     /// Tip object name of the document (if any).
     PropertyString TipName;
+    /// The durable id of the step the document stops building after; empty builds every step.
+    PropertyString RollbackMarker;
     /// Whether to show hidden items in TreeView.
     PropertyBool ShowHidden;
     /// Whether to use hasher on topological naming.
@@ -290,6 +384,40 @@ public:
      * @{
      */
 
+    /// Canonical DocumentType marker values (§7.1 / §10.4). The marker is a string for
+    /// open extensibility (§7.4) and to match the on-disk format; these constants name
+    /// the four types defined now so no bare literal is duplicated across the code. A
+    /// future type (CAM, Simulation) adds a value here and a policy row in
+    /// admitsContentScope() — not a new enum, not a recompile of every consumer.
+    static constexpr const char* DocTypePart = "Part";
+    static constexpr const char* DocTypeAssembly = "Assembly";
+    static constexpr const char* DocTypeDrawing = "Drawing";
+    static constexpr const char* DocTypeSpreadsheet = "Spreadsheet";
+
+    /// Cruth: stamp the document-type marker and set up type-specific content at creation.
+    /// A "Part" document mints its shared world frame (App::Origin) so the coordinate
+    /// system exists from the moment the document is born, owned by the document itself.
+    /// The marker is the authority; the on-disk file extension is derived from it.
+    void applyDocumentType(const char* type);
+
+    /// Cruth: on-disk file extension (without dot) derived from a document-type marker.
+    /// The marker is the authority; a "Part" document saves as ".cpart", an "Assembly"
+    /// document as ".cassembly", while an untyped/legacy document saves as ".FCStd".
+    /// Unknown types fall back to "FCStd".
+    static std::string fileExtensionForType(const char* type);
+    /// The file extension this document should be saved under, derived from its
+    /// DocumentType marker. See fileExtensionForType().
+    std::string documentFileExtension() const;
+
+    /// Cruth: every extension that denotes a whole native document (the universal ".FCStd"
+    /// plus each type-specific extension). The single source consumers use to tell a
+    /// document meant to be opened from geometry meant to be imported; adding a new document
+    /// type to fileExtensionForType() extends this automatically.
+    static std::vector<std::string> nativeFormatExtensions();
+    /// Whether the given extension (without dot, case-insensitive) is a native document
+    /// format. See nativeFormatExtensions().
+    static bool isNativeFormatExtension(const char* ext);
+
     /// Save the document to the file in Property Path
     bool save();
 
@@ -305,7 +433,7 @@ public:
      *
      * @param[in] file: The file name to save the copy to.
      */
-    bool saveCopy(const char* file) const;
+    bool saveCopy(const char* file);
 
     /**
      * @brief Return whether App-side document state allows a recovery write.
@@ -404,6 +532,27 @@ public:
      */
     std::vector<DocumentObject*> importObjects(Base::XMLReader& reader);
 
+    /** Take objects rendered by the record's own writer into this document.
+     *
+     * The arrival half of a copy. What `copyObject` renders is the stored form of the objects a
+     * person picked, and it is read back by the stored form's own reader -- one writer and one
+     * reader for anything that can become the record (Amendment 19 Clause 19.5).
+     *
+     * Everything an arrival does whatever form it arrived in is here: marking the objects as
+     * importing, minting each a durable identity of its own unless this is a relocation, and the
+     * second pass that lets formulas bind once every object exists. That is the same work
+     * `importObjects` does around the archive reader, in the same order -- a new identity has to
+     * be in place before the pass that binds against it.
+     *
+     * Answers with what arrived, each paired with the durable id the file stated for it, which
+     * is what lets a caller say which copy came from which original.
+     *
+     * @param[in, out] rendering: the stored form of the objects, as `formatStoredRecipe` wrote it.
+     * @param[in] assetDirectory: where material the rendering names by content is read from.
+     */
+    std::vector<std::pair<std::string, DocumentObject*>>
+    acceptStoredRecipeObjects(std::istream& rendering, const std::string& assetDirectory = {});
+
     /**
      * @brief Import any externally linked objects
      *
@@ -430,6 +579,9 @@ public:
 
     /// Get program version the project file was created with.
     const char* getProgramVersion() const;
+    /// True when the file was read from a format older than the one a save writes, so the next
+    /// save replaces it with a file older programs may not read.
+    bool isInOlderFormat() const;
 
     /**
      * @brief Get the filename of the document.
@@ -439,10 +591,224 @@ public:
      * content of property 'TransientDir'.
      */
     const char* getFileName() const;
+
+    /**
+     * @brief Where this document's rebuildable files are kept.
+     *
+     * The document file holds what a part is made of. Everything the program can produce from
+     * it -- the built geometry, the colours and camera the last session left behind -- is kept
+     * apart from it, in one directory for the whole project, so that a folder of parts is a list
+     * of parts and a comparison of two versions is a comparison of designs. Nothing in there is
+     * a record: it can be deleted at any moment and rebuilt from the file it belongs to.
+     *
+     * Empty for a document that has never been saved, and keyed by the document's durable
+     * identity, so renaming or moving the file leaves nothing behind that claims to be its cache.
+     */
+    std::string cacheDirectory() const;
+
+    /// The one folder a project keeps rebuildable files under, beside the documents themselves.
+    /// Named here so that a survey of the folder and the documents in it agree about where to
+    /// look.
+    static constexpr const char* cacheFolderName = ".cruth";
+
+    /**
+     * @brief Where the project keeps the geometry it was handed.
+     *
+     * An imported solid, a scanned mesh, a measured point cloud: nothing in the project produces
+     * them, so they are source material and belong with the recipes rather than with the cache.
+     * One folder serves the whole project, and a body used by five parts is kept once.
+     *
+     * Empty for a document that has never been saved -- with no place on disk, such a value has
+     * to travel inside the recipe itself.
+     */
+    std::string assetDirectory() const;
+    /// The same folder for a document file that need not be open, such as a past version.
+    static std::string assetDirectoryFor(const std::string& file);
     /// @}
 
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
+
+    /** @name Statements this build could not honour (Amendment 19)
+     *
+     * Cruth: a document's file may state an object this build cannot construct -- a module that
+     * was not compiled in, an add-on that is absent, a scripted class that is gone. Dropping it
+     * is not available: the next save would write the absence over the record and the design
+     * would be gone for everyone, not only for this build. So the block is kept exactly as the
+     * file stated it, given back in its own place on save, and the document says it is not whole
+     * for as long as it holds one.
+     */
+    //@{
+    /// Keep an object's block exactly as its file stated it, because it could not be constructed.
+    void keepUnreadObject(std::string uuid, std::string type, std::string text);
+    /// The kept blocks, in the durable-id order the file states objects in.
+    const std::vector<std::array<std::string, 3>>& unreadObjects() const
+    {
+        return _unreadObjects;
+    }
+    /// A step whose stated predecessor is a kept block follows the nearest step that was built.
+    /// The file's own words are given back for as long as that is still the step it follows.
+    void keepStatedPredecessor(const std::string& uuid, std::string stated, std::string built);
+    /// What to write as the step `uuid` comes after, given the step it follows here.
+    std::string predecessorToState(const std::string& uuid, const std::string& built) const;
+    /// True while this document holds a statement its file made and this session could not honour.
+    bool holdsUnreadContent() const;
+
+    /** Whether what this document holds is still what its file states.
+     *
+     * False from the moment something the recipe carries changes -- a value a person set, an
+     * object added or removed -- and true again once a save has written that out, or once a
+     * fresh read has replaced it. Values a rebuild produces do not count: a recompute makes a
+     * solid the file never held in the first place, so producing one does not make the document
+     * disagree with its file.
+     *
+     * The interface has always tracked this for itself, to know whether to offer to save. It
+     * belongs here because it is a fact about the document rather than about the window showing
+     * it, and because a question asked of what is on disk -- which files does this project still
+     * name? -- cannot be answered from a document that has moved on from its file without saying
+     * so.
+     */
+    bool statesWhatItsFileStates() const;
+
+    /** Whether this document can present what it holds as the whole of what its file states.
+     *
+     * False while anything it read could not be honoured -- content it had to keep rather than
+     * read, and equally a value one object states for another that could not be applied. The two
+     * are different failures and only the first hides references, so they are asked separately;
+     * this is the question a script asks before it saves a directory of documents (P8).
+     */
+    bool isWhole() const;
+
+    /** Whether a sweep here may act on the assumption that it can see every reference.
+     *
+     * False while this document holds a statement it could not honour -- whether or not any save
+     * would lose it. What could not be honoured may name anything, so an absence of resolvable
+     * references is no longer evidence that nothing references an object: §3.5's cleanup may not
+     * conclude from it, and no sweep may remove what nothing appears to reference (Amendment 19
+     * Clause 19.3). The way out is Clause 19.4's discard, which only a person may perform.
+     */
+    bool seesEveryReference() const;
+
+    /// What is being held, said in one line, for a refusal that has to explain itself.
+    std::string whyReferencesAreFrozen() const;
+
+    /** Refuse a duplication that would carry a statement this session could not honour.
+     *
+     * Duplication mints fresh identities and rewires the references among the copies (§10.7).
+     * A reference that could not be resolved cannot be rewired -- it names a durable id, and the
+     * copy would go on naming the ORIGINAL rather than its counterpart in the new set. So such a
+     * duplication is refused with its reason rather than quietly producing that copy. Throws;
+     * a relocation is not duplication and is not bound by this.
+     */
+    static void refuseDuplicationThatCannotBeRewired(const std::vector<DocumentObject*>& objs);
+
+    /** Everything being held here, named: who holds it, under what name, and why.
+     *
+     * Named rather than counted, because a person deciding whether to discard one has to be able
+     * to read what it is, and a script asking the same question reads the same answer (P8). The
+     * holder is an object's in-document name, or empty for the document's own statements; for a
+     * whole object block this build could not construct, the name is its durable id.
+     */
+    std::vector<std::array<std::string, 3>> heldStatements() const;
+
+    /** Discard a statement this build cannot honour -- a person's act, and only a person's.
+     *
+     * A statement nothing here can honour would otherwise bind the document forever, holding the
+     * reference freeze of Clause 19.3 closed over it. Clause 19.4 gives exactly one way out: a
+     * person drops it deliberately, the act names what it dropped, and it is recorded in the
+     * document's history like any other edit.
+     *
+     * **Only a person may.** No save, no sweep, no recompute and no repair routine may discard on
+     * a person's behalf, however confident it is that nothing needs the statement -- the whole of
+     * the amendment is the claim that the system cannot tell a value it failed to honour from a
+     * value nobody authored. So a call arriving while the document is reading, rebuilding,
+     * importing, or undoing is refused rather than obeyed: those are the callers that are not a
+     * person. Returns false where nothing was held under that name; throws where the caller is
+     * not in a position to be a person.
+     *
+     * `holder` is the object holding it, or null for the document's own statements.
+     */
+    bool discardStatement(DocumentObject* holder, const char* name);
+
+    /// The same act for a whole object block this build could not construct, named by durable id.
+    bool discardUnreadObject(const char* uuid);
+
+    /// Which container holds statements under that name -- an object, or the document itself.
+    PropertyContainer* holderOfStatements(const std::string& holder);
+
+    /** Put the state a discard replaced into whichever transaction is active.
+     *
+     * @warning This function is only for internal use, by the undo machinery and by the act above.
+     */
+    void recordStatementBeforeDiscard(const std::string& holder,
+                                      const std::string& name,
+                                      bool wholeObject);
+
+    /** Put back, or take away, the kept block for one durable id.
+     *
+     * @warning This function is only for internal use, by the undo machinery.
+     */
+    void putBackUnreadObject(const std::string& uuid, const std::array<std::string, 3>& block);
+
+    /** Record every object holding such a statement as a blocked node (Amendment 19).
+     *
+     * A node is blocked by what it holds, not by having been asked to rebuild. An object whose
+     * geometry came back from the rebuild store is never asked, and would otherwise report itself
+     * up to date while its file states something this session could not produce.
+     *
+     * Asks every object first what it states about OTHER objects and could not honour, so that a
+     * configuration option naming a property this build does not have blocks the part whose value
+     * it would have set rather than only itself (Clause 19.6).
+     */
+    void blockWhatCouldNotBeHonoured();
+
+    /** Say which nodes are blocked now, and release the ones that no longer are.
+     *
+     * The half of the above that does not re-ask the holders, for the moment a holder has just
+     * said what it could not honour and nothing else has changed.
+     */
+    void recordWhatIsBlocked();
+
+    /** What a save from this document would take out of its file, each named (Amendment 19).
+     *
+     * Empty for an ordinary document, including one holding statements it could not honour: those
+     * are kept and given back, so a save loses nothing.
+     *
+     * It is what the READ recorded that it could not bring back and could not keep -- a file that
+     * ended part way through, a property whose value would not read back, an object dropped by an
+     * older reader. A status bit set when a read THREW cannot answer this: most losses do not
+     * throw, and a load-time flag says what once happened rather than what a write would now cost.
+     */
+    std::vector<std::string> whatASaveWouldLose() const;
+
+    /** Name content the file states that this session neither honoured nor kept (Amendment 19).
+     *
+     * Called by whoever reads the file, at the point the content is stepped over. Anything
+     * recorded here is what the next write would take out of the file, so it is worded as the
+     * person about to be asked to accept it would need to read it.
+     */
+    void recordUnkeptStatement(std::string said);
+
+    /** Write this document, accepting the loss by name.
+     *
+     * The way past the guard, which has to exist: a person may publish a fragment when that is
+     * what they want, and P8 requires a script be able to do what a person can. What is forbidden
+     * is not automation but a write that proceeds on an ASSUMED answer, so the caller states what
+     * it is losing and is refused unless that is what it would lose. Given per write; there is no
+     * way to turn it off.
+     *
+     * @param losing what the caller accepts losing -- must name what whatASaveWouldLose() reports
+     * @param path where to write, or empty to write over the document's own file
+     */
+    bool saveAcceptingLoss(const std::vector<std::string>& losing, const std::string& path);
+
+private:
+    /// True when this document may be written at all: a fragment may not, unless the loss was
+    /// accepted for this write (Amendment 19 Clause 19.3).
+    bool mayWrite();
+
+public:
+    //@}
 
     unsigned int getMemSize() const override;
 
@@ -472,6 +838,11 @@ public:
                               bool isNew = true,
                               const char* viewType = nullptr,
                               bool isPartial = false);
+    /// Add an object a file states, with the durable id the file gives it and the integer id
+    /// derived from that at its birth, which its element names carry.
+    DocumentObject* addReadObject(const char* sType,
+                                  const char* pObjectName,
+                                  const std::string& uuid);
 
     /**
      * @brief Add an object of a given type to the document.
@@ -510,6 +881,17 @@ public:
      */
     std::vector<DocumentObject*>
     addObjects(const char* sType, const std::vector<std::string>& objectNames, bool isNew = true);
+
+    /**
+     * @brief Whether this document's type accepts an object of the given content scope.
+     *
+     * The host half of Cruth content-scoping (ARCHITECTURE §7.1/§7.4, Amendment 8):
+     * a typed document accepts only the kinds its type admits. A Generic object is
+     * accepted by every document, and an untyped/legacy document (empty DocumentType,
+     * or a type carrying no policy yet) stays deliberately fluid and accepts every
+     * kind. The admission door (_addObject) consults this and fails loud on refusal.
+     */
+    bool admitsContentScope(DocumentObject::ContentScope scope) const;
 
     /**
      * @brief Remove an object from the document.
@@ -606,6 +988,17 @@ public:
     DocumentObject* getObjectByID(long id) const;
 
     /**
+     * @brief Resolve an object by its durable UUID (Amendment 3, Clause 3.6).
+     *
+     * The UUID is the durable binding a reference resolves through; the object's
+     * name is display/diagnostic only. Resolution is document-scoped.
+     *
+     * @param[in] uuid The durable UUID of the object to get.
+     * @return The document object with the given UUID or `nullptr` if none.
+     */
+    DocumentObject* getObjectByUuid(const Base::Uuid& uuid) const;
+
+    /**
      * @brief Check whether the object is in this document.
      *
      * @param[in] pFeat The object to check.
@@ -663,6 +1056,17 @@ public:
 
     /// Get a list of all document objects.
     const std::vector<DocumentObject*>& getObjects() const;
+    /// Put these objects, in this order, into the places they already hold in the list; every
+    /// other object keeps its place. The order is the order steps were made in (the tree shows it).
+    void arrangeObjects(const std::vector<DocumentObject*>& order);
+
+    /// The step the document stops building after, or `nullptr` when every step is built.
+    DocumentObject* getRollbackMarker() const;
+    /// Stop building after @p step; `nullptr`, or the last step, builds every step, and the
+    /// world frame builds none.
+    void setRollbackMarker(DocumentObject* step);
+    /// Whether @p obj is a step that comes after the roll-back marker, so it is not built.
+    bool isRolledBackPast(const DocumentObject* obj) const;
 
     /**
      * @brief Get all objects of a given type.
@@ -1262,6 +1666,9 @@ public:
                 return true;
             });
 
+    /// Tells every object but `sheet` that its rows or columns moved by `shift`.
+    void shiftCellReferences(const DocumentObject* sheet, const CellShift& shift);
+
     PyObject* getPyObject() override;
 
     std::string getFullName() const override;
@@ -1331,6 +1738,8 @@ protected:
      * @param[in] line The line number where this function is called.
      */
     void _checkTransaction(DocumentObject* pcDelObj, const Property* What, int line);
+    /// Reopen the last undo step, only while nothing is open, booked or undone.
+    bool _resumeLastTransaction();
 
     /**
      * @brief Break dependencies of an object.
@@ -1434,6 +1843,16 @@ protected:
      * AutoTransaction setting.
      */
     int _openTransaction(std::string name = "", int id = 0);
+
+    /** Open a transaction of this document's own for a deliberate act, if none is already open.
+     *
+     * A transaction is booked lazily and only becomes real when a change is recorded through the
+     * property machinery. A discard does not go through that machinery -- the statement it drops
+     * may have no property at all -- so it opens the transaction itself, or the act would never
+     * reach the undo stack (Amendment 19 Clause 19.4). Returns whether this call opened it, and
+     * therefore whether this call should commit it.
+     */
+    bool openTransactionForAct(const std::string& title);
     /**
      * @brief Commit the Command transaction.
      *
@@ -1465,7 +1884,24 @@ private:
 
     struct DocumentP* d;
 
+    /// uuid, type, and the block's own text -- see keepUnreadObject().
+    std::vector<std::array<std::string, 3>> _unreadObjects;
+    /// By step: the predecessor its file stated, and the built step that stood in for it.
+    std::map<std::string, std::pair<std::string, std::string>> _statedPredecessors;
+    /// What the file states and this session neither honoured nor kept -- recordUnkeptStatement().
+    std::vector<std::string> _unkeptStatements;
+    /// The file those losses were measured against: the one that still holds what is missing here.
+    std::string _unkeptAgainst;
+    bool _acceptedLoss {false};
+
     std::string oldLabel;
+    std::string rollbackMarkerBeforeChange;
+    void touchAcrossRollbackMove();
+    DocumentObject* objectByUid(const std::string& uid) const;
+    /// A step made while rolled back goes in at the marker, and the marker moves onto it.
+    void placeAtRollbackMarker(DocumentObject* obj);
+    /// A removed marker step hands the marker to the step before it.
+    void retreatRollbackMarkerFrom(const DocumentObject* obj);
     std::string myName;
     bool autoCreated;    // Flag to know if the document was automatically created at startup
 };

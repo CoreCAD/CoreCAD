@@ -1,0 +1,1740 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
+
+#include "gtest/gtest.h"
+
+#include <src/App/InitApplication.h>
+
+#include <App/Application.h>
+#include <App/Document.h>
+#include <App/DocumentObject.h>
+#include <Base/FileInfo.h>
+#include <Base/Placement.h>
+#include <Base/Rotation.h>
+
+#include <App/Expression.h>
+#include <App/Extension.h>
+#include <App/GroupExtension.h>
+#include <App/ObjectIdentifier.h>
+#include <App/PropertyExpressionEngine.h>
+#include <App/PropertyFile.h>
+#include <App/PropertyGeo.h>
+#include <App/PropertyLinks.h>
+#include <App/PropertyStandard.h>
+#include <App/PropertyUnits.h>
+#include <App/StoredRecipe.h>
+#include <App/Services.h>
+#include <Base/ServiceProvider.h>
+
+#include <algorithm>
+#include <cctype>
+#include <regex>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <numbers>
+#include <regex>
+#include <sstream>
+#include <string>
+
+using namespace App;
+
+// NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
+
+class StoredRecipeTest: public ::testing::Test
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+
+    void SetUp() override
+    {
+        _sourceName = App::GetApplication().getUniqueDocumentName("stored");
+        _source = App::GetApplication().newDocument(_sourceName.c_str(), "testUser");
+        _rebuiltName = App::GetApplication().getUniqueDocumentName("rebuilt");
+        _rebuilt = App::GetApplication().newDocument(_rebuiltName.c_str(), "testUser");
+    }
+
+    void TearDown() override
+    {
+        App::GetApplication().closeDocument(_rebuiltName.c_str());
+        if (_source != nullptr) {
+            App::GetApplication().closeDocument(_sourceName.c_str());
+        }
+    }
+
+    /// The objects half of a written recipe -- the half that must not depend on creation order.
+    /// The document half carries identity, which two live documents may never share.
+    static std::string objectsSection(const std::string& written)
+    {
+        const std::string::size_type start = written.find("<Objects");
+        return start == std::string::npos ? written : written.substr(start);
+    }
+
+    /// Write the source document's stored recipe and read it back into the empty one, which is
+    /// the whole claim being tested: the file returns the document, not a readable summary of it.
+    void roundTrip()
+    {
+        std::istringstream text(formatStoredRecipe(*_source));
+        restoreStoredRecipe(*_rebuilt, text);
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+    std::string _sourceName {};
+    std::string _rebuiltName {};
+    App::Document* _source {};
+    App::Document* _rebuilt {};
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
+};
+
+// The spine: an object comes back with its type, its in-document name, its durable identity and
+// its authored values -- and the geometry it computed does not come back at all, because a shape
+// is rebuilt from the recipe rather than stored in it.
+TEST_F(StoredRecipeTest, anObjectReturnsWithItsIdentityTypeAndAuthoredValues)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    box->Label.setValue("Bearing block");
+    static_cast<PropertyLength*>(box->getPropertyByName("Length"))->setValue(40.0);
+    static_cast<PropertyLength*>(box->getPropertyByName("Height"))->setValue(12.5);
+    _source->recompute();
+
+    // Act
+    roundTrip();
+
+    // Assert
+    DocumentObject* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    EXPECT_EQ(rebuilt->getTypeId().getName(), std::string("Part::Box"));
+    EXPECT_EQ(rebuilt->Uid.getValueStr(), box->Uid.getValueStr());
+    EXPECT_EQ(std::string(rebuilt->Label.getValue()), std::string("Bearing block"));
+    EXPECT_DOUBLE_EQ(
+        static_cast<PropertyLength*>(rebuilt->getPropertyByName("Length"))->getValue(),
+        40.0
+    );
+    EXPECT_DOUBLE_EQ(
+        static_cast<PropertyLength*>(rebuilt->getPropertyByName("Height"))->getValue(),
+        12.5
+    );
+}
+
+// A value has to return EXACTLY, not to the four decimals a person reads. The readable view
+// rounds an outcome on purpose; a file of record that did the same would quietly redesign the
+// part every time it was read.
+TEST_F(StoredRecipeTest, aValueReturnsExactlyNotRounded)
+{
+    // Arrange: a length no rounded rendering could reproduce.
+    constexpr double awkward = 12.345678901234567;
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    static_cast<PropertyLength*>(box->getPropertyByName("Length"))->setValue(awkward);
+
+    // Act
+    roundTrip();
+
+    // Assert: the same double, bit for bit.
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    EXPECT_EQ(static_cast<PropertyLength*>(rebuilt->getPropertyByName("Length"))->getValue(), awkward);
+}
+
+// A property added at runtime carries its declaration, or the value would have nowhere to land.
+TEST_F(StoredRecipeTest, aPropertyAddedAtRuntimeIsDeclaredAndReturns)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* note = static_cast<PropertyString*>(
+        box->addDynamicProperty("App::PropertyString", "Supplier", "Sourcing", "who makes it")
+    );
+    ASSERT_NE(note, nullptr);
+    note->setValue("Cruth Engineering");
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* returned = rebuilt->getPropertyByName("Supplier");
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(
+        std::string(static_cast<PropertyString*>(returned)->getValue()),
+        std::string("Cruth Engineering")
+    );
+    EXPECT_EQ(std::string(rebuilt->getPropertyGroup("Supplier")), std::string("Sourcing"));
+}
+
+// Declaring a property and giving it a value are two acts, and a property's flags answer only the
+// second. A property built into a class is declared by the class, so leaving its value out of the
+// file loses a value; a property a person added exists only because the file says so, and leaving
+// it out loses the property. Measured before this: the two whose values are not authored source --
+// the one that is not saved, and the one the object computes -- came back missing entirely, with
+// nothing said.
+//
+// Prop_NoPersist is the one that means what it says: not in the file at all, declaration included.
+TEST_F(StoredRecipeTest, aPropertyAddedAtRuntimeIsDeclaredEvenWhereItsValueIsNot)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+
+    struct Declared
+    {
+        const char* name;
+        short flags;
+        bool expected;  ///< whether the file is meant to bring the property back
+    };
+    const std::vector<Declared> declared {
+        {"Plain", App::Prop_None, true},
+        {"NotSaved", App::Prop_Transient, true},
+        {"Computed", App::Prop_Output, true},
+        {"Hidden", App::Prop_Hidden, true},
+        {"NotInTheFile", App::Prop_NoPersist, false},
+    };
+    for (const Declared& one : declared) {
+        ASSERT_NE(
+            box->addDynamicProperty("App::PropertyString", one.name, "Sourcing", "", one.flags),
+            nullptr
+        ) << one.name
+          << " was not declared on the source object";
+    }
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    for (const Declared& one : declared) {
+        auto* returned = rebuilt->getPropertyByName(one.name);
+        if (!one.expected) {
+            EXPECT_EQ(returned, nullptr)
+                << one.name << " says it is not to be in the file, and it came back";
+            continue;
+        }
+        ASSERT_NE(returned, nullptr) << one.name << " did not come back at all";
+        EXPECT_EQ(rebuilt->getPropertyType(returned), one.flags)
+            << one.name << " came back declared differently from how it was written";
+    }
+}
+
+// The other direction: the declaration coming back must not drag the value with it. A value the
+// object says is not saved is not saved, and the property comes back as the object makes it.
+TEST_F(StoredRecipeTest, aValueTheObjectDoesNotKeepIsStillNotKept)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* passing = static_cast<PropertyString*>(
+        box->addDynamicProperty("App::PropertyString", "NotSaved", "Sourcing", "", App::Prop_Transient)
+    );
+    ASSERT_NE(passing, nullptr);
+    passing->setValue("this session only");
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+    roundTrip();
+
+    // Assert
+    EXPECT_EQ(written.find("this session only"), std::string::npos)
+        << "the file carries a value the object says it does not keep";
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* returned = rebuilt->getPropertyByName("NotSaved");
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(std::string(static_cast<PropertyString*>(returned)->getValue()), std::string())
+        << "a value that is not carried came back anyway";
+}
+
+// A file a person handed in is called something, and what it is called is part of what they
+// handed in. The store names its entries by what they hold, so it renames the files inside them --
+// right for a shape, whose side file is named after the object that computed it, and wrong for a
+// file a person chose and named. Measured before this: a part given "Test.txt" came back holding
+// "1.txt", with the right bytes under the wrong name.
+TEST_F(StoredRecipeTest, aFileAPersonHandedInComesBackUnderItsOwnName)
+{
+    // Arrange
+    namespace fs = std::filesystem;
+    const fs::path folder = fs::path(Base::FileInfo::getTempFileName()) / "handed";
+    fs::create_directories(folder);
+    const fs::path handedIn = folder / "whatever-it-was-called-on-disk.txt";
+    std::ofstream(handedIn) << "the bytes a person handed in";
+
+    auto* obj = _source->addObject("App::DocumentObjectFileIncluded", "Handed");
+    ASSERT_NE(obj, nullptr);
+    auto* held = static_cast<PropertyFileIncluded*>(obj->getPropertyByName("File"));
+    ASSERT_NE(held, nullptr);
+    held->setValue(handedIn.string().c_str(), "Test.txt");
+    ASSERT_EQ(fs::path(held->getValue()).filename().string(), std::string("Test.txt"));
+
+    // Act
+    const fs::path assets = folder / "assets";
+    fs::create_directories(assets);
+    std::istringstream text(formatStoredRecipe(*_source, assets.string()));
+    restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets.string());
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Handed");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* returned = static_cast<PropertyFileIncluded*>(rebuilt->getPropertyByName("File"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_NE(std::string(returned->getValue()), std::string()) << "the file did not come back";
+    EXPECT_EQ(fs::path(returned->getValue()).filename().string(), std::string("Test.txt"))
+        << "the file came back under a name nobody chose";
+
+    std::ifstream back(returned->getValue());
+    const std::string bytes {std::istreambuf_iterator<char>(back), std::istreambuf_iterator<char>()};
+    EXPECT_EQ(bytes, std::string("the bytes a person handed in"))
+        << "the name came back and the bytes did not";
+
+    std::error_code ignored;
+    fs::remove_all(folder.parent_path(), ignored);
+}
+
+// A rotation of no angle still has an axis a person picked, and the quaternion cannot hold it:
+// every axis gives the same quaternion when nothing turns. Measured before this: pick an axis,
+// save, reopen, and the part is set to turn about the default one -- so typing an angle afterwards
+// turns it about something nobody chose.
+TEST_F(StoredRecipeTest, anAxisChosenBeforeAnyAngleComesBack)
+{
+    // Arrange
+    auto* obj = _source->addObject("App::VarSet", "Turned");
+    ASSERT_NE(obj, nullptr);
+    auto* placed = static_cast<PropertyPlacement*>(
+        obj->addDynamicProperty("App::PropertyPlacement", "Plm")
+    );
+    auto* turned = static_cast<PropertyRotation*>(
+        obj->addDynamicProperty("App::PropertyRotation", "Rot")
+    );
+    ASSERT_NE(placed, nullptr);
+    ASSERT_NE(turned, nullptr);
+    placed->setValue(
+        Base::Placement(Base::Vector3d(), Base::Rotation(Base::Vector3d(1.0, 2.0, 3.0), 0.0))
+    );
+    turned->setValue(Base::Rotation(Base::Vector3d(3.0, 2.0, 1.0), 0.0));
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Turned");
+    ASSERT_NE(rebuilt, nullptr);
+
+    const auto axisOf = [](const Base::Rotation& rotation) {
+        Base::Vector3d axis;
+        double angle {};
+        rotation.getRawValue(axis, angle);
+        EXPECT_DOUBLE_EQ(angle, 0.0) << "a rotation of no angle came back turning";
+        return axis;
+    };
+
+    const Base::Vector3d fromPlacement = axisOf(
+        static_cast<PropertyPlacement*>(rebuilt->getPropertyByName("Plm"))->getValue().getRotation()
+    );
+    EXPECT_DOUBLE_EQ(fromPlacement.x, 1.0);
+    EXPECT_DOUBLE_EQ(fromPlacement.y, 2.0);
+    EXPECT_DOUBLE_EQ(fromPlacement.z, 3.0);
+
+    const Base::Vector3d fromRotation = axisOf(
+        static_cast<PropertyRotation*>(rebuilt->getPropertyByName("Rot"))->getValue()
+    );
+    EXPECT_DOUBLE_EQ(fromRotation.x, 3.0);
+    EXPECT_DOUBLE_EQ(fromRotation.y, 2.0);
+    EXPECT_DOUBLE_EQ(fromRotation.z, 1.0);
+}
+
+// The other direction, and the reason the axis is not simply written beside every rotation: a
+// rotation that DOES turn is stated by its quaternion alone and comes back bit for bit. Rebuilding
+// one from an angle goes through sine and cosine, which drifted a saved placement a step on every
+// reopen and did not even drift the same way on every platform.
+TEST_F(StoredRecipeTest, aRotationThatTurnsComesBackExactly)
+{
+    // Arrange
+    auto* obj = _source->addObject("App::VarSet", "Turned");
+    ASSERT_NE(obj, nullptr);
+    auto* placed = static_cast<PropertyPlacement*>(
+        obj->addDynamicProperty("App::PropertyPlacement", "Plm")
+    );
+    ASSERT_NE(placed, nullptr);
+    const Base::Rotation quarterTurn(Base::Vector3d(1.0, 2.0, 3.0), std::numbers::pi / 2.0);
+    placed->setValue(Base::Placement(Base::Vector3d(), quarterTurn));
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Turned");
+    ASSERT_NE(rebuilt, nullptr);
+    const Base::Rotation back
+        = static_cast<PropertyPlacement*>(rebuilt->getPropertyByName("Plm"))->getValue().getRotation();
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_DOUBLE_EQ(back[i], quarterTurn[i]) << "the rotation came back a step off at " << i;
+    }
+}
+
+// The document's own authored facts are part of the recipe. The readable view walks objects only,
+// so a document's comment, its author and its identity had nowhere to go at all.
+//
+// The source document is closed before the file is read back, because that is the real case -- a
+// file becomes a document when it is opened -- and because two documents open at once may not
+// share one identity: the document model mints a new uuid for the second, on purpose.
+TEST_F(StoredRecipeTest, theDocumentsOwnFactsAreCarried)
+{
+    // Arrange
+    _source->Comment.setValue("first cut of the housing");
+    _source->CreatedBy.setValue("S. Barton");
+    const std::string written = formatStoredRecipe(*_source);
+    const std::string identity = _source->Uid.getValueStr();
+    App::GetApplication().closeDocument(_sourceName.c_str());
+    _source = nullptr;
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    EXPECT_EQ(std::string(_rebuilt->Comment.getValue()), std::string("first cut of the housing"));
+    EXPECT_EQ(std::string(_rebuilt->CreatedBy.getValue()), std::string("S. Barton"));
+    EXPECT_EQ(_rebuilt->Uid.getValueStr(), identity);
+}
+
+// Blocks are written in durable-id order, so where a block sits in the file does not depend on
+// the order the objects were made in. The order itself is stated by each block naming the step it
+// comes after, so a reordered session changes those links and nothing else.
+TEST_F(StoredRecipeTest, blocksSitInIdOrderWhateverTheCreationOrder)
+{
+    // Arrange: the same two objects, created in opposite orders, given matching identities.
+    auto* first = _source->addObject("Part::Box", "First");
+    auto* second = _source->addObject("Part::Box", "Second");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+
+    auto* laterSecond = _rebuilt->addObject("Part::Box", "Second");
+    auto* laterFirst = _rebuilt->addObject("Part::Box", "First");
+    ASSERT_NE(laterSecond, nullptr);
+    ASSERT_NE(laterFirst, nullptr);
+    laterFirst->Uid.setValue(first->Uid.getValueStr());
+    laterSecond->Uid.setValue(second->Uid.getValueStr());
+
+    // Act
+    std::string written = objectsSection(formatStoredRecipe(*_source));
+    std::string writtenInReverse = objectsSection(formatStoredRecipe(*_rebuilt));
+
+    // Assert
+    const auto withoutLinks = [](std::string text) {
+        static const std::regex link(R"( after="[^"]*")");
+        return std::regex_replace(text, link, "");
+    };
+    EXPECT_NE(written, writtenInReverse) << "the file does not state which step came first";
+    EXPECT_EQ(withoutLinks(written), withoutLinks(writtenInReverse));
+}
+
+namespace
+{
+std::vector<std::string> namesInOrder(const App::Document& doc)
+{
+    std::vector<std::string> names;
+    for (const DocumentObject* obj : doc.getObjects()) {
+        names.emplace_back(obj->getNameInDocument());
+    }
+    return names;
+}
+}  // namespace
+
+// The order steps were made in is part of the design: a cut shown above the sketch it cuts with
+// reads as nonsense. Measured before this: the reader built in file order, which is id order, so
+// every reopen shuffled the steps.
+TEST_F(StoredRecipeTest, stepsComeBackInTheOrderTheyWereMade)
+{
+    // Arrange -- ids chosen to run against the creation order.
+    const std::vector<std::pair<const char*, const char*>> steps {
+        {"Sketch", "ffffffff-0000-4000-8000-000000000001"},
+        {"Pad", "88888888-0000-4000-8000-000000000002"},
+        {"Pocket", "00000000-0000-4000-8000-000000000003"},
+    };
+    for (const auto& [name, uid] : steps) {
+        auto* obj = _source->addObject("App::VarSet", name);
+        ASSERT_NE(obj, nullptr);
+        obj->Uid.setValue(uid);
+    }
+
+    // Act
+    roundTrip();
+
+    // Assert
+    EXPECT_EQ(namesInOrder(*_rebuilt), (std::vector<std::string> {"Sketch", "Pad", "Pocket"}));
+}
+
+// Two sides of a merge that each inserted a step after the same one leave two blocks naming the
+// same predecessor. Both steps come back, each before what follows it, in a settled order.
+TEST_F(StoredRecipeTest, twoStepsInsertedAfterTheSameStepBothComeBackInASettledOrder)
+{
+    // Arrange
+    for (const char* name : {"Base", "Mine", "Theirs"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    const std::string baseUid = _source->getObject("Base")->Uid.getValueStr();
+    const std::string mineUid = _source->getObject("Mine")->Uid.getValueStr();
+    std::string written = formatStoredRecipe(*_source);
+    const std::string theirsAfterMine = "name=\"Theirs\" after=\"" + mineUid + "\"";
+    const std::string::size_type at = written.find(theirsAfterMine);
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, theirsAfterMine.size(), "name=\"Theirs\" after=\"" + baseUid + "\"");
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    const std::vector<std::string> order = namesInOrder(*_rebuilt);
+    ASSERT_EQ(order.size(), 3U);
+    EXPECT_EQ(order.front(), "Base");
+    const std::string mineFirst = _source->getObject("Mine")->Uid.getValueStr()
+            < _source->getObject("Theirs")->Uid.getValueStr()
+        ? "Mine"
+        : "Theirs";
+    EXPECT_EQ(order[1], mineFirst) << "the step stated first in the file did not go first";
+}
+
+// A reference that leaves the document is carried by the durable pair the link property already
+// writes -- the target document's uuid beside the object's uuid -- with the file path left as a
+// locator hint. The recipe does not invent a second, weaker way of saying it.
+TEST_F(StoredRecipeTest, aReferenceThatLeavesTheDocumentIsCarriedByDurableIds)
+{
+    // Arrange: a link that leaves the document. Both documents must be saved first -- a link
+    // between documents is addressed by file as well as by identity.
+    const std::string here = Base::FileInfo::getTempPath() + "stored_recipe_here.FCStd";
+    const std::string there = Base::FileInfo::getTempPath() + "stored_recipe_there.FCStd";
+    auto* box = _source->addObject("Part::Box", "Block");
+    auto* elsewhere = _rebuilt->addObject("Part::Box", "Elsewhere");
+    ASSERT_NE(box, nullptr);
+    ASSERT_NE(elsewhere, nullptr);
+    _source->saveAs(here.c_str());
+    _rebuilt->saveAs(there.c_str());
+
+    auto* link = static_cast<PropertyXLink*>(
+        box->addDynamicProperty("App::PropertyXLink", "Neighbour")
+    );
+    ASSERT_NE(link, nullptr);
+    link->setValue(elsewhere);
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+
+    // Assert -- both halves of the binding are in the file, and it is no longer a stated gap.
+    EXPECT_NE(written.find("docUuid=\"" + _rebuilt->Uid.getValueStr() + "\""), std::string::npos);
+    EXPECT_NE(written.find("uuid=\"" + elsewhere->Uid.getValueStr() + "\""), std::string::npos);
+    EXPECT_EQ(written.find("reason=\"cross-document reference\""), std::string::npos);
+
+    Base::FileInfo(here).deleteFile();
+    Base::FileInfo(there).deleteFile();
+    Base::FileInfo(here + ".recipe").deleteFile();
+    Base::FileInfo(there + ".recipe").deleteFile();
+}
+
+// A link naming one empty part and a link naming no part are different values, and both come back
+// as written. Written alike, the empty part was dropped on reading, and a pattern whose direction
+// named an axis that way lost its direction on reopening (#137).
+TEST_F(StoredRecipeTest, anEmptyPartIsNotTheSameAsNoPart)
+{
+    // Arrange
+    auto* target = _source->addObject("Part::Box", "Axis");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* emptyPart = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "EmptyPart", "Base", "")
+    );
+    auto* noPart = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "NoPart", "Base", "")
+    );
+    ASSERT_NE(emptyPart, nullptr);
+    ASSERT_NE(noPart, nullptr);
+    emptyPart->setValue(target, std::vector<std::string> {""});
+    noPart->setValue(target, std::vector<std::string> {});
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    auto* returnedEmpty = static_cast<PropertyLinkSub*>(rebuiltHolder->getPropertyByName("EmptyPart"));
+    auto* returnedNone = static_cast<PropertyLinkSub*>(rebuiltHolder->getPropertyByName("NoPart"));
+    ASSERT_NE(returnedEmpty, nullptr);
+    ASSERT_NE(returnedNone, nullptr);
+    EXPECT_EQ(returnedEmpty->getSubValues(), std::vector<std::string> {""});
+    EXPECT_TRUE(returnedNone->getSubValues().empty());
+    EXPECT_EQ(returnedEmpty->getValue(), _rebuilt->getObject("Axis"));
+    EXPECT_EQ(returnedNone->getValue(), _rebuilt->getObject("Axis"));
+}
+
+// A person's own text goes into the file as the value of an attribute -- a tooltip, a group, the
+// name of a picked part -- and it can hold any character. Measured before this: one `&` in a
+// tooltip saved without complaint, and the document then refused to open at all (#138).
+TEST_F(StoredRecipeTest, textAPersonTypedComesBackWhateverItHolds)
+{
+    // Arrange
+    const std::string awkward = "a \"quoted\" & <tagged> 'word'\tand a\nsecond line";
+    auto* target = _source->addObject("Part::Box", "Target");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* clearance = holder->addDynamicProperty(
+        "App::PropertyLength",
+        "Clearance",
+        awkward.c_str(),
+        awkward.c_str()
+    );
+    ASSERT_NE(clearance, nullptr);
+    auto* picked = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "Picked", "Base", "")
+    );
+    ASSERT_NE(picked, nullptr);
+    picked->setValue(target, std::vector<std::string> {awkward});
+
+    // Act
+    roundTrip();
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    ASSERT_NE(rebuilt->getPropertyByName("Clearance"), nullptr);
+    EXPECT_EQ(std::string(rebuilt->getPropertyGroup("Clearance")), awkward);
+    EXPECT_EQ(std::string(rebuilt->getPropertyDocumentation("Clearance")), awkward);
+    auto* returned = static_cast<PropertyLinkSub*>(rebuilt->getPropertyByName("Picked"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(returned->getValue(), _rebuilt->getObject("Target"));
+    EXPECT_EQ(returned->getSubValues(), std::vector<std::string> {awkward});
+}
+
+// A reference comes back pointing at the same object, and the file says so by durable id rather
+// than by the target's name.
+TEST_F(StoredRecipeTest, aReferenceReturnsAndIsWrittenByDurableId)
+{
+    // Arrange
+    auto* target = _source->addObject("Part::Box", "Block");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* link = static_cast<PropertyLink*>(
+        holder->addDynamicProperty("App::PropertyLink", "BuiltOn", "Base", "what it sits on")
+    );
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert: the file binds by identity, not by the name "Block"...
+    EXPECT_NE(written.find("<Target uuid=\"" + target->Uid.getValueStr() + "\"/>"), std::string::npos);
+
+    // ...and the rebuilt reference points at the rebuilt object.
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    auto* rebuiltTarget = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    ASSERT_NE(rebuiltTarget, nullptr);
+    auto* returned = static_cast<PropertyLink*>(rebuiltHolder->getPropertyByName("BuiltOn"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(returned->getValue(), rebuiltTarget);
+}
+
+// The binding survives the objects being renamed on the way in. This is the whole reason for
+// binding by durable id: read the same file into a document that already holds a "Block" and the
+// rebuilt objects get different names -- a reference written by name would land on the wrong
+// object or on nothing at all.
+TEST_F(StoredRecipeTest, aReferenceSurvivesTheObjectsBeingRenamed)
+{
+    // Arrange: the source, and a destination that already uses the names it will ask for.
+    auto* target = _source->addObject("Part::Box", "Block");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "BuiltOn"))
+        ->setValue(target);
+
+    auto* squatter = _rebuilt->addObject("Part::Box", "Block");
+    ASSERT_NE(squatter, nullptr);
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert: the rebuilt target took a different name...
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    auto* returned = static_cast<PropertyLink*>(rebuiltHolder->getPropertyByName("BuiltOn"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_NE(returned->getValue(), nullptr);
+    EXPECT_NE(std::string(returned->getValue()->getNameInDocument()), std::string("Block"));
+
+    // ...and the reference still found it, because it was bound to its identity.
+    EXPECT_EQ(returned->getValue()->Uid.getValueStr(), target->Uid.getValueStr());
+    EXPECT_NE(returned->getValue(), squatter);
+}
+
+// Which face was picked rides along with the identity. A reference binds by durable id, but a
+// sketch drawn on one face of a part and the same sketch on the opposite face are not the same
+// design, and only the picked element tells them apart.
+TEST_F(StoredRecipeTest, thePickedFaceRidesAlongsideTheIdentity)
+{
+    // Arrange
+    auto* target = _source->addObject("Part::Box", "Block");
+    auto* holder = _source->addObject("Part::Box", "Holder");
+    ASSERT_NE(target, nullptr);
+    ASSERT_NE(holder, nullptr);
+    auto* link = static_cast<PropertyLinkSub*>(
+        holder->addDynamicProperty("App::PropertyLinkSub", "Face")
+    );
+    ASSERT_NE(link, nullptr);
+    link->setValue(target, {"Face6"});
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltHolder, nullptr);
+    auto* returned = static_cast<PropertyLinkSub*>(rebuiltHolder->getPropertyByName("Face"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_EQ(returned->getSubValues().size(), 1u);
+    EXPECT_EQ(returned->getSubValues().front(), std::string("Face6"));
+    EXPECT_EQ(returned->getValue(), _rebuilt->getObject("Block"));
+}
+
+// A formula is authored content -- the value a person typed is the formula, not the number it
+// produced -- so it has to come back as a formula.
+TEST_F(StoredRecipeTest, aFormulaReturnsAsAFormula)
+{
+    // Arrange
+    auto* driver = _source->addObject("Part::Box", "Driver");
+    auto* driven = _source->addObject("Part::Box", "Driven");
+    ASSERT_NE(driver, nullptr);
+    ASSERT_NE(driven, nullptr);
+    static_cast<PropertyLength*>(driver->getPropertyByName("Length"))->setValue(30.0);
+    driven->setExpression(
+        App::ObjectIdentifier::parse(driven, "Length"),
+        std::shared_ptr<App::Expression>(App::Expression::parse(driven, "Driver.Length * 2"))
+    );
+    _source->recompute();
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Driven");
+    ASSERT_NE(rebuilt, nullptr);
+    const App::ObjectIdentifier path = App::ObjectIdentifier::parse(rebuilt, "Length");
+    const App::PropertyExpressionEngine::ExpressionInfo info = rebuilt->getExpression(path);
+    ASSERT_NE(info.expression, nullptr);
+    EXPECT_EQ(info.expression->toString(), std::string("Driver.Length * 2"));
+}
+
+TEST_F(StoredRecipeTest, aFormulaReadingItsOwnObjectReturnsAsWritten)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    box->setExpression(
+        App::ObjectIdentifier::parse(box, "Width"),
+        std::shared_ptr<App::Expression>(App::Expression::parse(box, "Length * 2"))
+    );
+    _source->recompute();
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    const App::PropertyExpressionEngine::ExpressionInfo info = rebuilt->getExpression(
+        App::ObjectIdentifier::parse(rebuilt, "Width")
+    );
+    ASSERT_NE(info.expression, nullptr);
+    EXPECT_EQ(info.expression->toString(), std::string("Length * 2"));
+}
+
+TEST_F(StoredRecipeTest, aFormulaReadingPartOfAnotherObjectsValueKeepsThatObject)
+{
+    // Arrange
+    auto* driver = _source->addObject("Part::Box", "Driver");
+    auto* driven = _source->addObject("Part::Box", "Driven");
+    ASSERT_NE(driver, nullptr);
+    ASSERT_NE(driven, nullptr);
+    driven->setExpression(
+        App::ObjectIdentifier::parse(driven, "Length"),
+        std::shared_ptr<App::Expression>(App::Expression::parse(driven, "Driver.Placement.Base.x"))
+    );
+    _source->recompute();
+
+    // Act
+    std::istringstream text(formatStoredRecipe(*_source));
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    auto* rebuilt = _rebuilt->getObject("Driven");
+    ASSERT_NE(rebuilt, nullptr);
+    const App::PropertyExpressionEngine::ExpressionInfo info = rebuilt->getExpression(
+        App::ObjectIdentifier::parse(rebuilt, "Length")
+    );
+    ASSERT_NE(info.expression, nullptr);
+    EXPECT_EQ(info.expression->toString(), std::string("Driver.Placement.Base.x"));
+}
+
+// The file states its content and never a count of it, because a count is a landmine in a file
+// whose whole purpose is that people diff and merge it.
+//
+// This is the measured failure, reconstructed exactly. One ancestor part; two people each add one
+// independent feature; both sides therefore write the SAME larger number on the line that declares
+// how many objects there are, so a textual merge takes that line without even raising a conflict.
+// Resolved the natural way -- keep both sides' objects -- the document used to open with no warning
+// of any kind and one of the two added features simply absent.
+TEST_F(StoredRecipeTest, aTextualMergeThatKeepsBothSidesLosesNothing)
+{
+    // Arrange -- the common ancestor, and the two blocks the two people each added.
+    auto* shared = _source->addObject("Part::Box", "Shared");
+    ASSERT_NE(shared, nullptr);
+    auto* mine = _source->addObject("Part::Box", "Mine");
+    auto* yours = _source->addObject("Part::Box", "Yours");
+    ASSERT_NE(mine, nullptr);
+    ASSERT_NE(yours, nullptr);
+    const std::string minesBlock = formatStoredRecipeObject(*mine);
+    const std::string yoursBlock = formatStoredRecipeObject(*yours);
+    _source->removeObject("Mine");
+    _source->removeObject("Yours");
+
+    // The ancestor, plus both added blocks: what a person or a merge tool produces by keeping
+    // both sides. Any declared length the file still carried would name one fewer than is there.
+    std::string merged = formatStoredRecipe(*_source);
+    const std::string::size_type close = merged.find("</Objects>");
+    ASSERT_NE(close, std::string::npos);
+    merged.insert(close, minesBlock + yoursBlock);
+
+    const std::string identity = _source->Uid.getValueStr();
+    App::GetApplication().closeDocument(_sourceName.c_str());
+    _source = nullptr;
+
+    // Act
+    std::istringstream text(merged);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- both people's work is there.
+    EXPECT_NE(_rebuilt->getObject("Shared"), nullptr);
+    EXPECT_NE(_rebuilt->getObject("Mine"), nullptr) << "one side's added feature was dropped";
+    EXPECT_NE(_rebuilt->getObject("Yours"), nullptr) << "one side's added feature was dropped";
+    EXPECT_EQ(_rebuilt->Uid.getValueStr(), identity);
+}
+
+// A file that restated its own content could disagree with itself. Nothing in the recipe declares
+// how many of anything follows, so there is no second answer to keep in step.
+//
+// The document holds one of each kind of list a property can write, because the question is not
+// whether the recipe's own framing declares a length -- it never did -- but whether anything
+// written INTO it does. Measured when this was widened: a document of ordinary content carried
+// eighteen declared lengths, every one of them spelled with a small c, which the assertion of the
+// day did not look for.
+TEST_F(StoredRecipeTest, theFileDeclaresNoLengths)
+{
+    // Arrange
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    box->Label.setValue("Bearing block");
+
+    auto* strings = freecad_cast<PropertyStringList*>(
+        box->addDynamicProperty("App::PropertyStringList", "Words")
+    );
+    ASSERT_NE(strings, nullptr);
+    strings->setValues(std::vector<std::string> {"one", "two", "three"});
+
+    auto* numbers = freecad_cast<PropertyIntegerList*>(
+        box->addDynamicProperty("App::PropertyIntegerList", "Counts")
+    );
+    ASSERT_NE(numbers, nullptr);
+    numbers->setValues({1, 2, 3});
+
+    auto* pairs = freecad_cast<PropertyMap*>(box->addDynamicProperty("App::PropertyMap", "Pairs"));
+    ASSERT_NE(pairs, nullptr);
+    pairs->setValues({{"a", "1"}, {"b", "2"}});
+
+    auto* choice = freecad_cast<PropertyEnumeration*>(
+        box->addDynamicProperty("App::PropertyEnumeration", "Choice")
+    );
+    ASSERT_NE(choice, nullptr);
+    choice->setEnums({"first", "second", "third"});
+    choice->setValue("second");
+
+    box->setExpression(
+        App::ObjectIdentifier::parse(box, "Width"),
+        std::shared_ptr<App::Expression>(App::Expression::parse(box, "Block.Length / 2"))
+    );
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+
+    // Assert -- in either spelling, anywhere in the file.
+    std::string lowered = written;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    const std::string::size_type declared = lowered.find("count=\"");
+    EXPECT_EQ(declared, std::string::npos)
+        << "the file declares a length: "
+        << written.substr(declared == std::string::npos ? 0 : declared, 60);
+}
+
+// The same merge, one level down. Two people each add an entry to a list a part already had, so
+// both sides write the same larger length and a textual merge takes it without a conflict. Kept
+// both ways -- which is what the merge produces -- a reader that believed a declared length read
+// the first few and stopped, and one person's entry was gone with nothing said.
+TEST_F(StoredRecipeTest, aListThatBothSidesAddedToKeepsBothAdditions)
+{
+    // Arrange -- the ancestor list, as it stood before either person touched it.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* strings = freecad_cast<PropertyStringList*>(
+        box->addDynamicProperty("App::PropertyStringList", "Words")
+    );
+    ASSERT_NE(strings, nullptr);
+    strings->setValues(std::vector<std::string> {"ancestor"});
+
+    std::string merged = formatStoredRecipe(*_source);
+
+    // What keeping both sides produces: the ancestor entry, and one entry from each person.
+    const std::string::size_type close = merged.find("</StringList>");
+    ASSERT_NE(close, std::string::npos) << "the list was not written as stated entries";
+    merged.insert(close, "<String value=\"mine\"/>\n<String value=\"yours\"/>\n");
+
+    // Act
+    std::istringstream text(merged);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- both people's entries are there, and so is what they started from.
+    auto* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* read = freecad_cast<PropertyStringList*>(rebuilt->getPropertyByName("Words"));
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->getValues(), std::vector<std::string>({"ancestor", "mine", "yours"}))
+        << "an addition was dropped without a word";
+}
+
+/// A stand-in for the view layer, so that the App half of the appearance question can be tested
+/// where there is no GUI to answer it.
+///
+/// The container it hands back is another document object, because what matters here is that the
+/// file asks, carries what it is given, and hands it back to whoever answers the same question on
+/// the way in -- not what kind of container the answer happens to be.
+class StubAppearance: public App::DisplayStateProvider
+{
+public:
+    App::PropertyContainer* appearanceOf(const App::DocumentObject& object) const override
+    {
+        const char* name = object.getNameInDocument();
+        if (name == nullptr) {
+            return nullptr;
+        }
+        const auto found = _byName.find(name);
+        return found == _byName.end() ? nullptr : found->second;
+    }
+
+    void answerFor(const std::string& name, App::PropertyContainer* container)
+    {
+        _byName[name] = container;
+    }
+
+    /// A session with no view layer answers nothing, which is what a headless save does.
+    void answerNothing()
+    {
+        _byName.clear();
+    }
+
+    static StubAppearance& theOne()
+    {
+        static StubAppearance* stub = [] {
+            auto* made = new StubAppearance;
+            Base::registerServiceImplementation<App::DisplayStateProvider>(made);
+            return made;
+        }();
+        return *stub;
+    }
+
+private:
+    std::map<std::string, App::PropertyContainer*> _byName;
+};
+
+// A colour a person chose is authored content: nothing in the document produces it, and a record
+// that dropped it would come back a different-looking part. So the file of record carries it, in a
+// block of its own inside the object -- and the deletable project cache, which is where the whole
+// of the display state used to live, no longer decides whether it survives.
+TEST_F(StoredRecipeTest, theChosenAppearanceIsCarriedInTheFile)
+{
+    // Arrange -- an object, and somewhere the view layer keeps how it looks.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    auto* colour = static_cast<PropertyLength*>(chosen->getPropertyByName("Length"));
+    ASSERT_NE(colour, nullptr);
+    colour->setValue(0.75);
+    StubAppearance::theOne().answerFor("Block", chosen);
+
+    // Act
+    const std::string written = formatStoredRecipe(*_source);
+
+    // Assert -- the object's block names an appearance and carries it.
+    EXPECT_NE(written.find("display=\"1\""), std::string::npos);
+    EXPECT_NE(written.find("<Display>"), std::string::npos);
+
+    // And it is handed back to whoever answers the same question on the way in.
+    auto* returned = _rebuilt->addObject("Part::Box", "Returned");
+    ASSERT_NE(returned, nullptr);
+    StubAppearance::theOne().answerFor("Block", returned);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    EXPECT_DOUBLE_EQ(
+        static_cast<PropertyLength*>(returned->getPropertyByName("Length"))->getValue(),
+        0.75
+    );
+
+    StubAppearance::theOne().answerNothing();
+}
+
+// A session with nowhere to put an appearance KEEPS the block rather than stepping over it.
+//
+// Measured before this: a headless open-and-save -- the batch script Clause 19.6 names as the actor
+// most able to cause damage at scale -- stripped every colour a person had chosen from every part
+// it touched, silently, and a test asserted that was correct. Nothing in this session depends on an
+// appearance, so the block is kept, not honoured: it blocks nothing and the document is still
+// whole. What would make the document less than its file is losing it.
+TEST_F(StoredRecipeTest, aSessionWithNoViewLayerKeepsTheAppearanceItCannotApply)
+{
+    // Arrange -- a file written WITH an appearance.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    StubAppearance::theOne().answerFor("Block", chosen);
+    const std::string withAppearance = formatStoredRecipe(*_source);
+    ASSERT_NE(withAppearance.find("<Display>"), std::string::npos);
+
+    // Act -- read and written again by a session that has no view layer.
+    StubAppearance::theOne().answerNothing();
+    std::istringstream text(withAppearance);
+    restoreStoredRecipe(*_rebuilt, text);
+    const std::string written = formatStoredRecipe(*_rebuilt);
+
+    // Assert -- the words the file stated come back, in their own place, byte for byte. Byte
+    // identity is the assertion that matters: a block re-emitted correctly but relocated produces
+    // a diff on a save that changed nothing (Clause 18.1). Compared from <Objects> on, because a
+    // second live copy of a document is minted a fresh identity by the model's own rule, so the
+    // document block is the one part that is meant to differ here.
+    EXPECT_NE(_rebuilt->getObject("Block"), nullptr);
+    EXPECT_NE(written.find("<Display>"), std::string::npos);
+    EXPECT_NE(written.find("display=\"1\""), std::string::npos);
+    const std::string objects = written.substr(written.find("<Objects>"));
+    const std::string stated = withAppearance.substr(withAppearance.find("<Objects>"));
+    EXPECT_EQ(objects, stated);
+
+    // And it costs the document nothing: nothing in this session depends on an appearance, so no
+    // node is blocked by one and the document does not report itself short of its file.
+    EXPECT_FALSE(_rebuilt->holdsUnreadContent());
+}
+
+// A file may name an object of a type this build cannot construct -- a module not compiled in, an
+// add-on absent, a scripted class gone. Measured before this: the read ABORTED at that object, so
+// the objects stated after it were lost too (three objects in, one out), and an ordinary save then
+// wrote that loss into the file permanently. The object's own content is not this build's to
+// discard, and neither is its neighbours'.
+TEST_F(StoredRecipeTest, anObjectThisBuildCannotConstructKeepsItsNeighboursAndItself)
+{
+    // Arrange -- three objects, then one of them retyped to something no build here registers.
+    for (const char* name : {"Alpha", "Beta", "Gamma"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.find("type=\"App::VarSet\" name=\"Beta\"");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, std::strlen("type=\"App::VarSet\""), "type=\"Absent::Feature\"");
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control. Losing them is the measured failure.
+    EXPECT_NE(_rebuilt->getObject("Alpha"), nullptr)
+        << "an object stated before the unreadable one was lost";
+    EXPECT_NE(_rebuilt->getObject("Gamma"), nullptr)
+        << "an object stated after the unreadable one was lost";
+    EXPECT_EQ(_rebuilt->getObject("Beta"), nullptr)
+        << "a type this build cannot construct was constructed anyway";
+
+    // The document says what it is: holding something its file states that it could not honour.
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a statement it could not honour";
+    ASSERT_EQ(_rebuilt->unreadObjects().size(), 1U);
+
+    // And it gives the statement back exactly, in its own place: writing what was just read
+    // reproduces the file it was read from.
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+}
+
+// A file may state a reference to an object the document does not hold -- the ordinary result of
+// a branch that deleted the target, which is the workflow this format exists for. Measured before
+// this: the link resolved to nothing, and the next save wrote an empty reference over the uuid,
+// so where it pointed was gone and no merge could ever see that anything had been lost.
+TEST_F(StoredRecipeTest, aReferenceWhoseTargetIsAbsentKeepsWhereItPointed)
+{
+    // Arrange -- one object pointing at another.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    auto* target = _source->addObject("App::VarSet", "Target");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_NE(target, nullptr);
+    auto* link = static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "Uses"));
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+    _source->recompute();
+    const std::string targetUuid = target->Uid.getValueStr();
+
+    // ... and the target's block struck out of the file, leaving the reference naming something
+    // this document does not have.
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type names = written.find("uuid=\"" + targetUuid + "\" type=");
+    ASSERT_NE(names, std::string::npos);
+    const std::string::size_type start = written.rfind('\n', names) + 1;
+    const std::string::size_type closes = written.find("</Object>", names);
+    ASSERT_NE(closes, std::string::npos);
+    const std::string::size_type end = written.find('\n', closes) + 1;
+    written.erase(start, end - start);
+    ASSERT_EQ(written.find("name=\"Target\""), std::string::npos);
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the holder is back, and the statement it carries is still where it pointed.
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(targetUuid), std::string::npos)
+        << "a save erased the target a reference named because this document could not resolve it";
+
+    // Said again exactly as it was stated, and in its own place: reading a file and writing it
+    // back changes nothing, which is what lets a merge see a deletion as a deletion.
+    EXPECT_EQ(objectsSection(again), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+
+    // The document says what it is, rather than presenting a reference to nothing as authored.
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a reference it could not resolve";
+}
+
+// The other half of keeping a statement: it is kept only until something supersedes it. A person
+// who points the reference somewhere real has authored a value, and the file must say THAT --
+// otherwise the note that protected their work starts overwriting it.
+TEST_F(StoredRecipeTest, aReferencePointedSomewhereRealNoLongerStatesWhatWasKept)
+{
+    // Arrange -- the same absent target, kept.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    auto* target = _source->addObject("App::VarSet", "Target");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_NE(target, nullptr);
+    auto* link = static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "Uses"));
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+    _source->recompute();
+    const std::string targetUuid = target->Uid.getValueStr();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type names = written.find("uuid=\"" + targetUuid + "\" type=");
+    ASSERT_NE(names, std::string::npos);
+    const std::string::size_type start = written.rfind('\n', names) + 1;
+    const std::string::size_type closes = written.find("</Object>", names);
+    ASSERT_NE(closes, std::string::npos);
+    written.erase(start, written.find('\n', closes) + 1 - start);
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    ASSERT_TRUE(_rebuilt->holdsUnreadContent());
+
+    // Act -- the person points it at an object that is here.
+    auto* replacement = _rebuilt->addObject("App::VarSet", "Replacement");
+    ASSERT_NE(replacement, nullptr);
+    static_cast<PropertyLink*>(rebuilt->getPropertyByName("Uses"))->setValue(replacement);
+
+    // Assert -- the file states what they authored, and no longer states what was kept.
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(replacement->Uid.getValueStr()), std::string::npos)
+        << "a reference a person authored was not written";
+    EXPECT_EQ(again.find(targetUuid), std::string::npos)
+        << "a kept statement outlived the value that superseded it and was written over it";
+    EXPECT_FALSE(_rebuilt->holdsUnreadContent())
+        << "the document still reported itself not whole after the gap was filled";
+}
+
+// A kept statement is part of an object's state, so undo restores it (§10.6).
+//
+// Measured before this: an edit discharged the note -- correctly, the person had supplied a value
+// -- and undoing the edit did not bring it back, because every value set discharges the note and
+// undo restores a value by setting it. The document then said it was whole, and the next save wrote
+// the absence over the uuid the file stated. A keystroke and a second keystroke, and another
+// person's deleted-target reference was gone for everyone.
+TEST_F(StoredRecipeTest, undoingAnEditBringsBackTheStatementItDischarged)
+{
+    // Arrange -- a reference to a target this document does not hold, kept.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    auto* target = _source->addObject("App::VarSet", "Target");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_NE(target, nullptr);
+    auto* link = static_cast<PropertyLink*>(holder->addDynamicProperty("App::PropertyLink", "Uses"));
+    ASSERT_NE(link, nullptr);
+    link->setValue(target);
+    _source->recompute();
+    const std::string targetUuid = target->Uid.getValueStr();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type names = written.find("uuid=\"" + targetUuid + "\" type=");
+    ASSERT_NE(names, std::string::npos);
+    const std::string::size_type start = written.rfind('\n', names) + 1;
+    const std::string::size_type closes = written.find("</Object>", names);
+    ASSERT_NE(closes, std::string::npos);
+    written.erase(start, written.find('\n', closes) + 1 - start);
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    ASSERT_TRUE(_rebuilt->holdsUnreadContent());
+
+    // Act -- the person points it somewhere real, then changes their mind.
+    auto* replacement = _rebuilt->addObject("App::VarSet", "Replacement");
+    ASSERT_NE(replacement, nullptr);
+    _rebuilt->setUndoMode(1);
+    _rebuilt->openTransaction("Point it somewhere real");
+    static_cast<PropertyLink*>(rebuilt->getPropertyByName("Uses"))->setValue(replacement);
+    _rebuilt->commitTransaction();
+    ASSERT_FALSE(_rebuilt->holdsUnreadContent()) << "the edit did not discharge the kept statement";
+
+    _rebuilt->undo();
+
+    // Assert -- the file's own statement is back, and the file states it again.
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "undo reported the document whole while the reference it restored resolves to nothing";
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(targetUuid), std::string::npos)
+        << "undo erased where the reference pointed, and the save wrote the absence over it";
+
+    // And redoing the edit discharges it again: restoring state means arriving at the state that
+    // was captured, in both directions.
+    _rebuilt->redo();
+    EXPECT_FALSE(_rebuilt->holdsUnreadContent())
+        << "redo brought back a statement the value it restored had superseded";
+}
+
+// A file may state a property this build's class does not declare -- an add-on version that had
+// one more, a property renamed since, a type this build does not have. Measured before this: the
+// reader stepped over it in silence and the next save wrote the object without it, so a value a
+// person authored was gone and the file no longer said it had ever been there.
+TEST_F(StoredRecipeTest, aPropertyThisBuildDoesNotDeclareIsKeptAsStated)
+{
+    // Arrange -- an authored value on a property this build will not know about, by striking the
+    // declaration the file carries for it: what a build without that add-on sees.
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    ASSERT_NE(holder, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        holder->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type declares = written.find(" dynamic=\"1\"");
+    ASSERT_NE(declares, std::string::npos);
+    written.erase(declares, std::strlen(" dynamic=\"1\""));
+
+    // The words the file states for it, which are what must come back.
+    const std::string::size_type opens = written.find("<Property name=\"Clearance\"");
+    ASSERT_NE(opens, std::string::npos);
+    const std::string::size_type lineStart = written.rfind('\n', opens) + 1;
+    const std::string::size_type closes = written.find("</Property>", opens);
+    ASSERT_NE(closes, std::string::npos);
+    const std::string stated = written.substr(lineStart, written.find('\n', closes) + 1 - lineStart);
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control, and the statement itself is the claim.
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    EXPECT_EQ(std::string(rebuilt->Label.getValue()), std::string("Holder"))
+        << "a property stated beside the unknown one was lost";
+    EXPECT_EQ(rebuilt->getPropertyByName("Clearance"), nullptr)
+        << "a property this build does not declare was declared anyway";
+
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(stated), std::string::npos)
+        << "a save dropped, or reworded, a property the file states that this build has no place "
+           "for";
+
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a property it could not honour";
+
+    // Given back in its own place, so a save that changed nothing changes nothing.
+    EXPECT_EQ(objectsSection(again), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+}
+
+// The same duty one level up: a property the DOCUMENT ITSELF states.
+//
+// Measured before this: the document's own block was read with no words to fall back on, so a
+// statement here was reported and then dropped -- a tracking code from a records system, a field an
+// add-on added -- and the next save wrote the absence over it. The reader now lifts the document's
+// own block for the same reason it lifts an object's.
+TEST_F(StoredRecipeTest, aPropertyTheDocumentItselfStatesIsKeptAsStated)
+{
+    // Arrange -- a file whose document block states a property this build does not declare.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    std::string written = formatStoredRecipe(*_source);
+
+    const std::string stated
+        = "            <Property name=\"ZZTrackingCode\" type=\"App::PropertyString\">\n"
+          "        <String value=\"ACME-PART-0042\"/>\n"
+          "            </Property>\n";
+    const std::string::size_type documentEnds = written.find("</Properties>");
+    ASSERT_NE(documentEnds, std::string::npos);
+    const std::string::size_type lineStart = written.rfind('\n', documentEnds) + 1;
+    written.insert(lineStart, stated);
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control, the statement itself is the claim.
+    EXPECT_NE(_rebuilt->getObject("Block"), nullptr) << "an object stated after the unknown "
+                                                        "document property was lost";
+    EXPECT_EQ(_rebuilt->getPropertyByName("ZZTrackingCode"), nullptr)
+        << "a property this build does not declare was declared anyway";
+
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    EXPECT_NE(again.find(stated), std::string::npos)
+        << "a save dropped, or reworded, a property the document's own block states";
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a statement of its own that it could "
+           "not honour";
+}
+
+// And one level across: a property stated inside an appearance block. The block belongs to whoever
+// answers for the object's display, and a name in there may also name one of the object's OWN
+// properties -- so the words are lifted from the appearance block alone. Lifting them from the
+// object would give the appearance back a value the object stated, which nobody authored.
+TEST_F(StoredRecipeTest, aPropertyStatedInsideAnAppearanceIsKeptFromTheAppearancesOwnWords)
+{
+    // Arrange -- an object with a Length of its own, and an appearance that has no such property.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    static_cast<PropertyLength*>(box->getPropertyByName("Length"))->setValue(10);
+    auto* chosen = _source->addObject("App::VarSet", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    StubAppearance::theOne().answerFor("Block", chosen);
+    std::string written = formatStoredRecipe(*_source);
+
+    // The appearance states a Length too, and a different one. This build has no place for it
+    // there, so it is the file's own words that must come back -- not the object's.
+    const std::string stated
+        = "                    <Property name=\"Length\" type=\"App::PropertyLength\">\n"
+          "        <Float value=\"42\"/>\n"
+          "                    </Property>\n";
+    const std::string::size_type display = written.find("<Display>");
+    ASSERT_NE(display, std::string::npos);
+    const std::string::size_type closes = written.find("</Properties>", display);
+    ASSERT_NE(closes, std::string::npos);
+    written.insert(written.rfind('\n', closes) + 1, stated);
+
+    // Act -- read by a session that does have somewhere to put an appearance.
+    auto* returned = _rebuilt->addObject("App::VarSet", "Returned");
+    ASSERT_NE(returned, nullptr);
+    StubAppearance::theOne().answerFor("Block", returned);
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the appearance's own words come back, in the appearance's own block.
+    const std::string again = formatStoredRecipe(*_rebuilt);
+    const std::string::size_type displayAgain = again.find("<Display>");
+    ASSERT_NE(displayAgain, std::string::npos);
+    const std::string appearanceBlock
+        = again.substr(displayAgain, again.find("</Display>", displayAgain) - displayAgain);
+    EXPECT_NE(appearanceBlock.find(stated), std::string::npos)
+        << "a save dropped, or reworded, a property stated inside an appearance";
+    EXPECT_EQ(appearanceBlock.find("<Float value=\"10\"/>"), std::string::npos)
+        << "the appearance was given back a value lifted from the object's own words";
+
+    // And the object's own statement is untouched by the one that shares its name.
+    EXPECT_DOUBLE_EQ(
+        static_cast<PropertyLength*>(_rebuilt->getObject("Block")->getPropertyByName("Length"))
+            ->getValue(),
+        10
+    );
+
+    StubAppearance::theOne().answerNothing();
+}
+
+// The severe half of the same case: a property of a TYPE this build does not have -- an add-on's
+// own kind of value. Declaring it fails, and measured before this the failure escaped the reader,
+// so the read stopped at that property and every object stated after it was lost with it.
+TEST_F(StoredRecipeTest, aPropertyOfATypeThisBuildDoesNotHaveKeepsItsNeighboursAndItself)
+{
+    // Arrange -- three objects, the middle one carrying a property whose type is then retyped to
+    // something no build here registers.
+    for (const char* name : {"Alpha", "Beta", "Gamma"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    auto* beta = _source->getObject("Beta");
+    ASSERT_NE(beta, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        beta->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.find("name=\"Clearance\" type=\"App::PropertyLength\"");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(
+        at + std::strlen("name=\"Clearance\" "),
+        std::strlen("type=\"App::PropertyLength\""),
+        "type=\"Absent::PropertyThing\""
+    );
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control. Losing them is the measured failure.
+    EXPECT_NE(_rebuilt->getObject("Alpha"), nullptr)
+        << "an object stated before the unreadable property was lost";
+    EXPECT_NE(_rebuilt->getObject("Gamma"), nullptr)
+        << "an object stated after the unreadable property was lost";
+    ASSERT_NE(_rebuilt->getObject("Beta"), nullptr)
+        << "the object carrying the unreadable property was lost";
+
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a property it could not honour";
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+}
+
+// Keeping a statement is half the duty; the other half is not pretending the result is finished
+// without it. Measured before this: an object holding a statement this session could not honour
+// recomputed anyway, from the part of its input that happened to be legible, and reported success.
+TEST_F(StoredRecipeTest, anObjectHoldingWhatCouldNotBeHonouredIsNotRecomputed)
+{
+    // Arrange -- a box with a property whose declaration is then struck out, so this build has no
+    // place for what the file states.
+    auto* box = _source->addObject("Part::Box", "Block");
+    ASSERT_NE(box, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        box->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type declares = written.find(" dynamic=\"1\"");
+    ASSERT_NE(declares, std::string::npos);
+    written.erase(declares, std::strlen(" dynamic=\"1\""));
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+    DocumentObject* rebuilt = _rebuilt->getObject("Block");
+    ASSERT_NE(rebuilt, nullptr);
+
+    // Blocked by what it holds, before anything asks it to rebuild -- an object whose geometry
+    // came back from the rebuild store is never asked.
+    EXPECT_TRUE(rebuilt->isError())
+        << "an object reported itself sound while holding a statement it could not honour";
+
+    // Act
+    _rebuilt->recompute();
+
+    // Assert -- blocked at the node that holds the statement, and said in the model.
+    EXPECT_TRUE(rebuilt->isError())
+        << "an object built something from input it could not read in full, and reported success";
+    EXPECT_TRUE(rebuilt->isTouched())
+        << "the object was marked up to date while holding a statement it could not honour";
+    const auto unhonoured = rebuilt->unhonouredStatements();
+    ASSERT_EQ(unhonoured.size(), 1U);
+    EXPECT_EQ(unhonoured.front().first, std::string("Clearance"))
+        << "the report does not name what could not be honoured";
+    EXPECT_FALSE(unhonoured.front().second.empty()) << "the report does not say why";
+}
+
+// NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
+
+// A value whose element is well formed and whose content this build cannot turn into a value --
+// a number that is not one, a list whose contents changed shape. The obstacle is different from a
+// property this build has no place for; the duty is the same (Amendment 19 Clause 19.1).
+//
+// Measured before this: one such value and the document did not open AT ALL -- the failure came
+// out of the standard library rather than ours, so nothing on the way up named it, and the opener
+// reported an invalid project file. Every object in the document was lost with it.
+TEST_F(StoredRecipeTest, aValueThisBuildCannotReadKeepsItsNeighboursAndItself)
+{
+    // Arrange -- three objects, the middle one stating a length that is not a number.
+    for (const char* name : {"Alpha", "Beta", "Gamma"}) {
+        ASSERT_NE(_source->addObject("App::VarSet", name), nullptr);
+    }
+    auto* beta = _source->getObject("Beta");
+    ASSERT_NE(beta, nullptr);
+    auto* clearance = static_cast<PropertyLength*>(
+        beta->addDynamicProperty("App::PropertyLength", "Clearance")
+    );
+    ASSERT_NE(clearance, nullptr);
+    clearance->setValue(2.5);
+    _source->recompute();
+
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.find("value=\"2.5");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, std::strlen("value=\"2.5"), "value=\"two point five");
+
+    // Act
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert -- the neighbours are the control.
+    EXPECT_NE(_rebuilt->getObject("Alpha"), nullptr)
+        << "an object stated before the unreadable value was lost";
+    EXPECT_NE(_rebuilt->getObject("Gamma"), nullptr)
+        << "an object stated after the unreadable value was lost";
+    ASSERT_NE(_rebuilt->getObject("Beta"), nullptr)
+        << "the object carrying the unreadable value was lost";
+
+    EXPECT_TRUE(_rebuilt->holdsUnreadContent())
+        << "the document reported itself whole while holding a value it could not read";
+    EXPECT_TRUE(_rebuilt->whatASaveWouldLose().empty())
+        << "a statement that is kept and given back is not a cost of saving";
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "a document that changed nothing did not write back what it was given";
+}
+
+// The live property does not keep what half a read left in it. What the file states is what the
+// save writes either way; what is at stake here is the value the rest of the session sees.
+TEST_F(StoredRecipeTest, aValueThisBuildCannotReadLeavesNoDebrisInTheProperty)
+{
+    auto* varset = _source->addObject("App::VarSet", "Alpha");
+    ASSERT_NE(varset, nullptr);
+    auto* sizes = static_cast<PropertyFloatList*>(
+        varset->addDynamicProperty("App::PropertyFloatList", "Sizes")
+    );
+    ASSERT_NE(sizes, nullptr);
+    sizes->setValues({1.0, 2.0, 3.0});
+    _source->recompute();
+
+    // The third of three is not a number: a list that reads half way and then cannot go on.
+    std::string written = formatStoredRecipe(*_source);
+    const std::string::size_type at = written.rfind("<F v=\"3\"/>");
+    ASSERT_NE(at, std::string::npos);
+    written.replace(at, std::strlen("<F v=\"3\"/>"), "<F v=\"three\"/>");
+
+    std::istringstream text(written);
+    restoreStoredRecipe(*_rebuilt, text);
+
+    auto* rebuilt = _rebuilt->getObject("Alpha");
+    ASSERT_NE(rebuilt, nullptr);
+    auto* rebuiltSizes = dynamic_cast<PropertyFloatList*>(rebuilt->getPropertyByName("Sizes"));
+    ASSERT_NE(rebuiltSizes, nullptr);
+    EXPECT_TRUE(rebuiltSizes->getValues().empty())
+        << "the property kept the part of the list that happened to read";
+    EXPECT_EQ(objectsSection(formatStoredRecipe(*_rebuilt)), objectsSection(written))
+        << "the file's own words were not what the save wrote back";
+}
+
+// Slice one of the copy path (Amendment 19 Clause 19.5): the writer that makes the record is the
+// one that makes a copy, so it has to be able to render part of a document. What a copy carries is
+// the objects a person picked -- not the document's own name, licence or identity, which belong to
+// the document they came from.
+TEST_F(StoredRecipeTest, aRenderingOfPartOfADocumentCarriesOnlyTheObjectsChosen)
+{
+    // Arrange
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    auto* other = _source->addObject("Part::Box", "Other");
+    ASSERT_NE(other, nullptr);
+    _source->recompute();
+
+    // Act
+    const std::string written
+        = formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false});
+
+    // Assert
+    EXPECT_NE(written.find("name=\"Chosen\""), std::string::npos)
+        << "the object that was picked is not in what the writer produced";
+    EXPECT_EQ(written.find("name=\"Other\""), std::string::npos)
+        << "an object nobody picked was carried along with it";
+    EXPECT_EQ(written.find("<Document "), std::string::npos)
+        << "a copy states facts about the document it came from";
+}
+
+// The other half of the same slice: a rendering with no document block reads back, and reading it
+// leaves the receiving document's own facts exactly as they were.
+TEST_F(StoredRecipeTest, aRenderingWithNoDocumentBlockLeavesTheReceivingDocumentsOwnFacts)
+{
+    // Arrange
+    auto* chosen = _source->addObject("Part::Box", "Chosen");
+    ASSERT_NE(chosen, nullptr);
+    static_cast<PropertyLength*>(chosen->getPropertyByName("Length"))->setValue(7.5);
+    _source->Comment.setValue("the document it came from");
+    _source->recompute();
+
+    _rebuilt->Comment.setValue("the document it is going to");
+    const std::string receivingUid = _rebuilt->Uid.getValueStr();
+
+    // Act
+    std::istringstream text(
+        formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false})
+    );
+    restoreStoredRecipe(*_rebuilt, text);
+
+    // Assert
+    DocumentObject* arrived = _rebuilt->getObject("Chosen");
+    ASSERT_NE(arrived, nullptr) << "the object never arrived";
+    EXPECT_DOUBLE_EQ(static_cast<PropertyLength*>(arrived->getPropertyByName("Length"))->getValue(), 7.5);
+    EXPECT_EQ(std::string(_rebuilt->Comment.getValue()), std::string("the document it is going to"))
+        << "the receiving document was overwritten with the sending document's own facts";
+    EXPECT_EQ(_rebuilt->Uid.getValueStr(), receivingUid)
+        << "the receiving document took on the identity of the one the objects came from";
+}
+
+// A reference says where it points and can be pointed there again, and the file asks it rather
+// than working out which of a dozen link classes it is. The list-shaped kinds are here because
+// they are the ones a class ladder is most likely to miss: each holds its targets and the parts of
+// them that were picked in a shape of its own.
+TEST_F(StoredRecipeTest, listShapedReferencesComeBackPointingWhereTheyPointed)
+{
+    // Arrange
+    auto* first = _source->addObject("Part::Box", "First");
+    auto* second = _source->addObject("Part::Box", "Second");
+    auto* holder = _source->addObject("App::VarSet", "Holder");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    ASSERT_NE(holder, nullptr);
+
+    auto* list = static_cast<PropertyLinkList*>(
+        holder->addDynamicProperty("App::PropertyLinkList", "Parts")
+    );
+    ASSERT_NE(list, nullptr);
+    list->setValues({first, second});
+
+    auto* subList = static_cast<PropertyLinkSubList*>(
+        holder->addDynamicProperty("App::PropertyLinkSubList", "Faces")
+    );
+    ASSERT_NE(subList, nullptr);
+    subList->setValues({first, second}, {std::string("Face2"), std::string("Face5")});
+
+    auto* xSubList = static_cast<PropertyXLinkSubList*>(
+        holder->addDynamicProperty("App::PropertyXLinkSubList", "Edges")
+    );
+    ASSERT_NE(xSubList, nullptr);
+    xSubList->setValues({first}, {std::string("Edge3")});
+
+    _source->recompute();
+
+    // Act
+    roundTrip();
+
+    // Assert
+    DocumentObject* rebuiltFirst = _rebuilt->getObject("First");
+    DocumentObject* rebuiltSecond = _rebuilt->getObject("Second");
+    DocumentObject* rebuiltHolder = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuiltFirst, nullptr);
+    ASSERT_NE(rebuiltSecond, nullptr);
+    ASSERT_NE(rebuiltHolder, nullptr);
+
+    auto* returnedList = static_cast<PropertyLinkList*>(rebuiltHolder->getPropertyByName("Parts"));
+    ASSERT_NE(returnedList, nullptr);
+    EXPECT_EQ(returnedList->getValues(), (std::vector<DocumentObject*> {rebuiltFirst, rebuiltSecond}))
+        << "a list of references did not come back pointing where it pointed";
+
+    auto* returnedSubList = static_cast<PropertyLinkSubList*>(
+        rebuiltHolder->getPropertyByName("Faces")
+    );
+    ASSERT_NE(returnedSubList, nullptr);
+    EXPECT_EQ(
+        returnedSubList->getValues(),
+        (std::vector<DocumentObject*> {rebuiltFirst, rebuiltSecond})
+    );
+    EXPECT_EQ(returnedSubList->getSubValues(), (std::vector<std::string> {"Face2", "Face5"}))
+        << "the parts that were picked did not come back beside the objects they were picked on";
+
+    auto* returnedEdges = static_cast<PropertyXLinkSubList*>(rebuiltHolder->getPropertyByName("Edges"));
+    ASSERT_NE(returnedEdges, nullptr);
+    EXPECT_EQ(returnedEdges->getValues(), (std::vector<DocumentObject*> {rebuiltFirst}));
+    EXPECT_EQ(returnedEdges->getSubValues(rebuiltFirst), (std::vector<std::string> {"Edge3"}));
+}
+
+// A capability a script asked for is part of what the object holds, and the file has to say so.
+//
+// #121: the recipe stated an object's type and its properties and nothing about the capabilities
+// it had been granted at runtime, so an object that asked for one came back without it -- and the
+// properties that capability carried arrived with nowhere to go. Measured on CAM's stock, which
+// asks for the capability that says what it is made of: the stock reopened made of nothing, and
+// the reader said saving the document would lose what the file stated.
+TEST_F(StoredRecipeTest, aCapabilityAnObjectAskedForComesBackWithIt)
+{
+    // Arrange: an object whose class composes no grouping capability, granted one the way a
+    // script grants it.
+    auto* holder = _source->addObject("App::FeaturePython", "Holder");
+    ASSERT_NE(holder, nullptr);
+    ASSERT_FALSE(holder->hasExtension(App::GroupExtension::getExtensionClassTypeId()))
+        << "the test object already had the capability, so it proves nothing";
+
+    auto* asked = static_cast<App::Extension*>(
+        App::GroupExtensionPython::getExtensionClassTypeId().createInstance()
+    );
+    ASSERT_NE(asked, nullptr);
+    asked->initExtension(holder);
+    ASSERT_TRUE(holder->hasExtension(App::GroupExtension::getExtensionClassTypeId()));
+
+    auto* member = _source->addObject("App::FeaturePython", "Member");
+    ASSERT_NE(member, nullptr);
+    static_cast<PropertyLinkList*>(holder->getPropertyByName("Group"))->setValue(member);
+
+    // Act
+    roundTrip();
+
+    // Assert: the capability is back, and so is what it carried.
+    DocumentObject* rebuilt = _rebuilt->getObject("Holder");
+    ASSERT_NE(rebuilt, nullptr);
+    EXPECT_TRUE(rebuilt->hasExtension(App::GroupExtension::getExtensionClassTypeId()))
+        << "the object came back without the capability it asked for";
+    auto* group = dynamic_cast<PropertyLinkList*>(rebuilt->getPropertyByName("Group"));
+    ASSERT_NE(group, nullptr) << "the capability came back without the property it carries";
+    ASSERT_EQ(group->getValues().size(), 1U) << "what the capability carried did not come back";
+    EXPECT_EQ(std::string(group->getValues().front()->getNameInDocument()), std::string("Member"));
+
+    // And the file says it in words a person can read, without a count to go stale (Clause 18.4a).
+    const std::string written = formatStoredRecipe(*_source);
+    EXPECT_NE(written.find("<Extension type=\"App::GroupExtensionPython\"/>"), std::string::npos)
+        << written;
+}

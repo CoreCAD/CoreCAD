@@ -85,19 +85,6 @@
         </item>
        </widget>
       </item>
-      <item row="4" column="0" colspan="2">
-       <widget class="Gui::PrefCheckBox" name="checkBoxExportLegacy">
-        <property name="text">
-         <string>Use legacy export function</string>
-        </property>
-        <property name="prefEntry" stdset="0">
-         <cstring>ExportLegacy</cstring>
-        </property>
-        <property name="prefPath" stdset="0">
-         <cstring>Mod/Import</cstring>
-        </property>
-       </widget>
-      </item>
       <item row="3" column="0">
        <widget class="Gui::PrefCheckBox" name="checkBoxKeepPlacement">
         <property name="toolTip">

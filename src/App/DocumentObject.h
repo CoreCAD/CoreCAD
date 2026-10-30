@@ -50,6 +50,7 @@ class Matrix4D;
 namespace App
 {
 class Document;
+struct CellShift;
 class DocumentObjectGroup;
 class DocumentObjectPy;
 class Expression;
@@ -79,7 +80,6 @@ enum ObjectStatus
     PendingTransactionUpdate = 18,
     RecomputeExtension = 19, ///< Whether the extensions of this object should be recomputed.
     TouchOnColorChange = 20, ///< Whether the object should be touched on color change.
-    Freeze = 21, ///< Whether the object is frozen and is excluded from recomputation.
 };
 // clang-format on
 
@@ -140,11 +140,6 @@ class AppExport DocumentObject: public App::TransactionalObject
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::DocumentObject);
 
-private:
-    // store read-only property names at freeze
-    // in order to retablish correct status at unfreeze
-    std::vector<const char*> readOnlyProperties;
-
 public:
     /**
      * @name Static properties
@@ -162,7 +157,32 @@ public:
 
     /// A property that controls the visibility status in App name space.
     PropertyBool Visibility;
+
+    /// A durable, per-object identity minted once at creation and persisted for the
+    /// life of the object. Unlike the internal name or session id, this survives
+    /// save/load and reorder, giving the feature tree the same stable authored
+    /// identity that sketch geometry carries in its tag. It is the bedrock the
+    /// version-control (diff/merge) story stands on: features are lined up by this
+    /// id, never by position or name.
+    PropertyUUID Uid;
     /// @}
+
+    /** Mint fresh durable identity for this object and everything it contains.
+     *
+     * Called when the object has been duplicated rather than continued — the copy
+     * path (copy-paste, insert-as-copy, drag-duplicate) drops a *new* object into
+     * a document, so it must not inherit the source's identity: two coexisting
+     * objects sharing one id would break "same id means the same object" (§10.7,
+     * §7.2). A relocation (Document::moveObject) is not duplication and never
+     * calls this.
+     *
+     * The base implementation mints this object's own id and then asks every
+     * property to mint identity for any content it owns, so a container's
+     * internal grain (sketch entity tags) is reborn with the container rather
+     * than being left sharing identity with the original's insides. Overriders
+     * must call the base implementation.
+     */
+    virtual void mintDurableIdentity();
 
     /**
      * @name Signals for property change
@@ -237,6 +257,54 @@ public:
     virtual const char* getViewProviderNameOverride() const
     {
         return getViewProviderName();
+    }
+
+    /**
+     * @brief The content-scope kind an object declares itself to be.
+     *
+     * The self-declared half of Cruth content-scoping (ARCHITECTURE §7.1/§7.4,
+     * Amendment 8): the document's admission door consults this to decide whether
+     * a typed document accepts the object. Every scoped nature the four document
+     * types sort on has a value; the default is Generic.
+     */
+    enum class ContentScope
+    {
+        Generic,       ///< admitted by every document (world frame, datums, groups, links)
+        Sketch,        ///< a 2D sketch
+        Feature,       ///< a geometric feature
+        Body,          ///< a solid body
+        AssemblyItem,  ///< an assembly component instance or mate constraint
+        DrawingView,   ///< a drawing view, dimension, annotation, or sheet
+        Spreadsheet,   ///< a parametric spreadsheet
+    };
+
+    /**
+     * @brief Declare this object's content-scope kind.
+     *
+     * The default is Generic: an object that declares nothing is admitted by every
+     * document, keeping untyped/App-native objects (the world frame, datums, groups,
+     * links) fluid. Only objects carrying a document-scoped nature — a sketch, body,
+     * geometric feature, assembly component/mate, drawing view, or spreadsheet —
+     * override this, so a typed document can refuse them at the admission door
+     * (Amendment 8 Clause 8.1). This is the boundary between App and the modules:
+     * App never names the concrete types, it reads the kind each object reports.
+     */
+    virtual ContentScope getContentScope() const
+    {
+        return ContentScope::Generic;
+    }
+
+    /// Whether this object is a step of the document's history, a row the roll-back marker can
+    /// hold back. A body or the world frame is not: it stands for steps, it is not one.
+    virtual bool isTimelineStep() const
+    {
+        return true;
+    }
+
+    /// Whether the roll-back marker can stand on this row.
+    virtual bool isRollbackStop() const
+    {
+        return isTimelineStep();
     }
 
     DocumentObject();
@@ -370,36 +438,12 @@ public:
         return StatusBits.test(ObjectStatus::Restore);
     }
 
+    void restoreFromStream(std::istream& stream) override;
+
     /// Check whether this document object is being removed.
     bool isRemoving() const
     {
         return StatusBits.test(ObjectStatus::Remove);
-    }
-
-    /**
-     * @brief Set this document object freezed.
-     *
-     * A freezed document object is excluded from recomputation.
-     */
-    void freeze();
-
-    /**
-     * @brief Set this document object unfreezed.
-     *
-     * A freezed document object is excluded from recomputation.  This function
-     * enables recomputation and touches the object.
-     *
-     * @param[in] noRecompute: if true, the object will not be recomputed when
-     * touched.
-     *
-     * @see touch()
-     */
-    void unfreeze(bool noRecompute = false);
-
-    /// Check whether this document object is being freezed.
-    bool isFreezed() const
-    {
-        return StatusBits.test(ObjectStatus::Freeze);
     }
 
     /// Get the status bits.
@@ -736,6 +780,62 @@ public:
      */
     virtual short mustExecute() const;
 
+    /** Block the objects whose values this one states and this session could not honour.
+     *
+     * Cruth (Amendment 19 Clause 19.6): blocking follows the value, not the file. An object that
+     * sets a value on ANOTHER object from outside the dependency graph -- a configuration option,
+     * a spreadsheet driver (§3.4, §7.7) -- is the only thing that knows its statement could not be
+     * honoured, and the object that must be blocked is the one whose value it would have set, not
+     * this holder. So the holder is asked, and records what it could not honour on each of them
+     * with rememberStatementSetFromElsewhere().
+     *
+     * Asked again whenever what it states may have changed, and its answer REPLACES the last one:
+     * an implementation states only what it cannot honour now, and must first drop what it said
+     * before with forgetStatementsSetFrom(). Nothing here applies a value -- the document is read
+     * with its values already in it, and a read that recomputed from a configuration would be
+     * rebuilding a file that was already whole.
+     *
+     * The default says nothing, which is the right answer for every object that states values
+     * only about itself.
+     */
+    virtual void blockWhatItSetsElsewhere()
+    {}
+
+    /**
+     * @brief Whether the content this property carries is content this object PRODUCES.
+     *
+     * A feature's shape is the OUTPUT of its recipe: the sizes, profiles and references it was
+     * given are the source, and the solid is what they produce, so it is kept where anything
+     * produced is kept -- hidden, and thrown away without loss. An imported solid, a scanned
+     * mesh, the bytes of a file a person handed over are the opposite: nothing in the document
+     * produces them, so that content IS the authored content, and a record that treated it as
+     * disposable would describe a part nobody can rebuild.
+     *
+     * Asked of the OBJECT and never of the property's class (Amendment 18 Clause 18.2), because
+     * two objects carry the same kind of property and mean different things by it -- and for a
+     * scripted object the honest answer is not fixed by its type either: the same class parks a
+     * handed-in shape when its script has no execute and computes one when it has.
+     *
+     * The property is named rather than assumed, because one object holds both kinds at once:
+     * a drawing view carries the image it was given and the rendering it produced from it.
+     *
+     * The default is **false** -- the object did not produce this, so it is authored. That is
+     * the direction that cannot lose a design: an object wrongly said to have produced content
+     * has that content put somewhere disposable, while one wrongly said to hold authored content
+     * only makes the project larger, which is visible and repairable.
+     */
+    virtual bool producesContentOf(const Property& prop) const;
+
+    /**
+     * @brief Whether the order of the references this link holds means anything.
+     *
+     * Asked of the object, as producesContentOf is. A merge takes a reference added on one side
+     * and one added on the other into a link whose order means nothing; where order may mean
+     * something, two changed lists are a conflict. The default is **true**, the answer that
+     * cannot lose a choice.
+     */
+    virtual bool linkOrderMatters(const Property& link) const;
+
     /**
      * @brief Recompute only this feature.
      *
@@ -977,6 +1077,7 @@ public:
     friend class Document;
     friend class Transaction;
     friend class ObjectExecution;
+    friend class OverriddenBuild;
 
     /**
      * @brief The standard return object for document object execution.
@@ -1029,6 +1130,10 @@ public:
      */
     virtual void
     renameObjectIdentifiers(const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths);
+
+    /// Rows or columns of `sheet` moved: move every reference to its cells, empty ones included,
+    /// along with them. By default this covers the cells named in expressions.
+    virtual void shiftCellReferences(const DocumentObject* sheet, const CellShift& shift);
 
     /// Get the old label of the object.
     const std::string& getOldLabel() const
@@ -1271,6 +1376,31 @@ public:
     /// Returns the Placement property to use if any.
     virtual App::PropertyPlacement* getPlacementProperty() const;
 
+    /** @name The appearance this object's file stated (Amendment 19)
+     *
+     * Cruth: a colour or a transparency a person chose is authored content and lives in the file
+     * of record, but only a session with a display layer has anywhere to put it. A headless one
+     * has nowhere -- and stepping over the block is how an ordinary open-and-save strips every
+     * colour from every part in a directory without a word. So the block is kept exactly as the
+     * file stated it and given back in its own place, unread and unchanged.
+     *
+     * It is kept, never honoured: nothing in this session depends on it, so it blocks nothing
+     * (Clause 19.6) and the document is still whole. What would make the document not whole is
+     * losing it.
+     */
+    //@{
+    /// Keep the appearance block exactly as this object's file stated it.
+    void keepStatedAppearance(std::string words)
+    {
+        _statedAppearance = std::move(words);
+    }
+    /// The kept block, or empty where this session had somewhere to put the appearance.
+    const std::string& statedAppearance() const
+    {
+        return _statedAppearance;
+    }
+    //@}
+
 protected:
     /// Recompute only this object.
     virtual App::DocumentObjectExecReturn* recompute();
@@ -1371,6 +1501,9 @@ private:
 
     // unique identifier (among a document) of this object.
     long _Id {0};
+
+    // the appearance block this object's file stated, kept verbatim -- see keepStatedAppearance().
+    std::string _statedAppearance;
 
 private:
     // Back pointer to all the fathers in a DAG of the document

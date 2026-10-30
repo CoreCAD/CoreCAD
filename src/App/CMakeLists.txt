@@ -81,6 +81,7 @@ set(FreeCADApp_LIBS
     FreeCADBase
     ${Boost_LIBRARIES}
     fmt::fmt
+    libgit2::libgit2
 )
 
 if(BUILD_TRACY_FRAME_PROFILER)
@@ -103,10 +104,9 @@ generate_from_py(LinkBaseExtension)
 generate_from_py(DocumentObjectGroup)
 generate_from_py(GeoFeature)
 generate_from_py(GeoFeatureGroupExtension)
+generate_from_py(PlacementExtension)
 generate_from_py(SuppressibleExtension)
 generate_from_py(Metadata)
-generate_from_py(OriginGroupExtension)
-generate_from_py(Part)
 generate_from_py(StringHasher)
 generate_from_py(StringID)
 
@@ -130,9 +130,8 @@ SET(FreeCADApp_Pyi_SRCS
     DocumentObject.pyi
     GeoFeature.pyi
     GeoFeatureGroupExtension.pyi
-    OriginGroupExtension.pyi
+    PlacementExtension.pyi
     SuppressibleExtension.pyi
-    Part.pyi
     Document.pyi
     PropertyContainer.pyi
     ComplexGeoData.pyi
@@ -147,7 +146,14 @@ SOURCE_GROUP("Pyi" FILES ${FreeCADApp_Pyi_SRCS})
 SET(Document_CPP_SRCS
     Annotation.cpp
     BackupPolicy.cpp
+    Configuration.cpp
     Document.cpp
+    DocumentObjects.cpp
+    DocumentRecompute.cpp
+    DocumentStorage.cpp
+    DocumentTransactions.cpp
+    DocumentType.cpp
+    DocumentUnkeptStatements.cpp
     RecoverySnapshot.cpp
     DocumentObject.cpp
     Extension.cpp
@@ -175,12 +181,10 @@ SET(Document_CPP_SRCS
     GeoFeatureGroupExtensionPyImp.cpp
     GeoFeatureGroupExtension.cpp
     ImagePlane.cpp
-    OriginGroupExtensionPyImp.cpp
-    OriginGroupExtension.cpp
+    PlacementExtensionPyImp.cpp
+    PlacementExtension.cpp
     SuppressibleExtensionPyImp.cpp
     SuppressibleExtension.cpp
-    PartPyImp.cpp
-    Part.cpp
     Origin.cpp
     Path.cpp
     InventorObject.cpp
@@ -203,6 +207,7 @@ SET(Document_CPP_SRCS
 SET(Document_HPP_SRCS
     Annotation.h
     BackupPolicy.h
+    Configuration.h
     Document.h
     RecoverySnapshot.h
     DocumentObject.h
@@ -226,9 +231,8 @@ SET(Document_HPP_SRCS
     GeoFeature.h
     GeoFeatureGroupExtension.h
     ImagePlane.h
-    OriginGroupExtension.h
+    PlacementExtension.h
     SuppressibleExtension.h
-    Part.h
     Origin.h
     Path.h
     InventorObject.h
@@ -261,6 +265,14 @@ SET(Properties_CPP_SRCS
     PropertyFile.cpp
     PropertyGeo.cpp
     PropertyLinks.cpp
+    PropertyLink.cpp
+    PropertyLinkList.cpp
+    PropertyLinkSub.cpp
+    PropertyLinkSubList.cpp
+    PropertyXLink.cpp
+    PropertyXLinkSubList.cpp
+    PropertyXLinkContainer.cpp
+    PropertyOverrideTable.cpp
     PropertyPythonObject.cpp
     PropertyStandard.cpp
     PropertyUnits.cpp
@@ -274,6 +286,8 @@ SET(Properties_HPP_SRCS
     PropertyFile.h
     PropertyGeo.h
     PropertyLinks.h
+    PropertyLinksDetail.h
+    PropertyOverrideTable.h
     PropertyPythonObject.h
     PropertyStandard.h
     PropertyUnits.h
@@ -290,9 +304,18 @@ SET(FreeCADApp_CPP_SRCS
     ${Document_CPP_SRCS}
     ${Properties_CPP_SRCS}
     Application.cpp
+    ApplicationFormats.cpp
+    ApplicationOpen.cpp
+    ApplicationParameters.cpp
+    ApplicationPaths.cpp
+    ApplicationRecomputeQueue.cpp
+    ApplicationStartup.cpp
+    ApplicationTypes.cpp
     ApplicationDirectories.cpp
     ApplicationDirectoriesPyImp.cpp
     ApplicationPy.cpp
+    ApplicationPyHistory.cpp
+    ApplicationPyProject.cpp
     AutoTransaction.cpp
     Branding.cpp
     CleanupProcess.cpp
@@ -312,6 +335,21 @@ SET(FreeCADApp_CPP_SRCS
     MeasureManagerPyImp.cpp
     Metadata.cpp
     MetadataPyImp.cpp
+    Recipe.cpp
+    ObjectRecipe.cpp
+    MergedDocument.cpp
+    OverriddenBuild.cpp
+    RecipeText.cpp
+    GeometryCache.cpp
+    SealedArchive.cpp
+    UnreferencedFiles.cpp
+    StoredRecipe.cpp
+    StoredRecipeReader.cpp
+    StoredRecipeWriter.cpp
+    RecipeDetail.cpp
+    DocumentChanges.cpp
+    Project.cpp
+    VersionHistory.cpp
     ElementNamingUtils.cpp
     ProgramInformation.cpp
     SafeMode.cpp
@@ -339,6 +377,18 @@ SET(FreeCADApp_HPP_SRCS
     Material.h
     MeasureManager.h
     Metadata.h
+    Recipe.h
+    ObjectRecipe.h
+    OverriddenBuild.h
+    RecipeText.h
+    GeometryCache.h
+    SealedArchive.h
+    UnreferencedFiles.h
+    StoredRecipe.h
+    RecipeDetail.h
+    DocumentChanges.h
+    Project.h
+    VersionHistory.h
     ElementNamingUtils.h
     ProgramInformation.h
     Services.h

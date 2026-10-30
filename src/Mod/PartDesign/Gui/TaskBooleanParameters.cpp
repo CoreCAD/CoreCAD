@@ -73,7 +73,7 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean* BooleanView, Q
     this->groupLayout()->addWidget(proxy);
 
     PartDesign::Boolean* pcBoolean = BooleanView->getObject<PartDesign::Boolean>();
-    std::vector<App::DocumentObject*> bodies = pcBoolean->Group.getValues();
+    std::vector<App::DocumentObject*> bodies = pcBoolean->Tools.getValues();
     for (auto body : bodies) {
         QListWidgetItem* item = new QListWidgetItem(ui->listWidgetBodies);
         item->setText(QString::fromUtf8(body->Label.getValue()));
@@ -117,22 +117,36 @@ void TaskBooleanParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
             return;
         }
 
-        // if the selected object is not a body then get the body it is part of
+        // if the selected object is not a body then get the body it is part of. When a face was
+        // picked on a feature that backs several component bodies (Cruth §4.7 multi-output),
+        // resolve through the picked sub-element so we tool in the body the user clicked, not
+        // first-match. Falls back to first-match when no sub was picked or the pick is ambiguous.
         if (!pcBody->isDerivedFrom<PartDesign::Body>()) {
-            pcBody = PartDesign::Body::findBodyOf(pcBody);
-            if (!pcBody) {
+            PartDesign::Body* owner = nullptr;
+            if (msg.pSubName && msg.pSubName[0]) {
+                try {
+                    owner = PartDesign::Body::bodyOf(pcBody, msg.pSubName);
+                }
+                catch (const Base::Exception&) {
+                    owner = nullptr;
+                }
+            }
+            if (!owner) {
+                owner = PartDesign::Body::findBodyOf(pcBody);
+            }
+            if (!owner) {
                 return;
             }
+            pcBody = owner;
             body = pcBody->getNameInDocument();
         }
 
-        std::vector<App::DocumentObject*> bodies = pcBoolean->Group.getValues();
+        std::vector<App::DocumentObject*> bodies = pcBoolean->Tools.getValues();
 
         if (selectionMode == bodyAdd) {
             if (std::ranges::find(bodies, pcBody) == bodies.end()) {
                 bodies.push_back(pcBody);
-                pcBoolean->Group.setValues(std::vector<App::DocumentObject*>());
-                pcBoolean->addObjects(bodies);
+                pcBoolean->Tools.setValues(bodies);
 
                 QListWidgetItem* item = new QListWidgetItem(ui->listWidgetBodies);
                 item->setText(QString::fromUtf8(pcBody->Label.getValue()));
@@ -174,7 +188,7 @@ void TaskBooleanParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
         else if (selectionMode == bodyRemove) {
             if (const auto b = std::ranges::find(bodies, pcBody); b != bodies.end()) {
                 bodies.erase(b);
-                pcBoolean->setObjects(bodies);
+                pcBoolean->Tools.setValues(bodies);
 
                 const QString internalName = QString::fromStdString(body);
                 for (int row = 0; row < ui->listWidgetBodies->count(); row++) {
@@ -218,7 +232,7 @@ void TaskBooleanParameters::onButtonBodyAdd(bool checked)
         PartDesign::Boolean* pcBoolean = BooleanView->getObject<PartDesign::Boolean>();
         Gui::Document* doc = BooleanView->getDocument();
         BooleanView->hide();
-        if (pcBoolean->Group.getValues().empty() && pcBoolean->BaseFeature.getValue()) {
+        if (pcBoolean->Tools.getValues().empty() && pcBoolean->BaseFeature.getValue()) {
             doc->setHide(pcBoolean->BaseFeature.getValue()->getNameInDocument());
         }
         selectionMode = bodyAdd;
@@ -285,7 +299,7 @@ int TaskBooleanParameters::getType() const
 void TaskBooleanParameters::onBodyDeleted()
 {
     PartDesign::Boolean* pcBoolean = BooleanView->getObject<PartDesign::Boolean>();
-    std::vector<App::DocumentObject*> bodies = pcBoolean->Group.getValues();
+    std::vector<App::DocumentObject*> bodies = pcBoolean->Tools.getValues();
     int index = ui->listWidgetBodies->currentRow();
     if (index < 0 && (size_t)index > bodies.size()) {
         return;
@@ -302,7 +316,7 @@ void TaskBooleanParameters::onBodyDeleted()
     }
 
     ui->listWidgetBodies->model()->removeRow(index);
-    pcBoolean->setObjects(bodies);
+    pcBoolean->Tools.setValues(bodies);
     pcBoolean->getDocument()->recomputeFeature(pcBoolean);
 
     // Make bodies visible again
@@ -387,12 +401,12 @@ bool TaskDlgBooleanParameters::accept()
             return false;
         }
         std::stringstream str;
-        str << Gui::Command::getObjectCmd(obj) << ".setObjects( [";
+        str << Gui::Command::getObjectCmd(obj) << ".Tools = [";
         for (const auto& body : bodies) {
             str << "App.getDocument('" << obj->getDocument()->getName() << "').getObject('" << body
                 << "'),";
         }
-        str << "])";
+        str << "]";
         Gui::Command::runCommand(Gui::Command::Doc, str.str().c_str());
         FCMD_OBJ_CMD(obj, "Type = " << parameter->getType());
 
@@ -420,7 +434,7 @@ bool TaskDlgBooleanParameters::reject()
     if (doc) {
         if (obj->BaseFeature.getValue()) {
             doc->setShow(obj->BaseFeature.getValue()->getNameInDocument());
-            std::vector<App::DocumentObject*> bodies = obj->Group.getValues();
+            std::vector<App::DocumentObject*> bodies = obj->Tools.getValues();
             for (auto body : bodies) {
                 doc->setShow(body->getNameInDocument());
             }

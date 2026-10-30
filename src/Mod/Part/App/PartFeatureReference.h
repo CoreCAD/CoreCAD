@@ -25,6 +25,7 @@
 #pragma once
 
 #include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>
 
 #include <Mod/Part/PartGlobal.h>
 
@@ -38,7 +39,7 @@ class PartFeaturePy;
 
 /** Base class of all shape feature classes in FreeCAD
  */
-class PartExport FeatureReference: public App::GeoFeature
+class PartExport FeatureReference: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::FeatureReference);
 

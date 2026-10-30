@@ -78,7 +78,6 @@ public:
         options.keepPlacement = enable;
     }
     void exportObjects(std::vector<App::DocumentObject*>& objs, const char* name = nullptr);
-    bool canFallback(std::vector<App::DocumentObject*> objs);
 
 private:
     TDF_Label exportObject(

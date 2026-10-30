@@ -29,6 +29,8 @@
 #include <Base/PyObjectBase.h>
 
 #include "Sheet.h"
+#include "SheetMerge.h"
+#include "SheetRecipe.h"
 
 
 namespace Spreadsheet
@@ -60,6 +62,12 @@ PyMOD_INIT_FUNC(Spreadsheet)
     Spreadsheet::PropertySheet::init();
 
     Spreadsheet::Sheet::init();
+
+    // A sheet keeps every cell inside one link-shaped property, which the generic recipe
+    // emitter walked for its references and drew no content out of. This teaches the readable
+    // document recipe to say what is in it, without App having to know what a cell is.
+    Spreadsheet::registerSheetRecipeDetail();
+    Spreadsheet::registerSheetMerge();
     Spreadsheet::SheetPython::init();
 
     PyObject* mod = Spreadsheet::initModule();

@@ -42,6 +42,7 @@
 #include "Window.h"
 
 #include <App/Application.h>
+#include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/Interpreter.h>
 #include <Gui/ComboView.h>
@@ -363,9 +364,15 @@ void Workbench::setupContextMenu(const char* recipient, MenuItem* item) const
 void Workbench::createMainWindowPopupMenu(MenuItem*) const
 {}
 
+bool Workbench::hasLinks()
+{
+    auto doc = App::GetApplication().getActiveDocument();
+    return doc && strcmp(doc->DocumentType.getValue(), App::Document::DocTypePart) != 0;
+}
+
 void Workbench::createLinkMenu(MenuItem* item)
 {
-    if (!item || !App::GetApplication().getActiveDocument()) {
+    if (!item || !hasLinks()) {
         return;
     }
 
@@ -657,13 +664,11 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
     }
     else if (strcmp(recipient, "Tree") == 0) {
         if (!sels.empty()) {
-            *item << "Std_ToggleFreeze" << "Separator"
-                  << "Std_ToggleVisibility" << "Std_ShowSelection"
-                  << "Std_HideSelection"
-                  << "Std_ToggleSelectability" << "Std_TreeSelectAllInstances" << "Separator"
-                  << "Std_RandomColor" << "Std_ToggleTransparency" << "Separator"
-                  << "Std_Cut" << "Std_Copy" << "Std_Paste" << "Std_Delete"
-                  << "Std_SendToPythonConsole";
+            *item << "Std_ToggleVisibility";
+            if (hasLinks()) {
+                *item << "Std_TreeSelectAllInstances";
+            }
+            *item << "Separator" << "Std_Copy" << "Std_Paste" << "Std_Delete";
         }
     }
 
@@ -689,10 +694,13 @@ MenuItem* StdWorkbench::setupMenuBar() const
     // File
     auto file = new MenuItem(menuBar);
     file->setCommand("&File");
-    *file << "Std_New" << "Std_Open" << "Std_RecentFiles" << "Separator" << "Std_CloseActiveWindow"
+    *file << "Std_New" << "Std_NewProject" << "Std_Open" << "Std_OpenProject" << "Std_RecentFiles"
+          << "Separator"
+          << "Std_CloseActiveWindow"
           << "Std_CloseAllWindows" << "Separator" << "Std_Save" << "Std_SaveAs"
           << "Std_SaveCopy" << "Std_SaveAll" << "Std_Revert" << "Separator" << "Std_Import"
-          << "Std_Export" << "Std_MergeProjects" << "Std_ProjectInfo"
+          << "Std_Export" << "Std_MergeProjects" << "Std_MergeDocumentVersions"
+          << "Std_ProjectInfo" << "Std_HeldStatements" << "Std_ProjectCleanup"
           << "Separator" << "Std_Print" << "Std_PrintPreview" << "Std_PrintPdf"
           << "Separator" << "Std_Quit";
 
@@ -704,7 +712,8 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_Refresh" << "Std_BoxSelection" << "Std_BoxElementSelection"
           << "Std_SelectAll" << "Std_Delete" << "Std_SendToPythonConsole"
           << "Separator" << "Std_Placement" << "Std_TransformManip" << "Std_Alignment"
-          << "Std_Edit" << "Std_Properties" << "Separator" << "Std_UserEditMode" << "Separator"
+          << "Std_Edit" << "Std_Properties" << "Std_Expressions" << "Separator"
+          << "Std_UserEditMode" << "Separator"
           << "Std_DlgPreferences";
 
     auto axoviews = new MenuItem;
@@ -760,7 +769,8 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Separator"
           << "Std_Workbench"
           << "Std_ToolBarMenu"
-          << "Std_DockViewMenu";
+          << "Std_DockViewMenu"
+          << "Std_ShowHistory";
     if (DockWindowManager::instance()->isOverlayActivated()) {
         *view << "Std_DockOverlay";
     }
@@ -779,6 +789,11 @@ MenuItem* StdWorkbench::setupMenuBar() const
               << "Separator";
     }
 #endif
+    // The material library belongs to no document (UI_GUIDE §2.6).
+    if (Application::Instance->commandManager().getCommandByName("Material_Edit")) {
+        *tool << "Material_Edit"
+              << "Separator";
+    }
     *tool << "Std_Measure"
           << "Std_MassProperties"
           << "Std_AnnotationLabel"

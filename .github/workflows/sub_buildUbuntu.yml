@@ -47,6 +47,9 @@ on:
     outputs:
       reportFile:
         value: ${{ jobs.Build.outputs.reportFile }}
+    secrets:
+      assetsToken:
+        required: false
 
 jobs:
 
@@ -89,6 +92,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: true
+
+      - name: Fetch CoreCAD branding assets
+        uses: ./.github/workflows/actions/fetchBrandingAssets
+        with:
+          token: ${{ secrets.assetsToken }}
 
       - name: Install FreeCAD dependencies
         run: ./package/ubuntu/install-apt-packages.sh
@@ -161,25 +169,15 @@ jobs:
         run: |
           ccache -s
 
-      - name: FreeCAD CLI tests on build dir
+      - name: FreeCAD Python tests on build dir
         if: inputs.testOnBuildDir
-        timeout-minutes: 10
+        timeout-minutes: 25
         uses: ./.github/workflows/actions/runPythonTests
         with:
-          testDescription: "CLI tests on build dir"
-          testCommand: ${{ env.builddir }}/bin/FreeCADCmd -t 0
-          logFile: ${{ env.logdir }}TestCLIBuild.log
-          reportFile: ${{env.reportdir}}${{ env.reportfilename }}
-
-      - name: FreeCAD GUI tests on build dir
-        if: inputs.testOnBuildDir
-        timeout-minutes: 15
-        uses: ./.github/workflows/actions/runPythonTests
-        with:
-          testDescription: "GUI tests on build dir"
-          # Use Python wrapper to run only GUI-registered tests with the built FreeCAD executable
-          testCommand: xvfb-run python3 ./.github/scripts/run_gui_tests.py "${{ env.builddir }}"
-          logFile: ${{ env.logdir }}TestGUIBuild.log
+          testDescription: "Python tests on build dir"
+          # One ctest entry per suite: `-t 0` stops at the first suite that crashes and hides the rest
+          testCommand: ctest --test-dir ${{ env.builddir }} -R "^Python_" -j 4 --output-on-failure
+          logFile: ${{ env.logdir }}TestPythonBuild.log
           reportFile: ${{env.reportdir}}${{ env.reportfilename }}
 
       - name: Coin node snapshot visual tests on build dir

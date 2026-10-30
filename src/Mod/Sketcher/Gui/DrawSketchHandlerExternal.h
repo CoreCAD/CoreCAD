@@ -25,7 +25,6 @@
 #pragma once
 
 #include <App/Datums.h>
-#include <Mod/Part/App/DatumFeature.h>
 
 #include <Gui/Notifications.h>
 #include <Gui/Selection/SelectionFilter.h>
@@ -74,16 +73,6 @@ public:
                 case Sketcher::SketchObject::rlOtherDoc:
                     this->notAllowedReason = QT_TR_NOOP("This object is in another document.");
                     break;
-                case Sketcher::SketchObject::rlOtherBody:
-                    this->notAllowedReason = QT_TR_NOOP(
-                        "This object belongs to another body, can't link."
-                    );
-                    break;
-                case Sketcher::SketchObject::rlOtherPart:
-                    this->notAllowedReason = QT_TR_NOOP(
-                        "This object belongs to another part, can't link."
-                    );
-                    break;
                 default:
                     break;
             }
@@ -106,7 +95,7 @@ public:
             return true;
         }
 
-        if (pObj->isDerivedFrom<App::Plane>() || pObj->isDerivedFrom<Part::Datum>()) {
+        if (pObj->isDerivedFrom<App::Plane>()) {
             return true;
         }
 
@@ -174,9 +163,8 @@ public:
             }
             std::string subName(msg.pSubName);
 
-            if (obj->isDerivedFrom<App::Plane>() || obj->isDerivedFrom<Part::Datum>()
-                || obj->isDerivedFrom<Part::DatumLine>() || obj->isDerivedFrom<Part::DatumPoint>()
-                || obj->isDerivedFrom<App::Line>() || obj->isDerivedFrom<App::Point>()
+            if (obj->isDerivedFrom<App::Plane>() || obj->isDerivedFrom<App::Line>()
+                || obj->isDerivedFrom<App::Point>()
                 || (subName.size() > 4 && subName.substr(0, 4) == "Edge")
                 || (subName.size() > 6 && subName.substr(0, 6) == "Vertex")
                 || (subName.size() > 4 && subName.substr(0, 4) == "Face")) {

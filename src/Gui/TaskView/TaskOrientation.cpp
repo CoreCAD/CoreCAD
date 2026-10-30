@@ -64,7 +64,7 @@ void TaskOrientation::open()
     if (!feature.expired()) {
         App::Document* doc = feature->getDocument();
         doc->openTransaction(QT_TRANSLATE_NOOP("Command", "Edit image"));
-        restore(feature->Placement.getValue());
+        restore(feature->getPlacement());
     }
 }
 
@@ -165,7 +165,9 @@ void TaskOrientation::updatePlacement()
     }
 
     if (!feature.expired()) {
-        feature->Placement.setValue(Pos);
+        if (auto* pp = feature->getPlacementProperty()) {
+            pp->setValue(Pos);
+        }
     }
 }
 

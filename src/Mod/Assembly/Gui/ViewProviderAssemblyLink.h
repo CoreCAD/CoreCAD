@@ -27,20 +27,44 @@
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
-#include <Gui/ViewProviderPart.h>
+#include <Gui/ViewProviderGeometryObject.h>
+#include <Gui/ViewProviderGeoFeatureGroupExtension.h>
 
+
+namespace Gui
+{
+class LinkView;
+}
 
 namespace AssemblyGui
 {
 
-class AssemblyGuiExport ViewProviderAssemblyLink: public Gui::ViewProviderPart
+// A sub-assembly reference is a placed geometry group without an Origin: it pairs
+// ViewProviderGeometryObject (scene/material node) with the plain geo-feature-group
+// extension, mirroring the App-side AssemblyLink (GeoFeature + GeoFeatureGroupExtension).
+class AssemblyGuiExport ViewProviderAssemblyLink: public Gui::ViewProviderGeometryObject,
+                                                  public Gui::ViewProviderGeoFeatureGroupExtension
 {
     Q_DECLARE_TR_FUNCTIONS(AssemblyGui::ViewProviderAssemblyLink)
-    PROPERTY_HEADER_WITH_OVERRIDE(AssemblyGui::ViewProviderAssemblyLink);
+    PROPERTY_HEADER_WITH_EXTENSIONS(AssemblyGui::ViewProviderAssemblyLink);
 
 public:
     ViewProviderAssemblyLink();
     ~ViewProviderAssemblyLink() override;
+
+    void attach(App::DocumentObject*) override;
+    void updateData(const App::Property*) override;
+    void finishRestoring() override;
+
+    // Picking resolves through the reference: a click on the linked geometry rendered in the
+    // parent view returns the referenced sub-shape, so joints can mate to it. Delegates to the
+    // LinkView; falls back to the base group behaviour when nothing is linked (flexible, #63).
+    bool useNewSelectionModel() const override
+    {
+        return true;
+    }
+    bool getElementPicked(const SoPickedPoint*, std::string&) const override;
+    bool getDetailPath(const char*, SoFullPath*, bool, SoDetail*&) const override;
 
     /// deliver the icon shown in the tree view. Override from ViewProvider.h
     QIcon getIcon() const override;
@@ -73,6 +97,14 @@ public:
     };
 
     void setupContextMenu(QMenu*, QObject*, const char*) override;
+
+private:
+    // Renders the linked assembly through the reference (rigid sub-assemblies own no proxy
+    // geometry). Positioned by this instance's Placement via the group placement transform.
+    // Flexible sub-assemblies keep their owned proxy children and this stays inactive (#63).
+    void updateLinkView();
+
+    Gui::LinkView* linkView = nullptr;
 };
 
 }  // namespace AssemblyGui

@@ -9,18 +9,22 @@ MACRO (fc_copy_sources target_name outpath)
 	else()
 		set(fc_details "")
 	endif()
-	if(INSTALL_PREFER_SYMLINKS)
-		set(copy_command create_symlink)
-	else()
-		set(copy_command copy)
-	endif()
-
 	foreach(it ${ARGN})
 		get_filename_component(infile ${it} ABSOLUTE)
 		get_filename_component(outfile "${outpath}/${it}" ABSOLUTE)
 		# Ensure parent directory exists when copying or creating symlinks
 		get_filename_component(outfile_dir "${outfile}" PATH)
 		add_file_dependencies("${infile}" "${outfile}")
+		# In symlink mode, only per-file sources are linked (create_symlink can
+		# overwrite a file but not replace an existing directory, and live-editing
+		# data directories is not the goal). Directory sources always copy.
+		if(INSTALL_PREFER_SYMLINKS AND NOT IS_DIRECTORY "${infile}")
+			set(copy_command create_symlink)
+		elseif(IS_DIRECTORY "${infile}")
+			set(copy_command copy_directory)
+		else()
+			set(copy_command copy)
+		endif()
 		ADD_CUSTOM_COMMAND(
 			# Make sure destination directory exists before copy/symlink
 			COMMAND   "${CMAKE_COMMAND}" -E make_directory "${outfile_dir}"

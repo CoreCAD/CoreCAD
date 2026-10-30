@@ -33,6 +33,10 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
+#include <functional>
+#include <map>
+#include <optional>
+
 #include "GeoEnum.h"
 
 
@@ -125,11 +129,57 @@ public:
     // does not copy the tag, but generates a new one
     Constraint* copy() const;
 
+    /// The durable per-constraint identity, persisted across save/restore.
+    boost::uuids::uuid getTag() const
+    {
+        return tag;
+    }
+
+    /// Give this constraint a fresh identity. Called when a duplicate must take an
+    /// identity of its own rather than keep the source's.
+    void mintDurableIdentity();
+
+    /// Resolves an authored geometry's GeoId to its durable tag; returns nil for
+    /// GeoIds with no durable identity (axes, external geometry, undefined).
+    using GeoIdToTagFn = std::function<boost::uuids::uuid(int geoId)>;
+    /// Resolves a durable geometry tag to the GeoId it currently occupies; empty if
+    /// no live geometry carries that tag.
+    using TagToGeoIdFn = std::function<std::optional<int>(const boost::uuids::uuid& tag)>;
+
     // from base class
     unsigned int getMemSize() const override;
     void Save(Base::Writer& /*writer*/) const override;
+    /// Save, additionally recording each element's durable geometry tag alongside its
+    /// GeoId so the reference can be re-bound after the geometry list reorders (merge,
+    /// upstream edit). The GeoId stays a readable annotation; the tag is authoritative.
+    void Save(Base::Writer& writer, const GeoIdToTagFn& geoIdToTag) const;
     void Restore(Base::XMLReader& /*reader*/) override;
 
+    /// Boundary translation, restore side: rewrite each element's GeoId from the durable
+    /// tag read during Restore, so a reference survives a geometry-list reorder. An element
+    /// with no durable handle (nil tag: axis, external geometry) keeps its loaded GeoId. An
+    /// element whose durable handle no longer resolves — the target geometry is genuinely
+    /// gone — is marked GeoUndef so the loss fails loud (§10.1) instead of the loaded GeoId
+    /// silently aliasing whatever element now occupies that slot. Returns true if any
+    /// element went dangling this way, so the caller can disclose it.
+    bool bindElementsToDurableGeometry(const TagToGeoIdFn& tagToGeoId);
+
+    /** Follow the geometry this constraint names to the identities it has just been given.
+     *
+     * A duplicate re-mints the identity of everything it authors. Between the read and the bind a
+     * constraint holds the identities the file stated, so a re-mint that does not carry them
+     * leaves the constraint naming geometry that no longer exists anywhere.
+     */
+    void carryElementReferencesTo(const std::map<boost::uuids::uuid, boost::uuids::uuid>& renamed);
+
+private:
+    /// Read the references a document written to this form states, one element each.
+    void restoreElementsStatedOnce(Base::XMLReader& reader);
+
+    /// Read the references a document written by an older program states, positionally.
+    void restoreElementsStatedPositionally(Base::XMLReader& reader);
+
+public:
     PyObject* getPyObject() override;
 
     Base::Quantity getPresentationValue() const;
@@ -173,10 +223,27 @@ public:
     }
     static std::string internalAlignmentTypeToString(InternalAlignmentType alignment);
 
+    /** The constraint type a file names, or nothing when this build has no type of that name.
+     *
+     * Cruth: a constraint states what it is by name, so a file can be read by a person and lined
+     * up on a merge, and so that adding a type cannot change what an existing file means. A name
+     * this build does not have is a statement it cannot honour, and the reader keeps it rather
+     * than dropping the constraint (Amendment 19).
+     */
+    static std::optional<ConstraintType> typeFromString(const std::string& name);
+
+    /// The internal-alignment type a file names, or nothing when this build has no such type.
+    static std::optional<InternalAlignmentType> internalAlignmentTypeFromString(
+        const std::string& name
+    );
+
     friend class PropertyConstraintList;
 
 private:
     Constraint(const Constraint&) = default;  // only for internal use
+
+    /// Mint a fresh random tag. Shared by the constructor and mintDurableIdentity().
+    void createNewTag();
 
 private:
     double Value {0.0};
@@ -246,6 +313,9 @@ public:
     void addElement(GeoElementId element);
     bool hasElement(int index) const;
     size_t getElementsSize() const;
+
+    /// How many elements the stored form states -- the trailing ones that hold nothing are not.
+    size_t statedElementCount() const;
     bool isElementsEmpty() const;
     void truncateElements(size_t newSize);
     int getGeoId(int index) const;
@@ -272,6 +342,10 @@ public:
     PointPos FirstPos {PointPos::none};
     PointPos SecondPos {PointPos::none};
     PointPos ThirdPos {PointPos::none};
+
+    /// Durable geometry tags read from the file, one per element (nil where none), held
+    /// only between Restore and bindElementsToDurableGeometry, which consumes them.
+    std::vector<boost::uuids::uuid> restoredElementGeoTags;
 #endif
 
 private:

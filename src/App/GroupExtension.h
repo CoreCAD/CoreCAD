@@ -75,6 +75,15 @@ public:
         return true;
     }
 
+    /// True when this group is the user's filing, where an object sits in at most one folder.
+    /// A group that records membership instead (an assembly's components, its joints, a
+    /// simulation's motions) returns false, so filing an object in a folder does not take it
+    /// out of that group.
+    virtual bool isFolder() const
+    {
+        return true;
+    }
+
     /** Removes an object from this group. Returns all objects that have been removed.
      */
     virtual std::vector<DocumentObject*> removeObject(DocumentObject* obj);

@@ -3369,10 +3369,7 @@ void ViewProviderSketch::drawEditMarkers(const std::vector<Base::Vector2d>& Edit
 }
 
 void ViewProviderSketch::updateData(const App::Property* prop) {
-    if (std::string(prop->getName()) != "ShapeMaterial") {
-        // We don't want material to override the colors of sketches.
-        ViewProvider2DObject::updateData(prop);
-    }
+    ViewProvider2DObject::updateData(prop);
 
     if (prop == &getSketchObject()->InternalShape) {
         const auto& shape = getSketchObject()->InternalShape.getValue();
@@ -3634,10 +3631,6 @@ bool ViewProviderSketch::setEdit(int ModNum)
     }
 
     Sketcher::SketchObject* sketch = getSketchObject();
-
-    if(sketch->isFreezed()) {
-        return false; // Disallow edit of a frozen sketch
-    }
 
     if (!sketch->evaluateConstraints()) {
         QMessageBox box(Gui::getMainWindow());
@@ -4468,19 +4461,6 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string>& subList)
     }
     // if not in edit delete the whole object
     return PartGui::ViewProviderPart::onDelete(subList);
-}
-
-QIcon ViewProviderSketch::mergeColorfulOverlayIcons(const QIcon& orig) const
-{
-    QIcon mergedicon = orig;
-
-    if (!getSketchObject()->FullyConstrained.getValue()) {
-        static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("Sketcher_NotFullyConstrained", QSize(10, 10)));
-        mergedicon = Gui::BitmapFactoryInst::mergePixmap(
-            mergedicon, px, Gui::BitmapFactoryInst::BottomRight);
-    }
-
-    return Gui::ViewProvider::mergeColorfulOverlayIcons(mergedicon);
 }
 
 void ViewProviderSketch::slotToolWidgetChanged(QWidget* newwidget)

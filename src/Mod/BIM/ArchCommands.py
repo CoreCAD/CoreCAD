@@ -894,11 +894,6 @@ def pruneIncluded(objectslist, strict=False, silent=False):
                     elif parent.isDerivedFrom("PartDesign::Body") and obj == parent.BaseFeature:
                         # don't consider a PartDesign_Body with a PartDesign_Clone that references obj
                         pass
-                    elif parent.isDerivedFrom("PartDesign::SubShapeBinder") or (
-                        hasattr(parent, "TypeId") and parent.TypeId == "PartDesign::ShapeBinder"
-                    ):
-                        # don't consider a PartDesign_SubShapeBinder or PartDesign_ShapeBinder referencing this object from another object
-                        pass
                     elif hasattr(parent, "Host") and parent.Host == obj:
                         pass
                     elif hasattr(parent, "Hosts") and obj in parent.Hosts:
@@ -1832,7 +1827,11 @@ def resolve_pd_object(obj):
     App::DocumentObject
         The parent PartDesign::Body if ``obj`` is a member of one, otherwise ``obj`` unchanged.
     """
-    body = getattr(obj, "_Body", None)
+    body = None
+    if obj.isDerivedFrom("PartDesign::Feature"):
+        import PartDesign
+
+        body = PartDesign.findBodyOf(obj)
     if body is not None:
         return body
     return obj

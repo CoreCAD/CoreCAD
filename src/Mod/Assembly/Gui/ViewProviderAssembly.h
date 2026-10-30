@@ -30,7 +30,7 @@
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <Gui/Selection/Selection.h>
-#include <Gui/ViewProviderPart.h>
+#include <Gui/ViewProviderDocumentObjectGroup.h>
 
 class SoSwitch;
 class SoSensor;
@@ -80,7 +80,7 @@ struct MovingObject
     {}
 };
 
-class AssemblyGuiExport ViewProviderAssembly: public Gui::ViewProviderPart,
+class AssemblyGuiExport ViewProviderAssembly: public Gui::ViewProviderDocumentObjectGroup,
                                               public Gui::SelectionObserver
 {
     Q_DECLARE_TR_FUNCTIONS(AssemblyGui::ViewProviderAssembly)

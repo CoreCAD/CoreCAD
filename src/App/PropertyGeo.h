@@ -549,6 +549,12 @@ class AppExport PropertyComplexGeoData: public App::PropertyGeometry
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: a solid, a mesh, a point cloud -- geometry, not something a person reads or edits as text.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyComplexGeoData();
     ~PropertyComplexGeoData() override;
 

@@ -76,12 +76,9 @@
 #include <App/MappedName.h>
 #include <App/ObjectIdentifier.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Base/Vector3D.h>
-#include <Mod/Part/App/BodyBase.h>
-#include <Mod/Part/App/DatumFeature.h>
 
 #include <memory>
 
@@ -210,40 +207,14 @@ bool SketchObject::isExternalAllowed(App::Document* pDoc, App::DocumentObject* p
     }
 
 
-    // Note: Checking for the body of the support doesn't work when the support are the three base
-    // planes
-    Part::BodyBase* body_this = Part::BodyBase::findBodyOf(this);
-    Part::BodyBase* body_obj = Part::BodyBase::findBodyOf(pObj);
-
-    // DatumElements in an LCS, get body from the parent LCS
-    if (!body_obj && pObj->isDerivedFrom<App::DatumElement>()) {
-        auto* datum = static_cast<const App::DatumElement*>(pObj);
-        if (auto* lcs = datum->getLCS()) {
-            body_obj = Part::BodyBase::findBodyOf(lcs);
-        }
-    }
-
-    App::Part* part_this = App::Part::getPartOfObject(this);
-    App::Part* part_obj = App::Part::getPartOfObject(pObj);
-    if (part_this == part_obj) {// either in the same part, or in the root of document
-        if (!body_this) {
-            return true;
-        }
-        else if (body_this == body_obj) {
-            return true;
-        }
-        else {
-            if (rsn)
-                *rsn = rlOtherBody;
-            return false;
-        }
-    }
-    else {
-        // cross-part link. Disallow, should be done via shapebinders only
-        if (rsn)
-            *rsn = rlOtherPart;
-        return false;
-    }
+    // Cruth de-ownership: a sketch belongs to the document, not to a Body — the sketch is the
+    // authored primary; a Body is only a downstream marker on a solid step and need not exist at
+    // all. So "same Body?" is no longer a meaningful question here and the old rlOtherBody gate is
+    // gone: within one document a sketch may reference any geometry it can see (another Body, a
+    // stray sketch, a datum), matching the fork's existing direct cross-body references. The only
+    // hard boundary is the document, checked above: referencing across documents goes through a
+    // binder.
+    return true;
 }
 
 bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject* pObj, bool& xinv,
@@ -288,31 +259,11 @@ bool SketchObject::isCarbonCopyAllowed(App::Document* pDoc, App::DocumentObject*
     }
 
 
-    // Note: Checking for the body of the support doesn't work when the support are the three base
-    // planes
-    Part::BodyBase* body_this = Part::BodyBase::findBodyOf(this);
-    Part::BodyBase* body_obj = Part::BodyBase::findBodyOf(pObj);
-    App::Part* part_this = App::Part::getPartOfObject(this);
-    App::Part* part_obj = App::Part::getPartOfObject(pObj);
-    if (part_this != part_obj) {
-        // cross-part relation. Disallow, should be done via shapebinders only
-        setReason(rlOtherPart);
-        return false;
-    }
-
-    // Hereafter assuming: either in the same part, or in the root of document
-    if (body_this && body_this != body_obj) {
-        if (!this->allowOtherBody) {
-            setReason(rlOtherBody);
-            return false;
-        }
-        // if the original sketch has external geometry AND it is not in this body prevent
-        // link
-        else if (psObj->getExternalGeometryCount() > 2) {
-            setReason(rlOtherBodyWithLinks);
-            return false;
-        }
-    }
+    // Cruth de-ownership: the Body is no longer the boundary for a carbon copy — the sketch lives
+    // in the document, and copying another sketch's geometry across Bodies is as legitimate as any
+    // in-Part reference (see isExternalAllowed above). The old rlOtherBody / rlOtherBodyWithLinks
+    // gates (and the allowOtherBody flag they consulted) protected a Body boundary that no longer
+    // exists. Only the document boundary remains, checked above.
 
     const Rotation& srot = psObj->Placement.getValue().getRotation();
     const Rotation& lrot = this->Placement.getValue().getRotation();
@@ -437,12 +388,13 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
             }
             auto copy = geo->copy();
             auto egf = ExternalGeometryFacade::getFacade(copy);
-            egf->setId(++geoLastId);
+            const long id = this->mintGeometryId(copy);
+            egf->setId(id);
             if (!egf->getRef().empty()) {
                 auto& refs = this->externalGeoRefMap[egf->getRef()];
-                refs.push_back(geoLastId);
+                refs.push_back(id);
             }
-            this->externalGeoMap[geoLastId] = (int)geos.size();
+            this->externalGeoMap[id] = (int)geos.size();
             geos.push_back(copy);
             extMap[-i - 1] = -(int)geos.size();
         }
@@ -1335,17 +1287,11 @@ void SketchObject::validateExternalLinks()
 
         TopoDS_Shape refSubShape;
         try {
-            if (Obj->isDerivedFrom<Part::Datum>()) {
-                const auto* datum = static_cast<const Part::Datum*>(Obj);
-                refSubShape = datum->getShape();
-            }
-            else if (Obj->isDerivedFrom<App::DatumElement>()) {
+            if (Obj->isDerivedFrom<App::DatumElement>()) {
                 // do nothing - shape will be calculated later during rebuild
             }
             else {
-                const auto* refObj = static_cast<const Part::Feature*>(Obj);
-                const Part::TopoShape& refShape = refObj->Shape.getShape();
-                refSubShape = refShape.getSubShape(SubElement.c_str());
+                refSubShape = Part::getShape(Obj).getSubShape(SubElement.c_str());
             }
             continue; // no bad link needs to be removed
         }
@@ -2452,11 +2398,8 @@ void SketchObject::rebuildExternalGeometry(std::optional<ExternalToAdd> extToAdd
                 }
             }
 
-            if (auto* datum = freecad_cast<const Part::Datum*>(resolvedObj)) {
-                refSubShape = datum->getShape();
-            }
-            else if (auto* refObj = freecad_cast<const Part::Feature*>(resolvedObj)) {
-                const Part::TopoShape& refShape = refObj->Shape.getShape();
+            if (Part::hasShape(resolvedObj)) {
+                const Part::TopoShape refShape = Part::getShape(resolvedObj);
                 refSubShape = refShape.getSubShape(SubElement.c_str());
             }
             else if (auto* pl = freecad_cast<const App::Plane*>(resolvedObj)) {
@@ -2635,7 +2578,7 @@ void SketchObject::rebuildExternalGeometry(std::optional<ExternalToAdd> extToAdd
         auto egf = ExternalGeometryFacade::getFacade(geos.front().get());
         auto &refs = externalGeoRefMap[egf->getRef()];
         while(refs.size() < geos.size())
-            refs.push_back(++geoLastId);
+            refs.push_back(mintGeometryId(geos[refs.size()].get()));
 
         // In case a projection reduces output geometries, delete them
         std::set<long> geoIds;
@@ -2821,9 +2764,7 @@ void SketchObject::updateGeometryRefs()
 
         legacyMap[key + Data::oldElementName(sub.c_str())] = i;
 
-        if (!obj->isDerivedFrom<Part::Datum>()) {
-            key += Data::newElementName(sub.c_str());
-        }
+        key += Data::newElementName(sub.c_str());
         if (!originalRefs.empty() && originalRefs[i] != key) {
             refMap[originalRefs[i]] = key;
         }

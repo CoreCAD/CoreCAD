@@ -32,6 +32,7 @@
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>
 #include <Mod/Part/App/FeatureCompound.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "ViewProviderCompound.h"
 
@@ -46,11 +47,6 @@ ViewProviderCompound::ViewProviderCompound()
 }
 
 ViewProviderCompound::~ViewProviderCompound() = default;
-
-std::vector<App::DocumentObject*> ViewProviderCompound::claimChildren() const
-{
-    return getObject<Part::Compound>()->Links.getValues();
-}
 
 bool ViewProviderCompound::onDelete(const std::vector<std::string>& subNames)
 {
@@ -135,7 +131,7 @@ void ViewProviderCompound::updateData(const App::Property* prop)
             std::set<App::DocumentObject*> tempSources;
             std::vector<App::DocumentObject*> filter;
             for (auto source : sources) {
-                Part::Feature* objBase = dynamic_cast<Part::Feature*>(source);
+                App::GeoFeature* objBase = Part::shapeCarrier(source);
                 if (objBase) {
                     auto pos = tempSources.insert(objBase);
                     if (pos.second) {
@@ -160,12 +156,12 @@ void ViewProviderCompound::updateData(const App::Property* prop)
         int index = 0;
         for (std::vector<App::DocumentObject*>::iterator it = sources.begin(); it != sources.end();
              ++it, ++index) {
-            Part::Feature* objBase = dynamic_cast<Part::Feature*>(Part::Feature::getShapeOwner(*it));
+            App::GeoFeature* objBase = Part::shapeCarrier(Part::Feature::getShapeOwner(*it));
             if (!objBase) {
                 continue;
             }
 
-            const TopoDS_Shape& baseShape = objBase->Shape.getValue();
+            const TopoDS_Shape baseShape = Part::getShape(objBase).getShape();
 
             TopTools_IndexedMapOfShape baseMap;
             TopExp::MapShapes(baseShape, TopAbs_FACE, baseMap);
@@ -212,7 +208,7 @@ bool ViewProviderCompound::canDragObjects() const
 
 bool ViewProviderCompound::canDragObject(App::DocumentObject* obj) const
 {
-    return obj->isDerivedFrom<Part::Feature>();
+    return Part::hasShape(obj);
 }
 
 void ViewProviderCompound::dragObject(App::DocumentObject* obj)
@@ -235,7 +231,7 @@ bool ViewProviderCompound::canDropObjects() const
 
 bool ViewProviderCompound::canDropObject(App::DocumentObject* obj) const
 {
-    return obj->isDerivedFrom<Part::Feature>();
+    return Part::hasShape(obj);
 }
 
 void ViewProviderCompound::dropObject(App::DocumentObject* obj)

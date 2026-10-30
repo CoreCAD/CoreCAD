@@ -38,6 +38,7 @@ protected:
      * The default implementation doesn't change anything.
      */
     void modifyMenuBar(Gui::MenuItem* menuBar) override;
+    void modifyContextMenu(const char* recipient, Gui::MenuItem* menuBar) override;
     /*!
      * \brief modifyToolBars
      * Method to manipulate the toolbar structure of a workbench
@@ -52,6 +53,7 @@ protected:
     void modifyDockWindows([[maybe_unused]] Gui::DockWindowItems* dockWindow) override;
 
 private:
+    static bool addAppearanceAfter(Gui::MenuItem* menuBar, const char* reference);
     static void addSelectionFilter(Gui::ToolBarItem* toolBar);
     static void addDatums(Gui::ToolBarItem* toolBar);
 };

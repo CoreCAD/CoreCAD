@@ -488,6 +488,8 @@ SET(Gui_UIC_SRCS
     DownloadManager.ui
     DownloadItem.ui
     Dialogs/DlgExpressionInput.ui
+    Dialogs/DlgHeldStatements.ui
+    Dialogs/DlgProjectCleanup.ui
     MouseButtons.ui
     SceneInspector.ui
     InputVector.ui
@@ -514,8 +516,39 @@ set (FreeCAD_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Language/FreeCAD_translation.qrc
 qt_find_and_add_translation(QM_SRCS "Language/FreeCAD_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Language)
 qt_create_resource_file_prefix(${FreeCAD_TR_QRC} ${QM_SRCS})
+# Stage branding icon overrides into the build tree (source tree is untouched).
+# When CORECAD_ASSETS_DIR is set, matching assets replace the placeholder icons
+# in a staging copy; otherwise the original QRC is used as-is.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Icons"
+    ASSETS_SUBDIR "src/Gui/Icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Icons/resource.qrc"
+    OUTPUT_QRC    _CoreCAD_Icons_QRC
+)
+
+# CorePart workbench icons — compiled into FreeCADGui so they are globally
+# available by name without requiring a separate Python import.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_SOURCE_DIR}/src/Mod/CorePart/Resources"
+    ASSETS_SUBDIR "src/Mod/CorePart"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_SOURCE_DIR}/src/Mod/CorePart/Resources/CorePart.qrc"
+    OUTPUT_QRC    _CorePart_Icons_QRC
+)
+
+# The drawing page icon, for Std_NewDrawing before the TechDraw module loads.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_SOURCE_DIR}/src/Mod/TechDraw/Gui/Resources"
+    ASSETS_SUBDIR "src/Mod/TechDraw"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_SOURCE_DIR}/src/Mod/TechDraw/Gui/Resources/TechDraw_NewDrawing.qrc"
+    OUTPUT_QRC    _NewDrawing_Icon_QRC
+)
+
 set(Gui_RES_SRCS
-    Icons/resource.qrc
+    ${_CoreCAD_Icons_QRC}
+    ${_CorePart_Icons_QRC}
+    ${_NewDrawing_Icon_QRC}
     Language/translation.qrc
     ${FreeCAD_TR_QRC}
 )
@@ -577,6 +610,8 @@ SET(Dialog_CPP_SRCS
     Dialogs/DlgPropertyLink.cpp
     Dialogs/DlgRevertToBackupConfigImp.cpp
     Dialogs/DlgExpressionInput.cpp
+    Dialogs/DlgHeldStatements.cpp
+    Dialogs/DlgProjectCleanup.cpp
     Dialogs/DlgThemeEditor.cpp
     Dialogs/DlgVersionMigrator.cpp
     TaskDlgRelocation.cpp
@@ -593,6 +628,7 @@ SET(Dialog_CPP_SRCS
     DownloadItem.cpp
     DownloadManager.cpp
     DocumentRecovery.cpp
+    DuplicateDocumentQuestion.cpp
     TaskElementColors.cpp
     Dialogs/DlgObjectSelection.cpp
     Dialogs/DlgAddProperty.cpp
@@ -621,6 +657,8 @@ SET(Dialog_HPP_SRCS
     Dialogs/DlgRevertToBackupConfigImp.h
     Dialogs/DlgCheckableMessageBox.h
     Dialogs/DlgExpressionInput.h
+    Dialogs/DlgHeldStatements.h
+    Dialogs/DlgProjectCleanup.h
     Dialogs/DlgThemeEditor.h
     Dialogs/DlgVersionMigrator.h
     TaskDlgRelocation.h
@@ -636,6 +674,7 @@ SET(Dialog_HPP_SRCS
     DownloadItem.h
     DownloadManager.h
     DocumentRecovery.h
+    DuplicateDocumentQuestion.h
     TaskElementColors.h
     Dialogs/DlgObjectSelection.h
     Dialogs/DlgAddProperty.h
@@ -669,6 +708,8 @@ SET(Dialog_SRCS
     Dialogs/DlgCheckableMessageBox.ui
     Dialogs/DlgTreeWidget.ui
     Dialogs/DlgExpressionInput.ui
+    Dialogs/DlgHeldStatements.ui
+    Dialogs/DlgProjectCleanup.ui
     Dialogs/DlgCreateNewPreferencePack.ui
     Dialogs/DlgVersionMigrator.ui
     DownloadManager.ui
@@ -803,6 +844,17 @@ SET(Dock_Windows_CPP_SRCS
     Selection/SelectionView.cpp
     ToolBox.cpp
     Tree.cpp
+    TreeDragDrop.cpp
+    TreeExpansion.cpp
+    TreeContextMenu.cpp
+    TreeDocumentItem.cpp
+    TreeItemDelegate.cpp
+    TreeObjectItem.cpp
+    TreePanel.cpp
+    TreeSelection.cpp
+    TreeHistory.cpp
+    TreeLineage.cpp
+    TreeSwatches.cpp
     TreeView.cpp
     DAGView/DAGView.cpp
     DAGView/DAGModel.cpp
@@ -817,6 +869,10 @@ SET(Dock_Windows_HPP_SRCS
     Selection/SelectionView.h
     ToolBox.h
     Tree.h
+    TreeShared.h
+    TreeHistory.h
+    TreeLineage.h
+    TreeSwatches.h
     TreeView.h
     DAGView/DAGView.h
     DAGView/DAGModel.h
@@ -1060,7 +1116,6 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderExtensionPyImp.cpp
     ViewProviderGroupExtension.cpp
     ViewProviderGeoFeatureGroupExtension.cpp
-    ViewProviderOriginGroupExtension.cpp
     ViewProviderSuppressibleExtension.cpp
     ViewProviderAnnotation.cpp
     ViewProviderDocumentObject.cpp
@@ -1083,8 +1138,6 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderPoint.cpp
     ViewProviderLine.cpp
     ViewProviderGeoFeatureGroup.cpp
-    ViewProviderOriginGroup.cpp
-    ViewProviderPart.cpp
     ViewProviderCoordinateSystem.cpp
     ViewProviderMaterialObject.cpp
     ViewProviderTextDocument.cpp
@@ -1102,7 +1155,6 @@ SET(Viewprovider_SRCS
     ViewProviderExtension.h
     ViewProviderGroupExtension.h
     ViewProviderGeoFeatureGroupExtension.h
-    ViewProviderOriginGroupExtension.h
     ViewProviderAnnotation.h
     ViewProviderDocumentObject.h
     ViewProviderDocumentObjectGroup.h
@@ -1121,8 +1173,6 @@ SET(Viewprovider_SRCS
     ViewProviderPoint.h
     ViewProviderLine.h
     ViewProviderGeoFeatureGroup.h
-    ViewProviderOriginGroup.h
-    ViewProviderPart.h
     ViewProviderCoordinateSystem.h
     ViewProviderMaterialObject.h
     ViewProviderTextDocument.h
@@ -1310,6 +1360,9 @@ SET(View_CPP_SRCS
     MDIViewPyWrap.cpp
     MDIViewWithCamera.cpp
     GraphvizView.cpp
+    HistoryPanel.cpp
+    ProjectPanel.cpp
+    ProjectDialogs.cpp
     ImageView.cpp
     ActiveObjectList.cpp
 )
@@ -1319,6 +1372,9 @@ SET(View_HPP_SRCS
     MDIViewPyWrap.h
     MDIViewWithCamera.h
     GraphvizView.h
+    HistoryPanel.h
+    ProjectPanel.h
+    ProjectDialogs.h
     ImageView.h
     ActiveObjectList.h
 )
@@ -1386,6 +1442,12 @@ SET(FreeCADGui_CPP_SRCS
     AutoSaver.cpp
     BitmapFactory.cpp
     Document.cpp
+    DocumentEdit.cpp
+    DocumentObjectSignals.cpp
+    DocumentSceneGraph.cpp
+    DocumentStorage.cpp
+    DocumentTransactions.cpp
+    DocumentViews.cpp
     DocumentModel.cpp
     DocumentPyImp.cpp
     DocumentObserver.cpp
@@ -1595,11 +1657,11 @@ else(WIN32)
     INSTALL(TARGETS FreeCADGui
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )
-    INSTALL(FILES Icons/freecad-icon-16.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/16x16/apps RENAME org.freecad.FreeCAD.png)
-    INSTALL(FILES Icons/freecad-icon-32.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps RENAME org.freecad.FreeCAD.png)
-    INSTALL(FILES Icons/freecad-icon-48.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/48x48/apps RENAME org.freecad.FreeCAD.png)
-    INSTALL(FILES Icons/freecad-icon-64.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/64x64/apps RENAME org.freecad.FreeCAD.png)
-    INSTALL(FILES Icons/freecad.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps RENAME org.freecad.FreeCAD.svg)
+    INSTALL(FILES Icons/freecad-icon-16.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/16x16/apps RENAME org.corecad.CoreCAD.png)
+    INSTALL(FILES Icons/freecad-icon-32.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps RENAME org.corecad.CoreCAD.png)
+    INSTALL(FILES Icons/freecad-icon-48.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/48x48/apps RENAME org.corecad.CoreCAD.png)
+    INSTALL(FILES Icons/freecad-icon-64.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/64x64/apps RENAME org.corecad.CoreCAD.png)
+    INSTALL(FILES Icons/freecad.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps RENAME org.corecad.CoreCAD.svg)
     INSTALL(FILES Icons/freecad.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pixmaps)
     INSTALL(FILES Icons/freecad-doc.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/mimetypes RENAME application-x-extension-fcstd.svg)
 endif(WIN32)

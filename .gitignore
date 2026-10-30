@@ -72,3 +72,22 @@ tsupdate_stdout.log
 # pixi environments
 *.egg-info
 .pixi
+
+# FreeCAD scratch/backup files (regenerable; never commit)
+*.FCBak
+/test.FCStd
+/test2.FCStd
+
+# Claude/dev scratch files (throwaway test scripts, docs; never commit)
+/.scratch/
+
+# Scratch CAD files saved at repo root during testing (real fixtures live in tests/)
+/test*.FCStd
+/test*.FCBak
+
+# Recipe views written beside saved documents (a view, regenerated on every save)
+*.recipe
+
+# Geometry cache written next to a document saved at the repo root
+/assets/
+.cortex/

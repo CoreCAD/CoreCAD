@@ -212,16 +212,6 @@ bool ImportExportSettings::getImportHiddenObject() const
     return pGroup->GetBool("ImportHiddenObject", true);
 }
 
-void ImportExportSettings::setExportLegacy(bool on)
-{
-    pGroup->SetBool("ExportLegacy", on);
-}
-
-bool ImportExportSettings::getExportLegacy() const
-{
-    return pGroup->GetBool("ExportLegacy", false);
-}
-
 void ImportExportSettings::setExportKeepPlacement(bool on)
 {
     pGroup->SetBool("ExportKeepPlacement", on);
@@ -230,16 +220,6 @@ void ImportExportSettings::setExportKeepPlacement(bool on)
 bool ImportExportSettings::getExportKeepPlacement() const
 {
     return pGroup->GetBool("ExportKeepPlacement", false);
-}
-
-void ImportExportSettings::setUseLinkGroup(bool on)
-{
-    pGroup->SetBool("UseLinkGroup", on);
-}
-
-bool ImportExportSettings::getUseLinkGroup() const
-{
-    return pGroup->GetBool("UseLinkGroup", false);
 }
 
 void ImportExportSettings::setUseBaseName(bool on)

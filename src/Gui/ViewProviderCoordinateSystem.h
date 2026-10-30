@@ -61,6 +61,7 @@ public:
     ///@{
     std::vector<App::DocumentObject*> claimChildren() const override;
     std::vector<App::DocumentObject*> claimChildren3D() const override;
+    bool canDropObjects() const override;
 
     SoGroup* getChildRoot() const override
     {
@@ -105,6 +106,7 @@ public:
 
 protected:
     bool onDelete(const std::vector<std::string>&) override;
+    bool canBeDeleted() const override;
 
 private:
     using DatumObjectFunc = std::function<void(ViewProviderDatum*)>;

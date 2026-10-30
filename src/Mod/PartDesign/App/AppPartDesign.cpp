@@ -28,11 +28,8 @@
 #include <Base/PyObjectBase.h>
 
 #include "Body.h"
-#include "DatumCS.h"
-#include "DatumLine.h"
-#include "DatumPlane.h"
-#include "DatumPoint.h"
 #include "Measure.h"
+#include "FeatureBakedShape.h"
 #include "FeatureBase.h"
 #include "FeatureBoolean.h"
 #include "FeatureChamfer.h"
@@ -45,19 +42,21 @@
 #include "FeatureLinearPattern.h"
 #include "FeatureLoft.h"
 #include "FeatureMirrored.h"
-#include "FeatureMultiTransform.h"
 #include "FeaturePad.h"
 #include "FeaturePipe.h"
 #include "FeaturePocket.h"
 #include "FeaturePolarPattern.h"
+#include "FeatureCurvePattern.h"
+#include "FeatureFillPattern.h"
+#include "FeatureTablePattern.h"
+#include "FeatureFormulaPattern.h"
+#include "FeaturePointPattern.h"
 #include "FeaturePrimitive.h"
 #include "FeatureRevolution.h"
-#include "FeatureScaled.h"
 #include "FeatureSketchBased.h"
 #include "FeatureSolid.h"
 #include "FeatureThickness.h"
 #include "FeatureTransformed.h"
-#include "ShapeBinder.h"
 
 
 namespace PartDesign
@@ -92,6 +91,7 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::FeatureRefine               ::init();
     PartDesign::FeatureRefinePython         ::init();
     PartDesign::Solid                       ::init();
+    PartDesign::BakedShape                  ::init();
     PartDesign::FeatureAddSub               ::init();
     PartDesign::FeatureAddSubPython         ::init();
     PartDesign::FeatureAdditivePython       ::init();
@@ -102,8 +102,11 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::Mirrored                    ::init();
     PartDesign::LinearPattern               ::init();
     PartDesign::PolarPattern                ::init();
-    PartDesign::Scaled                      ::init();
-    PartDesign::MultiTransform              ::init();
+    PartDesign::PointPattern                ::init();
+    PartDesign::CurvePattern                ::init();
+    PartDesign::FillPattern                 ::init();
+    PartDesign::TablePattern                 ::init();
+    PartDesign::FormulaPattern               ::init();
     PartDesign::Hole                        ::init();
     PartDesign::Body                        ::init();
     PartDesign::FeatureExtrude              ::init();
@@ -125,13 +128,6 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::Helix                       ::init();
     PartDesign::AdditiveHelix               ::init();
     PartDesign::SubtractiveHelix            ::init();
-    PartDesign::ShapeBinder                 ::init();
-    PartDesign::SubShapeBinder              ::init();
-    PartDesign::SubShapeBinderPython        ::init();
-    PartDesign::Plane                       ::init();
-    PartDesign::Line                        ::init();
-    PartDesign::Point                       ::init();
-    PartDesign::CoordinateSystem            ::init();
     PartDesign::Boolean                     ::init();
     PartDesign::FeaturePrimitive            ::init();
     PartDesign::Box                         ::init();
@@ -162,6 +158,10 @@ PyMOD_INIT_FUNC(_PartDesign)
 
     PartDesign::Measure ::initialize();
     // clang-format on
+
+    // Cruth §4.8: wire multi-output Body spawn onto document recompute (P8: one
+    // observer serves both the UI and Python recompute paths).
+    PartDesign::Body::initMultiOutputObserver();
 
     PyMOD_Return(mod);
 }

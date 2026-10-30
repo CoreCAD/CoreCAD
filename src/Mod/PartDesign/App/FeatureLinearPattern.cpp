@@ -39,8 +39,6 @@
 #include <Mod/Part/App/Part2DObject.h>
 
 #include "FeatureLinearPattern.h"
-#include "DatumLine.h"
-#include "DatumPlane.h"
 
 
 using namespace PartDesign;
@@ -226,7 +224,7 @@ void LinearPattern::setReadWriteStatusForMode(LinearPatternDirection dir)
     }
 }
 
-const std::list<gp_Trsf> LinearPattern::getTransformations(const std::vector<App::DocumentObject*>)
+std::list<gp_Trsf> LinearPattern::getTransformations()
 {
     int occurrences = Occurrences.getValue();
     int occurrences2 = Occurrences2.getValue();
@@ -406,14 +404,6 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
         }
         dir = gp_Dir(axis.getDirection().x, axis.getDirection().y, axis.getDirection().z);
     }
-    else if (auto* plane = freecad_cast<PartDesign::Plane*>(refObject)) {
-        Base::Vector3d d = plane->getNormal();
-        dir = gp_Dir(d.x, d.y, d.z);
-    }
-    else if (auto* line = freecad_cast<PartDesign::Line*>(refObject)) {
-        Base::Vector3d d = line->getDirection();
-        dir = gp_Dir(d.x, d.y, d.z);
-    }
     else if (auto* plane = freecad_cast<App::Plane*>(refObject)) {
         Base::Vector3d d = plane->getDirection();
         dir = gp_Dir(d.x, d.y, d.z);
@@ -422,11 +412,11 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
         Base::Vector3d d = line->getDirection();
         dir = gp_Dir(d.x, d.y, d.z);
     }
-    else if (auto* refFeature = freecad_cast<Part::Feature*>(refObject)) {
+    else if (Part::hasShape(refObject)) {
         if (subStrings[0].empty()) {
             throw Base::ValueError("No direction reference specified");
         }
-        Part::TopoShape refShape = refFeature->Shape.getShape();
+        Part::TopoShape refShape = Part::getShape(refObject);
         TopoDS_Shape ref = refShape.getSubShape(subStrings[0].c_str());
 
         if (ref.ShapeType() == TopAbs_FACE) {
@@ -462,9 +452,6 @@ gp_Dir LinearPattern::getDirectionFromProperty(const App::PropertyLinkSub& dirPr
             "Direction reference must be edge/face of a feature or a datum line/plane"
         );
     }
-
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    dir.Transform(invObjLoc.Transformation());
 
     return Base::convertTo<gp_Vec>(dir);
 }

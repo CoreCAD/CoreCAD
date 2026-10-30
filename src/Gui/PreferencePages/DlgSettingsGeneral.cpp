@@ -203,7 +203,6 @@ void DlgSettingsGeneral::saveUnitSystemSettings()
     );
     hGrpu->SetInt("UserSchema", ui->comboBox_UnitSystem->currentIndex());
     hGrpu->SetInt("Decimals", ui->spinBoxDecimals->value());
-    hGrpu->SetBool("IgnoreProjectSchema", ui->checkBox_projectUnitSystemIgnore->isChecked());
 
     // Set actual value
     UnitsApi::setDecimals(ui->spinBoxDecimals->value());
@@ -222,20 +221,9 @@ void DlgSettingsGeneral::saveUnitSystemSettings()
     // Set the actual format value
     UnitsApi::setDenominator(FracInch);
 
-    // Set and save the Unit System
-    if (ui->checkBox_projectUnitSystemIgnore->isChecked()) {
-        // currently selected View System (unit system)
-        int viewSystemIndex = ui->comboBox_UnitSystem->currentIndex();
-        UnitsApi::setSchema(viewSystemIndex);
-    }
-    else if (App::Document* doc = App::GetApplication().getActiveDocument()) {
-        UnitsApi::setSchema(doc->UnitSystem.getValue());
-    }
-    else {
-        // if there is no existing document then the unit must still be set
-        int viewSystemIndex = ui->comboBox_UnitSystem->currentIndex();
-        UnitsApi::setSchema(viewSystemIndex);
-    }
+    // Cruth: the unit system is the user's, so what is chosen here is what is applied. No
+    // document has a say in it (ARCHITECTURE.md §7.3).
+    UnitsApi::setSchema(ui->comboBox_UnitSystem->currentIndex());
 
     ui->SubstituteDecimal->onSave();
     ui->UseLocaleFormatting->onSave();
@@ -289,7 +277,6 @@ void DlgSettingsGeneral::loadSettings()
     );
     ui->comboBox_UnitSystem->setCurrentIndex(hGrpu->GetInt("UserSchema", 0));
     ui->spinBoxDecimals->setValue(hGrpu->GetInt("Decimals", UnitsApi::getDecimals()));
-    ui->checkBox_projectUnitSystemIgnore->setChecked(hGrpu->GetBool("IgnoreProjectSchema", false));
 
     // Get the current user setting for the minimum fractional inch
     FracInch = hGrpu->GetInt("FracInch", UnitsApi::getDenominator());
@@ -368,8 +355,6 @@ void DlgSettingsGeneral::resetSettingsToDefaults()
     hGrp->RemoveInt("UserSchema");
     // reset "Decimals" parameter
     hGrp->RemoveInt("Decimals");
-    // reset "IgnoreProjectSchema" parameter
-    hGrp->RemoveBool("IgnoreProjectSchema");
     // reset "FracInch" parameter
     hGrp->RemoveInt("FracInch");
 

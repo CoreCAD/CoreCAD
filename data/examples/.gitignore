@@ -1,0 +1,2 @@
+# Allow example mesh files that would otherwise be ignored
+!utah-teapot.obj

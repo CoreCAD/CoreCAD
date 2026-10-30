@@ -1137,7 +1137,7 @@ void NotificationArea::showConfirmationDialog(const QString& notifiername, const
     }
 }
 
-void NotificationArea::showInNotificationArea()
+QString NotificationArea::buildNotificationText()
 {
     // guard to avoid modifying the notification list and indices while creating the tooltip
     lock_guard<std::mutex> g(pImp->mutexNotification);
@@ -1167,13 +1167,15 @@ void NotificationArea::showInNotificationArea()
     auto currentlyshown = na->getShownCount();
 
     // If we cannot show more messages, we do no need to update the non-intrusive notification
-    if (currentlyshown < pImp->maxOpenNotifications) {
-        // There is space for at least one more notification
-        // We update the message with the most recent up to maxOpenNotifications
+    if (currentlyshown >= pImp->maxOpenNotifications) {
+        return {};
+    }
 
-        QString msgw
-            = QStringLiteral(
-                  "<style>p { margin: 0 0 0 0 } td { padding: 0 15px }</style>                     \
+    // There is space for at least one more notification
+    // We update the message with the most recent up to maxOpenNotifications
+
+    QString msgw = QStringLiteral(
+                       "<style>p { margin: 0 0 0 0 } td { padding: 0 15px }</style>                     \
         <p style='white-space:normal'>                                                                                      \
         <table>                                                                                                             \
         <tr>                                                                                                               \
@@ -1181,127 +1183,147 @@ void NotificationArea::showInNotificationArea()
         <th><small>%2</small></th>                                                                                        \
         <th><small>%3</small></th>                                                                                        \
         </tr>"
-            )
-                  .arg(QObject::tr("Type"), QObject::tr("Notifier"), QObject::tr("Message"));
+    )
+                       .arg(QObject::tr("Type"), QObject::tr("Notifier"), QObject::tr("Message"));
 
-        auto currentlynotifying = na->getCurrentlyNotifyingCount();
+    auto currentlynotifying = na->getCurrentlyNotifyingCount();
 
-        if (currentlynotifying > pImp->maxOpenNotifications) {
-            msgw += QStringLiteral(
-                        "                                                                                   \
+    if (currentlynotifying > pImp->maxOpenNotifications) {
+        msgw += QStringLiteral(
+                    "                                                                                   \
             <tr>                                                                                                            \
             <td align='left'><img width=\"16\" height=\"16\" src=':/icons/Warning.svg'></td>                                \
             <td align='left'>FreeCAD</td>                                                                                   \
             <td align='left'>%1</td>                                                                                        \
             </tr>"
-            )
-                        .arg(
-                            QObject::tr(
-                                "Too many opened non-intrusive notifications. Notifications "
-                                "are being omitted!"
-                            )
-                        );
-        }
+        )
+                    .arg(
+                        QObject::tr(
+                            "Too many opened non-intrusive notifications. Notifications "
+                            "are being omitted!"
+                        )
+                    );
+    }
 
-        int i = 0;
+    int i = 0;
 
-        // NOLINTNEXTLINE
-        while (i < na->count() && static_cast<NotificationItem*>(na->getItem(i))->isNotifying()) {
+    // NOLINTNEXTLINE
+    while (i < na->count() && static_cast<NotificationItem*>(na->getItem(i))->isNotifying()) {
 
-            if (i < pImp->maxOpenNotifications) {  // show the first up to maxOpenNotifications
-                // NOLINTNEXTLINE
-                NotificationItem* item = static_cast<NotificationItem*>(na->getItem(i));
+        if (i < pImp->maxOpenNotifications) {  // show the first up to maxOpenNotifications
+            // NOLINTNEXTLINE
+            NotificationItem* item = static_cast<NotificationItem*>(na->getItem(i));
 
-                QString iconstr;
-                if (item->isType(Base::LogStyle::Error)) {
-                    iconstr = QStringLiteral(":/icons/edit_Cancel.svg");
-                }
-                else if (item->isType(Base::LogStyle::Warning)) {
-                    iconstr = QStringLiteral(":/icons/Warning.svg");
-                }
-                else if (item->isType(Base::LogStyle::Critical)) {
-                    iconstr = QStringLiteral(":/icons/critical-info.svg");
-                }
-                else {
-                    iconstr = QStringLiteral(":/icons/info.svg");
-                }
+            QString iconstr;
+            if (item->isType(Base::LogStyle::Error)) {
+                iconstr = QStringLiteral(":/icons/edit_Cancel.svg");
+            }
+            else if (item->isType(Base::LogStyle::Warning)) {
+                iconstr = QStringLiteral(":/icons/Warning.svg");
+            }
+            else if (item->isType(Base::LogStyle::Critical)) {
+                iconstr = QStringLiteral(":/icons/critical-info.svg");
+            }
+            else {
+                iconstr = QStringLiteral(":/icons/info.svg");
+            }
 
-                QString tmpmessage
-                    = convertFromPlainText(item->getMessage(), Qt::WhiteSpaceMode::WhiteSpaceNormal);
+            QString tmpmessage
+                = convertFromPlainText(item->getMessage(), Qt::WhiteSpaceMode::WhiteSpaceNormal);
 
-                msgw += QStringLiteral(
-                            "                                                                                   \
+            msgw += QStringLiteral(
+                        "                                                                                   \
                 <tr>                                                                                                            \
                 <td align='left'><img width=\"16\" height=\"16\" src='%1'></td>                                                 \
                 <td align='left'>%2</td>                                                                                        \
                 <td align='left'>%3</td>                                                                                        \
                 </tr>"
-                )
-                            .arg(iconstr, item->getNotifier(), tmpmessage);
+            )
+                        .arg(iconstr, item->getNotifier(), tmpmessage);
 
-                // start a timer for each of these notifications that was not previously shown
-                if (!item->isShown()) {
-                    QTimer::singleShot(
-                        pImp->notificationExpirationTime,
-                        [this, item, repetitions = item->getRepetitions()]() {
-                            // guard to avoid modifying the notification
-                            // start index while creating the tooltip
-                            lock_guard<std::mutex> g(pImp->mutexNotification);
+            // start a timer for each of these notifications that was not previously shown
+            if (!item->isShown()) {
+                QTimer::singleShot(
+                    pImp->notificationExpirationTime,
+                    [this, item, repetitions = item->getRepetitions()]() {
+                        // guard to avoid modifying the notification
+                        // start index while creating the tooltip
+                        lock_guard<std::mutex> g(pImp->mutexNotification);
 
-                            // if the item exists and the number of repetitions has not changed in
-                            // the meantime
-                            if (item && item->getRepetitions() == repetitions) {
-                                item->resetShown();
-                                item->setNotified();
+                        // if the item exists and the number of repetitions has not changed in
+                        // the meantime
+                        if (item && item->getRepetitions() == repetitions) {
+                            item->resetShown();
+                            item->setNotified();
 
-                                if (pImp->autoRemoveUserNotifications) {
-                                    if (item->isType(Base::LogStyle::Notification)) {
-                                        // NOLINTNEXTLINE
-                                        static_cast<NotificationsAction*>(pImp->notificationaction)
-                                            ->deleteItem(item);
-                                    }
+                            if (pImp->autoRemoveUserNotifications) {
+                                if (item->isType(Base::LogStyle::Notification)) {
+                                    // NOLINTNEXTLINE
+                                    static_cast<NotificationsAction*>(pImp->notificationaction)
+                                        ->deleteItem(item);
                                 }
                             }
                         }
-                    );
-                }
-
-                // We update the status to shown
-                item->setShown();
-            }
-            else {  // We do not have more space and older notifications will be too old
-                // NOLINTBEGIN
-                static_cast<NotificationItem*>(na->getItem(i))->setNotified();
-                static_cast<NotificationItem*>(na->getItem(i))->resetShown();
-                // NOLINTEND
+                    }
+                );
             }
 
-            i++;
+            // We update the status to shown
+            item->setShown();
+        }
+        else {  // We do not have more space and older notifications will be too old
+            // NOLINTBEGIN
+            static_cast<NotificationItem*>(na->getItem(i))->setNotified();
+            static_cast<NotificationItem*>(na->getItem(i))->resetShown();
+            // NOLINTEND
         }
 
-        msgw += QStringLiteral("</table></p>");
+        i++;
+    }
 
-        NotificationBox::Options options = NotificationBox::Options::RestrictAreaToReference;
+    msgw += QStringLiteral("</table></p>");
 
-        if (pImp->preventNonIntrusiveNotificationsWhenWindowNotActive) {
-            options = options | NotificationBox::Options::OnlyIfReferenceActive;
-        }
+    return msgw;
+}
 
-        if (pImp->hideNonIntrusiveNotificationsWhenWindowDeactivated) {
-            options = options | NotificationBox::Options::HideIfReferenceWidgetDeactivated;
-        }
+void NotificationArea::showInNotificationArea()
+{
+    // Cruth: the list work happens first and finishes, releasing the lock, and only then is
+    // anything shown. Held across the show, the lock deadlocks the interface thread against
+    // itself: showing the widget raises a warning where the platform cannot raise a window, the
+    // warning is routed into the console, and the console hands it straight back to
+    // pushNotification, which waits for a lock this same thread is holding. Measured on the real
+    // binary before this: the interface stopped responding and never came back. Routing Qt's own
+    // diagnostics at a developer narrows how often a warning arrives from in here, but it does
+    // not close the hole -- a developer who subscribes to them deadlocks again, measured.
+    const QString msgw = buildNotificationText();
+    if (msgw.isEmpty()) {
+        return;
+    }
 
-        bool isshown = NotificationBox::showText(
-            this->mapToGlobal(QPoint()),
-            msgw,
-            getMainWindow(),
-            static_cast<int>(pImp->notificationExpirationTime),
-            pImp->minimumOnScreenTime,
-            options,
-            pImp->notificationWidth
-        );
+    NotificationBox::Options options = NotificationBox::Options::RestrictAreaToReference;
 
-        if (!isshown && !pImp->missedNotifications) {
+    if (pImp->preventNonIntrusiveNotificationsWhenWindowNotActive) {
+        options = options | NotificationBox::Options::OnlyIfReferenceActive;
+    }
+
+    if (pImp->hideNonIntrusiveNotificationsWhenWindowDeactivated) {
+        options = options | NotificationBox::Options::HideIfReferenceWidgetDeactivated;
+    }
+
+    bool isshown = NotificationBox::showText(
+        this->mapToGlobal(QPoint()),
+        msgw,
+        getMainWindow(),
+        static_cast<int>(pImp->notificationExpirationTime),
+        pImp->minimumOnScreenTime,
+        options,
+        pImp->notificationWidth
+    );
+
+    if (!isshown) {
+        lock_guard<std::mutex> g(pImp->mutexNotification);
+        if (!pImp->missedNotifications) {
             pImp->missedNotifications = true;
             setIcon(TrayIcon::MissedNotifications);
         }

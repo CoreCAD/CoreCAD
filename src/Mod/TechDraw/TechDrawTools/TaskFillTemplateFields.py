@@ -100,7 +100,7 @@ class TaskFillTemplateFields:
                 and listofkeys == reader.fieldnames
             ):
                 self.page = obj
-                if obj.Views == []:
+                if obj.getViews() == []:
                     msgBox = QtGui.QMessageBox()
                     msgTitle = QtCore.QT_TRANSLATE_NOOP(
                         "Techdraw_FillTemplateFields",
@@ -118,7 +118,7 @@ class TaskFillTemplateFields:
                     break
 
                 projgrp_view = None
-                for pageObj in obj.Views:
+                for pageObj in obj.getViews():
                     if hasattr(pageObj, "Scale"):
                         # use the scale from the first DVP or DPG encountered to fill the template's
                         # Scale editable text.
@@ -316,35 +316,25 @@ class TaskFillTemplateFields:
                         self.lineTextList.append(self.s7)
                         self.cb7.clicked.connect(self.on_cb7_clicked)
                         dialogRow += 1
-                        try:
-                            dt = datetime.datetime.strptime(
-                                App.ActiveDocument.LastModifiedDate,
-                                "%Y-%m-%dT%H:%M:%SZ",
-                            )
-                            if value == "MM/DD/YYYY":
-                                self.s7.setText(
-                                    "{0}/{1}/{2}".format(dt.month, dt.day, dt.year)
-                                )
-                            elif value == "YYYY-MM-DD":
-                                self.s7.setText(
-                                    "{0}-{1}-{2}".format(dt.year, dt.month, dt.day)
-                                )
-                            else:
-                                self.s7.setText(
-                                    "{0}/{1}/{2}".format(dt.day, dt.month, dt.year)
-                                )
-                        except ValueError:
-                            App.Console.PrintLog(
-                                "DateTime format not recognised: "
-                                + App.ActiveDocument.LastModifiedDate
-                                + "\n"
-                            )
+                        # A date on a drawing is authored, not derived. Engineering practice
+                        # dates a revision by when the change was released, and a title block
+                        # by the document's date of issue -- never by when a file happened to
+                        # be written (ASME Y14.35 revision blocks, ISO 7200 date of issue).
+                        # So the field is offered filled with today's date, which is what
+                        # someone completing a title block almost always means, and it stays
+                        # theirs to correct.
+                        today = date.today()
+                        if value == "MM/DD/YYYY":
                             self.s7.setText(
-                                "{0}/{1}/{2}".format(
-                                    date.today().day,
-                                    date.today().month,
-                                    date.today().year,
-                                )
+                                "{0}/{1}/{2}".format(today.month, today.day, today.year)
+                            )
+                        elif value == "YYYY-MM-DD":
+                            self.s7.setText(
+                                "{0}-{1}-{2}".format(today.year, today.month, today.day)
+                            )
+                        else:
+                            self.s7.setText(
+                                "{0}/{1}/{2}".format(today.day, today.month, today.year)
                             )
                     if str(key).lower() in CreatedDateChkLst:
                         t8 = QtGui.QLabel(value)
@@ -386,7 +376,7 @@ class TaskFillTemplateFields:
                         except ValueError:
                             App.Console.PrintLog(
                                 "DateTime format not recognised: "
-                                + App.ActiveDocument.LastModifiedDate
+                                + App.ActiveDocument.CreationDate
                                 + "\n"
                             )
                             self.s8.setText(

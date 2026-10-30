@@ -30,7 +30,10 @@
 #include <Base/FileInfo.h>
 #include <Base/PyObjectBase.h>
 
+#include "SketchObject.h"
+#include "SketchObjectPy.h"
 #include "SketchObjectSF.h"
+#include "SketchRecipe.h"
 
 
 namespace Sketcher
@@ -43,6 +46,16 @@ public:
     {
         add_varargs_method("open", &Module::open);
         add_varargs_method("insert", &Module::insert);
+        add_varargs_method(
+            "mergeReport",
+            &Module::mergeReport,
+            "mergeReport(ancestor, branchA, branchB) -> str\n\n"
+            "Merge three sketches — a common ancestor and two edited copies of it — and return a\n"
+            "plain-language report of the outcome: what combined, what value conflicts need a\n"
+            "choice, what constraints were dropped or need a decision, and whether the merged\n"
+            "sketch still solves. Exploratory surfacing of the recipe-merge engine; the three\n"
+            "sketches must share the ancestor's durable identity (a reload/copy, not a re-draw)."
+        );
         initialize("This module is the Sketcher module.");  // register with Python
     }
 
@@ -108,6 +121,37 @@ private:
             throw Py::RuntimeError(e.what());
         }
         return Py::None();
+    }
+
+    Py::Object mergeReport(const Py::Tuple& args)
+    {
+        PyObject* ancObj = nullptr;
+        PyObject* aObj = nullptr;
+        PyObject* bObj = nullptr;
+        if (!PyArg_ParseTuple(
+                args.ptr(),
+                "O!O!O!",
+                &SketchObjectPy::Type,
+                &ancObj,
+                &SketchObjectPy::Type,
+                &aObj,
+                &SketchObjectPy::Type,
+                &bObj
+            )) {
+            throw Py::Exception();
+        }
+
+        SketchObject* ancestor = static_cast<SketchObjectPy*>(ancObj)->getSketchObjectPtr();
+        SketchObject* branchA = static_cast<SketchObjectPy*>(aObj)->getSketchObjectPtr();
+        SketchObject* branchB = static_cast<SketchObjectPy*>(bObj)->getSketchObjectPtr();
+
+        try {
+            MergeReport report = mergeSketches(*ancestor, *branchA, *branchB);
+            return Py::String(formatMergeReport(report));
+        }
+        catch (const Base::Exception& e) {
+            throw Py::RuntimeError(e.what());
+        }
     }
 };
 

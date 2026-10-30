@@ -588,6 +588,16 @@ bool Command::hasActiveDocument() const
 {
     return getActiveGuiDocument() != nullptr;
 }
+
+bool Command::ensureActiveDocument() const
+{
+    if (hasActiveDocument()) {
+        return true;
+    }
+    App::GetApplication().newDocument();
+    return hasActiveDocument();
+}
+
 /// true when there is a document and a Feature with Name
 bool Command::hasObject(const char* Name)
 {

@@ -32,6 +32,7 @@
 #include <TDF_AttributeSequence.hxx>
 #include <TDF_Label.hxx>
 #include <TDF_LabelSequence.hxx>
+#include <TDF_Tool.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Iterator.hxx>
@@ -51,10 +52,11 @@
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Parameter.h>
-#include <Mod/Part/App/FeatureCompound.h>
 #include <Mod/Part/App/Interface.h>
+#include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
 
+#include "Feature.h"
 #include "ImportOCAF2.h"
 
 // See https://dev.opencascade.org/content/occt-3d-viewer-becomes-srgb-aware
@@ -87,7 +89,9 @@ ImportOCAF2::ImportOCAF2(Handle(TDocStd_Document) hDoc, App::Document* doc, cons
         filePath = fi.dirPath();
     }
 
-    setUseLinkGroup(options.useLinkGroup);
+    // Imports always produce the App::Link/App::LinkGroup structure; disable OCAF
+    // auto-naming so the reader keeps the STEP/IGES label names.
+    aShapeTool->SetAutoNaming(false);
 }
 
 ImportOCAF2::~ImportOCAF2() = default;
@@ -98,7 +102,6 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
 
     ImportOCAFOptions defaultOptions;
     defaultOptions.merge = settings.getReadShapeCompoundMode();
-    defaultOptions.useLinkGroup = settings.getUseLinkGroup();
     defaultOptions.useBaseName = settings.getUseBaseName();
     defaultOptions.importHidden = settings.getImportHiddenObject();
     defaultOptions.reduceObjects = settings.getReduceObjects();
@@ -125,13 +128,52 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
 void ImportOCAF2::setImportOptions(ImportOCAFOptions opts)
 {
     options = opts;
-    setUseLinkGroup(options.useLinkGroup);
 }
 
-void ImportOCAF2::setUseLinkGroup(bool enable)
+void ImportOCAF2::recordSource(Import::Feature* feature, TDF_Label label) const
 {
-    options.useLinkGroup = enable;
-    aShapeTool->SetAutoNaming(!enable);
+    if (sourceFile.empty()) {
+        return;
+    }
+
+    feature->SourceFile.setValue(sourceFile);
+    feature->SourceHash.setValue(Import::Feature::hashFile(sourceFile.c_str()));
+    feature->TranslatorSettings.setValues(describeOptions());
+
+    // A file holding one part needs no address within itself, and leaving the
+    // node empty says exactly that. Anything else is one part among several, and
+    // has to name the node it came from or it cannot re-read itself later.
+    TDF_LabelSequence roots;
+    aShapeTool->GetFreeShapes(roots);
+    if (roots.Length() > 1 || (roots.Length() == 1 && !roots.First().IsEqual(label))) {
+        TCollection_AsciiString entry;
+        TDF_Tool::Entry(label, entry);
+        feature->SourceNode.setValue(entry.ToCString());
+        // The position alone is not a safe address: a supplier who adds a part
+        // shifts every position after it. The name is what says whether the
+        // position still means the same thing on the next read.
+        feature->SourceNodeName.setValue(Tools::labelName(label));
+    }
+
+    // The importer has just built this feature's shape from the file it is being
+    // told about, so it is genuinely up to date; recording that must not leave
+    // the document asking to recompute.
+    feature->purgeTouched();
+}
+
+std::map<std::string, std::string> ImportOCAF2::describeOptions() const
+{
+    auto text = [](bool value) -> std::string {
+        return value ? "true" : "false";
+    };
+    return {
+        {"merge", text(options.merge)},
+        {"useBaseName", text(options.useBaseName)},
+        {"importHidden", text(options.importHidden)},
+        {"reduceObjects", text(options.reduceObjects)},
+        {"expandCompound", text(options.expandCompound)},
+        {"mode", std::to_string(options.mode)},
+    };
 }
 
 void ImportOCAF2::setMode(int m)
@@ -267,10 +309,14 @@ App::DocumentObject* ImportOCAF2::expandShape(App::Document* doc, TDF_Label labe
         if (objs.empty()) {
             return nullptr;
         }
-        auto compound = doc->addObject<Part::Compound2>("Compound");
-        compound->Links.setValues(objs);
-        setPlacement(&compound->Placement, shape);
-        return compound;
+        // A link group, not a compound feature. The expanded solids are separate
+        // objects and this only gathers them and says where the gathering sits, which
+        // is what a container does; a compound would instead own a second copy of
+        // their geometry and carry the position on that.
+        auto group = doc->addObject<App::LinkGroup>("Compound");
+        group->ElementList.setValues(objs);
+        setPlacement(&group->Placement, shape);
+        return group;
     }
     Info info;
     info.obj = nullptr;
@@ -368,8 +414,6 @@ bool ImportOCAF2::createObject(
         }
     }
 
-    Part::Feature* feature;
-
     if (newDoc && (options.mode == ObjectPerDoc || options.mode == ObjectPerDir)) {
         doc = getDocument(doc, label);
     }
@@ -377,13 +421,30 @@ bool ImportOCAF2::createObject(
     if (options.expandCompound
         && (tshape.countSubShapes(TopAbs_SOLID) > 1
             || (!tshape.countSubShapes(TopAbs_SOLID) && tshape.countSubShapes(TopAbs_SHELL) > 1))) {
-        feature = dynamic_cast<Part::Feature*>(expandShape(doc, label, shape));
-        assert(feature);
+        // Expanded into its own solids, gathered by a link group. Each expanded solid
+        // took its own colour on the way in, so tint the group only where this label
+        // carried a colour of its own -- the same rule createGroup follows.
+        auto* group = static_cast<App::LinkGroup*>(expandShape(doc, label, shape));
+        assert(group);
+        if (getColor(shape, info, false, true) && info.hasFaceColor) {
+            applyLinkColor(group, -1, info.faceColor);
+        }
+        info.propPlacement = &group->Placement;
+        info.obj = group;
+        return true;
     }
-    else {
-        feature = doc->addObject<Part::Feature>(tshape.shapeName().c_str());
-        feature->Shape.setValue(shape);
-    }
+
+    // Imported leaf geometry is an Import feature: it came from a file, and that
+    // is a property of the object, not a fact that lives only for the duration
+    // of the import.
+    auto* feature = doc->addObject<Import::Feature>(tshape.shapeName().c_str());
+    recordSource(feature, label);
+    feature->Shape.setValue(shape);
+    // The first import never goes through execute(), so the faces have to be put on
+    // record here as well -- otherwise an import would only learn what it produced
+    // once something else made it re-read the file. Nothing is on record yet at this
+    // point, so this is the seeding case of the same match.
+    feature->matchFaceIdentities();
     applyFaceColors(feature, {info.faceColor});
     applyEdgeColors(feature, {info.edgeColor});
     if (hasFaceColors) {
@@ -505,13 +566,6 @@ bool ImportOCAF2::createGroup(
 
 App::DocumentObject* ImportOCAF2::loadShapes()
 {
-    if (!options.useLinkGroup) {
-        ImportLegacy legacy(*this);
-        legacy.setMerge(options.merge);
-        legacy.loadShapes();
-        return nullptr;
-    }
-
     if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
         Tools::dumpLabels(pDoc->Main(), aShapeTool, aColorTool);
     }
@@ -562,6 +616,7 @@ App::DocumentObject* ImportOCAF2::loadShapes()
     if (ret) {
         ret->recomputeFeature(true);
     }
+
     if (options.merge && ret && !ret->isDerivedFrom<Part::Feature>()) {
         auto shape = Part::Feature::getTopoShape(
             ret,
@@ -691,9 +746,6 @@ App::DocumentObject* ImportOCAF2::loadShape(
     }
 
     std::map<std::string, Base::Color> shuoColors;
-    if (!options.useLinkGroup) {
-        getSHUOColors(label, shuoColors, false);
-    }
 
     auto info = it->second;
     getColor(shape, info, true);
@@ -703,16 +755,16 @@ App::DocumentObject* ImportOCAF2::loadShape(
         auto name = getLabelName(label);
         if (info.faceColor != it->second.faceColor || info.edgeColor != it->second.edgeColor
             || (!name.empty() && !info.baseName.empty() && name != info.baseName)) {
-            auto compound = doc->addObject<Part::Compound2>("Compound");
-            compound->Links.setValue(info.obj);
-            info.propPlacement = &compound->Placement;
+            // A link, not a compound feature -- the same wrapper the shared case below
+            // uses. This instance only wants its own name, colour and position; it
+            // does not want a second copy of the geometry to hang them on.
+            auto link = doc->addObject<App::Link>("Link");
+            link->setLink(-1, info.obj);
+            info.propPlacement = &link->Placement;
             if (info.faceColor != it->second.faceColor) {
-                applyFaceColors(compound, {info.faceColor});
+                applyLinkColor(link, -1, info.faceColor);
             }
-            if (info.edgeColor != it->second.edgeColor) {
-                applyEdgeColors(compound, {info.edgeColor});
-            }
-            info.obj = compound;
+            info.obj = link;
             setObjectName(info, label);
         }
         setPlacement(info.propPlacement, shape);

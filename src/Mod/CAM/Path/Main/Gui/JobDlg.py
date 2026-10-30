@@ -92,6 +92,11 @@ class JobCreate:
 
         return minute_based_schemes
 
+    def _currentSchemaIndex(self):
+        """Return the unit schema in force. Cruth: that is the user's preference; a
+        document does not carry a unit schema (ARCHITECTURE.md 7.3)."""
+        return FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Units").GetInt("UserSchema", 0)
+
     def _currentSchemaUsesMinutes(self):
         """Test if the current unit schema uses minutes for velocity."""
         try:
@@ -132,7 +137,7 @@ class JobCreate:
         warning_label.setText(
             translate(
                 "CAM_Job",
-                "<b>This document uses an improper unit schema which can result in "
+                "<b>The current unit schema is improper for machining and can result in "
                 "dangerous situations and machine crashes!</b>",
             )
         )
@@ -146,7 +151,7 @@ class JobCreate:
             translate(
                 "CAM_Job",
                 "Current unit schema '{}' expresses velocity in values <i>per second</i>.",
-            ).format(FreeCAD.ActiveDocument.UnitSystem)
+            ).format(FreeCAD.Units.listSchemas(self._currentSchemaIndex()))
         )
         current_info.setWordWrap(True)
         layout.addWidget(current_info)
@@ -214,7 +219,7 @@ class JobCreate:
         dialog.exec_()
 
     def _applyUnitSchema(self, dialog):
-        """Apply the selected unit schema to the document."""
+        """Apply the selected unit schema to the user's preferences."""
         selected_schema_id = None
         selected_schema_label = None
         for button in self.schema_buttons:
@@ -225,8 +230,10 @@ class JobCreate:
 
         if selected_schema_id is not None:
             try:
-                FreeCAD.ActiveDocument.UnitSystem = selected_schema_id
-                FreeCAD.ActiveDocument.recompute()
+                FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Units").SetInt(
+                    "UserSchema", selected_schema_id
+                )
+                FreeCAD.Units.setSchema(selected_schema_id)
 
                 # Show success message
                 QtGui.QMessageBox.information(

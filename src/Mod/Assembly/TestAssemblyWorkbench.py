@@ -24,8 +24,20 @@
 import TestApp
 
 from AssemblyTests.TestCore import TestCore
-from AssemblyTests.TestCommandInsertLink import TestCommandInsertLink
+from AssemblyTests.TestSubAssembly import TestSubAssembly
+from AssemblyTests.TestAssemblyBuilder import TestAssemblyBuilder
+from AssemblyTests.TestStepAssemblyImport import TestStepAssemblyImport
+from AssemblyTests.TestSceneGraphHelpers import TestSceneGraphHelpers
+from AssemblyTests.TestCreatePart import TestCreatePart
+
+# The draw-layer test (TestStepAssemblyImportDraw) needs a running GUI, so it is
+# registered separately as TestAssemblyWorkbenchGui from InitGui.py rather than
+# here -- otherwise it would only ever skip under the headless FreeCADCmd lane.
 
 # Use the modules so that code checkers don't complain (flake8)
 True if TestCore else False
-True if TestCommandInsertLink else False
+True if TestSubAssembly else False
+True if TestAssemblyBuilder else False
+True if TestStepAssemblyImport else False
+True if TestSceneGraphHelpers else False
+True if TestCreatePart else False

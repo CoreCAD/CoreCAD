@@ -94,12 +94,12 @@ public:
 
     void attach(App::DocumentObject*) override;
     void setDisplayMode(const char* ModeName) override;
+    /// The tree's Body column (§8.7): the bodies this object builds, and the bodies it references.
+    TreeBodyColumn getTreeBodyColumn() const override;
     /// returns a list of all possible modes
     std::vector<std::string> getDisplayModes() const override;
     /// Update the view representation
     void reload();
-    /// If no other task is pending it opens a dialog to allow one to change face colors
-    bool changeFaceAppearances();
 
     void updateData(const App::Property*) override;
 
@@ -174,7 +174,6 @@ public:
 
     /** @name Edit methods */
     //@{
-    void setupContextMenu(QMenu*, QObject*, const char*) override;
 
     /// Get the python wrapper for that ViewProvider
     PyObject* getPyObject() override;
@@ -254,5 +253,9 @@ private:
     // shape that was last rendered so if it does not change we don't re-render it without need
     TopoDS_Shape lastRenderedShape;
 };
+
+/// The tree's Body column (§8.7) for any object: the bodies it builds, and in brackets the bodies
+/// it references that it does not feed.
+PartGuiExport Gui::ViewProvider::TreeBodyColumn treeBodyColumnOf(const App::DocumentObject* obj);
 
 }  // namespace PartGui

@@ -211,19 +211,9 @@ protected:
                               const std::string& ref,
                               const char* newLabel);
 
-    /**
-     * @brief Move cell references in an expression.
-     *
-     * This function visits the expression and updates all cell references to
-     * @p address.  These cell references are then updated by moving them by @p
-     * rowCount rows and @p colCount columns.
-     *
-     * @param[in,out] e The expression.
-     * @param[in] address The cell address that needs to be updated.
-     * @param[in] rowCount The number of rows to move.
-     * @param[in] colCount The number of columns to move.
-     */
-    void moveCells(Expression& e, const CellAddress& address, int rowCount, int colCount);
+    /// Moves references to cells of `sheet` past inserted or removed rows or columns; a
+    /// reference to a removed cell becomes a missing reference.
+    void shiftCells(Expression& e, const DocumentObject* sheet, const CellShift& shift);
 
     /**
      * @brief Offset cell references in an expression.
@@ -560,7 +550,7 @@ protected:
         (void)oldObj;
         (void)newObj;
     }
-    virtual void _moveCells(const CellAddress &, int, int, ExpressionVisitor &) {}
+    virtual void _shiftCells(const DocumentObject *, const CellShift &, ExpressionVisitor &) {}
     virtual void _offsetCells(int, int, ExpressionVisitor &) {}
     virtual Py::Object _getPyValue() const = 0;
     virtual void _visit(ExpressionVisitor &) {}

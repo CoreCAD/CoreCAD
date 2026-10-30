@@ -42,7 +42,6 @@ class AppExport GeoFeature: public App::DocumentObject
     PROPERTY_HEADER_WITH_OVERRIDE(App::GeoFeature);
 
 public:
-    PropertyPlacement Placement;
     PropertyString _ElementMapVersion;
 
     /// Constructor
@@ -58,12 +57,30 @@ public:
      */
     virtual void transformPlacement(const Base::Placement& transform);
     /**
+     * @brief Whether this object holds an authored placement of its own.
+     *
+     * Amendment 4 (world-frame feature geometry): a geometric object either
+     * *anchors* a coordinate frame it authors (sketches, datums, primitives,
+     * shape-binders, meshes, imports, App::Part, origin datums — the common
+     * case) or it is *derived*, its geometry already living in the document
+     * world frame with no position of its own. Anchors return true; derived
+     * features override this to false. The default is true.
+     *
+     * This is the seam that Clause 4.2 names: "position belongs only to frame
+     * anchors." Generic consumers ask this rather than probing AttachExtension
+     * (which is sufficient-not-necessary — shape-binders and Body lack it).
+     */
+    virtual bool holdsAuthoredPlacement() const;
+    /**
      * This method returns the main property of a geometric object that holds
      * the actual geometry. For a part object this is the Shape property, for
      * a mesh object the Mesh property and so on.
      * The default implementation returns null.
      */
     virtual const PropertyComplexGeoData* getPropertyOfGeometry() const;
+    /// The geometry whose elements this object names: its stored geometry by default. An
+    /// object that derives its geometry instead of storing it overrides this.
+    virtual const Data::ComplexGeoData* getElementData() const;
     /**
      * @brief getPyObject returns the Python binding object
      * @return the Python binding object
@@ -134,26 +151,6 @@ public:
      */
     Base::Placement globalPlacement() const;
     /**
-     * @brief Virtual function to get an App::Material object describing the appearance
-     *
-     * The appearance properties are described by the underlying features material. This can not
-     * be accessed directly from within the Gui module. This virtual function will return a
-     * App::Material object describing the appearance properties of the material.
-     *
-     * @return App::Material the appearance properties of the object material
-     */
-    virtual App::Material getMaterialAppearance() const;
-
-    /**
-     * @brief Virtual function to set the appearance with an App::Material object
-     *
-     * The appearance properties are described by the underlying features material. This cannot
-     * be accessed directly from within the Gui module. This virtual function will set the
-     * appearance from an App::Material object.
-     */
-    virtual void setMaterialAppearance(const App::Material& material);
-
-    /**
      * @brief Virtual function to get the camera alignment direction
      *
      * Finds a directionZ to align the camera with.
@@ -213,7 +210,7 @@ protected:
     void updateElementReference();
 
 protected:
-    ElementNamePair _getElementName(const char* name, const Data::MappedElement& mapped) const;
+    static ElementNamePair _getElementName(const char* name, const Data::MappedElement& mapped);
 };
 
 }  // namespace App

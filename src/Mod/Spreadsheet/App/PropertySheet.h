@@ -200,6 +200,21 @@ public:
 
     void removeColumns(int col, int count);
 
+    /// A row's durable id: it stays with the row while inserts and removals renumber it.
+    /// Empty for a row that has never held a cell.
+    std::string rowId(int row) const;
+    std::string columnId(int col) const;
+    const std::map<int, std::string>& rowIdMap() const
+    {
+        return rowIds;
+    }
+    const std::map<int, std::string>& columnIdMap() const
+    {
+        return columnIds;
+    }
+
+    void mintDurableIdentity() override;
+
     unsigned int getMemSize() const override;
 
     bool mergeCells(App::CellAddress from, App::CellAddress to);
@@ -230,6 +245,9 @@ public:
     void invalidateDependants(const App::DocumentObject* docObj);
 
     void renameObjectIdentifiers(const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths);
+
+    /// Moves this sheet's references to the cells of another sheet whose rows or columns moved.
+    void shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift);
 
     void deletedDocumentObject(const App::DocumentObject* docObj);
 
@@ -310,15 +328,17 @@ private:
     /*! Owner of this property */
     Sheet* owner;
 
+    /*! Durable ids of the rows and columns that hold cells; a cell is the pair */
+    std::map<int, std::string> rowIds;
+    std::map<int, std::string> columnIds;
+
+    void mintMissingIds(App::CellAddress address);
+
     void clearAlias(App::CellAddress address);
 
     void moveAlias(App::CellAddress currPos, App::CellAddress newPos);
 
-    void moveCell(
-        App::CellAddress currPos,
-        App::CellAddress newPos,
-        std::map<App::ObjectIdentifier, App::ObjectIdentifier>& renames
-    );
+    void moveCell(App::CellAddress currPos, App::CellAddress newPos);
 
     /*
      * Cell dependency tracking

@@ -32,12 +32,13 @@ set(Assembly_Scripts
     JointObject.py
     Preferences.py
     AssemblyImport.py
-    SoSwitchMarker.py
+    AssemblyStepImport.py
     UtilsAssembly.py
 )
 
 if(BUILD_GUI)
     list (APPEND Assembly_Scripts InitGui.py)
+    list (APPEND Assembly_Scripts TestAssemblyWorkbenchGui.py)
 endif(BUILD_GUI)
 
 INSTALL(
@@ -56,6 +57,14 @@ SET(AssemblyTests_SRCS
     AssemblyTests/__init__.py
     AssemblyTests/TestCore.py
     AssemblyTests/TestCommandInsertLink.py
+    AssemblyTests/TestSubAssembly.py
+    AssemblyTests/TestAssemblyBuilder.py
+    AssemblyTests/TestStepAssemblyImport.py
+    AssemblyTests/TestStepAssemblyImportDraw.py
+    AssemblyTests/TestAssemblyViewProviders.py
+    AssemblyTests/scene_graph.py
+    AssemblyTests/TestSceneGraphHelpers.py
+    AssemblyTests/TestCreatePart.py
     AssemblyTests/mocks/__init__.py
     AssemblyTests/mocks/MockGui.py
 )

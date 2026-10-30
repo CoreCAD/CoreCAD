@@ -38,6 +38,7 @@ PROPERTY_SOURCE(Part::ImportBrep, Part::Feature)
 
 ImportBrep::ImportBrep()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(FileName, (""));
 }
 

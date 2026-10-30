@@ -144,7 +144,7 @@ void TaskFemConstraintGear::onSelectionChanged(const Gui::SelectionChanges& msg)
         App::DocumentObject* obj = ConstraintView->getObject()->getDocument()->getObject(
             msg.pObjectName
         );
-        Part::Feature* feat = static_cast<Part::Feature*>(obj);
+        Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(obj);
         TopoDS_Shape ref = feat->Shape.getShape().getSubShape(subName.c_str());
 
         if (selectionMode == seldir) {

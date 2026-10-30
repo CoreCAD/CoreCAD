@@ -48,7 +48,6 @@
 #endif
 
 #include <chrono>
-#include "ExportOCAFGui.h"
 #include "ImportOCAFGui.h"
 #include "OCAFBrowser.h"
 
@@ -169,7 +168,6 @@ private:
             }
             auto stepSettings = dlg.getSettings();
             options.setItem("merge", Py::Boolean(stepSettings.merge));
-            options.setItem("useLinkGroup", Py::Boolean(stepSettings.useLinkGroup));
             options.setItem("useBaseName", Py::Boolean(stepSettings.useBaseName));
             options.setItem("importHidden", Py::Boolean(stepSettings.importHidden));
             options.setItem("reduceObjects", Py::Boolean(stepSettings.reduceObjects));
@@ -188,22 +186,13 @@ private:
         PyObject* pyoptions = nullptr;
         PyObject* importHidden = Py_None;
         PyObject* merge = Py_None;
-        PyObject* useLinkGroup = Py_None;
         int mode = -1;
-        static const std::array<const char*, 8> kwd_list {
-            "name",
-            "docName",
-            "options",
-            "importHidden",
-            "merge",
-            "useLinkGroup",
-            "mode",
-            nullptr
-        };
+        static const std::array<const char*, 7>
+            kwd_list {"name", "docName", "options", "importHidden", "merge", "mode", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "et|sO!O!O!O!i",
+                "et|sO!O!O!i",
                 kwd_list,
                 "utf-8",
                 &Name,
@@ -214,8 +203,6 @@ private:
                 &importHidden,
                 &PyBool_Type,
                 &merge,
-                &PyBool_Type,
-                &useLinkGroup,
                 &mode
             )) {
             throw Py::Exception();
@@ -239,6 +226,7 @@ private:
             Handle(TDocStd_Document) hDoc;
             hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
             ImportOCAFGui ocaf(hDoc, pcDoc, file.fileNamePure());
+            ocaf.setSourceFile(file.filePath());
             ocaf.setImportOptions(ImportOCAFGui::customImportOptions());
 
             Base::TimeTracker tracker("Import Step");
@@ -266,11 +254,6 @@ private:
                     Py::Dict options(pyoptions);
                     if (options.hasKey("merge")) {
                         ocaf.setMerge(static_cast<bool>(Py::Boolean(options.getItem("merge"))));
-                    }
-                    if (options.hasKey("useLinkGroup")) {
-                        ocaf.setUseLinkGroup(
-                            static_cast<bool>(Py::Boolean(options.getItem("useLinkGroup")))
-                        );
                     }
                     if (options.hasKey("useBaseName")) {
                         ocaf.setBaseName(
@@ -366,9 +349,6 @@ private:
             }
             if (importHidden != Py_None) {
                 ocaf.setImportHiddenObject(Base::asBoolean(importHidden));
-            }
-            if (useLinkGroup != Py_None) {
-                ocaf.setUseLinkGroup(Base::asBoolean(useLinkGroup));
             }
             if (mode >= 0) {
                 ocaf.setMode(mode);
@@ -491,7 +471,6 @@ private:
                 auto stepSettings = dlg.getSettings();
                 options.setItem("exportHidden", Py::Boolean(stepSettings.exportHidden));
                 options.setItem("keepPlacement", Py::Boolean(stepSettings.keepPlacement));
-                options.setItem("legacy", Py::Boolean(stepSettings.exportLegacy));
             }
         }
 
@@ -504,14 +483,13 @@ private:
         char* Name;
         PyObject* pyoptions = nullptr;
         PyObject* pyexportHidden = Py_None;
-        PyObject* pylegacy = Py_None;
         PyObject* pykeepPlacement = Py_None;
-        static const std::array<const char*, 7>
-            kwd_list {"obj", "name", "options", "exportHidden", "legacy", "keepPlacement", nullptr};
+        static const std::array<const char*, 6>
+            kwd_list {"obj", "name", "options", "exportHidden", "keepPlacement", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "Oet|O!O!O!O!",
+                "Oet|O!O!O!",
                 kwd_list,
                 &object,
                 "utf-8",
@@ -520,8 +498,6 @@ private:
                 &pyoptions,
                 &PyBool_Type,
                 &pyexportHidden,
-                &PyBool_Type,
-                &pylegacy,
                 &PyBool_Type,
                 &pykeepPlacement
             )) {
@@ -535,9 +511,6 @@ private:
         // determine export options
         Part::OCAF::ImportExportSettings settings;
 
-        // still support old way
-        bool legacyExport = (pylegacy         == Py_None ? settings.getExportLegacy()
-                                                         : Base::asBoolean(pylegacy));
         bool exportHidden = (pyexportHidden   == Py_None ? settings.getExportHiddenObject()
                                                          : Base::asBoolean(pyexportHidden));
         bool keepPlacement = (pykeepPlacement == Py_None ? settings.getExportKeepPlacement()
@@ -547,9 +520,6 @@ private:
         // new way
         if (pyoptions) {
             Py::Dict options(pyoptions);
-            if (options.hasKey("legacy")) {
-                legacyExport = static_cast<bool>(Py::Boolean(options.getItem("legacy")));
-            }
             if (options.hasKey("exportHidden")) {
                 exportHidden = static_cast<bool>(Py::Boolean(options.getItem("exportHidden")));
             }
@@ -574,18 +544,10 @@ private:
             hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
 
             Import::ExportOCAF2 ocaf(hDoc, &getShapeColors);
-            if (!legacyExport || !ocaf.canFallback(objs)) {
-                ocaf.setExportOptions(Import::ExportOCAF2::customExportOptions());
-                ocaf.setExportHiddenObject(exportHidden);
-                ocaf.setKeepPlacement(keepPlacement);
-
-                ocaf.exportObjects(objs);
-            }
-            else {
-                bool keepExplicitPlacement = true;
-                ExportOCAFGui ocaf(hDoc, keepExplicitPlacement);
-                ocaf.exportObjects(objs);
-            }
+            ocaf.setExportOptions(Import::ExportOCAF2::customExportOptions());
+            ocaf.setExportHiddenObject(exportHidden);
+            ocaf.setKeepPlacement(keepPlacement);
+            ocaf.exportObjects(objs);
 
             Base::FileInfo file(Utf8Name.c_str());
             if (file.hasExtension({"stp", "step"})) {

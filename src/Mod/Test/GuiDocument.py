@@ -25,7 +25,6 @@ import os
 import threading
 import time
 import unittest
-import zipfile
 
 import FreeCAD
 import FreeCADGui
@@ -57,7 +56,8 @@ class TestGuiDocument(unittest.TestCase):
         raise self.failureException("Gui::AutoSaver was not found in the QApplication object tree")
 
     def _recoveryArchive(self):
-        return os.path.join(self.doc.TransientDir, "fc_recovery_file.fcstd")
+        # A snapshot is written as the document itself, in the record's own form.
+        return os.path.join(self.doc.TransientDir, "fc_recovery_file.cpart")
 
     def _removeRecoveryArchive(self):
         archive = self._recoveryArchive()
@@ -87,23 +87,24 @@ class TestGuiDocument(unittest.TestCase):
         archive = self._recoveryArchive()
         self.assertTrue(os.path.isfile(archive))
 
-        with zipfile.ZipFile(archive) as recovery:
-            self.assertIn("Document.xml", recovery.namelist())
-            self.assertIn("GuiDocument.xml", recovery.namelist())
+        with open(archive, encoding="utf-8", errors="replace") as written:
+            recipe = written.read()
 
-            if expected_label is not None:
-                document_xml = recovery.read("Document.xml").decode("utf-8", errors="replace")
-                self.assertIn(expected_label, document_xml)
+        self.assertIn("<Recipe", recipe)
+        # The chosen appearance rides in the record itself, so a session with a view layer
+        # writes it into the snapshot rather than into a second file beside it.
+        self.assertIn('display="1"', recipe)
+
+        if expected_label is not None:
+            self.assertIn(expected_label, recipe)
 
     def testGetTreeRootObject(self):
         # Create objects at the root level
         group1 = self.doc.addObject("App::DocumentObjectGroup", "Group1")
         group2 = self.doc.addObject("App::DocumentObjectGroup", "Group2")
         obj1 = self.doc.addObject("App::FeaturePython", "RootObject1")
-        part1 = self.doc.addObject("App::Part", "Part1")
 
-        # Create App::Parts and groups with objects in them
-        part1_obj = part1.newObject("App::FeaturePython", "Part1_Object")
+        # Create groups with objects in them
         group3 = group2.newObject("App::DocumentObjectGroup", "Group1")
         group1_obj = group3.newObject("App::FeaturePython", "Group1_Object")
 
@@ -111,7 +112,7 @@ class TestGuiDocument(unittest.TestCase):
         root_objects = FreeCADGui.getDocument("TestDoc").TreeRootObjects
 
         # Check if the new function returns the correct root objects
-        expected_root_objects = [group1, group2, obj1, part1]
+        expected_root_objects = [group1, group2, obj1]
         self.assertEqual(set(root_objects), set(expected_root_objects))
 
     def testViewObjectRequiresMainThread(self):
@@ -162,7 +163,74 @@ class TestGuiDocument(unittest.TestCase):
         self.assertEqual(proxy.executed_thread_id, threading.get_ident())
         self.assertGreaterEqual(elapsed, 0.04)
 
-    def testRecoverySnapshotIncludesGuiDocument(self):
+    def _countingFeature(self, fails=False):
+        class CountingProxy:
+            def __init__(self):
+                self.runs = 0
+
+            def execute(self, obj):
+                self.runs += 1
+                if fails:
+                    raise RuntimeError("this step cannot be built")
+
+        proxy = CountingProxy()
+        obj = self.doc.addObject("App::FeaturePython", "Counted")
+        obj.addProperty("App::PropertyInteger", "Value")
+        obj.Proxy = proxy
+        self.doc.recompute()
+        proxy.runs = 0
+        return obj, proxy
+
+    def _settle(self):
+        for _ in range(20):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents, 10)
+
+    def testAChangeIsRebuiltOnceTheAppIsIdle(self):
+        obj, proxy = self._countingFeature()
+        obj.Value = 1
+        obj.Value = 2
+        self.assertTrue(self.doc.mustExecute())
+
+        self._settle()
+
+        self.assertFalse(self.doc.mustExecute())
+        self.assertEqual(proxy.runs, 1)
+
+    def testTheSkipSwitchHoldsTheRebuildUntilItIsTurnedOff(self):
+        obj, proxy = self._countingFeature()
+        FreeCADGui.runCommand("Std_ToggleSkipRecompute", 1)
+        obj.Value = 1
+        self._settle()
+        self.assertTrue(self.doc.mustExecute())
+        self.assertEqual(proxy.runs, 0)
+
+        FreeCADGui.runCommand("Std_ToggleSkipRecompute", 0)
+        self._settle()
+
+        self.assertFalse(self.doc.mustExecute())
+        self.assertEqual(proxy.runs, 1)
+
+    def testAnOpenTransactionIsRebuiltWhenItCommits(self):
+        obj, proxy = self._countingFeature()
+        self.doc.openTransaction("Edit")
+        obj.Value = 1
+        self._settle()
+        self.assertEqual(proxy.runs, 0)
+
+        self.doc.commitTransaction()
+        self._settle()
+
+        self.assertEqual(proxy.runs, 1)
+
+    def testAStepThatFailsIsNotRebuiltOverAndOver(self):
+        obj, proxy = self._countingFeature(fails=True)
+        obj.Value = 1
+
+        self._settle()
+
+        self.assertEqual(proxy.runs, 1)
+
+    def testRecoverySnapshotCarriesTheChosenAppearance(self):
         self.doc.addObject("App::FeaturePython", "RecoveryGuiObject")
 
         self.assertTrue(FreeCAD.writeRecoverySnapshotToTransientDir(self.doc))
@@ -208,3 +276,43 @@ class TestGuiDocument(unittest.TestCase):
 
         self.assertTrue(self._processEventsUntil(lambda: os.path.exists(self._recoveryArchive())))
         self._assertRecoveryArchiveContains(expected_label="AutoSaveBurst7")
+
+
+class _EmptyTask:
+    def __init__(self):
+        self.form = QtWidgets.QWidget()
+
+
+class TestTaskPanel(unittest.TestCase):
+    """The Tasks panel opens for a dialog and is left as it was found when the dialog closes."""
+
+    def setUp(self):
+        self.doc = FreeCAD.newDocument("TaskPanelDoc")
+        self.dock = FreeCADGui.getMainWindow().findChild(QtWidgets.QDockWidget, "Tasks")
+        self.assertIsNotNone(self.dock)
+        self.wasOpen = not self.dock.isHidden()
+
+    def tearDown(self):
+        if FreeCADGui.Control.activeDialog():
+            FreeCADGui.Control.closeDialog()
+        self.dock.setVisible(self.wasOpen)
+        FreeCAD.closeDocument(self.doc.Name)
+
+    def _openAndCloseADialog(self):
+        FreeCADGui.Control.showDialog(_EmptyTask())
+        self.assertFalse(self.dock.isHidden(), "the dialog did not open the panel")
+        FreeCADGui.Control.closeDialog()
+        QtWidgets.QApplication.processEvents()
+
+    def testTasksIsADockedPanelNotAnOverlay(self):
+        self.assertIs(self.dock.parentWidget(), FreeCADGui.getMainWindow())
+
+    def testAPanelOpenedForADialogClosesWithIt(self):
+        self.dock.hide()
+        self._openAndCloseADialog()
+        self.assertTrue(self.dock.isHidden())
+
+    def testAnEmptyPanelThatWasAlreadyOpenClosesToo(self):
+        self.dock.show()
+        self._openAndCloseADialog()
+        self.assertTrue(self.dock.isHidden())

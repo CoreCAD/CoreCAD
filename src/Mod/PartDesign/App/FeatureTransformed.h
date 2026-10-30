@@ -25,10 +25,13 @@
 
 #pragma once
 
+#include <optional>
 #include <gp_Trsf.hxx>
 
+#include <App/DocumentObserver.h>
+#include <App/ObjectIdentifier.h>
 #include <App/PropertyStandard.h>
-#include "FeatureRefine.h"
+#include "FeatureAddSub.h"
 
 
 namespace PartDesign
@@ -36,9 +39,12 @@ namespace PartDesign
 
 /**
  * Abstract superclass of all features that are created by transformation of another feature
- * Transformations are translation, rotation and mirroring
+ * Transformations are translation, rotation and mirroring.
+ *
+ * A pattern's piece is every copy it placed, the originals included, so a later pattern can
+ * copy it like any other step.
  */
-class PartDesignExport Transformed: public PartDesign::FeatureRefine
+class PartDesignExport Transformed: public PartDesign::FeatureAddSub
 {
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::Transformed);
 
@@ -55,7 +61,85 @@ public:
      */
     App::PropertyLinkList Originals;
     App::PropertyEnumeration TransformMode;
-    App::PropertyBool Refine;
+
+    /// Cruth §5.5: when true, the pattern emits its N copies as disconnected solids
+    /// (a compound) instead of fusing them into one. The multi-output reconciler then
+    /// spawns one Body per copy — "each copy is its own Body". Default false keeps the
+    /// classic instance-fusing behaviour.
+    ///
+    /// This is the second of the two merge decisions a pattern makes, and the only one it
+    /// owns. The first — whether the pattern's result joins the Body it was added to — is
+    /// the ordinary §8.5 Merge Result gesture, asked of every solid feature alike and
+    /// answered by the BaseFeature chain. This one asks whether the COPIES join EACH OTHER.
+    /// They are independent: a pattern can extend its Body while keeping its copies apart.
+    ///
+    /// Honoured in both transform modes. In Whole shape the copies are the whole output. In
+    /// Features mode the support keeps the untransformed original (it was already in the
+    /// chain before the pattern existed) and every transformed copy is emitted beside it
+    /// rather than welded on, so N copies still yield N pieces.
+    App::PropertyBool MultiBody;
+
+    /// Cruth P7 (#34): how many copies the pattern was asked for, and how many connected
+    /// pieces they actually formed among themselves, as of the last recompute. Equal when
+    /// nothing overlapped; the second is smaller when copies ran into each other and were
+    /// fused. Both zero when the question does not arise (fewer than two copies, or the
+    /// copies were kept apart and never fused).
+    ///
+    /// Derived, never authored: read-only, output (recording them does not re-touch the
+    /// feature) and transient (recomputed, never stored). They exist so the answer is
+    /// readable — by the dialog that offers the merge choice, and by a script — instead of
+    /// living only in a console line nobody is obliged to read. With several originals the
+    /// pair records the worst run, which is the one the user needs to hear about.
+    App::PropertyInteger InstancesRequested;
+    App::PropertyInteger InstancePieces;
+
+    /// Cruth §5.6 skip-list: original ordinals of the instances broken out of the MultiBody
+    /// output. An instance's ordinal is its position in the transform sequence
+    /// (getTransformedCompShape order) — stable across recompute and independent of other
+    /// skips — so the pattern continues with one fewer member and never silently re-merges it.
+    /// Index-based per ARCHITECTURE §5.6/§11.2 ("marking that index as broken-out"). An earlier
+    /// design keyed this on Body::TipComponentId to "speak the identity language the user
+    /// selects", but the element-map component-id is context-dependent: its map name shifts
+    /// with the surrounding compound, so a skip keyed on it silently failed to match at execute
+    /// time. Break-out translates the selected Body's component-id to its ordinal once, against
+    /// the pattern's stored shape where the ids are self-consistent, then stores the ordinal.
+    App::PropertyIntegerList SkipInstances;
+
+    /// The number of the copy formulas are being worked out for, 1 for the first copy placed.
+    App::PropertyInteger n;
+
+    /// A measurement of a copied step that is set again for each copy, so each copy is that
+    /// step rebuilt with its own value. Stored as two properties of this pattern: VariedK, whose
+    /// formula names the measurement, and VariedKPerCopy, whose formula gives its value.
+    struct VariedMeasurement
+    {
+        App::ObjectIdentifier target;
+        App::Property* perCopy;
+    };
+    /// In the order they were added. Throws when a VariedK formula does not name one value.
+    std::vector<VariedMeasurement> variedMeasurements() const;
+    bool variesMeasurements() const;
+    /// @p target names the measurement as a formula would, e.g. "Sketch.Constraints.Width";
+    /// @p formula gives its value for each copy and may use n.
+    void varyMeasurement(const std::string& target, const std::string& formula);
+    void stopVarying(std::size_t index);
+    /// What varyMeasurement() can be given for the current originals, each named as a formula
+    /// names it: the originals' own measurements and their sketches' named dimensions.
+    std::vector<std::string> measurementsToVary() const;
+
+    /// The 1-based index, among this pattern's output solids, of the copy with @p ordinal, or 0
+    /// when that copy is skipped or out of range. Copies are emitted in ordinal order with the
+    /// skipped ones left out (§5.6), so the index counts the survivors before it.
+    int solidIndexOfInstance(long ordinal) const;
+    /// The 1-based index of the output solid that holds the original, or 0 when no one solid
+    /// does (the original was cut apart, or skipped).
+    int solidIndexOfOriginal() const;
+    /// True when the original comes out of this pattern as it went in: its copies are kept apart
+    /// or touch nothing they would fuse with, and none are cut. The copies are then all it makes.
+    bool leavesOriginalAsIs() const;
+    /// The ordinal of the copy whose solid carries component id @p cid (Body::TipComponentId),
+    /// or -1. Read against this pattern's own stored shape, where the ids agree.
+    long ordinalOfComponent(const std::string& cid) const;
 
     /**
      * Returns the BaseFeature property's object(if any) otherwise return first original,
@@ -64,21 +148,37 @@ public:
      *               silently return a nullptr, otherwise throw Base::Exception.
      *               Default is false.
      */
-    Part::Feature* getBaseObject(bool silent = false) const override;
+    App::DocumentObject* getBaseObject(bool silent = false) const override;
+
+    /**
+     * Cruth P7 (#34): say so when the requested instances collapse into fewer pieces.
+     *
+     * A pattern whose copies overlap fuses them into fewer connected pieces than were asked
+     * for, reports Up-to-date, and says nothing — the user asked for N and silently received
+     * fewer. This compares the instances against EACH OTHER (never against the finished
+     * result, which is legitimately one solid whenever a pattern is meant to join its base)
+     * and reports the shortfall.
+     *
+     * A notice, not a failure: overlap is valid geometry and can be deliberate, so the
+     * feature stays valid and the recompute is untouched. Deciding what to DO about it is
+     * the MultiBody choice above, offered by the dialog and not decided here.
+     *
+     * Records the counts in InstancesRequested/InstancePieces as well as writing the
+     * console line, so the answer can be read rather than only watched for. Called only on
+     * the fusing path: copies that were deliberately kept apart did not collapse, so there
+     * is nothing to report about them.
+     */
+    void reportCollapsedInstances(const std::vector<Part::TopoShape>& instances);
 
     virtual std::vector<App::DocumentObject*> getOriginals() const;
 
     /// Return the sketch of the first original
     App::DocumentObject* getSketchObject() const;
 
-    /// Return true if this feature is a child of a MultiTransform
-    bool isMultiTransformChild() const;
-
     /// Get the list of transformations describing the members of the pattern
-    // Note: Only the Scaled feature requires the originals
-    virtual const std::list<gp_Trsf> getTransformations(const std::vector<App::DocumentObject*> /*originals*/)
+    virtual std::list<gp_Trsf> getTransformations()
     {
-        return std::list<gp_Trsf>();  // Default method
+        return {};
     }
 
     /** @name methods override feature */
@@ -87,8 +187,7 @@ public:
      * Gets the transformations from the virtual getTransformations() method of the sub class
      * and applies them to every member of Originals. The total number of copies including
      * the untransformed Originals will be sizeof(Originals) times sizeof(getTransformations())
-     * If Originals is empty, execute() returns immediately without doing anything as
-     * the actual processing will happen in the MultiTransform feature
+     * With nothing to copy yet, the base passes through unchanged.
      */
     App::DocumentObjectExecReturn* execute() override;
     short mustExecute() const override;
@@ -96,14 +195,14 @@ public:
 
     App::DocumentObjectExecReturn* recomputePreview() override;
 
+    void getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& subShape) override;
+
     void onChanged(const App::Property* prop) override;
 
-    /** returns the compound of the shapes that were rejected during the last execute
-     * because they did not overlap with the support
-     */
-    TopoDS_Shape rejected;
-
 protected:
+    /// The centre of what is copied: the originals, or the whole base shape.
+    Base::Vector3d centreOfOriginals();
+
     void Restore(Base::XMLReader& reader) override;
     void handleChangedPropertyType(
         Base::XMLReader& reader,
@@ -111,10 +210,21 @@ protected:
         App::Property* prop
     ) override;
 
-    virtual void positionBySupport();
-    static TopoDS_Shape getRemainingSolids(const TopoDS_Shape&);
-
 private:
+    struct Piece
+    {
+        Part::TopoShape added;
+        Part::TopoShape cut;
+    };
+    /// The original's piece for each of @p count members, moved by @p toSupport: the same piece
+    /// for every member unless measurements vary, when member k is the original rebuilt with
+    /// copy k's values.
+    std::vector<Piece> piecesOf(FeatureAddSub* original, std::size_t count, const gp_Trsf& toSupport);
+    std::vector<App::any> valuesForCopy(const std::vector<VariedMeasurement>& varied, long copy);
+
+    /// leavesOriginalAsIs(), kept until the pattern's shape or its base changes.
+    mutable std::optional<bool> originalAsIs;
+    bool checkOriginalAsIs() const;
 };
 
 }  // namespace PartDesign

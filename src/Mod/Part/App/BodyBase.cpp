@@ -23,7 +23,10 @@
  ***************************************************************************/
 
 
+#include <Standard_Failure.hxx>
+
 #include <App/Document.h>
+#include <App/PropertyLinks.h>
 
 #include "BodyBase.h"
 #include "BodyBasePy.h"
@@ -32,16 +35,19 @@
 namespace Part
 {
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(Part::BodyBase, Part::Feature)
+PROPERTY_SOURCE(Part::BodyBase, App::GeoFeature)
 
 BodyBase::BodyBase()
 {
+    // #121: a Body is what stands as a part, so a Body is what is made of something.
+    // Its features are not: they build the part, they are not parts themselves.
+    Part::ShapeExtension::initExtension(this);
+    Part::MaterialExtension::initExtension(this);
+
     ADD_PROPERTY(Tip, (nullptr));
     Tip.setScope(App::LinkScope::Child);
 
     ADD_PROPERTY(BaseFeature, (nullptr));
-
-    App::OriginGroupExtension::initExtension(this);
 }
 
 BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
@@ -51,13 +57,72 @@ BodyBase* BodyBase::findBodyOf(const App::DocumentObject* f)
         std::vector<App::DocumentObject*> bodies = doc->getObjectsOfType(BodyBase::getClassTypeId());
         for (auto it : bodies) {
             BodyBase* body = static_cast<BodyBase*>(it);
-            if (body->hasObject(f)) {
+            // De-owned Bodies keep no Group (Cruth §11 step 5e); membership is the derived
+            // member list, resolved through the virtual getFullModel() so a PartDesign Body
+            // uses its BaseFeature-chain reverse lookup.
+            std::vector<App::DocumentObject*> model = body->getFullModel();
+            if (std::ranges::find(model, f) != model.end()) {
                 return body;
             }
         }
     }
 
     return nullptr;
+}
+
+std::vector<BodyBase*> BodyBase::findBodiesBuiltBy(const App::DocumentObject* f)
+{
+    std::vector<BodyBase*> result;
+    App::Document* doc = f ? f->getDocument() : nullptr;
+    if (!doc) {
+        return result;
+    }
+    for (auto* obj : doc->getObjectsOfType(BodyBase::getClassTypeId())) {
+        auto* body = static_cast<BodyBase*>(obj);
+        if (body->isBuiltBy(f)) {
+            result.push_back(body);
+        }
+    }
+    return result;
+}
+
+bool BodyBase::isBuiltBy(const App::DocumentObject* f)
+{
+    std::vector<App::DocumentObject*> model = getFullModel();
+    return std::ranges::find(model, f) != model.end();
+}
+
+Base::Color BodyBase::getIdentityColor() const
+{
+    return Base::Color(0.5F, 0.5F, 0.5F);
+}
+
+void BodyBase::rebaseBodySubReferencesToTip(
+    std::vector<App::DocumentObject*>& objs,
+    std::vector<std::string>& subs
+)
+{
+    const std::size_t count = std::min(objs.size(), subs.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        if (subs[i].empty()) {
+            continue;  // a whole-Body reference stays a Body reference (tracks the Tip, §8)
+        }
+        if (!objs[i] || !objs[i]->isDerivedFrom<BodyBase>()) {
+            continue;
+        }
+        auto* body = static_cast<BodyBase*>(objs[i]);
+        if (auto* tip = body->Tip.getValue()) {
+            objs[i] = tip;  // feature-anchor the sub-element reference (§8)
+        }
+    }
+}
+
+void BodyBase::rebaseBodySubReferencesToTip(App::PropertyLinkSubList& links)
+{
+    std::vector<App::DocumentObject*> objs = links.getValues();
+    std::vector<std::string> subs = links.getSubValues();
+    rebaseBodySubReferencesToTip(objs, subs);
+    links.setValues(objs, subs);
 }
 
 bool BodyBase::isAfter(const App::DocumentObject* feature, const App::DocumentObject* target) const
@@ -68,11 +133,14 @@ bool BodyBase::isAfter(const App::DocumentObject* feature, const App::DocumentOb
         return false;
     }
 
+    // De-owned Bodies keep no Group (Cruth §11 step 5e); order the members by the derived
+    // member list (getFullModel is solids-first in build order) instead of Group position.
+    const std::vector<App::DocumentObject*> features = const_cast<BodyBase*>(this)->getFullModel();
+
     if (!target || target == BaseFeature.getValue()) {
-        return hasObject(feature);
+        return std::ranges::find(features, feature) != features.end();
     }
 
-    const std::vector<App::DocumentObject*>& features = Group.getValues();
     const auto featureIt = std::ranges::find(features, feature);
     const auto targetIt = std::ranges::find(features, target);
 
@@ -87,7 +155,7 @@ void BodyBase::onBeforeChange(const App::Property* prop)
     if ( prop == &BaseFeature && BaseFeature.getValue() == Tip.getValue() && BaseFeature.getValue()
     ) { Tip.setValue( nullptr );
     }*/
-    Part::Feature::onBeforeChange(prop);
+    App::GeoFeature::onBeforeChange(prop);
 }
 
 void BodyBase::onChanged(const App::Property* prop)
@@ -97,18 +165,29 @@ void BodyBase::onChanged(const App::Property* prop)
     if ( prop == &BaseFeature && !Tip.getValue() && BaseFeature.getValue() ) {
         Tip.setValue( BaseFeature.getValue () );
     }*/
-    Part::Feature::onChanged(prop);
+    App::GeoFeature::onChanged(prop);
 }
 
-void BodyBase::handleChangedPropertyName(Base::XMLReader& reader, const char* TypeName, const char* PropName)
+App::ElementNamePair BodyBase::getElementName(const char* name, ElementNameType type) const
 {
-    // The App::PropertyLinkList property was Model in the past (#0002642)
-    Base::Type type = Base::Type::fromName(TypeName);
-    if (Group.getClassTypeId() == type && strcmp(PropName, "Model") == 0) {
-        Group.Restore(reader);
+    if (type != ElementNameType::Export) {
+        return App::GeoFeature::getElementName(name, type);
     }
-    else {
-        Part::Feature::handleChangedPropertyName(reader, TypeName, PropName);
+    const TopoShape shape = backingShape();
+    return ShapeFeature::exportElementName(shape, shape, name);
+}
+
+App::DocumentObjectExecReturn* BodyBase::recompute()
+{
+    try {
+        return App::GeoFeature::recompute();
+    }
+    catch (Standard_Failure& e) {
+        auto* ret = new App::DocumentObjectExecReturn(e.GetMessageString());
+        if (ret->Why.empty()) {
+            ret->Why = "Unknown OCC exception";
+        }
+        return ret;
     }
 }
 

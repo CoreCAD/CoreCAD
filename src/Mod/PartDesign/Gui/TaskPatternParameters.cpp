@@ -37,16 +37,14 @@
 #include <Gui/Command.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/DatumLine.h>
-#include <Mod/PartDesign/App/DatumPlane.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
 #include <Mod/PartDesign/App/FeaturePolarPattern.h>
 #include <Mod/Part/Gui/PatternParametersWidget.h>
 
 #include "ui_TaskPatternParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskPatternParameters.h"
 #include "ReferenceSelection.h"
-#include "TaskMultiTransformParameters.h"
 
 
 using namespace PartDesignGui;
@@ -59,16 +57,6 @@ TaskPatternParameters::TaskPatternParameters(ViewProviderTransformed* Transforme
     , ui(new Ui_TaskPatternParameters)
 {
     setupUI();
-}
-
-TaskPatternParameters::TaskPatternParameters(
-    TaskMultiTransformParameters* parentTask,
-    QWidget* parameterWidget
-)
-    : TaskTransformedParameters(parentTask)
-    , ui(new Ui::TaskPatternParameters)
-{
-    setupParameterUI(parameterWidget);
 }
 
 void TaskPatternParameters::setupParameterUI(QWidget* widget)
@@ -136,7 +124,7 @@ void TaskPatternParameters::setupParameterUI(QWidget* widget)
     bindProperties();
 
     // --- Task Specific Setup ---
-    showOriginAxes(true);  // Show origin helper axes
+    originDisplay.show(getObject(), Gui::DatumElement::Axes);
 
     updateViewTimer = new QTimer(this);
     updateViewTimer->setSingleShot(true);
@@ -211,28 +199,6 @@ void TaskPatternParameters::updateUI()
 
 // --- Task-Specific Logic ---
 
-void TaskPatternParameters::showOriginAxes(bool show)
-{
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-    if (body) {
-        try {
-            App::Origin* origin = body->getOrigin();
-            auto vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            if (show) {
-                vpOrigin->setTemporaryVisibility(Gui::DatumElement::Axes);
-            }
-            else {
-                vpOrigin->resetTemporaryVisibility();
-            }
-        }
-        catch (const Base::Exception& ex) {
-            Base::Console().error("TaskPatternParameters: Error accessing origin axes: %s\n", ex.what());
-        }
-    }
-}
-
 void TaskPatternParameters::enterReferenceSelectionMode()
 {
     if (selectionMode == SelectionMode::Reference) {
@@ -295,15 +261,6 @@ void TaskPatternParameters::onParameterWidgetParametersChanged()
     kickUpdateViewTimer();  // Debounce recompute
 }
 
-void TaskPatternParameters::onUpdateView(bool on)
-{
-    // This might be less relevant now if recomputes are triggered by parametersChanged
-    blockUpdate = !on;
-    if (on) {
-        kickUpdateViewTimer();
-    }
-}
-
 void TaskPatternParameters::kickUpdateViewTimer() const
 {
     updateViewTimer->start();
@@ -361,7 +318,6 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 
 TaskPatternParameters::~TaskPatternParameters()
 {
-    showOriginAxes(false);         // Clean up temporary visibility
     exitReferenceSelectionMode();  // Ensure gates are removed etc.
     // ui unique_ptr handles deletion
     // parametersWidget is deleted by Qt parent mechanism if added to layout correctly
@@ -424,6 +380,8 @@ TaskDlgLinearPatternParameters::TaskDlgLinearPatternParameters(
     parameter = new TaskPatternParameters(LinearPatternView);
     // Add it to the dialog's content list
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(LinearPatternView));
+    Content.push_back(new TaskMergeResultParameters(LinearPatternView));
     Content.push_back(preview);
 }
 

@@ -261,17 +261,7 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
     Gui::Document* doc = vp->getDocument();
     this->attachDocument(doc);
 
-    //show the parts coordinate system axis for selection
-    if(PartDesign::Body * body = PartDesign::Body::findBodyOf(getObject())) {
-        try {
-            App::Origin *origin = body->getOrigin();
-            Gui::ViewProviderCoordinateSystem* vpOrigin {};
-            vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
-            vpOrigin->setTemporaryVisibility(Gui::DatumElement::Planes | Gui::DatumElement::Axes);
-        } catch (const Base::Exception &ex) {
-            Base::Console().error ("%s\n", ex.what () );
-        }
-    }
+    originDisplay.show(getObject(), Gui::DatumElement::Planes | Gui::DatumElement::Axes);
 
     // box
     connect(ui->boxLength, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
@@ -377,27 +367,7 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
 }
 // clang-format on
 
-/*
- *  Destroys the object and frees any allocated resources
- */
-TaskBoxPrimitives::~TaskBoxPrimitives()
-{
-    // hide the parts coordinate system axis for selection
-    try {
-        auto obj = getObject();
-        if (PartDesign::Body* body = obj ? PartDesign::Body::findBodyOf(obj) : nullptr) {
-            App::Origin* origin = body->getOrigin();
-            Gui::ViewProviderCoordinateSystem* vpOrigin;
-            vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->resetTemporaryVisibility();
-        }
-    }
-    catch (const Base::Exception& ex) {
-        Base::Console().error("%s\n", ex.what());
-    }
-}
+TaskBoxPrimitives::~TaskBoxPrimitives() = default;
 
 void TaskBoxPrimitives::slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj)
 {
@@ -1081,6 +1051,7 @@ TaskDlgPrimitiveParameters::TaskDlgPrimitiveParameters(ViewProviderPrimitive* Pr
     Content.push_back(primitive);
     parameter = new PartGui::TaskAttacher(PrimitiveView, nullptr, QString(), tr("Attachment"));
     Content.push_back(parameter);
+    Content.push_back(new TaskMergeResultParameters(PrimitiveView));
     Content.push_back(preview);
 
     connect(

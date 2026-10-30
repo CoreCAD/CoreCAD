@@ -47,7 +47,6 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Link.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
@@ -58,12 +57,10 @@
 #include <Gui/WaitCursor.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PrimitiveFeature.h>
-#include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/FeatureMirroring.h>
 #include <App/Datums.h>
 
 #include "Mirroring.h"
-
 #include "ui_Mirroring.h"
 
 
@@ -89,12 +86,11 @@ public:
     {
         std::string subString(sSubName);
 
-        if (pObj->isDerivedFrom<Part::Plane>() || pObj->isDerivedFrom<App::Plane>()
-            || (strstr(pObj->getNameInDocument(), "Plane") && pObj->isDerivedFrom<Part::Datum>())) {
+        if (pObj->isDerivedFrom<Part::Plane>() || pObj->isDerivedFrom<App::Plane>()) {
             return true;
             // reference is an app::link or a part::feature or some subobject
         }
-        else if (pObj->isDerivedFrom<Part::Feature>() || pObj->isDerivedFrom<App::Link>()) {
+        else if (Part::hasShape(pObj) || pObj->isDerivedFrom<App::Link>()) {
             bool isFace = false;  // will be true if user selected face subobject or if object only
                                   // has 1 face
             bool isEdge = false;  // will be true if user selected edge subobject or if object only
@@ -214,9 +210,10 @@ Mirroring::Mirroring(QWidget* parent)
     findShapes();
 
     Gui::ItemViewSelection sel(ui->shapes);
-    sel.applyFrom(Gui::Selection().getObjectsOfType(Part::Feature::getClassTypeId()));
+    auto shapeObjs = Gui::Selection().getObjectsOfType(App::DocumentObject::getClassTypeId());
+    std::erase_if(shapeObjs, [](App::DocumentObject* o) { return !Part::hasShape(o); });
+    sel.applyFrom(shapeObjs);
     sel.applyFrom(Gui::Selection().getObjectsOfType(App::Link::getClassTypeId()));
-    sel.applyFrom(Gui::Selection().getObjectsOfType(App::Part::getClassTypeId()));
 
     connect(ui->selectButton, &QPushButton::clicked, this, &Mirroring::onSelectButtonClicked);
 
@@ -365,9 +362,19 @@ bool Mirroring::accept()
         }
         label.append(QStringLiteral(" (Mirror #%1)").arg(++count));
 
+        Gui::Command::runCommand(
+            Gui::Command::App,
+            QStringLiteral(
+                "__doc__=FreeCAD.getDocument(\"%1\")\n"
+                "__doc__.addObject(\"Part::Mirroring\")\n"
+                "del __doc__"
+            )
+                .arg(this->document)
+                .toLatin1()
+        );
+
         QString code = QStringLiteral(
                            "__doc__=FreeCAD.getDocument(\"%1\")\n"
-                           "__doc__.addObject(\"Part::Mirroring\")\n"
                            "__doc__.ActiveObject.Source=__doc__.getObject(\"%2\")\n"
                            "__doc__.ActiveObject.Label=u\"%3\"\n"
                            "__doc__.ActiveObject.Normal=(%4,%5,%6)\n"

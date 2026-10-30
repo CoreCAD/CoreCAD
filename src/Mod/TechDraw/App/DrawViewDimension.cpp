@@ -50,8 +50,11 @@
 #include <ShapeAnalysis.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Shape.hxx>
+#include <TopoDS_Vertex.hxx>
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -64,6 +67,7 @@
 
 #include <Mod/Measure/App/Measurement.h>
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 
 #include <Mod/TechDraw/App/DrawViewDimensionPy.h>  // generated from DrawViewDimensionPy.xml
@@ -126,6 +130,12 @@ DrawViewDimension::DrawViewDimension()
                       (App::Prop_None),
                       "3D Geometry References");
     References3D.setScope(App::LinkScope::Global);
+    ADD_PROPERTY_TYPE(ReferenceAnchors3D,
+                      (nullptr, nullptr),
+                      "",
+                      (App::Prop_Output),
+                      "Durable source of each 2D reference (internal)");
+    ReferenceAnchors3D.setScope(App::LinkScope::Global);
 
     ADD_PROPERTY_TYPE(FormatSpec,
                       (getDefaultFormatSpec()),
@@ -222,6 +232,8 @@ DrawViewDimension::DrawViewDimension()
     // changing the references in the property editor will only cause problems
     References2D.setStatus(App::Property::ReadOnly, true);
     References3D.setStatus(App::Property::ReadOnly, true);
+    ReferenceAnchors3D.setStatus(App::Property::ReadOnly, true);
+    ReferenceAnchors3D.setStatus(App::Property::Hidden, true);
 
     // hide the DrawView properties that don't apply to Dimensions
     ScaleType.setStatus(App::Property::ReadOnly, true);
@@ -316,6 +328,12 @@ void DrawViewDimension::onChanged(const App::Property* prop)
     }
 
     if (prop == &References2D) {
+        // the 2d references changed, so any previously captured source anchors
+        // are stale; drop them and let execute() recapture from the new picks.
+        if (!ReferenceAnchors3D.getSubValues().empty()) {
+            ReferenceAnchors3D.setValues(std::vector<App::DocumentObject*>(),
+                                         std::vector<std::string>());
+        }
         updateSavedGeometry();
     }
     else if (prop == &References3D) {
@@ -541,6 +559,11 @@ App::DocumentObjectExecReturn* DrawViewDimension::execute()
         m_areaPoint = getAreaParameters(references);
         m_hasGeometry = true;
     }
+
+    // now that the references resolve to valid geometry, record the durable 3d
+    // source of each 2d reference so a later model change can be tracked by
+    // identity rather than by the projected index.
+    captureReferenceAnchors();
 
     overrideKeepUpdated(false);
     return DrawView::execute();
@@ -1654,6 +1677,96 @@ void DrawViewDimension::updateSavedGeometry()
     if (!newGeometry.empty()) {
         SavedGeometry.setValues(newGeometry);
         saveFeatureBox();
+    }
+}
+
+
+// Record, for each 2d reference, the durable 3d source sub-element it was
+// projected from.  The anchor is stored as a PropertyLinkSub so the element map
+// keeps it pointing at the same physical edge/vertex across model edits; that is
+// what lets autocorrect re-find a moved reference by identity rather than by the
+// projected index (which silently slides onto an unrelated edge).
+void DrawViewDimension::captureReferenceAnchors()
+{
+    // 3d-referenced dimensions are already durable through References3D.
+    if (!References3D.getValues().empty()) {
+        return;
+    }
+    // only capture once; cleared and recaptured when References2D changes.
+    if (!ReferenceAnchors3D.getSubValues().empty()) {
+        return;
+    }
+    DrawViewPart* dvp = getViewPart();
+    if (!dvp || !dvp->hasGeometry()) {
+        return;
+    }
+    const std::vector<std::string>& subs = References2D.getSubValues();
+    if (subs.empty()) {
+        return;
+    }
+    std::vector<App::DocumentObject*> sources = dvp->getAllSources();
+    if (sources.empty()) {
+        return;
+    }
+
+    std::vector<App::DocumentObject*> anchorObjects;
+    std::vector<std::string> anchorSubs;
+    bool foundAny = false;
+    for (const auto& sub : subs) {
+        std::string gType = DrawUtil::getGeomTypeFromName(sub);
+        int viewIndex = DrawUtil::getIndexFromName(sub);
+        App::DocumentObject* anchorObj = nullptr;
+        std::string anchorSub;
+        for (auto* source : sources) {
+            if (!source) {
+                continue;
+            }
+            auto shape = Part::Feature::getShape(
+                source, Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform);
+            if (shape.IsNull()) {
+                continue;
+            }
+            TopTools_IndexedMapOfShape shapeMap;
+            if (gType == "Edge") {
+                TopExp::MapShapes(shape, TopAbs_EDGE, shapeMap);
+                for (int k = 1; k <= shapeMap.Extent(); k++) {
+                    if (dvp->edgeIndexForModelEdge(TopoDS::Edge(shapeMap(k))) == viewIndex) {
+                        anchorObj = source;
+                        anchorSub = std::string("Edge") + std::to_string(k);
+                        break;
+                    }
+                }
+            }
+            else if (gType == "Vertex") {
+                TopExp::MapShapes(shape, TopAbs_VERTEX, shapeMap);
+                for (int k = 1; k <= shapeMap.Extent(); k++) {
+                    if (dvp->vertexIndexForModelVertex(TopoDS::Vertex(shapeMap(k))) == viewIndex) {
+                        anchorObj = source;
+                        anchorSub = std::string("Vertex") + std::to_string(k);
+                        break;
+                    }
+                }
+            }
+            if (anchorObj) {
+                break;
+            }
+        }
+        if (anchorObj) {
+            anchorObjects.push_back(anchorObj);
+            anchorSubs.emplace_back(anchorSub);
+            foundAny = true;
+        }
+        else {
+            // keep the anchor list aligned with References2D; a silhouette or
+            // outline edge has no single source edge, so leave a placeholder that
+            // resolves to no geometry.
+            anchorObjects.push_back(dvp);
+            anchorSubs.emplace_back();
+        }
+    }
+
+    if (foundAny) {
+        ReferenceAnchors3D.setValues(anchorObjects, anchorSubs);
     }
 }
 

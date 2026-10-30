@@ -40,9 +40,6 @@ public:
     ViewProviderAttachExtension();
     ~ViewProviderAttachExtension() override = default;
 
-    QIcon extensionMergeColorfullOverlayIcons(const QIcon& orig) const override;
-
-    void extensionUpdateData(const App::Property*) override;
     void extensionSetupContextMenu(QMenu*, QObject*, const char*) override;
 
     void showAttachmentEditor(std::function<void()> onAccept = {}, std::function<void()> onReject = {});

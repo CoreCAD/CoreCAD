@@ -26,7 +26,14 @@ set (Part_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/Part_translation.qrc)
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${Part_TR_QRC} ${QM_SRCS})
-qt_add_resources(PartGui_QRC_SRCS Resources/Part.qrc ${Part_TR_QRC})
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/Part"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Part.qrc"
+    OUTPUT_QRC    _Part_Icons_QRC
+)
+qt_add_resources(PartGui_QRC_SRCS ${_Part_Icons_QRC} ${Part_TR_QRC})
 
 set(PartGui_UIC_SRCS
     CrossSections.ui
@@ -53,7 +60,6 @@ set(PartGui_UIC_SRCS
     PatternParametersWidget.ui
     SectionCutting.ui
     ShapeFromMesh.ui
-    TaskFaceAppearances.ui
     TaskShapeBuilder.ui
     TaskLoft.ui
     TaskOffset.ui
@@ -74,9 +80,16 @@ SET(PartGui_SRCS
     AppPartGui.cpp
     AttacherTexts.h
     AttacherTexts.cpp
+    AppearancePanel.cpp
+    AppearancePanel.h
     BoxSelection.cpp
     BoxSelection.h
     Command.cpp
+    CommandBoolean.cpp
+    CommandDatum.cpp
+    CommandShapeTools.cpp
+    CommandSupport.cpp
+    CommandSupport.h
     CommandFilter.cpp
     CommandSimple.cpp
     CommandParametric.cpp
@@ -164,6 +177,8 @@ SET(PartGui_SRCS
     ViewProviderDatum.h
     ViewProviderExt.cpp
     ViewProviderExt.h
+    VersionComparison.cpp
+    VersionComparison.h
     ViewProviderReference.cpp
     ViewProviderReference.h
     ViewProviderBox.cpp
@@ -231,9 +246,6 @@ SET(PartGui_SRCS
     SectionCutting.ui
     ShapeFromMesh.cpp
     ShapeFromMesh.h
-    TaskFaceAppearances.cpp
-    TaskFaceAppearances.h
-    TaskFaceAppearances.ui
     TaskShapeBuilder.cpp
     TaskShapeBuilder.h
     TaskShapeBuilder.ui

@@ -72,6 +72,13 @@ SET(Features_SRCS
     SketchObjectExternal.cpp
     SketchObjectConstraints.cpp
     SketchObjectOperations.cpp
+    SketchObjectElementNames.cpp
+    SketchObjectRestore.cpp
+    SketchObjectAnalysis.cpp
+    SketchObjectFillet.cpp
+    SketchObjectTrim.cpp
+    SketchObjectCopy.cpp
+    SketchObjectBSpline.cpp
     SketchAnalysis.h
     SketchAnalysis.cpp
     Analyse.h
@@ -93,6 +100,11 @@ SET(Datatypes_SRCS
     ExternalGeometryFacade.h
     GeoEnum.cpp
     GeoEnum.h
+    SketchRecipe.cpp
+    SketchRecipeMerge.cpp
+    SketchRecipeView.cpp
+    SketchRecipe.h
+    SketchRecipeInternal.h
 )
 SOURCE_GROUP("Datatypes" FILES ${Datatypes_SRCS})
 

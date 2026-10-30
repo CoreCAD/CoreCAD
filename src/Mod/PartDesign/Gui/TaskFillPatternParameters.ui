@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PartDesignGui::TaskFillPatternParameters</class>
+ <widget class="QWidget" name="PartDesignGui::TaskFillPatternParameters">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>253</width>
+    <height>190</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string notr="true">Form</string>
+  </property>
+  <layout class="QGridLayout" name="gridLayout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item row="0" column="0">
+    <widget class="QLabel" name="labelBoundary">
+     <property name="text">
+      <string>Boundary</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QComboBox" name="comboBoundary"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="labelLayout">
+     <property name="text">
+      <string>Layout</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="comboLayout">
+     <item>
+      <property name="text">
+       <string>Grid</string>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Staggered</string>
+      </property>
+     </item>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="labelSpacing">
+     <property name="text">
+      <string>Spacing</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="Gui::QuantitySpinBox" name="spinSpacing">
+     <property name="keyboardTracking">
+      <bool>false</bool>
+     </property>
+     <property name="unit" stdset="0">
+      <string notr="true">mm</string>
+     </property>
+     <property name="minimum">
+      <double>0.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="labelRowSpacing">
+     <property name="text">
+      <string>Row spacing</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="Gui::QuantitySpinBox" name="spinRowSpacing">
+     <property name="keyboardTracking">
+      <bool>false</bool>
+     </property>
+     <property name="unit" stdset="0">
+      <string notr="true">mm</string>
+     </property>
+     <property name="minimum">
+      <double>0.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="labelMargin">
+     <property name="text">
+      <string>Margin</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="Gui::QuantitySpinBox" name="spinMargin">
+     <property name="keyboardTracking">
+      <bool>false</bool>
+     </property>
+     <property name="unit" stdset="0">
+      <string notr="true">mm</string>
+     </property>
+     <property name="minimum">
+      <double>0.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="labelAngle">
+     <property name="text">
+      <string>Angle</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="Gui::QuantitySpinBox" name="spinAngle">
+     <property name="keyboardTracking">
+      <bool>false</bool>
+     </property>
+     <property name="unit" stdset="0">
+      <string notr="true">deg</string>
+     </property>
+     <property name="minimum">
+      <double>-360.000000000000000</double>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>Gui::QuantitySpinBox</class>
+   <extends>QWidget</extends>
+   <header>Gui/QuantitySpinBox.h</header>
+  </customwidget>
+ </customwidgets>
+ <tabstops>
+  <tabstop>comboBoundary</tabstop>
+  <tabstop>comboLayout</tabstop>
+  <tabstop>spinSpacing</tabstop>
+  <tabstop>spinRowSpacing</tabstop>
+  <tabstop>spinMargin</tabstop>
+  <tabstop>spinAngle</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

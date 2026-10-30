@@ -26,6 +26,7 @@
 #include <FCConfig.h>
 
 #include <array>
+#include <string_view>
 
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -40,13 +41,16 @@
 #include "DocumentPy.h"
 #include "DocumentObserverPython.h"
 #include "DocumentObjectPy.h"
+#include "DocumentChanges.h"
+#include "ObjectRecipe.h"
+#include "Project.h"
+#include "VersionHistory.h"
 #include "RecoverySnapshot.h"
-
+#include "UnreferencedFiles.h"
 
 // using Base::GetConsole;
 using namespace Base;
 using namespace App;
-
 
 //**************************************************************************
 // Python stuff
@@ -154,6 +158,46 @@ PyMethodDef ApplicationPy::Methods[] = {
      "* If no module is given it will be determined by the file extension.\n"
      "* If more than one module can load a file the first one will be taken.\n"
      "* If no module exists to load the file an exception will be raised."},
+    {"surveyProjectSourceMaterial",
+     (PyCFunction)ApplicationPy::sSurveyProjectSourceMaterial,
+     METH_VARARGS,
+     "surveyProjectSourceMaterial(folder) -> dict\n\n"
+     "Ask a project folder what source material nothing in it names any more.\n\n"
+     "Reads every native document in the folder and answers with:\n"
+     "* 'recipesRead': the recipes the answer is based on.\n"
+     "* 'unreferenced': a list of (path, bytes), largest first.\n"
+     "* 'bytes': what those entries hold together.\n\n"
+     "Removes nothing. Raises where any recipe in the folder cannot be read, rather\n"
+     "than reporting the material that recipe names as unreferenced."},
+    {"surveyProjectRebuildStore",
+     (PyCFunction)ApplicationPy::sSurveyProjectRebuildStore,
+     METH_VARARGS,
+     "surveyProjectRebuildStore(folder) -> dict\n\n"
+     "Ask a project folder which kept rebuild results nothing in it names any more.\n\n"
+     "An entry's name is derived, so this opens every document in the folder and\n"
+     "computes it. Answers as surveyProjectSourceMaterial does, and removes nothing.\n\n"
+     "Raises where a document in the folder is open, where one holds a statement it\n"
+     "could not honour, or where one cannot be opened at all -- in each case the\n"
+     "entries it names would otherwise be reported as named by nothing."},
+    {"discardUnreferencedRebuildResults",
+     (PyCFunction)ApplicationPy::sDiscardUnreferencedRebuildResults,
+     METH_VARARGS,
+     "discardUnreferencedRebuildResults(folder) -> dict\n\n"
+     "Remove the kept rebuild results nothing in this project names any more.\n\n"
+     "The safe half: what is removed costs a rebuild, and nothing in it was designed.\n"
+     "The survey is run again inside the call and only what it names now is removed,\n"
+     "so it raises where the survey would -- an open document above all.\n\n"
+     "Answers with 'removed' (a list of (path, bytes)), 'bytes', and 'kept'\n"
+     "(a list of (path, reason) for anything it would not remove)."},
+    {"discardSourceMaterial",
+     (PyCFunction)ApplicationPy::sDiscardSourceMaterial,
+     METH_VARARGS,
+     "discardSourceMaterial(folder, paths) -> dict\n\n"
+     "Remove named source material this project holds and nothing in it names.\n\n"
+     "Deliberately not the same act as the one above: this is authored content, so\n"
+     "there is no sweep and no 'remove what you found'. A person names each file, and\n"
+     "each is removed only if the survey, run again here, still says nothing names it.\n"
+     "Anything else is reported in 'kept' with its reason and left alone."},
     {"open",
      reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(ApplicationPy::sOpenDocument)),
      METH_VARARGS | METH_KEYWORDS,
@@ -167,16 +211,21 @@ PyMethodDef ApplicationPy::Methods[] = {
      "          or the file cannot be loaded an I/O exception is thrown.\n"
      "          In this case the document is kept alive.\n"
      "hidden: whether to hide document 3D view.\n"
-     "temporary: whether to hide document in the tree view."},
+     "temporary: whether to hide document in the tree view.\n"
+     "duplicate: for a copy of a document already open, 'same' (the same part)\n"
+     "           or 'new' (a new part with a fresh identity). Without it, opening\n"
+     "           such a copy raises RuntimeError."},
     {"newDocument",
      reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(ApplicationPy::sNewDocument)),
      METH_VARARGS | METH_KEYWORDS,
-     "newDocument(name, label=None, hidden=False, temp=False) -> object\n"
+     "newDocument(name, label=None, hidden=False, temp=False, type=None) -> object\n"
      "Create a new document with a given name.\n\n"
      "name: unique document name which is checked automatically.\n"
      "label: optional user changeable label for the document.\n"
      "hidden: whether to hide document 3D view.\n"
-     "temp: mark the document as temporary so that it will not be saved"},
+     "temp: mark the document as temporary so that it will not be saved.\n"
+     "type: Cruth document-type marker (e.g. \"Part\"); a Part document mints its\n"
+     "      shared world frame (origin/planes) at creation."},
     {"closeDocument",
      (PyCFunction)ApplicationPy::sCloseDocument,
      METH_VARARGS,
@@ -187,9 +236,10 @@ PyMethodDef ApplicationPy::Methods[] = {
          reinterpret_cast<void (*)()>(ApplicationPy::sWriteRecoverySnapshotToTransientDir)
      ),
      METH_VARARGS | METH_KEYWORDS,
-     "writeRecoverySnapshotToTransientDir(document, *, compressed=True, "
-     "save_binary_brep=True, save_thumbnail=False) -> bool\n\n"
-     "Write a recovery snapshot for the given document into its transient directory."},
+     "writeRecoverySnapshotToTransientDir(document) -> bool\n\n"
+     "Write a recovery snapshot for the given document into its transient directory.\n"
+     "The snapshot is written as the document itself -- the same form and the same writer --\n"
+     "because recovery can turn it back into the record."},
     {"activeDocument",
      (PyCFunction)ApplicationPy::sActiveDocument,
      METH_VARARGS,
@@ -206,6 +256,106 @@ PyMethodDef ApplicationPy::Methods[] = {
      "getDocument(string) -> object\n\n"
      "Get a document by its name or raise an exception\n"
      "if there is no document with the given name."},
+    {"mergeDocuments",
+     (PyCFunction)ApplicationPy::sMergeDocuments,
+     METH_VARARGS,
+     "mergeDocuments(ancestor, branchA, branchB, build=False) -> dict\n\n"
+     "Three-way merge of a model's authored recipe. The three documents must share a\n"
+     "common ancestor's durable identities (branches reloaded/copied from one origin,\n"
+     "not independently rebuilt). Only authored state is reconciled -- no recompute is\n"
+     "run and emergent geometry is never matched. Returns 'text', a plain-language\n"
+     "report, and 'conflicts', each with what the ancestor, branchA and branchB stated\n"
+     "for the object (None where that version has none), and 'overridden', each choice a\n"
+     "side made that the rebuilt result no longer holds, and 'undetermined', each result\n"
+     "that lands elsewhere when rebuilt from one version's own state, and 'complete', true\n"
+     "only when none of those three lists holds anything. With build, also makes the\n"
+     "merged part as a new document: 'document' (None when refused), 'refusal' and\n"
+     "'newlyFailing', the steps that fail merged and failed on neither side, and\n"
+     "'identityChanges', the bodies the merged rebuild retired or made where neither\n"
+     "version's rebuild did."},
+    {"diffDocuments",
+     (PyCFunction)ApplicationPy::sDiffDocuments,
+     METH_VARARGS,
+     "diffDocuments(before, after) -> list of dict\n\n"
+     "What changed in a model's authored recipe from one version to the next. Objects\n"
+     "are matched by durable identity, so both documents must be versions of one model.\n"
+     "Nothing is recomputed. Each entry has 'object', 'label', 'type', 'section',\n"
+     "'entity', 'kind', 'field', 'before', 'after' and 'text', the change in plain words."},
+    {"fileVersions",
+     (PyCFunction)ApplicationPy::sFileVersions,
+     METH_VARARGS,
+     "fileVersions(path) -> list of dict\n\n"
+     "The committed versions of a document file in the git repository it is kept in,\n"
+     "newest first: each a dict with 'commit', 'author', 'time' (seconds since the\n"
+     "epoch) and 'summary'. Empty when the file is not in a repository."},
+    {"openFileVersion",
+     (PyCFunction)ApplicationPy::sOpenFileVersion,
+     METH_VARARGS,
+     "openFileVersion(path, revision) -> Document\n\n"
+     "The file as committed at a revision (a commit id, or a name such as 'HEAD'), read\n"
+     "into a new hidden, temporary document for reading and comparing. Close it after."},
+    {"isKeptInHistory",
+     (PyCFunction)ApplicationPy::sIsKeptInHistory,
+     METH_VARARGS,
+     "isKeptInHistory(path) -> bool\n\n"
+     "Whether a file lies in the working folder of a git repository."},
+    {"startHistory",
+     (PyCFunction)ApplicationPy::sStartHistory,
+     METH_VARARGS,
+     "startHistory(folder) -> None\n\n"
+     "Start a git repository in a folder, with the rebuild store ignored."},
+    {"commitFile",
+     (PyCFunction)ApplicationPy::sCommitFile,
+     METH_VARARGS,
+     "commitFile(path, message) -> str\n\n"
+     "Record a document file as it is on disk as a new version and return the commit id.\n"
+     "Only the file and the source material it names go in; anything else changed or\n"
+     "staged in the repository is left as it was. Save the document first."},
+    {"projectFileOf",
+     (PyCFunction)ApplicationPy::sProjectFileOf,
+     METH_VARARGS,
+     "projectFileOf(path) -> str\n\n"
+     "The project file of the project a document file is in, or '' when it is in none."},
+    {"projectName",
+     (PyCFunction)ApplicationPy::sProjectName,
+     METH_VARARGS,
+     "projectName(projectFile) -> str\n\n"
+     "The project's name, as its project file states it."},
+    {"createProject",
+     (PyCFunction)ApplicationPy::sCreateProject,
+     METH_VARARGS,
+     "createProject(folder, name) -> str\n\n"
+     "Make a project in a folder, starting its history unless it is already kept in one,\n"
+     "and return the project file."},
+    {"moveIntoProject",
+     (PyCFunction)ApplicationPy::sMoveIntoProject,
+     METH_VARARGS,
+     "moveIntoProject(document, projectFile) -> str\n\n"
+     "Move a saved document into the project's folder, with its source material, and\n"
+     "return its new path. The old file is removed."},
+    {"projectDocuments",
+     (PyCFunction)ApplicationPy::sProjectDocuments,
+     METH_VARARGS,
+     "projectDocuments(projectFile) -> list\n\n"
+     "The paths of the documents in the project's folder that are in this project."},
+    {"outsideDocuments",
+     (PyCFunction)ApplicationPy::sOutsideDocuments,
+     METH_VARARGS,
+     "outsideDocuments(projectFile) -> list\n\n"
+     "The documents the project uses from outside its folder, each a dict of path, uuid,\n"
+     "version (the commit it is held at, '' when not versioned) and newer (the commit of a\n"
+     "newer version, or '')."},
+    {"addOutsideDocument",
+     (PyCFunction)ApplicationPy::sAddOutsideDocument,
+     METH_VARARGS,
+     "addOutsideDocument(projectFile, path) -> str\n\n"
+     "List a document in the project where it is, without moving it, held at its newest\n"
+     "committed version; return that commit, or '' when it is not versioned."},
+    {"updateOutsideDocument",
+     (PyCFunction)ApplicationPy::sUpdateOutsideDocument,
+     METH_VARARGS,
+     "updateOutsideDocument(projectFile, path) -> str\n\n"
+     "Hold an outside document at its newest version and return that commit."},
     {"listDocuments",
      (PyCFunction)ApplicationPy::sListDocuments,
      METH_VARARGS,
@@ -318,7 +468,7 @@ PyObject* ApplicationPy::sLoadFile(PyObject* /*self*/, PyObject* args)
 
         std::stringstream str;
         str << "import " << module << std::endl;
-        if (fi.hasExtension("FCStd")) {
+        if (Document::isNativeFormatExtension(fi.extension().c_str())) {
             str << module << ".openDocument(" << pathRepr << ")" << std::endl;
         }
         else {
@@ -352,31 +502,68 @@ PyObject* ApplicationPy::sOpenDocument(PyObject* /*self*/, PyObject* args, PyObj
     char* Name {};
     PyObject* hidden = Py_False;
     PyObject* temporary = Py_False;
-    static const std::array<const char*, 4> kwlist {"name", "hidden", "temporary", nullptr};
+    const char* duplicate = nullptr;
+    static const std::array<const char*, 5> kwlist {"name", "hidden", "temporary", "duplicate", nullptr};
     if (!Base::Wrapped_ParseTupleAndKeywords(args,
                                              kwd,
-                                             "et|O!O!",
+                                             "et|O!O!z",
                                              kwlist,
                                              "utf-8",
                                              &Name,
                                              &PyBool_Type,
                                              &hidden,
                                              &PyBool_Type,
-                                             &temporary)) {
+                                             &temporary,
+                                             &duplicate)) {
         return nullptr;
     }
     std::string EncodedName = std::string(Name);
     PyMem_Free(Name);
+
+    DuplicateAnswer answer = DuplicateAnswer::Unanswered;
+    if (duplicate) {
+        if (std::string_view(duplicate) == "same") {
+            answer = DuplicateAnswer::SamePart;
+        }
+        else if (std::string_view(duplicate) == "new") {
+            answer = DuplicateAnswer::NewPart;
+        }
+        else {
+            PyErr_SetString(PyExc_ValueError, "duplicate must be 'same' or 'new'");
+            return nullptr;
+        }
+    }
     try {
         DocumentInitFlags initFlags {
             .createView = !Base::asBoolean(hidden),
-            .temporary = Base::asBoolean(temporary)
+            .temporary = Base::asBoolean(temporary),
+            .duplicate = answer
         };
 
-        // return new document
-        return (GetApplication()
-                    .openDocument(EncodedName.c_str(), initFlags)
-                    ->getPyObject());
+        Document* doc = GetApplication().openDocument(EncodedName.c_str(), initFlags);
+        if (!doc) {
+            Py_Return;
+        }
+        return doc->getPyObject();
+    }
+    catch (const DocumentDuplicateError& e) {
+        e.setPyException();
+        return nullptr;
+    }
+    catch (const DocumentContentScopeError& e) {
+        // A content-scope violation is not an I/O error: surface it as the same
+        // catchable RuntimeError the creation door raises,
+        // not the generic IOError the open path uses for corrupt/missing files.
+        e.setPyException();
+        return nullptr;
+    }
+    catch (const DocumentMalformedError& e) {
+        // Told apart from a file that is missing or unreadable, which is what the generic
+        // IOError below means. A script is entitled to know that the file IS there and states
+        // something it cannot determine, and to read where -- that is the difference between
+        // retrying and opening a text editor.
+        e.setPyException();
+        return nullptr;
     }
     catch (const Base::Exception& e) {
         PyErr_SetString(PyExc_IOError, e.what());
@@ -393,12 +580,14 @@ PyObject* ApplicationPy::sNewDocument(PyObject* /*self*/, PyObject* args, PyObje
 {
     char* docName = nullptr;
     char* usrName = nullptr;
+    char* docType = nullptr;
     PyObject* hidden = Py_False;
     PyObject* temp = Py_False;
-    static const std::array<const char*, 5> kwlist {"name", "label", "hidden", "temp", nullptr};
+    static const std::array<const char*, 6> kwlist {"name", "label", "hidden", "temp", "type",
+                                                    nullptr};
     if (!Base::Wrapped_ParseTupleAndKeywords(args,
                                              kwd,
-                                             "|etetO!O!",
+                                             "|etetO!O!et",
                                              kwlist,
                                              "utf-8",
                                              &docName,
@@ -407,7 +596,9 @@ PyObject* ApplicationPy::sNewDocument(PyObject* /*self*/, PyObject* args, PyObje
                                              &PyBool_Type,
                                              &hidden,
                                              &PyBool_Type,
-                                             &temp)) {
+                                             &temp,
+                                             "utf-8",
+                                             &docType)) {
         return nullptr;
     }
 
@@ -415,13 +606,15 @@ PyObject* ApplicationPy::sNewDocument(PyObject* /*self*/, PyObject* args, PyObje
     {
         DocumentInitFlags initFlags {
             .createView = !Base::asBoolean(hidden),
-            .temporary = Base::asBoolean(temp)
+            .temporary = Base::asBoolean(temp),
+            .documentType = docType ? docType : ""
         };
         App::Document* doc = GetApplication().newDocument(docName,
                                                           usrName,
                                                           initFlags);
         PyMem_Free(docName);
         PyMem_Free(usrName);
+        PyMem_Free(docType);
         return doc->getPyObject();
     }
     PY_CATCH;
@@ -520,28 +713,13 @@ PyObject* ApplicationPy::sWriteRecoverySnapshotToTransientDir(PyObject* /*self*/
                                                               PyObject* kwd)
 {
     PyObject* document {};
-    PyObject* compressed = Py_True;
-    PyObject* saveBinaryBrep = Py_True;
-    PyObject* saveThumbnail = Py_False;
-    static constexpr std::array<const char*, 5> kwlist {
-        "document",
-        "compressed",
-        "save_binary_brep",
-        "save_thumbnail",
-        nullptr
-    };
+    static constexpr std::array<const char*, 2> kwlist {"document", nullptr};
     if (!Base::Wrapped_ParseTupleAndKeywords(args,
                                              kwd,
-                                             "O!|O!O!O!",
+                                             "O!",
                                              kwlist,
                                              &App::DocumentPy::Type,
-                                             &document,
-                                             &PyBool_Type,
-                                             &compressed,
-                                             &PyBool_Type,
-                                             &saveBinaryBrep,
-                                             &PyBool_Type,
-                                             &saveThumbnail)) {
+                                             &document)) {
         return nullptr;
     }
 
@@ -553,13 +731,8 @@ PyObject* ApplicationPy::sWriteRecoverySnapshotToTransientDir(PyObject* /*self*/
 
     PY_TRY
     {
-        App::RecoverySnapshotSaveOptions options;
-        options.compressed = Base::asBoolean(compressed);
-        options.saveBinaryBrep = Base::asBoolean(saveBinaryBrep);
-        options.saveThumbnail = Base::asBoolean(saveThumbnail);
-
         return Py::new_reference_to(
-            Py::Boolean(App::writeRecoverySnapshotToTransientDir(*doc, options))
+            Py::Boolean(App::writeRecoverySnapshotToTransientDir(*doc))
         );
     }
     PY_CATCH
@@ -639,7 +812,6 @@ PyObject* ApplicationPy::sSaveParameter(PyObject* /*self*/, PyObject* args)
     }
     PY_CATCH;
 }
-
 
 PyObject* ApplicationPy::sGetConfig(PyObject* /*self*/, PyObject* args)
 {
@@ -1251,7 +1423,6 @@ PyObject* ApplicationPy::sGetDependentObjects(PyObject* /*self*/, PyObject* args
     }
     PY_CATCH;
 }
-
 
 PyObject* ApplicationPy::sSetActiveTransaction(PyObject* /*self*/, PyObject* args)
 {

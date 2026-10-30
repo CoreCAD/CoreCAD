@@ -42,7 +42,7 @@ PROPERTY_SOURCE(PartDesignGui::ViewProviderExtrude, PartDesignGui::ViewProviderS
 void PartDesignGui::ViewProviderExtrude::highlightShapeFaces(const std::vector<std::string>& faces)
 {
     auto extrude = getObject<PartDesign::FeatureExtrude>();
-    auto base = static_cast<Part::Feature*>(extrude->UpToShape.getValue());
+    auto base = static_cast<Part::ShapeFeature*>(extrude->UpToShape.getValue());
 
     auto baseViewProvider = dynamic_cast<PartGui::ViewProviderPart*>(
         Gui::Application::Instance->getViewProvider(base)

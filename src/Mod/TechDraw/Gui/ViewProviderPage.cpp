@@ -122,6 +122,10 @@ void ViewProviderPage::attach(App::DocumentObject* pcFeat)
     auto* feature = dynamic_cast<TechDraw::DrawPage*>(pcFeat);
     if (feature) {
         connectGuiRepaint = feature->signalGuiPaint.connect(bnd);
+        //NOLINTBEGIN
+        auto bndMembership = std::bind(&ViewProviderPage::onMembershipChanged, this, sp::_1);
+        //NOLINTEND
+        connectMembershipChanged = feature->signalMembershipChanged.connect(bndMembership);
         if (feature->isAttachedToDocument()) {
             // it could happen that feature is not completely in the document yet and getNameInDocument returns
             // nullptr, so we only update m_myName if we got a valid string.
@@ -174,11 +178,6 @@ void ViewProviderPage::updateData(const App::Property* prop)
     else if (prop == &(page->Label)) {
         if (m_mdiView && !page->isUnsetting()) {
             m_mdiView->setTabText(page->Label.getValue());
-        }
-    }
-    else if (prop == &page->Views) {
-        if (!page->isUnsetting()) {
-            m_graphicsScene->fixOrphans();
         }
     }
 
@@ -412,7 +411,7 @@ std::vector<App::DocumentObject*> ViewProviderPage::claimChildren() const
     //  ?? leaders?
 
     try {
-        for (auto* obj : getDrawPage()->Views.getValues()) {
+        for (auto* obj : getDrawPage()->getViews()) {
             if (!obj) {
                 continue;
             }
@@ -514,6 +513,13 @@ void ViewProviderPage::dropObject(App::DocumentObject* docObj)
 }
 
 //! Redo the whole visual page
+void ViewProviderPage::onMembershipChanged(const TechDraw::DrawPage* dp)
+{
+    if (dp == getDrawPage() && !getDrawPage()->isUnsetting()) {
+        m_graphicsScene->fixOrphans();
+    }
+}
+
 void ViewProviderPage::onGuiRepaint(const TechDraw::DrawPage* dp)
 {
     if (dp == getDrawPage()) {

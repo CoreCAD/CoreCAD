@@ -37,6 +37,7 @@
 #include "PropertyConstraintList.h"
 #include "Sketch.h"
 #include "SketchGeometry.h"
+#include "SketchRecipe.h"
 #include "SketchGeometryExtension.h"
 #include "SketchGeometryExtensionPy.h"
 #include "SketchObject.h"
@@ -101,6 +102,11 @@ PyMOD_INIT_FUNC(Sketcher)
     Sketcher::Sketch ::init();
     Sketcher::Constraint ::init();
     Sketcher::PropertyConstraintList ::init();
+
+    // A sketch's lines and dimensions live inside two properties the generic recipe emitter can
+    // only see as opaque values; this teaches the readable document recipe to say what is in
+    // them, without App having to know what a sketch is.
+    Sketcher::registerSketchRecipeDetail();
 
     // connect to unified measurement facility
     Sketcher::Measure ::initialize();

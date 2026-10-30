@@ -68,7 +68,7 @@ Fillet::Fillet()
 
 short Fillet::mustExecute() const
 {
-    if (Placement.isTouched() || Radius.isTouched()) {
+    if (Radius.isTouched()) {
         return 1;
     }
     return DressUp::mustExecute();
@@ -106,8 +106,6 @@ App::DocumentObjectExecReturn* Fillet::execute()
         );
     }
 
-    this->positionByBaseFeature();
-
     try {
         TopoShape shape(0);  //,getDocument()->getStringHasher());
 
@@ -138,14 +136,7 @@ App::DocumentObjectExecReturn* Fillet::execute()
         // store shape before refinement
         this->rawShape = shape;
         shape = refineShapeIfActive(shape);
-        if (!isSingleSolidRuleSatisfied(shape.getShape())) {
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                "Exception",
-                "Result has multiple solids: enable 'Allow Compound' in the active body."
-            ));
-        }
 
-        shape = getSolid(shape);
         this->Shape.setValue(shape);
         return App::DocumentObject::StdReturn;
     }

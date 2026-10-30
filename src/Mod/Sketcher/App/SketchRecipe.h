@@ -1,0 +1,167 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+/****************************************************************************
+ *   Copyright (c) 2026 Sean Barton (Cruth)                                 *
+ *                                                                          *
+ *   This file is part of the Cruth CAD development system, a fork of       *
+ *   FreeCAD.                                                               *
+ *                                                                          *
+ *   Cruth is free software: you can redistribute it and/or modify it       *
+ *   under the terms of the GNU Lesser General Public License as            *
+ *   published by the Free Software Foundation, either version 2.1 of the   *
+ *   License, or (at your option) any later version.                        *
+ *                                                                          *
+ *   Cruth is distributed in the hope that it will be useful, but           *
+ *   WITHOUT ANY WARRANTY; without even the implied warranty of             *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU       *
+ *   Lesser General Public License for more details.                        *
+ *                                                                          *
+ *   You should have received a copy of the GNU Lesser General Public       *
+ *   License along with Cruth. If not, see                                  *
+ *   <https://www.gnu.org/licenses/>.                                       *
+ *                                                                          *
+ ***************************************************************************/
+
+#ifndef SKETCHER_SKETCHRECIPE_H
+#define SKETCHER_SKETCHRECIPE_H
+
+#include <App/Recipe.h>
+#include <App/RecipeDetail.h>
+
+#include "SketchObject.h"
+
+namespace Sketcher
+{
+
+/** The sketch's authored recipe — the first driver behind the general recipe-merge engine
+ *  (App::RecipeMerge). Reads only authored/stored state; it never runs the solver, so the
+ *  result can be diffed and merged with nothing running (the three-level split's Data-level
+ *  guarantee). See corecad-strategy/DESIGN_recipe-merge.md §3.
+ *
+ *  Two homogeneous, durable-id-keyed sections:
+ *   - geometry: one node per internal entity, keyed by its Part::Geometry Tag, carrying the
+ *     authored type and construction flag. Coordinates are regenerable seeds (§4), not emitted
+ *     as merge-diffed fields.
+ *   - constraints: one node per constraint, keyed by its own Tag, carrying type, the authored
+ *     value (an expression if one is bound, else a unit-typed literal; omitted for derived,
+ *     non-driving reference dimensions), and references to geometry by the geometry's durable
+ *     Tag — never by positional GeoId. The sketch's frame (origin, axes) is referenced by name.
+ *     Refs to external geometry, which has no durable identity yet, are not emitted.
+ */
+struct SketchRecipe
+{
+    App::RecipeSection geometry;
+    App::RecipeSection constraints;
+    App::RecipeSection external;  ///< geometry the sketch borrows, by where it was borrowed from
+};
+
+/// Emit the authored recipe of a sketch (§3). Pure read of authored/stored state; the solver
+/// is not run.
+SketcherExport SketchRecipe emitSketchRecipe(const SketchObject& sketch);
+
+/// The sketch's contribution to a readable document recipe: its geometry and constraints, which
+/// the generic emitter can only see as two opaque properties. Adds the authored coordinates the
+/// merge recipe deliberately omits — a person asking what moved needs them, a merge does not.
+SketcherExport App::RecipeDetail sketchRecipeDetail(const App::DocumentObject& obj);
+
+/// The coordinates the solver moved between two versions of a sketch, as opposed to the ones a
+/// person moved: every coordinate of geometry tied, through any chain of constraints, to a
+/// constraint that was added, removed or changed. Geometry no changed constraint reaches was
+/// moved by a person. The solver is not run.
+SketcherExport App::RecipeConsequences sketchConsequences(
+    const App::DocumentObject& before,
+    const App::DocumentObject& after
+);
+
+/// Register sketchRecipeDetail and sketchConsequences against Sketcher::SketchObject. Called once,
+/// at module init.
+SketcherExport void registerSketchRecipeDetail();
+
+/** The outcome of regenerating a recipe onto a live sketch and re-solving with the existing
+ *  solver — the CAD analogue of "does the merge compile?" (DESIGN_recipe-merge.md §6 slice 5,
+ *  §10.3). The recipe layer merges text with nothing running; a textually-clean merge can still
+ *  regenerate to invalid geometry, and only running the kernel/solver reveals it.
+ */
+struct RegenResult
+{
+    int solverStatus = 0;          ///< SketchObject::solve() return: 0 ok; -4 overconstrained,
+                                   ///< -3 conflicting, -5 malformed, -1 solver error, -2 redundant
+    bool hasConflicts = false;     ///< last solve reported conflicting constraints
+    bool hasRedundancies = false;  ///< last solve reported redundant constraints
+    bool hasMalformed = false;     ///< last solve reported malformed constraints
+    int dof = -1;                  ///< remaining degrees of freedom after the solve
+    bool fullyRealized = true;  ///< every node materialized (false if a seed/type/ref was missing)
+    std::map<std::string, int> placed;  ///< each realized entity's durable tag -> its GeoId
+};
+
+/// Slice 5: regenerate. Materialize a (typically merged) recipe as live geometry and constraints
+/// on `target`, then run the existing solver. Coordinates are not in the recipe (they are
+/// regenerable seeds, §4): each surviving entity's seed geometry is pulled by durable tag from the
+/// sketch `seedFor` names for it, else from the first of `seedSources` that holds it, so the merged
+/// constraint set is re-solved against real starting coordinates. Constraint values are taken as
+/// literal datums, a formula as the datum it gave on the sides that state it; refs to
+/// external geometry were never emitted and so are absent. Returns the solver's
+/// verdict: a clean merge that regenerates with hasConflicts is the "merged but does not compile"
+/// case.
+SketcherExport RegenResult regenerateSketch(
+    SketchObject& target,
+    const SketchRecipe& recipe,
+    const std::vector<const SketchObject*>& seedSources,
+    const std::map<std::string, const SketchObject*>& seedFor = {},
+    const std::map<std::string, const Part::Geometry*>& seedGeometry = {}
+);
+
+/// A position a person chose on one side that the re-solved merge no longer holds: the rest of
+/// the merge now puts it elsewhere.
+struct OverriddenChoice
+{
+    std::string id;     ///< the geometry's durable tag
+    std::string type;   ///< its authored type token
+    std::string field;  ///< which of its coordinates
+};
+
+/// Geometry whose solved position depends on where the solve starts, not on the merged values.
+struct OpenPosition
+{
+    std::string id;    ///< the geometry's durable tag
+    std::string type;  ///< its authored type token
+};
+
+/** The user-facing outcome of merging three sketches — a common ancestor and two edited copies —
+ *  the whole recipe-merge pipeline (emit → three-way merge → reference resolution → regenerate)
+ *  run as one call so the result can be surfaced to a person (DESIGN_recipe-merge.md §7). This is
+ *  the exploratory surfacing layer: a provisional trigger until the git-for-CAD merge driver
+ *  exists. The three sketches need not share a document, but they must share a common ancestor's
+ *  durable identity (a reload/copy of one sketch, not an independently re-drawn one), or the merge
+ *  has no basis to align them.
+ */
+struct MergeReport
+{
+    App::RecipeSection mergedGeometry;          ///< geometry after the three-way merge
+    App::RecipeSection mergedConstraints;       ///< constraints after the three-way merge
+    std::vector<App::MergeConflict> conflicts;  ///< value conflicts (both edits changed one thing)
+    RegenResult regen;                          ///< does the merged sketch still compile?
+    std::vector<OverriddenChoice> overridden;   ///< chosen positions the re-solve moved
+    App::RecipeSection solvedPositions;         ///< where the re-solve put each entity
+    /// Geometry the re-solve puts elsewhere when started from one version's own positions.
+    std::vector<OpenPosition> undetermined;
+};
+
+/// Run the whole recipe-merge pipeline over three sketches and collect the outcome (§7). Emits the
+/// three recipes, merges geometry and constraints, resolves dangling references through §4.7's
+/// honest-retirement outcomes, then regenerates the merged recipe onto a throwaway scratch sketch
+/// and re-solves — so the "does the merge compile?" verdict is included. Given `into`, the merged
+/// sketch is regenerated there instead, replacing what it held.
+SketcherExport MergeReport mergeSketches(
+    const SketchObject& ancestor,
+    const SketchObject& branchA,
+    const SketchObject& branchB,
+    SketchObject* into = nullptr
+);
+
+/// Render a MergeReport as plain language a person can read (Report View / Python console).
+SketcherExport std::string formatMergeReport(const MergeReport& report);
+
+}  // namespace Sketcher
+
+#endif  // SKETCHER_SKETCHRECIPE_H
