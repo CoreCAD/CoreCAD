@@ -297,9 +297,7 @@ void TaskTablePatternParameters::useRows(const std::vector<Base::Vector3d>& rows
 {
     setupTransaction();
     getObject<PartDesign::TablePattern>()->Rows.setValues(rows);
-    if (preview) {
-        recomputeFeature();
-    }
+    recomputeFeature();
     updateUI();
 }
 
@@ -309,9 +307,7 @@ void TaskTablePatternParameters::usePlane(App::DocumentObject* obj, const std::v
     auto* pattern = getObject<PartDesign::TablePattern>();
     pattern->Plane.setValue(obj, subs);
     pattern->MeasuredFrom.setValue(obj ? fromPlane : 0);
-    if (preview) {
-        recomputeFeature();
-    }
+    recomputeFeature();
     updateUI();
 }
 
@@ -352,9 +348,7 @@ void TaskTablePatternParameters::onRowsFromChosen(int index)
     if (sheet && pattern->Cells.getStrValue().empty()) {
         pattern->Cells.setValue(cellsHoldingLengths(sheet));
     }
-    if (preview) {
-        recomputeFeature();
-    }
+    recomputeFeature();
     updateUI();
 }
 
@@ -367,9 +361,7 @@ void TaskTablePatternParameters::onCellsEdited()
     }
     setupTransaction();
     pattern->Cells.setValue(cells);
-    if (preview) {
-        recomputeFeature();
-    }
+    recomputeFeature();
     updateUI();
 }
 
@@ -499,15 +491,6 @@ bool TaskTablePatternParameters::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
     return TaskTransformedParameters::eventFilter(watched, event);
-}
-
-void TaskTablePatternParameters::onUpdateView(bool on)
-{
-    preview = on;
-    if (on) {
-        setupTransaction();
-        recomputeFeature();
-    }
 }
 
 void TaskTablePatternParameters::apply()

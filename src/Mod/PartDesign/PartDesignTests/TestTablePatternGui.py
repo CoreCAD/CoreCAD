@@ -103,12 +103,6 @@ class TestTablePatternGui(unittest.TestCase):
         self._paste("20;abc;5\n")
         self.assertEqual(self._rows(), [(20, 0, 5)])
 
-    def testEditsAreKeptWithLivePreviewOff(self):
-        _widget("checkBoxUpdateView").setChecked(False)
-        self.table.item(0, 1).setText("15")
-        _widget("buttonAddRow").click()
-        self.assertEqual(self._rows(), [(10, 15, 0), (20, 15, 0)])
-
     def testChoosingThePickedFaceAgainKeepsIt(self):
         top = next(
             "Face%d" % (i + 1)

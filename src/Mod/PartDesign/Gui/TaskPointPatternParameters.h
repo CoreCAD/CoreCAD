@@ -30,7 +30,6 @@ protected:
 
 private Q_SLOTS:
     void onSketchChosen(int index);
-    void onUpdateView(bool on) override;
 
 private:
     void setupParameterUI(QWidget* widget) override;

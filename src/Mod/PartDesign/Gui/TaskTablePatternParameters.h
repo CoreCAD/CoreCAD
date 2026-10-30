@@ -45,7 +45,6 @@ private Q_SLOTS:
     void onCellEdited(int row, int column);
     void onAddRow();
     void onRemoveRow();
-    void onUpdateView(bool on) override;
 
 private:
     void setupParameterUI(QWidget* widget) override;
@@ -62,7 +61,6 @@ private:
     std::vector<App::DocumentObject*> planes;
     /// The rows' sources in order: first null for the typed rows.
     std::vector<App::DocumentObject*> spreadsheets;
-    bool preview = true;
     std::unique_ptr<Ui_TaskTablePatternParameters> ui;
 };
 

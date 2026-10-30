@@ -221,15 +221,6 @@ void TaskFillPatternParameters::onLayoutChosen(int index)
     changed();
 }
 
-void TaskFillPatternParameters::onUpdateView(bool on)
-{
-    blockUpdate = !on;
-    if (on) {
-        setupTransaction();
-        recomputeFeature();
-    }
-}
-
 void TaskFillPatternParameters::apply()
 {
     auto* pattern = getObject<PartDesign::FillPattern>();

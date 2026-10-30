@@ -150,15 +150,6 @@ void TaskPointPatternParameters::onSelectionChanged(const Gui::SelectionChanges&
     usePoints(sketch);
 }
 
-void TaskPointPatternParameters::onUpdateView(bool on)
-{
-    blockUpdate = !on;
-    if (on) {
-        setupTransaction();
-        recomputeFeature();
-    }
-}
-
 void TaskPointPatternParameters::apply()
 {
     auto* sketch = getObject<PartDesign::PointPattern>()->Points.getValue();

@@ -40,7 +40,6 @@ protected:
 private Q_SLOTS:
     void onBoundaryChosen(int index);
     void onLayoutChosen(int index);
-    void onUpdateView(bool on) override;
 
 private:
     void setupParameterUI(QWidget* widget) override;

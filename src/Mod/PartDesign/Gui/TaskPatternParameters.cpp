@@ -261,15 +261,6 @@ void TaskPatternParameters::onParameterWidgetParametersChanged()
     kickUpdateViewTimer();  // Debounce recompute
 }
 
-void TaskPatternParameters::onUpdateView(bool on)
-{
-    // This might be less relevant now if recomputes are triggered by parametersChanged
-    blockUpdate = !on;
-    if (on) {
-        kickUpdateViewTimer();
-    }
-}
-
 void TaskPatternParameters::kickUpdateViewTimer() const
 {
     updateViewTimer->start();

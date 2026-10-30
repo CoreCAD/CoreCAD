@@ -113,15 +113,6 @@ void TaskFormulaPatternParameters::onAxisChanged(int axis)
     changed();
 }
 
-void TaskFormulaPatternParameters::onUpdateView(bool on)
-{
-    blockUpdate = !on;
-    if (on) {
-        setupTransaction();
-        recomputeFeature();
-    }
-}
-
 void TaskFormulaPatternParameters::apply()
 {
     auto* pattern = getObject<PartDesign::FormulaPattern>();
