@@ -53,6 +53,25 @@ FC_LOG_LEVEL_INIT("PartDesign", true, true)
 using namespace PartDesignGui;
 using namespace Gui;
 
+namespace
+{
+// Marks the row standing for every step before the pattern, which no entry of Originals holds.
+constexpr int allStepsBeforeRole = Qt::UserRole + 1;
+
+QListWidgetItem* makeAllStepsBeforeRow(const App::DocumentObject* body)
+{
+    auto item = new QListWidgetItem(QString::fromUtf8(body->Label.getValue()));
+    item->setData(Qt::UserRole, QString::fromLatin1(body->getNameInDocument()));
+    item->setData(allStepsBeforeRole, true);
+    return item;
+}
+
+bool isAllStepsBeforeRow(const QListWidgetItem* item)
+{
+    return item && item->data(allStepsBeforeRole).toBool();
+}
+}  // namespace
+
 /* TRANSLATOR PartDesignGui::TaskTransformedParameters */
 
 TaskTransformedParameters::TaskTransformedParameters(
@@ -118,7 +137,11 @@ void TaskTransformedParameters::setupUI()
 
     auto pcTransformed = getObject<PartDesign::Transformed>();
     std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();
-    // Fill data into dialog elements
+    if (pcTransformed->AllStepsBefore.getValue()) {
+        if (auto body = pcTransformed->getFeatureBody()) {
+            ui->listWidgetFeatures->addItem(makeAllStepsBeforeRow(body));
+        }
+    }
     for (auto obj : originals) {
         if (obj) {
             auto item = new QListWidgetItem();
@@ -195,6 +218,9 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
 
         PartDesign::Transformed* pcTransformed = getObject();
         App::DocumentObject* selectedObject = pcTransformed->getDocument()->getObject(msg.pObjectName);
+        if (auto body = freecad_cast<PartDesign::Body*>(selectedObject)) {
+            return allStepsBeforeSelected(body);
+        }
         if (selectedObject != pcTransformed
             && selectedObject->isDerivedFrom<PartDesign::FeatureAddSub>()) {
 
@@ -231,6 +257,32 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
     }
 
     return false;
+}
+
+bool TaskTransformedParameters::allStepsBeforeSelected(PartDesign::Body* body)
+{
+    PartDesign::Transformed* pcTransformed = getObject();
+    const auto bodies = PartDesign::Body::bodiesOf(pcTransformed);
+    const bool adding = selectionMode == SelectionMode::AddFeature;
+    if (std::ranges::find(bodies, body) == bodies.end()
+        || pcTransformed->AllStepsBefore.getValue() == adding) {
+        return false;
+    }
+    if (adding) {
+        ui->listWidgetFeatures->insertItem(0, makeAllStepsBeforeRow(body));
+    }
+    else {
+        for (int row = 0; row < ui->listWidgetFeatures->count(); ++row) {
+            if (isAllStepsBeforeRow(ui->listWidgetFeatures->item(row))) {
+                delete ui->listWidgetFeatures->takeItem(row);
+                break;
+            }
+        }
+    }
+    setupTransaction();
+    pcTransformed->AllStepsBefore.setValue(adding);
+    recomputeFeature();
+    return true;
 }
 
 void TaskTransformedParameters::setupTransaction()
@@ -312,9 +364,18 @@ void TaskTransformedParameters::onFeatureDeleted()
         Base::Console().error("PartDesign Pattern: No feature selected for removing.\n");
         return;  // no current row selected
     }
-    originals.erase(originals.begin() + currentRow);
     setupTransaction();
-    pcTransformed->Originals.setValues(originals);
+    if (isAllStepsBeforeRow(ui->listWidgetFeatures->item(currentRow))) {
+        pcTransformed->AllStepsBefore.setValue(false);
+    }
+    else {
+        int index = currentRow;
+        for (int row = 0; row < currentRow; ++row) {
+            index -= isAllStepsBeforeRow(ui->listWidgetFeatures->item(row)) ? 1 : 0;
+        }
+        originals.erase(originals.begin() + index);
+        pcTransformed->Originals.setValues(originals);
+    }
     ui->listWidgetFeatures->model()->removeRow(currentRow);
     recomputeFeature();
 }
@@ -506,14 +567,16 @@ void TaskTransformedParameters::indexesMoved()
     }
 
     PartDesign::Transformed* pcTransformed = getObject();
-    std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();
+    std::vector<App::DocumentObject*> originals;
 
-    QByteArray name;
     int rows = model->rowCount();
     for (int i = 0; i < rows; i++) {
         QModelIndex index = model->index(i, 0);
-        name = index.data(Qt::UserRole).toByteArray().constData();
-        originals[i] = pcTransformed->getDocument()->getObject(name.constData());
+        if (index.data(allStepsBeforeRole).toBool()) {
+            continue;
+        }
+        QByteArray name = index.data(Qt::UserRole).toByteArray();
+        originals.push_back(pcTransformed->getDocument()->getObject(name.constData()));
     }
 
     setupTransaction();

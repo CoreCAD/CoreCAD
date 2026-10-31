@@ -73,6 +73,7 @@ from PartDesignTests.TestSuppressed import TestSuppressed
 from PartDesignTests.TestBodyEmergence import TestBodyEmergence
 from PartDesignTests.TestRollbackMarker import TestRollbackMarker
 from PartDesignTests.TestPatternChain import TestPatternChain
+from PartDesignTests.TestPatternAllStepsBefore import TestPatternAllStepsBefore
 from PartDesignTests.TestPointPattern import TestPointPattern
 from PartDesignTests.TestCurvePattern import TestCurvePattern
 from PartDesignTests.TestFillPattern import TestFillPattern

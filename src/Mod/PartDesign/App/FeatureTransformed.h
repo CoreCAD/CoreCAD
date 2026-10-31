@@ -61,6 +61,9 @@ public:
      */
     App::PropertyLinkList Originals;
     App::PropertyEnumeration TransformMode;
+    /// What picking the Body means: every step before this pattern is copied as well as
+    /// Originals, read afresh each build so a step inserted earlier later on is included.
+    App::PropertyBool AllStepsBefore;
 
     /// Cruth §5.5: when true, the pattern emits its N copies as disconnected solids
     /// (a compound) instead of fusing them into one. The multi-output reconciler then
@@ -225,6 +228,9 @@ private:
     /// leavesOriginalAsIs(), kept until the pattern's shape or its base changes.
     mutable std::optional<bool> originalAsIs;
     bool checkOriginalAsIs() const;
+    /// The steps this pattern's body was built from before it, in build order. @p complete is
+    /// false when the body began as an earlier pattern's copy, which no step list can stand for.
+    std::vector<App::DocumentObject*> stepsBefore(bool& complete) const;
 };
 
 }  // namespace PartDesign

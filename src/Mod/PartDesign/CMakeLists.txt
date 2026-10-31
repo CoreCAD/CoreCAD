@@ -68,6 +68,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestStepDependencies.py
     PartDesignTests/TestRollbackMarker.py
     PartDesignTests/TestPatternChain.py
+    PartDesignTests/TestPatternAllStepsBefore.py
     PartDesignTests/TestPointPattern.py
     PartDesignTests/TestCurvePattern.py
     PartDesignTests/TestFillPattern.py
@@ -77,6 +78,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestTablePatternGui.py
     PartDesignTests/TestFormulaPatternGui.py
     PartDesignTests/TestVariedMeasurementGui.py
+    PartDesignTests/TestPatternAllStepsBeforeGui.py
 )
 
 if(BUILD_GUI)
