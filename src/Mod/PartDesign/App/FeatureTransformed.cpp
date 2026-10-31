@@ -76,6 +76,14 @@ Transformed::Transformed()
     ADD_PROPERTY(TransformMode, (static_cast<long>(Mode::Features)));
     TransformMode.setEnums(transformModeEnums.data());
 
+    ADD_PROPERTY_TYPE(
+        AllStepsBefore,
+        (false),
+        "Base",
+        App::Prop_None,
+        "Copy every step before this pattern, as well as the listed ones"
+    );
+
     AddSubShape.setStatus(App::Property::Output, true);
 
     ADD_PROPERTY_TYPE(
@@ -400,7 +408,16 @@ std::vector<App::DocumentObject*> Transformed::getOriginals() const
         return {};
     }
 
-    std::vector<DocumentObject*> originals = Originals.getValues();
+    std::vector<DocumentObject*> originals;
+    if (AllStepsBefore.getValue()) {
+        bool complete = false;
+        originals = stepsBefore(complete);
+    }
+    for (DocumentObject* listed : Originals.getValues()) {
+        if (std::ranges::find(originals, listed) == originals.end()) {
+            originals.push_back(listed);
+        }
+    }
 
     const auto isSuppressed = [](const DocumentObject* obj) {
         auto feature = freecad_cast<Feature*>(obj);
@@ -414,6 +431,34 @@ std::vector<App::DocumentObject*> Transformed::getOriginals() const
     originals.erase(first, last);
 
     return originals;
+}
+
+std::vector<App::DocumentObject*> Transformed::stepsBefore(bool& complete) const
+{
+    std::vector<App::DocumentObject*> steps;
+    complete = false;
+    long copy = BaseInstance.getValue();
+    for (App::DocumentObject* base = BaseFeature.getValue(); base;) {
+        auto* step = freecad_cast<Feature*>(base);
+        if (!step) {
+            return steps;
+        }
+        if (copy >= 0) {
+            // Built on one copy. The original's copy passes back over a pattern that left it as
+            // it was; any other copy's body begins at that pattern.
+            auto* pattern = freecad_cast<Transformed*>(step);
+            if (copy != 0 || !pattern || !pattern->leavesOriginalAsIs()) {
+                return steps;
+            }
+        }
+        else {
+            steps.insert(steps.begin(), step);
+        }
+        copy = step->BaseInstance.getValue();
+        base = step->BaseFeature.getValue();
+    }
+    complete = true;
+    return steps;
 }
 
 Base::Vector3d Transformed::centreOfOriginals()
@@ -500,8 +545,8 @@ void Transformed::handleChangedPropertyType(
 
 short Transformed::mustExecute() const
 {
-    if (Originals.isTouched() || TransformMode.isTouched() || MultiBody.isTouched()
-        || SkipInstances.isTouched()) {
+    if (Originals.isTouched() || TransformMode.isTouched() || AllStepsBefore.isTouched()
+        || MultiBody.isTouched() || SkipInstances.isTouched()) {
         return 1;
     }
     for (std::size_t k = 1; App::Property* measured = getPropertyByName(variedName(k).c_str()); ++k) {
@@ -710,6 +755,17 @@ App::DocumentObjectExecReturn* Transformed::execute()
     auto const mode = static_cast<Mode>(TransformMode.getValue());
 
     std::vector<DocumentObject*> originals = getOriginals();
+
+    if (AllStepsBefore.getValue()) {
+        bool complete = false;
+        stepsBefore(complete);
+        if (!complete) {
+            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
+                "Exception",
+                "A body that began as a pattern's copy cannot yet be copied whole; pick its steps"
+            ));
+        }
+    }
 
     if (mode == Mode::Features && originals.empty()) {
         Shape.setValue(getBaseTopoShape(true));

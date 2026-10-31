@@ -49,8 +49,9 @@ class Feature;
 
 namespace PartDesign
 {
+class Body;
 class Transformed;
-}
+}  // namespace PartDesign
 
 namespace PartDesignGui
 {
@@ -98,6 +99,8 @@ protected:
      * Returns true if a selected feature was added/removed.
      */
     bool originalSelected(const Gui::SelectionChanges& msg);
+    /// Picking the pattern's body adds, or removes, every step before the pattern.
+    bool allStepsBeforeSelected(PartDesign::Body* body);
 
     void recomputeFeature();
 

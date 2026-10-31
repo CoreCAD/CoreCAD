@@ -44,6 +44,7 @@ from PartDesignTests.TestSuppressed import TestSuppressedStrikethrough
 from PartDesignTests.TestTablePatternGui import TestTablePatternCommand, TestTablePatternGui
 from PartDesignTests.TestFormulaPatternGui import TestFormulaPatternGui
 from PartDesignTests.TestVariedMeasurementGui import TestVariedMeasurementGui
+from PartDesignTests.TestPatternAllStepsBeforeGui import TestPatternAllStepsBeforeGui
 
 
 class CallableCheckWarning:
