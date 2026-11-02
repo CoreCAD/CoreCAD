@@ -27,7 +27,7 @@ class TestPatternCopyBodies(unittest.TestCase):
         self.Box.Length = self.Box.Width = self.Box.Height = 10.0
         self.Doc.recompute()
         self.Pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
-        self.Pattern.TransformMode = "Whole shape"
+        self.Pattern.AllStepsBefore = True
         self.Pattern.MultiBody = True
         self.Pattern.Direction = (_x_axis(self.Doc), [""])
         self.Pattern.Length = 90.0

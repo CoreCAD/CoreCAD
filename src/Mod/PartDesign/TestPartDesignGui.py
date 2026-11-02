@@ -711,7 +711,7 @@ class TestBodyColumn(unittest.TestCase):
         origin = next(o for o in self.Doc.Objects if o.isDerivedFrom("App::Origin"))
         y_axis = next(f for f in origin.OriginFeatures if getattr(f, "Role", "") == "Y_Axis")
         pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
-        pattern.TransformMode = "Whole shape"
+        pattern.AllStepsBefore = True
         pattern.MultiBody = apart
         pattern.Direction = (y_axis, [""])
         pattern.Length = length

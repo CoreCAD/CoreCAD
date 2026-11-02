@@ -246,9 +246,6 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
                 }
             }
             setupTransaction();
-            pcTransformed->TransformMode.setValue(
-                static_cast<long>(PartDesign::Transformed::Mode::Features)
-            );
             pcTransformed->Originals.setValues(originals);
             recomputeFeature();
 
