@@ -3,7 +3,7 @@
 
 # Locks the MultiBody pattern break-out contract (Cruth ARCHITECTURE §5.6 / §4.7).
 #
-# A "Whole shape" pattern with MultiBody emits one Body per instance (the multi-output
+# A whole-body pattern with MultiBody emits one Body per instance (the multi-output
 # reconciler). Break-out re-homes a selected instance into an independent BakedShape Body
 # and records a skip so the pattern drops that instance and never silently re-merges it.
 #
@@ -35,7 +35,7 @@ class TestBreakOut(unittest.TestCase):
         self.Doc = FreeCAD.newDocument("PartDesignTestBreakOut", type="Part")
 
     def _pattern(self, occurrences=4, length=90.0):
-        """A MultiBody 'Whole shape' LinearPattern of a 10-cube along X, well separated so
+        """A MultiBody whole-body LinearPattern of a 10-cube along X, well separated so
         every instance is its own disjoint solid. Returns the pattern feature."""
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
@@ -44,7 +44,7 @@ class TestBreakOut(unittest.TestCase):
         self.Doc.recompute()
 
         lp = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
-        lp.TransformMode = "Whole shape"
+        lp.AllStepsBefore = True
         lp.MultiBody = True
         lp.Direction = (_x_axis(self.Doc), [""])
         lp.Length = length
@@ -145,7 +145,7 @@ class TestStepOnOneCopy(unittest.TestCase):
         self.box.Length = self.box.Width = self.box.Height = 10.0
         self.Doc.recompute()
         self.lp = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
-        self.lp.TransformMode = "Whole shape"
+        self.lp.AllStepsBefore = True
         self.lp.MultiBody = True
         self.lp.Direction = (_x_axis(self.Doc), [""])
         self.lp.Length = 90.0  # x = 5, 35, 65, 95
@@ -326,7 +326,7 @@ class TestPatternDirectionSurvivesReopen(unittest.TestCase):
         body.addFeature(box)
         doc.recompute()
         lp = doc.addObject("PartDesign::LinearPattern", "LinearPattern")
-        lp.TransformMode = "Whole shape"
+        lp.AllStepsBefore = True
         lp.MultiBody = True
         lp.Direction = (_x_axis(doc), [""])
         lp.Length = 90.0

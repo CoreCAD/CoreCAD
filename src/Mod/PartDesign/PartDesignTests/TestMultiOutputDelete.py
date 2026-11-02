@@ -36,7 +36,7 @@ class TestMultiOutputDelete(unittest.TestCase):
         FreeCAD.closeDocument(self.Doc.Name)
 
     def _multibody_pattern(self, occurrences=4, length=90.0):
-        """A MultiBody 'Whole shape' LinearPattern of a 10-cube along X, well separated so every
+        """A MultiBody whole-body LinearPattern of a 10-cube along X, well separated so every
         instance is its own disjoint solid: emits one Body per instance. Returns (base, pattern)."""
         body = self.Doc.addObject("PartDesign::Body", "Body")
         box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
@@ -45,7 +45,7 @@ class TestMultiOutputDelete(unittest.TestCase):
         self.Doc.recompute()
 
         lp = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
-        lp.TransformMode = "Whole shape"
+        lp.AllStepsBefore = True
         lp.MultiBody = True
         lp.Direction = (_x_axis(self.Doc), [""])
         lp.Length = length

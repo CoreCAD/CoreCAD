@@ -49,18 +49,11 @@ class PartDesignExport Transformed: public PartDesign::FeatureAddSub
     PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::Transformed);
 
 public:
-    enum class Mode
-    {
-        Features,
-        WholeShape
-    };
-
     Transformed();
 
     /** The features to be transformed
      */
     App::PropertyLinkList Originals;
-    App::PropertyEnumeration TransformMode;
     /// What picking the Body means: every step before this pattern is copied as well as
     /// Originals, read afresh each build so a step inserted earlier later on is included.
     App::PropertyBool AllStepsBefore;
@@ -76,10 +69,9 @@ public:
     /// answered by the BaseFeature chain. This one asks whether the COPIES join EACH OTHER.
     /// They are independent: a pattern can extend its Body while keeping its copies apart.
     ///
-    /// Honoured in both transform modes. In Whole shape the copies are the whole output. In
-    /// Features mode the support keeps the untransformed original (it was already in the
-    /// chain before the pattern existed) and every transformed copy is emitted beside it
-    /// rather than welded on, so N copies still yield N pieces.
+    /// The support keeps the untransformed original (it was already in the chain before the
+    /// pattern existed) and every transformed copy is emitted beside it rather than welded on,
+    /// so N copies still yield N pieces.
     App::PropertyBool MultiBody;
 
     /// Cruth P7 (#34): how many copies the pattern was asked for, and how many connected
@@ -203,7 +195,7 @@ public:
     void onChanged(const App::Property* prop) override;
 
 protected:
-    /// The centre of what is copied: the originals, or the whole base shape.
+    /// The centre of what is copied.
     Base::Vector3d centreOfOriginals();
 
     void Restore(Base::XMLReader& reader) override;

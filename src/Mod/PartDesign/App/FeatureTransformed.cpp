@@ -66,15 +66,10 @@ extern bool getPDRefineModelParameter();
 
 PROPERTY_SOURCE(PartDesign::Transformed, PartDesign::FeatureAddSub)
 
-std::array<char const*, 3> transformModeEnums = {"Features", "Whole shape", nullptr};
-
 Transformed::Transformed()
 {
     ADD_PROPERTY(Originals, (nullptr));
     Originals.setSize(0);
-
-    ADD_PROPERTY(TransformMode, (static_cast<long>(Mode::Features)));
-    TransformMode.setEnums(transformModeEnums.data());
 
     ADD_PROPERTY_TYPE(
         AllStepsBefore,
@@ -402,12 +397,6 @@ App::DocumentObject* Transformed::getBaseObject(bool silent) const
 
 std::vector<App::DocumentObject*> Transformed::getOriginals() const
 {
-    auto const mode = static_cast<Mode>(TransformMode.getValue());
-
-    if (mode == Mode::WholeShape) {
-        return {};
-    }
-
     std::vector<DocumentObject*> originals;
     if (AllStepsBefore.getValue()) {
         bool complete = false;
@@ -464,23 +453,18 @@ std::vector<App::DocumentObject*> Transformed::stepsBefore(bool& complete) const
 Base::Vector3d Transformed::centreOfOriginals()
 {
     std::vector<Part::TopoShape> pieces;
-    if (static_cast<Mode>(TransformMode.getValue()) == Mode::WholeShape) {
-        pieces.push_back(getBaseTopoShape());
-    }
-    else {
-        for (auto* original : getOriginals()) {
-            auto* feature = freecad_cast<PartDesign::FeatureAddSub*>(original);
-            if (!feature) {
-                continue;
-            }
-            Part::TopoShape added;
-            Part::TopoShape cut;
-            feature->getAddSubShape(added, cut);
-            const gp_Trsf location = feature->getLocation().Transformation();
-            for (Part::TopoShape* half : {&added, &cut}) {
-                if (!half->isNull()) {
-                    pieces.push_back(half->makeElementTransform(location));
-                }
+    for (auto* original : getOriginals()) {
+        auto* feature = freecad_cast<PartDesign::FeatureAddSub*>(original);
+        if (!feature) {
+            continue;
+        }
+        Part::TopoShape added;
+        Part::TopoShape cut;
+        feature->getAddSubShape(added, cut);
+        const gp_Trsf location = feature->getLocation().Transformation();
+        for (Part::TopoShape* half : {&added, &cut}) {
+            if (!half->isNull()) {
+                pieces.push_back(half->makeElementTransform(location));
             }
         }
     }
@@ -545,8 +529,8 @@ void Transformed::handleChangedPropertyType(
 
 short Transformed::mustExecute() const
 {
-    if (Originals.isTouched() || TransformMode.isTouched() || AllStepsBefore.isTouched()
-        || MultiBody.isTouched() || SkipInstances.isTouched()) {
+    if (Originals.isTouched() || AllStepsBefore.isTouched() || MultiBody.isTouched()
+        || SkipInstances.isTouched()) {
         return 1;
     }
     for (std::size_t k = 1; App::Property* measured = getPropertyByName(variedName(k).c_str()); ++k) {
@@ -568,8 +552,6 @@ void Transformed::getAddSubShape(Part::TopoShape& addShape, Part::TopoShape& sub
 
 App::DocumentObjectExecReturn* Transformed::recomputePreview()
 {
-    const auto mode = static_cast<Mode>(TransformMode.getValue());
-
     App::DocumentObject* supportFeature = getBaseObject();
     const Part::TopoShape supportShape
         = narrowToBaseInstance(supportFeature, Part::getShape(supportFeature), true);
@@ -606,39 +588,20 @@ App::DocumentObjectExecReturn* Transformed::recomputePreview()
         return compound;
     };
 
-    switch (mode) {
-        case Mode::Features:
-            // Copies built differently cannot be shown as one shape moved about, so the preview
-            // is the pieces the last build placed.
-            if (variesMeasurements() && !AddSubShape.getShape().isNull()) {
-                PreviewShape.setValue(AddSubShape.getShape().getShape());
-                return StdReturn;
-            }
-            PreviewShape.setValue(makeCompoundOfToolShapes());
-            return StdReturn;
-
-        case Mode::WholeShape: {
-            auto shape = getBaseTopoShape();
-            shape = shape.makeElementTransform(supportTransform.Inverted());
-
-            PreviewShape.setValue(shape.getShape());
-
-            return StdReturn;
-        }
-
-        default:
-            return FeatureAddSub::recomputePreview();
+    // Copies built differently cannot be shown as one shape moved about, so the preview is the
+    // pieces the last build placed.
+    if (variesMeasurements() && !AddSubShape.getShape().isNull()) {
+        PreviewShape.setValue(AddSubShape.getShape().getShape());
+        return StdReturn;
     }
+    PreviewShape.setValue(makeCompoundOfToolShapes());
+    return StdReturn;
 }
 
 void Transformed::onChanged(const App::Property* prop)
 {
     if (prop == &Shape || prop == &AddSubShape || prop == &BaseFeature) {
         originalAsIs.reset();
-    }
-    if (prop == &TransformMode) {
-        auto const mode = static_cast<Mode>(TransformMode.getValue());
-        Originals.setStatus(App::Property::Status::Hidden, mode == Mode::WholeShape);
     }
 
     FeatureAddSub::onChanged(prop);
@@ -752,8 +715,6 @@ App::DocumentObjectExecReturn* Transformed::execute()
 {
     AddSubShape.setValue(Part::TopoShape());
 
-    auto const mode = static_cast<Mode>(TransformMode.getValue());
-
     std::vector<DocumentObject*> originals = getOriginals();
 
     if (AllStepsBefore.getValue()) {
@@ -767,7 +728,7 @@ App::DocumentObjectExecReturn* Transformed::execute()
         }
     }
 
-    if (mode == Mode::Features && originals.empty()) {
+    if (originals.empty()) {
         Shape.setValue(getBaseTopoShape(true));
         return App::DocumentObject::StdReturn;
     }
@@ -875,143 +836,103 @@ App::DocumentObjectExecReturn* Transformed::execute()
         AddSubShape.setValue(makeAddSubHalves(compoundOf(addedCopies), compoundOf(cutCopies)));
     };
 
-    switch (mode) {
-        case Mode::Features:
-            // NOTE: It would be possible to build a compound from all original addShapes/subShapes
-            // and then transform the compounds as a whole. But we choose to apply the
-            // transformations to each Original separately. This way it is easier to discover what
-            // feature causes a fuse/cut to fail. The downside is that performance suffers when
-            // there are many originals. But it seems safe to assume that in most cases there are
-            // few originals and many transformations
-            for (auto original : originals) {
-                auto feature = freecad_cast<PartDesign::FeatureAddSub*>(original);
-                if (!feature) {
-                    return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                        "Exception",
-                        "Only additive and subtractive features can be transformed"
-                    ));
-                }
+    // NOTE: It would be possible to build a compound from all original addShapes/subShapes
+    // and then transform the compounds as a whole. But we choose to apply the
+    // transformations to each Original separately. This way it is easier to discover what
+    // feature causes a fuse/cut to fail. The downside is that performance suffers when
+    // there are many originals. But it seems safe to assume that in most cases there are
+    // few originals and many transformations
+    for (auto original : originals) {
+        auto feature = freecad_cast<PartDesign::FeatureAddSub*>(original);
+        if (!feature) {
+            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
+                "Exception",
+                "Only additive and subtractive features can be transformed"
+            ));
+        }
 
-                std::vector<Piece> pieces;
-                try {
-                    pieces = piecesOf(feature, transformations.size(), trsfInv);
-                }
-                catch (const Base::Exception& e) {
-                    return new App::DocumentObjectExecReturn(e.what());
-                }
-                const Part::TopoShape& fuseShape = pieces.front().added;
-                const Part::TopoShape& cutShape = pieces.front().cut;
-                if (!fuseShape.isNull()) {
-                    auto shapes = getTransformedCompShape(supportShape, [&](std::size_t k) {
-                        return pieces[k].added;
-                    });
-                    if (Base::Sequencer().wasCanceled()) {
-                        return new App::DocumentObjectExecReturn("User aborted");
-                    }
-                    addedCopies.push_back(fuseShape);
-                    if (keepCopiesApart) {
-                        // Hold the transformed copies back. shapes[0] is the support and is
-                        // not a copy: the untransformed original was spliced into the chain
-                        // before the pattern existed and cannot be peeled back out, so it
-                        // stays where it is and the rest come out beside it.
-                        //
-                        // §5.6: an instance broken out of the pattern is dropped by its
-                        // ordinal in the transform sequence. The ordinal spans originals --
-                        // instance k of the pattern is copy k of every original -- so the
-                        // skip applies inside this loop and drops the whole instance.
-                        const std::vector<long>& skip = SkipInstances.getValues();
-                        for (std::size_t i = 1; i < shapes.size(); ++i) {
-                            if (std::ranges::find(skip, static_cast<long>(i)) == skip.end()) {
-                                looseCopies.push_back(shapes[i]);
-                                addedCopies.push_back(shapes[i]);
-                            }
-                        }
-                    }
-                    else {
-                        // Cruth §8.6/P7 (#34): ask, before the fuse hides the answer, whether
-                        // the copies ran into each other. shapes[0] is the support; the
-                        // instances are the untransformed original plus every copy after it.
-                        std::vector<Part::TopoShape> instances {fuseShape};
-                        instances.insert(instances.end(), shapes.begin() + 1, shapes.end());
-                        reportCollapsedInstances(instances);
-
-                        addedCopies.insert(addedCopies.end(), shapes.begin() + 1, shapes.end());
-                        supportShape.makeElementFuse(shapes);
-                    }
-                }
-                if (!cutShape.isNull()) {
-                    auto shapes = getTransformedCompShape(supportShape, [&](std::size_t k) {
-                        return pieces[k].cut;
-                    });
-                    if (Base::Sequencer().wasCanceled()) {
-                        return new App::DocumentObjectExecReturn("User aborted");
-                    }
-                    cutCopies.push_back(cutShape);
-                    cutCopies.insert(cutCopies.end(), shapes.begin() + 1, shapes.end());
-                    supportShape.makeElementCut(shapes);
-                }
-            }
-            break;
-        case Mode::WholeShape: {
-            if (variesMeasurements()) {
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-                    "Exception",
-                    "Measurements can change for each copy only when the pattern copies steps"
-                ));
-            }
-            auto shapes = getTransformedCompShape(supportShape, [&](std::size_t) {
-                return supportShape;
+        std::vector<Piece> pieces;
+        try {
+            pieces = piecesOf(feature, transformations.size(), trsfInv);
+        }
+        catch (const Base::Exception& e) {
+            return new App::DocumentObjectExecReturn(e.what());
+        }
+        const Part::TopoShape& fuseShape = pieces.front().added;
+        const Part::TopoShape& cutShape = pieces.front().cut;
+        if (!fuseShape.isNull()) {
+            auto shapes = getTransformedCompShape(supportShape, [&](std::size_t k) {
+                return pieces[k].added;
             });
             if (Base::Sequencer().wasCanceled()) {
                 return new App::DocumentObjectExecReturn("User aborted");
             }
-            if (MultiBody.getValue()) {
-                // Cruth §5.5/§5.6: emit the copies as disconnected solids (one Body each via
-                // the multi-output reconciler), omitting any instance the break-out skip-list
-                // records. Bypass the single-solid fuse/rule.
+            addedCopies.push_back(fuseShape);
+            if (keepCopiesApart) {
+                // Hold the transformed copies back. shapes[0] is the support and is
+                // not a copy: the untransformed original was spliced into the chain
+                // before the pattern existed and cannot be peeled back out, so it
+                // stays where it is and the rest come out beside it. Breaking the
+                // original out drops the support whole, below.
                 //
-                // The skip-list keys on each instance's ORIGINAL ordinal — its index in the
-                // transform sequence `shapes` (ARCHITECTURE §5.6/§11.2). That ordinal is stable
-                // across recompute and independent of other skips, so the drop always matches.
-                // (An earlier design keyed the skip on the element-map component-id; that id is
-                // context-dependent — its map name shifts with the surrounding compound — so the
-                // recorded key silently failed to match here and the instance was never dropped.)
+                // §5.6: an instance broken out of the pattern is dropped by its
+                // ordinal in the transform sequence. The ordinal spans originals --
+                // instance k of the pattern is copy k of every original -- so the
+                // skip applies inside this loop and drops the whole instance.
                 const std::vector<long>& skip = SkipInstances.getValues();
-                std::vector<Part::TopoShape> kept;
-                for (std::size_t i = 0; i < shapes.size(); ++i) {
+                for (std::size_t i = 1; i < shapes.size(); ++i) {
                     if (std::ranges::find(skip, static_cast<long>(i)) == skip.end()) {
-                        kept.push_back(shapes[i]);
+                        looseCopies.push_back(shapes[i]);
+                        addedCopies.push_back(shapes[i]);
                     }
                 }
-                if (kept.empty()) {
-                    return new App::DocumentObjectExecReturn(
-                        QT_TRANSLATE_NOOP("Exception", "Pattern skip-list removed every instance")
-                    );
-                }
-                addedCopies = kept;
-                recordPiece();
-                Part::TopoShape compound;
-                compound.makeElementCompound(kept);
-                this->Shape.setValue(compound);
-                return App::DocumentObject::StdReturn;
             }
-            addedCopies = shapes;
-            reportCollapsedInstances(shapes);
-            supportShape.makeElementFuse(shapes);
-            break;
+            else {
+                // Cruth §8.6/P7 (#34): ask, before the fuse hides the answer, whether
+                // the copies ran into each other. shapes[0] is the support; the
+                // instances are the untransformed original plus every copy after it.
+                std::vector<Part::TopoShape> instances {fuseShape};
+                instances.insert(instances.end(), shapes.begin() + 1, shapes.end());
+                reportCollapsedInstances(instances);
+
+                addedCopies.insert(addedCopies.end(), shapes.begin() + 1, shapes.end());
+                supportShape.makeElementFuse(shapes);
+            }
+        }
+        if (!cutShape.isNull()) {
+            auto shapes = getTransformedCompShape(supportShape, [&](std::size_t k) {
+                return pieces[k].cut;
+            });
+            if (Base::Sequencer().wasCanceled()) {
+                return new App::DocumentObjectExecReturn("User aborted");
+            }
+            cutCopies.push_back(cutShape);
+            cutCopies.insert(cutCopies.end(), shapes.begin() + 1, shapes.end());
+            supportShape.makeElementCut(shapes);
         }
     }
 
     recordPiece();
 
-    if (!looseCopies.empty()) {
+    // The original broken out of the pattern takes the support with it: its own Body now holds
+    // that solid, frozen.
+    const bool originalBrokenOut = keepCopiesApart
+        && std::ranges::find(SkipInstances.getValues(), 0L) != SkipInstances.getValues().end();
+    if (!looseCopies.empty() || originalBrokenOut) {
         // The copies were kept apart, so the result is several solids: the support, and one
         // per surviving copy. The multi-output reconciler turns that into one Body each
         // (§4.6/§5.5). No refine pass -- refining fuses coplanar faces across the compound
-        // and would undo the separation just asked for, which is why the Whole shape path
-        // returns early for the same reason.
-        std::vector<Part::TopoShape> pieces {supportShape};
+        // and would undo the separation just asked for.
+        std::vector<Part::TopoShape> pieces;
+        if (!originalBrokenOut) {
+            pieces.push_back(supportShape);
+        }
         pieces.insert(pieces.end(), looseCopies.begin(), looseCopies.end());
+        if (pieces.empty()) {
+            return new App::DocumentObjectExecReturn(
+                QT_TRANSLATE_NOOP("Exception", "Pattern skip-list removed every instance")
+            );
+        }
         Part::TopoShape compound;
         compound.makeElementCompound(pieces);
         this->Shape.setValue(compound);

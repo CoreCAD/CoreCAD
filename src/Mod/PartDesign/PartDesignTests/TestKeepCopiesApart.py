@@ -9,11 +9,10 @@
 #     BaseFeature chain. Not this file's subject.
 #   * Do the COPIES join EACH OTHER? That is MultiBody, and it is what is guarded here.
 #
-# Until now MultiBody was read only in "Whole shape" mode and ignored in the ordinary
-# Features mode, so a feature pattern whose copies overlapped fused them into one lump with
-# no way to ask for anything else — the silent collapse of #34 with no second option. The
-# copies are now held back from the fuse and emitted beside the support, which gives one
-# Body per copy through the multi-output reconciler, exactly as §5.5 describes.
+# Without it, a pattern whose copies overlapped fused them into one lump with no way to ask
+# for anything else — the silent collapse of #34 with no second option. The copies are held
+# back from the fuse and emitted beside the support, which gives one Body per copy through
+# the multi-output reconciler, exactly as §5.5 describes.
 #
 # The support is not one of the copies: the untransformed original was spliced into the
 # chain before the pattern existed and cannot be peeled back out, so N copies come back as
