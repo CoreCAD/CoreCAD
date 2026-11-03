@@ -29,6 +29,7 @@
 
 #include <iosfwd>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,8 +47,8 @@ class PropertyContainer;
 /// to the document they came from. Same writer either way (Amendment 19 Clause 19.5).
 struct RecipeScope
 {
-    /// The objects to state. Empty means every object the document holds.
-    std::vector<const DocumentObject*> objects;
+    /// The objects to state; none stated means every object the document holds.
+    std::optional<std::vector<const DocumentObject*>> objects;
     /// Whether the document's own authored properties are part of this rendering.
     bool withDocumentProperties {true};
     /// For an object stated, the properties whose value is stated from another version of that

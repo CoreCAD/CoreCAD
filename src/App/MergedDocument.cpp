@@ -37,6 +37,8 @@
 
 #include "ObjectRecipe.h"
 
+#include <Base/Exception.h>
+
 #include "Application.h"
 #include "Document.h"
 #include "DocumentObject.h"
@@ -305,9 +307,171 @@ Rebuilt rebuildCopyOf(const Document& version)
     return done;
 }
 
+bool refersTo(const DocumentObject& obj, const std::string& target)
+{
+    const std::vector<RecipeRef> refs = emitObjectRecipe(obj).refs;
+    return std::any_of(refs.begin(), refs.end(), [&](const RecipeRef& ref) {
+        return ref.target == target;
+    });
+}
+
+/// Give a map one entry as `from` states it, or take it out where `from` has none.
+void takeEntry(Property& into, const Property* from, const std::string& key)
+{
+    auto* entries = dynamic_cast<PropertyMap*>(&into);
+    const auto* stated = dynamic_cast<const PropertyMap*>(from);
+    if (entries == nullptr) {
+        throw Base::RuntimeError("Choosing a side does not settle a conflict over part of "
+                                 + std::string(into.getName()) + " yet");
+    }
+    std::map<std::string, std::string> values = entries->getValues();
+    const std::map<std::string, std::string> theirs =
+        stated != nullptr ? stated->getValues() : std::map<std::string, std::string> {};
+    const auto found = theirs.find(key);
+    if (found != theirs.end()) {
+        values[key] = found->second;
+    }
+    else {
+        values.erase(key);
+    }
+    entries->setValues(values);
+}
+
+/// Give a copy one value, or one entry of a map, as the winning version states it.
+void takeValue(PropertyContainer& into, const PropertyContainer& winner, const std::string& field)
+{
+    const std::string name = field.substr(0, field.find('.'));
+    Property* prop = into.getPropertyByName(name.c_str());
+    const Property* stated = winner.getPropertyByName(name.c_str());
+    if (prop == nullptr) {
+        throw Base::RuntimeError("Choosing a side does not settle a conflict over " + name
+                                 + ", which the losing version lacks, yet");
+    }
+    if (name != field) {
+        takeEntry(*prop, stated, field.substr(name.size() + 1));
+    }
+    else if (stated != nullptr) {
+        prop->Paste(*stated);
+    }
+}
+
+/** A copy of `side` that agrees with `winner` on each conflict it lost. A value is taken from the
+ *  winner. Over presence, the winner's delete deletes the copy's object, and the winner's keeping
+ *  restores what the copy deleted, with what it is built on, as the ancestor held it, so the merge
+ *  takes the winner's statement. Everything else stays as `side` states it. */
+TemporaryDocument settledCopy(const Document& ancestor,
+                              const Document& side,
+                              const Document& winner,
+                              const std::vector<const MergeConflict*>& lost)
+{
+    const auto objectsO = byUid(ancestor);
+    const auto objectsS = byUid(side);
+    const auto objectsW = byUid(winner);
+    const std::string documentId = ancestor.Uid.getValueStr();
+
+    RecipeScope scope;
+    scope.objects.emplace(side.getObjects().begin(), side.getObjects().end());
+    std::set<std::string> held;
+    for (const auto& [id, obj] : objectsS) {
+        held.insert(id);
+    }
+    // What a kept step is built on is kept with it, as the ancestor held it.
+    const auto restore = [&](const std::string& id) {
+        std::vector<std::string> waiting {id};
+        while (!waiting.empty()) {
+            const std::string next = waiting.back();
+            waiting.pop_back();
+            const DocumentObject* objO = find(objectsO, next);
+            if (objO == nullptr || !held.insert(next).second) {
+                continue;
+            }
+            scope.objects->push_back(objO);
+            for (const RecipeRef& ref : emitObjectRecipe(*objO).refs) {
+                waiting.push_back(ref.target);
+            }
+        }
+    };
+    std::set<std::string> deleted;
+    std::vector<std::pair<std::string, std::string>> values;  // object id, field
+    std::vector<std::string> documentValues;
+
+    for (const MergeConflict* conflict : lost) {
+        const auto cannot = [&]() {
+            return Base::RuntimeError("Choosing a side does not settle this conflict yet: "
+                                      + conflict->detail);
+        };
+        const DocumentObject* objS = find(objectsS, conflict->id);
+        const DocumentObject* objW = find(objectsW, conflict->id);
+        if (conflict->id == documentId) {
+            if (conflict->value.empty()) {
+                throw cannot();
+            }
+            documentValues.push_back(conflict->value);
+        }
+        else if (conflict->kind == MergeConflict::Kind::Referential) {
+            if (objS != nullptr && refersTo(*objS, conflict->value)) {
+                deleted.insert(conflict->id);
+            }
+            else if (find(objectsO, conflict->value) != nullptr) {
+                restore(conflict->value);
+            }
+            else {
+                throw cannot();
+            }
+        }
+        else if (conflict->value.empty()) {
+            if (objW == nullptr && objS != nullptr) {
+                deleted.insert(conflict->id);
+            }
+            else if (objS == nullptr && find(objectsO, conflict->id) != nullptr) {
+                restore(conflict->id);
+            }
+            else {
+                throw cannot();
+            }
+        }
+        else if (objS == nullptr || objW == nullptr) {
+            throw cannot();
+        }
+        else {
+            values.emplace_back(conflict->id, conflict->value);
+        }
+    }
+
+    DocumentInitFlags flags;
+    flags.createView = false;
+    flags.temporary = true;
+    Application& app = GetApplication();
+    TemporaryDocument copy(
+        app.newDocument(app.getUniqueDocumentName("Settled").c_str(), nullptr, flags));
+    std::istringstream recipe(formatStoredRecipe(side, {}, scope));
+    restoreStoredRecipe(*copy, recipe);
+    copy->Label.setValue(side.Label.getValue());
+
+    for (const auto& [id, field] : values) {
+        DocumentObject* into = objectWithUid(*copy, id);
+        const DocumentObject& from = *find(objectsW, id);
+        takeValue(*into, from, field);
+        if (field.find('.') == std::string::npos) {
+            takeFormulas(*into, from, field);
+        }
+    }
+    for (const std::string& field : documentValues) {
+        takeValue(*copy, winner, field);
+    }
+    for (const std::string& id : deleted) {
+        if (DocumentObject* obj = objectWithUid(*copy, id)) {
+            copy->removeObject(obj->getNameInDocument());
+        }
+    }
+    return copy;
+}
+
 MergedDocument buildFrom(const Document& ancestor,
                          const Document& branchA,
                          const Document& branchB,
+                         const Document& seenA,
+                         const Document& seenB,
                          bool createView)
 {
     MergedDocument result;
@@ -325,16 +489,17 @@ MergedDocument buildFrom(const Document& ancestor,
     // does; an object only B holds is stated as B states it. A value both changed, which the
     // merge combined, is set afterwards from the merged result.
     RecipeScope scope;
+    scope.objects.emplace();
     std::map<std::string, std::vector<std::string>> combined;
     for (const auto& [id, node] : result.report.merged) {
         const DocumentObject* objO = find(objectsO, id);
         const DocumentObject* objA = find(objectsA, id);
         const DocumentObject* objB = find(objectsB, id);
         if (objA == nullptr) {
-            scope.objects.push_back(objB);
+            scope.objects->push_back(objB);
             continue;
         }
-        scope.objects.push_back(objA);
+        scope.objects->push_back(objA);
         if (objB == nullptr) {
             continue;
         }
@@ -352,10 +517,10 @@ MergedDocument buildFrom(const Document& ancestor,
             }
         }
     }
-    std::erase(scope.objects, nullptr);
+    std::erase(*scope.objects, nullptr);
 
-    const Rebuilt rebuiltA = rebuildCopyOf(branchA);
-    const Rebuilt rebuiltB = rebuildCopyOf(branchB);
+    const Rebuilt rebuiltA = rebuildCopyOf(seenA);
+    const Rebuilt rebuiltB = rebuildCopyOf(seenB);
 
     DocumentInitFlags flags;
     flags.createView = createView;
@@ -452,14 +617,67 @@ MergedDocument buildFrom(const Document& ancestor,
 
 }  // namespace
 
+SettledVersions App::settleConflicts(const Document& ancestor,
+                                     const Document& branchA,
+                                     const Document& branchB,
+                                     const std::vector<MergeChoice>& choices)
+{
+    SettledVersions settled;
+    std::vector<MergeChoice> waiting = choices;
+    while (!waiting.empty()) {
+        const Document& a = settled.branchA ? *settled.branchA : branchA;
+        const Document& b = settled.branchB ? *settled.branchB : branchB;
+        const DocumentMergeReport report = mergeDocuments(ancestor, a, b);
+
+        std::vector<const MergeConflict*> lostByA;
+        std::vector<const MergeConflict*> lostByB;
+        std::vector<MergeChoice> later;
+        for (const MergeChoice& choice : waiting) {
+            const auto named = std::find_if(
+                report.conflicts.begin(), report.conflicts.end(), [&](const MergeConflict& c) {
+                    return c.id == choice.id && c.value == choice.value;
+                });
+            if (named == report.conflicts.end()) {
+                later.push_back(choice);
+            }
+            else {
+                (choice.takeB ? lostByA : lostByB).push_back(&*named);
+            }
+        }
+        if (later.size() == waiting.size()) {
+            throw Base::RuntimeError("No open conflict of the merge is over " + later.front().id
+                                     + (later.front().value.empty()
+                                            ? std::string()
+                                            : " " + later.front().value));
+        }
+        if (!lostByA.empty()) {
+            settled.branchA = settledCopy(ancestor, a, b, lostByA);
+        }
+        if (!lostByB.empty()) {
+            settled.branchB = settledCopy(ancestor, b, a, lostByB);
+        }
+        waiting = std::move(later);
+    }
+    return settled;
+}
+
 MergedDocument App::buildMergedDocument(const Document& ancestor,
                                         const Document& branchA,
                                         const Document& branchB,
+                                        const std::vector<MergeChoice>& choices,
                                         bool createView)
 {
-    const RebasedVersions rebased = rebaseVersions(ancestor, branchA, branchB);
+    const SettledVersions settled = settleConflicts(ancestor, branchA, branchB, choices);
+    const Document& a = settled.branchA ? *settled.branchA : branchA;
+    const Document& b = settled.branchB ? *settled.branchB : branchB;
+    const RebasedVersions rebased = rebaseVersions(ancestor, a, b);
     if (rebased.ancestor) {
-        return buildFrom(*rebased.ancestor, *rebased.branchA, *rebased.branchB, createView);
+        return buildFrom(*rebased.ancestor,
+                         *rebased.branchA,
+                         *rebased.branchB,
+                         branchA,
+                         branchB,
+                         createView);
     }
-    return buildFrom(ancestor, branchA, branchB, createView);
+    return buildFrom(ancestor, a, b, branchA, branchB, createView);
 }

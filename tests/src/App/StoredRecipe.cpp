@@ -1584,8 +1584,11 @@ TEST_F(StoredRecipeTest, aRenderingOfPartOfADocumentCarriesOnlyTheObjectsChosen)
     _source->recompute();
 
     // Act
-    const std::string written
-        = formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false});
+    const std::string written = formatStoredRecipe(
+        *_source,
+        {},
+        RecipeScope {std::vector<const App::DocumentObject*> {chosen}, /*withDocumentProperties=*/false}
+    );
 
     // Assert
     EXPECT_NE(written.find("name=\"Chosen\""), std::string::npos)
@@ -1611,9 +1614,11 @@ TEST_F(StoredRecipeTest, aRenderingWithNoDocumentBlockLeavesTheReceivingDocument
     const std::string receivingUid = _rebuilt->Uid.getValueStr();
 
     // Act
-    std::istringstream text(
-        formatStoredRecipe(*_source, {}, RecipeScope {{chosen}, /*withDocumentProperties=*/false})
-    );
+    std::istringstream text(formatStoredRecipe(
+        *_source,
+        {},
+        RecipeScope {std::vector<const App::DocumentObject*> {chosen}, /*withDocumentProperties=*/false}
+    ));
     restoreStoredRecipe(*_rebuilt, text);
 
     // Assert

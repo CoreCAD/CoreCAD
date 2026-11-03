@@ -157,6 +157,32 @@ AppExport RebasedVersions rebaseVersions(const Document& ancestor,
                                          const Document& branchA,
                                          const Document& branchB);
 
+/// A person's choice of one version's statement for one open conflict, named as the conflict names
+/// itself: its node and what it is over.
+struct MergeChoice
+{
+    std::string id;
+    std::string value;
+    bool takeB {false};  ///< the second version's statement stands; otherwise the first's
+};
+
+/// Copies of the two edited versions; a copy is null where no choice went against that version.
+struct SettledVersions
+{
+    TemporaryDocument branchA;
+    TemporaryDocument branchB;
+};
+
+/// Settle conflicts by choosing a side (Clause 21.3): each version that lost a choice is copied
+/// and made to agree with the winner on that conflict alone, so merging the copies takes the chosen
+/// statement and everything else as before. A choice may open a conflict the first merge did not
+/// show, as a step kept on what the other side deleted, and a choice naming that one is applied
+/// next. Throws when a choice names no open conflict, or one choosing a side cannot settle yet.
+AppExport SettledVersions settleConflicts(const Document& ancestor,
+                                          const Document& branchA,
+                                          const Document& branchB,
+                                          const std::vector<MergeChoice>& choices);
+
 /// A merge made into a document of its own, or why it was not.
 struct MergedDocument
 {
@@ -170,11 +196,13 @@ struct MergedDocument
 
 /// Merge three versions into a new document. Each object is stated as branch A states it, with
 /// each value only B changed taken from B, and a value both changed set from the merged result,
-/// all by durable id; the document is then rebuilt. Refused while any conflict is open, and where
-/// a combined value cannot yet be written.
+/// all by durable id; the document is then rebuilt. Each choice settles its conflict as
+/// settleConflicts does. Refused while any conflict is open, and where a combined value cannot yet
+/// be written.
 AppExport MergedDocument buildMergedDocument(const Document& ancestor,
                                              const Document& branchA,
                                              const Document& branchB,
+                                             const std::vector<MergeChoice>& choices = {},
                                              bool createView = false);
 
 /// Render a DocumentMergeReport as plain language a person can read (Report View / console).

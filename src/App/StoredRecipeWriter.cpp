@@ -657,13 +657,13 @@ std::string App::formatStoredRecipe(const Document& doc,
     // Uid order, not creation order, so an inserted feature reads as one added block. The
     // creation order is stated instead by each block naming the step it comes after: inserting a
     // step changes its own block and the one block that now follows it.
-    const bool wholeDocument = scope.objects.empty();
+    const bool wholeDocument = !scope.objects;
     std::vector<const DocumentObject*> objects;
     if (wholeDocument) {
         objects.assign(doc.getObjects().begin(), doc.getObjects().end());
     }
     else {
-        objects = scope.objects;
+        objects = *scope.objects;
     }
     std::erase(objects, nullptr);
     // A copy may carry objects from more than one document; each keeps its own document's order.
