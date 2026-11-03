@@ -116,6 +116,9 @@ struct MergeConflict
                           ///< sketch layer) turns it into a readable label so a report need not
                           ///< print the raw id
     std::string detail;   ///< human-readable summary (which field / which dangling target)
+    /// What the conflict is over: for a Value conflict the field or link, empty for the whole
+    /// node; for a Referential one the id of the deleted node it points at.
+    std::string value;
 
     /// What each version stated for the conflicted node, kept so the person settling it sees
     /// all three (Clause 21.4 of the merge proposal). Empty means absent from that version.

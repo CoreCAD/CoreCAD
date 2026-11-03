@@ -259,7 +259,7 @@ PyMethodDef ApplicationPy::Methods[] = {
     {"mergeDocuments",
      (PyCFunction)ApplicationPy::sMergeDocuments,
      METH_VARARGS,
-     "mergeDocuments(ancestor, branchA, branchB, build=False) -> dict\n\n"
+     "mergeDocuments(ancestor, branchA, branchB, build=False, choices=[]) -> dict\n\n"
      "Three-way merge of a model's authored recipe. The three documents must share a\n"
      "common ancestor's durable identities (branches reloaded/copied from one origin,\n"
      "not independently rebuilt). Only authored state is reconciled -- no recompute is\n"
@@ -272,7 +272,9 @@ PyMethodDef ApplicationPy::Methods[] = {
      "merged part as a new document: 'document' (None when refused), 'refusal' and\n"
      "'newlyFailing', the steps that fail merged and failed on neither side, and\n"
      "'identityChanges', the bodies the merged rebuild retired or made where neither\n"
-     "version's rebuild did."},
+     "version's rebuild did. Each conflict names its 'object' and the 'value' it is over;\n"
+     "a choice is a conflict's 'object' and 'value' with 'take' set to 'A' or 'B', and\n"
+     "settles that conflict with the chosen version's statement."},
     {"diffDocuments",
      (PyCFunction)ApplicationPy::sDiffDocuments,
      METH_VARARGS,

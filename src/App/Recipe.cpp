@@ -224,7 +224,8 @@ void RecipeMerge::checkReferences(const RecipeSection& withRefs,
                 conflicts.push_back({MergeConflict::Kind::Referential,
                                      id,
                                      node.type,
-                                     "references deleted entity " + ref.target});
+                                     "references deleted entity " + ref.target,
+                                     ref.target});
             }
         }
     }
@@ -272,7 +273,8 @@ void RecipeMerge::presenceConflicts(const RecipeSection& baseRefs,
                                      id,
                                      node.type,
                                      "points at " + deleted->target
-                                         + ", which the other version deleted"});
+                                         + ", which the other version deleted",
+                                     deleted->target});
                 recordStatements(conflicts.back(), baseRefs, aRefs, bRefs);
                 break;
             }
@@ -520,7 +522,8 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
                          conflict.id,
                          nodeA.type,
                          "references in " + link
-                             + ": one branch moved it to another object, the other changed it"});
+                             + ": one branch moved it to another object, the other changed it",
+                         link});
                 }
             }
             else {
@@ -544,7 +547,8 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
                          conflict.id,
                          nodeA.type,
                          "references" + (link.empty() ? std::string() : " in " + link)
-                             + ": both branches changed the links differently"});
+                             + ": both branches changed the links differently",
+                         link});
                 }
             }
             result.refs.insert(result.refs.end(), resolvedRefs.begin(), resolvedRefs.end());
@@ -577,7 +581,8 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
                      conflict.id,
                      nodeA.type,
                      "field " + name + ": this branch " + describeValue(fieldOf(nodeA, name))
-                         + ", other branch " + describeValue(fieldOf(nodeB, name))});
+                         + ", other branch " + describeValue(fieldOf(nodeB, name)),
+                     name});
             }
         }
 

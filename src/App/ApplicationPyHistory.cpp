@@ -89,15 +89,18 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
     PyObject* apy {};
     PyObject* bpy {};
     int build = 0;
+    PyObject* choicespy = nullptr;
     if (!PyArg_ParseTuple(args,
-                          "O!O!O!|p",
+                          "O!O!O!|pO!",
                           &App::DocumentPy::Type,
                           &ancpy,
                           &App::DocumentPy::Type,
                           &apy,
                           &App::DocumentPy::Type,
                           &bpy,
-                          &build)) {
+                          &build,
+                          &PyList_Type,
+                          &choicespy)) {
         return nullptr;
     }
 
@@ -111,12 +114,31 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
 
     PY_TRY
     {
+        std::vector<MergeChoice> choices;
+        if (choicespy != nullptr) {
+            const Py::List given(choicespy);
+            for (Py::List::size_type i = 0; i < given.length(); ++i) {
+                const Py::Dict entry(given[i]);
+                const auto text = [&entry](const char* key) {
+                    return Py::String(entry.getItem(key)).as_std_string("utf-8");
+                };
+                const std::string take = text("take");
+                if (take != "A" && take != "B") {
+                    throw Py::ValueError("a choice takes 'A' or 'B'");
+                }
+                choices.push_back({text("object"), text("value"), take == "B"});
+            }
+        }
         MergedDocument made;
         if (build != 0) {
-            made = buildMergedDocument(*ancestor, *branchA, *branchB);
+            made = buildMergedDocument(*ancestor, *branchA, *branchB, choices);
         }
         else {
-            made.report = mergeDocuments(*ancestor, *branchA, *branchB);
+            const SettledVersions settled =
+                settleConflicts(*ancestor, *branchA, *branchB, choices);
+            made.report = mergeDocuments(*ancestor,
+                                         settled.branchA ? *settled.branchA : *branchA,
+                                         settled.branchB ? *settled.branchB : *branchB);
         }
         const DocumentMergeReport& report = made.report;
         Py::List conflicts;
@@ -128,6 +150,7 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
             entry.setItem("object", Py::String(conflict.id));
             entry.setItem("type", Py::String(conflict.type));
             entry.setItem("detail", Py::String(conflict.detail));
+            entry.setItem("value", Py::String(conflict.value));
             entry.setItem("ancestor", asSaid(conflict.ancestor));
             entry.setItem("branchA", asSaid(conflict.branchA));
             entry.setItem("branchB", asSaid(conflict.branchB));

@@ -1167,6 +1167,209 @@ TEST_F(ObjectRecipeTest, buildMergedDocumentMakesNothingWhileAConflictIsOpen)
     app.closeDocument(docB->getName());
 }
 
+// Both versions set the box's length differently and A also sets its width. Choosing B's length
+// settles the conflict: the merged box takes B's length and keeps A's width.
+TEST_F(ObjectRecipeTest, aChosenSideSettlesAValueConflict)
+{
+    auto& app = App::GetApplication();
+    const std::string uid = _doc->addObject("Part::Box", "Box")->Uid.getValueStr();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    for (auto [doc, length] : {std::pair {docA, 20.0}, std::pair {docB, 30.0}}) {
+        auto* box = doc->addObject("Part::Box", "Box");
+        box->Uid.setValue(sharedId);
+        static_cast<App::PropertyFloat*>(box->getPropertyByName("Length"))->setValue(length);
+    }
+    static_cast<App::PropertyFloat*>(docA->getObject("Box")->getPropertyByName("Width"))->setValue(40.0);
+
+    const App::DocumentMergeReport open = App::mergeDocuments(*_doc, *docA, *docB);
+    ASSERT_EQ(open.conflicts.size(), 1u);
+    EXPECT_EQ(open.conflicts.front().value, "Length");
+
+    for (const auto& [takeB, length] : {std::pair {true, 30.0}, std::pair {false, 20.0}}) {
+        const App::MergedDocument made
+            = App::buildMergedDocument(*_doc, *docA, *docB, {{uid, "Length", takeB}});
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        EXPECT_TRUE(made.report.conflicts.empty());
+        App::DocumentObject* box = made.document->getObjects().front();
+        EXPECT_DOUBLE_EQ(
+            static_cast<App::PropertyFloat*>(box->getPropertyByName("Length"))->getValue(),
+            length
+        );
+        EXPECT_DOUBLE_EQ(
+            static_cast<App::PropertyFloat*>(box->getPropertyByName("Width"))->getValue(),
+            40.0
+        );
+        app.closeDocument(made.document->getName());
+    }
+    EXPECT_DOUBLE_EQ(
+        static_cast<App::PropertyFloat*>(docA->getObject("Box")->getPropertyByName("Length"))->getValue(),
+        20.0
+    ) << "settling changes neither version";
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// A edits an extrusion; B deletes it with the circle it extrudes. Choosing B's delete leaves
+// neither; choosing A's edit keeps the extrusion, as A set it, and the circle it is built on.
+TEST_F(ObjectRecipeTest, aChosenSideSettlesAnEditAgainstADelete)
+{
+    auto& app = App::GetApplication();
+    auto* circle = _doc->addObject("Part::Circle", "Circle");
+    auto* extrusion = _doc->addObject("Part::Extrusion", "Extrusion");
+    static_cast<App::PropertyLink*>(extrusion->getPropertyByName("Base"))->setValue(circle);
+    const std::string circleId = circle->Uid.getValueStr();
+    const std::string extrusionId = extrusion->Uid.getValueStr();
+
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* circleA = docA->addObject("Part::Circle", "Circle");
+    auto* extrusionA = docA->addObject("Part::Extrusion", "Extrusion");
+    Base::Uuid id;
+    id.setValue(circleId);
+    circleA->Uid.setValue(id);
+    id.setValue(extrusionId);
+    extrusionA->Uid.setValue(id);
+    static_cast<App::PropertyLink*>(extrusionA->getPropertyByName("Base"))->setValue(circleA);
+    static_cast<App::PropertyFloat*>(extrusionA->getPropertyByName("LengthFwd"))->setValue(25.0);
+
+    const App::DocumentMergeReport open = App::mergeDocuments(*_doc, *docA, *docB);
+    ASSERT_EQ(open.conflicts.size(), 1u);
+    ASSERT_EQ(open.conflicts.front().id, extrusionId);
+
+    const App::MergedDocument deleted
+        = App::buildMergedDocument(*_doc, *docA, *docB, {{extrusionId, "", true}});
+    ASSERT_NE(deleted.document, nullptr) << deleted.refusal;
+    EXPECT_TRUE(deleted.document->getObjects().empty());
+    app.closeDocument(deleted.document->getName());
+
+    const App::MergedDocument kept
+        = App::buildMergedDocument(*_doc, *docA, *docB, {{extrusionId, "", false}});
+    ASSERT_NE(kept.document, nullptr) << kept.refusal;
+    App::DocumentObject* merged = kept.document->getObject("Extrusion");
+    ASSERT_NE(merged, nullptr);
+    EXPECT_DOUBLE_EQ(
+        static_cast<App::PropertyFloat*>(merged->getPropertyByName("LengthFwd"))->getValue(),
+        25.0
+    );
+    App::DocumentObject* base
+        = static_cast<App::PropertyLink*>(merged->getPropertyByName("Base"))->getValue();
+    ASSERT_NE(base, nullptr);
+    EXPECT_EQ(base->Uid.getValueStr(), circleId);
+    app.closeDocument(kept.document->getName());
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// B mirrors a box A deleted. Choosing B keeps the mirror and the box it mirrors; choosing A's
+// delete removes both.
+TEST_F(ObjectRecipeTest, aChosenSideSettlesAStepBuiltOnWhatTheOtherDeleted)
+{
+    auto& app = App::GetApplication();
+    Base::Uuid boxId;
+    boxId.setValue(_doc->addObject("Part::Box", "Box")->Uid.getValueStr());
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    auto* boxB = docB->addObject("Part::Box", "Box");
+    boxB->Uid.setValue(boxId);
+    auto* mirrorB = docB->addObject("Part::Mirroring", "Mirror");
+    static_cast<App::PropertyLink*>(mirrorB->getPropertyByName("Source"))->setValue(boxB);
+    const std::string mirror = mirrorB->Uid.getValueStr();
+
+    const App::DocumentMergeReport open = App::mergeDocuments(*_doc, *docA, *docB);
+    ASSERT_EQ(open.conflicts.size(), 1u);
+    EXPECT_EQ(open.conflicts.front().value, boxId.getValue());
+
+    const App::MergedDocument kept
+        = App::buildMergedDocument(*_doc, *docA, *docB, {{mirror, boxId.getValue(), true}});
+    ASSERT_NE(kept.document, nullptr) << kept.refusal;
+    App::DocumentObject* merged = kept.document->getObject("Mirror");
+    ASSERT_NE(merged, nullptr);
+    App::DocumentObject* source
+        = static_cast<App::PropertyLink*>(merged->getPropertyByName("Source"))->getValue();
+    ASSERT_NE(source, nullptr);
+    EXPECT_EQ(source->Uid.getValueStr(), boxId.getValue());
+    app.closeDocument(kept.document->getName());
+
+    const App::MergedDocument dropped
+        = App::buildMergedDocument(*_doc, *docA, *docB, {{mirror, boxId.getValue(), false}});
+    ASSERT_NE(dropped.document, nullptr) << dropped.refusal;
+    EXPECT_TRUE(dropped.document->getObjects().empty());
+    app.closeDocument(dropped.document->getName());
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// Each version gives the document a different comment; the chosen one stands.
+TEST_F(ObjectRecipeTest, aChosenSideSettlesAConflictOverTheDocumentsOwnValue)
+{
+    auto& app = App::GetApplication();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    docA->Comment.setValue("from A");
+    docB->Comment.setValue("from B");
+
+    const App::MergedDocument made
+        = App::buildMergedDocument(*_doc, *docA, *docB, {{_doc->Uid.getValueStr(), "Comment", true}});
+
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    EXPECT_STREQ(made.document->Comment.getValue(), "from B");
+
+    app.closeDocument(made.document->getName());
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// A choice that names no open conflict is refused, not ignored.
+TEST_F(ObjectRecipeTest, aChoiceNamingNoConflictIsRefused)
+{
+    auto& app = App::GetApplication();
+    const std::string uid = _doc->addObject("Part::Box", "Box")->Uid.getValueStr();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+
+    EXPECT_THROW(App::settleConflicts(*_doc, *docA, *docB, {{uid, "Length", true}}), Base::RuntimeError);
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
+// A script settles a conflict by handing back the conflict it was given with the side it takes.
+TEST_F(ObjectRecipeTest, aScriptSettlesAConflictByTakingASide)
+{
+    const std::string uid = _doc->addObject("Part::Box")->Uid.getValueStr();
+    Base::Uuid sharedId;
+    sharedId.setValue(uid);
+    auto& app = App::GetApplication();
+    App::Document* docA = app.newDocument(app.getUniqueDocumentName("branchA").c_str(), "u");
+    App::Document* docB = app.newDocument(app.getUniqueDocumentName("branchB").c_str(), "u");
+    for (const auto& [doc, length] : {std::pair {docA, 25.0}, std::pair {docB, 30.0}}) {
+        auto* box = doc->addObject("Part::Box");
+        box->Uid.setValue(sharedId);
+        dynamic_cast<App::PropertyFloat*>(box->getPropertyByName("Length"))->setValue(length);
+    }
+
+    std::string cmd = "import FreeCAD as App\n";
+    cmd += "versions = [App.getDocument(n) for n in ('" + std::string(_doc->getName()) + "', '"
+        + docA->getName() + "', '" + docB->getName() + "')]\n";
+    cmd += "c, = App.mergeDocuments(*versions)['conflicts']\n";
+    cmd += "assert c['value'] == 'Length'\n";
+    cmd += "r = App.mergeDocuments(*versions, True, [dict(c, take='B')])\n";
+    cmd += "assert r['complete'] and r['document'] is not None, r['refusal']\n";
+    cmd += "assert r['document'].Objects[0].Length == 30\n";
+    cmd += "App.closeDocument(r['document'].Name)\n";
+    cmd += "assert App.mergeDocuments(*versions, False, [dict(c, take='A')])['complete']\n";
+    EXPECT_NO_THROW(Base::Interpreter().runString(cmd.c_str()));
+
+    app.closeDocument(docA->getName());
+    app.closeDocument(docB->getName());
+}
+
 // A formula binds the object it reads by durable id; the name in its text is display (§4.5). So a
 // rename, which rewrites that text, leaves the recipe's statement of the formula as it was, both
 // for a reference by label and one by name.
