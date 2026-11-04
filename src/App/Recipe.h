@@ -117,7 +117,9 @@ struct MergeConflict
                           ///< print the raw id
     std::string detail;   ///< human-readable summary (which field / which dangling target)
     /// What the conflict is over: for a Value conflict the field or link, empty for the whole
-    /// node; for a Referential one the id of the deleted node it points at.
+    /// node; for a Referential one the id of the deleted node it points at. A conflict inside an
+    /// object's own content (a sheet's cells) states the covered property, a space, then what
+    /// inside it, in the owning module's terms.
     std::string value;
 
     /// What each version stated for the conflicted node, kept so the person settling it sees

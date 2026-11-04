@@ -11,12 +11,15 @@
 
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/ObjectRecipe.h>
 #include <App/Range.h>
 #include <App/StoredRecipe.h>
+#include <Base/Exception.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 #include <Mod/Spreadsheet/App/Sheet.h>
@@ -100,11 +103,25 @@ protected:
         cells->Restore(reader);
     }
 
-    App::MergedDocument merge(App::Document* branchA, App::Document* branchB)
+    App::MergedDocument merge(
+        App::Document* branchA,
+        App::Document* branchB,
+        const std::vector<App::MergeChoice>& choices = {}
+    )
     {
         branchA->recompute();
         branchB->recompute();
-        return App::buildMergedDocument(*_ancestor, *branchA, *branchB);
+        return App::buildMergedDocument(*_ancestor, *branchA, *branchB, choices);
+    }
+
+    /// Each open conflict of merging the two, answered for one side.
+    std::vector<App::MergeChoice> taking(bool sideB, App::Document* branchA, App::Document* branchB)
+    {
+        std::vector<App::MergeChoice> choices;
+        for (const App::MergeConflict& open : merge(branchA, branchB).report.conflicts) {
+            choices.push_back({open.id, open.value, sideB});
+        }
+        return choices;
     }
 
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
@@ -471,6 +488,82 @@ TEST_F(SheetMergeTest, cellsMergedBesideTheOtherSidesEditsBothLand)
     ASSERT_NE(merged.document, nullptr) << merged.refusal;
     EXPECT_TRUE(sheetOf(merged.document)->isMergedCell(App::CellAddress("B2")));
     EXPECT_EQ(contents(merged.document, "C1"), "'beside");
+}
+
+TEST_F(SheetMergeTest, choosingASideTakesItsCellAndKeepsEveryOtherEdit)
+{
+    for (const auto& [takeB, kept] : {std::pair {true, "5"}, std::pair {false, "100"}}) {
+        App::Document* a = branch("a");
+        App::Document* b = branch("b");
+        sheetOf(a)->setCell("A1", "100");
+        sheetOf(a)->setCell("A2", "7");
+        sheetOf(b)->setCell("A1", "5");
+        sheetOf(b)->setCell("B1", "beside");
+
+        const App::MergedDocument merged = merge(a, b, taking(takeB, a, b));
+
+        ASSERT_NE(merged.document, nullptr) << merged.refusal;
+        EXPECT_EQ(contents(merged.document, "A1"), kept);
+        EXPECT_EQ(contents(merged.document, "A2"), "7");
+        EXPECT_EQ(contents(merged.document, "B1"), "'beside");
+    }
+}
+
+TEST_F(SheetMergeTest, eachCellEditedTwoWaysIsItsOwnChoice)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->setCell("A1", "100");
+    sheetOf(a)->setCell("A2", "200");
+    sheetOf(b)->setCell("A1", "5");
+    sheetOf(b)->setCell("A2", "6");
+    const std::vector<App::MergeChoice> open = taking(false, a, b);
+    ASSERT_EQ(open.size(), 2U);
+
+    const App::MergedDocument merged = merge(a, b, {open[0], {open[1].id, open[1].value, true}});
+
+    ASSERT_NE(merged.document, nullptr) << merged.refusal;
+    EXPECT_EQ(contents(merged.document, "A1"), "100");
+    EXPECT_EQ(contents(merged.document, "A2"), "6");
+}
+
+TEST_F(SheetMergeTest, choosingASideOnAnAliasLeavesItOnOneCell)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->setAlias(App::CellAddress("A1"), "len");
+    sheetOf(b)->setAlias(App::CellAddress("A2"), "len");
+
+    const App::MergedDocument merged = merge(a, b, taking(true, a, b));
+
+    ASSERT_NE(merged.document, nullptr) << merged.refusal;
+    EXPECT_EQ(sheetOf(merged.document)->getAddressFromAlias("len"), "A2");
+}
+
+TEST_F(SheetMergeTest, choosingASideOnACellUnderMergedCellsKeepsOnlyThatSide)
+{
+    for (const bool takeB : {true, false}) {
+        App::Document* a = branch("a");
+        App::Document* b = branch("b");
+        sheetOf(a)->mergeCells(App::Range("E1:F2"));
+        sheetOf(b)->setCell("F2", "hidden");
+
+        const App::MergedDocument merged = merge(a, b, taking(takeB, a, b));
+
+        ASSERT_NE(merged.document, nullptr) << merged.refusal;
+        EXPECT_EQ(sheetOf(merged.document)->isMergedCell(App::CellAddress("F2")), !takeB);
+        EXPECT_EQ(contents(merged.document, "F2"), takeB ? "'hidden" : "");
+    }
+}
+
+TEST_F(SheetMergeTest, choosingASideDoesNotYetSettleRowsBothSidesMoved)
+{
+    App::Document* a = branch("a");
+    App::Document* b = branch("b");
+    sheetOf(a)->insertRows(0, 1);
+    sheetOf(b)->insertRows(1, 1);
+
+    EXPECT_THROW(merge(a, b, taking(true, a, b)), Base::RuntimeError);
 }
 
 }  // namespace

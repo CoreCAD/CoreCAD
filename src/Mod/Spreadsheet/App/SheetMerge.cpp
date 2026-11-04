@@ -111,9 +111,28 @@ std::map<App::CellAddress, std::string> statedCells(const App::DocumentObject& s
     return stated;
 }
 
-App::MergeConflict conflict(const std::string& id, const std::string& detail)
+/// A conflict over the sheet as a whole, or over the cells `over` names, which choosing a side
+/// settles by taking each of them as the chosen side states it.
+App::MergeConflict conflict(
+    const std::string& id,
+    const std::string& detail,
+    std::initializer_list<App::CellAddress> over = {}
+)
 {
-    return App::MergeConflict {App::MergeConflict::Kind::Value, id, "Spreadsheet", detail, {}, {}, {}};
+    std::string cells;
+    for (const App::CellAddress& address : over) {
+        cells += " " + address.toString();
+    }
+    return App::MergeConflict {
+        App::MergeConflict::Kind::Value,
+        id,
+        "Spreadsheet",
+        detail,
+        cells.empty() ? std::string() : "cells" + cells,
+        {},
+        {},
+        {}
+    };
 }
 
 const App::DocumentObject* withUid(const App::Document& doc, const std::string& uid)
@@ -495,9 +514,11 @@ SheetMergeResult mergeSheets(
             : inA == inO                                                  ? inB
                                                                           : std::nullopt;
         if (inA != inB && inA != inO && inB != inO) {
-            result.conflicts.push_back(
-                conflict(uid, "cell " + address.toString() + ": both sides changed it differently")
-            );
+            result.conflicts.push_back(conflict(
+                uid,
+                "cell " + address.toString() + ": both sides changed it differently",
+                {address}
+            ));
         }
         else if (taken) {
             result.cells[address] = {*taken, taken == inA ? &branchA : &branchB};
@@ -512,7 +533,8 @@ SheetMergeResult mergeSheets(
                 result.conflicts.push_back(conflict(
                     uid,
                     "the alias " + *alias + " names both " + named->second.toString() + " and "
-                        + address.toString()
+                        + address.toString(),
+                    {named->second, address}
                 ));
             }
         }
@@ -532,7 +554,8 @@ SheetMergeResult mergeSheets(
             if (spans[i].overlaps(spans[j])) {
                 result.conflicts.push_back(conflict(
                     uid,
-                    "the merged cells " + spans[i].named() + " and " + spans[j].named() + " overlap"
+                    "the merged cells " + spans[i].named() + " and " + spans[j].named() + " overlap",
+                    {spans[i].anchor, spans[j].anchor}
                 ));
             }
         }
@@ -549,7 +572,8 @@ SheetMergeResult mergeSheets(
                 result.conflicts.push_back(conflict(
                     uid,
                     "cell " + address.toString() + " lies under the merged cells "
-                        + spans[i].named() + " the other side made"
+                        + spans[i].named() + " the other side made",
+                    {address, spans[i].anchor}
                 ));
             }
         }
@@ -558,7 +582,7 @@ SheetMergeResult mergeSheets(
 }
 
 /// The id of the row or column at `index` in the first version that has one.
-std::string idAt(int index, std::initializer_list<const std::map<int, std::string>*> versions)
+std::string idAt(int index, const std::vector<const std::map<int, std::string>*>& versions)
 {
     for (const auto* ids : versions) {
         const auto found = ids->find(index);
@@ -567,6 +591,53 @@ std::string idAt(int index, std::initializer_list<const std::map<int, std::strin
         }
     }
     return {};
+}
+
+/// Replace every cell of `into` with `cells`. A row or column keeps the id of the version its
+/// first cell was taken from, or else of the first of `idSources` that has one.
+void restoreCells(
+    App::DocumentObject& into,
+    const std::map<App::CellAddress, TakenCell>& cells,
+    std::initializer_list<const App::DocumentObject*> idSources
+)
+{
+    std::map<int, const PropertySheet*> rows;
+    std::map<int, const PropertySheet*> columns;
+    std::ostringstream cellLines;
+    for (const auto& [address, cell] : cells) {
+        rows.emplace(address.row(), &cellsOf(*cell.from));
+        columns.emplace(address.col(), &cellsOf(*cell.from));
+        const std::string opening = "<Cell ";
+        cellLines << opening << "address=\"" << address.toString() << "\" "
+                  << cell.stated.substr(cell.stated.find(opening) + opening.size());
+    }
+    std::ostringstream file;
+    file << "<root><Cells Count=\"" << cells.size() << "\" rows=\"" << rows.size()
+         << "\" columns=\"" << columns.size() << "\">";
+    for (const auto& [row, from] : rows) {
+        std::vector<const std::map<int, std::string>*> ids {&from->rowIdMap()};
+        for (const App::DocumentObject* source : idSources) {
+            ids.push_back(&cellsOf(*source).rowIdMap());
+        }
+        file << "<Row row=\"" << App::CellAddress(row, 0).toString(App::CellAddress::Cell::ShowRow)
+             << "\" id=\"" << idAt(row, ids) << "\"/>";
+    }
+    for (const auto& [column, from] : columns) {
+        std::vector<const std::map<int, std::string>*> ids {&from->columnIdMap()};
+        for (const App::DocumentObject* source : idSources) {
+            ids.push_back(&cellsOf(*source).columnIdMap());
+        }
+        file << "<Column column=\""
+             << App::CellAddress(0, column).toString(App::CellAddress::Cell::ShowColumn)
+             << "\" id=\"" << idAt(column, ids) << "\"/>";
+    }
+    file << cellLines.str() << "</Cells></root>";
+
+    std::istringstream stream(file.str());
+    Base::XMLReader reader("Cells", stream);
+    auto& sheet = static_cast<Sheet&>(into);
+    sheet.clearAll();
+    sheet.getCells()->Restore(reader);
 }
 
 std::optional<std::string> applySheetMerge(
@@ -583,47 +654,31 @@ std::optional<std::string> applySheetMerge(
     if (!merged.conflicts.empty()) {
         return "its cells conflict";
     }
-
-    // A row or column keeps the id of the version its first cell was taken from.
-    std::map<int, const PropertySheet*> rows;
-    std::map<int, const PropertySheet*> columns;
-    std::ostringstream cellLines;
-    for (const auto& [address, cell] : merged.cells) {
-        rows.emplace(address.row(), &cellsOf(*cell.from));
-        columns.emplace(address.col(), &cellsOf(*cell.from));
-        const std::string opening = "<Cell ";
-        cellLines << opening << "address=\"" << address.toString() << "\" "
-                  << cell.stated.substr(cell.stated.find(opening) + opening.size());
-    }
-    const auto& o = cellsOf(ancestor);
-    const auto& a = cellsOf(branchA);
-    const auto& b = cellsOf(branchB);
-    std::ostringstream file;
-    file << "<root><Cells Count=\"" << merged.cells.size() << "\" rows=\"" << rows.size()
-         << "\" columns=\"" << columns.size() << "\">";
-    for (const auto& [row, from] : rows) {
-        file << "<Row row=\"" << App::CellAddress(row, 0).toString(App::CellAddress::Cell::ShowRow)
-             << "\" id=\""
-             << idAt(row, {&from->rowIdMap(), &o.rowIdMap(), &a.rowIdMap(), &b.rowIdMap()})
-             << "\"/>";
-    }
-    for (const auto& [column, from] : columns) {
-        file << "<Column column=\""
-             << App::CellAddress(0, column).toString(App::CellAddress::Cell::ShowColumn) << "\" id=\""
-             << idAt(
-                    column,
-                    {&from->columnIdMap(), &o.columnIdMap(), &a.columnIdMap(), &b.columnIdMap()}
-                )
-             << "\"/>";
-    }
-    file << cellLines.str() << "</Cells></root>";
-
-    std::istringstream stream(file.str());
-    Base::XMLReader reader("Cells", stream);
-    auto& sheet = static_cast<Sheet&>(into);
-    sheet.clearAll();
-    sheet.getCells()->Restore(reader);
+    restoreCells(into, merged.cells, {&ancestor, &branchA, &branchB});
     return std::nullopt;
+}
+
+/// Make `copy` state each cell `over` names as `winner` states it.
+void settleSheet(App::DocumentObject& copy, const App::DocumentObject& winner, const std::string& over)
+{
+    const auto stated = statedCells(winner);
+    std::map<App::CellAddress, TakenCell> cells;
+    for (const auto& [address, line] : statedCells(copy)) {
+        cells[address] = {line, &copy};
+    }
+    std::istringstream addresses(over);
+    std::string named;
+    while (addresses >> named) {
+        const App::CellAddress address(named);
+        const auto found = stated.find(address);
+        if (found != stated.end()) {
+            cells[address] = {found->second, &winner};
+        }
+        else {
+            cells.erase(address);
+        }
+    }
+    restoreCells(copy, cells, {&copy, &winner});
 }
 
 }  // namespace
@@ -638,7 +693,8 @@ void Spreadsheet::registerSheetMerge()
            const App::DocumentObject& branchB) {
             return App::RecipeContentMerge {mergeSheets(ancestor, branchA, branchB).conflicts, {}, {}};
         },
-        &applySheetMerge
+        &applySheetMerge,
+        &settleSheet
     );
     App::registerMergeRebase(&rebaseSheets);
 }

@@ -356,7 +356,7 @@ void takeValue(PropertyContainer& into, const PropertyContainer& winner, const s
 }
 
 /** A copy of `side` that agrees with `winner` on each conflict it lost. A value is taken from the
- *  winner. Over presence, the winner's delete deletes the copy's object, and the winner's keeping
+ *  winner, and content inside an object by the module that merges it. Over presence, the winner's delete deletes the copy's object, and the winner's keeping
  *  restores what the copy deleted, with what it is built on, as the ancestor held it, so the merge
  *  takes the winner's statement. Everything else stays as `side` states it. */
 TemporaryDocument settledCopy(const Document& ancestor,
@@ -392,8 +392,18 @@ TemporaryDocument settledCopy(const Document& ancestor,
         }
     };
     std::set<std::string> deleted;
-    std::vector<std::pair<std::string, std::string>> values;  // object id, field
+    std::vector<std::pair<std::string, std::string>> values;    // object id, field
+    std::vector<std::pair<std::string, std::string>> contents;  // object id, what inside it
     std::vector<std::string> documentValues;
+    const auto settlesContent = [](const DocumentObject& obj, const std::string& value) {
+        const RegisteredContentMerge* merger = recipeMerger(obj);
+        const auto space = value.find(' ');
+        return merger != nullptr && merger->settle && space != std::string::npos
+            && std::find(merger->coveredProperties.begin(),
+                         merger->coveredProperties.end(),
+                         value.substr(0, space))
+            != merger->coveredProperties.end();
+    };
 
     for (const MergeConflict* conflict : lost) {
         const auto cannot = [&]() {
@@ -433,6 +443,10 @@ TemporaryDocument settledCopy(const Document& ancestor,
         else if (objS == nullptr || objW == nullptr) {
             throw cannot();
         }
+        else if (settlesContent(*objS, conflict->value)) {
+            contents.emplace_back(conflict->id,
+                                  conflict->value.substr(conflict->value.find(' ') + 1));
+        }
         else {
             values.emplace_back(conflict->id, conflict->value);
         }
@@ -455,6 +469,10 @@ TemporaryDocument settledCopy(const Document& ancestor,
         if (field.find('.') == std::string::npos) {
             takeFormulas(*into, from, field);
         }
+    }
+    for (const auto& [id, over] : contents) {
+        DocumentObject* into = objectWithUid(*copy, id);
+        recipeMerger(*into)->settle(*into, *find(objectsW, id), over);
     }
     for (const std::string& field : documentValues) {
         takeValue(*copy, winner, field);
