@@ -314,7 +314,7 @@ TEST_F(SketchRecipeMergeTest, aDocumentMergeSeesADimensionSetTwoWays)
 
     const bool dimensionConflicts
         = std::any_of(report.conflicts.begin(), report.conflicts.end(), [&](const auto& c) {
-              return c.id == ctag;
+              return c.value.find(ctag) != std::string::npos;
           });
     EXPECT_TRUE(dimensionConflicts);
     EXPECT_EQ(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
@@ -1251,6 +1251,158 @@ TEST_F(SketchRecipeMergeTest, aMergedPartPlacesASketchBothSidesMovedFromItsSuppo
     EXPECT_TRUE(sketch->Placement.getValue().getPosition().IsEqual(Base::Vector3d(1, 0, 20), 1e-9));
 
     App::GetApplication().closeDocument(made.document->getName());
+}
+
+// Each open conflict of merging the three versions, answered for one side.
+std::vector<App::MergeChoice> answering(
+    bool takeB,
+    const Sketcher::SketchObject* ancestor,
+    const Sketcher::SketchObject* a,
+    const Sketcher::SketchObject* b
+)
+{
+    std::vector<App::MergeChoice> choices;
+    for (const App::MergeConflict& open :
+         App::mergeDocuments(*ancestor->getDocument(), *a->getDocument(), *b->getDocument()).conflicts) {
+        choices.push_back({open.id, open.value, takeB});
+    }
+    return choices;
+}
+
+App::MergedDocument mergeAnswering(
+    bool takeB,
+    const Sketcher::SketchObject* ancestor,
+    const Sketcher::SketchObject* a,
+    const Sketcher::SketchObject* b
+)
+{
+    return App::buildMergedDocument(
+        *ancestor->getDocument(),
+        *a->getDocument(),
+        *b->getDocument(),
+        answering(takeB, ancestor, a, b)
+    );
+}
+
+const Sketcher::SketchObject* sketchIn(const App::MergedDocument& made)
+{
+    for (App::DocumentObject* obj : made.document->getObjects()) {
+        if (auto* sketch = dynamic_cast<Sketcher::SketchObject*>(obj)) {
+            return sketch;
+        }
+    }
+    return nullptr;
+}
+
+std::set<std::string> constraintTypes(const Sketcher::SketchObject* sketch)
+{
+    std::set<std::string> types;
+    for (const Sketcher::Constraint* constraint : sketch->Constraints.getValues()) {
+        types.insert(constraint->typeToString());
+    }
+    return types;
+}
+
+TEST_F(SketchRecipeMergeTest, choosingASideOnADimensionSetTwoWaysTakesThatSidesValue)
+{
+    for (const auto& [takeB, length] : {std::pair {true, 60.0}, std::pair {false, 50.0}}) {
+        Branches br = makeBranches([](Sketcher::SketchObject* s) {
+            addLine(s, 0, 0, 40, 0);
+            addDistance(s, 0, 40.0);
+        });
+        ASSERT_NE(br.a, nullptr);
+        br.a->setDatum(0, 50.0);
+        br.b->setDatum(0, 60.0);
+        br.a->getDocument()->recompute();
+        br.b->getDocument()->recompute();
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+
+        const App::MergedDocument made = mergeAnswering(takeB, ancestor, br.a, br.b);
+
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        EXPECT_DOUBLE_EQ(sketchIn(made)->Constraints.getValues()[0]->getValue(), length);
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
+// A deletes a line; B adds a horizontal constraint on it.
+TEST_F(SketchRecipeMergeTest, choosingASideOnAConstraintOnDeletedGeometryTakesBoth)
+{
+    for (const bool takeB : {true, false}) {
+        Branches br = makeBranches([](Sketcher::SketchObject* s) {
+            addLine(s, 0, 0, 10, 0);
+            addLine(s, 0, 5, 10, 5);
+            addDistance(s, 1, 10.0);
+        });
+        ASSERT_NE(br.a, nullptr);
+        br.a->delGeometry(1);
+        br.a->getDocument()->recompute();
+        addHorizontal(br.b, 1);
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+
+        const App::MergedDocument made = mergeAnswering(takeB, ancestor, br.a, br.b);
+
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        EXPECT_EQ(sketchIn(made)->getInternalGeometry().size(), takeB ? 2U : 1U);
+        EXPECT_EQ(constraintTypes(sketchIn(made)).count("Horizontal"), takeB ? 1U : 0U);
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
+// A deletes a line with its length; B changes the length. Keeping B's length keeps the line it
+// measures.
+TEST_F(SketchRecipeMergeTest, choosingASideOnADimensionTheOtherSideDeletedKeepsWhatItMeasures)
+{
+    for (const bool takeB : {true, false}) {
+        Branches br = makeBranches([](Sketcher::SketchObject* s) {
+            addLine(s, 0, 0, 10, 0);
+            addLine(s, 0, 5, 10, 5);
+            addDistance(s, 1, 10.0);
+        });
+        ASSERT_NE(br.a, nullptr);
+        br.a->delGeometry(1);
+        br.a->getDocument()->recompute();
+        ASSERT_EQ(br.b->setDatum(0, 12.0), 0);
+        br.b->getDocument()->recompute();
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+
+        const App::MergedDocument made = mergeAnswering(takeB, ancestor, br.a, br.b);
+
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        const Sketcher::SketchObject* sketch = sketchIn(made);
+        EXPECT_EQ(sketch->getInternalGeometry().size(), takeB ? 2U : 1U);
+        ASSERT_EQ(sketch->Constraints.getValues().size(), takeB ? 1U : 0U);
+        if (takeB) {
+            EXPECT_DOUBLE_EQ(sketch->Constraints.getValues()[0]->getValue(), 12.0);
+        }
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
+// Both sides drag the same end of a free line to different places.
+TEST_F(SketchRecipeMergeTest, choosingASideOnAPointDraggedTwoWaysPutsItWhereThatSideDid)
+{
+    for (const auto& [takeB, x] : {std::pair {true, 1.0}, std::pair {false, -3.0}}) {
+        Branches br = makeBranches([](Sketcher::SketchObject* s) { addLine(s, 0, 0, 10, 0); });
+        ASSERT_NE(br.a, nullptr);
+        br.a->moveGeometry(0, Sketcher::PointPos::start, Base::Vector3d(-3, 2, 0));
+        br.b->moveGeometry(0, Sketcher::PointPos::start, Base::Vector3d(1, 4, 0));
+        br.b->moveGeometry(0, Sketcher::PointPos::end, Base::Vector3d(10, 6, 0));
+        br.a->getDocument()->recompute();
+        br.b->getDocument()->recompute();
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+        ASSERT_EQ(answering(takeB, ancestor, br.a, br.b).size(), 1U);
+
+        const App::MergedDocument made = mergeAnswering(takeB, ancestor, br.a, br.b);
+
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        const auto* line = static_cast<const Part::GeomLineSegment*>(
+            sketchIn(made)->getInternalGeometry()[0]
+        );
+        EXPECT_NEAR(line->getStartPoint().x, x, 1e-6);
+        EXPECT_NEAR(line->getEndPoint().y, 6.0, 1e-6) << "B's other drag stands either way";
+        App::GetApplication().closeAllDocuments();
+    }
 }
 
 }  // namespace
