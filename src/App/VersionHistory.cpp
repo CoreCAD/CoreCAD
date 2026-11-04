@@ -26,6 +26,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -575,6 +576,80 @@ std::string App::sharedVersion(const std::string& path, const std::string& revis
     const Commit current = commitAt(repository, "HEAD");
     const Commit other = commitAt(repository, revision);
     return sharedVersionOf(repository, *git_commit_id(current.get()), *git_commit_id(other.get()));
+}
+
+std::vector<FileBranch> App::branchesToMerge(const std::string& path)
+{
+    const GitSession session;
+    std::optional<Located> located = locate(path);
+    if (!located) {
+        return {};
+    }
+    git_repository* repository = located->repository.get();
+    git_oid headId;
+    if (git_reference_name_to_id(&headId, repository, "HEAD") != 0) {
+        return {};  // a repository with nothing committed yet
+    }
+
+    std::vector<FileBranch> branches;
+    std::vector<git_oid> listed;
+    // Local branches first, so a fetched branch at the same commit is listed by the local name.
+    for (const git_branch_t kind : {GIT_BRANCH_LOCAL, GIT_BRANCH_REMOTE}) {
+        git_branch_iterator* rawIterator = nullptr;
+        if (git_branch_iterator_new(&rawIterator, repository, kind) != 0) {
+            fail("Could not list the branches");
+        }
+        const std::unique_ptr<git_branch_iterator,
+                              Freer<git_branch_iterator, git_branch_iterator_free>>
+            iterator(rawIterator);
+        git_reference* rawReference = nullptr;
+        git_branch_t found {};
+        while (git_branch_next(&rawReference, &found, rawIterator) == 0) {
+            const std::unique_ptr<git_reference, Freer<git_reference, git_reference_free>>
+                reference(rawReference);
+            const git_oid* tip = git_reference_target(rawReference);  // null for origin/HEAD
+            const char* name = nullptr;
+            if (tip == nullptr || git_branch_name(&name, rawReference) != 0
+                || std::any_of(listed.begin(), listed.end(), [&](const git_oid& id) {
+                       return git_oid_equal(&id, tip) != 0;
+                   })) {
+                continue;
+            }
+            git_oid baseId;
+            git_commit* rawTip = nullptr;
+            git_commit* rawBase = nullptr;
+            if (git_merge_base(&baseId, repository, &headId, tip) != 0
+                || git_commit_lookup(&rawTip, repository, tip) != 0) {
+                continue;
+            }
+            const Commit tipCommit(rawTip);
+            if (git_commit_lookup(&rawBase, repository, &baseId) != 0) {
+                continue;
+            }
+            const Commit base(rawBase);
+            // A branch the current version already holds shares its own file with it, so this
+            // also leaves out merged branches.
+            const std::optional<git_oid> there = fileIdAt(rawTip, located->pathInRepository);
+            const std::optional<git_oid> before = fileIdAt(rawBase, located->pathInRepository);
+            if (!there || (before && git_oid_equal(&*there, &*before) != 0)) {
+                continue;
+            }
+
+            listed.push_back(*tip);
+            const git_signature* author = git_commit_author(rawTip);
+            const char* summary = git_commit_summary(rawTip);
+            branches.push_back(
+                {name,
+                 {commitId(*tip),
+                  author != nullptr && author->name != nullptr ? author->name : "",
+                  static_cast<std::int64_t>(git_commit_time(rawTip)),
+                  summary != nullptr ? summary : ""}});
+        }
+    }
+    std::stable_sort(branches.begin(), branches.end(), [](const FileBranch& a, const FileBranch& b) {
+        return a.latest.time > b.latest.time;
+    });
+    return branches;
 }
 
 MergedDocument App::mergeFileRevision(const Document& open,

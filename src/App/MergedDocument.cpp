@@ -524,8 +524,9 @@ MergedDocument buildFrom(const Document& ancestor,
 
     DocumentInitFlags flags;
     flags.createView = createView;
+    flags.temporary = !createView;  // read by code, so kept out of the model tree
     Document* merged = GetApplication().newDocument(
-        "Merged",
+        GetApplication().getUniqueDocumentName("Merged").c_str(),
         (std::string(branchA.Label.getValue()) + " (merged)").c_str(),
         flags);
     std::istringstream recipe(formatStoredRecipe(branchA, {}, scope));

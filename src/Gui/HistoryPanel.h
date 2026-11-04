@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -50,7 +51,8 @@ GuiExport QString timeAgo(std::int64_t time);
 /// first, under a "Not yet committed" entry, and what the chosen one changed. Choosing an older
 /// entry shows that version in the model view, which cannot be edited until the view returns to
 /// now. "Not yet committed" offers to commit the document; a document with no history is offered
-/// one. It follows the active document.
+/// one. The current version's row offers to merge a branch into it, listing each change both sides
+/// made for the person to settle before the merge is committed. It follows the active document.
 class GuiExport HistoryPanel: public QWidget
 {
     Q_OBJECT
@@ -82,6 +84,15 @@ private:
     void commit();
     void newProject();
     void addToProject();
+    void showVersionMenu(const QPoint& pos);
+    void startMerge(const App::FileBranch& branch);
+    void runMerge();
+    void showMerge();
+    void answer(const std::string& conflict, bool takeTheirs);
+    void commitMerge();
+    bool changedSinceLastVersion();
+    void endMerge();
+    void closeMerged();
 
     /// The two documents the chosen entry compares, and how to speak of it.
     struct Comparison
@@ -115,6 +126,14 @@ private:
     QPlainTextEdit* messageBox;
     QPushButton* commitButton;
     QLabel* commitProblem;
+    QWidget* mergeArea;
+    QTreeWidget* mergeList;
+    QPlainTextEdit* mergeMessage;
+    QPushButton* mergeButton;
+    QLabel* mergeProblem;
+    /// The merge under way, while the panel shows it in place of the chosen version's changes.
+    struct Merge;
+    std::unique_ptr<Merge> merge;
     QTimer* versionViewTimer;
     std::map<std::pair<App::Document*, bool>, App::Document*> layerDocuments;
     std::vector<QPointer<View3DInventor>> standInViews;

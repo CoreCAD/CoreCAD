@@ -539,6 +539,33 @@ TEST_F(FileMergeTest, aBranchMergesIntoTheOpenPartAndIsRecordedWithBothParents)
     EXPECT_NE(made.document->Uid.getValueStr(), _live->Uid.getValueStr());
 }
 
+TEST_F(FileMergeTest, onlyBranchesThatChangedThePartAndAreNotMergedAreOffered)
+{
+    write(_folder / "notes.txt", "x");
+    _repository->commitOn({_longer}, {"notes.txt"}, "Notes", "refs/heads/notes");
+
+    const std::vector<FileBranch> offered = branchesToMerge(_file.string());
+    ASSERT_EQ(offered.size(), 1u);
+    EXPECT_EQ(offered.front().name, "wider");
+    EXPECT_EQ(offered.front().latest.commit, _wider);
+    EXPECT_EQ(offered.front().latest.summary, "Wider");
+
+    MergedDocument made = mergeFileRevision(*_live, offered.front().latest.commit, {});
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    track(made.document);
+    recordMerge(*_live, *made.document, offered.front().latest.commit, "Merge wider");
+    EXPECT_TRUE(branchesToMerge(_file.string()).empty());
+}
+
+TEST_F(FileMergeTest, aMergedPartIsKeptOutOfTheModelTree)
+{
+    MergedDocument made = mergeFileRevision(*_live, "wider", {});
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    track(made.document);
+    EXPECT_TRUE(made.document->testStatus(App::Document::TempDoc));
+    EXPECT_EQ(App::GetApplication().getActiveDocument(), _live);
+}
+
 TEST_F(FileMergeTest, aConflictIsSettledByChoosingASide)
 {
     length(*_live).setValue(20.0);
