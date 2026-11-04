@@ -313,6 +313,22 @@ PyMethodDef ApplicationPy::Methods[] = {
      "Record a document file as it is on disk as a new version and return the commit id.\n"
      "Only the file and the source material it names go in; anything else changed or\n"
      "staged in the repository is left as it was. Save the document first."},
+    {"mergeFileRevision",
+     (PyCFunction)ApplicationPy::sMergeFileRevision,
+     METH_VARARGS,
+     "mergeFileRevision(doc, revision, choices=[]) -> dict\n\n"
+     "Merge another version of a saved document's file, such as a branch name, into its\n"
+     "current version, from the version both grew from. Answers as mergeDocuments with\n"
+     "build does; close the merged document after. Refused when the file has changes not\n"
+     "recorded as a version, when the revision is already part of the current one, or when\n"
+     "the revision changed any other file since the shared version."},
+    {"recordMerge",
+     (PyCFunction)ApplicationPy::sRecordMerge,
+     METH_VARARGS,
+     "recordMerge(doc, merged, revision, message) -> str\n\n"
+     "Write a merged document over doc's file as doc, and record it as a version whose\n"
+     "parents are the current one and the revision; returns the commit id. doc is then\n"
+     "behind its file: reopen it."},
     {"projectFileOf",
      (PyCFunction)ApplicationPy::sProjectFileOf,
      METH_VARARGS,

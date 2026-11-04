@@ -35,6 +35,8 @@ namespace App
 {
 
 class Document;
+struct MergeChoice;
+struct MergedDocument;
 
 /** A document's versions in the git repository its file is kept in: reading past ones, and
  *  recording a new one.
@@ -89,5 +91,33 @@ AppExport void startHistory(const std::string& folder);
  *  or nothing has changed since the current version.
  */
 AppExport std::string commitFile(const std::string& path, const std::string& message);
+
+/// The version that the file's current version and `revision` both grew from: the commit id of
+/// their nearest common ancestor. Throws when they have none, or more than one (Amendment 21
+/// Clause 21.5).
+AppExport std::string sharedVersion(const std::string& path, const std::string& revision);
+
+/** Merge the file's version at `revision` into `open`, the document saved at that file. Its
+ *  current version and `revision` are merged from the version they share, as buildMergedDocument
+ *  does, into a new document the caller closes.
+ *
+ *  Throws when the file on disk is not its current version, when `revision` is already part of
+ *  it, or when `revision` changed any other file since the shared version: merging those is
+ *  git's, and a merge recorded here would mark them merged without them.
+ */
+AppExport MergedDocument mergeFileRevision(const Document& open,
+                                           const std::string& revision,
+                                           const std::vector<MergeChoice>& choices);
+
+/** Write `merged` over `open`'s file as that document, keeping its identity and name, and record
+ *  it as a version whose parents are the current one and `revision`; returns the commit id.
+ *
+ *  `open` is then behind its file, and the caller reopens it. Throws as mergeFileRevision does,
+ *  and as commitFile does on an empty message.
+ */
+AppExport std::string recordMerge(const Document& open,
+                                  Document& merged,
+                                  const std::string& revision,
+                                  const std::string& message);
 
 }  // namespace App

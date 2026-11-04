@@ -9,6 +9,7 @@
 #include <App/Document.h>
 #include <App/DocumentChanges.h>
 #include <App/DocumentObject.h>
+#include <App/ObjectRecipe.h>
 #include <App/PropertyUnits.h>
 #include <App/VersionHistory.h>
 #include <Base/Exception.h>
@@ -18,6 +19,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -118,6 +120,23 @@ public:
         EXPECT_EQ(git_index_add_bypath(index, file.c_str()), 0) << file;
         git_index_write(index);
         git_index_free(index);
+    }
+
+    std::vector<std::string> parentsOf(const std::string& revision) const
+    {
+        git_object* object = nullptr;
+        git_revparse_single(&object, _repository, revision.c_str());
+        git_commit* commit = nullptr;
+        git_object_peel(reinterpret_cast<git_object**>(&commit), object, GIT_OBJECT_COMMIT);
+        std::vector<std::string> parents;
+        for (unsigned i = 0; i < git_commit_parentcount(commit); ++i) {
+            char text[GIT_OID_MAX_HEXSIZE + 1] {};
+            git_oid_tostr(text, sizeof(text), git_commit_parent_id(commit, i));
+            parents.emplace_back(text);
+        }
+        git_commit_free(commit);
+        git_object_free(object);
+        return parents;
     }
 
     bool isStaged(const std::string& file) const
@@ -435,6 +454,158 @@ TEST_F(VersionHistoryTest, aFileOutsideAnyRepositoryCannotBeCommitted)
     const fs::path file = _folder / "Loose.cpart";
     write(file, recipeNaming("", "first"));
     EXPECT_THROW(commitFile(file.string(), "First"), Base::Exception);
+}
+
+
+// Two people's branches of one part, the way a merge in the app meets them: a shared start, a
+// change on a branch named "wider", and a different change on the current one.
+class FileMergeTest: public VersionHistoryTest
+{
+protected:
+    void SetUp() override
+    {
+        VersionHistoryTest::SetUp();
+        _repository = std::make_unique<ScratchRepository>(_folder);
+        _file = _folder / "Widget.cpart";
+        _live = track(
+            App::GetApplication()
+                .newDocument(App::GetApplication().getUniqueDocumentName("live").c_str(), "Widget")
+        );
+        auto* box = _live->addObject("Part::Box", "Box");
+        length(*_live).setValue(10.0);
+        width(*_live).setValue(10.0);
+        _live->saveAs(_file.string().c_str());
+        _start = _repository->commit({"Widget.cpart"}, "Start");
+
+        width(*_live).setValue(30.0);
+        _live->save();
+        _wider = _repository->commitOn({_start}, {"Widget.cpart"}, "Wider", "refs/heads/wider");
+
+        width(*_live).setValue(10.0);
+        length(*_live).setValue(40.0);
+        _live->save();
+        _longer = _repository->commit({"Widget.cpart"}, "Longer");
+        (void)box;
+    }
+
+    static App::DocumentObject& boxOf(const App::Document& doc)
+    {
+        return *doc.getObjects().front();
+    }
+    static PropertyLength& length(const App::Document& doc)
+    {
+        return *static_cast<PropertyLength*>(boxOf(doc).getPropertyByName("Length"));
+    }
+    static PropertyLength& width(const App::Document& doc)
+    {
+        return *static_cast<PropertyLength*>(boxOf(doc).getPropertyByName("Width"));
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+    std::unique_ptr<ScratchRepository> _repository;
+    fs::path _file;
+    App::Document* _live {};
+    std::string _start;
+    std::string _wider;
+    std::string _longer;
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
+};
+
+TEST_F(FileMergeTest, aBranchMergesIntoTheOpenPartAndIsRecordedWithBothParents)
+{
+    EXPECT_EQ(sharedVersion(_file.string(), "wider"), _start);
+
+    MergedDocument made = mergeFileRevision(*_live, "wider", {});
+    ASSERT_NE(made.document, nullptr) << made.refusal << formatDocumentReport(made.report);
+    track(made.document);
+    EXPECT_TRUE(made.report.complete()) << formatDocumentReport(made.report);
+    EXPECT_DOUBLE_EQ(length(*made.document).getValue(), 40.0);
+    EXPECT_DOUBLE_EQ(width(*made.document).getValue(), 30.0);
+    const std::string mergedLabel = made.document->Label.getValue();
+
+    const std::string merge = recordMerge(*_live, *made.document, "wider", "Merge wider");
+
+    EXPECT_EQ(_repository->parentsOf("HEAD"), (std::vector<std::string> {_longer, _wider}));
+    EXPECT_EQ(fileVersions(_file.string()).front().commit, merge);
+    auto* recorded = track(openFileVersion(_file.string(), "HEAD"));
+    EXPECT_DOUBLE_EQ(length(*recorded).getValue(), 40.0);
+    EXPECT_DOUBLE_EQ(width(*recorded).getValue(), 30.0);
+
+    // The file is still the open part: other documents' links find it by its identity and name.
+    const std::string text = fileTextAt(_file.string(), "HEAD");
+    EXPECT_NE(text.find(_live->Uid.getValueStr()), std::string::npos);
+    EXPECT_EQ(text.find("(merged)"), std::string::npos);
+    EXPECT_EQ(std::string(made.document->Label.getValue()), mergedLabel);
+    EXPECT_NE(made.document->Uid.getValueStr(), _live->Uid.getValueStr());
+}
+
+TEST_F(FileMergeTest, aConflictIsSettledByChoosingASide)
+{
+    length(*_live).setValue(20.0);
+    width(*_live).setValue(30.0);
+    _live->save();
+    _repository->commitOn({_wider}, {"Widget.cpart"}, "Longer too", "refs/heads/wider");
+    length(*_live).setValue(40.0);
+    width(*_live).setValue(10.0);
+    _live->save();
+
+    MergedDocument open = mergeFileRevision(*_live, "wider", {});
+    EXPECT_EQ(open.document, nullptr);
+    ASSERT_EQ(open.report.conflicts.size(), 1u) << formatDocumentReport(open.report);
+
+    const MergeConflict& conflict = open.report.conflicts.front();
+    MergedDocument made = mergeFileRevision(*_live, "wider", {{conflict.id, conflict.value, true}});
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    track(made.document);
+    EXPECT_DOUBLE_EQ(length(*made.document).getValue(), 20.0);
+    EXPECT_DOUBLE_EQ(width(*made.document).getValue(), 30.0);
+}
+
+TEST_F(FileMergeTest, aBranchThatChangedOtherFilesIsLeftToGit)
+{
+    width(*_live).setValue(30.0);
+    _live->save();
+    write(_folder / "notes.txt", "x");
+    _repository->commitOn({_wider}, {"notes.txt"}, "Notes", "refs/heads/wider");
+    width(*_live).setValue(10.0);
+    _live->save();
+
+    EXPECT_THROW(mergeFileRevision(*_live, "wider", {}), Base::Exception);
+}
+
+TEST_F(FileMergeTest, unrecordedChangesOnDiskAreNotMergedOver)
+{
+    length(*_live).setValue(50.0);
+    _live->save();
+
+    EXPECT_THROW(mergeFileRevision(*_live, "wider", {}), Base::Exception);
+}
+
+TEST_F(FileMergeTest, aVersionAlreadyPartOfTheCurrentOneIsRefused)
+{
+    EXPECT_THROW(mergeFileRevision(*_live, _start, {}), Base::Exception);
+}
+
+TEST_F(FileMergeTest, aVersionWithNoSharedHistoryIsRefused)
+{
+    const std::string unrelated
+        = _repository->commitOn({}, {"Widget.cpart"}, "Fresh", "refs/heads/fresh");
+
+    EXPECT_THROW(sharedVersion(_file.string(), unrelated), Base::Exception);
+    EXPECT_THROW(mergeFileRevision(*_live, "fresh", {}), Base::Exception);
+}
+
+// Each side merged the other once already, so two versions are equally near (Clause 21.5).
+TEST_F(FileMergeTest, versionsWithSeveralNearestSharedVersionsAreRefused)
+{
+    const std::string mine
+        = _repository->commitOn({_longer, _wider}, {"Widget.cpart"}, "Take wider", "HEAD");
+    const std::string theirs
+        = _repository->commitOn({_wider, _longer}, {"Widget.cpart"}, "Take longer", "refs/heads/wider");
+    (void)mine;
+    (void)theirs;
+
+    EXPECT_THROW(sharedVersion(_file.string(), "wider"), Base::Exception);
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

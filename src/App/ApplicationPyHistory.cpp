@@ -81,6 +81,79 @@ Py::Object asSaid(const std::optional<RecipeNode>& node)
     return said;
 }
 
+std::vector<MergeChoice> choicesFrom(PyObject* choicespy)
+{
+    std::vector<MergeChoice> choices;
+    if (choicespy == nullptr) {
+        return choices;
+    }
+    const Py::List given(choicespy);
+    for (Py::List::size_type i = 0; i < given.length(); ++i) {
+        const Py::Dict entry(given[i]);
+        const auto text = [&entry](const char* key) {
+            return Py::String(entry.getItem(key)).as_std_string("utf-8");
+        };
+        const std::string take = text("take");
+        if (take != "A" && take != "B") {
+            throw Py::ValueError("a choice takes 'A' or 'B'");
+        }
+        choices.push_back({text("object"), text("value"), take == "B"});
+    }
+    return choices;
+}
+
+/// The merge's report, and when it was built, the merged document or why there is none.
+Py::Dict describeMerge(const MergedDocument& made, bool built)
+{
+    const DocumentMergeReport& report = made.report;
+    Py::List conflicts;
+    for (const MergeConflict& conflict : report.conflicts) {
+        Py::Dict entry;
+        entry.setItem("kind",
+                      Py::String(conflict.kind == MergeConflict::Kind::Value ? "value"
+                                                                             : "reference"));
+        entry.setItem("object", Py::String(conflict.id));
+        entry.setItem("type", Py::String(conflict.type));
+        entry.setItem("detail", Py::String(conflict.detail));
+        entry.setItem("value", Py::String(conflict.value));
+        entry.setItem("ancestor", asSaid(conflict.ancestor));
+        entry.setItem("branchA", asSaid(conflict.branchA));
+        entry.setItem("branchB", asSaid(conflict.branchB));
+        conflicts.append(entry);
+    }
+    Py::Dict answer;
+    answer.setItem("text", Py::String(formatDocumentReport(report)));
+    answer.setItem("conflicts", conflicts);
+    Py::List overridden;
+    for (const std::string& lost : report.overridden) {
+        overridden.append(Py::String(lost));
+    }
+    answer.setItem("overridden", overridden);
+    Py::List undetermined;
+    for (const std::string& open : report.undetermined) {
+        undetermined.append(Py::String(open));
+    }
+    answer.setItem("undetermined", undetermined);
+    answer.setItem("complete", Py::Boolean(report.complete()));
+    if (built) {
+        answer.setItem("document",
+                       made.document != nullptr ? Py::asObject(made.document->getPyObject())
+                                                : Py::None());
+        answer.setItem("refusal", Py::String(made.refusal));
+        Py::List failing;
+        for (const std::string& label : made.newlyFailing) {
+            failing.append(Py::String(label));
+        }
+        answer.setItem("newlyFailing", failing);
+        Py::List identity;
+        for (const std::string& change : made.identityChanges) {
+            identity.append(Py::String(change));
+        }
+        answer.setItem("identityChanges", identity);
+    }
+    return answer;
+}
+
 }  // namespace
 
 PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
@@ -114,21 +187,7 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
 
     PY_TRY
     {
-        std::vector<MergeChoice> choices;
-        if (choicespy != nullptr) {
-            const Py::List given(choicespy);
-            for (Py::List::size_type i = 0; i < given.length(); ++i) {
-                const Py::Dict entry(given[i]);
-                const auto text = [&entry](const char* key) {
-                    return Py::String(entry.getItem(key)).as_std_string("utf-8");
-                };
-                const std::string take = text("take");
-                if (take != "A" && take != "B") {
-                    throw Py::ValueError("a choice takes 'A' or 'B'");
-                }
-                choices.push_back({text("object"), text("value"), take == "B"});
-            }
-        }
+        const std::vector<MergeChoice> choices = choicesFrom(choicespy);
         MergedDocument made;
         if (build != 0) {
             made = buildMergedDocument(*ancestor, *branchA, *branchB, choices);
@@ -140,53 +199,74 @@ PyObject* ApplicationPy::sMergeDocuments(PyObject* /*self*/, PyObject* args)
                                          settled.branchA ? *settled.branchA : *branchA,
                                          settled.branchB ? *settled.branchB : *branchB);
         }
-        const DocumentMergeReport& report = made.report;
-        Py::List conflicts;
-        for (const MergeConflict& conflict : report.conflicts) {
-            Py::Dict entry;
-            entry.setItem("kind",
-                          Py::String(conflict.kind == MergeConflict::Kind::Value ? "value"
-                                                                                 : "reference"));
-            entry.setItem("object", Py::String(conflict.id));
-            entry.setItem("type", Py::String(conflict.type));
-            entry.setItem("detail", Py::String(conflict.detail));
-            entry.setItem("value", Py::String(conflict.value));
-            entry.setItem("ancestor", asSaid(conflict.ancestor));
-            entry.setItem("branchA", asSaid(conflict.branchA));
-            entry.setItem("branchB", asSaid(conflict.branchB));
-            conflicts.append(entry);
-        }
-        Py::Dict answer;
-        answer.setItem("text", Py::String(formatDocumentReport(report)));
-        answer.setItem("conflicts", conflicts);
-        Py::List overridden;
-        for (const std::string& lost : report.overridden) {
-            overridden.append(Py::String(lost));
-        }
-        answer.setItem("overridden", overridden);
-        Py::List undetermined;
-        for (const std::string& open : report.undetermined) {
-            undetermined.append(Py::String(open));
-        }
-        answer.setItem("undetermined", undetermined);
-        answer.setItem("complete", Py::Boolean(report.complete()));
-        if (build != 0) {
-            answer.setItem("document",
-                           made.document != nullptr ? Py::asObject(made.document->getPyObject())
-                                                    : Py::None());
-            answer.setItem("refusal", Py::String(made.refusal));
-            Py::List failing;
-            for (const std::string& label : made.newlyFailing) {
-                failing.append(Py::String(label));
-            }
-            answer.setItem("newlyFailing", failing);
-            Py::List identity;
-            for (const std::string& change : made.identityChanges) {
-                identity.append(Py::String(change));
-            }
-            answer.setItem("identityChanges", identity);
-        }
-        return Py::new_reference_to(answer);
+        return Py::new_reference_to(describeMerge(made, build != 0));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sMergeFileRevision(PyObject* /*self*/, PyObject* args)
+{
+    PyObject* docpy {};
+    char* revision = nullptr;
+    PyObject* choicespy = nullptr;
+    if (!PyArg_ParseTuple(args,
+                          "O!et|O!",
+                          &App::DocumentPy::Type,
+                          &docpy,
+                          "utf-8",
+                          &revision,
+                          &PyList_Type,
+                          &choicespy)) {
+        return nullptr;
+    }
+    const std::string at(revision);
+    PyMem_Free(revision);
+    Document* open = static_cast<App::DocumentPy*>(docpy)->getDocumentPtr();
+    if (!open) {
+        PyErr_SetString(PyExc_RuntimeError, "Invalid document");
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        return Py::new_reference_to(
+            describeMerge(mergeFileRevision(*open, at, choicesFrom(choicespy)), true));
+    }
+    PY_CATCH;
+}
+
+PyObject* ApplicationPy::sRecordMerge(PyObject* /*self*/, PyObject* args)
+{
+    PyObject* docpy {};
+    PyObject* mergedpy {};
+    char* revision = nullptr;
+    char* message = nullptr;
+    if (!PyArg_ParseTuple(args,
+                          "O!O!etet",
+                          &App::DocumentPy::Type,
+                          &docpy,
+                          &App::DocumentPy::Type,
+                          &mergedpy,
+                          "utf-8",
+                          &revision,
+                          "utf-8",
+                          &message)) {
+        return nullptr;
+    }
+    const std::string at(revision);
+    const std::string text(message);
+    PyMem_Free(revision);
+    PyMem_Free(message);
+    Document* open = static_cast<App::DocumentPy*>(docpy)->getDocumentPtr();
+    Document* merged = static_cast<App::DocumentPy*>(mergedpy)->getDocumentPtr();
+    if (!open || !merged) {
+        PyErr_SetString(PyExc_RuntimeError, "Invalid document");
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        return Py::new_reference_to(Py::String(recordMerge(*open, *merged, at, text)));
     }
     PY_CATCH;
 }

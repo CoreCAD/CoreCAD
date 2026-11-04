@@ -45,6 +45,7 @@
 
 #include "Application.h"
 #include "Document.h"
+#include "ObjectRecipe.h"
 #include "StoredRecipe.h"
 #include "UnreferencedFiles.h"
 
@@ -87,6 +88,7 @@ using Object = std::unique_ptr<git_object, Freer<git_object, git_object_free>>;
 using Blob = std::unique_ptr<git_blob, Freer<git_blob, git_blob_free>>;
 using Index = std::unique_ptr<git_index, Freer<git_index, git_index_free>>;
 using Signature = std::unique_ptr<git_signature, Freer<git_signature, git_signature_free>>;
+using Diff = std::unique_ptr<git_diff, Freer<git_diff, git_diff_free>>;
 
 [[noreturn]] void fail(const std::string& what)
 {
@@ -190,6 +192,227 @@ Signature author(git_repository* repository)
     return Signature(raw);
 }
 
+Commit commitAt(git_repository* repository, const std::string& revision)
+{
+    git_object* rawObject = nullptr;
+    if (git_revparse_single(&rawObject, repository, revision.c_str()) != 0) {
+        fail("No version '" + revision + "'");
+    }
+    const Object object(rawObject);
+    git_object* rawPeeled = nullptr;
+    if (git_object_peel(&rawPeeled, rawObject, GIT_OBJECT_COMMIT) != 0) {
+        fail("'" + revision + "' is not a version");
+    }
+    return Commit(reinterpret_cast<git_commit*>(rawPeeled));
+}
+
+Tree treeOf(const git_commit* commit)
+{
+    git_tree* raw = nullptr;
+    if (git_commit_tree(&raw, commit) != 0) {
+        fail("Could not read a commit's files");
+    }
+    return Tree(raw);
+}
+
+std::string cleanedMessage(const std::string& message)
+{
+    const std::size_t start = message.find_first_not_of(" \t\r\n");
+    const std::string trimmed = start == std::string::npos ? std::string {} : message.substr(start);
+    git_buf cleaned = GIT_BUF_INIT;
+    git_message_prettify(&cleaned, trimmed.c_str(), 0, 0);
+    const std::string text = cleaned.ptr != nullptr ? cleaned.ptr : "";
+    git_buf_dispose(&cleaned);
+    if (text.empty()) {
+        throw Base::ValueError("A version needs a message saying what changed");
+    }
+    return text;
+}
+
+std::string sharedVersionOf(git_repository* repository, const git_oid& one, const git_oid& other)
+{
+    git_oidarray bases {};
+    const int found = git_merge_bases(&bases, repository, &one, &other);
+    if (found == GIT_ENOTFOUND) {
+        throw Base::RuntimeError("The two versions share no earlier version to merge from");
+    }
+    if (found != 0) {
+        fail("Could not find the version both grew from");
+    }
+    const std::size_t count = bases.count;
+    const std::string first = count > 0 ? commitId(bases.ids[0]) : std::string {};
+    git_oidarray_dispose(&bases);
+    if (count != 1) {
+        throw Base::RuntimeError(
+            "The two versions grew from more than one nearest version; merging them is not "
+            "supported yet");
+    }
+    return first;
+}
+
+/// The current version and the one at `revision`, checked as a merge of one document can take
+/// them, with the version they share.
+struct MergeSides
+{
+    Commit current;
+    Commit other;
+    std::string shared;
+};
+
+MergeSides mergeSides(const std::string& path, const Located& located, const std::string& revision)
+{
+    git_repository* repository = located.repository.get();
+    MergeSides sides {commitAt(repository, "HEAD"), commitAt(repository, revision), {}};
+    sides.shared =
+        sharedVersionOf(repository, *git_commit_id(sides.current.get()), *git_commit_id(sides.other.get()));
+    if (sides.shared == commitId(*git_commit_id(sides.other.get()))) {
+        throw Base::RuntimeError("Version '" + revision + "' is already part of the current one");
+    }
+
+    git_oid onDisk;
+    const std::optional<git_oid> current =
+        fileIdAt(sides.current.get(), located.pathInRepository);
+    if (!current
+        || git_repository_hashfile(&onDisk, repository, path.c_str(), GIT_OBJECT_BLOB, nullptr) != 0
+        || git_oid_equal(&onDisk, &*current) == 0) {
+        throw Base::RuntimeError(
+            "The file has changes not recorded as a version; record or discard them before "
+            "merging");
+    }
+
+    git_oid sharedId;
+    git_oid_fromstr(&sharedId, sides.shared.c_str());
+    git_commit* rawShared = nullptr;
+    if (git_commit_lookup(&rawShared, repository, &sharedId) != 0) {
+        fail("Could not read the shared version");
+    }
+    const Commit shared(rawShared);
+    const Tree before = treeOf(rawShared);
+    const Tree after = treeOf(sides.other.get());
+    git_diff* rawDiff = nullptr;
+    if (git_diff_tree_to_tree(&rawDiff, repository, before.get(), after.get(), nullptr) != 0) {
+        fail("Could not compare the versions");
+    }
+    const Diff diff(rawDiff);
+    for (std::size_t i = 0; i < git_diff_num_deltas(rawDiff); ++i) {
+        const git_diff_delta* delta = git_diff_get_delta(rawDiff, i);
+        for (const char* changed : {delta->old_file.path, delta->new_file.path}) {
+            if (changed != nullptr && located.pathInRepository != changed) {
+                throw Base::RuntimeError("Version '" + revision + "' also changed '" + changed
+                                         + "'; merge the other files with git first");
+            }
+        }
+    }
+    return sides;
+}
+
+/// Record the document's files as they are on disk as a new version on top of the current one,
+/// and on top of `mergedFrom` too when one is given.
+std::string recordVersion(const std::string& path,
+                          const Located& located,
+                          const std::string& message,
+                          const git_commit* mergedFrom)
+{
+    git_repository* repository = located.repository.get();
+    const std::string text = cleanedMessage(message);
+
+    Commit parent;
+    git_oid headId;
+    if (git_reference_name_to_id(&headId, repository, "HEAD") == 0) {
+        git_commit* raw = nullptr;
+        if (git_commit_lookup(&raw, repository, &headId) != 0) {
+            fail("Could not read the current version");
+        }
+        parent.reset(raw);
+    }
+
+    // Built from the current version rather than the repository's staging area, so only this
+    // document's files differ from it.
+    git_index* rawIndex = nullptr;
+    if (git_index_new(&rawIndex) != 0) {
+        fail("Could not prepare the version");
+    }
+    const Index index(rawIndex);
+    std::optional<git_oid> parentTreeId;
+    if (parent) {
+        const Tree tree = treeOf(parent.get());
+        parentTreeId = *git_tree_id(tree.get());
+        if (git_index_read_tree(rawIndex, tree.get()) != 0) {
+            fail("Could not read the current version's files");
+        }
+    }
+
+    const std::vector<std::string> files = filesOfDocument(path, located);
+    for (const std::string& file : files) {
+        git_index_entry entry {};
+        if (git_blob_create_from_workdir(&entry.id, repository, file.c_str()) != 0) {
+            fail("Could not read '" + file + "'");
+        }
+        entry.mode = GIT_FILEMODE_BLOB;
+        entry.path = file.c_str();
+        if (git_index_add(rawIndex, &entry) != 0) {
+            fail("Could not add '" + file + "'");
+        }
+    }
+
+    git_oid treeId;
+    if (git_index_write_tree_to(&treeId, rawIndex, repository) != 0) {
+        fail("Could not write the version's files");
+    }
+    // A merge that takes nothing new still records that the other version is merged.
+    if (mergedFrom == nullptr && parentTreeId && git_oid_equal(&treeId, &*parentTreeId) != 0) {
+        throw Base::RuntimeError("Nothing has changed since the last version");
+    }
+    git_tree* rawTree = nullptr;
+    if (git_tree_lookup(&rawTree, repository, &treeId) != 0) {
+        fail("Could not write the version's files");
+    }
+    const Tree tree(rawTree);
+
+    const Signature signature = author(repository);
+    std::vector<const git_commit*> parents;
+    if (parent) {
+        parents.push_back(parent.get());
+    }
+    if (mergedFrom != nullptr) {
+        parents.push_back(mergedFrom);
+    }
+    git_oid id;
+    if (git_commit_create(&id,
+                          repository,
+                          "HEAD",
+                          signature.get(),
+                          signature.get(),
+                          nullptr,
+                          text.c_str(),
+                          rawTree,
+                          parents.size(),
+                          parents.data())
+        != 0) {
+        fail("Could not record the version");
+    }
+
+    // The staging area now matches the new version for these files, as after `git commit <file>`.
+    git_index* rawStaging = nullptr;
+    if (git_repository_index(&rawStaging, repository) == 0) {
+        const Index staging(rawStaging);
+        for (const std::string& file : files) {
+            git_index_add_bypath(rawStaging, file.c_str());
+        }
+        git_index_write(rawStaging);
+    }
+    return commitId(id);
+}
+
+Located locateOrThrow(const std::string& path)
+{
+    std::optional<Located> located = locate(path);
+    if (!located) {
+        throw Base::FileException("The file is not kept in a git repository", path.c_str());
+    }
+    return std::move(*located);
+}
+
 }  // namespace
 
 std::vector<FileVersion> App::fileVersions(const std::string& path)
@@ -250,25 +473,11 @@ std::vector<FileVersion> App::fileVersions(const std::string& path)
 std::string App::fileTextAt(const std::string& path, const std::string& revision)
 {
     const GitSession session;
-    std::optional<Located> located = locate(path);
-    if (!located) {
-        throw Base::FileException("The file is not kept in a git repository", path.c_str());
-    }
-    git_repository* repository = located->repository.get();
+    const Located located = locateOrThrow(path);
+    git_repository* repository = located.repository.get();
 
-    git_object* rawObject = nullptr;
-    if (git_revparse_single(&rawObject, repository, revision.c_str()) != 0) {
-        fail("No version '" + revision + "'");
-    }
-    const Object object(rawObject);
-    git_object* rawPeeled = nullptr;
-    if (git_object_peel(&rawPeeled, rawObject, GIT_OBJECT_COMMIT) != 0) {
-        fail("'" + revision + "' is not a version");
-    }
-    const Commit commit(reinterpret_cast<git_commit*>(rawPeeled));
-
-    const std::optional<git_oid> fileId =
-        fileIdAt(reinterpret_cast<git_commit*>(rawPeeled), located->pathInRepository);
+    const Commit commit = commitAt(repository, revision);
+    const std::optional<git_oid> fileId = fileIdAt(commit.get(), located.pathInRepository);
     if (!fileId) {
         throw Base::FileException(("The file is not in version '" + revision + "'").c_str(),
                                   path.c_str());
@@ -355,103 +564,61 @@ void App::startHistory(const std::string& folder)
 std::string App::commitFile(const std::string& path, const std::string& message)
 {
     const GitSession session;
-    std::optional<Located> located = locate(path);
-    if (!located) {
-        throw Base::FileException("The file is not kept in a git repository", path.c_str());
-    }
-    git_repository* repository = located->repository.get();
+    return recordVersion(path, locateOrThrow(path), message, nullptr);
+}
 
-    const std::size_t start = message.find_first_not_of(" \t\r\n");
-    const std::string trimmed = start == std::string::npos ? std::string {} : message.substr(start);
-    git_buf cleaned = GIT_BUF_INIT;
-    git_message_prettify(&cleaned, trimmed.c_str(), 0, 0);
-    const std::string text = cleaned.ptr != nullptr ? cleaned.ptr : "";
-    git_buf_dispose(&cleaned);
-    if (text.empty()) {
-        throw Base::ValueError("A version needs a message saying what changed");
-    }
+std::string App::sharedVersion(const std::string& path, const std::string& revision)
+{
+    const GitSession session;
+    const Located located = locateOrThrow(path);
+    git_repository* repository = located.repository.get();
+    const Commit current = commitAt(repository, "HEAD");
+    const Commit other = commitAt(repository, revision);
+    return sharedVersionOf(repository, *git_commit_id(current.get()), *git_commit_id(other.get()));
+}
 
-    Commit parent;
-    git_oid headId;
-    if (git_reference_name_to_id(&headId, repository, "HEAD") == 0) {
-        git_commit* raw = nullptr;
-        if (git_commit_lookup(&raw, repository, &headId) != 0) {
-            fail("Could not read the current version");
-        }
-        parent.reset(raw);
+MergedDocument App::mergeFileRevision(const Document& open,
+                                      const std::string& revision,
+                                      const std::vector<MergeChoice>& choices)
+{
+    const std::string path = open.FileName.getStrValue();
+    std::string shared;
+    std::string other;
+    {
+        const GitSession session;
+        const Located located = locateOrThrow(path);
+        const MergeSides sides = mergeSides(path, located, revision);
+        shared = sides.shared;
+        other = commitId(*git_commit_id(sides.other.get()));
     }
+    const TemporaryDocument ancestor(openFileVersion(path, shared));
+    const TemporaryDocument current(openFileVersion(path, "HEAD"));
+    const TemporaryDocument theirs(openFileVersion(path, other));
+    return buildMergedDocument(*ancestor, *current, *theirs, choices);
+}
 
-    // Built from the current version rather than the repository's staging area, so only this
-    // document's files differ from it.
-    git_index* rawIndex = nullptr;
-    if (git_index_new(&rawIndex) != 0) {
-        fail("Could not prepare the version");
-    }
-    const Index index(rawIndex);
-    std::optional<git_oid> parentTreeId;
-    if (parent) {
-        git_tree* rawTree = nullptr;
-        if (git_commit_tree(&rawTree, parent.get()) != 0) {
-            fail("Could not read the current version's files");
-        }
-        const Tree tree(rawTree);
-        parentTreeId = *git_tree_id(rawTree);
-        if (git_index_read_tree(rawIndex, rawTree) != 0) {
-            fail("Could not read the current version's files");
-        }
-    }
+std::string App::recordMerge(const Document& open,
+                             Document& merged,
+                             const std::string& revision,
+                             const std::string& message)
+{
+    const std::string path = open.FileName.getStrValue();
+    const GitSession session;
+    const Located located = locateOrThrow(path);
+    const MergeSides sides = mergeSides(path, located, revision);
+    cleanedMessage(message);  // refused before the file is written, not after
 
-    const std::vector<std::string> files = filesOfDocument(path, *located);
-    for (const std::string& file : files) {
-        git_index_entry entry {};
-        if (git_blob_create_from_workdir(&entry.id, repository, file.c_str()) != 0) {
-            fail("Could not read '" + file + "'");
-        }
-        entry.mode = GIT_FILEMODE_BLOB;
-        entry.path = file.c_str();
-        if (git_index_add(rawIndex, &entry) != 0) {
-            fail("Could not add '" + file + "'");
-        }
+    // Written as the open document, so links from other documents still find it; the merged
+    // document gets its own back so two open documents never share one for longer than the write.
+    const std::string mergedUid = merged.Uid.getValueStr();
+    const std::string mergedLabel = merged.Label.getValue();
+    merged.Uid.setValue(open.Uid.getValueStr());
+    merged.Label.setValue(open.Label.getValue());
+    const bool written = merged.saveCopy(path.c_str());
+    merged.Uid.setValue(mergedUid);
+    merged.Label.setValue(mergedLabel);
+    if (!written) {
+        throw Base::FileException("Could not write the merged part", path.c_str());
     }
-
-    git_oid treeId;
-    if (git_index_write_tree_to(&treeId, rawIndex, repository) != 0) {
-        fail("Could not write the version's files");
-    }
-    if (parentTreeId && git_oid_equal(&treeId, &*parentTreeId) != 0) {
-        throw Base::RuntimeError("Nothing has changed since the last version");
-    }
-    git_tree* rawTree = nullptr;
-    if (git_tree_lookup(&rawTree, repository, &treeId) != 0) {
-        fail("Could not write the version's files");
-    }
-    const Tree tree(rawTree);
-
-    const Signature signature = author(repository);
-    const git_commit* parents[] = {parent.get()};
-    git_oid id;
-    if (git_commit_create(&id,
-                          repository,
-                          "HEAD",
-                          signature.get(),
-                          signature.get(),
-                          nullptr,
-                          text.c_str(),
-                          rawTree,
-                          parent ? 1 : 0,
-                          parents)
-        != 0) {
-        fail("Could not record the version");
-    }
-
-    // The staging area now matches the new version for these files, as after `git commit <file>`.
-    git_index* rawStaging = nullptr;
-    if (git_repository_index(&rawStaging, repository) == 0) {
-        const Index staging(rawStaging);
-        for (const std::string& file : files) {
-            git_index_add_bypath(rawStaging, file.c_str());
-        }
-        git_index_write(rawStaging);
-    }
-    return commitId(id);
+    return recordVersion(path, located, message, sides.other.get());
 }
