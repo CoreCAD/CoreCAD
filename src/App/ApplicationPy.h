@@ -81,6 +81,8 @@ public:
     static PyObject* sIsKeptInHistory        (PyObject *self,PyObject *args);
     static PyObject* sStartHistory           (PyObject *self,PyObject *args);
     static PyObject* sCommitFile             (PyObject *self,PyObject *args);
+    static PyObject* sMergeFileRevision      (PyObject *self,PyObject *args);
+    static PyObject* sRecordMerge            (PyObject *self,PyObject *args);
     static PyObject* sProjectFileOf          (PyObject *self,PyObject *args);
     static PyObject* sProjectName            (PyObject *self,PyObject *args);
     static PyObject* sCreateProject          (PyObject *self,PyObject *args);
