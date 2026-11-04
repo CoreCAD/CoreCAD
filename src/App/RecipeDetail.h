@@ -133,18 +133,26 @@ using RecipeContentApplier = std::function<std::optional<std::string>(DocumentOb
                                                                       const DocumentObject& branchA,
                                                                       const DocumentObject& branchB)>;
 
+/// Makes `copy`, an object of the version that lost a choice, agree with `winner` on one conflict
+/// its merger found, named by what follows the covered property in the conflict's value. Throws
+/// when choosing a side cannot settle that conflict yet.
+using RecipeContentSettler = std::function<
+    void(DocumentObject& copy, const DocumentObject& winner, const std::string& over)>;
+
 struct RegisteredContentMerge
 {
     std::vector<std::string> coveredProperties;
     RecipeContentMerger merge;
     RecipeContentApplier apply;
+    RecipeContentSettler settle;
 };
 
 /// Register a merger for `type` and every type derived from it, for the properties it covers.
 AppExport void registerRecipeMerge(Base::Type type,
                                    std::vector<std::string> coveredProperties,
                                    RecipeContentMerger merger,
-                                   RecipeContentApplier applier = {});
+                                   RecipeContentApplier applier = {},
+                                   RecipeContentSettler settler = {});
 
 /// The merger registered against the nearest of the object's types, or null when none is.
 AppExport const RegisteredContentMerge* recipeMerger(const DocumentObject& obj);
