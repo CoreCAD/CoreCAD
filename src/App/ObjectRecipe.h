@@ -198,7 +198,7 @@ struct MergedDocument
 /// each value only B changed taken from B, and a value both changed set from the merged result,
 /// all by durable id; the document is then rebuilt. Each choice settles its conflict as
 /// settleConflicts does. Refused while any conflict is open, and where a combined value cannot yet
-/// be written.
+/// be written. Without a view the document is temporary, hidden from the model tree.
 AppExport MergedDocument buildMergedDocument(const Document& ancestor,
                                              const Document& branchA,
                                              const Document& branchB,

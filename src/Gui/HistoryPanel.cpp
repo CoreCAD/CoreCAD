@@ -3,10 +3,12 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
 #include <filesystem>
 
 #ifndef _PreComp_
 # include <QApplication>
+# include <QButtonGroup>
 # include <QCheckBox>
 # include <QDateTime>
 # include <QDockWidget>
@@ -14,8 +16,10 @@
 # include <QHeaderView>
 # include <QLabel>
 # include <QLocale>
+# include <QMenu>
 # include <QPlainTextEdit>
 # include <QPushButton>
+# include <QRadioButton>
 # include <QSplitter>
 # include <QTimer>
 # include <QTreeWidget>
@@ -28,6 +32,7 @@
 #include <App/Document.h>
 #include <App/DocumentChanges.h>
 #include <App/DocumentObject.h>
+#include <App/ObjectRecipe.h>
 #include <App/Project.h>
 #include <Base/Exception.h>
 #include <Base/Uuid.h>
@@ -51,6 +56,18 @@
 using namespace Gui;
 
 QPointer<HistoryPanel> HistoryPanel::instance;
+
+struct HistoryPanel::Merge
+{
+    App::FileBranch branch;
+    /// Every change both sides made that the merge has met, in the order met; answered ones stay.
+    std::vector<App::MergeConflict> conflicts;
+    std::map<std::string, bool> takesTheirs;  ///< each answer, by conflictKey
+    App::Document* merged = nullptr;          ///< the result, once nothing is left open
+    App::DocumentMergeReport report;
+    std::vector<std::string> newlyFailing;
+    QString problem;  ///< why the merge cannot go on
+};
 
 namespace
 {
@@ -100,6 +117,47 @@ QTreeWidgetItem* emptyLine(QTreeWidget* list, const QString& text)
     item->setFlags(Qt::NoItemFlags);
     item->setFirstColumnSpanned(true);
     return item;
+}
+
+QTreeWidgetItem* headingLine(QTreeWidget* list, const QString& text)
+{
+    auto* header = new QTreeWidgetItem(list, {text});
+    header->setFlags(Qt::ItemIsEnabled);
+    header->setFirstColumnSpanned(true);
+    QFont bold = header->font(0);
+    bold.setBold(true);
+    header->setFont(0, bold);
+    return header;
+}
+
+std::string conflictKey(const App::MergeConflict& conflict)
+{
+    return conflict.id + '\n' + conflict.value;
+}
+
+App::DocumentObject* objectWithId(const App::Document& doc, const std::string& id)
+{
+    Base::Uuid uid;
+    try {
+        uid.setValue(id);
+    }
+    catch (const std::exception&) {
+        return nullptr;  // an element inside an object, not an object
+    }
+    return doc.getObjectByUuid(uid);
+}
+
+/// The conflict as a person reads it, led by the step it is in.
+QString conflictText(const App::Document& doc, const App::MergeConflict& conflict)
+{
+    QString text = QString::fromStdString(conflict.detail);
+    if (const App::DocumentObject* obj = objectWithId(doc, conflict.id)) {
+        const QString label = QString::fromUtf8(obj->Label.getValue());
+        if (!text.startsWith(label + QStringLiteral(": "))) {
+            text = label + QStringLiteral(": ") + text;
+        }
+    }
+    return text;
 }
 }  // namespace
 
@@ -181,6 +239,55 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     });
     connect(commitButton, &QPushButton::clicked, this, &HistoryPanel::commit);
 
+    mergeArea = new QWidget(changesPane);
+    auto* mergeLayout = new QVBoxLayout(mergeArea);
+    mergeLayout->setContentsMargins(0, 0, 0, 0);
+    mergeList = new QTreeWidget(mergeArea);
+    mergeList->setObjectName(QStringLiteral("HistoryMergeList"));
+    mergeList->setColumnCount(2);
+    mergeList->setHeaderHidden(true);
+    mergeList->setRootIsDecorated(false);
+    mergeList->header()->setStretchLastSection(false);
+    mergeList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    mergeList->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    mergeLayout->addWidget(mergeList);
+    mergeProblem = new QLabel(mergeArea);
+    mergeProblem->setObjectName(QStringLiteral("HistoryMergeProblem"));
+    mergeProblem->setWordWrap(true);
+    mergeProblem->hide();
+    mergeLayout->addWidget(mergeProblem);
+    mergeMessage = new QPlainTextEdit(mergeArea);
+    mergeMessage->setObjectName(QStringLiteral("HistoryMergeMessage"));
+    mergeMessage->setPlaceholderText(tr("Say what changed"));
+    mergeMessage->setTabChangesFocus(true);
+    mergeMessage->setFixedHeight(mergeMessage->fontMetrics().lineSpacing() * 4);
+    mergeLayout->addWidget(mergeMessage);
+    auto* mergeButtons = new QHBoxLayout();
+    mergeButtons->addStretch();
+    auto* cancelMerge = new QPushButton(tr("Cancel"), mergeArea);
+    cancelMerge->setObjectName(QStringLiteral("HistoryCancelMergeButton"));
+    cancelMerge->setToolTip(tr("Leave the part as it is."));
+    mergeButtons->addWidget(cancelMerge);
+    mergeButton = new QPushButton(tr("Commit merge"), mergeArea);
+    mergeButton->setObjectName(QStringLiteral("HistoryCommitMergeButton"));
+    mergeButton->setToolTip(tr("Keep the merged part as a new version."));
+    mergeButton->setEnabled(false);
+    mergeButtons->addWidget(mergeButton);
+    mergeLayout->addLayout(mergeButtons);
+    changesLayout->addWidget(mergeArea);
+    mergeArea->hide();
+    connect(mergeMessage, &QPlainTextEdit::textChanged, this, [this]() {
+        mergeButton->setEnabled(
+            merge && merge->merged && merge->report.complete()
+            && !mergeMessage->toPlainText().trimmed().isEmpty()
+        );
+    });
+    connect(mergeButton, &QPushButton::clicked, this, &HistoryPanel::commitMerge);
+    connect(cancelMerge, &QPushButton::clicked, this, &HistoryPanel::endMerge);
+
+    versionList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(versionList, &QWidget::customContextMenuRequested, this, &HistoryPanel::showVersionMenu);
+
     changeList->setHeaderHidden(true);
     changeList->setRootIsDecorated(false);
     changeList->setMouseTracking(true);
@@ -197,6 +304,9 @@ HistoryPanel::HistoryPanel(QWidget* parent)
     });
     connect(changeList, &QTreeWidget::itemClicked, this, &HistoryPanel::selectChange);
     connect(changeList, &QTreeWidget::itemEntered, this, &HistoryPanel::preselectChange);
+    mergeList->setMouseTracking(true);
+    connect(mergeList, &QTreeWidget::itemClicked, this, &HistoryPanel::selectChange);
+    connect(mergeList, &QTreeWidget::itemEntered, this, &HistoryPanel::preselectChange);
     // A commit made outside the app shows when the user comes back to it.
     connect(qApp, &QApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
         if (state == Qt::ApplicationActive && isVisible()) {
@@ -241,6 +351,9 @@ HistoryPanel::HistoryPanel(QWidget* parent)
         if (&doc == empty) {
             empty = nullptr;
         }
+        if (merge && &doc == merge->merged) {
+            merge->merged = nullptr;
+        }
         for (auto it = versionDocuments.begin(); it != versionDocuments.end(); ++it) {
             if (it->second == &doc) {
                 versionDocuments.erase(it);
@@ -274,6 +387,7 @@ HistoryPanel::HistoryPanel(QWidget* parent)
 
 HistoryPanel::~HistoryPanel()
 {
+    closeMerged();
     closeVersionDocuments();
 }
 
@@ -308,6 +422,9 @@ void HistoryPanel::setDocument(App::Document* doc)
 {
     if (doc == document) {
         return;
+    }
+    if (merge) {
+        endMerge();
     }
     closeVersionDocuments();
     document = doc;
@@ -452,6 +569,9 @@ std::optional<HistoryPanel::Comparison> HistoryPanel::chosenComparison()
 
 void HistoryPanel::showChanges()
 {
+    if (merge) {
+        return;
+    }
     changeList->clear();
     showCommitArea(false);
     auto* item = versionList->currentItem();
@@ -541,6 +661,273 @@ void HistoryPanel::addToProject()
 {
     if (document && Gui::addToProject(document, getMainWindow())) {
         scheduleRefresh(true);
+    }
+}
+
+void HistoryPanel::showVersionMenu(const QPoint& pos)
+{
+    // A merge goes into the current version, so only its row offers one.
+    auto* item = versionList->itemAt(pos);
+    if (!item || merge || item->data(0, VersionRole) != QVariant(0)) {
+        return;
+    }
+    std::vector<App::FileBranch> branches;
+    try {
+        branches = App::branchesToMerge(documentFile);
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
+        return;
+    }
+    if (branches.empty()) {
+        return;  // hidden, not greyed out (UI_GUIDE §2.4)
+    }
+
+    QMenu menu(this);
+    QMenu* mergeWith = menu.addMenu(tr("Merge with"));
+    mergeWith->setToolTipsVisible(true);
+    for (const App::FileBranch& branch : branches) {
+        QAction* action = mergeWith->addAction(tr("%1 — %2").arg(
+            QString::fromStdString(branch.name),
+            QString::fromStdString(branch.latest.summary)
+        ));
+        action->setToolTip(
+            tr("%1, %2").arg(QString::fromStdString(branch.latest.author), timeAgo(branch.latest.time))
+        );
+        connect(action, &QAction::triggered, this, [this, branch]() { startMerge(branch); });
+    }
+    menu.exec(versionList->viewport()->mapToGlobal(pos));
+}
+
+void HistoryPanel::startMerge(const App::FileBranch& branch)
+{
+    if (!document || merge) {
+        return;
+    }
+    restoreModelView();
+    merge = std::make_unique<Merge>();
+    merge->branch = branch;
+    versionList->setEnabled(false);
+    changeList->hide();
+    showCommitArea(false);
+    mergeArea->show();
+    mergeMessage->setPlainText(tr("Merge %1").arg(QString::fromStdString(branch.name)));
+
+    if (changedSinceLastVersion()) {
+        merge->problem = tr("The part has changes not yet committed. Commit them before merging.");
+        showMerge();
+        return;
+    }
+    runMerge();
+}
+
+void HistoryPanel::runMerge()
+{
+    if (!merge || !document) {
+        return;
+    }
+    closeMerged();
+    merge->problem.clear();
+    std::vector<App::MergeChoice> choices;
+    for (const App::MergeConflict& conflict : merge->conflicts) {
+        const auto answered = merge->takesTheirs.find(conflictKey(conflict));
+        if (answered != merge->takesTheirs.end()) {
+            choices.push_back({conflict.id, conflict.value, answered->second});
+        }
+    }
+    try {
+        WaitCursor wait;
+        App::MergedDocument made
+            = App::mergeFileRevision(*document, merge->branch.latest.commit, choices);
+        merge->merged = made.document;
+        merge->report = std::move(made.report);
+        merge->newlyFailing = std::move(made.newlyFailing);
+        // A choice can open a change the first merge did not show, as a step kept on what the
+        // other side deleted.
+        for (const App::MergeConflict& conflict : merge->report.conflicts) {
+            const std::string key = conflictKey(conflict);
+            if (std::none_of(merge->conflicts.begin(), merge->conflicts.end(), [&](const auto& met) {
+                    return conflictKey(met) == key;
+                })) {
+                merge->conflicts.push_back(conflict);
+            }
+        }
+        if (!merge->merged && merge->report.conflicts.empty()) {
+            merge->problem = QString::fromStdString(made.refusal);
+        }
+    }
+    catch (const Base::Exception& e) {
+        merge->problem = QString::fromUtf8(e.what());
+    }
+    showMerge();
+}
+
+void HistoryPanel::showMerge()
+{
+    mergeList->clear();
+    auto* title
+        = headingLine(mergeList, tr("Merging “%1”").arg(QString::fromStdString(merge->branch.name)));
+    title->setToolTip(
+        0,
+        tr("%1\n%2, %3")
+            .arg(
+                QString::fromStdString(merge->branch.latest.summary),
+                QString::fromStdString(merge->branch.latest.author),
+                timeAgo(merge->branch.latest.time)
+            )
+    );
+
+    if (!merge->conflicts.empty()) {
+        headingLine(mergeList, tr("Changed on both sides (%1)").arg(merge->conflicts.size()));
+    }
+    for (const App::MergeConflict& conflict : merge->conflicts) {
+        const std::string key = conflictKey(conflict);
+        auto* line = new QTreeWidgetItem(mergeList, {conflictText(*document, conflict)});
+        line->setToolTip(0, line->text(0));
+        if (const App::DocumentObject* obj = objectWithId(*document, conflict.id)) {
+            line->setData(0, ObjectRole, QString::fromStdString(obj->Uid.getValueStr()));
+        }
+
+        // No preselected answer (UI_GUIDE §4.3).
+        auto* sides = new QWidget(mergeList);
+        auto* sidesLayout = new QHBoxLayout(sides);
+        sidesLayout->setContentsMargins(4, 0, 4, 0);
+        auto* group = new QButtonGroup(sides);
+        auto* mine = new QRadioButton(tr("Keep mine"), sides);
+        auto* theirs = new QRadioButton(tr("Take theirs"), sides);
+        group->addButton(mine);
+        group->addButton(theirs);
+        sidesLayout->addWidget(mine);
+        sidesLayout->addWidget(theirs);
+        const auto answered = merge->takesTheirs.find(key);
+        if (answered != merge->takesTheirs.end()) {
+            (answered->second ? theirs : mine)->setChecked(true);
+        }
+        connect(mine, &QRadioButton::clicked, this, [this, key]() { answer(key, false); });
+        connect(theirs, &QRadioButton::clicked, this, [this, key]() { answer(key, true); });
+        mergeList->setItemWidget(line, 1, sides);
+    }
+
+    if (merge->merged) {
+        const App::DocumentMergeReport& report = merge->report;
+        if (!report.complete()) {
+            const std::size_t open = report.overridden.size() + report.undetermined.size();
+            headingLine(mergeList, tr("Cannot be settled here yet (%1)").arg(open));
+            for (const auto* list : {&report.overridden, &report.undetermined}) {
+                for (const std::string& text : *list) {
+                    emptyLine(mergeList, QString::fromStdString(text));
+                }
+            }
+            merge->problem = tr("This merge cannot be finished in the app yet.");
+        }
+        else {
+            std::vector<App::DocumentChange> changes;
+            try {
+                changes = App::diffDocuments(*document, *merge->merged);
+            }
+            catch (const Base::Exception& e) {
+                e.reportException();
+            }
+            headingLine(mergeList, tr("What the merge changes (%1)").arg(changes.size()));
+            for (const App::DocumentChange& change : changes) {
+                auto* line = new QTreeWidgetItem(mergeList, {QString::fromStdString(change.text)});
+                line->setFirstColumnSpanned(true);
+                line->setData(0, ObjectRole, QString::fromStdString(change.objectId));
+            }
+            for (const std::string& name : merge->newlyFailing) {
+                emptyLine(mergeList, tr("%1 fails after the merge").arg(QString::fromStdString(name)));
+            }
+        }
+    }
+    mergeList->resizeColumnToContents(1);
+
+    mergeProblem->setText(merge->problem);
+    mergeProblem->setVisible(!merge->problem.isEmpty());
+    mergeButton->setEnabled(
+        merge->merged && merge->report.complete() && !mergeMessage->toPlainText().trimmed().isEmpty()
+    );
+}
+
+void HistoryPanel::answer(const std::string& conflict, bool takeTheirs)
+{
+    if (!merge) {
+        return;
+    }
+    merge->takesTheirs[conflict] = takeTheirs;
+    const bool allAnswered
+        = std::all_of(merge->conflicts.begin(), merge->conflicts.end(), [this](const auto& met) {
+              return merge->takesTheirs.count(conflictKey(met)) != 0;
+          });
+    if (allAnswered) {
+        // Showing the new result rebuilds the list, deleting the button that sent this.
+        QTimer::singleShot(0, this, &HistoryPanel::runMerge);
+    }
+}
+
+void HistoryPanel::commitMerge()
+{
+    const std::string message = mergeMessage->toPlainText().trimmed().toStdString();
+    if (!merge || !merge->merged || !document || message.empty()) {
+        return;
+    }
+    if (changedSinceLastVersion()) {
+        mergeProblem->setText(tr("The part changed during the merge. Cancel and merge again."));
+        mergeProblem->show();
+        return;
+    }
+    try {
+        App::recordMerge(*document, *merge->merged, merge->branch.latest.commit, message);
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
+        mergeProblem->setText(tr("The merge was not kept: %1").arg(QString::fromUtf8(e.what())));
+        mergeProblem->show();
+        return;
+    }
+    endMerge();
+    // The file now holds the merge; the open part is read from it again.
+    try {
+        WaitCursor wait;
+        document->restore();
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
+    }
+    scheduleRefresh(true);
+}
+
+// Asks what the "Not yet committed" row shows, not whether the document is marked modified:
+// opening a part can mark it modified without changing anything a version records.
+bool HistoryPanel::changedSinceLastVersion()
+{
+    try {
+        App::Document* last = versions.empty() ? emptyDocument()
+                                               : versionDocument(versions.front().commit);
+        return !App::diffDocuments(*last, *document).empty();
+    }
+    catch (const Base::Exception& e) {
+        e.reportException();
+        return true;
+    }
+}
+
+void HistoryPanel::endMerge()
+{
+    closeMerged();
+    merge.reset();
+    mergeArea->hide();
+    mergeList->clear();
+    changeList->show();
+    versionList->setEnabled(true);
+    scheduleRefresh(false);
+}
+
+void HistoryPanel::closeMerged()
+{
+    if (merge && merge->merged) {
+        App::Document* merged = merge->merged;
+        merge->merged = nullptr;
+        App::GetApplication().closeDocument(merged->getName());
     }
 }
 

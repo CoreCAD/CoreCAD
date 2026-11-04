@@ -97,6 +97,18 @@ AppExport std::string commitFile(const std::string& path, const std::string& mes
 /// Clause 21.5).
 AppExport std::string sharedVersion(const std::string& path, const std::string& revision);
 
+/// A branch holding a change to the file that the current version does not.
+struct FileBranch
+{
+    std::string name;    ///< as git shows it, such as "wider" or "origin/wider"
+    FileVersion latest;  ///< the commit the branch is at
+};
+
+/// The branches, local and fetched, that changed the file at `path` since the version they share
+/// with the current one and are not part of it yet, newest first. Empty when the file is not kept
+/// in a git repository.
+AppExport std::vector<FileBranch> branchesToMerge(const std::string& path);
+
 /** Merge the file's version at `revision` into `open`, the document saved at that file. Its
  *  current version and `revision` are merged from the version they share, as buildMergedDocument
  *  does, into a new document the caller closes.
