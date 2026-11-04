@@ -67,4 +67,6 @@ std::vector<Borrowed> borrowedGeometry(const SketchObject& sketch);
 
 std::string nounFor(const std::string& type);
 
+bool isGeometryType(const std::string& type);
+
 }  // namespace Sketcher::SketchRecipeInternal

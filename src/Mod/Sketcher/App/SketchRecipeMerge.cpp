@@ -43,6 +43,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <Base/Exception.h>
 #include <Base/Tools.h>
 #include <App/ElementNamingUtils.h>
 #include <App/ObjectIdentifier.h>
@@ -176,7 +177,7 @@ std::unique_ptr<Part::Geometry> composeCoordinates(
     const auto takes = [&fields](const char* field) {
         return std::find(fields.begin(), fields.end(), field) != fields.end();
     };
-    std::unique_ptr<Part::Geometry> composed(geo->copy());
+    std::unique_ptr<Part::Geometry> composed(geo->clone());
     if (auto* line = dynamic_cast<Part::GeomLineSegment*>(composed.get())) {
         const auto* from = dynamic_cast<const Part::GeomLineSegment*>(other);
         line->setPoints(
@@ -523,6 +524,129 @@ MergeReport Sketcher::mergeSketches(
     }
 
     return report;
+}
+
+void Sketcher::settleSketchConflict(SketchObject& copy, const SketchObject& winner, const std::string& over)
+{
+    const auto cannot = [](const std::string& why) {
+        return Base::RuntimeError("Choosing a side does not settle this sketch conflict yet: " + why);
+    };
+    for (const SketchObject* sketch : {static_cast<const SketchObject*>(&copy), &winner}) {
+        if (!borrowedGeometry(*sketch).empty()) {
+            throw cannot("the sketch borrows geometry from other objects");
+        }
+        if (!sketch->ExpressionEngine.getExpressions().empty()) {
+            throw cannot("a formula drives one of its dimensions");
+        }
+    }
+
+    std::istringstream words(over);
+    std::string tag;
+    std::string field;
+    std::string deleted;
+    words >> tag >> field;
+    if (field == "on") {
+        words >> deleted;
+        field.clear();
+    }
+
+    SketchRecipe recipe = emitSketchRecipe(copy);
+    const SketchRecipe theirs = emitSketchRecipe(winner);
+    std::map<std::string, const SketchObject*> seedFor;
+    std::map<std::string, const Part::Geometry*> seedGeometry;
+    std::unique_ptr<Part::Geometry> composed;
+
+    const auto takeWhole = [&](const std::string& id) {
+        if (theirs.geometry.count(id) != 0) {
+            recipe.geometry[id] = theirs.geometry.at(id);
+            seedFor[id] = &winner;
+        }
+        else if (recipe.geometry.erase(id) != 0) {
+            // Constraints on geometry the winner deleted go with it, as they did there.
+            std::erase_if(recipe.constraints, [&](const auto& entry) {
+                return theirs.constraints.count(entry.first) == 0
+                    && std::any_of(
+                           entry.second.refs.begin(),
+                           entry.second.refs.end(),
+                           [&](const App::RecipeRef& ref) { return ref.target == id; }
+                    );
+            });
+        }
+        if (theirs.constraints.count(id) != 0) {
+            recipe.constraints[id] = theirs.constraints.at(id);
+            // A kept constraint keeps the geometry it is on.
+            for (const App::RecipeRef& ref : theirs.constraints.at(id).refs) {
+                if (theirs.geometry.count(ref.target) != 0 && recipe.geometry.count(ref.target) == 0) {
+                    recipe.geometry[ref.target] = theirs.geometry.at(ref.target);
+                    seedFor[ref.target] = &winner;
+                }
+            }
+        }
+        else {
+            recipe.constraints.erase(id);
+        }
+    };
+
+    const bool geometry = recipe.geometry.count(tag) != 0 && theirs.geometry.count(tag) != 0;
+    const bool constraint = recipe.constraints.count(tag) != 0 && theirs.constraints.count(tag) != 0;
+    if (field.empty()) {
+        takeWhole(tag);
+        if (!deleted.empty()) {
+            takeWhole(deleted);
+        }
+    }
+    else if (geometry && field == "construction") {
+        recipe.geometry[tag].fields[field] = theirs.geometry.at(tag).fields.at(field);
+    }
+    else if (geometry) {
+        composed = composeCoordinates(
+            findSeedGeometry(tag, {&copy}),
+            findSeedGeometry(tag, {&winner}),
+            {field}
+        );
+        if (!composed) {
+            throw cannot("its curve moves as one");
+        }
+        seedGeometry[tag] = composed.get();
+    }
+    else if (constraint) {
+        const App::RecipeNode& stated = theirs.constraints.at(tag);
+        App::RecipeNode& mine = recipe.constraints[tag];
+        if (stated.fields.count(field) != 0) {
+            mine.fields[field] = stated.fields.at(field);
+        }
+        else if (mine.fields.count(field) != 0) {
+            mine.fields.erase(field);
+        }
+        else {
+            mine = stated;  // over its links, which are taken as one set
+        }
+    }
+    else {
+        throw cannot("one version no longer holds the element");
+    }
+
+    App::DocumentInitFlags flags;
+    flags.createView = false;
+    flags.temporary = true;
+    App::Document* scratch = App::GetApplication().newDocument("sketchSettleScratch", nullptr, flags);
+    auto* rebuilt = static_cast<SketchObject*>(scratch->addObject("Sketcher::SketchObject", "Settled"));
+    const RegenResult regen
+        = regenerateSketch(*rebuilt, recipe, {&copy, &winner}, seedFor, seedGeometry);
+    if (!regen.fullyRealized) {
+        App::GetApplication().closeDocument(scratch->getName());
+        throw cannot("the sketch could not be rebuilt with that choice");
+    }
+
+    copy.deleteAllConstraints();
+    copy.deleteAllGeometry();
+    for (const Part::Geometry* geo : rebuilt->getInternalGeometry()) {
+        const int geoId = copy.addGeometry(geo, GeometryFacade::getConstruction(geo));
+        copy.Geometry.getValues()[geoId]->copyTagFrom(geo);
+    }
+    copy.addConstraints(rebuilt->Constraints.getValues());
+    App::GetApplication().closeDocument(scratch->getName());
+    copy.solve();
 }
 
 namespace Sketcher::SketchRecipeInternal

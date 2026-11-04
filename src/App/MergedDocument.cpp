@@ -418,6 +418,10 @@ TemporaryDocument settledCopy(const Document& ancestor,
             }
             documentValues.push_back(conflict->value);
         }
+        else if (objS != nullptr && objW != nullptr && settlesContent(*objS, conflict->value)) {
+            contents.emplace_back(conflict->id,
+                                  conflict->value.substr(conflict->value.find(' ') + 1));
+        }
         else if (conflict->kind == MergeConflict::Kind::Referential) {
             if (objS != nullptr && refersTo(*objS, conflict->value)) {
                 deleted.insert(conflict->id);
@@ -442,10 +446,6 @@ TemporaryDocument settledCopy(const Document& ancestor,
         }
         else if (objS == nullptr || objW == nullptr) {
             throw cannot();
-        }
-        else if (settlesContent(*objS, conflict->value)) {
-            contents.emplace_back(conflict->id,
-                                  conflict->value.substr(conflict->value.find(' ') + 1));
         }
         else {
             values.emplace_back(conflict->id, conflict->value);

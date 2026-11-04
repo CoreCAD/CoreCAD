@@ -118,7 +118,7 @@ struct MergeConflict
     std::string detail;   ///< human-readable summary (which field / which dangling target)
     /// What the conflict is over: for a Value conflict the field or link, empty for the whole
     /// node; for a Referential one the id of the deleted node it points at. A conflict inside an
-    /// object's own content (a sheet's cells) states the covered property, a space, then what
+    /// object's own content (a sheet's cells, a sketch's elements) states the covered property, a space, then what
     /// inside it, in the owning module's terms.
     std::string value;
 

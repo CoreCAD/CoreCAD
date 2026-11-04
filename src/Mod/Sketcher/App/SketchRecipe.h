@@ -159,6 +159,17 @@ SketcherExport MergeReport mergeSketches(
     SketchObject* into = nullptr
 );
 
+/// Make `copy`, the sketch of a version that lost a choice, agree with `winner` on one conflict of
+/// their merge: `over` names an element by its tag, then optionally one of its values, or "on" and
+/// the deleted element a constraint points at, which is then taken with it. The sketch is rebuilt
+/// from its recipe with that taken from `winner`, every other element started where `copy` holds
+/// it. Throws where choosing a side cannot settle it yet.
+SketcherExport void settleSketchConflict(
+    SketchObject& copy,
+    const SketchObject& winner,
+    const std::string& over
+);
+
 /// Render a MergeReport as plain language a person can read (Report View / Python console).
 SketcherExport std::string formatMergeReport(const MergeReport& report);
 

@@ -706,6 +706,21 @@ void Sketcher::registerSketchRecipeDetail()
                 static_cast<const SketchObject&>(branchB)
             );
             App::RecipeContentMerge merged {std::move(report.conflicts), {}};
+            // Each conflict is addressed to the sketch, and names the element inside it.
+            for (App::MergeConflict& conflict : merged.conflicts) {
+                const std::string section = conflict.id.rfind("borrowed:", 0) == 0 ? "ExternalGeo"
+                    : isGeometryType(conflict.type)                                ? "Geometry"
+                                                                                   : "Constraints";
+                std::string over = section + " " + conflict.id;
+                if (conflict.kind == App::MergeConflict::Kind::Referential) {
+                    over += " on " + conflict.value;
+                }
+                else if (!conflict.value.empty()) {
+                    over += " " + conflict.value;
+                }
+                conflict.id = ancestor.Uid.getValueStr();
+                conflict.value = over;
+            }
             for (const OverriddenChoice& lost : report.overridden) {
                 merged.overridden.push_back(nounFor(lost.type) + " (" + lost.field + ")");
             }
@@ -743,6 +758,13 @@ void Sketcher::registerSketchRecipeDetail()
                 return "it could not be rebuilt from the merged elements";
             }
             return std::nullopt;
+        },
+        [](App::DocumentObject& copy, const App::DocumentObject& winner, const std::string& over) {
+            settleSketchConflict(
+                static_cast<SketchObject&>(copy),
+                static_cast<const SketchObject&>(winner),
+                over
+            );
         }
     );
 }
