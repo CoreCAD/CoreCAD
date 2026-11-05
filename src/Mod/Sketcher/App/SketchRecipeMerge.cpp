@@ -707,25 +707,33 @@ std::string geometryNoun(const std::string& type)
     return it != nouns.end() ? it->second : type;
 }
 
-/// A noun phrase for a constraint node's authored type token ("Horizontal" -> "horizontal
-/// constraint"). A few tokens read poorly lower-cased and are spelled out; the rest are just
-/// lower-cased. Unknown tokens still read as "<token> constraint".
-std::string constraintNoun(const std::string& type)
+/// What kind of constraint a type token is, in plain words ("DistanceX" -> "horizontal
+/// distance"). A few tokens read poorly lower-cased and are spelled out; the rest are just
+/// lower-cased.
+std::string constraintKind(const std::string& type)
 {
     static const std::map<std::string, std::string> special = {
-        {"DistanceX", "horizontal-distance"},
-        {"DistanceY", "vertical-distance"},
-        {"PointOnObject", "point-on-object"},
-        {"InternalAlignment", "internal-alignment"},
+        {"DistanceX", "horizontal distance"},
+        {"DistanceY", "vertical distance"},
+        {"PointOnObject", "point on object"},
+        {"InternalAlignment", "internal alignment"},
     };
-    const auto it = special.find(type);
-    std::string word = it->second;
-    if (it == special.end()) {
-        word = type;
-        for (char& c : word) {
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        }
+    if (const auto it = special.find(type); it != special.end()) {
+        return it->second;
     }
+    std::string word = type;
+    for (char& c : word) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return word;
+}
+
+/// A noun phrase for a constraint node's authored type token ("Horizontal" -> "horizontal
+/// constraint"). Unknown tokens still read as "<token> constraint".
+std::string constraintNoun(const std::string& type)
+{
+    std::string word = constraintKind(type);
+    std::replace(word.begin(), word.end(), ' ', '-');
     return word + " constraint";
 }
 
@@ -744,6 +752,14 @@ std::string nounFor(const std::string& type)
         return "an element";
     }
     return withArticle(isGeometryType(type) ? geometryNoun(type) : constraintNoun(type));
+}
+
+std::string entryName(const std::string& type, const std::string& givenName)
+{
+    if (!givenName.empty()) {
+        return givenName;
+    }
+    return isGeometryType(type) ? geometryNoun(type) : constraintKind(type);
 }
 
 /// " on a line and a circle" — the surviving geometry a still-present constraint attaches to, for

@@ -146,6 +146,26 @@ TEST_F(SketchChangesTest, aChangedDimensionDoesNotReportTheLinesTheSolverMoved)
     ASSERT_EQ(changes.size(), 1u) << listed(changes);
     EXPECT_EQ(changes[0].section, "constraints");
     EXPECT_EQ(changes[0].change.field, "value");
+    EXPECT_EQ(changes[0].text, "Sketch, horizontal distance: 10 mm → 20 mm");
+}
+
+TEST_F(SketchChangesTest, aNamedDimensionIsListedByItsName)
+{
+    addLine(_sketch, 0, 0, 10, 0);
+    Sketcher::Constraint length;
+    length.Type = Sketcher::DistanceX;
+    length.setElement(0, Sketcher::GeoElementId(0, Sketcher::PointPos::start));
+    length.setElement(1, Sketcher::GeoElementId(0, Sketcher::PointPos::end));
+    length.setValue(10.0);
+    length.Name = "width";
+    const int lengthId = _sketch->addConstraint(&length);
+    auto* after = nextVersion();
+    after->setDatum(lengthId, 20.0);
+
+    const std::vector<App::DocumentChange> changes = App::diffDocuments(*_before, *_after);
+
+    ASSERT_EQ(changes.size(), 1u) << listed(changes);
+    EXPECT_EQ(changes[0].text, "Sketch, width: 10 mm → 20 mm");
 }
 
 TEST_F(SketchChangesTest, aLineDraggedAlongsideADimensionChangeIsStillReported)

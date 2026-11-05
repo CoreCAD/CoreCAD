@@ -27,6 +27,7 @@
 #include <FCGlobal.h>
 
 #include <functional>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -56,6 +57,8 @@ struct RecipeDetailSection
 {
     std::string name;              ///< "geometry", "constraints" — the reader's heading
     std::vector<RecipeNode> nodes; ///< in authoring order, which is the order a person expects
+    std::map<std::string, std::string> names; ///< what a person calls a node, by id, where its
+                                              ///< type and id would not say
 };
 
 /** What one provider says about one object.

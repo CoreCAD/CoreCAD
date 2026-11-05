@@ -580,7 +580,7 @@ std::vector<MergeConflict> RecipeMerge::refineConflicts(const std::vector<MergeC
                     {MergeConflict::Kind::Value,
                      conflict.id,
                      nodeA.type,
-                     "field " + name + ": this branch " + describeValue(fieldOf(nodeA, name))
+                     name + ": this branch " + describeValue(fieldOf(nodeA, name))
                          + ", other branch " + describeValue(fieldOf(nodeB, name)),
                      name});
             }
