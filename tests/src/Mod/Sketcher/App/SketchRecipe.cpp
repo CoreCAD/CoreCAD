@@ -1379,6 +1379,38 @@ TEST_F(SketchRecipeMergeTest, choosingASideOnADimensionTheOtherSideDeletedKeepsW
     }
 }
 
+// A free line with only its width dimensioned, which each side sets differently: where the solve
+// left the line is decided by the side chosen, so the merge is complete.
+TEST_F(SketchRecipeMergeTest, choosingASideOnADimensionOfAnUnderConstrainedSketchTakesItsPositions)
+{
+    for (const bool takeB : {true, false}) {
+        Branches br = makeBranches([](Sketcher::SketchObject* s) {
+            addLine(s, 0, 0, 10, 0);
+            addConstraintOn(s, Sketcher::DistanceX, {{0, Sketcher::PointPos::none}}, 10.0);
+        });
+        ASSERT_NE(br.a, nullptr);
+        ASSERT_EQ(br.a->setDatum(0, 20.0), 0);
+        ASSERT_EQ(br.b->setDatum(0, 30.0), 0);
+        br.a->getDocument()->recompute();
+        br.b->getDocument()->recompute();
+        auto* ancestor = reopenAncestor(tempPath("recipe_base.FCStd"));
+
+        const App::MergedDocument made = mergeAnswering(takeB, ancestor, br.a, br.b);
+
+        ASSERT_NE(made.document, nullptr) << made.refusal;
+        EXPECT_TRUE(made.report.complete()) << App::formatDocumentReport(made.report);
+        const auto* line = static_cast<const Part::GeomLineSegment*>(
+            sketchIn(made)->getInternalGeometry()[0]
+        );
+        const auto* chosen = static_cast<const Part::GeomLineSegment*>(
+            (takeB ? br.b : br.a)->getInternalGeometry()[0]
+        );
+        EXPECT_TRUE(line->getStartPoint().IsEqual(chosen->getStartPoint(), 1e-6));
+        EXPECT_TRUE(line->getEndPoint().IsEqual(chosen->getEndPoint(), 1e-6));
+        App::GetApplication().closeAllDocuments();
+    }
+}
+
 // Both sides drag the same end of a free line to different places.
 TEST_F(SketchRecipeMergeTest, choosingASideOnAPointDraggedTwoWaysPutsItWhereThatSideDid)
 {

@@ -621,6 +621,30 @@ void Sketcher::settleSketchConflict(SketchObject& copy, const SketchObject& winn
         else {
             mine = stated;  // over its links, which are taken as one set
         }
+        // An under-constrained sketch solves to wherever it starts, so everything the dimension
+        // reaches through other constraints starts where the winner left it.
+        std::vector<std::string> reached;
+        for (const App::RecipeRef& ref : stated.refs) {
+            reached.push_back(ref.target);
+        }
+        while (!reached.empty()) {
+            const std::string id = reached.back();
+            reached.pop_back();
+            if (recipe.geometry.count(id) == 0 || theirs.geometry.count(id) == 0
+                || !seedFor.emplace(id, &winner).second) {
+                continue;
+            }
+            for (const auto& [_, node] : recipe.constraints) {
+                const auto touches = [&](const App::RecipeRef& ref) {
+                    return ref.target == id;
+                };
+                if (std::any_of(node.refs.begin(), node.refs.end(), touches)) {
+                    for (const App::RecipeRef& ref : node.refs) {
+                        reached.push_back(ref.target);
+                    }
+                }
+            }
+        }
     }
     else {
         throw cannot("one version no longer holds the element");
