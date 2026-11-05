@@ -153,7 +153,8 @@ QString conflictText(const App::Document& doc, const App::MergeConflict& conflic
     QString text = QString::fromStdString(conflict.detail);
     if (const App::DocumentObject* obj = objectWithId(doc, conflict.id)) {
         const QString label = QString::fromUtf8(obj->Label.getValue());
-        if (!text.startsWith(label + QStringLiteral(": "))) {
+        if (!text.startsWith(label + QStringLiteral(": "))
+            && !text.startsWith(label + QStringLiteral(", "))) {
             text = label + QStringLiteral(": ") + text;
         }
     }

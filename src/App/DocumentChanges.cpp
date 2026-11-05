@@ -116,6 +116,9 @@ std::string describe(const RecipeChange& change,
                      const LabelById& newLabels,
                      const LabelById& oldLabels)
 {
+    // An entry's own "value", such as a dimension's length, is what the entry is; naming the
+    // field would only repeat it.
+    const std::string field = change.field == "value" ? std::string() : " " + change.field;
     switch (change.kind) {
         case RecipeChange::Kind::Added:
             return subject + " added";
@@ -128,13 +131,12 @@ std::string describe(const RecipeChange& change,
                 + " → " + refsText(change.refsAfter, newLabels, oldLabels);
         case RecipeChange::Kind::FieldChanged:
             if (!change.before) {
-                return subject + ": " + change.field + " set to " + valueText(*change.after);
+                return subject + ":" + field + " set to " + valueText(*change.after);
             }
             if (!change.after) {
-                return subject + ": " + change.field + " cleared (was " + valueText(*change.before)
-                    + ")";
+                return subject + ":" + field + " cleared (was " + valueText(*change.before) + ")";
             }
-            return subject + ": " + change.field + " " + valueText(*change.before) + " → "
+            return subject + ":" + field + " " + valueText(*change.before) + " → "
                 + valueText(*change.after);
     }
     return subject;
@@ -180,6 +182,23 @@ const RecipeDetailSection* findSection(const RecipeDetail& detail, const std::st
     return nullptr;
 }
 
+/// An entry inside an object by the name its provider gives it, from the newer version first
+/// since a removed entry is only in the older one; by its type and tag where it gives none.
+std::string entryName(const RecipeChange& change,
+                      const RecipeDetailSection* newSection,
+                      const RecipeDetailSection* oldSection)
+{
+    for (const RecipeDetailSection* section : {newSection, oldSection}) {
+        if (section == nullptr) {
+            continue;
+        }
+        if (const auto it = section->names.find(change.id); it != section->names.end()) {
+            return it->second;
+        }
+    }
+    return change.type + " " + shortId(change.id);
+}
+
 /// Changes inside an object's interior, such as a sketch's lines and dimensions, which the
 /// object's own node cannot see.
 void appendInteriorChanges(const DocumentObject& oldObj,
@@ -223,7 +242,7 @@ void appendInteriorChanges(const DocumentObject& oldObj,
             DocumentChange entry = about;
             entry.section = name;
             entry.change = change;
-            const std::string subject = about.label + ", " + change.type + " " + shortId(change.id);
+            const std::string subject = about.label + ", " + entryName(change, newSection, oldSection);
             entry.text = describe(change, subject, newLabels, oldLabels);
             out.push_back(entry);
         }

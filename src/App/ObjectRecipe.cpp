@@ -378,7 +378,7 @@ RecipeContentMerge markUncomparedChanges(const Document& ancestor,
             b[id].fields[name] = mergedByContent;
         }
         RecipeContentMerge inside = merger->merge(*objO, *objA, *objB);
-        const std::string where = std::string(objA->Label.getValue()) + ": ";
+        const std::string where = std::string(objA->Label.getValue()) + ", ";
         for (MergeConflict& conflict : inside.conflicts) {
             conflict.detail = where + conflict.detail;
             found.conflicts.push_back(std::move(conflict));

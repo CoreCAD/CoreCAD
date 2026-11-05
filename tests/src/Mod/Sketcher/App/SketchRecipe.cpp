@@ -318,6 +318,12 @@ TEST_F(SketchRecipeMergeTest, aDocumentMergeSeesADimensionSetTwoWays)
           });
     EXPECT_TRUE(dimensionConflicts);
     EXPECT_EQ(App::formatDocumentReport(report).find("Merged cleanly"), std::string::npos);
+    const std::string label = br.a->Label.getValue();
+    const bool readsPlainly
+        = std::any_of(report.conflicts.begin(), report.conflicts.end(), [&](const auto& c) {
+              return c.detail == label + ", distance: this branch 50 mm, other branch 60 mm";
+          });
+    EXPECT_TRUE(readsPlainly) << App::formatDocumentReport(report);
 }
 
 // Two branches drawing different lines into one sketch is two changes, not one clash: the sketch

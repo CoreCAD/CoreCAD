@@ -69,4 +69,8 @@ std::string nounFor(const std::string& type);
 
 bool isGeometryType(const std::string& type);
 
+/// What a person calls a line or dimension of a sketch: the name given to it, else its kind in
+/// plain words ("line", "horizontal distance").
+std::string entryName(const std::string& type, const std::string& givenName = {});
+
 }  // namespace Sketcher::SketchRecipeInternal

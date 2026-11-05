@@ -169,6 +169,7 @@ App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
             continue;
         }
         App::RecipeNode node = found->second;
+        geometry.names[node.id] = entryName(node.type);
         node.type = readableGeometryType(node.type);
         // A flag left at its default is not something anyone did. The merge carries it on every
         // entity because it needs a value to rebuild with; the view prints it only where it
@@ -223,6 +224,7 @@ App::RecipeDetail Sketcher::sketchRecipeDetail(const App::DocumentObject& obj)
             continue;
         }
         App::RecipeNode node = found->second;
+        constraints.names[node.id] = entryName(node.type, constraint->Name);
         if (!constraint->Name.empty()) {
             // A named constraint is the handle an expression binds to, so the name is authored
             // content and a rename is a real change to the model.

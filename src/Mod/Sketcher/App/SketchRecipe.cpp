@@ -706,8 +706,24 @@ void Sketcher::registerSketchRecipeDetail()
                 static_cast<const SketchObject&>(branchB)
             );
             App::RecipeContentMerge merged {std::move(report.conflicts), {}};
+            const auto givenName = [&](const std::string& tag) {
+                for (const App::DocumentObject* side : {&branchA, &branchB, &ancestor}) {
+                    for (const Constraint* constraint :
+                         static_cast<const SketchObject*>(side)->Constraints.getValues()) {
+                        if (tagToString(constraint->getTag()) == tag) {
+                            return constraint->Name;
+                        }
+                    }
+                }
+                return std::string();
+            };
             // Each conflict is addressed to the sketch, and names the element inside it.
             for (App::MergeConflict& conflict : merged.conflicts) {
+                const std::string name = entryName(conflict.type, givenName(conflict.id));
+                const std::string ownValue = "value: ";
+                conflict.detail = conflict.detail.rfind(ownValue, 0) == 0
+                    ? name + ": " + conflict.detail.substr(ownValue.size())
+                    : name + ": " + conflict.detail;
                 const std::string section = conflict.id.rfind("borrowed:", 0) == 0 ? "ExternalGeo"
                     : isGeometryType(conflict.type)                                ? "Geometry"
                                                                                    : "Constraints";
