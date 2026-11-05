@@ -32,11 +32,12 @@
 using namespace Robot;
 using namespace App;
 
-PROPERTY_SOURCE(Robot::TrajectoryObject, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Robot::TrajectoryObject, App::GeoFeature)
 
 
 TrajectoryObject::TrajectoryObject()
 {
+    App::PlacementExtension::initExtension(this);
 
     ADD_PROPERTY_TYPE(Base, (Base::Placement()), "Trajectory", Prop_None, "Base frame of the trajectory");
     ADD_PROPERTY_TYPE(Trajectory, (Robot::Trajectory()), "Trajectory", Prop_None, "Trajectory object");

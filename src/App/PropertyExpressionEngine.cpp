@@ -31,12 +31,20 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
 #include <Base/Reader.h>
+#include <cctype>
+
+#include <Base/Quantity.h>
+#include <Base/Unit.h>
+#include <Base/Uuid.h>
 #include <Base/Tools.h>
 #include <Base/Writer.h>
 #include <CXX/Objects.hxx>
 
 #include "PropertyExpressionEngine.h"
 #include "ExpressionVisitors.h"
+#include "ExpressionParser.h"
+#include "Document.h"
+#include "DocumentObject.h"
 
 
 FC_LOG_LEVEL_INIT("App", true);
@@ -45,6 +53,149 @@ using namespace App;
 using namespace Base;
 using namespace boost;
 namespace sp = std::placeholders;
+
+namespace
+{
+// Collects the object-referencing variable nodes of an expression. Read-only visitor; it never
+// mutates the tree.
+class VariableNodeCollector: public App::ExpressionVisitor
+{
+public:
+    void visit(App::Expression& node) override
+    {
+        if (auto* var = freecad_cast<App::VariableExpression*>(&node)) {
+            nodes.push_back(var);
+        }
+    }
+    std::vector<App::VariableExpression*> nodes;
+};
+
+/// @p path made canonical but still owned by the formula's object. canonicalPath() hands it to the
+/// object it reads, and a sub-path such as Constraints.Width owned there prints without the object.
+ObjectIdentifier canonicalPathOwnedBy(const DocumentObject* owner, const ObjectIdentifier& path)
+{
+    ObjectIdentifier owned(owner);
+    for (const auto& component : path.canonicalPath().getPropertyComponents()) {
+        owned << component;
+    }
+    return owned;
+}
+
+/// Binds each object a restored formula states by UUID (formulaStatedByUid). The name it then
+/// shows is the object's current label. A UUID no object in this document carries is said, never
+/// dropped (Amendment 19, Clause 19.1): the formula keeps it as written and fails when computed.
+void bindObjectsStatedByUid(const DocumentObject& owner,
+                            const std::string& property,
+                            Expression& expression)
+{
+    VariableNodeCollector collector;
+    expression.visit(collector);
+    for (auto* variable : collector.nodes) {
+        ObjectIdentifier path = variable->getPath();
+        // A UUID the parser did not find is still the text; one it found it has already bound,
+        // and shows the object's label in its place.
+        std::string stated = path.getStatedObjectName().first;
+        Base::Uuid uuid;
+        try {
+            uuid.setValue(stated);
+        }
+        catch (const std::exception&) {
+            stated = path.getBoundObjectUuid();
+            if (stated.empty()) {
+                continue;
+            }
+            uuid.setValue(stated);
+        }
+        const DocumentObject* object = owner.getDocument()->getObjectByUuid(uuid);
+        if (object == nullptr) {
+            FC_WARN("Formula reference not found: " << owner.getFullName() << '.' << property
+                                                    << " reads object " << stated
+                                                    << ", which is not in this document.");
+            continue;
+        }
+        path.setBoundObjectUuid(stated);
+        if (std::string(object->Label.getValue()) == object->getNameInDocument()) {
+            // Shown as a plain name, not <<label>>, while the two are the same.
+            ObjectIdentifier plain = canonicalPathOwnedBy(&owner, path);
+            ObjectIdentifier::String name(object->getNameInDocument(), false, true);
+            name.setUuid(stated);
+            plain.setDocumentObjectName(std::move(name),
+                                        true,
+                                        ObjectIdentifier::String(path.getSubObjectName()));
+            path = plain;
+        }
+        variable->setPath(path);
+    }
+}
+
+/// P7 (Robustness Through Honesty): a plain number arriving at a property that carries a
+/// dimension is ambiguous -- two of *what*? The engine used to settle that silently by reading
+/// the bare number as the internal unit, so a sheet a person authored in inches drove a part
+/// twenty-five times too small and said nothing. The ambiguity is surfaced at the moment it
+/// arises instead, naming the dimension that was expected and how to state it.
+///
+/// The target's dimension is read from the value already sitting at the path rather than from
+/// the property's own type, so a sub-path stays honest: `Placement.Base.x` is a length even
+/// though the property it lives on is a placement.
+///
+/// Typing a bare number straight into a length field is untouched -- that is a direct property
+/// set, not an expression, and the field on screen says what the unit is. This governs only a
+/// value crossing a reference, where nothing tells the reader what it landed in.
+///
+/// Zero passes. P7 governs *ambiguity*, and zero is the same value in every unit, so there is
+/// nothing to guess and nothing worth asking about.
+void requireDimensionOnBareNumber(const App::any& value,
+                                  const App::any& current,
+                                  const App::Expression* expression)
+{
+    if (current.type() != typeid(Base::Quantity)) {
+        return;
+    }
+    const Base::Unit expected = boost::any_cast<Base::Quantity>(current).getUnit();
+    if (expected == Base::Unit()) {
+        return;  // the target carries no dimension, so a plain number is exactly right
+    }
+    if (value.type() == typeid(Base::Quantity)) {
+        return;  // the value states its own unit; a mismatch is caught where it is assigned
+    }
+
+    double bare = 0.0;
+    if (value.type() == typeid(int)) {
+        bare = boost::any_cast<int>(value);
+    }
+    else if (value.type() == typeid(long)) {
+        bare = static_cast<double>(boost::any_cast<long>(value));
+    }
+    else if (value.type() == typeid(float)) {
+        bare = boost::any_cast<float>(value);
+    }
+    else if (value.type() == typeid(double)) {
+        bare = boost::any_cast<double>(value);
+    }
+    else {
+        return;  // not a number at all -- that is a different failure, reported where it happens
+    }
+
+    if (bare == 0.0) {
+        return;
+    }
+
+    // "An Angle", not "A Angle" -- the message is the whole point of the rule, so it reads.
+    const std::string dimension = expected.getTypeString();
+    const bool vowel = !dimension.empty()
+        && std::string("AEIOU").find(static_cast<char>(std::toupper(dimension[0])))
+            != std::string::npos;
+
+    std::ostringstream ss;
+    ss << (vowel ? "An " : "A ") << dimension << " was expected, but this gives the plain number "
+       << bare << " with no unit. Say which unit it is -- write it into the value, as in \""
+       << bare << " " << expected.getString() << "\", or multiply by a unit.";
+    if (expression != nullptr) {
+        ss << "\nfrom the expression '" << expression->toString() << "'";
+    }
+    throw Base::TypeError(ss.str().c_str());
+}
+}  // namespace
 
 TYPESYSTEM_SOURCE_ABSTRACT(App::PropertyExpressionContainer, App::PropertyXLinkContainer)
 
@@ -415,20 +566,24 @@ void PropertyExpressionEngine::Paste(const Property& from)
 
 void PropertyExpressionEngine::Save(Base::Writer& writer) const
 {
-    writer.Stream() << writer.ind() << "<ExpressionEngine count=\"" << expressions.size();
+    // Stated without a declared length: a count is a second statement of what the same element
+    // already holds, and in a file people merge, two people each adding a formula both raise it
+    // to the same number -- a textual merge takes that without a conflict and a reader that loops
+    // the stated number of times drops one of the two formulas without a word.
+    writer.Stream() << writer.ind() << "<ExpressionEngine";
     if (PropertyExpressionContainer::_XLinks.empty()) {
-        writer.Stream() << "\">" << std::endl;
+        writer.Stream() << ">" << std::endl;
         writer.incInd();
     }
     else {
-        writer.Stream() << R"(" xlink="1">)" << std::endl;
+        writer.Stream() << R"( xlink="1">)" << std::endl;
         writer.incInd();
         PropertyExpressionContainer::Save(writer);
     }
     for (const auto& it : expressions) {
         std::string expression, comment;
         if (it.second.expression) {
-            expression = it.second.expression->toString(true);
+            expression = formulaStatedByUid(*it.second.expression);
             comment = it.second.expression->comment;
         }
 
@@ -447,17 +602,15 @@ void PropertyExpressionEngine::Save(Base::Writer& writer) const
 void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
 {
     reader.readElement("ExpressionEngine");
-    int count = reader.getAttribute<double>("count");
+    const int engine = reader.level();
 
     if (reader.hasAttribute("xlink") && reader.getAttribute<bool>("xlink")) {
         PropertyExpressionContainer::Restore(reader);
     }
 
     restoredExpressions = std::make_unique<std::vector<RestoredExpression>>();
-    restoredExpressions->reserve(count);
-    for (int i = 0; i < count; ++i) {
-
-        reader.readElement("Expression");
+    while (nextChildElement(reader, engine)) {
+        expectElement(reader, "Expression");
         restoredExpressions->emplace_back();
         auto& info = restoredExpressions->back();
         info.path = reader.getAttribute<const char*>("path");
@@ -466,8 +619,33 @@ void PropertyExpressionEngine::Restore(Base::XMLReader& reader)
             info.comment = reader.getAttribute<const char*>("comment");
         }
     }
+}
 
-    reader.readEndElement("ExpressionEngine");
+std::string App::formulaStatedByUid(const Expression& expression)
+{
+    std::unique_ptr<Expression> copy(expression.copy());
+    const DocumentObject* owner = expression.getOwner();
+    VariableNodeCollector collector;
+    copy->visit(collector);
+    for (auto* variable : collector.nodes) {
+        const ObjectIdentifier path = variable->getPath();
+        const DocumentObject* object = path.getDocumentObject();
+        // A property of the formula's own object is read as a bare name, which never needs a UUID.
+        if (object == nullptr || owner == nullptr || object == owner
+            || object->getDocument() != owner->getDocument()) {
+            continue;
+        }
+        std::string uuid = path.getBoundObjectUuid();
+        if (uuid.empty()) {
+            uuid = object->Uid.getValueStr();
+        }
+        ObjectIdentifier stated = canonicalPathOwnedBy(owner, path);
+        stated.setDocumentObjectName(ObjectIdentifier::String(uuid, true),
+                                     true,
+                                     ObjectIdentifier::String(path.getSubObjectName()));
+        variable->setPath(stated);
+    }
+    return copy->toString(true);
 }
 
 ObjectIdentifier PropertyExpressionEngine::canonicalPath(const ObjectIdentifier& oid) const
@@ -533,6 +711,8 @@ void PropertyExpressionEngine::tryRestoreExpression(DocumentObject* docObj,
                 Expression::parse(docObj, info.expr));
             if (expression) {
                 expression->comment = info.comment;
+
+                bindObjectsStatedByUid(*docObj, info.path, *expression);
             }
             setValue(path, expression);
         }
@@ -734,9 +914,11 @@ DocumentObjectExecReturn* App::PropertyExpressionEngine::execute(ExecuteOption o
                 //
                 // if (option == ExecuteOnRestore && prop->testStatus(Property::EvalOnRestore))
                 {
-                    if (isAnyEqual(value, prop->getPathValue(*it))) {
+                    const App::any current = prop->getPathValue(*it);
+                    if (isAnyEqual(value, current)) {
                         continue;
                     }
+                    requireDimensionOnBareNumber(value, current, expression.get());
                     if (touched) {
                         *touched = true;
                     }
@@ -890,6 +1072,15 @@ void PropertyExpressionEngine::renameObjectIdentifiers(
     for (const auto& it : expressions) {
         RenameObjectIdentifierExpressionVisitor<PropertyExpressionEngine> v(*this, paths, it.first);
         it.second.expression->visit(v);
+    }
+}
+
+void PropertyExpressionEngine::shiftCellReferences(const App::DocumentObject* sheet,
+                                                   const App::CellShift& shift)
+{
+    ShiftCellsExpressionVisitor<PropertyExpressionEngine> visitor(*this, sheet, shift);
+    for (const auto& it : expressions) {
+        it.second.expression->visit(visitor);
     }
 }
 

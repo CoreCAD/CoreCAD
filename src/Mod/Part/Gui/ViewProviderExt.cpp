@@ -50,6 +50,8 @@
 
 #include <QAction>
 #include <QMenu>
+#include <QStringList>
+#include <set>
 #include <sstream>
 
 #include <Inventor/SoPickedPoint.h>
@@ -83,6 +85,7 @@
 #include <Gui/ViewParams.h>
 #include <Gui/Utilities.h>
 
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/ShapeMapHasher.h>
 #include <Mod/Part/App/Tools.h>
 
@@ -91,7 +94,7 @@
 #include "SoBrepEdgeSet.h"
 #include "SoBrepFaceSet.h"
 #include "SoBrepPointSet.h"
-#include "TaskFaceAppearances.h"
+#include "AppearancePanel.h"
 
 
 FC_LOG_LEVEL_INIT("Part", true, true)
@@ -534,6 +537,154 @@ void ViewProviderPartExt::attach(App::DocumentObject* pcFeat)
     addDisplayMaskMode(pcFlatRoot, "Shaded");
     addDisplayMaskMode(pcWireframeRoot, "Wireframe");
     addDisplayMaskMode(pcPointsRoot, "Point");
+}
+
+namespace
+{
+QColor toQColor(const Base::Color& color)
+{
+    return QColor::fromRgbF(color.r, color.g, color.b);
+}
+
+/// The bodies one pattern emits share that pattern as their Tip; they show as one group, drawn
+/// as a stack with a count when large (ARCHITECTURE §5.5). Aggregation is presentation only.
+std::vector<std::vector<Part::BodyBase*>> groupByPattern(const std::vector<Part::BodyBase*>& bodies)
+{
+    std::vector<std::vector<Part::BodyBase*>> groups;
+    for (auto* body : bodies) {
+        App::DocumentObject* tip = body->Tip.getValue();
+        auto group = std::ranges::find_if(groups, [&](const auto& g) {
+            return tip && g.front()->Tip.getValue() == tip;
+        });
+        if (group != groups.end()) {
+            group->push_back(body);
+        }
+        else {
+            groups.push_back({body});
+        }
+    }
+    return groups;
+}
+
+std::vector<Gui::ViewProvider::BodySwatch> swatches(
+    const std::vector<std::vector<Part::BodyBase*>>& groups
+)
+{
+    std::vector<Gui::ViewProvider::BodySwatch> result;
+    for (const auto& group : groups) {
+        Gui::ViewProvider::BodySwatch swatch;
+        for (auto* body : group) {
+            swatch.colors.push_back(toQColor(body->getIdentityColor()));
+            swatch.bodies.push_back(body);
+        }
+        result.push_back(std::move(swatch));
+    }
+    return result;
+}
+
+/// Every body by name, one to a line, each after a square of its own colour (§8.7): the column
+/// draws at most three of a pattern's colours, so this is where each body can be told apart.
+QString listBodies(const std::vector<std::vector<Part::BodyBase*>>& groups)
+{
+    QStringList lines;
+    for (const auto& group : groups) {
+        for (auto* body : group) {
+            lines << QStringLiteral("<span style=\"color:%1\">&#9632;</span> %2")
+                         .arg(
+                             toQColor(body->getIdentityColor()).name(),
+                             QString::fromUtf8(body->Label.getValue()).toHtmlEscaped()
+                         );
+        }
+    }
+    return lines.join(QStringLiteral("<br>"));
+}
+}  // namespace
+
+Gui::ViewProvider::TreeBodyColumn PartGui::treeBodyColumnOf(const App::DocumentObject* obj)
+{
+    Gui::ViewProvider::TreeBodyColumn column;
+    if (!obj || !obj->isAttachedToDocument()) {
+        return column;
+    }
+    // A step past the roll-back marker does not exist yet, so it builds and uses no body.
+    if (obj->getDocument()->isRolledBackPast(obj)) {
+        return column;
+    }
+
+    // A body's own row (shown only with hidden rows revealed) carries its swatch.
+    if (auto* body = freecad_cast<Part::BodyBase*>(obj)) {
+        Gui::ViewProvider::BodySwatch swatch;
+        swatch.colors.push_back(toQColor(body->getIdentityColor()));
+        swatch.bodies.push_back(const_cast<Part::BodyBase*>(body));
+        column.partOf.push_back(swatch);
+        column.builds.push_back(std::move(swatch));
+        column.swatchRow = body->lastShapedBy();
+        column.tooltip = QString::fromUtf8(body->Label.getValue());
+        return column;
+    }
+
+    // The bodies this object builds: every body whose chain holds it.
+    std::vector<Part::BodyBase*> built = Part::BodyBase::findBodiesBuiltBy(obj);
+
+    // What counts as foreign. For a solid feature, any body it does not build. A sketch, datum or
+    // other input builds nothing itself; a body it feeds (through the first steps downstream that
+    // build one, past any datum or sketch between) is not foreign either.
+    std::vector<Part::BodyBase*> own = built;
+    if (built.empty()) {
+        std::vector<App::DocumentObject*> pending = obj->getInList();
+        std::set<App::DocumentObject*> seen(pending.begin(), pending.end());
+        while (!pending.empty()) {
+            App::DocumentObject* consumer = pending.back();
+            pending.pop_back();
+            auto feeds = Part::BodyBase::findBodiesBuiltBy(consumer);
+            for (auto* body : feeds) {
+                if (std::ranges::find(own, body) == own.end()) {
+                    own.push_back(body);
+                }
+            }
+            if (feeds.empty() && !freecad_cast<Part::BodyBase*>(consumer)) {
+                for (auto* next : consumer->getInList()) {
+                    if (seen.insert(next).second) {
+                        pending.push_back(next);
+                    }
+                }
+            }
+        }
+    }
+
+    // A reference counts when it points at a body, or at a step that builds one. A free input
+    // (the profile sketch a pad consumes) builds nothing, so it counts on its own row, not here.
+    std::vector<Part::BodyBase*> referenced;
+    auto addReferenced = [&](Part::BodyBase* body) {
+        if (std::ranges::find(own, body) == own.end()
+            && std::ranges::find(referenced, body) == referenced.end()) {
+            referenced.push_back(body);
+        }
+    };
+    for (auto* target : obj->getOutList()) {
+        if (auto* body = freecad_cast<Part::BodyBase*>(target)) {
+            addReferenced(body);
+            continue;
+        }
+        for (auto* body : Part::BodyBase::findBodiesBuiltBy(target)) {
+            addReferenced(body);
+        }
+    }
+
+    // A body's swatch stands only on the step that last shaped it; the rows that build it are
+    // washed when it is selected.
+    column.partOf = swatches(groupByPattern(built));
+    std::erase_if(built, [obj](Part::BodyBase* body) { return body->lastShapedBy() != obj; });
+    const auto builtGroups = groupByPattern(built);
+    column.builds = swatches(builtGroups);
+    column.tooltip = listBodies(builtGroups);
+    column.references = swatches(groupByPattern(referenced));
+    return column;
+}
+
+Gui::ViewProvider::TreeBodyColumn ViewProviderPartExt::getTreeBodyColumn() const
+{
+    return treeBodyColumnOf(getObject());
 }
 
 void ViewProviderPartExt::setDisplayMode(const char* ModeName)
@@ -987,38 +1138,13 @@ void ViewProviderPartExt::finishRestoring()
     Gui::ViewProviderGeometryObject::finishRestoring();
 }
 
-void ViewProviderPartExt::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
-{
-    QIcon iconObject = mergeGreyableOverlayIcons(Gui::BitmapFactory().pixmap("Part_ColorFace.svg"));
-    Gui::ViewProviderGeometryObject::setupContextMenu(menu, receiver, member);
-    QAction* act = menu->addAction(iconObject, QObject::tr("Appearance per Face"), receiver, member);
-    act->setData(QVariant((int)ViewProvider::Color));
-}
-
-bool ViewProviderPartExt::changeFaceAppearances()
-{
-    Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
-    if (dlg) {
-        Gui::Control().showDialog(dlg);
-        return false;
-    }
-
-    Gui::Selection().clearSelection();
-    Gui::Control().showDialog(new TaskFaceAppearances(this));
-    return true;
-}
-
 bool ViewProviderPartExt::setEdit(int ModNum)
 {
     if (ModNum == ViewProvider::Color) {
-        // When double-clicking on the item for this pad the
-        // object unsets and sets its edit mode without closing
-        // the task panel
-        return changeFaceAppearances();
+        AppearancePanel::showPanel();
+        return false;
     }
-    else {
-        return Gui::ViewProviderGeometryObject::setEdit(ModNum);
-    }
+    return Gui::ViewProviderGeometryObject::setEdit(ModNum);
 }
 
 void ViewProviderPartExt::unsetEdit(int ModNum)

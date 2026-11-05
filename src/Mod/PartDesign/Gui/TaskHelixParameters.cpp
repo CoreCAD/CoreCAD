@@ -74,7 +74,7 @@ TaskHelixParameters::TaskHelixParameters(PartDesignGui::ViewProviderHelix* Helix
 
     connectSlots();
     setFocus();
-    showCoordinateAxes();
+    originDisplay.show(getObject(), Gui::DatumElement::Axes);
 
     setupGizmos(HelixView);
 }
@@ -168,24 +168,6 @@ void TaskHelixParameters::connectSlots()
     // clang-format on
 }
 
-void TaskHelixParameters::showCoordinateAxes()
-{
-    // show the parts coordinate system axis for selection
-    if (PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject())) {
-        try {
-            App::Origin* origin = body->getOrigin();
-            ViewProviderCoordinateSystem* vpOrigin;
-            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->setTemporaryVisibility(Gui::DatumElement::Axes);
-        }
-        catch (const Base::Exception& ex) {
-            ex.reportException();
-        }
-    }
-}
-
 void TaskHelixParameters::fillAxisCombo(bool forceRefill)
 {
     Base::StateLocker lock(getUpdateBlockRef(), true);
@@ -235,9 +217,11 @@ void TaskHelixParameters::addSketchAxes()
 void TaskHelixParameters::addPartAxes()
 {
     auto profile = getObject<PartDesign::ProfileBased>();
-    if (PartDesign::Body* body = PartDesign::Body::findBodyOf(profile)) {
+    // Reference axes come from the shared document Origin (Cruth §11 step 5e), not a body.
+    App::Origin* orig = profile ? PartDesign::Body::findDocumentOrigin(profile->getDocument())
+                                : nullptr;
+    if (orig) {
         try {
-            App::Origin* orig = body->getOrigin();
             addAxisToCombo(orig->getX(), "", tr("Base X-axis"));
             addAxisToCombo(orig->getY(), "", tr("Base Y-axis"));
             addAxisToCombo(orig->getZ(), "", tr("Base Z-axis"));
@@ -584,25 +568,7 @@ void TaskHelixParameters::onOutsideChanged(bool on)
 }
 
 
-TaskHelixParameters::~TaskHelixParameters()
-{
-    try {
-        // hide the parts coordinate system axis for selection
-        auto obj = getObject();
-        PartDesign::Body* body = obj ? PartDesign::Body::findBodyOf(obj) : nullptr;
-        if (body) {
-            App::Origin* origin = body->getOrigin();
-            ViewProviderCoordinateSystem* vpOrigin {};
-            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->resetTemporaryVisibility();
-        }
-    }
-    catch (const Base::Exception& ex) {
-        ex.reportException();
-    }
-}
+TaskHelixParameters::~TaskHelixParameters() = default;
 
 void TaskHelixParameters::changeEvent(QEvent* e)
 {
@@ -766,6 +732,7 @@ TaskDlgHelixParameters::TaskDlgHelixParameters(ViewProviderHelix* HelixView)
 {
     assert(HelixView);
     Content.push_back(new TaskHelixParameters(HelixView));
+    Content.push_back(new TaskMergeResultParameters(HelixView));
     Content.push_back(preview);
 }
 

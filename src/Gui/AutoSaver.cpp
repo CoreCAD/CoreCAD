@@ -176,21 +176,13 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
         return;
     }
 
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Document"
-    );
-    App::RecoverySnapshotSaveOptions options;
-    options.compressed = this->compressed;
-    options.saveBinaryBrep = !this->compressed || hGrp->GetBool("SaveBinaryBrep", true);
-    options.saveThumbnail = false;
-
     Gui::WaitCursor wc;
     getMainWindow()->showMessage(tr("Wait until the auto-recovery file has been saved…"), 5000);
     // qApp->processEvents();
 
     Base::TimeElapsed startTime;
     try {
-        App::writeRecoverySnapshotToTransientDir(*doc, options);
+        App::writeRecoverySnapshotToTransientDir(*doc);
     }
     catch (...) {
         saver.restorePendingAutosave();

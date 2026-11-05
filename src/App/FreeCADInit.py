@@ -61,6 +61,7 @@ try:
     import types
     import importlib.resources as resources
     import importlib
+    import importlib.util
     import functools
     import re
     import pkgutil
@@ -421,6 +422,10 @@ App.__cmake__ = globals().get("cmake", [])
 App.__unit_test__ = []
 
 App.addImportType("FreeCAD document (*.FCStd)", "FreeCAD")
+App.addImportType("Part document (*.cpart)", "FreeCAD")
+App.addImportType("Assembly document (*.cassembly)", "FreeCAD")
+App.addImportType("Drawing document (*.cdrawing)", "FreeCAD")
+App.addImportType("Spreadsheet document (*.csheet)", "FreeCAD")
 
 # set to no gui, is overwritten by InitGui
 App.GuiUp = 0
@@ -1462,6 +1467,48 @@ class InitPipeline:
         # Save to use in FreeCADGuiInit.py
         App.__ModCache__ = module_cache
 
+    @staticmethod
+    def gui_follows() -> bool:
+        """
+        Whether FreeCADGuiInit.py runs after this script. Mirrors inGuiMode() in MainGui.cpp:
+        only the GUI program sets Console to "0" (and -c turns it to "1"); FreeCADCmd and an
+        interpreter importing FreeCAD leave it unset. RunMode alone cannot tell, because -t sets
+        it to "Internal" in both programs.
+        """
+        return App.ConfigGet("Console") == "0" and Config.RunMode in ("Gui", "Internal")
+
+    def import_mods(self) -> None:
+        """
+        Import every Mod the program installed.
+
+        The program decides what code it runs, and it decides it here. Nothing a document holds
+        may cause a module to load: a file states data, and the type names in it are looked up
+        among what is already registered. That could not be true while a module was loaded on
+        first use, because the only thing that knew a module was wanted was the file that named
+        it -- so opening a document imported whatever module name it stated, and a document
+        decided what ran.
+
+        Each Mod is imported on its own. Loading everything up front puts a module that cannot
+        load in the way of starting the program at all, so one that fails says so and is skipped
+        rather than taking the session with it.
+        """
+        for mod in App.__ModCache__:
+            if mod.state != ModState.Loaded:
+                continue
+            name = mod.name
+            try:
+                if importlib.util.find_spec(name) is None:
+                    # A Mod that is a directory of scripts and resources with no module of its
+                    # own. There is nothing to register and nothing to report.
+                    continue
+            except Exception:
+                continue
+            try:
+                importlib.import_module(name)
+            except Exception as ex:
+                Err(f"Init: Mod {name} could not be loaded, so documents that hold its content "
+                    f"will not be read whole: {ex!s}")
+
     def register_macro_sources(self) -> None:
         """
         Add Macro sources to search paths.
@@ -1533,6 +1580,13 @@ class InitPipeline:
         """
         self.scan()
         self.load_mods()
+        if self.gui_follows():
+            # Too early: App.GuiUp is still 0, and a module that asks "is the GUI up?" as it
+            # is imported (Draft asks in some thirty places) would take its no-GUI branch for
+            # the whole session. FreeCADGuiInit.py imports the Mods once it has set GuiUp.
+            App.__ImportMods__ = self.import_mods
+        else:
+            self.import_mods()
         self.register_macro_sources()
         self.post()
         self.report()

@@ -133,13 +133,21 @@ void GeometryFacade::copyId(const Part::Geometry* src, Part::Geometry* dst)
     gfdst->setId(gfsrc->getId());
 }
 
-int GeometryFacade::getId(const Part::Geometry* geometry)
+void GeometryFacade::copyTag(const Part::Geometry* src, Part::Geometry* dst)
+{
+    throwOnNullPtr(src);
+    throwOnNullPtr(dst);
+
+    dst->copyTagFrom(src);
+}
+
+long GeometryFacade::getId(const Part::Geometry* geometry)
 {
     auto gf = GeometryFacade::getFacade(geometry);
     return gf->getId();
 }
 
-void GeometryFacade::setId(const Part::Geometry* geometry, int id)
+void GeometryFacade::setId(const Part::Geometry* geometry, long id)
 {
     auto gf = GeometryFacade::getFacade(geometry);
     gf->setId(id);

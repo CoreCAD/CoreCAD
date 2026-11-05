@@ -26,6 +26,7 @@
 
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureGroove.h>
+#include "OriginDisplay.h"
 #include "TaskSketchBasedParameters.h"
 
 
@@ -115,10 +116,10 @@ private:
     // TODO: This is common with extrude. Maybe send to superclass.
     void translateFaceName();
     void clearFaceName();
-    Gui::ViewProviderCoordinateSystem* getOriginView() const;
 
 private:
     std::unique_ptr<Ui_TaskRevolutionParameters> ui;
+    OriginDisplay originDisplay;
     QWidget* proxy;
     bool selectionFace;
     bool isGroove;

@@ -808,10 +808,9 @@ App::DocumentObjectExecReturn* Feature::execute()
         Points::Feature* pts = static_cast<Points::Feature*>(pcActual);
         actual = new InspectActualPoints(pts->Points.getValue());
     }
-    else if (pcActual->isDerivedFrom<Part::Feature>()) {
+    else if (Part::hasShape(pcActual)) {
         useMultithreading = false;
-        Part::Feature* part = static_cast<Part::Feature*>(pcActual);
-        actual = new InspectActualShape(part->Shape.getShape());
+        actual = new InspectActualShape(Part::getShape(pcActual));
     }
     else {
         throw Base::TypeError("Unknown geometric type");
@@ -831,10 +830,9 @@ App::DocumentObjectExecReturn* Feature::execute()
             Points::Feature* pts = static_cast<Points::Feature*>(it);
             nominal = new InspectNominalPoints(pts->Points.getValue(), this->SearchRadius.getValue());
         }
-        else if (it->isDerivedFrom<Part::Feature>()) {
+        else if (Part::hasShape(it)) {
             useMultithreading = false;
-            Part::Feature* part = static_cast<Part::Feature*>(it);
-            nominal = new InspectNominalShape(part->Shape.getValue(), this->SearchRadius.getValue());
+            nominal = new InspectNominalShape(Part::getShape(it).getShape(), this->SearchRadius.getValue());
         }
 
         if (nominal) {

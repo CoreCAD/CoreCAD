@@ -29,11 +29,12 @@
 
 using namespace Path;
 
-PROPERTY_SOURCE(Path::Feature, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Path::Feature, App::GeoFeature)
 
 
 Feature::Feature()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Path, (Path::Toolpath()), "Base", App::Prop_None, "The path data of this feature");
 }
 

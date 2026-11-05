@@ -38,9 +38,9 @@
 #include <Mod/PartDesign/App/FeatureMirrored.h>
 
 #include "ui_TaskMirroredParameters.h"
+#include "TaskVariedMeasurements.h"
 #include "TaskMirroredParameters.h"
 #include "ReferenceSelection.h"
-#include "TaskMultiTransformParameters.h"
 
 using namespace PartDesignGui;
 using namespace Gui;
@@ -52,16 +52,6 @@ TaskMirroredParameters::TaskMirroredParameters(ViewProviderTransformed* Transfor
     , ui(new Ui_TaskMirroredParameters)
 {
     setupUI();
-}
-
-TaskMirroredParameters::TaskMirroredParameters(
-    TaskMultiTransformParameters* parentTask,
-    QWidget* parameterWidget
-)
-    : TaskTransformedParameters(parentTask)
-    , ui(new Ui_TaskMirroredParameters)
-{
-    setupParameterUI(parameterWidget);
 }
 
 void TaskMirroredParameters::setupParameterUI(QWidget* widget)
@@ -87,20 +77,7 @@ void TaskMirroredParameters::setupParameterUI(QWidget* widget)
         this->fillPlanesCombo(planeLinks, nullptr);
     }
 
-    // show the parts coordinate system planes for selection
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-    if (body) {
-        try {
-            App::Origin* origin = body->getOrigin();
-            auto vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->setTemporaryVisibility(Gui::DatumElement::Planes);
-        }
-        catch (const Base::Exception& ex) {
-            Base::Console().error("%s\n", ex.what());
-        }
-    }
+    originDisplay.show(getObject(), Gui::DatumElement::Planes);
 
     updateUI();
 }
@@ -189,23 +166,6 @@ void TaskMirroredParameters::onPlaneChanged(int /*num*/)
     recomputeFeature();
 }
 
-void TaskMirroredParameters::onUpdateView(bool on)
-{
-    blockUpdate = !on;
-    if (on) {
-        setupTransaction();
-        // Do the same like in TaskDlgMirroredParameters::accept() but without doCommand
-        auto pcMirrored = getObject<PartDesign::Mirrored>();
-        std::vector<std::string> mirrorPlanes;
-        App::DocumentObject* obj = nullptr;
-
-        getMirrorPlane(obj, mirrorPlanes);
-        pcMirrored->MirrorPlane.setValue(obj, mirrorPlanes);
-
-        recomputeFeature();
-    }
-}
-
 void TaskMirroredParameters::getMirrorPlane(App::DocumentObject*& obj, std::vector<std::string>& sub) const
 {
     const App::PropertyLinkSub& lnk = planeLinks.getCurrentLink();
@@ -223,23 +183,7 @@ void TaskMirroredParameters::apply()
     FCMD_OBJ_CMD(getObject(), "MirrorPlane = " << mirrorPlane);
 }
 
-TaskMirroredParameters::~TaskMirroredParameters()
-{
-    // hide the parts coordinate system axis for selection
-    try {
-        PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-        if (body) {
-            App::Origin* origin = body->getOrigin();
-            auto vpOrigin = static_cast<ViewProviderCoordinateSystem*>(
-                Gui::Application::Instance->getViewProvider(origin)
-            );
-            vpOrigin->resetTemporaryVisibility();
-        }
-    }
-    catch (const Base::Exception& ex) {
-        Base::Console().error("%s\n", ex.what());
-    }
-}
+TaskMirroredParameters::~TaskMirroredParameters() = default;
 
 //**************************************************************************
 //**************************************************************************
@@ -252,6 +196,8 @@ TaskDlgMirroredParameters::TaskDlgMirroredParameters(ViewProviderMirrored* Mirro
     parameter = new TaskMirroredParameters(MirroredView);
 
     Content.push_back(parameter);
+    Content.push_back(new TaskVariedMeasurements(MirroredView));
+    Content.push_back(new TaskMergeResultParameters(MirroredView));
     Content.push_back(preview);
 }
 

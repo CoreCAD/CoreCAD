@@ -69,7 +69,6 @@ void DlgSettingsGeneral::saveSettings()
     ui->checkBooleanRefine->onSave();
     ui->checkSketchBaseRefine->onSave();
     ui->checkObjectNaming->onSave();
-    ui->checkAllowCompoundBody->onSave();
     ui->enableGizmos->onSave();
     ui->delayedGizmoUpdate->onSave();
     ui->enableCoarseSnap->onSave();
@@ -91,7 +90,6 @@ void DlgSettingsGeneral::loadSettings()
     ui->checkBooleanRefine->onRestore();
     ui->checkSketchBaseRefine->onRestore();
     ui->checkObjectNaming->onRestore();
-    ui->checkAllowCompoundBody->onRestore();
     ui->enableGizmos->onRestore();
     ui->delayedGizmoUpdate->onRestore();
     ui->enableCoarseSnap->onRestore();

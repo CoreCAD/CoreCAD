@@ -59,9 +59,11 @@ class _Analysis(CommandManager):
         self.tooltip = Qt.QT_TRANSLATE_NOOP(
             "FEM_Analysis", "Creates an analysis container with default solver"
         )
-        self.is_active = "with_document"
+        self.is_active = "always"
 
     def Activated(self):
+        if not FreeCAD.ActiveDocument:
+            FreeCAD.newDocument()
         FreeCAD.ActiveDocument.openTransaction("Create Analysis")
         FreeCADGui.addModule("FemGui")
         FreeCADGui.addModule("ObjectsFem")

@@ -49,7 +49,6 @@
 #include <App/Link.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
-#include <App/Part.h>
 
 #include <Base/Tools.h>
 
@@ -69,7 +68,9 @@
 #include <Gui/Selection/SoFCSelectionAction.h>
 
 #include <Mod/Assembly/App/AssemblyLink.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Assembly/App/AssemblyObject.h>
+#include <Mod/Assembly/App/ExplodedView.h>
 #include <Mod/Assembly/App/AssemblyUtils.h>
 #include <Mod/Assembly/App/JointGroup.h>
 #include <Mod/Assembly/App/ViewGroup.h>
@@ -107,7 +108,7 @@ void printPlacement(Base::Placement plc, const char* name)
     );
 }
 
-PROPERTY_SOURCE(AssemblyGui::ViewProviderAssembly, Gui::ViewProviderPart)
+PROPERTY_SOURCE(AssemblyGui::ViewProviderAssembly, Gui::ViewProviderDocumentObjectGroup)
 
 ViewProviderAssembly::ViewProviderAssembly()
     : SelectionObserver(false)
@@ -146,10 +147,10 @@ void ViewProviderAssembly::setupContextMenu(QMenu* menu, QObject* receiver, cons
 
     QAction* act = menu->addAction(QObject::tr("Active object"));
     act->setCheckable(true);
-    act->setChecked(isActivePart(ASSEMBLYKEY));
+    act->setChecked(getActivePart() == getObject());
     func->trigger(act, [this]() { this->doubleClicked(); });
 
-    ViewProviderDragger::setupContextMenu(menu, receiver, member);  // NOLINT
+    Gui::ViewProviderDocumentObjectGroup::setupContextMenu(menu, receiver, member);  // NOLINT
 }
 
 bool ViewProviderAssembly::doubleClicked()
@@ -276,7 +277,7 @@ void ViewProviderAssembly::updateData(const App::Property* prop)
         });
     }
     else {
-        Gui::ViewProviderPart::updateData(prop);
+        Gui::ViewProviderDocumentObjectGroup::updateData(prop);
     }
 }
 
@@ -327,7 +328,7 @@ bool ViewProviderAssembly::setEdit(int mode)
 
         return true;
     }
-    return ViewProviderPart::setEdit(mode);
+    return ViewProviderDocumentObjectGroup::setEdit(mode);
 }
 
 void ViewProviderAssembly::unsetEdit(int mode)
@@ -347,7 +348,7 @@ void ViewProviderAssembly::unsetEdit(int mode)
         }
 
         // Set the part as not 'Activated' ie not bold in the tree.
-        if (isActivePart(ASSEMBLYKEY)) {
+        if (getActivePart() == getObject()) {
             Gui::Command::doCommand(
                 Gui::Command::Gui,
                 "appDoc = App.getDocument('%s')\n"
@@ -364,7 +365,7 @@ void ViewProviderAssembly::unsetEdit(int mode)
 
         return;
     }
-    ViewProviderPart::unsetEdit(mode);
+    ViewProviderDocumentObjectGroup::unsetEdit(mode);
 }
 
 void ViewProviderAssembly::slotActivatedVP(const Gui::ViewProviderDocumentObject* vp, const char* name)
@@ -415,7 +416,7 @@ void ViewProviderAssembly::unsetDragger()
 
 void ViewProviderAssembly::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
 {
-    ViewProviderPart::setEditViewer(viewer, ModNum);
+    ViewProviderDocumentObjectGroup::setEditViewer(viewer, ModNum);
 
     if (asmDragger && viewer) {
         asmDragger->setUpAutoScale(viewer->getSoRenderManager()->getCamera());
@@ -680,16 +681,11 @@ void ViewProviderAssembly::doubleClickedIn3dView()
     auto* joint = getSelectedJoint();
 
     if (joint) {
-        std::string obj_name = joint->getNameInDocument();
-        std::string doc_name = joint->getDocument()->getName();
-
-        std::string cmd = "import JointObject\n"
-                          "obj = App.getDocument('"
-            + doc_name + "').getObject('" + obj_name
-            + "')\n"
-              "Gui.Control.showDialog(JointObject.TaskAssemblyCreateJoint(0, obj))";
-
-        Gui::Command::runCommand(Gui::Command::App, cmd.c_str());
+        // The joint's own view provider knows how to open it: a double click in the
+        // 3D view and one in the tree are the same request.
+        if (auto* vp = Gui::Application::Instance->getViewProvider(joint)) {
+            vp->doubleClicked();
+        }
     }
 }
 
@@ -759,7 +755,7 @@ App::DocumentObject* ViewProviderAssembly::getSelectedJoint()
 bool ViewProviderAssembly::getSelectedObjectsWithinAssembly(bool addPreselection, bool onlySolids)
 {
     // check the current selection, and check if any of the selected objects are within this
-    // App::Part
+    // assembly.
     //  If any, put them into the vector docsToMove and return true.
     //  Get the document
     docsToMove.clear();
@@ -870,7 +866,7 @@ void ViewProviderAssembly::collectMovableObjects(
     // Base case: This is not a flexible link, process it as a potential movable part.
     if (onlySolids
         && !(
-            currentObject->isDerivedFrom<App::Part>() || currentObject->isDerivedFrom<Part::Feature>()
+            currentObject->isDerivedFrom<Assembly::AssemblyLink>() || Part::hasShape(currentObject)
             || currentObject->isDerivedFrom<App::Link>()
             || currentObject->isDerivedFrom<App::LinkElement>()
         )) {
@@ -1218,6 +1214,28 @@ void ViewProviderAssembly::onSelectionChanged(const Gui::SelectionChanges& msg)
         return;
     }
 
+    // A picking click must not also start a part drag. mouseButtonPressed arms canStartDragging
+    // on press and can only disarm it on release -- but the release is swallowed whenever the
+    // click selects something (see the comment there), so the flag survives the click and the
+    // next mouse motion starts a move. That move disables viewer picking for its whole duration,
+    // which is what stops the user picking the second joint element.
+    //
+    // PickedListChanged is the message that actually identifies a picking click here: a genuine
+    // press-and-drag on a part sends no selection message at all, while a click that picks
+    // geometry sends this one, before the first motion event. Add/Rmv/ClrSelection are kept for
+    // programmatic selection changes. This must run before the isolation and explosion branches
+    // below, both of which return early.
+    if (isInEditMode()
+        && (msg.Type == Gui::SelectionChanges::PickedListChanged
+            || msg.Type == Gui::SelectionChanges::AddSelection
+            || msg.Type == Gui::SelectionChanges::ClrSelection
+            || msg.Type == Gui::SelectionChanges::RmvSelection)) {
+        canStartDragging = false;
+        if (partMoving) {
+            endMove();
+        }
+    }
+
     // Joint components isolation
     if (msg.Type == Gui::SelectionChanges::AddSelection) {
         auto selection = Gui::Selection().getSelection();
@@ -1245,12 +1263,6 @@ void ViewProviderAssembly::onSelectionChanged(const Gui::SelectionChanges& msg)
 
     if (!isInEditMode()) {
         return;
-    }
-
-    if (msg.Type == Gui::SelectionChanges::AddSelection
-        || msg.Type == Gui::SelectionChanges::ClrSelection
-        || msg.Type == Gui::SelectionChanges::RmvSelection) {
-        canStartDragging = false;
     }
 
     if (msg.Type == Gui::SelectionChanges::AddSelection) {
@@ -1288,12 +1300,12 @@ bool ViewProviderAssembly::onDelete(const std::vector<std::string>& subNames)
         }
     }
 
-    return ViewProviderPart::onDelete(subNames);
+    return ViewProviderDocumentObjectGroup::onDelete(subNames);
 }
 
 bool ViewProviderAssembly::canDelete(App::DocumentObject* objBeingDeleted) const
 {
-    bool res = ViewProviderPart::canDelete(objBeingDeleted);
+    bool res = ViewProviderDocumentObjectGroup::canDelete(objBeingDeleted);
     if (res) {
         // If a component is deleted, then we delete the joints as well.
         auto* assemblyPart = getObject<AssemblyObject>();
@@ -1430,18 +1442,15 @@ void ViewProviderAssembly::applyIsolationRecursively(
         }
         return;
     }
-    else if (auto* part = dynamic_cast<App::Part*>(current)) {
-        // As App::Part currently don't have material override
-        // (there is in LinkStage and RealThunder said he'll try to PR later)
-        // we have to recursively apply to children of App::Parts.
-
-        // If Part is in isolateSet, then all its children should be added to isolateSet
+    else if (auto* asmLink = dynamic_cast<Assembly::AssemblyLink*>(current)) {
+        // A sub-assembly carries no material override either; recurse into its components
+        // the same way as a plain group.
         if (isolate) {
-            for (auto* child : part->Group.getValues()) {
+            for (auto* child : asmLink->Group.getValues()) {
                 isolateSet.insert(child);
             }
         }
-        for (auto* child : part->Group.getValues()) {
+        for (auto* child : asmLink->Group.getValues()) {
             applyIsolationRecursively(child, isolateSet, mode, visited);
         }
         return;
@@ -1648,67 +1657,33 @@ bool ViewProviderAssembly::explodeTemporarily(App::DocumentObject* explodedView)
         return false;
     }
 
+    // An exploded view is a real type now, so ask it directly. This used to test any
+    // object handed in for a Python attribute that happened to be called
+    // "explodeTemporarily" -- which answered yes for anything that owned that name.
+    auto* view = freecad_cast<Assembly::ExplodedView*>(explodedView);
+    if (!view) {
+        return false;
+    }
+
     clearTemporaryExplosion();
 
-    Base::PyGILStateLocker lock;
-
-    App::PropertyPythonObject* proxy = explodedView
-        ? dynamic_cast<App::PropertyPythonObject*>(explodedView->getPropertyByName("Proxy"))
-        : nullptr;
-
-    if (!proxy) {
-        return false;
-    }
-
-    Py::Object jointPy = proxy->getValue();
-
-    if (!jointPy.hasAttr("explodeTemporarily")) {
-        return false;
-    }
-
-    Py::Object attr = jointPy.getAttr("explodeTemporarily");
-    if (attr.ptr() && attr.isCallable()) {
-        Py::Tuple args(1);
-        args.setItem(0, Py::asObject(explodedView->getPyObject()));
-        Py::Callable(attr).apply(args);
-        temporaryExplosion = explodedView;
-        temporaryExplosion->purgeTouched();
-        return true;
-    }
-
-    return false;
+    view->explodeTemporarily();
+    temporaryExplosion = view;
+    temporaryExplosion->purgeTouched();
+    return true;
 }
 
 void ViewProviderAssembly::clearTemporaryExplosion()
 {
-    if (!temporaryExplosion) {
-        return;
-    }
-
-    Base::PyGILStateLocker lock;
-
-    App::PropertyPythonObject* proxy = temporaryExplosion
-        ? dynamic_cast<App::PropertyPythonObject*>(temporaryExplosion->getPropertyByName("Proxy"))
-        : nullptr;
-
-    if (!proxy) {
-        return;
-    }
-
-    Py::Object jointPy = proxy->getValue();
-
-    if (!jointPy.hasAttr("restoreAssembly")) {
-        return;
-    }
-
-    Py::Object attr = jointPy.getAttr("restoreAssembly");
-    if (attr.ptr() && attr.isCallable()) {
-        Py::Tuple args(1);
-        args.setItem(0, Py::asObject(temporaryExplosion->getPyObject()));
-        Py::Callable(attr).apply(args);
-        temporaryExplosion->purgeTouched();
+    auto* view = freecad_cast<Assembly::ExplodedView*>(temporaryExplosion);
+    if (!view) {
         temporaryExplosion = nullptr;
+        return;
     }
+
+    view->restoreAssembly();
+    view->purgeTouched();
+    temporaryExplosion = nullptr;
 }
 
 // UTILS

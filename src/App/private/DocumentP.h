@@ -29,6 +29,7 @@
 #endif
 
 #include <map>
+#include <set>
 #include <string>
 #include <memory>
 #include <vector>
@@ -68,6 +69,8 @@ namespace App
 using HasherMap = boost::bimap<StringHasherRef, int>;
 class Transaction;
 
+extern bool globalIsRestoring;
+
 // Pimpl class
 struct DocumentP
 {
@@ -78,6 +81,16 @@ struct DocumentP
     Base::UniqueNameManager objectNameManager;
     Base::UniqueNameManager objectLabelManager;
     std::unordered_map<long, DocumentObject*> objectIdMap;
+    // Durable-UUID -> object index (Amendment 3, Clause 3.6). Lazily rebuilt: an
+    // object's Uid is minted at construction and overwritten on restore, so the
+    // index is marked dirty on add/remove and on any Uid change, then rebuilt on
+    // the next lookup rather than tracked incrementally.
+    mutable std::unordered_map<std::string, DocumentObject*> objectUuidMap;
+    mutable bool objectUuidMapDirty {true};
+    // Whether what the document holds is still what its file states. Set the moment something
+    // the recipe carries changes; cleared by a save that wrote it out and by a read that
+    // replaced it. A value a rebuild produces is not carried and so does not set it.
+    bool movedOnFromItsFile {false};
     std::unordered_map<std::string, bool> partialLoadObjects;
     std::vector<DocumentObjectT> pendingRemove;
     long lastObjectId {};
@@ -86,10 +99,17 @@ struct DocumentP
     // pointer to the python class
     Py::Object DocumentPythonObject;
     int iTransactionMode {0};
+    /// The document was read from a recipe, so its geometry has yet to be built.
+    ///
+    /// A recipe holds the steps, never the solid they make, so opening one includes building
+    /// it. The flag is cleared by the build, so a document is never rebuilt twice for one open.
+    bool rebuildOnOpen {false};
     bool rollback {false};
     bool undoing {false};  ///< document in the middle of undo or redo
     bool committing {false};
     bool opentransaction {false};
+    bool joinLastTransaction {false};
+    bool resumedLastTransaction {false};
     std::bitset<32> StatusBits;
     int iUndoMode {0};
     unsigned int UndoMemSize {0};
@@ -100,9 +120,17 @@ struct DocumentP
     int bookedTransaction { 0 }; 
 
     std::string programVersion;
+    bool inOlderFormat {false};
     mutable HasherMap hashers;
     std::multimap<const App::DocumentObject*, std::unique_ptr<App::DocumentObjectExecReturn>>
         _RecomputeLog;
+    /// The objects reported blocked last time anything was asked what it could not honour, by id.
+    ///
+    /// Kept so that a block can be RELEASED. A failure that is no longer stated has to stop being
+    /// reported, and nothing else in the log says which entries came from a statement rather than
+    /// from a rebuild that failed on its own terms (Amendment 19 Clause 19.6). By id and not by
+    /// pointer: an object that has left the document since is one this must not follow.
+    std::set<long> blockedByStatement;
     ExportInfo exportInfo;
 
     StringHasherRef Hasher {new StringHasher};
@@ -134,6 +162,9 @@ struct DocumentP
     {
         if (!obj) {
             _RecomputeLog.clear();
+            // Nothing is reported blocked any more, so nothing is owed a release either. Kept in
+            // step or a later pass would go looking for objects that are no longer there.
+            blockedByStatement.clear();
         }
         else {
             _RecomputeLog.erase(obj);
@@ -152,6 +183,8 @@ struct DocumentP
         objectMap.clear();
         objectNameManager.clear();
         objectIdMap.clear();
+        objectUuidMap.clear();
+        objectUuidMapDirty = true;
     }
 
     const char* findRecomputeLog(const App::DocumentObject* obj)
@@ -173,5 +206,11 @@ struct DocumentP
     partialTopologicalSort(const std::vector<App::DocumentObject*>& objects);
     static void checkStringHasher(const Base::XMLReader& reader);
 };
+
+inline bool transactionStateBlocksRecoveryWrite(const DocumentP& documentPrivate)
+{
+    return documentPrivate.bookedTransaction != NullTransaction
+        || documentPrivate.activeUndoTransaction != nullptr || documentPrivate.committing;
+}
 
 }  // namespace App

@@ -38,6 +38,7 @@ PROPERTY_SOURCE(Part::ImportIges, Part::Feature)
 
 ImportIges::ImportIges()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(FileName, (""));
 }
 

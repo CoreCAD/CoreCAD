@@ -81,6 +81,12 @@ class AppExport PropertyFileIncluded: public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: the contents of a whole file the document was handed.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyFileIncluded();
     ~PropertyFileIncluded() override;
 

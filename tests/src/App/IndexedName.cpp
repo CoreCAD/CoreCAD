@@ -89,6 +89,19 @@ TEST_F(IndexedNameTest, nameAndIndexConstructionWithOverride)
 }
 
 // Names must only contain ASCII letters and underscores (but may end with a number)
+// A rejected name carries no number. Keeping the digits off its end let a string table hand out
+// "#2" -> 2 when creating an entry but 0 on lookup, so a pad's first build named an edge
+// differently from every rebuild.
+TEST_F(IndexedNameTest, aRejectedNameCarriesNoNumber)
+{
+    for (const char* rejected : {"#2", ";#1c;:G;XTR;:H1c:6,E.Edge15", "Edge.15"}) {
+        auto indexedName = Data::IndexedName(rejected);
+
+        EXPECT_STREQ(indexedName.getType(), "") << rejected;
+        EXPECT_EQ(indexedName.getIndex(), 0) << rejected;
+    }
+}
+
 TEST_F(IndexedNameTest, constructionInvalidCharInName)
 {
     // Arrange
@@ -138,9 +151,9 @@ TEST_F(IndexedNameTest, nameAndTypeListConstructionWithoutAllowOthers)
     // Act
     indexedName = Data::IndexedName("EDGES_ARE_REALLY_GREAT19", allowedTypes, false);
 
-    // Assert
+    // Assert: a rejected name carries no number
     EXPECT_STREQ(indexedName.getType(), "");
-    EXPECT_EQ(indexedName.getIndex(), 19);
+    EXPECT_EQ(indexedName.getIndex(), 0);
 
     // Act
     indexedName = Data::IndexedName("NOT_IN_THE_LIST42", allowedTypes, false);

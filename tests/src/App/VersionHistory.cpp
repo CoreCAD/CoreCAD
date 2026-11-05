@@ -1,0 +1,669 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
+
+#include "gtest/gtest.h"
+
+#include <src/App/InitApplication.h>
+
+#include <App/Application.h>
+#include <App/Document.h>
+#include <App/DocumentChanges.h>
+#include <App/DocumentObject.h>
+#include <App/ObjectRecipe.h>
+#include <App/PropertyUnits.h>
+#include <App/VersionHistory.h>
+#include <Base/Exception.h>
+#include <Base/Uuid.h>
+
+#include <git2.h>
+
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <vector>
+
+using namespace App;
+namespace fs = std::filesystem;
+
+// NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
+
+namespace
+{
+
+/// A repository the test writes commits into directly, so the machine's git settings (a signing
+/// requirement, a hook) cannot change what gets committed.
+class ScratchRepository
+{
+public:
+    explicit ScratchRepository(const fs::path& folder)
+    {
+        git_libgit2_init();
+        git_repository_init(&_repository, folder.string().c_str(), 0);
+    }
+    ~ScratchRepository()
+    {
+        git_repository_free(_repository);
+        git_libgit2_shutdown();
+    }
+    ScratchRepository(const ScratchRepository&) = delete;
+    ScratchRepository& operator=(const ScratchRepository&) = delete;
+
+    /// Commit `files` (paths inside the repository) on top of HEAD; returns the commit id.
+    std::string commit(const std::vector<std::string>& files, const std::string& message)
+    {
+        return commitOn(headOrNothing(), files, message, "HEAD");
+    }
+
+    /// Commit with the given parents, moving `ref` to it, or no ref at all when empty.
+    std::string commitOn(
+        const std::vector<std::string>& parentIds,
+        const std::vector<std::string>& files,
+        const std::string& message,
+        const std::string& ref
+    )
+    {
+        git_index* index = nullptr;
+        git_repository_index(&index, _repository);
+        for (const std::string& file : files) {
+            EXPECT_EQ(git_index_add_bypath(index, file.c_str()), 0) << file;
+        }
+        git_index_write(index);
+        git_oid treeId;
+        git_index_write_tree(&treeId, index);
+        git_index_free(index);
+
+        git_tree* tree = nullptr;
+        git_tree_lookup(&tree, _repository, &treeId);
+        git_signature* signature = nullptr;
+        git_signature_new(&signature, "Tester", "tester@example.com", _clock++, 0);
+
+        std::vector<git_commit*> parents;
+        for (const std::string& parentId : parentIds) {
+            git_oid id;
+            git_oid_fromstr(&id, parentId.c_str());
+            git_commit* parent = nullptr;
+            git_commit_lookup(&parent, _repository, &id);
+            parents.push_back(parent);
+        }
+        std::vector<const git_commit*> parentList(parents.begin(), parents.end());
+        git_oid id;
+        git_commit_create(
+            &id,
+            _repository,
+            ref.empty() ? nullptr : ref.c_str(),
+            signature,
+            signature,
+            nullptr,
+            message.c_str(),
+            tree,
+            parentList.size(),
+            parentList.data()
+        );
+
+        for (git_commit* parent : parents) {
+            git_commit_free(parent);
+        }
+        git_signature_free(signature);
+        git_tree_free(tree);
+
+        char text[GIT_OID_MAX_HEXSIZE + 1] {};
+        git_oid_tostr(text, sizeof(text), &id);
+        return text;
+    }
+
+    /// Stage `file` without committing it, as `git add` does.
+    void stage(const std::string& file)
+    {
+        git_index* index = nullptr;
+        git_repository_index(&index, _repository);
+        EXPECT_EQ(git_index_add_bypath(index, file.c_str()), 0) << file;
+        git_index_write(index);
+        git_index_free(index);
+    }
+
+    std::vector<std::string> parentsOf(const std::string& revision) const
+    {
+        git_object* object = nullptr;
+        git_revparse_single(&object, _repository, revision.c_str());
+        git_commit* commit = nullptr;
+        git_object_peel(reinterpret_cast<git_object**>(&commit), object, GIT_OBJECT_COMMIT);
+        std::vector<std::string> parents;
+        for (unsigned i = 0; i < git_commit_parentcount(commit); ++i) {
+            char text[GIT_OID_MAX_HEXSIZE + 1] {};
+            git_oid_tostr(text, sizeof(text), git_commit_parent_id(commit, i));
+            parents.emplace_back(text);
+        }
+        git_commit_free(commit);
+        git_object_free(object);
+        return parents;
+    }
+
+    bool isStaged(const std::string& file) const
+    {
+        git_index* index = nullptr;
+        git_repository_index(&index, _repository);
+        git_index_read(index, 1);
+        const bool found = git_index_get_bypath(index, file.c_str(), 0) != nullptr;
+        git_index_free(index);
+        return found;
+    }
+
+private:
+    std::vector<std::string> headOrNothing() const
+    {
+        git_oid id;
+        if (git_reference_name_to_id(&id, _repository, "HEAD") != 0) {
+            return {};
+        }
+        char text[GIT_OID_MAX_HEXSIZE + 1] {};
+        git_oid_tostr(text, sizeof(text), &id);
+        return {text};
+    }
+
+    git_repository* _repository {};
+    git_time_t _clock {1700000000};
+};
+
+void write(const fs::path& file, const std::string& text)
+{
+    fs::create_directories(file.parent_path());
+    std::ofstream(file, std::ios::binary) << text;
+}
+
+}  // namespace
+
+class VersionHistoryTest: public ::testing::Test
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+
+    void SetUp() override
+    {
+        _folder = fs::temp_directory_path() / ("cruth_history_" + Base::Uuid::createUuid());
+        fs::create_directories(_folder);
+    }
+
+    void TearDown() override
+    {
+        for (App::Document* doc : _opened) {
+            App::GetApplication().closeDocument(doc->getName());
+        }
+        std::error_code ignored;
+        fs::remove_all(_folder, ignored);
+    }
+
+    App::Document* track(App::Document* doc)
+    {
+        _opened.push_back(doc);
+        return doc;
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+    fs::path _folder;
+    std::vector<App::Document*> _opened;
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
+};
+
+TEST_F(VersionHistoryTest, aFileOutsideAnyRepositoryHasNoVersions)
+{
+    const fs::path file = _folder / "Loose.cpart";
+    write(file, "text");
+
+    EXPECT_TRUE(fileVersions(file.string()).empty());
+    EXPECT_THROW(fileTextAt(file.string(), "HEAD"), Base::Exception);
+}
+
+TEST_F(VersionHistoryTest, onlyCommitsThatChangedTheFileAreVersionsNewestFirst)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "parts" / "Widget.cpart";
+    write(file, "first");
+    const std::string first = repository.commit({"parts/Widget.cpart"}, "Start the widget");
+    write(_folder / "notes.txt", "unrelated");
+    repository.commit({"notes.txt"}, "Notes only");
+    write(file, "second");
+    const std::string second = repository.commit({"parts/Widget.cpart"}, "Lengthen it\n\nbody");
+
+    const std::vector<FileVersion> versions = fileVersions(file.string());
+
+    ASSERT_EQ(versions.size(), 2u);
+    EXPECT_EQ(versions[0].commit, second);
+    EXPECT_EQ(versions[0].summary, "Lengthen it");
+    EXPECT_EQ(versions[0].author, "Tester");
+    EXPECT_EQ(versions[1].commit, first);
+    EXPECT_GT(versions[0].time, versions[1].time);
+}
+
+TEST_F(VersionHistoryTest, aVersionIsTheCommittedTextNotTheFileOnDisk)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, "as committed");
+    const std::string first = repository.commit({"Widget.cpart"}, "One");
+    write(file, "edited since");
+
+    EXPECT_EQ(fileTextAt(file.string(), first), "as committed");
+    EXPECT_EQ(fileTextAt(file.string(), "HEAD"), "as committed");
+}
+
+TEST_F(VersionHistoryTest, aRevisionWithoutTheFileIsRefused)
+{
+    ScratchRepository repository(_folder);
+    write(_folder / "notes.txt", "x");
+    const std::string before = repository.commit({"notes.txt"}, "Before the part");
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, "part");
+    repository.commit({"Widget.cpart"}, "The part");
+
+    EXPECT_THROW(fileTextAt(file.string(), before), Base::Exception);
+    EXPECT_THROW(fileTextAt(file.string(), "no-such-revision"), Base::Exception);
+}
+
+// A merged-in branch's own commits are not this line's versions; the merge that brought the
+// change in is.
+TEST_F(VersionHistoryTest, historyFollowsTheBranchThroughAMerge)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, "one");
+    const std::string start = repository.commit({"Widget.cpart"}, "Start");
+    write(file, "two");
+    const std::string side = repository.commitOn({start}, {"Widget.cpart"}, "Side edit", "");
+    write(file, "one");
+    write(_folder / "notes.txt", "x");
+    const std::string main = repository.commit({"Widget.cpart", "notes.txt"}, "Notes");
+    write(file, "two");
+    const std::string merge = repository.commitOn({main, side}, {"Widget.cpart"}, "Merge side", "HEAD");
+
+    const std::vector<FileVersion> versions = fileVersions(file.string());
+
+    ASSERT_EQ(versions.size(), 2u);
+    EXPECT_EQ(versions[0].commit, merge);
+    EXPECT_EQ(versions[1].commit, start);
+}
+
+// The whole path piece 2 exists for: a saved part, changed and committed, compared with what it
+// was.
+TEST_F(VersionHistoryTest, aPastVersionOpensAndComparesWithTheOpenDocument)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    auto* live = track(
+        App::GetApplication()
+            .newDocument(App::GetApplication().getUniqueDocumentName("live").c_str(), "Widget")
+    );
+    auto* box = live->addObject("Part::Box", "Box");
+    auto* length = static_cast<PropertyLength*>(box->getPropertyByName("Length"));
+    length->setValue(10.0);
+    live->saveAs(file.string().c_str());
+    const std::string first = repository.commit({"Widget.cpart"}, "Ten");
+    length->setValue(40.0);
+    live->save();
+    repository.commit({"Widget.cpart"}, "Forty");
+
+    auto* past = track(openFileVersion(file.string(), first));
+    const std::vector<DocumentChange> changes = diffDocuments(*past, *live);
+
+    ASSERT_EQ(changes.size(), 1u) << formatDocumentChanges(changes);
+    EXPECT_EQ(changes[0].text, "Box: Length 10 mm → 40 mm");
+    EXPECT_TRUE(past->testStatus(App::Document::TempDoc));
+    EXPECT_EQ(std::string(past->Label.getValue()), "Widget at " + first.substr(0, 8));
+    EXPECT_NE(past->Uid.getValueStr(), live->Uid.getValueStr());
+    EXPECT_EQ(App::GetApplication().getDocumentByUuid(live->Uid.getValue()), live);
+}
+
+TEST_F(VersionHistoryTest, savingAPartInAProjectLeavesNoBackupBesideIt)
+{
+    const fs::path file = _folder / "Widget.cpart";
+    auto* live = track(
+        App::GetApplication()
+            .newDocument(App::GetApplication().getUniqueDocumentName("live").c_str(), "Widget")
+    );
+    live->addObject("Part::Box", "Box");
+    const auto backups = [this] {
+        int found = 0;
+        for (const fs::directory_entry& entry : fs::directory_iterator(_folder)) {
+            found += entry.path().extension() == ".FCBak" ? 1 : 0;
+        }
+        return found;
+    };
+
+    live->saveAs(file.string().c_str());
+    live->save();
+    ASSERT_EQ(backups(), 1) << "outside a project a save keeps a backup";
+    for (const fs::directory_entry& entry : fs::directory_iterator(_folder)) {
+        if (entry.path().extension() == ".FCBak") {
+            fs::remove(entry.path());
+        }
+    }
+
+    ScratchRepository repository(_folder);
+    live->save();
+    live->save();
+    EXPECT_EQ(backups(), 0);
+}
+
+// Each version needs a document of its own; two read into one would be compared with itself.
+TEST_F(VersionHistoryTest, twoVersionsOpenSideBySide)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    auto* live = track(
+        App::GetApplication()
+            .newDocument(App::GetApplication().getUniqueDocumentName("live").c_str(), "Widget")
+    );
+    auto* length = static_cast<PropertyLength*>(
+        live->addObject("Part::Box", "Box")->getPropertyByName("Length")
+    );
+    length->setValue(10.0);
+    live->saveAs(file.string().c_str());
+    const std::string first = repository.commit({"Widget.cpart"}, "Ten");
+    length->setValue(40.0);
+    live->save();
+    const std::string second = repository.commit({"Widget.cpart"}, "Forty");
+
+    auto* older = track(openFileVersion(file.string(), first));
+    auto* newer = track(openFileVersion(file.string(), second));
+    const std::vector<DocumentChange> changes = diffDocuments(*older, *newer);
+
+    EXPECT_NE(older, newer);
+    ASSERT_EQ(changes.size(), 1u) << formatDocumentChanges(changes);
+    EXPECT_EQ(changes[0].text, "Box: Length 10 mm → 40 mm");
+}
+
+namespace
+{
+
+std::string recipeNaming(const std::string& asset, const std::string& label)
+{
+    return "<?xml version='1.0' encoding='utf-8'?>\n<Document>\n  <Objects>\n"
+           "    <Object name=\"Thing\" type=\"Some::TypeThisBuildHasNot\">\n"
+           "      <Properties>\n"
+           "        <Property name=\"Label\" type=\"App::PropertyString\" value=\""
+        + label + "\"/>\n"
+        + (asset.empty() ? std::string {}
+                         : "        <Property name=\"Body\" type=\"Some::PropertyThisBuildHasNot\" "
+                           "asset=\""
+                   + asset + "\"/>\n")
+        + "      </Properties>\n    </Object>\n  </Objects>\n</Document>\n";
+}
+
+}  // namespace
+
+TEST_F(VersionHistoryTest, startedHistoryRecordsTheDocumentAndIgnoresTheRebuildStore)
+{
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming("", "first"));
+    EXPECT_FALSE(isKeptInHistory(file.string()));
+
+    startHistory(_folder.string());
+    ASSERT_TRUE(isKeptInHistory(file.string()));
+    const std::string id = commitFile(file.string(), "  Start the widget\n\n");
+
+    const std::vector<FileVersion> versions = fileVersions(file.string());
+    ASSERT_EQ(versions.size(), 1u);
+    EXPECT_EQ(versions[0].commit, id);
+    EXPECT_EQ(versions[0].summary, "Start the widget");
+    EXPECT_FALSE(versions[0].author.empty());
+    EXPECT_EQ(fileTextAt(file.string(), "HEAD"), recipeNaming("", "first"));
+
+    std::ifstream ignore(_folder / ".gitignore");
+    const std::string ignored {std::istreambuf_iterator<char>(ignore), std::istreambuf_iterator<char>()};
+    EXPECT_NE(ignored.find(std::string(Document::cacheFolderName) + "/\n"), std::string::npos);
+    startHistory(_folder.string());
+    std::ifstream again(_folder / ".gitignore");
+    EXPECT_EQ(
+        std::string(std::istreambuf_iterator<char>(again), std::istreambuf_iterator<char>()),
+        ignored
+    ) << "starting twice wrote the ignore line twice";
+}
+
+// A commit made from a document must not sweep up what the person has changed or staged
+// elsewhere in the project: they never saw it in this document's list of changes.
+TEST_F(VersionHistoryTest, aCommitHoldsOnlyThisDocument)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming("", "first"));
+    write(_folder / "notes.txt", "old notes");
+    repository.commit({"Widget.cpart", "notes.txt"}, "Start");
+
+    write(_folder / "notes.txt", "new notes");
+    write(_folder / "Other.cpart", recipeNaming("", "other"));
+    repository.stage("Other.cpart");
+    write(file, recipeNaming("", "second"));
+    commitFile(file.string(), "Second");
+
+    EXPECT_EQ(fileTextAt(file.string(), "HEAD"), recipeNaming("", "second"));
+    EXPECT_EQ(fileTextAt((_folder / "notes.txt").string(), "HEAD"), "old notes");
+    EXPECT_THROW(fileTextAt((_folder / "Other.cpart").string(), "HEAD"), Base::Exception)
+        << "another document's staged change went into this document's version";
+    EXPECT_TRUE(repository.isStaged("Other.cpart")) << "the person's staging was undone";
+    EXPECT_EQ(fileVersions(file.string()).size(), 2u);
+}
+
+TEST_F(VersionHistoryTest, aCommitCarriesTheSourceMaterialItNames)
+{
+    ScratchRepository repository(_folder);
+    const std::string named = "0000000000000000000000000000000000000001";
+    const std::string unnamed = "0000000000000000000000000000000000000002";
+    const fs::path assets(Document::assetDirectoryFor((_folder / "Widget.cpart").string()));
+    write(assets / named / "content.xml", "<Value/>");
+    write(assets / named / "Shape.brp", "bulk");
+    write(assets / unnamed / "content.xml", "<Value/>");
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming(named, "first"));
+
+    commitFile(file.string(), "With its body");
+
+    EXPECT_EQ(fileTextAt((assets / named / "Shape.brp").string(), "HEAD"), "bulk");
+    EXPECT_EQ(fileTextAt((assets / named / "content.xml").string(), "HEAD"), "<Value/>");
+    EXPECT_THROW(fileTextAt((assets / unnamed / "content.xml").string(), "HEAD"), Base::Exception)
+        << "material the document does not name went in";
+}
+
+TEST_F(VersionHistoryTest, aCommitNeedsAMessageAndAChange)
+{
+    ScratchRepository repository(_folder);
+    const fs::path file = _folder / "Widget.cpart";
+    write(file, recipeNaming("", "first"));
+
+    EXPECT_THROW(commitFile(file.string(), " \n "), Base::Exception);
+    EXPECT_TRUE(fileVersions(file.string()).empty());
+
+    commitFile(file.string(), "First");
+    EXPECT_THROW(commitFile(file.string(), "Again"), Base::Exception);
+    EXPECT_EQ(fileVersions(file.string()).size(), 1u);
+}
+
+TEST_F(VersionHistoryTest, aFileOutsideAnyRepositoryCannotBeCommitted)
+{
+    const fs::path file = _folder / "Loose.cpart";
+    write(file, recipeNaming("", "first"));
+    EXPECT_THROW(commitFile(file.string(), "First"), Base::Exception);
+}
+
+
+// Two people's branches of one part, the way a merge in the app meets them: a shared start, a
+// change on a branch named "wider", and a different change on the current one.
+class FileMergeTest: public VersionHistoryTest
+{
+protected:
+    void SetUp() override
+    {
+        VersionHistoryTest::SetUp();
+        _repository = std::make_unique<ScratchRepository>(_folder);
+        _file = _folder / "Widget.cpart";
+        _live = track(
+            App::GetApplication()
+                .newDocument(App::GetApplication().getUniqueDocumentName("live").c_str(), "Widget")
+        );
+        auto* box = _live->addObject("Part::Box", "Box");
+        length(*_live).setValue(10.0);
+        width(*_live).setValue(10.0);
+        _live->saveAs(_file.string().c_str());
+        _start = _repository->commit({"Widget.cpart"}, "Start");
+
+        width(*_live).setValue(30.0);
+        _live->save();
+        _wider = _repository->commitOn({_start}, {"Widget.cpart"}, "Wider", "refs/heads/wider");
+
+        width(*_live).setValue(10.0);
+        length(*_live).setValue(40.0);
+        _live->save();
+        _longer = _repository->commit({"Widget.cpart"}, "Longer");
+        (void)box;
+    }
+
+    static App::DocumentObject& boxOf(const App::Document& doc)
+    {
+        return *doc.getObjects().front();
+    }
+    static PropertyLength& length(const App::Document& doc)
+    {
+        return *static_cast<PropertyLength*>(boxOf(doc).getPropertyByName("Length"));
+    }
+    static PropertyLength& width(const App::Document& doc)
+    {
+        return *static_cast<PropertyLength*>(boxOf(doc).getPropertyByName("Width"));
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+    std::unique_ptr<ScratchRepository> _repository;
+    fs::path _file;
+    App::Document* _live {};
+    std::string _start;
+    std::string _wider;
+    std::string _longer;
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
+};
+
+TEST_F(FileMergeTest, aBranchMergesIntoTheOpenPartAndIsRecordedWithBothParents)
+{
+    EXPECT_EQ(sharedVersion(_file.string(), "wider"), _start);
+
+    MergedDocument made = mergeFileRevision(*_live, "wider", {});
+    ASSERT_NE(made.document, nullptr) << made.refusal << formatDocumentReport(made.report);
+    track(made.document);
+    EXPECT_TRUE(made.report.complete()) << formatDocumentReport(made.report);
+    EXPECT_DOUBLE_EQ(length(*made.document).getValue(), 40.0);
+    EXPECT_DOUBLE_EQ(width(*made.document).getValue(), 30.0);
+    const std::string mergedLabel = made.document->Label.getValue();
+
+    const std::string merge = recordMerge(*_live, *made.document, "wider", "Merge wider");
+
+    EXPECT_EQ(_repository->parentsOf("HEAD"), (std::vector<std::string> {_longer, _wider}));
+    EXPECT_EQ(fileVersions(_file.string()).front().commit, merge);
+    auto* recorded = track(openFileVersion(_file.string(), "HEAD"));
+    EXPECT_DOUBLE_EQ(length(*recorded).getValue(), 40.0);
+    EXPECT_DOUBLE_EQ(width(*recorded).getValue(), 30.0);
+
+    // The file is still the open part: other documents' links find it by its identity and name.
+    const std::string text = fileTextAt(_file.string(), "HEAD");
+    EXPECT_NE(text.find(_live->Uid.getValueStr()), std::string::npos);
+    EXPECT_EQ(text.find("(merged)"), std::string::npos);
+    EXPECT_EQ(std::string(made.document->Label.getValue()), mergedLabel);
+    EXPECT_NE(made.document->Uid.getValueStr(), _live->Uid.getValueStr());
+}
+
+TEST_F(FileMergeTest, onlyBranchesThatChangedThePartAndAreNotMergedAreOffered)
+{
+    write(_folder / "notes.txt", "x");
+    _repository->commitOn({_longer}, {"notes.txt"}, "Notes", "refs/heads/notes");
+
+    const std::vector<FileBranch> offered = branchesToMerge(_file.string());
+    ASSERT_EQ(offered.size(), 1u);
+    EXPECT_EQ(offered.front().name, "wider");
+    EXPECT_EQ(offered.front().latest.commit, _wider);
+    EXPECT_EQ(offered.front().latest.summary, "Wider");
+
+    MergedDocument made = mergeFileRevision(*_live, offered.front().latest.commit, {});
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    track(made.document);
+    recordMerge(*_live, *made.document, offered.front().latest.commit, "Merge wider");
+    EXPECT_TRUE(branchesToMerge(_file.string()).empty());
+}
+
+TEST_F(FileMergeTest, aMergedPartIsKeptOutOfTheModelTree)
+{
+    MergedDocument made = mergeFileRevision(*_live, "wider", {});
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    track(made.document);
+    EXPECT_TRUE(made.document->testStatus(App::Document::TempDoc));
+    EXPECT_EQ(App::GetApplication().getActiveDocument(), _live);
+}
+
+TEST_F(FileMergeTest, aConflictIsSettledByChoosingASide)
+{
+    length(*_live).setValue(20.0);
+    width(*_live).setValue(30.0);
+    _live->save();
+    _repository->commitOn({_wider}, {"Widget.cpart"}, "Longer too", "refs/heads/wider");
+    length(*_live).setValue(40.0);
+    width(*_live).setValue(10.0);
+    _live->save();
+
+    MergedDocument open = mergeFileRevision(*_live, "wider", {});
+    EXPECT_EQ(open.document, nullptr);
+    ASSERT_EQ(open.report.conflicts.size(), 1u) << formatDocumentReport(open.report);
+
+    const MergeConflict& conflict = open.report.conflicts.front();
+    MergedDocument made = mergeFileRevision(*_live, "wider", {{conflict.id, conflict.value, true}});
+    ASSERT_NE(made.document, nullptr) << made.refusal;
+    track(made.document);
+    EXPECT_DOUBLE_EQ(length(*made.document).getValue(), 20.0);
+    EXPECT_DOUBLE_EQ(width(*made.document).getValue(), 30.0);
+}
+
+TEST_F(FileMergeTest, aBranchThatChangedOtherFilesIsLeftToGit)
+{
+    width(*_live).setValue(30.0);
+    _live->save();
+    write(_folder / "notes.txt", "x");
+    _repository->commitOn({_wider}, {"notes.txt"}, "Notes", "refs/heads/wider");
+    width(*_live).setValue(10.0);
+    _live->save();
+
+    EXPECT_THROW(mergeFileRevision(*_live, "wider", {}), Base::Exception);
+}
+
+TEST_F(FileMergeTest, unrecordedChangesOnDiskAreNotMergedOver)
+{
+    length(*_live).setValue(50.0);
+    _live->save();
+
+    EXPECT_THROW(mergeFileRevision(*_live, "wider", {}), Base::Exception);
+}
+
+TEST_F(FileMergeTest, aVersionAlreadyPartOfTheCurrentOneIsRefused)
+{
+    EXPECT_THROW(mergeFileRevision(*_live, _start, {}), Base::Exception);
+}
+
+TEST_F(FileMergeTest, aVersionWithNoSharedHistoryIsRefused)
+{
+    const std::string unrelated
+        = _repository->commitOn({}, {"Widget.cpart"}, "Fresh", "refs/heads/fresh");
+
+    EXPECT_THROW(sharedVersion(_file.string(), unrelated), Base::Exception);
+    EXPECT_THROW(mergeFileRevision(*_live, "fresh", {}), Base::Exception);
+}
+
+// Each side merged the other once already, so two versions are equally near (Clause 21.5).
+TEST_F(FileMergeTest, versionsWithSeveralNearestSharedVersionsAreRefused)
+{
+    const std::string mine
+        = _repository->commitOn({_longer, _wider}, {"Widget.cpart"}, "Take wider", "HEAD");
+    const std::string theirs
+        = _repository->commitOn({_wider, _longer}, {"Widget.cpart"}, "Take longer", "refs/heads/wider");
+    (void)mine;
+    (void)theirs;
+
+    EXPECT_THROW(sharedVersion(_file.string(), "wider"), Base::Exception);
+}
+
+// NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

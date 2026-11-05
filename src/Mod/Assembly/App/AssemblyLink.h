@@ -26,10 +26,14 @@
 
 #include <unordered_map>
 
+#include <QCoreApplication>
+
 #include <Mod/Assembly/AssemblyGlobal.h>
 
 #include <App/FeaturePython.h>
-#include <App/Part.h>
+#include <App/GeoFeature.h>
+#include <App/GeoFeatureGroupExtension.h>
+#include <App/PlacementExtension.h>
 #include <App/PropertyLinks.h>
 
 
@@ -38,9 +42,12 @@ namespace Assembly
 class AssemblyObject;
 class JointGroup;
 
-class AssemblyExport AssemblyLink: public App::Part
+class AssemblyExport AssemblyLink: public App::GeoFeature,
+                                   public App::GeoFeatureGroupExtension,
+                                   public App::PlacementExtension
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Assembly::AssemblyLink);
+    PROPERTY_HEADER_WITH_EXTENSIONS(Assembly::AssemblyLink);
+    Q_DECLARE_TR_FUNCTIONS(Assembly::AssemblyLink)
 
 public:
     AssemblyLink();
@@ -54,7 +61,27 @@ public:
         return "AssemblyGui::ViewProviderAssemblyLink";
     }
 
+    /// A sub-assembly instance is assembly-scoped content: only an Assembly document admits it.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::AssemblyItem;
+    }
+
     App::DocumentObjectExecReturn* execute() override;
+
+    /**
+     * A rigid sub-assembly owns nothing: it resolves child geometry across the document
+     * boundary into the linked assembly at query time, composing this instance's Placement,
+     * instead of materialising owned proxies. Flexible sub-assemblies still carry an owned
+     * proxy graph (#63) and defer to the base group resolution.
+     */
+    App::DocumentObject* getSubObject(
+        const char* subname,
+        PyObject** pyObj = nullptr,
+        Base::Matrix4D* mat = nullptr,
+        bool transform = true,
+        int depth = 0
+    ) const override;
 
     // The linked assembly is the AssemblyObject that this AssemblyLink pseudo-links to recursively.
     AssemblyObject* getLinkedAssembly() const;

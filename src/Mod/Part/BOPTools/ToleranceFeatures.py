@@ -98,9 +98,7 @@ def cmdCreateToleranceSetFeature(name, minTolerance=1e-7, maxTolerance=0):
             FreeCAD.ActiveDocument.abortTransaction()
             return
 
-    FreeCADGui.doCommand(
-        "for obj in j.ViewObject.Proxy.claimChildren():\n" "    obj.ViewObject.hide()"
-    )
+    FreeCADGui.doCommand("for obj in j.ViewObject.Proxy.inputs():\n" "    obj.ViewObject.hide()")
 
     FreeCAD.ActiveDocument.commitTransaction()
 
@@ -191,12 +189,12 @@ class ViewProviderToleranceSet:
     def loads(self, state):
         return None
 
-    def claimChildren(self):
+    def inputs(self):
         return self.Object.Objects
 
     def onDelete(self, feature, subelements):
         try:
-            for obj in self.claimChildren():
+            for obj in self.inputs():
                 obj.ViewObject.show()
         except Exception as err:
             FreeCAD.Console.PrintError("Error in onDelete: " + str(err))

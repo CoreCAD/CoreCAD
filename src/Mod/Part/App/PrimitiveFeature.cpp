@@ -22,7 +22,11 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
 #include <limits>
+#include <map>
+#include <string>
+#include <vector>
 
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -51,6 +55,7 @@
 
 #include "PrimitiveFeature.h"
 #include "PartFeaturePy.h"
+#include "PrimitiveFaceRole.h"
 
 namespace Part
 {
@@ -80,8 +85,80 @@ short Primitive::mustExecute() const
     return Feature::mustExecute();
 }
 
+namespace
+{
+
+/// Name each face of a one-solid primitive for the part it plays (+Z, Side, ...), and each edge for
+/// the faces it joins (+Z^Side), so a reference to one a new parameter removes fails instead of
+/// landing on whichever now has its number. A name two share names neither; they, an edge on an
+/// unnamed face and the vertices keep their numbers.
+void nameElementsByRole(TopoShape& shape, long tag)
+{
+    if (shape.isNull() || shape.countSubShapes(TopAbs_SOLID) != 1) {
+        return;
+    }
+    const TopoDS_Shape& solid = shape.getShape();
+    const gp_Trsf localToWorld = solid.Location().Transformation();
+    const int faceCount = static_cast<int>(shape.countSubShapes(TopAbs_FACE));
+    std::vector<std::string> roles(faceCount + 1);
+    std::map<std::string, int> facesPerRole;
+    for (int i = 1; i <= faceCount; ++i) {
+        roles[i] = primitiveFaceRole(shape.getSubShape(TopAbs_FACE, i), solid, localToWorld);
+        ++facesPerRole[roles[i]];
+    }
+
+    const auto map = std::make_shared<Data::ElementMap>();
+    shape.resetElementMap(map);
+    shape.Tag = tag;
+    auto setName = [&](const Data::IndexedName& element, const Data::MappedName& name) {
+        map->setElementName(element, name, tag);
+    };
+    for (int i = 1; i <= faceCount; ++i) {
+        const Data::IndexedName face("Face", i);
+        const bool ownsRole = !roles[i].empty() && facesPerRole[roles[i]] == 1;
+        setName(face, ownsRole ? Data::MappedName(roles[i]) : Data::MappedName(face));
+        if (!ownsRole) {
+            roles[i].clear();
+        }
+    }
+
+    const int edgeCount = static_cast<int>(shape.countSubShapes(TopAbs_EDGE));
+    std::vector<std::string> edgeRoles(edgeCount + 1);
+    std::map<std::string, int> edgesPerRole;
+    for (int i = 1; i <= edgeCount; ++i) {
+        std::vector<std::string> joined;
+        for (int face : shape.findAncestors(shape.getSubShape(TopAbs_EDGE, i), TopAbs_FACE)) {
+            joined.push_back(roles[face]);
+        }
+        if (joined.size() == 1) {
+            joined.push_back(joined.front());
+        }
+        if (joined.size() != 2 || joined[0].empty() || joined[1].empty()) {
+            continue;
+        }
+        std::sort(joined.begin(), joined.end());
+        edgeRoles[i] = joined[0] + "^" + joined[1];
+        ++edgesPerRole[edgeRoles[i]];
+    }
+    for (int i = 1; i <= edgeCount; ++i) {
+        const Data::IndexedName edge("Edge", i);
+        const bool ownsRole = !edgeRoles[i].empty() && edgesPerRole[edgeRoles[i]] == 1;
+        setName(edge, ownsRole ? Data::MappedName(edgeRoles[i]) : Data::MappedName(edge));
+    }
+    const int vertexCount = static_cast<int>(shape.countSubShapes(TopAbs_VERTEX));
+    for (int i = 1; i <= vertexCount; ++i) {
+        const Data::IndexedName vertex("Vertex", i);
+        setName(vertex, Data::MappedName(vertex));
+    }
+}
+
+}  // namespace
+
 App::DocumentObjectExecReturn* Primitive::execute()
 {
+    TopoShape shape = Shape.getShape();
+    nameElementsByRole(shape, getID());
+    Shape.setValue(shape);
     return Part::Feature::execute();
 }
 
@@ -334,6 +411,7 @@ PROPERTY_SOURCE(Part::Sphere, Part::Primitive)
 
 Sphere::Sphere()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius, (5.0), "Sphere", App::Prop_None, "The radius of the sphere");
     Radius.setConstraints(&quantityRange);
     ADD_PROPERTY_TYPE(Angle1, (-90.0f), "Sphere", App::Prop_None, "The angle of the sphere");
@@ -389,6 +467,7 @@ PROPERTY_SOURCE(Part::Ellipsoid, Part::Primitive)
 
 Ellipsoid::Ellipsoid()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius1, (2.0), "Ellipsoid", App::Prop_None, "The radius of the ellipsoid");
     Radius1.setConstraints(&quantityRange);
     ADD_PROPERTY_TYPE(Radius2, (4.0), "Ellipsoid", App::Prop_None, "The radius of the ellipsoid");
@@ -482,6 +561,7 @@ PROPERTY_SOURCE(Part::Cylinder, Part::Primitive)
 
 Cylinder::Cylinder()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius, (2.0), "Cylinder", App::Prop_None, "The radius of the cylinder");
     ADD_PROPERTY_TYPE(Height, (10.0f), "Cylinder", App::Prop_None, "The height of the cylinder");
     ADD_PROPERTY_TYPE(Angle, (360.0f), "Cylinder", App::Prop_None, "The rotation angle of the cylinder");
@@ -541,6 +621,7 @@ PROPERTY_SOURCE(Part::Prism, Part::Primitive)
 
 Prism::Prism()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(
         Polygon,
         (6.0),
@@ -689,6 +770,7 @@ PROPERTY_SOURCE(Part::Cone, Part::Primitive)
 
 Cone::Cone()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius1, (2.0), "Cone", App::Prop_None, "The radius of the cone");
     ADD_PROPERTY_TYPE(Radius2, (4.0), "Cone", App::Prop_None, "The radius of the cone");
     ADD_PROPERTY_TYPE(Height, (10.0), "Cone", App::Prop_None, "The height of the cone");
@@ -759,6 +841,7 @@ PROPERTY_SOURCE(Part::Torus, Part::Primitive)
 
 Torus::Torus()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Radius1, (10.0), "Torus", App::Prop_None, "The radius of the torus");
     Radius1.setConstraints(&quantityRange);
     ADD_PROPERTY_TYPE(Radius2, (2.0), "Torus", App::Prop_None, "The radius of the torus");
@@ -1021,6 +1104,7 @@ PROPERTY_SOURCE(Part::Wedge, Part::Primitive)
 
 Wedge::Wedge()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Xmin, (0.0f), "Wedge", App::Prop_None, "Xmin of the wedge");
     ADD_PROPERTY_TYPE(Ymin, (0.0f), "Wedge", App::Prop_None, "Ymin of the wedge");
     ADD_PROPERTY_TYPE(Zmin, (0.0f), "Wedge", App::Prop_None, "Zmin of the wedge");

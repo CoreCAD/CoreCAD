@@ -53,6 +53,10 @@ public:
     const char* getViewProviderName() const override {
         return "TechDrawGui::ViewProviderHatch";
     }
+    /// Hatching is Drawing-scoped content (Amendment 8, ARCHITECTURE §7.1).
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
+    }
     void setupObject() override;
     void unsetupObject() override;
 

@@ -24,15 +24,19 @@
 
 
 #include <QApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QInputDialog>
+#include <QLabel>
+#include <QListWidget>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QVBoxLayout>
 #include <TopExp_Explorer.hxx>
 
 #include <App/Datums.h>
 #include <App/Document.h>
-#include <App/GeoFeatureGroupExtension.h>
 #include <App/Origin.h>
-#include <App/Part.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Gui/Command.h>
@@ -41,713 +45,16 @@
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
+#include <Gui/Selection/Selection.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureBase.h>
 #include <Mod/PartDesign/App/FeatureSketchBased.h>
 
-#include "TaskFeaturePick.h"
+#include "BodyPanel.h"
+#include "DependenciesPanel.h"
 #include "Utils.h"
-#include "WorkflowManager.h"
 
-
-//===========================================================================
-// Shared functions
-//===========================================================================
-
-namespace PartDesignGui
-{
-
-/// Returns active part, if there is no such, creates a new part, if it fails, shows a message
-App::Part* assertActivePart()
-{
-    App::Part* rv = Gui::Application::Instance->activeView()->getActiveObject<App::Part*>(PARTKEY);
-
-    if (!rv) {
-        Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
-        rcCmdMgr.runCommandByName("Std_Part");
-        rv = Gui::Application::Instance->activeView()->getActiveObject<App::Part*>(PARTKEY);
-        if (!rv) {
-            QMessageBox::critical(
-                nullptr,
-                QObject::tr("Part creation failed"),
-                QObject::tr("Failed to create a part object.")
-            );
-        }
-    }
-
-    return rv;
-}
-
-}  // namespace PartDesignGui
-
-// PartDesign_Body
-//===========================================================================
-DEF_STD_CMD_A(CmdPartDesignBody)
-
-CmdPartDesignBody::CmdPartDesignBody()
-    : Command("PartDesign_Body")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("New Body");
-    sToolTipText = QT_TR_NOOP("Creates a new body and activates it");
-    sWhatsThis = "PartDesign_Body";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_Body";
-}
-
-void CmdPartDesignBody::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-
-    App::Part* actPart = PartDesignGui::getActivePart();
-    App::Part* partOfBaseFeature = nullptr;
-
-    std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
-    );
-    App::DocumentObject* baseFeature = nullptr;
-    bool addtogroup = false;
-
-    Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-        "BaseApp/Preferences/Mod/PartDesign"
-    );
-
-    bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
-    if (!features.empty()) {
-        if (features.size() == 1) {
-            baseFeature = features[0];
-            if (baseFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-                && PartDesign::Body::findBodyOf(baseFeature)) {
-                // Prevent creating bodies based on features already belonging to other bodies
-                QMessageBox::warning(
-                    Gui::getMainWindow(),
-                    QObject::tr("Bad base feature"),
-                    QObject::tr("A body cannot be based on a Part Design feature.")
-                );
-                baseFeature = nullptr;
-            }
-            else if (PartDesign::Body::findBodyOf(baseFeature)) {
-                QMessageBox::warning(
-                    Gui::getMainWindow(),
-                    QObject::tr("Bad base feature"),
-                    QObject::tr("%1 already belongs to a body and cannot be used as a base feature for another body.")
-                        .arg(QString::fromUtf8(baseFeature->Label.getValue()))
-                );
-                baseFeature = nullptr;
-            }
-            else if (baseFeature->isDerivedFrom(Part::BodyBase::getClassTypeId())) {
-                // Prevent creating bodies based on bodies (but don't pop-up a dialog)
-                baseFeature = nullptr;
-            }
-            else {
-                partOfBaseFeature = App::Part::getPartOfObject(baseFeature);
-                if (partOfBaseFeature && partOfBaseFeature != actPart) {
-                    // prevent cross-part mess
-                    QMessageBox::warning(
-                        Gui::getMainWindow(),
-                        QObject::tr("Bad base feature"),
-                        QObject::tr("Base feature (%1) belongs to other part.")
-                            .arg(QString::fromUtf8(baseFeature->Label.getValue()))
-                    );
-                    baseFeature = nullptr;
-                }
-                else if (baseFeature->isDerivedFrom<Sketcher::SketchObject>()) {
-                    // Add sketcher to the body's group property
-                    addtogroup = true;
-                }
-                // if a standard Part feature (not a PartDesign feature) is selected then check
-                // the number of solids/shells
-                else if (!baseFeature->isDerivedFrom<PartDesign::Feature>()) {
-                    const TopoDS_Shape& shape
-                        = static_cast<Part::Feature*>(baseFeature)->Shape.getValue();
-                    if (!shape.IsNull()) {
-                        int numSolids = 0;
-                        int numShells = 0;
-                        for (TopExp_Explorer xp(shape, TopAbs_SOLID); xp.More(); xp.Next()) {
-                            numSolids++;
-                        }
-                        for (TopExp_Explorer xp(shape, TopAbs_SHELL, TopAbs_SOLID); xp.More();
-                             xp.Next()) {
-                            numShells++;
-                        }
-
-                        QString warning;
-                        if (numSolids > 1 && numShells == 0) {
-                            warning = QObject::tr(
-                                "The selected shape consists of multiple solids.\n"
-                                "This may lead to unexpected results."
-                            );
-                        }
-                        else if (numShells > 1 && numSolids == 0) {
-                            warning = QObject::tr(
-                                "The selected shape consists of multiple shells.\n"
-                                "This may lead to unexpected results."
-                            );
-                        }
-                        else if (numShells == 1 && numSolids == 0) {
-                            warning = QObject::tr(
-                                "The selected shape consists of only a shell.\n"
-                                "This may lead to unexpected results."
-                            );
-                        }
-                        else if (numSolids + numShells > 1) {
-                            warning = QObject::tr(
-                                "The selected shape consists of multiple solids or shells.\n"
-                                "This may lead to unexpected results."
-                            );
-                        }
-
-                        if (!warning.isEmpty()) {
-                            QMessageBox::warning(
-                                Gui::getMainWindow(),
-                                QObject::tr("Base feature"),
-                                warning
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            QMessageBox::warning(
-                Gui::getMainWindow(),
-                QObject::tr("Bad base feature"),
-                QObject::tr("Body may be based on no more than one feature.")
-            );
-            return;
-        }
-    }
-
-    openCommand(QT_TRANSLATE_NOOP("Command", "Add a Body"));
-    bool openedModal = false;
-
-    std::string bodyName = getUniqueObjectName("Body");
-    const char* bodyString = bodyName.c_str();
-
-    // add the Body feature itself, and make it active
-    doCommand(Doc, "App.activeDocument().addObject('PartDesign::Body','%s')", bodyString);
-    // set Label for i18n/L10N
-    std::string labelString = QObject::tr("Body").toUtf8().toStdString();
-    labelString = Base::Tools::escapeEncodeString(labelString);
-    doCommand(Doc, "App.ActiveDocument.getObject('%s').Label = '%s'", bodyString, labelString.c_str());
-    doCommand(
-        Doc,
-        "App.ActiveDocument.getObject('%s').AllowCompound = %s",
-        bodyString,
-        allowCompound ? "True" : "False"
-    );
-    if (baseFeature) {
-        if (partOfBaseFeature) {
-            // withdraw base feature from Part, otherwise visibility madness results
-            doCommand(
-                Doc,
-                "App.activeDocument().%s.removeObject(App.activeDocument().%s)",
-                partOfBaseFeature->getNameInDocument(),
-                baseFeature->getNameInDocument()
-            );
-        }
-        if (addtogroup) {
-            doCommand(
-                Doc,
-                "App.activeDocument().%s.Group = [App.activeDocument().%s]",
-                bodyString,
-                baseFeature->getNameInDocument()
-            );
-        }
-        else {
-            doCommand(
-                Doc,
-                "App.activeDocument().%s.BaseFeature = App.activeDocument().%s",
-                bodyString,
-                baseFeature->getNameInDocument()
-            );
-        }
-    }
-    addModule(Gui, "PartDesignGui");  // import the Gui module only once a session
-
-    if (actPart) {
-        doCommand(
-            Doc,
-            "App.activeDocument().%s.addObject(App.ActiveDocument.%s)",
-            actPart->getNameInDocument(),
-            bodyString
-        );
-    }
-
-    doCommand(
-        Gui::Command::Gui,
-        "Gui.activateView('Gui::View3DInventor', True)\n"
-        "Gui.activeView().setActiveObject('%s', App.activeDocument().%s)",
-        PDBODYKEY,
-        bodyString
-    );
-
-    // Make the "Create sketch" prompt appear in the task panel
-    doCommand(Gui, "Gui.Selection.clearSelection()");
-    doCommand(Gui, "Gui.Selection.addSelection(App.ActiveDocument.%s)", bodyString);
-
-    // check if a proxy object has been created for the base feature inside the body
-    if (baseFeature) {
-        PartDesign::Body* body = dynamic_cast<PartDesign::Body*>(
-            baseFeature->getDocument()->getObject(bodyString)
-        );
-        if (body) {
-            std::vector<App::DocumentObject*> links = body->Group.getValues();
-            for (auto it : links) {
-                if (it->isDerivedFrom<PartDesign::FeatureBase>()) {
-                    PartDesign::FeatureBase* base = static_cast<PartDesign::FeatureBase*>(it);
-                    if (base && base->BaseFeature.getValue() == baseFeature) {
-                        Gui::Application::Instance->hideViewProvider(baseFeature);
-                        break;
-                    }
-                }
-            }
-
-            // for sketches open the feature dialog to rebase it to a new plane
-            // as requested in issue #0002862
-            if (addtogroup) {
-                std::vector<App::DocumentObject*> planes;
-                std::vector<PartDesignGui::TaskFeaturePick::featureStatus> status;
-                unsigned validPlaneCount = 0;
-                for (auto plane : body->getOrigin()->planes()) {
-                    planes.push_back(plane);
-                    status.push_back(PartDesignGui::TaskFeaturePick::basePlane);
-                    validPlaneCount++;
-                }
-
-                if (validPlaneCount > 1) {
-                    // Determines if user made a valid selection in dialog
-                    auto accepter = [](const std::vector<App::DocumentObject*>& features) -> bool {
-                        return !features.empty();
-                    };
-
-                    // Called by dialog when user hits "OK" and accepter returns true
-                    auto worker = [baseFeature](const std::vector<App::DocumentObject*>& features) {
-                        // may happen when the user switched to an empty document while the
-                        // dialog is open
-                        if (features.empty()) {
-                            return;
-                        }
-                        App::Plane* plane = static_cast<App::Plane*>(features.front());
-                        std::string supportString = Gui::Command::getObjectCmd(plane, "(", ", [''])");
-
-                        FCMD_OBJ_CMD(baseFeature, "AttachmentSupport = " << supportString);
-                        FCMD_OBJ_CMD(
-                            baseFeature,
-                            "MapMode = '"
-                                << Attacher::AttachEngine::getModeName(Attacher::mmFlatFace) << "'"
-                        );
-                        Gui::Command::updateActive();
-                    };
-
-                    // Called by dialog for "Cancel", or "OK" if accepter returns false
-                    std::string docname = getDocument()->getName();
-                    auto quitter = [docname]() {
-                        Gui::Document* document = Gui::Application::Instance->getDocument(
-                            docname.c_str()
-                        );
-                        if (document) {
-                            document->abortCommand();
-                        }
-                    };
-
-                    // Show dialog and let user pick plane
-                    Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
-                    if (!dlg) {
-                        Gui::Selection().clearSelection();
-                        Gui::Control().showDialog(
-                            new PartDesignGui::TaskDlgFeaturePick(planes, status, accepter, worker, true, quitter)
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    updateActive();
-
-    if (!openedModal) {
-        commitCommand();
-    }
-}
-
-bool CmdPartDesignBody::isActive()
-{
-    return hasActiveDocument();
-}
-
-//===========================================================================
-// PartDesign_Migrate
-//===========================================================================
-
-DEF_STD_CMD_A(CmdPartDesignMigrate)
-
-CmdPartDesignMigrate::CmdPartDesignMigrate()
-    : Command("PartDesign_Migrate")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Migrate");
-    sToolTipText = QT_TR_NOOP("Migrates the document to the modern Part Design workflow");
-    sWhatsThis = "PartDesign_Migrate";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_Migrate";
-}
-
-void CmdPartDesignMigrate::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    App::Document* doc = getDocument();
-
-    std::set<PartDesign::Feature*> migrateFeatures;
-
-
-    // Retrieve all PartDesign Features objects and filter out features already belonging to some body
-    for (const auto& feat : doc->getObjects()) {
-        if (feat->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-            && !PartDesign::Body::findBodyOf(feat) && PartDesign::Body::isSolidFeature(feat)) {
-            migrateFeatures.insert(static_cast<PartDesign::Feature*>(feat));
-        }
-    }
-
-    if (migrateFeatures.empty()) {
-        if (!PartDesignGui::isModernWorkflow(doc)) {
-            // If there is nothing to migrate and workflow is still old just set it to modern
-            PartDesignGui::WorkflowManager::instance()->forceWorkflow(
-                doc,
-                PartDesignGui::Workflow::Modern
-            );
-        }
-        else {
-            // Huh? nothing to migrate?
-            QMessageBox::warning(
-                nullptr,
-                QObject::tr("Nothing to migrate"),
-                QObject::tr(
-                    "No Part Design features without body found"
-                    " Nothing to migrate."
-                )
-            );
-        }
-        return;
-    }
-
-    // Note: this action is undoable, should it be?
-    PartDesignGui::WorkflowManager::instance()->forceWorkflow(doc, PartDesignGui::Workflow::Modern);
-
-    // Put features into chains. Each chain should become a separate body.
-    std::list<std::list<PartDesign::Feature*>> featureChains;
-    std::list<PartDesign::Feature*> chain;  //< the current chain we are working on
-
-    for (auto featIt = migrateFeatures.begin(); !migrateFeatures.empty();) {
-        Part::Feature* base = (*featIt)->getBaseObject(/*silent =*/true);
-
-        chain.push_front(*featIt);
-
-        if (!base || !base->isDerivedFrom(PartDesign::Feature::getClassTypeId())
-            || PartDesignGui::isAnyNonPartDesignLinksTo(
-                static_cast<PartDesign::Feature*>(base),
-                /*respectGroups=*/true
-            )) {
-            // a feature based on nothing as well as on non-partdesign solid starts a new chain
-            auto newChainIt = featureChains.emplace(featureChains.end());
-            newChainIt->splice(newChainIt->end(), chain);
-        }
-        else {
-            // we are basing on some partdesign feature which supposed to belong to some body
-            PartDesign::Feature* baseFeat = static_cast<PartDesign::Feature*>(base);
-
-            auto baseFeatSetIt = migrateFeatures.find(baseFeat);
-
-            if (baseFeatSetIt != migrateFeatures.end()) {
-                // base feature is pending for migration, switch to it and continue over
-                migrateFeatures.erase(featIt);
-                featIt = baseFeatSetIt;
-                continue;
-            }
-            else {
-                // The base feature seems already assigned to some chain. Find which
-                std::list<PartDesign::Feature*>::iterator baseFeatIt;
-                auto isChain =
-                    [baseFeat, &baseFeatIt](std::list<PartDesign::Feature*>& fchain) mutable -> bool {
-                    baseFeatIt = std::ranges::find(fchain, baseFeat);
-                    return baseFeatIt != fchain.end();
-                };
-
-                if (auto chainIt = std::ranges::find_if(featureChains, isChain);
-                    chainIt != featureChains.end()) {
-                    assert(baseFeatIt != chainIt->end());
-                    if (std::next(baseFeatIt) == chainIt->end()) {
-                        // just append our chain to already found
-                        chainIt->splice(chainIt->end(), chain);
-                        // TODO: If we will hit a third part everything will be messed up again.
-                        //       Probably it will require a yet another smart-ass find_if.
-                        //       (2015-08-10, Fat-Zer)
-                    }
-                    else {
-                        // We have a fork of a partDesign feature here
-                        // add a chain for current body
-                        auto newChainIt = featureChains.emplace(featureChains.end());
-                        newChainIt->splice(newChainIt->end(), chain);
-                        // add a chain for forked one
-                        newChainIt = featureChains.emplace(featureChains.end());
-                        newChainIt->splice(
-                            newChainIt->end(),
-                            *chainIt,
-                            std::next(baseFeatIt),
-                            chainIt->end()
-                        );
-                    }
-                }
-                else {
-                    // The feature is not present in list pending for migration,
-                    // This generally shouldn't happen but may be if we run into some broken file
-                    // Try to find out the body we should insert into
-                    // TODO: Some error/warning is needed here (2015-08-10, Fat-Zer)
-                    auto newChainIt = featureChains.emplace(featureChains.end());
-                    newChainIt->splice(newChainIt->end(), chain);
-                }
-            }
-        }
-        migrateFeatures.erase(featIt);
-        featIt = migrateFeatures.begin();
-        // TODO: Align visibility (2015-08-17, Fat-Zer)
-    } /* for */
-
-    // TODO: make it work without parts (2015-09-04, Fat-Zer)
-    // add a part if there is no active yet
-    App::Part* actPart = PartDesignGui::assertActivePart();
-
-    if (!actPart) {
-        return;
-    }
-
-    // do the actual migration
-    openCommand(QT_TRANSLATE_NOOP("Command", "Migrate legacy Part Design features to bodies"));
-
-    for (auto chainIt = featureChains.begin(); !featureChains.empty();
-         featureChains.erase(chainIt), chainIt = featureChains.begin()) {
-#ifndef FC_DEBUG
-        if (chainIt->empty()) {  // prevent crash in release in case of errors
-            continue;
-        }
-#else
-        assert(!chainIt->empty());
-#endif
-        Part::Feature* base = chainIt->front()->getBaseObject(/*silent =*/true);
-
-        // Find a suitable chain to work with
-        for (; chainIt != featureChains.end(); chainIt++) {
-            base = chainIt->front()->getBaseObject(/*silent =*/true);
-            if (!base || !base->isDerivedFrom(PartDesign::Feature::getClassTypeId())) {
-                break;  // no base is ok
-            }
-            else {
-                // The base feature is a PartDesign, it's a fork, try to reassign it to a body...
-                base = PartDesign::Body::findBodyOf(base);
-                if (base) {
-                    break;
-                }
-            }
-        }
-
-        if (chainIt == featureChains.end()) {
-            // Shouldn't happen, may be only in case of some circular dependency?
-            // TODO Some error message (2015-08-11, Fat-Zer)
-            chainIt = featureChains.begin();
-            base = chainIt->front()->getBaseObject(/*silent =*/true);
-        }
-
-        // Construct a Pretty Body name based on the Tip
-        std::string bodyName = getUniqueObjectName(
-            std::string(chainIt->back()->getNameInDocument()).append("Body").c_str()
-        );
-
-        Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().GetGroup(
-            "BaseApp/Preferences/Mod/PartDesign"
-        );
-
-        bool allowCompound = hGrp->GetBool("AllowCompoundDefault", true);
-
-        // Create a body for the chain
-        doCommand(Doc, "App.activeDocument().addObject('PartDesign::Body','%s')", bodyName.c_str());
-        doCommand(
-            Doc,
-            "App.ActiveDocument.getObject('%s').AllowCompound = %s",
-            bodyName.c_str(),
-            allowCompound ? "True" : "False"
-        );
-        doCommand(
-            Doc,
-            "App.activeDocument().%s.addObject(App.ActiveDocument.%s)",
-            actPart->getNameInDocument(),
-            bodyName.c_str()
-        );
-        if (base) {
-            doCommand(
-                Doc,
-                "App.activeDocument().%s.BaseFeature = App.activeDocument().%s",
-                bodyName.c_str(),
-                base->getNameInDocument()
-            );
-        }
-
-        // Fill the body with features
-        for (auto feature : *chainIt) {
-            if (feature->isDerivedFrom(PartDesign::ProfileBased::getClassTypeId())) {
-                // add the sketch and also reroute it if needed
-                PartDesign::ProfileBased* sketchBased = static_cast<PartDesign::ProfileBased*>(feature);
-                Part::Part2DObject* sketch = sketchBased->getVerifiedSketch(/*silent =*/true);
-                if (sketch) {
-                    doCommand(
-                        Doc,
-                        "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-                        bodyName.c_str(),
-                        sketch->getNameInDocument()
-                    );
-
-                    if (sketch->isDerivedFrom(Sketcher::SketchObject::getClassTypeId())) {
-                        try {
-                            PartDesignGui::fixSketchSupport(
-                                static_cast<Sketcher::SketchObject*>(sketch)
-                            );
-                        }
-                        catch (Base::Exception&) {
-                            QMessageBox::critical(
-                                Gui::getMainWindow(),
-                                QObject::tr("Sketch plane cannot be migrated"),
-                                QObject::tr(
-                                    "Please edit '%1' and redefine it to use a Base or "
-                                    "Datum plane as the sketch plane."
-                                )
-                                    .arg(QString::fromUtf8(sketch->Label.getValue()))
-                            );
-                        }
-                    }
-                    else {
-                        // TODO: Message that sketchbased is based not on a sketch (2015-08-11, Fat-Zer)
-                    }
-                }
-            }
-            doCommand(
-                Doc,
-                "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-                bodyName.c_str(),
-                feature->getNameInDocument()
-            );
-
-            PartDesignGui::relinkToBody(feature);
-        }
-    }
-
-    updateActive();
-}
-
-bool CmdPartDesignMigrate::isActive()
-{
-    return hasActiveDocument();
-}
-
-//===========================================================================
-// PartDesign_MoveTip
-//===========================================================================
-DEF_STD_CMD_A(CmdPartDesignMoveTip)
-
-CmdPartDesignMoveTip::CmdPartDesignMoveTip()
-    : Command("PartDesign_MoveTip")
-{
-    sAppModule = "PartDesign";
-    sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Set Tip");
-    sToolTipText = QT_TR_NOOP("Moves the tip of the body to the selected feature");
-    sWhatsThis = "PartDesign_MoveTip";
-    sStatusTip = sToolTipText;
-    sPixmap = "PartDesign_MoveTip";
-}
-
-void CmdPartDesignMoveTip::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
-    );
-    App::DocumentObject* selFeature;
-    PartDesign::Body* body = nullptr;
-
-    if (features.size() == 1) {
-        selFeature = features.front();
-        if (selFeature->isDerivedFrom<PartDesign::Body>()) {
-            body = static_cast<PartDesign::Body*>(selFeature);
-        }
-        else {
-            body = PartDesignGui::getBodyFor(selFeature, /* messageIfNot =*/false);
-        }
-    }
-    else {
-        selFeature = nullptr;
-    }
-
-    if (!selFeature) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Select exactly one Part Design feature or a body.")
-        );
-        return;
-    }
-    else if (!body) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr(
-                "Could not determine a body for the selected feature '%s'.",
-                selFeature->Label.getValue()
-            )
-        );
-        return;
-    }
-    else if (
-        !selFeature->isDerivedFrom(PartDesign::Feature::getClassTypeId()) && selFeature != body
-        && body->BaseFeature.getValue() != selFeature
-    ) {
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Selection error"),
-            QObject::tr("Only a solid feature can be the tip of a body.")
-        );
-        return;
-    }
-
-    App::DocumentObject* oldTip = body->Tip.getValue();
-    if (oldTip == selFeature) {  // it's not generally an error, so print only a console message
-        Base::Console().message("%s is already the tip of the body\n", selFeature->getNameInDocument());
-        return;
-    }
-
-    openCommand(QT_TRANSLATE_NOOP("Command", "Move tip to selected feature"));
-
-    if (selFeature == body) {
-        FCMD_OBJ_CMD(body, "Tip = None");
-    }
-    else {
-        FCMD_OBJ_CMD(body, "Tip = " << getObjectCmd(selFeature));
-
-        // Adjust visibility to show only the Tip feature
-        FCMD_OBJ_SHOW(selFeature);
-    }
-
-    // TODO: Hide all datum features after the Tip feature? But the user might have already hidden
-    // some and wants to see others, so we would have to remember their state somehow
-    updateActive();
-}
-
-bool CmdPartDesignMoveTip::isActive()
-{
-    return hasActiveDocument();
-}
 
 //===========================================================================
 // PartDesign_DuplicateSelection
@@ -761,7 +68,7 @@ CmdPartDesignDuplicateSelection::CmdPartDesignDuplicateSelection()
     sAppModule = "PartDesign";
     sGroup = QT_TR_NOOP("PartDesign");
     sMenuText = QT_TR_NOOP("Duplicate &Object");
-    sToolTipText = QT_TR_NOOP("Duplicates the selected object and adds it to the active body");
+    sToolTipText = QT_TR_NOOP("Duplicates the selected object and adds it to the selected body");
     sWhatsThis = "PartDesign_DuplicateSelection";
     sStatusTip = sToolTipText;
 }
@@ -769,7 +76,8 @@ CmdPartDesignDuplicateSelection::CmdPartDesignDuplicateSelection()
 void CmdPartDesignDuplicateSelection::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/*messageIfNot = */ false);
+    // Cruth #132: the copies join the body the selection points at, if it points at one.
+    PartDesign::Body* pcActiveBody = PartDesignGui::soleSelectedBody(getDocument());
 
     std::vector<App::DocumentObject*> beforeFeatures = getDocument()->getObjects();
 
@@ -791,11 +99,12 @@ void CmdPartDesignDuplicateSelection::activated(int iMsg)
         );
 
         for (auto feature : newFeatures) {
-            if (PartDesign::Body::isAllowed(feature)) {
-                // if feature already is in a body, then we don't put it into the active body issue #6278
-                auto body = App::GeoFeatureGroupExtension::getGroupOfObject(feature);
-                if (!body) {
-                    FCMD_OBJ_CMD(pcActiveBody, "addObject(" << getObjectCmd(feature) << ")");
+            if (PartDesign::Body::isSolidFeature(feature)) {
+                // If the feature already belongs to a body, don't re-home it into the selected
+                // body (issue #6278). Body membership is derived from the feature chain, not
+                // Body.Group, so ask the reverse lookup rather than probing the dormant group.
+                if (!PartDesign::Body::inAnyBody(feature)) {
+                    FCMD_OBJ_CMD(pcActiveBody, "addFeature(" << getObjectCmd(feature) << ")");
                     FCMD_OBJ_HIDE(feature);
                 }
             }
@@ -839,8 +148,9 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
+        App::DocumentObject::getClassTypeId()
     );
+    std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
     if (features.empty()) {
         return;
     }
@@ -944,8 +254,8 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
 
     stream << "]";
     runCommand(Doc, stream.str().c_str());
-    FCMD_OBJ_CMD(source_body, "removeObjects(features_)");
-    FCMD_OBJ_CMD(target, "addObjects(features_)");
+    FCMD_OBJ_CMD(source_body, "removeFeatures(features_)");
+    FCMD_OBJ_CMD(target, "addFeatures(features_)");
     /*
 
         // Find body of this feature
@@ -957,14 +267,14 @@ void CmdPartDesignMoveFeature::activated(int iMsg)
         // Remove from the source body if the feature belonged to a body
         if (source) {
             featureWasTip = (source->Tip.getValue() == feat);
-            doCommand(Doc,"App.activeDocument().%s.removeObject(App.activeDocument().%s)",
+            doCommand(Doc,"App.activeDocument().%s.removeFeature(App.activeDocument().%s)",
                       source->getNameInDocument(), (feat)->getNameInDocument());
         }
 
         App::DocumentObject* targetOldTip = target->Tip.getValue();
 
         // Add to target body (always at the Tip)
-        doCommand(Doc,"App.activeDocument().%s.addObject(App.activeDocument().%s)",
+        doCommand(Doc,"App.activeDocument().%s.addFeature(App.activeDocument().%s)",
                       target->getNameInDocument(), (feat)->getNameInDocument());
         // Recompute to update the shape
         doCommand(Gui,"App.activeDocument().recompute()");
@@ -1036,8 +346,9 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(
-        Part::Feature::getClassTypeId()
+        App::DocumentObject::getClassTypeId()
     );
+    std::erase_if(features, [](App::DocumentObject* o) { return !Part::hasShape(o); });
 
     // also check and include datum objects, ie. plane, line, and point
     std::vector<App::DocumentObject*> datums = getSelection().getObjectsOfType(
@@ -1062,7 +373,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     if (body) {
         bodyBase = body->BaseFeature.getValue();
         for (auto feat : features) {
-            if (!body->hasObject(feat)) {
+            if (!PartDesign::Body::backsBody(feat, body)) {
                 allFeaturesFromSameBody = false;
                 break;
             }
@@ -1086,7 +397,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     }
 
     // Create a list of all features in this body
-    const std::vector<App::DocumentObject*>& model = body->Group.getValues();
+    const std::vector<App::DocumentObject*>& model = body->getFullModel();
 
     // Ask user to select the target feature
     bool ok;
@@ -1130,7 +441,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
         // TODO: if tip was moved the new position of tip is quite undetermined (2015-08-07, Fat-Zer)
         // TODO: warn the user if we are moving an object to some place before the object's link
         // (2015-08-07, Fat-Zer)
-        FCMD_OBJ_CMD(body, "removeObject(" << getObjectCmd(feat) << ")");
+        FCMD_OBJ_CMD(body, "removeFeature(" << getObjectCmd(feat) << ")");
         FCMD_OBJ_CMD(
             body,
             "insertObject(" << getObjectCmd(feat) << "," << getObjectCmd(lastObject) << ", True)"
@@ -1144,7 +455,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     // depend on later objects
     std::vector<App::DocumentObject*> bodyFeatures;
     std::map<App::DocumentObject*, size_t> orders;
-    for (auto obj : body->Group.getValues()) {
+    for (auto obj : body->getFullModel()) {
         if (obj->isDerivedFrom<PartDesign::Feature>()) {
             orders.emplace(obj, bodyFeatures.size());
             bodyFeatures.push_back(obj);
@@ -1219,6 +530,201 @@ bool CmdPartDesignMoveFeatureInTree::isActive()
 
 
 //===========================================================================
+// PartDesign_CheckInterference
+//===========================================================================
+
+DEF_STD_CMD_A(CmdPartDesignCheckInterference)
+
+CmdPartDesignCheckInterference::CmdPartDesignCheckInterference()
+    : Command("PartDesign_CheckInterference")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Check spatial interference");
+    sToolTipText = QT_TR_NOOP(
+        "List pairs of parts whose volumes overlap in space, and acknowledge intended overlaps"
+    );
+    sWhatsThis = "PartDesign_CheckInterference";
+    sStatusTip = sToolTipText;
+}
+
+void CmdPartDesignCheckInterference::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    // Cruth §8.6: an on-demand, non-blocking check — the pairwise boolean is too costly to run
+    // every recompute, and an overlap is valid geometry, never a failure. This dialog is the
+    // interim surface until the Phase-5 state manifest carries the notice.
+    App::Document* doc = getDocument();
+    if (!doc) {
+        return;
+    }
+
+    if (PartDesign::Body::liveInterferingPairs(doc).empty()) {
+        QMessageBox::information(
+            Gui::getMainWindow(),
+            QObject::tr("Spatial interference"),
+            QObject::tr("No unacknowledged overlaps: no two parts share volume in space.")
+        );
+        return;
+    }
+
+    QDialog dialog(Gui::getMainWindow());
+    dialog.setWindowTitle(QObject::tr("Spatial interference"));
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(
+        QObject::tr(
+            "These parts overlap in space without being merged. Select a pair to highlight "
+            "it, then acknowledge if the overlap is intentional (keep them distinct). An "
+            "overlap can only be acknowledged between two bodies for now; anything else "
+            "stays listed."
+        ),
+        &dialog
+    ));
+    auto* list = new QListWidget(&dialog);
+    layout->addWidget(list);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    auto* ackButton = buttons->addButton(
+        QObject::tr("Acknowledge (keep distinct)"),
+        QDialogButtonBox::ActionRole
+    );
+    ackButton->setEnabled(false);
+    layout->addWidget(buttons);
+
+    // Rebuild the row list from the current live pairs; each row remembers its two body names so a
+    // later selection/acknowledge resolves them freshly (a body could have been retired meanwhile).
+    const std::string docName = doc->getName();
+    auto repopulate = [&]() {
+        list->clear();
+        for (const auto& pair : PartDesign::Body::liveInterferingPairs(doc)) {
+            auto* item = new QListWidgetItem(
+                QString::fromUtf8("%1  ∩  %2")
+                    .arg(QString::fromUtf8(pair.first->Label.getValue()))
+                    .arg(QString::fromUtf8(pair.second->Label.getValue())),
+                list
+            );
+            item->setData(Qt::UserRole, QString::fromLatin1(pair.first->getNameInDocument()));
+            item->setData(Qt::UserRole + 1, QString::fromLatin1(pair.second->getNameInDocument()));
+            item->setData(
+                Qt::UserRole + 2,
+                PartDesign::Body::isInterferenceDismissable(pair.first, pair.second)
+            );
+        }
+        ackButton->setEnabled(false);
+        if (list->count() == 0) {
+            dialog.accept();  // nothing left to resolve
+        }
+    };
+
+    QObject::connect(list, &QListWidget::currentItemChanged, [&](QListWidgetItem* item) {
+        // Offered only where there is somewhere to record the answer; the alternative is a
+        // button that appears to work and silently does nothing.
+        ackButton->setEnabled(item != nullptr && item->data(Qt::UserRole + 2).toBool());
+        Gui::Selection().clearSelection();
+        if (!item) {
+            return;
+        }
+        // Highlight both bodies of the selected pair in the 3D view.
+        Gui::Selection().addSelection(
+            docName.c_str(),
+            item->data(Qt::UserRole).toString().toLatin1().constData()
+        );
+        Gui::Selection().addSelection(
+            docName.c_str(),
+            item->data(Qt::UserRole + 1).toString().toLatin1().constData()
+        );
+    });
+
+    QObject::connect(ackButton, &QPushButton::clicked, [&]() {
+        QListWidgetItem* item = list->currentItem();
+        if (!item) {
+            return;
+        }
+        auto* a = freecad_cast<PartDesign::Body*>(
+            doc->getObject(item->data(Qt::UserRole).toString().toLatin1().constData())
+        );
+        auto* b = freecad_cast<PartDesign::Body*>(
+            doc->getObject(item->data(Qt::UserRole + 1).toString().toLatin1().constData())
+        );
+        PartDesign::Body::dismissInterference(a, b);
+        repopulate();
+    });
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    repopulate();
+    dialog.exec();
+    Gui::Selection().clearSelection();
+}
+
+bool CmdPartDesignCheckInterference::isActive()
+{
+    return hasActiveDocument();
+}
+
+//===========================================================================
+// PartDesign_ShowDependencies
+//===========================================================================
+
+DEF_STD_CMD_A(CmdPartDesignShowDependencies)
+
+CmdPartDesignShowDependencies::CmdPartDesignShowDependencies()
+    : Command("PartDesign_ShowDependencies")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Show dependencies");
+    sToolTipText = QT_TR_NOOP("Shows what the selected step uses and what uses it");
+    sWhatsThis = "PartDesign_ShowDependencies";
+    sStatusTip = sToolTipText;
+}
+
+void CmdPartDesignShowDependencies::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const auto selection = Gui::Selection().getSelection();
+    if (selection.size() == 1) {
+        PartDesignGui::DependenciesPanel::showFor(selection.front().pObject);
+    }
+}
+
+bool CmdPartDesignShowDependencies::isActive()
+{
+    return Gui::Selection().getSelection().size() == 1;
+}
+
+//===========================================================================
+// PartDesign_BodyInfo
+//===========================================================================
+
+DEF_STD_CMD_A(CmdPartDesignBodyInfo)
+
+CmdPartDesignBodyInfo::CmdPartDesignBodyInfo()
+    : Command("PartDesign_BodyInfo")
+{
+    sAppModule = "PartDesign";
+    sGroup = QT_TR_NOOP("PartDesign");
+    sMenuText = QT_TR_NOOP("Body information");
+    sToolTipText = QT_TR_NOOP("Shows the selected body's name, colour, material and what uses it");
+    sWhatsThis = "PartDesign_BodyInfo";
+    sStatusTip = sToolTipText;
+}
+
+void CmdPartDesignBodyInfo::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    const auto selection = Gui::Selection().getSelection();
+    if (selection.size() == 1) {
+        PartDesignGui::BodyPanel::showFor(selection.front().pObject);
+    }
+}
+
+bool CmdPartDesignBodyInfo::isActive()
+{
+    const auto selection = Gui::Selection().getSelection();
+    return selection.size() == 1 && freecad_cast<Part::BodyBase*>(selection.front().pObject);
+}
+
+//===========================================================================
 // Initialization
 //===========================================================================
 
@@ -1226,11 +732,11 @@ void CreatePartDesignBodyCommands()
 {
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
-    rcCmdMgr.addCommand(new CmdPartDesignBody());
-    rcCmdMgr.addCommand(new CmdPartDesignMigrate());
-    rcCmdMgr.addCommand(new CmdPartDesignMoveTip());
 
     rcCmdMgr.addCommand(new CmdPartDesignDuplicateSelection());
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeature());
     rcCmdMgr.addCommand(new CmdPartDesignMoveFeatureInTree());
+    rcCmdMgr.addCommand(new CmdPartDesignCheckInterference());
+    rcCmdMgr.addCommand(new CmdPartDesignShowDependencies());
+    rcCmdMgr.addCommand(new CmdPartDesignBodyInfo());
 }

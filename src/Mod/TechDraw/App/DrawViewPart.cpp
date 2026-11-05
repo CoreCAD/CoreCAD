@@ -35,6 +35,7 @@
 // actual drawing routines in Gui
 
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAlgo_NormalProjection.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
@@ -1064,6 +1065,82 @@ BaseGeomPtr DrawViewPart::projectEdge(const TopoDS_Edge& e) const
     projector.Build();
     TopoDS_Shape s = projector.Projection();
     return BaseGeom::baseFactory(TopoDS::Edge(s));
+}
+
+// map a 3d model point into the frame of the stored projected geometry.  The view
+// stores each edge/vertex after shifting by the source centroid and applying the
+// view scale, so we reproduce that transform here (see addPoints/centerScaleRotate).
+Base::Vector3d DrawViewPart::modelPointToViewFrame(const Base::Vector3d& modelPoint) const
+{
+    return projectPoint((modelPoint - getOriginalCentroid()) * getScale());
+}
+
+namespace
+{
+// tolerance for correlating a reprojected source point with a stored 2d point.
+// looser than EWTOLERANCE because the two points travel through different
+// projection paths (HLRAlgo_Projector here vs the HLR edge output in the view),
+// but far tighter than the spacing between distinct model edges.
+constexpr double CorrelationTolerance = 0.01;
+
+bool sameViewPoint(const Base::Vector3d& lhs, const Base::Vector3d& rhs)
+{
+    return lhs.IsEqual(rhs, CorrelationTolerance);
+}
+}  // namespace
+
+int DrawViewPart::edgeIndexForModelEdge(const TopoDS_Edge& modelEdge) const
+{
+    if (modelEdge.IsNull()) {
+        return -1;
+    }
+    BRepAdaptor_Curve curve(modelEdge);
+    double first = curve.FirstParameter();
+    double last = curve.LastParameter();
+    auto toView = [this](const gp_Pnt& pnt) {
+        return modelPointToViewFrame(Base::Vector3d(pnt.X(), pnt.Y(), pnt.Z()));
+    };
+    Base::Vector3d start = toView(curve.Value(first));
+    Base::Vector3d end = toView(curve.Value(last));
+    Base::Vector3d mid = toView(curve.Value((first + last) / 2.0));
+
+    const BaseGeomPtrVector edges = getEdgeGeometry();
+    for (int i = 0; i < static_cast<int>(edges.size()); i++) {
+        BaseGeomPtr geom = edges.at(i);
+        if (!geom) {
+            continue;
+        }
+        Base::Vector3d gStart = geom->getStartPoint();
+        Base::Vector3d gEnd = geom->getEndPoint();
+        Base::Vector3d gMid = geom->getMidPoint();
+        bool endsMatch = (sameViewPoint(start, gStart) && sameViewPoint(end, gEnd))
+            || (sameViewPoint(start, gEnd) && sameViewPoint(end, gStart));
+        if (endsMatch && sameViewPoint(mid, gMid)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int DrawViewPart::vertexIndexForModelVertex(const TopoDS_Vertex& modelVertex) const
+{
+    if (modelVertex.IsNull()) {
+        return -1;
+    }
+    gp_Pnt pnt = BRep_Tool::Pnt(modelVertex);
+    Base::Vector3d target = modelPointToViewFrame(Base::Vector3d(pnt.X(), pnt.Y(), pnt.Z()));
+
+    const std::vector<TechDraw::VertexPtr> verts = getVertexGeometry();
+    for (int i = 0; i < static_cast<int>(verts.size()); i++) {
+        VertexPtr vert = verts.at(i);
+        if (!vert) {
+            continue;
+        }
+        if (sameViewPoint(target, vert->point())) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 bool DrawViewPart::waitingForResult() const

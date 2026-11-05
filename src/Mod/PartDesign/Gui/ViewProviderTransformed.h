@@ -60,8 +60,6 @@ public:
     // Name of menu dialog
     QString menuName;
 
-    Gui::ViewProvider* startEditing(int ModNum = 0) override;
-
     QString getMessage() const
     {
         return diagMessage;

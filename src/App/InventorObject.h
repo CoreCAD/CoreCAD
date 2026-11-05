@@ -26,13 +26,14 @@
 #pragma once
 
 #include "GeoFeature.h"
+#include "PlacementExtension.h"
 #include "PropertyStandard.h"
 
 
 namespace App
 {
 
-class AppExport InventorObject: public GeoFeature
+class AppExport InventorObject: public GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::InventorObject);
 

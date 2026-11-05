@@ -198,6 +198,10 @@ public:
 
     void setShowable(bool enable);
     bool isShowable() const;
+    /// Whether this object stands past the document's roll-back marker, so it is not drawn.
+    virtual bool isHeldBack() const;
+    /// Draw or stop drawing this object after what isShowable() reads has changed.
+    void updateShowable();
 
     /** Start the edit mode with ViewProvider::Default */
     void startDefaultEditMode();

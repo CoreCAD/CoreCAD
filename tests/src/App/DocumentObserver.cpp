@@ -4,6 +4,7 @@
 #include <gmock/gmock.h>
 
 #include <src/App/InitApplication.h>
+#include <src/App/PlacedGroup.h>
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -143,9 +144,9 @@ TEST_F(DISABLED_DocumentObserverTest, normalize)
     auto boxLabel {box->Label.getValue()};
     // The name of a Part::Cylinder added to the document
     auto cylName {_doc->addObject("Part::Cylinder")->getNameInDocument()};
-    // An App::Part added to the document
-    auto part {_doc->addObject("App::Part")};
-    // The name of the App::Part added to the document
+    // A placed group added to the document
+    auto part {tests::addPlacedGroup(_doc)};
+    // The name of the placed group added to the document
     auto partName {part->getNameInDocument()};
     // An App::LinkGroup added to the document
     auto lGrp {_doc->addObject("App::LinkGroup")};
@@ -158,7 +159,7 @@ TEST_F(DISABLED_DocumentObserverTest, normalize)
     // Base::Interpreter().runString()
     auto cmd {std::string()};
 
-    // Performing a fusion to create an object that will be added to the App::Part object and
+    // Performing a fusion to create an object that will be added to the placed group and
     // linked inside the App::LinkGroup object
     Base::Interpreter().runString("from BOPTools import BOPFeatures");
     Base::Interpreter().runString("bp = BOPFeatures.BOPFeatures(App.activeDocument())");
@@ -172,7 +173,7 @@ TEST_F(DISABLED_DocumentObserverTest, normalize)
     // The name of the fusion object
     auto fuseName {_doc->getObject("Fusion")->getNameInDocument()};
 
-    // Adding the fusion to the App::Part object to test the differences between calling
+    // Adding the fusion to the placed group to test the differences between calling
     // SubObjectT::normalize() with the options argument set to
     // SubObjectT::NormalizeOption::NoFlatten or set to other values
     cmd = "App.ActiveDocument.getObject(\"";
@@ -326,9 +327,9 @@ TEST_F(DISABLED_DocumentObserverTest, normalized)
     auto boxLabel {box->Label.getValue()};
     // The name of a Part::Cylinder added to the document
     auto cylName {_doc->addObject("Part::Cylinder")->getNameInDocument()};
-    // An App::Part added to the document
-    auto part {_doc->addObject("App::Part")};
-    // The name of the App::Part added to the document
+    // A placed group added to the document
+    auto part {tests::addPlacedGroup(_doc)};
+    // The name of the placed group added to the document
     auto partName {part->getNameInDocument()};
     // An App::LinkGroup added to the document
     auto lGrp {_doc->addObject("App::LinkGroup")};
@@ -342,7 +343,7 @@ TEST_F(DISABLED_DocumentObserverTest, normalized)
     // Base::Interpreter().runString()
     auto cmd {std::string()};
 
-    // Performing a fusion to create an object that will be added to the App::Part object and
+    // Performing a fusion to create an object that will be added to the placed group and
     // linked inside the App::LinkGroup object
     Base::Interpreter().runString("from BOPTools import BOPFeatures");
     Base::Interpreter().runString("bp = BOPFeatures.BOPFeatures(App.activeDocument())");
@@ -356,7 +357,7 @@ TEST_F(DISABLED_DocumentObserverTest, normalized)
     // The name of the fusion object
     auto fuseName {_doc->getObject("Fusion")->getNameInDocument()};
 
-    // Adding the fusion to the App::Part object to test the differences between calling
+    // Adding the fusion to the placed group to test the differences between calling
     // SubObjectT::normalized() with the options argument set to
     // SubObjectT::NormalizeOption::NoFlatten or set to other values
     cmd = "App.ActiveDocument.getObject(\"";
@@ -367,7 +368,7 @@ TEST_F(DISABLED_DocumentObserverTest, normalized)
     Base::Interpreter().runString(cmd.c_str());
     Base::Interpreter().runString("App.ActiveDocument.recompute()");
 
-    // Creating a Link Array with the App::Part object added to the document to test
+    // Creating a Link Array with the placed group added to the document to test
     // SubObjectT::normalized() with the options argument set to
     // SubObjectT::NormalizeOption::ConvertIndex or set to other values
     Base::Interpreter().runString("import Draft");

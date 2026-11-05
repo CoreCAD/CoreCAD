@@ -69,8 +69,8 @@ def make_copy(obj, force=None, reparent=False, simple_copy=False):
         gui_utils.format_object(newobj, obj)
     elif not simple_copy:
         # this is the new implementation using doc.copyObject API
-        if obj.hasExtension("App::OriginGroupExtension"):
-            # always copy with dependencies when copying App::Part and PartDesign::Body
+        if obj.isDerivedFrom("PartDesign::Body"):
+            # always copy a Body with its features
             newobj = App.ActiveDocument.copyObject(obj, True)
         else:
             newobj = App.ActiveDocument.copyObject(obj)
@@ -82,7 +82,7 @@ def make_copy(obj, force=None, reparent=False, simple_copy=False):
         parents = obj.InList
         if parents:
             for par in parents:
-                if par.isDerivedFrom("App::DocumentObjectGroup") or par.isDerivedFrom("App::Part"):
+                if par.isDerivedFrom("App::DocumentObjectGroup"):
                     par.addObject(newobj)
                 else:
                     # That's the case of Arch_BuildingParts or Draft_Layers for example

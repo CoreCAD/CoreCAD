@@ -81,7 +81,7 @@ def offset(obj, delta, copy=False, bind=False, sym=False, occ=False):
         utils.get_type(obj).startswith("Sketcher::")
         or utils.get_type(obj).startswith("Part::")
         or utils.get_type(obj).startswith("PartDesign::")
-    ):  # For PartDesign_SubShapeBinders which can reference sketches.
+    ):
         print(
             "the offset tool is currently unable to offset a non-Draft object directly - Creating a copy"
         )

@@ -33,7 +33,13 @@
 namespace Part
 {
 
-class PartExport ProjectOnSurface: public Part::Feature
+/** Edges and faces projected onto a support face.
+ *
+ * Derived, not an anchor (Amendment 4): the projection lands where the support
+ * face and the projection direction put it, so it holds no authored placement
+ * and derives from the unplaced ShapeFeature.
+ */
+class PartExport ProjectOnSurface: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::ProjectOnSurface);
 

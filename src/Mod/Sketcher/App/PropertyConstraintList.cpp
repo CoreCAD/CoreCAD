@@ -24,6 +24,9 @@
 
 #include <cassert>
 #include <limits>
+#include <memory>
+
+#include <boost/uuid/nil_generator.hpp>
 
 #include <App/ExpressionParser.h>
 #include <App/ObjectIdentifier.h>
@@ -32,8 +35,11 @@
 #include <Base/Tools.h>
 #include <Base/Writer.h>
 
+#include <Mod/Part/App/Geometry.h>
+
 #include "ConstraintPy.h"
 #include "PropertyConstraintList.h"
+#include "SketchObject.h"
 
 
 using namespace App;
@@ -253,6 +259,21 @@ void PropertyConstraintList::applyValues(std::vector<Constraint*>&& lValue)
     }
 }
 
+void PropertyConstraintList::mintDurableIdentity()
+{
+    // A duplicated sketch arrives carrying the source's constraint tags (they are now
+    // persisted). Duplication mints: give each constraint a fresh identity and rebuild
+    // the tag->index map to match. No signal — this runs mid-copy on constraints not
+    // yet visible, and the tag is identity, not constraint data.
+    valueMap.clear();
+    for (std::size_t i = 0; i < _lValueList.size(); ++i) {
+        if (_lValueList[i]) {
+            _lValueList[i]->mintDurableIdentity();
+            valueMap[_lValueList[i]->tag] = i;
+        }
+    }
+}
+
 PyObject* PropertyConstraintList::getPyObject()
 {
     PyObject* list = PyList_New(getSize());
@@ -325,10 +346,28 @@ void PropertyConstraintList::setPyObject(PyObject* value)
 
 void PropertyConstraintList::Save(Writer& writer) const
 {
+    // Snapshot GeoId -> durable geometry tag, so each constraint can record the durable
+    // handle behind its positional GeoId reference. This is the save-side boundary
+    // translation: only geometry the owning sketch authors (GeoId >= 0) has a tag.
+    std::vector<boost::uuids::uuid> geoTagByGeoId;
+    if (const auto* sketch = dynamic_cast<const SketchObject*>(getContainer())) {
+        const std::vector<Part::Geometry*>& geometry = sketch->getInternalGeometry();
+        geoTagByGeoId.reserve(geometry.size());
+        for (const Part::Geometry* geo : geometry) {
+            geoTagByGeoId.push_back(geo->getTag());
+        }
+    }
+    auto geoIdToTag = [&geoTagByGeoId](int geoId) -> boost::uuids::uuid {
+        if (geoId < 0 || geoId >= static_cast<int>(geoTagByGeoId.size())) {
+            return boost::uuids::nil_uuid();
+        }
+        return geoTagByGeoId[geoId];
+    };
+
     writer.Stream() << writer.ind() << "<ConstraintList count=\"" << getSize() << "\">" << endl;
     writer.incInd();
     for (int i = 0; i < getSize(); i++) {
-        _lValueList[i]->Save(writer);
+        _lValueList[i]->Save(writer, geoIdToTag);
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</ConstraintList>" << endl;
@@ -341,19 +380,26 @@ void PropertyConstraintList::Restore(Base::XMLReader& reader)
     // get the value of my attribute
     int count = reader.getAttribute<long>("count");
 
-    std::vector<Constraint*> values;
-    values.reserve(count);
+    // A constraint stating something this build cannot place used to be deleted here, under
+    // "upward compatibility". Measured: a four-constraint sketch whose Perpendicular named a type
+    // this build has no place for opened with three, reported itself whole, and the next save
+    // wrote the file without it -- the author's constraint gone from their own document, with
+    // nothing said. A constraint that cannot be read now refuses, and the reader keeps the list
+    // exactly as the file worded it (Amendment 19). Whole rather than in part, deliberately: a
+    // constraint set assembled from the constraints that happened to be legible is one nobody
+    // authored, and a sketch solved against it would be a different sketch.
+    std::vector<std::unique_ptr<Constraint>> read;
+    read.reserve(count);
     for (int i = 0; i < count; i++) {
-        Constraint* newC = new Constraint();
+        auto newC = std::make_unique<Constraint>();
         newC->Restore(reader);
-        // To keep upward compatibility ignore unknown constraint types
-        if (newC->Type < Sketcher::NumConstraintTypes) {
-            values.push_back(newC);
-        }
-        else {
-            // reading a new constraint type which this version cannot handle
-            delete newC;
-        }
+        read.push_back(std::move(newC));
+    }
+
+    std::vector<Constraint*> values;
+    values.reserve(read.size());
+    for (std::unique_ptr<Constraint>& constraint : read) {
+        values.push_back(constraint.release());
     }
 
     reader.readEndElement("ConstraintList");

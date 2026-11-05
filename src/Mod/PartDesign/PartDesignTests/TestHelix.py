@@ -38,11 +38,11 @@ class TestHelix(unittest.TestCase):
     """Test various helixes"""
 
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestHelix")
+        self.Doc = FreeCAD.newDocument("PartDesignTestHelix", type="Part")
 
     def testHelicalTubeCase(self):
         body = self.Doc.addObject("PartDesign::Body", "Body")
-        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch = body.Document.addObject("Sketcher::SketchObject", "Sketch")
         sketch.AttachmentSupport = (self.Doc.getObject("XY_Plane"), [""])
         sketch.MapMode = "FlatFace"
 
@@ -56,7 +56,9 @@ class TestHelix(unittest.TestCase):
         sketch.addConstraint(Sketcher.Constraint("Coincident", 1, 3, 0, 3))
         self.Doc.recompute()
 
-        helix = body.newObject("PartDesign::AdditiveHelix", "AdditiveHelix")
+        helix = body.addFeature(
+            body.Document.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
+        )
         helix.Profile = sketch
         helix.ReferenceAxis = (sketch, ["V_Axis"])
         helix.Mode = 0
@@ -75,18 +77,12 @@ class TestHelix(unittest.TestCase):
         """Test helix based on circle in Quadrant 1"""
         body = self.Doc.addObject("PartDesign::Body", "Body")
         profileSketch = self.Doc.addObject("Sketcher::SketchObject", "ProfileSketch")
-        body.addObject(profileSketch)
         TestSketcherApp.CreateCircleSketch(profileSketch, (2, 0), 1)
         self.Doc.recompute()
         helix = self.Doc.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
-        body.addObject(helix)
+        body.addFeature(helix)
         helix.Profile = profileSketch
         helix.ReferenceAxis = (profileSketch, "V_Axis")
-        helix.Placement = FreeCAD.Placement(
-            FreeCAD.Vector(0, 0, 0),
-            FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-            FreeCAD.Vector(0, 0, 0),
-        )
         helix.Pitch = 3
         helix.Height = 9
         helix.Turns = 2
@@ -109,22 +105,16 @@ class TestHelix(unittest.TestCase):
         """Test helix based on a rectangle"""
         body = self.Doc.addObject("PartDesign::Body", "GearBody")
         gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-        body.addObject(gearSketch)
         TestSketcherApp.CreateRectangleSketch(gearSketch, (0, 0), (5, 5))
         self.Doc.recompute()
 
-        # xz_plane = body.Origin.OriginFeatures[4]
+        # xz_plane = body.Document.XZ_Plane
         # coneSketch.AttachmentSupport = xz_plane
         # coneSketch.MapMode = 'FlatFace'
         helix = self.Doc.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
-        body.addObject(helix)
+        body.addFeature(helix)
         helix.Profile = gearSketch
         helix.ReferenceAxis = (gearSketch, "V_Axis")
-        helix.Placement = FreeCAD.Placement(
-            FreeCAD.Vector(0, 0, 0),
-            FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-            FreeCAD.Vector(0, 0, 0),
-        )
 
         helix.Pitch = 50
         helix.Height = 150
@@ -153,24 +143,18 @@ class TestHelix(unittest.TestCase):
             exponent = float(iexponent)
             body = self.Doc.addObject("PartDesign::Body", "GearBody")
             gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-            body.addObject(gearSketch)
             TestSketcherApp.CreateRectangleSketch(
                 gearSketch, (10 * (10**exponent), 0), (1 * (10**exponent), 1 * (10**exponent))
             )
-            xz_plane = body.Origin.OriginFeatures[4]
+            xz_plane = body.Document.XZ_Plane
             gearSketch.AttachmentSupport = xz_plane
             gearSketch.MapMode = "FlatFace"
             self.Doc.recompute()
 
             helix = self.Doc.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
-            body.addObject(helix)
+            body.addFeature(helix)
             helix.Profile = gearSketch
             helix.ReferenceAxis = (gearSketch, "V_Axis")
-            helix.Placement = FreeCAD.Placement(
-                FreeCAD.Vector(0, 0, 0),
-                FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-                FreeCAD.Vector(0, 0, 0),
-            )
 
             helix.Pitch = 2 * (10**exponent)
             helix.Turns = 2
@@ -211,11 +195,10 @@ class TestHelix(unittest.TestCase):
             exponent = float(iexponent)
             body = self.Doc.addObject("PartDesign::Body", "GearBody")
             gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-            body.addObject(gearSketch)
             TestSketcherApp.CreateRectangleSketch(
                 gearSketch, (10 * (10**exponent), 0), (1 * (10**exponent), 1 * (10**exponent))
             )
-            xz_plane = body.Origin.OriginFeatures[4]
+            xz_plane = body.Document.XZ_Plane
             gearSketch.AttachmentSupport = xz_plane
             gearSketch.MapMode = "FlatFace"
             self.Doc.recompute()
@@ -224,18 +207,13 @@ class TestHelix(unittest.TestCase):
             cylinder.Radius = 10 * (10**exponent)
             cylinder.Height = 8 * (10**exponent)
             cylinder.Angle = 360
-            body.addObject(cylinder)
+            body.addFeature(cylinder)
             self.Doc.recompute()
 
             helix = self.Doc.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
-            body.addObject(helix)
+            body.addFeature(helix)
             helix.Profile = gearSketch
             helix.ReferenceAxis = (gearSketch, "V_Axis")
-            helix.Placement = FreeCAD.Placement(
-                FreeCAD.Vector(0, 0, 0),
-                FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-                FreeCAD.Vector(0, 0, 0),
-            )
 
             helix.Pitch = 2 * (10**exponent)
             helix.Turns = 2.5  # workaround for OCCT bug with very large helices - full turns truncate the cylinder due to seam alignment
@@ -277,11 +255,10 @@ class TestHelix(unittest.TestCase):
             exponent = float(iexponent)
             body = self.Doc.addObject("PartDesign::Body", "GearBody")
             gearSketch = self.Doc.addObject("Sketcher::SketchObject", "GearSketch")
-            body.addObject(gearSketch)
             TestSketcherApp.CreateRectangleSketch(
                 gearSketch, (10 * (10**exponent), 0), (1 * (10**exponent), 1 * (10**exponent))
             )
-            xz_plane = body.Origin.OriginFeatures[4]
+            xz_plane = body.Document.XZ_Plane
             gearSketch.AttachmentSupport = xz_plane
             gearSketch.MapMode = "FlatFace"
             self.Doc.recompute()
@@ -290,18 +267,13 @@ class TestHelix(unittest.TestCase):
             cylinder.Radius = 11 * (10**exponent)
             cylinder.Height = 8 * (10**exponent)
             cylinder.Angle = 360
-            body.addObject(cylinder)
+            body.addFeature(cylinder)
             self.Doc.recompute()
 
             helix = self.Doc.addObject("PartDesign::SubtractiveHelix", "SubtractiveHelix")
-            body.addObject(helix)
+            body.addFeature(helix)
             helix.Profile = gearSketch
             helix.ReferenceAxis = (gearSketch, "V_Axis")
-            helix.Placement = FreeCAD.Placement(
-                FreeCAD.Vector(0, 0, 0),
-                FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-                FreeCAD.Vector(0, 0, 0),
-            )
 
             helix.Pitch = 2 * (10**exponent)
             helix.Turns = 2.5  # workaround for OCCT bug with very large helices - full turns truncate the cylinder due to seam alignment
@@ -334,7 +306,6 @@ class TestHelix(unittest.TestCase):
         """Test helix following a cone"""
         body = self.Doc.addObject("PartDesign::Body", "ConeBody")
         coneSketch = self.Doc.addObject("Sketcher::SketchObject", "ConeSketch")
-        body.addObject(coneSketch)
 
         geoList = []
         geoList.append(Part.LineSegment(FreeCAD.Vector(-5, -5, 0), FreeCAD.Vector(-3, 0, 0)))
@@ -360,18 +331,13 @@ class TestHelix(unittest.TestCase):
         conList.append(Sketcher.Constraint("DistanceX", 1, 10))
         coneSketch.addConstraint(conList)
 
-        xz_plane = body.Origin.OriginFeatures[4]
+        xz_plane = body.Document.XZ_Plane
         coneSketch.AttachmentSupport = xz_plane
         coneSketch.MapMode = "FlatFace"
         helix = self.Doc.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
-        body.addObject(helix)
+        body.addFeature(helix)
         helix.Profile = coneSketch
         helix.ReferenceAxis = (coneSketch, "V_Axis")
-        helix.Placement = FreeCAD.Placement(
-            FreeCAD.Vector(0, 0, 0),
-            FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 0),
-            FreeCAD.Vector(0, 0, 0),
-        )
 
         helix.Pitch = 50
         helix.Height = 110
@@ -386,7 +352,6 @@ class TestHelix(unittest.TestCase):
         """Test helix following a cone with a negative angle"""
         body = self.Doc.addObject("PartDesign::Body", "ConeBody")
         coneSketch = self.Doc.addObject("Sketcher::SketchObject", "ConeSketch")
-        body.addObject(coneSketch)
 
         geoList = []
         geoList.append(Part.LineSegment(FreeCAD.Vector(5, 5, 0), FreeCAD.Vector(3, 0, 0)))
@@ -410,11 +375,11 @@ class TestHelix(unittest.TestCase):
         conList.append(Sketcher.Constraint("DistanceX", 1, 10))
         coneSketch.addConstraint(conList)
 
-        xz_plane = body.Origin.OriginFeatures[4]
+        xz_plane = body.Document.XZ_Plane
         coneSketch.AttachmentSupport = xz_plane
         coneSketch.MapMode = "FlatFace"
         helix = self.Doc.addObject("PartDesign::AdditiveHelix", "AdditiveHelix")
-        body.addObject(helix)
+        body.addFeature(helix)
         helix.Profile = coneSketch
         helix.ReferenceAxis = (coneSketch, "V_Axis")
 

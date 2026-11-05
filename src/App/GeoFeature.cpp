@@ -46,7 +46,9 @@ PROPERTY_SOURCE(App::GeoFeature, App::DocumentObject)
 
 GeoFeature::GeoFeature()
 {
-    ADD_PROPERTY_TYPE(Placement, (Base::Placement()), nullptr, Prop_NoRecompute, nullptr);
+    // Amendment 4: the authored Placement is no longer a birthright bolted onto
+    // every GeoFeature. Placed classes opt into it via App::PlacementExtension;
+    // derived features carry none and answer getPlacement() with identity.
     ADD_PROPERTY_TYPE(_ElementMapVersion,
                     (""),
                     "Base",
@@ -58,9 +60,13 @@ GeoFeature::~GeoFeature() = default;
 
 void GeoFeature::transformPlacement(const Base::Placement& transform)
 {
-    Base::Placement plm = this->Placement.getValue();
-    plm = transform * plm;
-    this->Placement.setValue(plm);
+    // Only meaningful for an object that carries an authored placement; a
+    // derived feature holds none and this is a no-op (Amendment 4).
+    if (auto* plProp = getPlacementProperty()) {
+        Base::Placement plm = plProp->getValue();
+        plm = transform * plm;
+        plProp->setValue(plm);
+    }
 }
 
 Base::Placement GeoFeature::globalPlacement() const
@@ -71,6 +77,21 @@ Base::Placement GeoFeature::globalPlacement() const
 const PropertyComplexGeoData* GeoFeature::getPropertyOfGeometry() const
 {
     return nullptr;
+}
+
+const Data::ComplexGeoData* GeoFeature::getElementData() const
+{
+    const auto* prop = getPropertyOfGeometry();
+    return prop ? prop->getComplexData() : nullptr;
+}
+
+bool GeoFeature::holdsAuthoredPlacement() const
+{
+    // Structural, post member-removal (Amendment 4): an object authors a
+    // position iff it actually carries a Placement property — i.e. it opted
+    // into App::PlacementExtension (or a link placement). Anchors do; a derived
+    // feature, holding no such property, answers false. See Clause 4.2.
+    return getPlacementProperty() != nullptr;
 }
 
 PyObject* GeoFeature::getPyObject()
@@ -90,12 +111,7 @@ ElementNamePair GeoFeature::getElementName(const char* name, ElementNameType typ
         return {};
     }
 
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
-        return ElementNamePair("", name);
-    }
-
-    auto geo = prop->getComplexData();
+    const auto* geo = getElementData();
     if (!geo) {
         return ElementNamePair("", name);
     }
@@ -104,7 +120,7 @@ ElementNamePair GeoFeature::getElementName(const char* name, ElementNameType typ
 }
 
 ElementNamePair GeoFeature::_getElementName(const char* name,
-                                            const Data::MappedElement& mapped) const
+                                            const Data::MappedElement& mapped)
 {
     ElementNamePair ret;
     if (mapped.index && mapped.name) {
@@ -202,16 +218,6 @@ DocumentObject* GeoFeature::resolveElement(const DocumentObject* obj,
     return sobj;
 }
 
-App::Material GeoFeature::getMaterialAppearance() const
-{
-    return App::Material(App::Material::DEFAULT);
-}
-
-void GeoFeature::setMaterialAppearance(const App::Material& material)
-{
-    Q_UNUSED(material)
-}
-
 bool GeoFeature::getCameraAlignmentDirection(Base::Vector3d& directionZ, Base::Vector3d& directionX, const char* subname) const
 {
     Q_UNUSED(subname)
@@ -247,17 +253,14 @@ bool GeoFeature::hasMissingElement(const char* subname)
 
 void GeoFeature::updateElementReference()
 {
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
-        return;
-    }
-    auto geo = prop->getComplexData();
+    const auto* geo = getElementData();
     if (!geo) {
         return;
     }
     bool reset = false;
 
-    auto version = getElementMapVersion(prop);
+    const auto* prop = getPropertyOfGeometry();
+    auto version = prop ? getElementMapVersion(prop) : geo->getElementMapVersion();
     if (_ElementMapVersion.getStrValue().empty()) {
         _ElementMapVersion.setValue(version);
     }
@@ -272,8 +275,9 @@ void GeoFeature::updateElementReference()
 void GeoFeature::onChanged(const Property* prop)
 {
     if (prop == getPropertyOfGeometry()) {
+        // A shape handed back from the cache is still being read, like one read with its file.
         if (getDocument() && !getDocument()->testStatus(Document::Restoring)
-            && !getDocument()->isPerformingTransaction()) {
+            && !testStatus(ObjectStatus::Restore) && !getDocument()->isPerformingTransaction()) {
             updateElementReference();
         }
     }
@@ -304,20 +308,20 @@ const std::vector<std::string>& GeoFeature::searchElementCache(const std::string
 std::vector<const char*> GeoFeature::getElementTypes(bool /*all*/) const
 {
     static std::vector<const char*> nil;
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
+    const auto* geo = getElementData();
+    if (!geo) {
         return nil;
     }
-    return prop->getComplexData()->getElementTypes();
+    return geo->getElementTypes();
 }
 
 std::vector<Data::IndexedName> GeoFeature::getHigherElements(const char* element, bool silent) const
 {
-    auto prop = getPropertyOfGeometry();
-    if (!prop) {
+    const auto* geo = getElementData();
+    if (!geo) {
         return {};
     }
-    return prop->getComplexData()->getHigherElements(element, silent);
+    return geo->getHigherElements(element, silent);
 }
 
 Base::Placement GeoFeature::getPlacementFromProp(App::DocumentObject* obj, const char* propName)

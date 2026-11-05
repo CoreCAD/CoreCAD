@@ -116,6 +116,10 @@ public:
         return true; /*support.isTouched isn't true when linked objects are changed... why?..*/
     }
 
+    /// An attached placement is computed from the attachment, so it is produced, not authored --
+    /// except in Translate mode, where the rotation stays the person's choice.
+    bool extensionProducesContentOf(const App::Property& prop) const override;
+
     short int extensionMustExecute() override;
     App::DocumentObjectExecReturn* extensionExecute() override;
     PyObject* getExtensionPyObject() override;

@@ -72,11 +72,12 @@ bool getRefineModelParameter()
 
 }  // namespace Part
 
-PROPERTY_SOURCE_ABSTRACT(Part::Boolean, Part::Feature)
+PROPERTY_SOURCE_ABSTRACT(Part::Boolean, Part::ShapeFeature)
 
 
 Boolean::Boolean()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Base, (nullptr));
     ADD_PROPERTY(Tool, (nullptr));
     ADD_PROPERTY_TYPE(
@@ -172,8 +173,8 @@ App::DocumentObjectExecReturn* Boolean::execute()
             res = res.makeElementRefine();
         }
         this->Shape.setValue(res);
-        copyMaterial(base);
-        return Part::Feature::execute();
+        Part::inheritMaterial(this, base);
+        return Part::ShapeFeature::execute();
     }
     catch (const Base::Exception& e) {
         return new App::DocumentObjectExecReturn(e.what());

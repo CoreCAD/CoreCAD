@@ -49,6 +49,7 @@
 #include <Gui/Selection/SelectionFilter.h>
 #include <Gui/Selection/SelectionObject.h>
 #include <Mod/Part/App/Attacher.h>
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/Gui/AttacherTexts.h>
 #include <Mod/Sketcher/App/Constraint.h>
@@ -238,6 +239,9 @@ void CmdSketcherNewSketch::activated(int iMsg)
         std::vector<Gui::SelectionObject> objects = Gui::Selection().getSelectionEx();
         App::PropertyLinkSubList support;
         Gui::Selection().getAsPropertyLinkSubList(support);
+        // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the
+        // Tip feature so the sketch attaches to the feature, not the tip-tracking Body (§8).
+        Part::BodyBase::rebaseBodySubReferencesToTip(support);
         std::string supportString = support.getPyReprString();
 
         // create Sketch on Face
@@ -260,17 +264,9 @@ void CmdSketcherNewSketch::activated(int iMsg)
                                                            // on its support
         doCommand(Gui, "Gui.activeDocument().setEdit('%s')", FeatName.c_str());
 
-        Part::Feature* part = static_cast<Part::Feature*>(
-            support.getValue());// if multi-part support, this will return 0
-        if (part) {
-            App::DocumentObjectGroup* grp = part->getGroup();
-            if (grp) {
-                doCommand(Doc,
-                          "App.activeDocument().%s.addObject(App.activeDocument().%s)",
-                          grp->getNameInDocument(),
-                          FeatName.c_str());
-            }
-        }
+        // Cruth de-ownership (§8.5): a sketch belongs to the document, not a Body/group.
+        // Its Body is DERIVED by walking AttachmentSupport (findBodyOf / getFullModel), so we
+        // no longer file the sketch into the support object's group here.
         commitCommand();
     }
     else {
@@ -729,7 +725,7 @@ void CmdSketcherMapSketch::activated(int iMsg)
         // check circular dependency
         std::vector<Gui::SelectionObject> selobjs = Gui::Selection().getSelectionEx();
         for (size_t i = 0; i < selobjs.size(); ++i) {
-            App::DocumentObject* part = static_cast<Part::Feature*>(selobjs[i].getObject());
+            App::DocumentObject* part = static_cast<Part::ShapeFeature*>(selobjs[i].getObject());
             if (!part) {
                 assert(0);
                 throw Base::ValueError(

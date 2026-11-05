@@ -37,6 +37,12 @@ class PathExport PropertyPath: public App::Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: a machine toolpath, generated in bulk rather than authored line by line.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyPath();
     ~PropertyPath() override;
 

@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 add_executable(Part_tests_run
+        ArchiveObjectLoss.cpp
         Attacher.cpp
         AttachExtension.cpp
         BRepMesh.cpp
         FaceMakerBullseye.cpp
         FeatureChamfer.cpp
+        ConnectedComponentCount.cpp
         FeatureCompound.cpp
         FeatureExtrusion.cpp
+        FeatureFace.cpp
         FeatureFillet.cpp
         FeatureMirroring.cpp
         FeatureOffset.cpp
@@ -18,10 +21,22 @@ add_executable(Part_tests_run
         FeatureRevolution.cpp
         FuzzyBoolean.cpp
         Geometry.cpp
+        LegacyBoxWords.cpp
+        MadeOfSomethingIsForSolids.cpp
+        NeutralRef.cpp
         PartFeature.cpp
         PartFeatures.cpp
         PartTestHelpers.cpp
+        ShapeComparison.cpp
+        PrimitiveFaceRole.cpp
+        PrimitiveFaceRoleRef.cpp
+        ChamferByDistanceAndAngle.cpp
+        ChamferStatesItsOwnWords.cpp
         PropertyTopoShape.cpp
+        GeometryCache.cpp
+        RebuildStoreSurvey.cpp
+        StoredRecipeGeometry.cpp
+        SubShapeSignature.cpp
         TopoDS_Shape.cpp
         TopoShape.cpp
         TopoShapeCache.cpp

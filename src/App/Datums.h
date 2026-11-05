@@ -26,6 +26,7 @@
 #pragma once
 
 #include "GeoFeature.h"
+#include "PlacementExtension.h"
 #include "GeoFeatureGroupExtension.h"
 #include "QCoreApplication"
 
@@ -38,7 +39,7 @@ namespace App
 {
 class LocalCoordinateSystem;
 
-class AppExport DatumElement: public App::GeoFeature
+class AppExport DatumElement: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::DatumElement);
 
@@ -60,6 +61,11 @@ public:
 
     /// Returns true if this DatumElement is part of a App::Origin.
     bool isOriginFeature() const;
+
+    bool isTimelineStep() const override
+    {
+        return !isOriginFeature();
+    }
 
 protected:
     void setBaseDirection(const Base::Vector3d& dir);
@@ -103,7 +109,7 @@ public:
     }
 };
 
-class AppExport LocalCoordinateSystem: public App::GeoFeature, public App::GeoFeatureGroupExtension
+class AppExport LocalCoordinateSystem: public App::GeoFeature, public App::GeoFeatureGroupExtension, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_EXTENSIONS(App::LocalCoordinateSystem);
     Q_DECLARE_TR_FUNCTIONS(App::LocalCoordinateSystem)

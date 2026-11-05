@@ -34,11 +34,12 @@
 using namespace Robot;
 using namespace App;
 
-PROPERTY_SOURCE(Robot::RobotObject, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Robot::RobotObject, App::GeoFeature)
 
 
 RobotObject::RobotObject()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(
         RobotVrmlFile,
         (nullptr),

@@ -84,7 +84,7 @@ void ConstraintBearing::onChanged(const App::Property* prop)
             return;
         }
 
-        Part::Feature* feat = static_cast<Part::Feature*>(ref.front());
+        Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(ref.front());
         TopoDS_Shape sh = Tools::getFeatureSubShape(feat, subRef.front().c_str(), true);
         double radius, height;
         Base::Vector3d base, axis;
@@ -109,7 +109,7 @@ void ConstraintBearing::onChanged(const App::Property* prop)
             return;
         }
         std::string subName = names.front();
-        Part::Feature* feat = static_cast<Part::Feature*>(obj);
+        Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(obj);
         TopoDS_Shape sh = feat->Shape.getShape().getSubShape(subName.c_str());
 
         if (sh.ShapeType() == TopAbs_FACE) {
@@ -131,7 +131,7 @@ void ConstraintBearing::onChanged(const App::Property* prop)
             return;
         }
 
-        feat = static_cast<Part::Feature*>(ref.front());
+        feat = static_cast<Part::ShapeFeature*>(ref.front());
         sh = Tools::getFeatureSubShape(feat, subRef.front().c_str(), true);
         double radius, height;
         Base::Vector3d base, axis;

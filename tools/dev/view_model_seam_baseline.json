@@ -1,0 +1,156 @@
+{
+  "claimed_by": {
+    "Origin001": [
+      "Origin"
+    ],
+    "Pad": [
+      "Body"
+    ],
+    "Pad001": [
+      "Body001"
+    ],
+    "SharedProfile": [
+      "Pad",
+      "Pad001"
+    ],
+    "XY_Plane": [
+      "Origin"
+    ],
+    "XZ_Plane": [
+      "Origin"
+    ],
+    "X_Axis": [
+      "Origin"
+    ],
+    "YZ_Plane": [
+      "Origin"
+    ],
+    "Y_Axis": [
+      "Origin"
+    ],
+    "Z_Axis": [
+      "Origin"
+    ]
+  },
+  "multi_claimed": {
+    "SharedProfile": [
+      "Pad",
+      "Pad001"
+    ]
+  },
+  "objects": [
+    {
+      "name": "Origin",
+      "type": "App::Origin"
+    },
+    {
+      "name": "X_Axis",
+      "type": "App::Line"
+    },
+    {
+      "name": "Y_Axis",
+      "type": "App::Line"
+    },
+    {
+      "name": "Z_Axis",
+      "type": "App::Line"
+    },
+    {
+      "name": "XY_Plane",
+      "type": "App::Plane"
+    },
+    {
+      "name": "XZ_Plane",
+      "type": "App::Plane"
+    },
+    {
+      "name": "YZ_Plane",
+      "type": "App::Plane"
+    },
+    {
+      "name": "Origin001",
+      "type": "App::Point"
+    },
+    {
+      "name": "SharedProfile",
+      "type": "Sketcher::SketchObject"
+    },
+    {
+      "name": "Body",
+      "type": "PartDesign::Body"
+    },
+    {
+      "name": "Pad",
+      "type": "PartDesign::Pad"
+    },
+    {
+      "name": "Body001",
+      "type": "PartDesign::Body"
+    },
+    {
+      "name": "Pad001",
+      "type": "PartDesign::Pad"
+    }
+  ],
+  "root_items": [
+    "Origin",
+    "Body",
+    "Body001"
+  ],
+  "scene_path_counts": {
+    "Body": 1,
+    "Body001": 1,
+    "Origin": 1,
+    "Origin001": 1,
+    "Pad": 1,
+    "Pad001": 1,
+    "SharedProfile": 2,
+    "XY_Plane": 1,
+    "XZ_Plane": 1,
+    "X_Axis": 1,
+    "YZ_Plane": 1,
+    "Y_Axis": 1,
+    "Z_Axis": 1
+  },
+  "selection_paths": [
+    {
+      "document": "seam_snapshot",
+      "object": "Pad",
+      "parent": "Body",
+      "subname": "Pad.Edge"
+    },
+    {
+      "document": "seam_snapshot",
+      "object": "Pad",
+      "parent": "Body",
+      "subname": "Pad.Face"
+    },
+    {
+      "document": "seam_snapshot",
+      "object": "Pad001",
+      "parent": "Body001",
+      "subname": "Pad001.Edge"
+    },
+    {
+      "document": "seam_snapshot",
+      "object": "Pad001",
+      "parent": "Body001",
+      "subname": "Pad001.Face"
+    }
+  ],
+  "sub_objects": {
+    "Body": [],
+    "Body001": [],
+    "Origin": [],
+    "Origin001": [],
+    "Pad": [],
+    "Pad001": [],
+    "SharedProfile": [],
+    "XY_Plane": [],
+    "XZ_Plane": [],
+    "X_Axis": [],
+    "YZ_Plane": [],
+    "Y_Axis": [],
+    "Z_Axis": []
+  }
+}

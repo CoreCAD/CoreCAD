@@ -55,7 +55,6 @@
 #include <App/DocumentObserver.h>
 #include <App/GeoFeature.h>
 #include <App/GeoFeatureGroupExtension.h>
-#include <App/Part.h>
 #include <App/Link.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
@@ -1027,7 +1026,7 @@ void StdCmdToggleTransparency::activated(int iMsg)
             continue;
         }
 
-        bool isGroup = dynamic_cast<App::Part*>(obj) || dynamic_cast<App::LinkGroup*>(obj)
+        bool isGroup = dynamic_cast<App::LinkGroup*>(obj)
             || dynamic_cast<App::DocumentObjectGroup*>(obj);
 
         auto addObjects = [](App::DocumentObject* obj, std::vector<Gui::ViewProvider*>& views) {

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
-"""Support file to show FreeCAD thumbnails on Free Desktop Environments (like GNOME or KDE)
+"""Support file to show CoreCAD thumbnails on Free Desktop Environments (like GNOME or KDE)
 
 Installation:
 - This executable file should be on the PATH so it can be found
@@ -9,9 +9,9 @@ Installation:
   and must have execution rights
     "$ sudo chmod +x /usr/bin/freecad-thumbnailer"
 
-- If a FreeCAD project file doesn't include a thumbnail the file org.freecad.FreeCAD.png is used.
+- If a CoreCAD project file doesn't include a thumbnail the file org.corecad.CoreCAD.png is used.
   Thus, the file src/Gui/Icons/freecad-icon-48.png must be installed.
-    "$ sudo cp freecad-icon-48.png /usr/share/icons/hicolor/48x48/apps/org.freecad.FreeCAD.png"
+    "$ sudo cp freecad-icon-48.png /usr/share/icons/hicolor/48x48/apps/org.corecad.CoreCAD.png"
 
 - The application/x-extension-fcstd MIME type should be registered
     Check that a corresponding /usr/share/mime/packages/freecad.xml file exists
@@ -19,7 +19,7 @@ Installation:
     "$ sudo update-mime-database /usr/share/mime"
 
 - Register this thumbnailer
-    Adding a file /usr/share/thumbnailers/FreeCAD.thumbnailer with the following content:
+    Adding a file /usr/share/thumbnailers/CoreCAD.thumbnailer with the following content:
 
     [Thumbnailer Entry]
     TryExec=freecad-thumbnailer
@@ -28,7 +28,7 @@ Installation:
 
 HINT: Make sure that the symlink /usr/bin/python exists and points to the Python executable
 
-NOTE: To make sure FreeCAD saves thumbnail information:
+NOTE: To make sure CoreCAD saves thumbnail information:
 
     Edit → Preferences → Document → Save thumbnail into project when saving document
 """
@@ -40,16 +40,16 @@ import getopt
 opt, par = getopt.getopt(sys.argv[1:], "-s:")
 input_file = par[0]
 output_file = par[1]
-default_icon = "@CMAKE_INSTALL_DATAROOTDIR@/icons/hicolor/48x48/apps/org.freecad.FreeCAD.png"
+default_icon = "@CMAKE_INSTALL_DATAROOTDIR@/icons/hicolor/48x48/apps/org.corecad.CoreCAD.png"
 
 try:
     # Read compressed file
     zfile = zipfile.ZipFile(input_file)
     files = zfile.namelist()
 
-    # Check whether we have a FreeCAD document
+    # Check whether we have a CoreCAD document
     if "Document.xml" not in files:
-        print(input_file, " doesn't look like a FreeCAD file")
+        print(input_file, " doesn't look like a CoreCAD file")
         sys.exit(1)
 
     # Read thumbnail from file or use default icon
@@ -67,5 +67,5 @@ try:
     thumb.close()
 
 except Exception:
-    print("Error creating FreeCAD thumbnail for file ", input_file)
+    print("Error creating CoreCAD thumbnail for file ", input_file)
     sys.exit(1)

@@ -66,6 +66,28 @@ class Document(PropertyContainer):
     Restoring: Final[bool] = False
     """Indicate if the document is restoring"""
 
+    StatesWhatItsFileStates: Final[bool] = True
+    """False from the moment something the recipe carries changes -- a value a person set, an
+    object added or removed -- and true again once a save has written that out, or once a fresh
+    read has replaced it.
+
+    Values a rebuild produces do not count: a recompute makes a solid the file never held in the
+    first place, so producing one does not make the document disagree with its file.
+
+    Anything asking a question about what is on disk should consult this first. A document that
+    has moved on from its file answers about a version no save has written yet."""
+
+    IsWhole: Final[bool] = True
+    """False while this document holds something its file states that this session could not
+    honour -- an object of a type this build cannot construct, a reference to an object that is
+    not here, source material that would not load. The content is kept and given back on save,
+    but the document is not everything its file says it is, and anything that opens documents
+    and saves them should ask before it writes.
+
+    Also false while a value one object states for another could not be applied -- a configuration
+    option naming a property this build has no place for. Nothing is unread there, but the object
+    whose value it would have set is not the object its file describes."""
+
     Partial: Final[bool] = False
     """Indicate if the document is partially loaded"""
 
@@ -90,6 +112,57 @@ class Document(PropertyContainer):
         """
         ...
 
+    def saveAcceptingLoss(self, losing: List[str], path: str = "", /) -> None:
+        """
+        Write this document, accepting by name what the write will lose.
+
+        A document that did not come back whole -- a truncated file, or one still carrying the
+        markers of an unfinished merge -- is the beginning of its file and nothing more, and an
+        ordinary save of it is refused, to any path. This is the way past that: state what you
+        are losing, as WhatASaveWouldLose reports it, and the write goes through. The acceptance
+        is for this write and no other.
+
+        Pass a path to write elsewhere, or leave it out to write over the document's own file.
+        """
+        ...
+
+    WhatASaveWouldLose: Final[List[str]] = []
+    """What a save from this document would take out of its file, each named. Empty for an
+    ordinary document -- including one holding statements this build could not honour, since
+    those are kept and given back, so saving loses nothing."""
+
+    HeldStatements: Final[List[Tuple[str, str, str]]] = []
+    """Everything this document is holding that its file states and this session could not honour,
+    each as (holder, name, why). The holder is an object's name, or empty for the document's own
+    statements; for a whole object block this build cannot construct, the name is its durable id.
+
+    Named rather than counted, because deciding whether to discard one means reading what it is."""
+
+    def discardStatement(self, holder: Optional[DocumentObject], name: str, /) -> bool:
+        """
+        Discard a statement this build cannot honour. Only a person may.
+
+        A statement nothing here can honour binds the document: while one is held, no cleanup,
+        sweep or duplication may act on the assumption that it can see every reference. This is
+        the only way out -- a deliberate act that names what it drops and is recorded in the
+        document's history, so it can be undone.
+
+        Pass the object holding it, or None for the document's own statements, and the name it is
+        held under, as HeldStatements reports it. Returns False if nothing was held under that
+        name. Raises if called while the document is reading, rebuilding, importing or undoing:
+        those callers are not a person, and no save, sweep, recompute or repair routine may
+        discard on a person's behalf.
+        """
+        ...
+
+    def discardUnreadObject(self, uuid: str, /) -> bool:
+        """
+        Discard the block kept for an object this build cannot construct, named by its durable id.
+
+        The same act as discardStatement, for a whole object rather than one of its properties.
+        """
+        ...
+
     def saveAs(self, path: str, /) -> None:
         """
         Save the document under a new name to disk.
@@ -99,6 +172,21 @@ class Document(PropertyContainer):
     def saveCopy(self, path: str, /) -> None:
         """
         Save a copy of the document under a new name to disk.
+        """
+        ...
+
+    def exportSealedArchive(self, path: str, /) -> list[str]:
+        """
+        Write the document and every piece of source material its recipe names into one
+        sealed archive, for a release, a transfer, or a records system.
+
+        An export is a rendering of the document and never its record: it carries no
+        rebuilt content, and reading it back does not produce a byte-identical file.
+        It is refused as a whole -- leaving no file -- where the recipe names source
+        material this project does not hold.
+
+        Returns the names of the objects whose file statements this build could not
+        honour, which the archive carries through exactly as worded.
         """
         ...
 
@@ -392,6 +480,18 @@ class Document(PropertyContainer):
     def getObject(self, name: str, /) -> DocumentObject:
         """
         Return the object with the given name
+        """
+        ...
+
+    def rollBackTo(self, step: DocumentObject | None, /) -> None:
+        """
+        Stop building after the given step; None, or the last step, builds every step.
+        """
+        ...
+
+    def isRolledBackPast(self, obj: DocumentObject, /) -> bool:
+        """
+        Whether the object is a step after the roll-back marker, so it is not built.
         """
         ...
 

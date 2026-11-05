@@ -2,6 +2,7 @@
 
 /***************************************************************************
  *   Copyright (c) 2011 Juergen Riegel <FreeCAD@juergen-riegel.net>        *
+ *   Copyright (c) 2026 Cruth contributors                                 *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -43,9 +44,12 @@
 #include <Gui/Utilities.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureAddSub.h>
+#include <Mod/PartDesign/App/FeatureSketchBased.h>
+#include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/Part/Gui/ViewProviderExt.h>
 #include <Mod/Part/Gui/SoBrepEdgeSet.h>
+#include <Mod/Sketcher/App/SketchObject.h>
 
 #include "TaskFeatureParameters.h"
 #include "StyleParameters.h"
@@ -78,7 +82,9 @@ void ViewProvider::attach(App::DocumentObject* pcObject)
 
     auto* styleParameterManager = Base::provideService<Gui::StyleParameters::ParameterManager>();
 
-    if (auto addSubFeature = getObject<PartDesign::FeatureAddSub>()) {
+    // A pattern's piece may both add and cut, so it has no single colour to take.
+    auto addSubFeature = getObject<PartDesign::FeatureAddSub>();
+    if (addSubFeature && !addSubFeature->isDerivedFrom<PartDesign::Transformed>()) {
         bool isAdditive = addSubFeature->getAddSubType() == PartDesign::FeatureAddSub::Additive;
 
         PreviewColor.setValue(
@@ -103,10 +109,36 @@ bool ViewProvider::doubleClicked()
 
 void ViewProvider::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
-    QIcon iconObject = mergeGreyableOverlayIcons(Gui::BitmapFactory().pixmap("Part_ColorFace.svg"));
-    QAction* act = menu->addAction(iconObject, QObject::tr("Set Face Colors"), receiver, member);
+    if (auto* profileBased = getObject<PartDesign::ProfileBased>()) {
+        auto* sketch = dynamic_cast<Sketcher::SketchObject*>(profileBased->Profile.getValue());
+        Gui::ViewProvider* sketchView = sketch ? Gui::Application::Instance->getViewProvider(sketch)
+                                               : nullptr;
+        if (sketchView) {
+            QAction* editSketch = menu->addAction(QObject::tr("Edit Sketch"));
+            QObject::connect(editSketch, &QAction::triggered, [sketchView]() {
+                sketchView->doubleClicked();
+            });
+        }
+    }
 
-    act->setData(QVariant((int)ViewProvider::Color));
+    auto* feature = getObject<PartDesign::Feature>();
+    if (feature && feature->hasNoEffect()) {
+        const bool accepted = feature->NoEffectAcknowledged.getValue();
+        QAction* accept = menu->addAction(
+            accepted ? QObject::tr("Stop Accepting That This Step Changes Nothing")
+                     : QObject::tr("Accept That This Step Changes Nothing")
+        );
+        QObject::connect(accept, &QAction::triggered, [feature, accepted]() {
+            App::Document* doc = feature->getDocument();
+            doc->openTransaction(
+                accepted ? QT_TRANSLATE_NOOP("Command", "Stop accepting a step that changes nothing")
+                         : QT_TRANSLATE_NOOP("Command", "Accept a step that changes nothing")
+            );
+            Gui::cmdAppObjectArgs(feature, "NoEffectAcknowledged = %s", accepted ? "False" : "True");
+            doc->commitTransaction();
+        });
+    }
+
     // Call the extensions
     Gui::ViewProvider::setupContextMenu(menu, receiver, member);
 }
@@ -203,7 +235,9 @@ void ViewProvider::unsetEdit(int ModNum)
 
     if (ModNum == ViewProvider::Default) {
         // when pressing ESC make sure to close the dialog
+        finishingEdit = true;
         Gui::Control().closeDialog();
+        finishingEdit = false;
     }
     else {
         PartGui::ViewProviderPart::unsetEdit(ModNum);
@@ -212,6 +246,10 @@ void ViewProvider::unsetEdit(int ModNum)
 
 void ViewProvider::updateData(const App::Property* prop)
 {
+    if (auto* feature = getObject<PartDesign::Feature>();
+        feature && (prop == &feature->Shape || prop == &feature->NoEffectAcknowledged)) {
+        refreshNoEffectNotice();
+    }
     if (strcmp(prop->getName(), "PreviewShape") == 0) {
         updatePreview();
     }
@@ -268,7 +306,11 @@ void ViewProvider::updatePreview()
 
 void ViewProvider::makeChildrenVisible()
 {
-    for (const auto child : claimChildren()) {
+    std::vector<App::DocumentObject*> children = claimChildren();
+    for (auto* profile : consumedProfiles()) {
+        children.push_back(profile);
+    }
+    for (const auto child : children) {
         if (auto vp = Gui::Application::Instance->getViewProvider(child)) {
             vp->show();
         }
@@ -278,16 +320,23 @@ void ViewProvider::makeChildrenVisible()
 void ViewProvider::onChanged(const App::Property* prop)
 {
 
+    // A step past its Body's roll-back marker is not computed, so there is nothing true to show.
+    if (prop == &Visibility && Visibility.getValue() && PartDesign::Body::isHeldBack(getObject())) {
+        Visibility.setValue(false);
+        return;
+    }
+
     // if the object is inside of a body we make sure it is the only visible one on activation
     if (prop == &Visibility && Visibility.getValue()) {
 
-        Part::BodyBase* body = Part::BodyBase::findBodyOf(getObject());
+        Part::BodyBase* body = PartDesign::Body::findBodyOf(getObject());
         if (body) {
 
             // hide all features in the body other than this object
-            for (App::DocumentObject* obj : body->Group.getValues()) {
+            for (App::DocumentObject* obj : body->getFullModel()) {
 
-                if (obj->isDerivedFrom<PartDesign::Feature>() && obj != getObject()) {
+                if (obj->isDerivedFrom<PartDesign::Feature>() && obj != getObject()
+                    && !drawnByItsBodies(obj)) {
                     auto vpd = freecad_cast<Gui::ViewProviderDocumentObject*>(
                         Gui::Application::Instance->getViewProvider(obj)
                     );
@@ -299,7 +348,53 @@ void ViewProvider::onChanged(const App::Property* prop)
         }
     }
 
+    if (prop == &Visibility && !isRestoring() && !showingBodies && drawnByItsBodies(getObject())) {
+        showingBodies = true;
+        for (auto* body : PartDesign::Body::bodiesTippedAt(getObject())) {
+            auto* vp = freecad_cast<Gui::ViewProviderDocumentObject*>(
+                Gui::Application::Instance->getViewProvider(body)
+            );
+            if (vp && vp->Visibility.getValue() != Visibility.getValue()) {
+                vp->Visibility.setValue(Visibility.getValue());
+            }
+        }
+        showingBodies = false;
+    }
+
     PartGui::ViewProviderPartExt::onChanged(prop);
+}
+
+bool ViewProvider::drawnByItsBodies(const App::DocumentObject* feature)
+{
+    const auto bodies = PartDesign::Body::bodiesTippedAt(feature);
+    return std::ranges::any_of(bodies, [](const PartDesign::Body* body) {
+        return !body->TipComponentId.getStrValue().empty();
+    });
+}
+
+void ViewProvider::setModeSwitch()
+{
+    if (temporarilyVisible || !drawnByItsBodies(getObject())) {
+        ViewProviderPart::setModeSwitch();
+    }
+}
+
+bool ViewProvider::isShow() const
+{
+    if (!temporarilyVisible && drawnByItsBodies(getObject())) {
+        return Visibility.getValue() && isShowable();
+    }
+    return ViewProviderPart::isShow();
+}
+
+void ViewProvider::refreshDrawing()
+{
+    if (drawnByItsBodies(getObject()) && !temporarilyVisible) {
+        Gui::ViewProvider::hide();
+    }
+    else if (Visibility.getValue() && !isShow()) {
+        setModeSwitch();
+    }
 }
 
 Gui::ViewProvider* ViewProvider::startEditing(int ModNum)
@@ -318,21 +413,33 @@ Gui::ViewProvider* ViewProvider::startEditing(int ModNum)
     return ViewProviderPart::startEditing(ModNum);
 }
 
-void ViewProvider::setTipIcon(bool onoff)
+void ViewProvider::refreshNoEffectNotice()
 {
-    isSetTipIcon = onoff;
-
+    auto* feature = getObject<PartDesign::Feature>();
+    const bool shows = feature && !feature->NoEffectAcknowledged.getValue() && feature->hasNoEffect();
+    if (shows == showsNoEffectNotice) {
+        return;
+    }
+    showsNoEffectNotice = shows;
     signalChangeIcon();
+    signalChangeToolTip(getToolTip());
+}
+
+QString ViewProvider::getToolTip() const
+{
+    return showsNoEffectNotice
+        ? QObject::tr("This step changes nothing. Right-click to accept it if that is intended.")
+        : QString();
 }
 
 QIcon ViewProvider::mergeColorfulOverlayIcons(const QIcon& orig) const
 {
     QIcon mergedicon = orig;
 
-    if (isSetTipIcon) {
-        static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("PartDesign_Overlay_Tip", QSize(10, 10)));
+    if (showsNoEffectNotice) {
+        static QPixmap px(Gui::BitmapFactory().pixmapFromSvg("overlay_notice", QSize(10, 10)));
         mergedicon
-            = Gui::BitmapFactoryInst::mergePixmap(mergedicon, px, Gui::BitmapFactoryInst::BottomRight);
+            = Gui::BitmapFactoryInst::mergePixmap(mergedicon, px, Gui::BitmapFactoryInst::BottomLeft);
     }
 
     return Gui::ViewProvider::mergeColorfulOverlayIcons(mergedicon);
@@ -351,8 +458,8 @@ bool ViewProvider::onDelete(const std::vector<std::string>&)
         Gui::Application::Instance->getViewProvider(previousfeat)->show();
     }
 
-    // find surrounding features in the tree
-    Part::BodyBase* body = PartDesign::Body::findBodyOf(getObject());
+    // The Body is derived from the chain; a feature stores none.
+    Part::BodyBase* body = feature->getFeatureBody();
 
     if (body) {
         // Deletion from the tree of a feature is handled by Document.removeObject, which has no
@@ -369,7 +476,7 @@ bool ViewProvider::onDelete(const std::vector<std::string>&)
         //
         // fixes (#3084)
 
-        FCMD_OBJ_CMD(body, "removeObject(" << Gui::Command::getObjectCmd(feature) << ')');
+        FCMD_OBJ_CMD(body, "removeFeature(" << Gui::Command::getObjectCmd(feature) << ')');
     }
 
     makeChildrenVisible();
@@ -450,6 +557,7 @@ void ViewProvider::setBodyMode(bool bodymode)
 void ViewProvider::makeTemporaryVisible(bool onoff)
 {
     // make sure to not use the overridden versions, as they change properties
+    temporarilyVisible = onoff;
     if (onoff) {
         if (VisualTouched) {
             updateVisual();

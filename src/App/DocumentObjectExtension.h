@@ -140,6 +140,12 @@ public:
     {
         return false;
     }
+    /// The extension's answer to DocumentObject::producesContentOf, for a property it computes
+    /// on the object's behalf.
+    virtual bool extensionProducesContentOf(const Property& /*prop*/) const
+    {
+        return false;
+    }
 };
 
 }  // namespace App

@@ -66,8 +66,6 @@ public:
 
     Gui::ViewProvider* startEditing(int ModNum) override;
 
-    void setTipIcon(bool onoff);
-
     // body mode means that the object is part of a body and that the body is used to set the
     // visual properties, not the features. Hence setting body mode to true will hide most
     // viewprovider properties.
@@ -78,6 +76,19 @@ public:
     // shape of this viewprovider from other viewproviders without doing anything to the
     // document and properties.
     void makeTemporaryVisible(bool);
+
+    /// True when @p feature's solids are drawn by the bodies that stand for them, one each, so
+    /// the feature draws nothing itself and its eye shows and hides those bodies.
+    static bool drawnByItsBodies(const App::DocumentObject* feature);
+    /// Draw this feature, or stop, after drawnByItsBodies() has changed.
+    void refreshDrawing();
+    /// True while this feature's eye is being passed on to its bodies.
+    bool isShowingBodies() const
+    {
+        return showingBodies;
+    }
+    /// A feature drawn by its bodies reads as shown while its eye is on.
+    bool isShow() const override;
 
     // Returns the ViewProvider of the body the feature belongs to, or NULL, if not in a body
     ViewProviderBody* getBodyViewProvider();
@@ -90,12 +101,24 @@ public:
     PyObject* getPyObject() override;
 
     QIcon mergeColorfulOverlayIcons(const QIcon& orig) const override;
+    QString getToolTip() const override;
 
     /// Default implementation is a no-op; derived classes override if needed.
     /// Called on recompute and when any feature in the Body changes visibility.
     /// Serves as the entry point for ViewProviders that apply visual overlays
     /// (e.g. textures, highlights, thread visualization).
     virtual void updateOverlay() {};
+
+    /// Re-derive whether this step changes nothing and is not yet accepted (#39); on a change,
+    /// redraw the notice mark and the row's hover text. Called after every recompute.
+    void refreshNoEffectNotice();
+
+    /// True while unsetEdit is closing the task dialog. The edit is being finished, so the
+    /// dialog must not roll its feature back from under this view provider (#20).
+    bool isFinishingEdit() const
+    {
+        return finishingEdit;
+    }
 
 protected:
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
@@ -105,6 +128,14 @@ protected:
 
     void attachPreview() override;
     void updatePreview() override;
+
+    /// The sketches this feature consumes. They are its inputs, not its tree children: the tree
+    /// is the timeline (Cruth ARCHITECTURE §8.1), so a sketch keeps its own row at the point it
+    /// was made, and one sketch shared by two features is one row, not two.
+    virtual std::vector<App::DocumentObject*> consumedProfiles() const
+    {
+        return {};
+    }
 
     virtual void makeChildrenVisible();
     bool onDelete(const std::vector<std::string>&) override;
@@ -118,10 +149,15 @@ protected:
     std::string oldWb;
     ViewProvider* previouslyShownViewProvider {nullptr};
 
-    bool isSetTipIcon {false};
+    bool showsNoEffectNotice {false};
+    bool temporarilyVisible {false};
+    bool showingBodies {false};
+
+    void setModeSwitch() override;
 
 private:
     Gui::CoinPtr<PartGui::SoPreviewShape> pcToolPreview;
+    bool finishingEdit {false};
 };
 
 using ViewProviderPython = Gui::ViewProviderFeaturePythonT<ViewProvider>;

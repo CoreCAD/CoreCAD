@@ -20,10 +20,20 @@ set (PartDesign_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/PartDesign_translat
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${PartDesign_TR_QRC} ${QM_SRCS})
-qt_add_resources(PartDesignGui_SRCS Resources/PartDesign.qrc ${PartDesign_TR_QRC})
+# Stage branding icon overrides (private corecad-assets) into the build tree.
+# SRC_DIR is the Resources/ directory so the icons/ subdirectory structure is
+# preserved in staging and matches the QRC's "icons/filename.svg" references.
+# ICONS_SUBDIR tells the overlay to place asset files into staging/icons/.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/PartDesign"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/PartDesign.qrc"
+    OUTPUT_QRC    _PartDesign_Icons_QRC
+)
+qt_add_resources(PartDesignGui_SRCS ${_PartDesign_Icons_QRC} ${PartDesign_TR_QRC})
 
 set(PartDesignGui_UIC_SRCS
-    TaskFeaturePick.ui
     TaskPadPocketParameters.ui
     TaskChamferParameters.ui
     TaskFilletParameters.ui
@@ -36,9 +46,11 @@ set(PartDesignGui_UIC_SRCS
     TaskTransformedParameters.ui
     TaskMirroredParameters.ui
     TaskPatternParameters.ui
-    TaskScaledParameters.ui
-    TaskMultiTransformParameters.ui
-    TaskShapeBinder.ui
+    TaskPointPatternParameters.ui
+    TaskCurvePatternParameters.ui
+    TaskFillPatternParameters.ui
+    TaskTablePatternParameters.ui
+    TaskFormulaPatternParameters.ui
     TaskPreviewParameters.ui
     TaskPrimitiveParameters.ui
     TaskPipeParameters.ui
@@ -46,7 +58,6 @@ set(PartDesignGui_UIC_SRCS
     TaskPipeScaling.ui
     TaskLoftParameters.ui
     DlgReference.ui
-    DlgActiveBody.ui
     TaskHelixParameters.ui
 )
 
@@ -87,22 +98,16 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderLinearPattern.h
     ViewProviderPolarPattern.cpp
     ViewProviderPolarPattern.h
-    ViewProviderScaled.cpp
-    ViewProviderScaled.h
-    ViewProviderMultiTransform.cpp
-    ViewProviderMultiTransform.h
-    ViewProviderDatum.cpp
-    ViewProviderDatum.h
-    ViewProviderDatumPoint.cpp
-    ViewProviderDatumPoint.h
-    ViewProviderDatumLine.cpp
-    ViewProviderDatumLine.h
-    ViewProviderDatumPlane.cpp
-    ViewProviderDatumPlane.h
-    ViewProviderDatumCS.cpp
-    ViewProviderDatumCS.h
-    ViewProviderShapeBinder.h
-    ViewProviderShapeBinder.cpp
+    ViewProviderPointPattern.cpp
+    ViewProviderPointPattern.h
+    ViewProviderCurvePattern.cpp
+    ViewProviderCurvePattern.h
+    ViewProviderFillPattern.cpp
+    ViewProviderFillPattern.h
+    ViewProviderTablePattern.cpp
+    ViewProviderTablePattern.h
+    ViewProviderFormulaPattern.cpp
+    ViewProviderFormulaPattern.h
     ViewProviderBoolean.cpp
     ViewProviderBoolean.h
     ViewProviderPrimitive.h
@@ -119,9 +124,6 @@ SET(PartDesignGuiViewProvider_SRCS
 SOURCE_GROUP("ViewProvider" FILES ${PartDesignGuiViewProvider_SRCS})
 
 SET(PartDesignGuiTaskDlgs_SRCS
-    TaskFeaturePick.ui
-    TaskFeaturePick.cpp
-    TaskFeaturePick.h
     ReferenceSelection.cpp
     ReferenceSelection.h
     TaskFeatureParameters.cpp
@@ -155,28 +157,36 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskTransformedMessages.ui
     TaskTransformedMessages.cpp
     TaskTransformedMessages.h
+    OriginDisplay.cpp
+    OriginDisplay.h
     TaskTransformedParameters.cpp
     TaskTransformedParameters.h
+    TaskVariedMeasurements.cpp
+    TaskVariedMeasurements.h
     TaskMirroredParameters.ui
     TaskMirroredParameters.cpp
     TaskMirroredParameters.h
     TaskPatternParameters.ui
     TaskPatternParameters.cpp
     TaskPatternParameters.h
-    TaskScaledParameters.ui
-    TaskScaledParameters.cpp
-    TaskScaledParameters.h
-    TaskMultiTransformParameters.ui
-    TaskMultiTransformParameters.cpp
-    TaskMultiTransformParameters.h
+    TaskPointPatternParameters.ui
+    TaskPointPatternParameters.cpp
+    TaskPointPatternParameters.h
+    TaskCurvePatternParameters.ui
+    TaskCurvePatternParameters.cpp
+    TaskCurvePatternParameters.h
+    TaskFillPatternParameters.ui
+    TaskTablePatternParameters.ui
+    TaskFormulaPatternParameters.ui
+    TaskFillPatternParameters.cpp
+    TaskFillPatternParameters.h
+    TaskTablePatternParameters.cpp
+    TaskTablePatternParameters.h
+    TaskFormulaPatternParameters.cpp
+    TaskFormulaPatternParameters.h
     TaskHoleParameters.ui
     TaskHoleParameters.cpp
     TaskHoleParameters.h
-    TaskDatumParameters.cpp
-    TaskDatumParameters.h
-    TaskShapeBinder.ui
-    TaskShapeBinder.cpp
-    TaskShapeBinder.h
     TaskBooleanParameters.ui
     TaskBooleanParameters.cpp
     TaskBooleanParameters.h
@@ -193,16 +203,25 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskHelixParameters.ui
     TaskHelixParameters.h
     TaskHelixParameters.cpp
-    DlgActiveBody.h
-    DlgActiveBody.cpp
+    SketchPickDialog.cpp
+    SketchPickDialog.h
 )
 SOURCE_GROUP("TaskDialogs" FILES ${PartDesignGuiTaskDlgs_SRCS})
 
 SET(PartDesignGuiModule_SRCS
     AppPartDesignGui.cpp
     Command.cpp
+    CommandDressUp.cpp
+    CommandProfileBased.cpp
+    CommandSupport.cpp
+    CommandSupport.h
+    CommandTransformed.cpp
     CommandPrimitive.cpp
     CommandBody.cpp
+    BodyPanel.cpp
+    BodyPanel.h
+    DependenciesPanel.cpp
+    DependenciesPanel.h
     EnumFlags.h
     Resources/PartDesign.qrc
     PreCompiled.h
@@ -213,8 +232,6 @@ SET(PartDesignGuiModule_SRCS
     Utils.h
     Workbench.cpp
     Workbench.h
-    WorkflowManager.cpp
-    WorkflowManager.h
 )
 SOURCE_GROUP("Module" FILES ${PartDesignGuiModule_SRCS})
 

@@ -43,15 +43,15 @@
 #include <App/Datums.h>
 
 #include "FeatureMirroring.h"
-#include "DatumFeature.h"
 
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::Mirroring, Part::Feature)
+PROPERTY_SOURCE(Part::Mirroring, Part::ShapeFeature)
 
 Mirroring::Mirroring()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Source, (nullptr));
     ADD_PROPERTY_TYPE(Base, (Base::Vector3d()), "Plane", App::Prop_None, "The base point of the plane");
     ADD_PROPERTY_TYPE(Normal, (Base::Vector3d(0, 0, 1)), "Plane", App::Prop_None, "The normal of the plane");
@@ -119,7 +119,7 @@ void Mirroring::onChanged(const App::Property* prop)
             }
         }
     }
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }
 
 void Mirroring::handleChangedPropertyType(
@@ -143,7 +143,7 @@ void Mirroring::handleChangedPropertyType(
         Normal.setValue(v.getValue());
     }
     else {
-        Part::Feature::handleChangedPropertyType(reader, TypeName, prop);
+        Part::ShapeFeature::handleChangedPropertyType(reader, TypeName, prop);
     }
 }
 
@@ -166,19 +166,17 @@ App::DocumentObjectExecReturn* Mirroring::execute()
       Can also be App::Links to such objects
     */
     if (refObject) {
-        if (refObject->isDerivedFrom<Part::Plane>() || refObject->isDerivedFrom<App::Plane>()
-            || (strstr(refObject->getNameInDocument(), "Plane")
-                && refObject->isDerivedFrom<Part::Datum>())) {
-            auto* plane = static_cast<Part::Feature*>(refObject);
-            Base::Vector3d base = plane->Placement.getValue().getPosition();
+        if (refObject->isDerivedFrom<Part::Plane>() || refObject->isDerivedFrom<App::Plane>()) {
+            auto* plane = static_cast<Part::ShapeFeature*>(refObject);
+            Base::Vector3d base = plane->getPlacement().getPosition();
             axbase = gp_Pnt(base.x, base.y, base.z);
-            Base::Rotation rot = plane->Placement.getValue().getRotation();
+            Base::Rotation rot = plane->getPlacement().getRotation();
             Base::Vector3d dir;
             rot.multVec(Base::Vector3d(0, 0, 1), dir);
             axdir = gp_Dir(dir.x, dir.y, dir.z);
             // reference is an app::link or a part::feature or some subobject
         }
-        else if (refObject->isDerivedFrom<Part::Feature>() || refObject->isDerivedFrom<App::Link>()) {
+        else if (Part::hasShape(refObject) || refObject->isDerivedFrom<App::Link>()) {
             if (subStrings.size() > 1) {
                 throw Base::ValueError(
                     std::string(this->getFullLabel()) + ": Only 1 subobject is supported for Mirror Plane reference, either a plane face or a circle edge."
@@ -335,9 +333,9 @@ App::DocumentObjectExecReturn* Mirroring::execute()
         auto mirrored = TopoShape(0).makeElementMirror(shape, ax2);
 
         this->Shape.setValue(mirrored);
-        copyMaterial(link);
+        Part::inheritMaterial(this, link);
 
-        return Part::Feature::execute();
+        return Part::ShapeFeature::execute();
     }
     catch (Standard_Failure& e) {
         return new App::DocumentObjectExecReturn(e.GetMessageString());

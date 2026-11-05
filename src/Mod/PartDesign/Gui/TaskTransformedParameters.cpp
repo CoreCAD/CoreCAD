@@ -45,7 +45,6 @@
 
 #include "ui_TaskTransformedParameters.h"
 #include "TaskTransformedParameters.h"
-#include "TaskMultiTransformParameters.h"
 #include "ReferenceSelection.h"
 
 
@@ -53,6 +52,25 @@ FC_LOG_LEVEL_INIT("PartDesign", true, true)
 
 using namespace PartDesignGui;
 using namespace Gui;
+
+namespace
+{
+// Marks the row standing for every step before the pattern, which no entry of Originals holds.
+constexpr int allStepsBeforeRole = Qt::UserRole + 1;
+
+QListWidgetItem* makeAllStepsBeforeRow(const App::DocumentObject* body)
+{
+    auto item = new QListWidgetItem(QString::fromUtf8(body->Label.getValue()));
+    item->setData(Qt::UserRole, QString::fromLatin1(body->getNameInDocument()));
+    item->setData(allStepsBeforeRole, true);
+    return item;
+}
+
+bool isAllStepsBeforeRow(const QListWidgetItem* item)
+{
+    return item && item->data(allStepsBeforeRole).toBool();
+}
+}  // namespace
 
 /* TRANSLATOR PartDesignGui::TaskTransformedParameters */
 
@@ -72,12 +90,6 @@ TaskTransformedParameters::TaskTransformedParameters(
     Gui::Document* doc = TransformedView->getDocument();
     this->attachDocument(doc);
 }
-
-TaskTransformedParameters::TaskTransformedParameters(TaskMultiTransformParameters* parentTask)
-    : TaskBox(QPixmap(), tr(""), true, parentTask)
-    , parentTask(parentTask)
-    , insideMultiTransform(true)
-{}
 
 TaskTransformedParameters::~TaskTransformedParameters()
 {
@@ -123,31 +135,13 @@ void TaskTransformedParameters::setupUI()
         &TaskTransformedParameters::indexesMoved
     );
 
-    connect(ui->checkBoxUpdateView, &QCheckBox::toggled, this, &TaskTransformedParameters::onUpdateView);
-
-    // Get the feature data
     auto pcTransformed = getObject<PartDesign::Transformed>();
-
-    using Mode = PartDesign::Transformed::Mode;
-
-    ui->buttonGroupMode->setId(ui->radioTransformBody, static_cast<int>(Mode::WholeShape));
-    ui->buttonGroupMode->setId(ui->radioTransformToolShapes, static_cast<int>(Mode::Features));
-
-    connect(ui->buttonGroupMode, &QButtonGroup::idClicked, this, &TaskTransformedParameters::onModeChanged);
-
-    auto const mode = static_cast<Mode>(pcTransformed->TransformMode.getValue());
-    ui->groupFeatureList->setEnabled(mode == Mode::Features);
-    switch (mode) {
-        case Mode::WholeShape:
-            ui->radioTransformBody->setChecked(true);
-            break;
-        case Mode::Features:
-            ui->radioTransformToolShapes->setChecked(true);
-            break;
-    }
-
     std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();
-    // Fill data into dialog elements
+    if (pcTransformed->AllStepsBefore.getValue()) {
+        if (auto body = pcTransformed->getFeatureBody()) {
+            ui->listWidgetFeatures->addItem(makeAllStepsBeforeRow(body));
+        }
+    }
     for (auto obj : originals) {
         if (obj) {
             auto item = new QListWidgetItem();
@@ -186,13 +180,8 @@ void TaskTransformedParameters::onSelectionChanged(const Gui::SelectionChanges& 
 
 void TaskTransformedParameters::clearButtons()
 {
-    if (insideMultiTransform) {
-        parentTask->clearButtons();
-    }
-    else {
-        ui->buttonAddFeature->setChecked(false);
-        ui->buttonRemoveFeature->setChecked(false);
-    }
+    ui->buttonAddFeature->setChecked(false);
+    ui->buttonRemoveFeature->setChecked(false);
 }
 
 int TaskTransformedParameters::getUpdateViewTimeout() const
@@ -229,7 +218,11 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
 
         PartDesign::Transformed* pcTransformed = getObject();
         App::DocumentObject* selectedObject = pcTransformed->getDocument()->getObject(msg.pObjectName);
-        if (selectedObject->isDerivedFrom<PartDesign::FeatureAddSub>()) {
+        if (auto body = freecad_cast<PartDesign::Body*>(selectedObject)) {
+            return allStepsBeforeSelected(body);
+        }
+        if (selectedObject != pcTransformed
+            && selectedObject->isDerivedFrom<PartDesign::FeatureAddSub>()) {
 
             // Do the same like in TaskDlgTransformedParameters::accept() but without doCommand
             std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();
@@ -263,12 +256,34 @@ bool TaskTransformedParameters::originalSelected(const Gui::SelectionChanges& ms
     return false;
 }
 
+bool TaskTransformedParameters::allStepsBeforeSelected(PartDesign::Body* body)
+{
+    PartDesign::Transformed* pcTransformed = getObject();
+    const auto bodies = PartDesign::Body::bodiesOf(pcTransformed);
+    const bool adding = selectionMode == SelectionMode::AddFeature;
+    if (std::ranges::find(bodies, body) == bodies.end()
+        || pcTransformed->AllStepsBefore.getValue() == adding) {
+        return false;
+    }
+    if (adding) {
+        ui->listWidgetFeatures->insertItem(0, makeAllStepsBeforeRow(body));
+    }
+    else {
+        for (int row = 0; row < ui->listWidgetFeatures->count(); ++row) {
+            if (isAllStepsBeforeRow(ui->listWidgetFeatures->item(row))) {
+                delete ui->listWidgetFeatures->takeItem(row);
+                break;
+            }
+        }
+    }
+    setupTransaction();
+    pcTransformed->AllStepsBefore.setValue(adding);
+    recomputeFeature();
+    return true;
+}
+
 void TaskTransformedParameters::setupTransaction()
 {
-    if (!isEnabledTransaction()) {
-        return;
-    }
-
     auto obj = getObject();
     if (!obj) {
         return;
@@ -284,36 +299,6 @@ void TaskTransformedParameters::setupTransaction()
     std::string name("Edit ");
     name += obj->Label.getValue();
     transactionID = obj->getDocument()->openTransaction(name.c_str());
-}
-
-void TaskTransformedParameters::setEnabledTransaction(bool on)
-{
-    enableTransaction = on;
-}
-
-bool TaskTransformedParameters::isEnabledTransaction() const
-{
-    return enableTransaction;
-}
-
-void TaskTransformedParameters::onModeChanged(int mode_id)
-{
-    if (mode_id < 0) {
-        return;
-    }
-
-    auto pcTransformed = getObject<PartDesign::Transformed>();
-    pcTransformed->TransformMode.setValue(mode_id);
-
-    using Mode = PartDesign::Transformed::Mode;
-    Mode const mode = static_cast<Mode>(mode_id);
-
-    ui->groupFeatureList->setEnabled(mode == Mode::Features);
-    if (mode == Mode::WholeShape) {
-        ui->listWidgetFeatures->clear();
-    }
-    setupTransaction();
-    recomputeFeature();
 }
 
 void TaskTransformedParameters::onButtonAddFeature(bool checked)
@@ -341,7 +326,7 @@ void TaskTransformedParameters::checkVisibility()
     }
     auto inset = feat->getInListEx(true);
     inset.emplace(feat);
-    for (auto obj : body->Group.getValues()) {
+    for (auto obj : body->getFullModel()) {
         if (!obj->Visibility.getValue() || !obj->isDerivedFrom<PartDesign::Feature>()) {
             continue;
         }
@@ -376,9 +361,18 @@ void TaskTransformedParameters::onFeatureDeleted()
         Base::Console().error("PartDesign Pattern: No feature selected for removing.\n");
         return;  // no current row selected
     }
-    originals.erase(originals.begin() + currentRow);
     setupTransaction();
-    pcTransformed->Originals.setValues(originals);
+    if (isAllStepsBeforeRow(ui->listWidgetFeatures->item(currentRow))) {
+        pcTransformed->AllStepsBefore.setValue(false);
+    }
+    else {
+        int index = currentRow;
+        for (int row = 0; row < currentRow; ++row) {
+            index -= isAllStepsBeforeRow(ui->listWidgetFeatures->item(row)) ? 1 : 0;
+        }
+        originals.erase(originals.begin() + index);
+        pcTransformed->Originals.setValues(originals);
+    }
     ui->listWidgetFeatures->model()->removeRow(currentRow);
     recomputeFeature();
 }
@@ -410,13 +404,12 @@ void TaskTransformedParameters::fillAxisCombo(Gui::ComboLinks& combolinks, Part:
         }
     }
 
-    // add part axes
+    // add part axes from the shared document Origin (Cruth §11 step 5e), not via a body
     App::DocumentObject* obj = getObject();
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(obj);
+    App::Origin* orig = PartDesign::Body::findDocumentOrigin(obj->getDocument());
 
-    if (body) {
+    if (orig) {
         try {
-            App::Origin* orig = body->getOrigin();
             combolinks.addLink(orig->getX(), "", tr("Base X-axis"));
             combolinks.addLink(orig->getY(), "", tr("Base Y-axis"));
             combolinks.addLink(orig->getZ(), "", tr("Base Z-axis"));
@@ -446,13 +439,12 @@ void TaskTransformedParameters::fillPlanesCombo(Gui::ComboLinks& combolinks, Par
         }
     }
 
-    // add part baseplanes
+    // add part baseplanes from the shared document Origin (Cruth §11 step 5e), not via a body
     App::DocumentObject* obj = getObject();
-    PartDesign::Body* body = PartDesign::Body::findBodyOf(obj);
+    App::Origin* orig = PartDesign::Body::findDocumentOrigin(obj->getDocument());
 
-    if (body) {
+    if (orig) {
         try {
-            App::Origin* orig = body->getOrigin();
             combolinks.addLink(orig->getXY(), "", tr("Base XY-plane"));
             combolinks.addLink(orig->getYZ(), "", tr("Base YZ-plane"));
             combolinks.addLink(orig->getXZ(), "", tr("Base XZ-plane"));
@@ -468,31 +460,11 @@ void TaskTransformedParameters::fillPlanesCombo(Gui::ComboLinks& combolinks, Par
 
 void TaskTransformedParameters::recomputeFeature()
 {
-    getTopTransformedView()->recomputeFeature();
-}
-
-PartDesignGui::ViewProviderTransformed* TaskTransformedParameters::getTopTransformedView() const
-{
-    return insideMultiTransform ? parentTask->TransformedView : TransformedView;
-}
-
-PartDesign::Transformed* TaskTransformedParameters::getTopTransformedObject() const
-{
-    ViewProviderTransformed* vp = getTopTransformedView();
-    if (!vp) {
-        return nullptr;
-    }
-
-    App::DocumentObject* transform = vp->getObject();
-    assert(transform->isDerivedFrom<PartDesign::Transformed>());
-    return static_cast<PartDesign::Transformed*>(transform);
+    TransformedView->recomputeFeature();
 }
 
 PartDesign::Transformed* TaskTransformedParameters::getObject() const
 {
-    if (insideMultiTransform) {
-        return parentTask->getSubFeature();
-    }
     if (TransformedView) {
         return TransformedView->getObject<PartDesign::Transformed>();
     }
@@ -501,7 +473,7 @@ PartDesign::Transformed* TaskTransformedParameters::getObject() const
 
 App::DocumentObject* TaskTransformedParameters::getBaseObject() const
 {
-    PartDesign::Feature* feature = getTopTransformedObject();
+    PartDesign::Feature* feature = getObject();
     if (!feature) {
         return nullptr;
     }
@@ -519,14 +491,14 @@ App::DocumentObject* TaskTransformedParameters::getBaseObject() const
 
 App::DocumentObject* TaskTransformedParameters::getSketchObject() const
 {
-    PartDesign::Transformed* feature = getTopTransformedObject();
+    PartDesign::Transformed* feature = getObject();
     return feature ? feature->getSketchObject() : nullptr;
 }
 
 void TaskTransformedParameters::hideObject()
 {
     try {
-        FCMD_OBJ_HIDE(getTopTransformedObject());
+        FCMD_OBJ_HIDE(getObject());
     }
     catch (const Base::Exception& e) {
         e.reportException();
@@ -536,7 +508,7 @@ void TaskTransformedParameters::hideObject()
 void TaskTransformedParameters::showObject()
 {
     try {
-        FCMD_OBJ_SHOW(getTopTransformedObject());
+        FCMD_OBJ_SHOW(getObject());
     }
     catch (const Base::Exception& e) {
         e.reportException();
@@ -580,9 +552,7 @@ void TaskTransformedParameters::addReferenceSelectionGate(AllowSelectionFlags al
     std::unique_ptr<Gui::SelectionFilterGate> gateRefPtr(
         new ReferenceSelection(getBaseObject(), allow)
     );
-    std::unique_ptr<Gui::SelectionFilterGate> gateDepPtr(
-        new NoDependentsSelection(getTopTransformedObject())
-    );
+    std::unique_ptr<Gui::SelectionFilterGate> gateDepPtr(new NoDependentsSelection(getObject()));
     Gui::Selection().addSelectionGate(new CombineSelectionFilterGates(gateRefPtr, gateDepPtr));
 }
 
@@ -594,14 +564,16 @@ void TaskTransformedParameters::indexesMoved()
     }
 
     PartDesign::Transformed* pcTransformed = getObject();
-    std::vector<App::DocumentObject*> originals = pcTransformed->Originals.getValues();
+    std::vector<App::DocumentObject*> originals;
 
-    QByteArray name;
     int rows = model->rowCount();
     for (int i = 0; i < rows; i++) {
         QModelIndex index = model->index(i, 0);
-        name = index.data(Qt::UserRole).toByteArray().constData();
-        originals[i] = pcTransformed->getDocument()->getObject(name.constData());
+        if (index.data(allStepsBeforeRole).toBool()) {
+            continue;
+        }
+        QByteArray name = index.data(Qt::UserRole).toByteArray();
+        originals.push_back(pcTransformed->getDocument()->getObject(name.constData()));
     }
 
     setupTransaction();

@@ -25,7 +25,6 @@
 
 #include <App/DocumentObjectGroup.h>
 #include <App/GroupExtension.h>
-#include <App/Part.h>
 #include "Application.h"
 #include "Action.h"
 #include "cet_lut.hpp"
@@ -147,7 +146,7 @@ void StdCmdRandomColor::activated(int iMsg)
     };
 
     auto allowToChangeColor = [](const App::DocumentObject* obj) {
-        return (obj->isDerivedFrom<App::Part>() || obj->isDerivedFrom<App::DocumentObjectGroup>());
+        return obj->isDerivedFrom<App::DocumentObjectGroup>();
     };
 
     // get the complete selection
@@ -176,57 +175,6 @@ bool StdCmdRandomColor::isActive()
 {
     return (Gui::Selection().size() != 0);
 }
-
-//===========================================================================
-// Std_ToggleFreeze
-//===========================================================================
-DEF_STD_CMD_A(StdCmdToggleFreeze)
-
-StdCmdToggleFreeze::StdCmdToggleFreeze()
-    : Command("Std_ToggleFreeze")
-{
-    sGroup = "File";
-    sMenuText = QT_TR_NOOP("Toggle Freeze");
-    static std::string toolTip
-        = std::string("<p>")
-        + QT_TR_NOOP("Toggles freeze state of the selected objects. A frozen object is not recomputed when its parents change.")
-        + "</p>";
-    sToolTipText = toolTip.c_str();
-    sStatusTip = sToolTipText;
-    sWhatsThis = "Std_ToggleFreeze";
-    sPixmap = "Std_ToggleFreeze";
-    sAccel = "";
-    eType = AlterDoc;
-}
-
-void StdCmdToggleFreeze::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-
-    std::vector<Gui::SelectionSingleton::SelObj> sels = Gui::Selection().getCompleteSelection();
-
-    Command::openCommand(QT_TRANSLATE_NOOP("Command", "Toggle freeze"));
-    for (Gui::SelectionSingleton::SelObj& sel : sels) {
-        App::DocumentObject* obj = sel.pObject;
-        if (!obj) {
-            continue;
-        }
-
-        if (obj->isFreezed()) {
-            obj->unfreeze();
-        }
-        else {
-            obj->freeze();
-        }
-    }
-    Command::commitCommand();
-}
-
-bool StdCmdToggleFreeze::isActive()
-{
-    return (Gui::Selection().size() != 0);
-}
-
 
 //===========================================================================
 // Std_SendToPythonConsole
@@ -372,6 +320,11 @@ void StdCmdToggleSkipRecompute::activated(int iMsg)
         _pcAction->setChecked((bool)iMsg);
     }
     Command::commitCommand();
+    if (!iMsg) {
+        if (auto* guiDoc = Application::Instance->getDocument(doc)) {
+            guiDoc->scheduleRebuild();
+        }
+    }
 }
 
 bool StdCmdToggleSkipRecompute::isActive()
@@ -396,7 +349,6 @@ void CreateFeatCommands()
     CommandManager& rcCmdMgr = Application::Instance->commandManager();
 
     rcCmdMgr.addCommand(new StdCmdFeatRecompute());
-    rcCmdMgr.addCommand(new StdCmdToggleFreeze());
     rcCmdMgr.addCommand(new StdCmdRandomColor());
     rcCmdMgr.addCommand(new StdCmdSendToPythonConsole());
     rcCmdMgr.addCommand(new StdCmdToggleSkipRecompute());

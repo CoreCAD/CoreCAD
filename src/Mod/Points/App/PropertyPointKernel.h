@@ -37,6 +37,12 @@ class PointsExport PropertyPointKernel: public App::PropertyComplexGeoData
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: a point cloud.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyPointKernel();
 
     /** @name Getter/setter */

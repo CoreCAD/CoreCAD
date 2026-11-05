@@ -5,7 +5,10 @@
 
 #include "App/Application.h"
 #include "App/Document.h"
+#include "App/DocumentObject.h"
 #include "App/StringHasher.h"
+#include "Base/Exception.h"
+#include "Base/Uuid.h"
 #include "Base/Writer.h"
 #include <src/App/InitApplication.h>
 
@@ -24,12 +27,29 @@ class FakeWriter: public Base::Writer
     }
 };
 
+// A DocumentObject whose setupObject() deliberately throws, used to prove that
+// Document::addObject rolls the half-created object back out of the document
+// rather than stranding it (issue #31).
+class ThrowingSetupObject: public App::DocumentObject
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    void setupObject() override
+    {
+        throw Base::RuntimeError("setupObject deliberately failed");
+    }
+};
+
+TYPESYSTEM_SOURCE(ThrowingSetupObject, App::DocumentObject)  // NOLINT
+
 class DocumentTest: public ::testing::Test
 {
 protected:
     static void SetUpTestSuite()
     {
         tests::initApplication();
+        ThrowingSetupObject::init();
     }
 
     void SetUp() override
@@ -53,6 +73,18 @@ private:
     App::Document* _doc {};
 };
 
+
+// Cruth: units are the user's preference, not something a document carries. A document that
+// stored its own unit system overrode the reader's choice and, worse, was edited by the act of
+// looking at it in different units (ARCHITECTURE.md 7.3).
+TEST_F(DocumentTest, documentCarriesNoUnitSystem)
+{
+    // Act
+    App::Property* unitSystem = doc()->getPropertyByName("UnitSystem");
+
+    // Assert
+    EXPECT_EQ(unitSystem, nullptr);
+}
 
 TEST_F(DocumentTest, addStringHasherIndicatesUnwrittenWhenNew)
 {
@@ -80,6 +112,24 @@ TEST_F(DocumentTest, addStringHasherIndicatesAlreadyWritten)
     EXPECT_FALSE(addResult.first);
 }
 
+TEST_F(DocumentTest, addObjectRollsBackWhenSetupObjectThrows)
+{
+    // Act: create with DoSetup (isNew=true) so setupObject() runs and throws.
+    EXPECT_THROW(doc()->addObject("ThrowingSetupObject", "T", /*isNew=*/true), Base::Exception);
+
+    // Assert: the half-created object was rolled back, not stranded (issue #31).
+    // Before the fix this left a registered 'T' object in the document.
+    EXPECT_TRUE(doc()->getObjects().empty());
+    EXPECT_EQ(doc()->getObject("T"), nullptr);
+
+    // The document is still usable afterwards: a normal add succeeds and the
+    // rolled-back name is free to reuse.
+    auto* reused = doc()->addObject("App::VarSet", "T");
+    ASSERT_NE(reused, nullptr);
+    EXPECT_STREQ(reused->getNameInDocument(), "T");
+    EXPECT_EQ(doc()->getObjects().size(), 1U);
+}
+
 TEST_F(DocumentTest, getStringHasherGivesExpectedHasher)
 {
     // Arrange
@@ -94,4 +144,114 @@ TEST_F(DocumentTest, getStringHasherGivesExpectedHasher)
     EXPECT_EQ(hasher, foundHasher);
 }
 
+// --- Durable-UUID resolution (Amendment 3, Clause 3.6 foundation) ---
+
+TEST_F(DocumentTest, getObjectByUuidResolvesEachObject)
+{
+    // Arrange
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    auto* b = doc()->addObject("App::DocumentObjectGroup");
+
+    // Act / Assert — each object resolves through its own durable UUID
+    EXPECT_EQ(doc()->getObjectByUuid(a->Uid.getValue()), a);
+    EXPECT_EQ(doc()->getObjectByUuid(b->Uid.getValue()), b);
+}
+
+TEST_F(DocumentTest, getObjectByUuidReturnsNullForUnknownUuid)
+{
+    // Arrange
+    doc()->addObject("App::DocumentObjectGroup");
+
+    // Act / Assert — a UUID no object carries resolves to nothing
+    EXPECT_EQ(doc()->getObjectByUuid(Base::Uuid()), nullptr);
+}
+
+TEST_F(DocumentTest, getObjectByUuidEvictsRemovedObject)
+{
+    // Arrange
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    auto* b = doc()->addObject("App::DocumentObjectGroup");
+    const Base::Uuid aUuid = a->Uid.getValue();
+
+    // Act
+    doc()->removeObject(a->getNameInDocument());
+
+    // Assert — the removed object no longer resolves; the survivor still does
+    EXPECT_EQ(doc()->getObjectByUuid(aUuid), nullptr);
+    EXPECT_EQ(doc()->getObjectByUuid(b->Uid.getValue()), b);
+}
+
+TEST_F(DocumentTest, getObjectByUuidTracksUuidChange)
+{
+    // Arrange — mirrors restore, where the minted Uid is overwritten from file
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    const Base::Uuid minted = a->Uid.getValue();
+
+    // Act — assign a fresh UUID, as a restore would
+    Base::Uuid replacement;
+    replacement.setValue(Base::Uuid::createUuid());
+    a->Uid.setValue(replacement);
+
+    // Assert — the stale key is gone, the new one resolves
+    EXPECT_EQ(doc()->getObjectByUuid(minted), nullptr);
+    EXPECT_EQ(doc()->getObjectByUuid(replacement), a);
+}
+
+// Independent oracle mirroring Document.cpp's deriveObjectIdFromUuid. Kept as a separate
+// implementation so a regression that reverts object-id minting to a counter fails the test
+// below rather than silently agreeing with it.
+static long fnvIdFromUuid(const std::string& uuid)
+{
+    unsigned long long hash = 14695981039346656037ULL;
+    for (const unsigned char ch : uuid) {
+        hash ^= ch;
+        hash *= 1099511628211ULL;
+    }
+    long id = static_cast<long>(hash & 0x7FFFFFFFFFFFFFFFULL);
+    return id != 0 ? id : 1;
+}
+
+TEST_F(DocumentTest, newObjectIdIsDerivedFromDurableUuid)
+{
+    // A new object's integer id -- stamped into every element-map name and resolved by
+    // getObjectByID -- is a deterministic projection of its durable UUID, not a per-document
+    // counter. That is what keeps an object added on one branch distinct from a different
+    // object added on another branch (two copies of a saved file no longer mint colliding
+    // ids that would false-match computed faces on merge). If minting reverts to a counter,
+    // this fails.
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+
+    EXPECT_EQ(a->getID(), fnvIdFromUuid(a->Uid.getValueStr()));
+    // Tag 0 means "no tag" and negative tags are semantically special in the element map, so
+    // a derived id must be strictly positive.
+    EXPECT_GT(a->getID(), 0);
+}
+
+TEST_F(DocumentTest, distinctObjectsGetDistinctIds)
+{
+    // Different durable UUIDs must yield different ids -- the branch-uniqueness guarantee in
+    // its simplest observable form.
+    auto* a = doc()->addObject("App::DocumentObjectGroup");
+    auto* b = doc()->addObject("App::DocumentObjectGroup");
+
+    EXPECT_NE(a->Uid.getValueStr(), b->Uid.getValueStr());
+    EXPECT_NE(a->getID(), b->getID());
+}
+
 // NOLINTEND(readability-magic-numbers)
+
+TEST(DocumentFileExtensionTest, eachDocumentTypeSavesUnderItsOwnExtension)
+{
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypePart), "cpart");
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypeAssembly), "cassembly");
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypeDrawing), "cdrawing");
+    EXPECT_EQ(App::Document::fileExtensionForType(App::Document::DocTypeSpreadsheet), "csheet");
+    EXPECT_EQ(App::Document::fileExtensionForType(""), "FCStd");
+}
+
+TEST(DocumentFileExtensionTest, everyTypeExtensionOpensAsADocument)
+{
+    for (const char* ext : {"FCStd", "cpart", "cassembly", "cdrawing", "csheet"}) {
+        EXPECT_TRUE(App::Document::isNativeFormatExtension(ext)) << ext;
+    }
+}

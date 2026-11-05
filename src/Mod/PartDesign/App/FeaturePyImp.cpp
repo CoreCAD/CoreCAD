@@ -58,3 +58,11 @@ PyObject* FeaturePy::getBaseObject(PyObject* /*args*/)
         return Py::new_reference_to(Py::None());
     }
 }
+
+PyObject* FeaturePy::hasNoEffect(PyObject* args)
+{
+    if (!PyArg_ParseTuple(args, "")) {
+        return nullptr;
+    }
+    return Py::new_reference_to(Py::Boolean(getFeaturePtr()->hasNoEffect()));
+}

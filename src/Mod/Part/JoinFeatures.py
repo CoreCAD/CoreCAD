@@ -135,7 +135,7 @@ class _ViewProviderPartJoinFeature:
     def loads(self, state):
         return None
 
-    def claimChildren(self):
+    def inputs(self):
         return [self.Object.Base, self.Object.Tool]
 
     def onDelete(self, feature, subelements):

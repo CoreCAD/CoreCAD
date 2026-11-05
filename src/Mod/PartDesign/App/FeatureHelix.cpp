@@ -98,6 +98,7 @@ Helix::Helix()
         App::Prop_None,
         QT_TRANSLATE_NOOP("App::Property", "The reference axis of the helix.")
     );
+    ReferenceAxis.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body axis refs
     ADD_PROPERTY_TYPE(
         Mode,
         (long(initialMode)),
@@ -216,8 +217,7 @@ Helix::Helix()
 
 short Helix::mustExecute() const
 {
-    if (Placement.isTouched() || ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched()
-        || Angle.isTouched()) {
+    if (ReferenceAxis.isTouched() || Axis.isTouched() || Base.isTouched() || Angle.isTouched()) {
         return 1;
     }
     return ProfileBased::mustExecute();
@@ -351,11 +351,6 @@ App::DocumentObjectExecReturn* Helix::execute()
     }
 
     try {
-        this->positionByPrevious();
-        TopLoc_Location invObjLoc = this->getLocation().Inverted();
-
-        base.move(invObjLoc);
-
         TopoDS_Shape result;
 
         // generate the helix path
@@ -370,7 +365,6 @@ App::DocumentObjectExecReturn* Helix::execute()
         }
 
         TopoDS_Shape face = sketchshape;
-        face.Move(invObjLoc);
 
         Bnd_Box bounds;
         BRepBndLib::Add(path, bounds);
@@ -416,15 +410,10 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
 
-            if (!isSingleSolidRuleSatisfied(result)) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Error: Result has multiple solids")
-                );
-            }
 
             // store shape before refinement
             this->rawShape = result;
-            Shape.setValue(getSolid(result));
+            Shape.setValue(result);
             return App::DocumentObject::StdReturn;
         }
 
@@ -437,7 +426,7 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
             // we have to get the solids (fuse sometimes creates compounds)
-            TopoShape boolOp = this->getSolid(mkFuse.Shape());
+            TopoShape boolOp = mkFuse.Shape();
 
             // lets check if the result is a solid
             if (boolOp.isNull()) {
@@ -446,16 +435,11 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
 
-            if (!isSingleSolidRuleSatisfied(boolOp.getShape())) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Error: Result has multiple solids")
-                );
-            }
 
             // store shape before refinement
             this->rawShape = boolOp;
             boolOp = refineShapeIfActive(boolOp, RefineErrorPolicy::Warn);
-            Shape.setValue(getSolid(boolOp));
+            Shape.setValue(boolOp);
         }
         else if (getAddSubType() == FeatureAddSub::Subtractive) {
 
@@ -468,7 +452,7 @@ App::DocumentObjectExecReturn* Helix::execute()
                         QT_TRANSLATE_NOOP("Exception", "Error: Intersecting the helix failed")
                     );
                 }
-                boolOp = this->getSolid(mkCom.Shape());
+                boolOp = mkCom.Shape();
             }
             else {
                 FCBRepAlgoAPI_Cut mkCut(base.getShape(), result);
@@ -477,7 +461,7 @@ App::DocumentObjectExecReturn* Helix::execute()
                         QT_TRANSLATE_NOOP("Exception", "Error: Subtracting the helix failed")
                     );
                 }
-                boolOp = this->getSolid(mkCut.Shape());
+                boolOp = mkCut.Shape();
             }
 
             // lets check if the result is a solid
@@ -487,16 +471,11 @@ App::DocumentObjectExecReturn* Helix::execute()
                 );
             }
 
-            if (!isSingleSolidRuleSatisfied(boolOp.getShape())) {
-                return new App::DocumentObjectExecReturn(
-                    QT_TRANSLATE_NOOP("Exception", "Error: Result has multiple solids")
-                );
-            }
 
             // store shape before refinement
             this->rawShape = boolOp;
             boolOp = refineShapeIfActive(boolOp, RefineErrorPolicy::Warn);
-            Shape.setValue(getSolid(boolOp));
+            Shape.setValue(boolOp);
         }
 
         return App::DocumentObject::StdReturn;
@@ -639,9 +618,6 @@ TopoDS_Shape Helix::generateHelixPath(double breakAtTurn)
     mov.SetTransformation(sourceCS, targetCS);
     TopLoc_Location loc(mov);
     path.Move(loc.Inverted());
-
-    TopLoc_Location invObjLoc = this->getLocation().Inverted();
-    path.Move(invObjLoc);
 
     return path;
 }

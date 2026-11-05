@@ -203,19 +203,19 @@ int main(int argc, char** argv)
 
     // set the banner (for logging and console)
     App::Application::Config()["CopyrightInfo"] = sBanner;
-    App::Application::Config()["AppIcon"] = "freecad";
+    App::Application::Config()["AppIcon"] = "CoreCAD";
     App::Application::Config()["SplashScreen"] = "freecadsplash";
     App::Application::Config()["AboutImage"] = App::Application::isDevelopmentVersion()
         ? "freecadaboutdev"
         : "freecadabout";
-    App::Application::Config()["StartWorkbench"] = "PartDesignWorkbench";
+    App::Application::Config()["StartWorkbench"] = "CorePartWorkbench";
     // App::Application::Config()["HiddenDockWindow"] = "Property editor";
     App::Application::Config()["SplashAlignment"] = "Bottom|Left";
     App::Application::Config()["SplashTextColor"] = "#418FDE";
     App::Application::Config()["SplashWarningColor"] = "#CA333B";
     App::Application::Config()["SplashInfoColor"] = "#000000";
     App::Application::Config()["SplashInfoPosition"] = "6,75";
-    App::Application::Config()["DesktopFileName"] = "org.freecad.FreeCAD";
+    App::Application::Config()["DesktopFileName"] = "org.corecad.CoreCAD";
 
     try {
         // Init phase ===========================================================

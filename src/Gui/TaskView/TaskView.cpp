@@ -21,6 +21,8 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
+
 #include <QAbstractSpinBox>
 #include <QActionEvent>
 #include <QApplication>
@@ -29,6 +31,8 @@
 #include <QLineEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -260,6 +264,34 @@ TaskPanel::TaskPanel(QWidget* parent)
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setMinimumWidth(200);
     dialogLayout->addWidget(scrollArea, 1);
+
+    scrollArea->verticalScrollBar()->installEventFilter(this);
+    actionPanel->installEventFilter(this);
+}
+
+bool TaskPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    switch (event->type()) {
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::LayoutRequest:
+            fitWidthToContent();
+            break;
+        default:
+            break;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+// With no horizontal scrollbar, a vertical one would otherwise cover the panel's right edge.
+void TaskPanel::fitWidthToContent()
+{
+    QScrollBar* bar = scrollArea->verticalScrollBar();
+    const int barWidth = bar->isVisibleTo(scrollArea) ? bar->sizeHint().width() : 0;
+    const int frame = 2 * scrollArea->frameWidth();
+    scrollArea->setMinimumWidth(
+        std::max(200, actionPanel->minimumSizeHint().width() + barWidth + frame)
+    );
 }
 
 TaskPanel::~TaskPanel()
@@ -504,17 +536,15 @@ void TaskView::slotInEdit(const Gui::ViewProviderDocumentObject& vp)
 
 void TaskView::slotDeletedDocument(const App::Document& doc)
 {
+    // A dialog is held per document, so one whose document is gone can never be shown or closed
+    // again, and anything it does on its way out reaches into a deleted document. It closes now,
+    // whether or not it asked to (the request predates dialogs being held per document).
     auto foundTaskInfo = std::ranges::find(taskInfos, &doc, &TaskInfo::Document);
-    bool hasDialog = foundTaskInfo != taskInfos.end();
-    if (hasDialog && foundTaskInfo->ActiveDialog->isAutoCloseOnDeletedDocument()) {
+    if (foundTaskInfo != taskInfos.end()) {
         foundTaskInfo->ActiveDialog->autoClosedOnDeletedDocument();
         removeDialog(foundTaskInfo);
-        hasDialog = false;
     }
-
-    if (!hasDialog) {
-        updateWatcher();
-    }
+    updateWatcher();
 }
 
 void TaskView::slotViewClosed(const Gui::MDIView* view)
@@ -960,6 +990,8 @@ void TaskView::accept(App::Document* doc)
     bool success = foundTaskInfo->ActiveDialog->accept();
     foundTaskInfo->ActiveDialog->setProperty("taskview_accept_or_reject", QVariant());
     if (success || foundTaskInfo->ActiveDialog->property("taskview_remove_dialog").isValid()) {
+        // Tells the dialog's closed() it went through OK/Cancel, not a bare closeDialog().
+        foundTaskInfo->ActiveDialog->setProperty("taskview_resolved", true);
         removeDialog(doc);
     }
 }
@@ -978,6 +1010,8 @@ void TaskView::reject(App::Document* doc)
     bool success = foundTaskInfo->ActiveDialog->reject();
     foundTaskInfo->ActiveDialog->setProperty("taskview_accept_or_reject", QVariant());
     if (success || foundTaskInfo->ActiveDialog->property("taskview_remove_dialog").isValid()) {
+        // Tells the dialog's closed() it went through OK/Cancel, not a bare closeDialog().
+        foundTaskInfo->ActiveDialog->setProperty("taskview_resolved", true);
         removeDialog(doc);
     }
 }

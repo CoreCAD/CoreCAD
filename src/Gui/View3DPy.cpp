@@ -392,9 +392,54 @@ Py::Object View3DInventorPy::repr()
 }
 
 View3DInventorPy::method_varargs_handler View3DInventorPy::pycxx_handler = nullptr;
+View3DInventorPy::method_varargs_handler View3DInventorPy::pycxx_noargs_handler = nullptr;
+View3DInventorPy::method_keyword_handler View3DInventorPy::pycxx_keyword_handler = nullptr;
+
+// getattr() refuses a deleted view, but a method fetched while the view was alive can still be
+// called after it is gone (a closing document deletes its views later), so check again here.
+// The methods joined in from MDIViewPy arrive with an MDIViewPy as self.
+bool View3DInventorPy::viewStillExists(PyObject* _self_and_name_tuple)
+{
+    PyObject* self = PyTuple_GetItem(_self_and_name_tuple, 0);
+    bool deleted = false;
+    if (self && PyObject_TypeCheck(self, type_object())) {
+        deleted = !static_cast<View3DInventorPy*>(self)->getView3DInventorPtr();
+    }
+    else if (self && PyObject_TypeCheck(self, MDIViewPy::type_object())) {
+        deleted = !static_cast<MDIViewPy*>(self)->getMDIViewPtr();
+    }
+    if (!deleted) {
+        return true;
+    }
+    PyErr_SetString(PyExc_RuntimeError, "Cannot call a method of a deleted view");
+    return false;
+}
+
+PyObject* View3DInventorPy::method_noargs_ext_handler(PyObject* _self_and_name_tuple, PyObject* _unused)
+{
+    if (!viewStillExists(_self_and_name_tuple)) {
+        return nullptr;
+    }
+    return pycxx_noargs_handler(_self_and_name_tuple, _unused);
+}
+
+PyObject* View3DInventorPy::method_keyword_ext_handler(
+    PyObject* _self_and_name_tuple,
+    PyObject* _args,
+    PyObject* _kwds
+)
+{
+    if (!viewStillExists(_self_and_name_tuple)) {
+        return nullptr;
+    }
+    return pycxx_keyword_handler(_self_and_name_tuple, _args, _kwds);
+}
 
 PyObject* View3DInventorPy::method_varargs_ext_handler(PyObject* _self_and_name_tuple, PyObject* _args)
 {
+    if (!viewStillExists(_self_and_name_tuple)) {
+        return nullptr;
+    }
     try {
         return pycxx_handler(_self_and_name_tuple, _args);
     }
@@ -465,6 +510,20 @@ Py::Object View3DInventorPy::getattr(const char* attr)
                         pycxx_handler = op->m_ml->ml_meth;
                     }
                     op->m_ml->ml_meth = method_varargs_ext_handler;
+                }
+                else if (op->m_ml->ml_flags == METH_NOARGS) {
+                    if (!pycxx_noargs_handler) {
+                        pycxx_noargs_handler = op->m_ml->ml_meth;
+                    }
+                    op->m_ml->ml_meth = method_noargs_ext_handler;
+                }
+                else if (op->m_ml->ml_flags == (METH_VARARGS | METH_KEYWORDS)) {
+                    if (!pycxx_keyword_handler) {
+                        pycxx_keyword_handler = reinterpret_cast<method_keyword_handler>(
+                            op->m_ml->ml_meth
+                        );
+                    }
+                    op->m_ml->ml_meth = reinterpret_cast<PyCFunction>(method_keyword_ext_handler);
                 }
             }
             return obj;

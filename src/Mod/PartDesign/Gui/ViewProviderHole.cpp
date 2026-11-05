@@ -112,7 +112,7 @@ void ViewProviderHole::clearThreadTextures()
     m_threadOverlays.clear();
 }
 
-std::vector<App::DocumentObject*> ViewProviderHole::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderHole::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
 
@@ -430,7 +430,7 @@ TopoDS_Shape ViewProviderHole::getCurrentlyVisibleShape(const PartDesign::Hole* 
     if (!body) {
         return {};
     }
-    const auto& features = body->Group.getValues();
+    const auto& features = body->getFullModel();
     auto holeIt = std::ranges::find(features, pcHole);
     if (holeIt == features.end()) {
         return {};
@@ -441,7 +441,8 @@ TopoDS_Shape ViewProviderHole::getCurrentlyVisibleShape(const PartDesign::Hole* 
             return posteriorFeature->Shape.getValue();
         }
     }
-    return body->Shape.getValue();
+    // Cruth §3.3: a Body holds no stored geometry; its shape is derived from its Tip.
+    return body->derivedTipShape().getShape();
 }
 
 std::pair<gp_Dir, gp_Dir> ViewProviderHole::buildOrthonormalFrame(const gp_Dir& axis)
@@ -675,7 +676,7 @@ bool ViewProviderHole::isHoleThreadVisible() const
         || hole->ModelThread.getValue()) {
         return false;
     }
-    const auto& features = body->Group.getValues();
+    const auto& features = body->getFullModel();
     auto holeIt = std::ranges::find(features, hole);
     if (holeIt == features.end()) {
         return false;

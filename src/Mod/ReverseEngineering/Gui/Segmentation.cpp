@@ -250,7 +250,7 @@ void Segmentation::accept()
         }
     }
     if (createCompound) {
-        Part::Feature* shapeFea = static_cast<Part::Feature*>(
+        Part::ShapeFeature* shapeFea = static_cast<Part::ShapeFeature*>(
             group->addObject("Part::Feature", "Compound")
         );
         shapeFea->Shape.setValue(compound);

@@ -43,12 +43,11 @@ ViewProviderBase::~ViewProviderBase() = default;
 
 bool ViewProviderBase::doubleClicked()
 {
-    // If the Placement is mutable then open the transform panel.
-    // If the Placement can't be modified then just do nothing on double-click.
+    // Amendment 4: only a base that authors its own placement (an orphan base
+    // outside a body) can be moved via the transform panel. Inside a body the
+    // base solid is world-placed like any derived feature, so do nothing.
     PartDesign::FeatureBase* base = getObject<PartDesign::FeatureBase>();
-    if (!base->Placement.testStatus(App::Property::Immutable)
-        && !base->Placement.testStatus(App::Property::ReadOnly)
-        && !base->Placement.testStatus(App::Property::Hidden)) {
+    if (base->holdsAuthoredPlacement()) {
 
         try {
             std::string Msg("Edit ");
@@ -67,11 +66,9 @@ bool ViewProviderBase::doubleClicked()
 
 void ViewProviderBase::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
-    // If the Placement is mutable then show the context-menu of the base class.
+    // Only an orphan base that authors its own placement gets the context menu.
     PartDesign::FeatureBase* base = getObject<PartDesign::FeatureBase>();
-    if (!base->Placement.testStatus(App::Property::Immutable)
-        && !base->Placement.testStatus(App::Property::ReadOnly)
-        && !base->Placement.testStatus(App::Property::Hidden)) {
+    if (base->holdsAuthoredPlacement()) {
 
         // Handling of the edge case where some base features are outside the body
         // that should not happen, but it was possible to do in older FreeCAD versions.
@@ -95,9 +92,7 @@ Gui::ViewProvider* ViewProviderBase::startEditing(int ModNum)
 bool ViewProviderBase::setEdit(int ModNum)
 {
     PartDesign::FeatureBase* base = getObject<PartDesign::FeatureBase>();
-    if (!base->Placement.testStatus(App::Property::Immutable)
-        && !base->Placement.testStatus(App::Property::ReadOnly)
-        && !base->Placement.testStatus(App::Property::Hidden)) {
+    if (base->holdsAuthoredPlacement()) {
 
         // same as in setupContextMenu
         if (!getBodyViewProvider()) {

@@ -45,10 +45,7 @@ def activePartOrAssembly():
         return None
     activeAssembly = doc.ActiveView.getActiveObject("assembly")
 
-    if activeAssembly:
-        return activeAssembly
-
-    return doc.ActiveView.getActiveObject("part")
+    return activeAssembly
 
 
 def activeAssembly():
@@ -162,7 +159,7 @@ def getObject(ref):
         if i == len(names) - 2:
             return obj
 
-        if obj.TypeId in {"App::Part", "Assembly::AssemblyObject"} or isLinkGroup(obj):
+        if obj.TypeId == "Assembly::AssemblyObject" or isLinkGroup(obj):
             continue
 
         elif obj.isDerivedFrom("App::LocalCoordinateSystem"):
@@ -318,7 +315,6 @@ def getObjectInPart(objName, part):
         part = part.getLinkedObject()
 
     if part.TypeId in {
-        "App::Part",
         "Assembly::AssemblyObject",
         "App::DocumentObjectGroup",
         "PartDesign::Body",
@@ -377,16 +373,6 @@ def getGlobalPlacement(ref, targetObj=None):
         subName = parents[0][1] + subName
 
     return rootObj.getPlacementOf(subName, targetObj)
-
-
-def isThereOneRootAssembly():
-    if Gui.activeDocument() is None:
-        return False
-
-    for part in Gui.activeDocument().TreeRootObjects:
-        if part.TypeId == "Assembly::AssemblyObject":
-            return True
-    return False
 
 
 def getElementName(full_name):
@@ -659,6 +645,83 @@ def getJointGroup(assembly):
     return joint_group
 
 
+# ---------------------------------------------------------------------------
+# Headless assembly construction
+#
+# The minimal App-layer primitives for building a live assembly without any GUI.
+# The Insert Component command and the STEP importer both compose the very same
+# calls; keeping them here means one construction path, exercised by tests, that
+# both consumers stand on. An assembly is its own document (one assembly per file,
+# per section 7.1): createAssembly mints the typed document, so the content-scope
+# door is active and a component can only ever be a cross-document reference.
+# ---------------------------------------------------------------------------
+
+
+def createAssembly(name="Assembly"):
+    """Create a typed Assembly document holding an AssemblyObject and its JointGroup.
+
+    Returns the AssemblyObject; its `.Document` is the freshly created ``.cassembly``
+    document. Because the document is typed at birth, it admits no owned geometry --
+    every component added afterwards is a reference into another document.
+    """
+    doc = App.newDocument(type=App.DocTypeAssembly)
+    assembly = doc.addObject("Assembly::AssemblyObject", name)
+    getJointGroup(assembly)
+    return assembly
+
+
+def addComponent(assembly, linkedObject, placement=None, label=None, name="Component"):
+    """Insert a component instance into ``assembly``.
+
+    A component is an ``App::Link`` living in the assembly that references
+    ``linkedObject`` in another document. The optional ``placement`` is the
+    instance's pose within the assembly (the link carries it); the referenced
+    document's own content keeps its internal frame. Returns the App::Link.
+    """
+    link = assembly.newObject("App::Link", name)
+    link.LinkedObject = linkedObject
+    if label:
+        link.Label = label
+    if placement is not None:
+        link.Placement = placement
+    return link
+
+
+def addSubAssembly(
+    assembly, subAssembly, placement=None, rigid=True, label=None, name="SubAssembly"
+):
+    """Insert a sub-assembly instance into ``assembly`` as an ``Assembly::AssemblyLink``.
+
+    ``subAssembly`` is the ``AssemblyObject`` of another (saved) assembly document. The
+    link carries the instance ``placement``. When ``rigid`` is True the sub-assembly moves
+    as one block; when False its own joints are honoured (the caller is then responsible
+    for grounding an internal part so the flexible sub-assembly has a fixed base). Returns
+    the AssemblyLink.
+    """
+    link = assembly.newObject("Assembly::AssemblyLink", name)
+    link.LinkedObject = subAssembly
+    if label:
+        link.Label = label
+    # Position first, then set Rigid: AssemblyLink::onChanged uses the placement already
+    # in place to reposition its internal parts when the rigid flag flips.
+    if placement is not None:
+        link.Placement = placement
+    link.recompute()
+    link.Rigid = rigid
+    return link
+
+
+def groundComponent(assembly, component):
+    """Ground ``component`` so the solver has a fixed base to solve against.
+
+    Creates a GroundedJoint in the assembly's JointGroup. Returns the joint.
+    """
+    joint_group = getJointGroup(assembly)
+    ground = joint_group.newObject("Assembly::GroundedJoint", "GroundedJoint")
+    ground.ObjectToGround = component
+    return ground
+
+
 def getViewGroup(assembly):
     view_group = None
 
@@ -695,7 +758,7 @@ def isAssemblyGrounded():
     jointGroup = getJointGroup(assembly)
 
     for joint in jointGroup.Group:
-        if hasattr(joint, "ObjectToGround"):
+        if joint.isDerivedFrom("Assembly::GroundedJoint"):
             return True
 
     return False
@@ -747,7 +810,7 @@ def getSubMovingParts(obj, partsAsSolid):
     if obj.isDerivedFrom("Part::Feature"):
         return [obj]
 
-    elif obj.isDerivedFrom("App::Part"):
+    elif obj.isDerivedFrom("Assembly::AssemblyLink"):
         objs = []
         if not partsAsSolid:
             objs = getMovablePartsWithin(obj)
@@ -759,7 +822,7 @@ def getSubMovingParts(obj, partsAsSolid):
 
     if isLink(obj):
         linked_obj = obj.getLinkedObject()
-        if linked_obj.isDerivedFrom("App::Part") or linked_obj.isDerivedFrom("Part::Feature"):
+        if linked_obj.isDerivedFrom("Part::Feature"):
             return [obj]
 
     return []
@@ -817,10 +880,10 @@ def getObjMassAndCom(obj, containingPart=None):
 
     elif (
         isLinkGroup(obj)
-        or obj.isDerivedFrom("App::Part")
+        or obj.isDerivedFrom("Assembly::AssemblyLink")
         or obj.isDerivedFrom("App::DocumentObjectGroup")
     ):
-        if containingPart is None and obj.isDerivedFrom("App::Part"):
+        if containingPart is None and obj.isDerivedFrom("Assembly::AssemblyLink"):
             containingPart = obj
 
         total_mass = 0
@@ -868,29 +931,6 @@ def getCenterOfBoundingBox(objs, refs):
     return center
 
 
-def findCylindersIntersection(obj, surface, edge, elt_index):
-    for j, facej in enumerate(obj.Shape.Faces):
-        surfacej = facej.Surface
-        if (elt_index - 1) == j or surfacej.TypeId != "Part::GeomCylinder":
-            continue
-
-        for edgej in facej.Edges:
-            if (
-                edgej.Curve.TypeId == "Part::GeomBSplineCurve"
-                and edgej.CenterOfGravity == edge.CenterOfGravity
-                and edgej.Length == edge.Length
-            ):
-                # we need intersection between the 2 cylinder axis.
-                line1 = Part.Line(surface.Center, surface.Center + surface.Axis)
-                line2 = Part.Line(surfacej.Center, surfacej.Center + surfacej.Axis)
-
-                res = line1.intersect(line2, Part.Precision.confusion())
-
-                if res:
-                    return App.Vector(res[0].X, res[0].Y, res[0].Z)
-    return surface.Center
-
-
 def openEditingPlacementDialog(obj, propName):
     task_placement = Gui.TaskPlacement()
     dialog = task_placement.form
@@ -908,16 +948,14 @@ def openEditingPlacementDialog(obj, propName):
 
 def setPickableState(obj, state: bool):
     vobj = obj.ViewObject
-    if hasattr(vobj, "Proxy"):
-        proxy = vobj.Proxy
-        if hasattr(proxy, "setPickableState"):
-            proxy.setPickableState(state)
+    if vobj is not None:
+        vobj.setPickableState(state)
 
 
 def setJointsPickableState(doc, state: bool):
     """Make all joints in document selectable (True) or unselectable (False) in 3D view"""
     for obj in doc.Objects:
-        if obj.TypeId == "App::FeaturePython" and hasattr(obj, "JointType"):
+        if obj.isDerivedFrom("Assembly::Joint"):
             setPickableState(obj, state)
 
 
@@ -953,6 +991,36 @@ def arePlacementZParallel(plc1, plc2):
     return zAxis1.cross(zAxis2).Length < 1e-06
 
 
+def getAssembly(obj):
+    """Return the assembly that owns obj.
+
+    One assembly per document, and an assembly document holds no geometry of its own,
+    so the assembly that owns obj is simply the sole AssemblyObject in obj's document.
+    This is a document query, matching the solver's other component/group lookups --
+    it no longer depends on obj appearing in the assembly's InList (the assembly used
+    to be a GeoFeatureGroup, which claimed every nested object; a plain group does not).
+    """
+    if obj is None:
+        return None
+    for candidate in obj.Document.Objects:
+        if candidate.isDerivedFrom("Assembly::AssemblyObject"):
+            return candidate
+
+    return None
+
+
+def areJcsSameDir(joint):
+    globalJcsPlc1 = getJcsGlobalPlc(joint.Placement1, joint.Reference1)
+    globalJcsPlc2 = getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+    return arePlacementSameDir(globalJcsPlc1, globalJcsPlc2)
+
+
+def areJcsZParallel(joint):
+    globalJcsPlc1 = getJcsGlobalPlc(joint.Placement1, joint.Reference1)
+    globalJcsPlc2 = getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+    return arePlacementZParallel(globalJcsPlc1, globalJcsPlc2)
+
+
 def removeTNPFromSubname(doc_name, obj_name, sub_name):
     rootObj = App.getDocument(doc_name).getObject(obj_name)
     resolved = rootObj.resolveSubElement(sub_name)
@@ -970,158 +1038,6 @@ def removeTNPFromSubname(doc_name, obj_name, sub_name):
     return sub_name
 
 
-"""
-So here we want to find a placement that corresponds to a local coordinate system that would be placed at the selected vertex.
-- obj is usually a App::Link to a PartDesign::Body, or primitive, fasteners. But can also be directly the object.1
-- elt can be a face, an edge or a vertex.
-- If elt is a vertex, then vtx = elt And placement is vtx coordinates without rotation.
-- if elt is an edge, then vtx = edge start/end vertex depending on which is closer. If elt is an arc or circle, vtx can also be the center. The rotation is the plane normal to the line positioned at vtx. Or for arcs/circle, the plane of the arc.
-- if elt is a plane face, vtx is the face vertex (to the list of vertex we need to add arc/circle centers) the closer to the mouse. The placement is the plane rotation positioned at vtx
-- if elt is a cylindrical face, vtx can also be the center of the arcs of the cylindrical face.
-"""
-
-
-def findPlacement(ref, ignoreVertex=False):
-    if not isRefValid(ref, 2):
-        return App.Placement()
-    obj = getObject(ref)
-    if not obj:
-        return App.Placement()
-
-    elt = getElementName(ref[1][0])
-    vtx = getElementName(ref[1][1])
-
-    if not elt or not vtx:
-        # case of whole parts such as PartDesign::Body or App/PartDesign::CordinateSystem/Point/Line/Plane.
-        if obj.TypeId == "App::Line":
-            if obj.Role == "X_Axis":
-                return App.Placement(App.Vector(), App.Rotation(0.5, 0.5, 0.5, 0.5))
-            if obj.Role == "Y_Axis":
-                return App.Placement(App.Vector(), App.Rotation(0.5, 0.5, 0.5, 0.5))
-            if obj.Role == "Z_Axis":
-                return App.Placement(App.Vector(), App.Rotation(-0.5, 0.5, -0.5, 0.5))
-        return App.Placement()
-
-    plc = App.Placement()
-
-    elt_type, elt_index = extract_type_and_number(elt)
-    vtx_type, _ = extract_type_and_number(vtx)
-
-    isLine = False
-
-    if elt_type == "Vertex":
-        vertex = get_element(obj.Shape, elt)
-        if vertex is None:
-            return App.Placement()
-        plc.Base = (vertex.X, vertex.Y, vertex.Z)
-    elif elt_type == "Edge":
-        edge = get_element(obj.Shape, elt)
-        if edge is None:
-            return App.Placement()
-
-        curve = edge.Curve
-
-        # First we find the translation
-        if vtx_type == "Edge" or ignoreVertex:
-            # In this case the wanted vertex is the center.
-            if curve.TypeId == "Part::GeomCircle":
-                center_point = curve.Location
-                plc.Base = (center_point.x, center_point.y, center_point.z)
-            elif curve.TypeId == "Part::GeomLine":
-                edge_points = getPointsFromVertexes(edge.Vertexes)
-                line_middle = (edge_points[0] + edge_points[1]) * 0.5
-                plc.Base = line_middle
-        else:
-            vertex = get_element(obj.Shape, vtx)
-            if vertex is None:
-                return App.Placement()
-
-            plc.Base = (vertex.X, vertex.Y, vertex.Z)
-
-        # Then we find the Rotation
-        if curve.TypeId == "Part::GeomCircle":
-            plc.Rotation = App.Rotation(curve.Rotation)
-
-        if curve.TypeId == "Part::GeomLine":
-            isLine = True
-            plane_normal = round_vector(curve.Direction)
-            plane_origin = App.Vector(0, 0, 0)
-            plane = Part.Plane(plane_origin, plane_normal)
-            plc.Rotation = App.Rotation(plane.Rotation)
-    elif elt_type == "Face":
-        face = get_element(obj.Shape, elt)
-        if face is None:
-            return App.Placement()
-
-        surface = face.Surface
-
-        # First we find the translation
-        if vtx_type == "Face" or ignoreVertex:
-            if surface.TypeId == "Part::GeomCylinder":
-                centerOfG = face.CenterOfGravity - surface.Center
-                centerPoint = surface.Center + centerOfG
-                centerPoint = centerPoint + App.Vector().projectToLine(centerOfG, surface.Axis)
-                plc.Base = centerPoint
-            elif surface.TypeId == "Part::GeomTorus" or surface.TypeId == "Part::GeomSphere":
-                plc.Base = surface.Center
-            elif surface.TypeId == "Part::GeomCone":
-                plc.Base = surface.Apex
-            else:
-                plc.Base = face.CenterOfGravity
-        elif vtx_type == "Edge":
-            # In this case the edge is a circle/arc and the wanted vertex is its center.
-            edge = get_element(face, vtx)
-            if edge is None:
-                return App.Placement()
-
-            curve = edge.Curve
-            if curve.TypeId == "Part::GeomCircle":
-                center_point = curve.Location
-                plc.Base = (center_point.x, center_point.y, center_point.z)
-
-            elif (
-                surface.TypeId == "Part::GeomCylinder" and curve.TypeId == "Part::GeomBSplineCurve"
-            ):
-                # handle special case of 2 cylinder intersecting.
-                plc.Base = findCylindersIntersection(obj, surface, edge, elt_index)
-
-        else:
-            vertex = get_element(obj.Shape, vtx)
-            if vertex is None:
-                return App.Placement()
-
-            plc.Base = (vertex.X, vertex.Y, vertex.Z)
-
-        # Then we find the Rotation
-        if hasattr(surface, "Rotation") and surface.Rotation is not None:
-            plc.Rotation = App.Rotation(surface.Rotation)
-
-    if hasattr(obj, "ExpandArray"):
-        # For draft arrays, the Shape has both the array placement and the base placement.
-        plc = obj.Base.Placement.inverse() * plc
-
-    # change plc to be relative to the object placement.
-    plc = obj.Placement.inverse() * plc
-
-    # post-process of plc for some special cases
-    if elt_type == "Vertex":
-        plc.Rotation = App.Rotation()
-    elif isLine:
-        plane_normal = round_vector(plc.Rotation.multVec(App.Vector(0, 0, 1)))
-        plane_origin = App.Vector(0, 0, 0)
-        plane = Part.Plane(plane_origin, plane_normal)
-        plc.Rotation = App.Rotation(plane.Rotation)
-
-    return plc
-
-
-def get_element(shape, name):
-    element = shape.getElement(name)
-    if element is None:
-        App.Console.PrintWarning(f"Unable to find element {name}.")
-    return element
-
-
 def isRefValid(ref, number_sub):
     if ref is None:
         return False
@@ -1133,11 +1049,6 @@ def isRefValid(ref, number_sub):
         return False
 
     return True
-
-
-def round_vector(v, decimals=10):
-    """Round each component of the vector to a specified number of decimal places."""
-    return App.Vector(round(v.x, decimals), round(v.y, decimals), round(v.z, decimals))
 
 
 def saveAssemblyPartsPlacements(assembly):
@@ -1226,17 +1137,21 @@ def getComponentReference(assembly, root_obj, sub_string):
     doc = assembly.Document
 
     # 1. Reconstruct full path
-    # e.g. ['Part', 'Assembly', 'Cylinder', 'Face1']
+    # e.g. ['Part', 'Assembly', 'Cylinder', 'Face1']  (assembly-rooted, old GeoFeatureGroup)
+    # or   ['Body', 'Face1']                          (component-rooted, plain group)
     names = [root_obj.Name] + sub_string.split(".")
 
-    # 2. Find Assembly in path
-    try:
-        asm_idx = names.index(assembly.Name)
-    except ValueError:
-        return None, ""
+    # 2. Decide where the component search begins. The assembly used to be a
+    # GeoFeatureGroup that claimed its members, so its name sat at the root of every
+    # in-assembly path; a plain group does not claim members, so a component now roots
+    # its own path. Start after the assembly's name when present, otherwise at the root.
+    if assembly.Name in names:
+        start = names.index(assembly.Name) + 1
+    else:
+        start = 0
 
-    # 3. Identify Component (first valid object after Assembly)
-    candidates = names[asm_idx + 1 :]
+    # 3. Identify Component (first valid object in the remaining path)
+    candidates = names[start:]
     if not candidates:
         return None, ""
 
@@ -1265,10 +1180,16 @@ def getComponentReference(assembly, root_obj, sub_string):
             continue
 
         component = obj
-        comp_idx = asm_idx + 1 + i
+        comp_idx = start + i
         break
 
     if not component:
+        return None, ""
+
+    # The component must belong to this assembly. With the assembly's name no longer
+    # guaranteed to be in the path, guard against a stray selection from outside it
+    # (one assembly per document, so a doc query settles ownership).
+    if getAssembly(component) is not assembly:
         return None, ""
 
     # 4. Construct new sub-string
@@ -1337,22 +1258,30 @@ def addVertexToReference(ref, vertex_name):
     return ref
 
 
-def createPart(partName, doc):
+def createPart(doc):
+    """Seed a new Part document with a starting solid and return its Body.
+
+    The document is the container, so the part is the document itself: no container object
+    is made. A Body is never created empty -- it emerges from its first feature -- so the
+    seed is a small cylinder padded from a circle on the XY plane, which the user edits or
+    replaces. @p doc must be a Part-type document (it carries the world frame the sketch
+    attaches to).
+    """
     if not doc:
-        raise ValueError("No active document to add a part to.")
+        raise ValueError("No document to seed the new part in.")
 
-    part = doc.addObject("App::Part", partName)
-    body = part.newObject("PartDesign::Body", "Body")
-    # Gui.ActiveDocument.ActiveView.setActiveObject('pdbody', body)
-    sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+    import PartDesign
+
+    sketch = doc.addObject("Sketcher::SketchObject", "Sketch")
     sketch.MapMode = "FlatFace"
-    sketch.AttachmentSupport = [(body.Origin.OriginFeatures[3], "")]  # XY_Plane
-
-    # add a circle as a base shape for visualisation
+    sketch.AttachmentSupport = [(doc.XY_Plane, "")]
     sketch.addGeometry(Part.Circle(App.Vector(0, 0), App.Vector(0, 0, 1), 5), False)
+
+    pad = PartDesign.makeFeature(sketch, "Pad")
+    pad.Length = 5
     doc.recompute()
 
-    return part, body
+    return PartDesign.findBodyOf(pad)
 
 
 def getLinkGroup(linkElement):

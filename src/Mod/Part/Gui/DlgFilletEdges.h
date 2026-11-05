@@ -28,6 +28,8 @@
 #include <QItemDelegate>
 #include <QStandardItemModel>
 
+#include <Base/Unit.h>
+
 #include <Gui/Selection/Selection.h>
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
@@ -83,8 +85,25 @@ public:
     QVariant data(const QModelIndex&, int role = Qt::DisplayRole) const override;
     void updateCheckStates();
 
+    /** What the second column measures: a second distance, or an angle.
+     *
+     * A chamfer taking a distance and an angle puts an angle in this column, and an editor that
+     * offered millimetres for it would take a number meaning one thing and store it as another.
+     */
+    void setSecondColumnUnit(const Base::Unit& unit)
+    {
+        _secondColumnUnit = unit;
+    }
+    const Base::Unit& secondColumnUnit() const
+    {
+        return _secondColumnUnit;
+    }
+
 Q_SIGNALS:
     void toggleCheckState(const QModelIndex&);
+
+private:
+    Base::Unit _secondColumnUnit {Base::Unit::Length};
 };
 
 class DlgFilletEdges: public QWidget, public Gui::SelectionObserver
@@ -109,6 +128,11 @@ public:
     void setSelectionGate();
 
 protected:
+    /// Where "Distance and Angle" sits in the list of kinds. A chamfer alone offers it.
+    static constexpr int distanceAndAngle = 2;
+    /// The angle a chamfer takes until somebody says otherwise.
+    static constexpr double defaultAngle = 45.0;
+
     void findShapes();
     void setupFillet(const std::vector<App::DocumentObject*>&);
     void changeEvent(QEvent* e) override;
@@ -129,6 +153,8 @@ private:
     void onSelectAllButtonClicked();
     void onSelectNoneButtonClicked();
     void onFilletTypeActivated(int);
+    /// Put the second column into the unit it now measures in -- a distance, or an angle.
+    void setSecondColumnUnit(const Base::Unit& unit);
     void onFilletStartRadiusValueChanged(const Base::Quantity&);
     void onFilletEndRadiusValueChanged(const Base::Quantity&);
     void toggleCheckState(const QModelIndex&);

@@ -78,6 +78,7 @@ Revolution::Revolution()
         (App::Prop_None),
         "Reference axis of revolution"
     );
+    ReferenceAxis.setScope(App::LinkScope::Global);  // CoreCAD Phase 2: allow cross-body axis refs
     ADD_PROPERTY_TYPE(
         FuseOrder,
         (BaseFirst),

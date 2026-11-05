@@ -74,7 +74,7 @@ ViewProviderSketchBased::ViewProviderSketchBased()
 ViewProviderSketchBased::~ViewProviderSketchBased() = default;
 
 
-std::vector<App::DocumentObject*> ViewProviderSketchBased::claimChildren() const
+std::vector<App::DocumentObject*> ViewProviderSketchBased::consumedProfiles() const
 {
     std::vector<App::DocumentObject*> temp;
     App::DocumentObject* sketch = getObject<PartDesign::ProfileBased>()->Profile.getValue();
@@ -106,9 +106,7 @@ void ViewProviderSketchBased::updateProfileShape()
     auto profileShape = profileBased->getTopoShapeVerifiedFace(true);
 
     // set the correct coordinate space for the profile shape
-    profileShape.setPlacement(
-        profileShape.getPlacement() * profileBased->Placement.getValue().inverse()
-    );
+    profileShape.setPlacement(profileShape.getPlacement() * profileBased->getPlacement().inverse());
 
     updatePreviewShape(profileShape, pcProfileShape);
 }

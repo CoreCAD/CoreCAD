@@ -262,9 +262,35 @@ public:
             && getEnum() == static_cast<decltype(this)>(&other)->getEnum();
     }
 
+    /** The name a file stated that this property's list did not offer when it was read.
+     *
+     * Cruth: a value is stated by name, and some lists are not fixed -- a hole's thread class is
+     * built from its thread type, so the values it offers depend on a property that may not have
+     * been read yet. A name is therefore resolved against the list the property ENDS UP offering,
+     * not the one it happened to hold part-way through a read: the name is held here until a list
+     * arrives that has it, and applied the moment one does. Empty once it has been applied.
+     *
+     * A name still held after everything that could supply a list has been read is a value this
+     * build cannot honour, and the reader keeps the file's words for it (Amendment 19).
+     */
+    const std::string& nameAwaitingItsList() const
+    {
+        return _statedName;
+    }
+
+    /// Stop waiting for a list to honour the held name -- the reader has kept the words instead.
+    void stopAwaitingItsList()
+    {
+        _statedName.clear();
+    }
+
 private:
+    /// Apply the held name if a list has since arrived that offers it.
+    void applyNameAwaitingItsList();
+
     Enumeration _enum;
     std::string _editorTypeName;
+    std::string _statedName;
 };
 
 /** Constraint integer properties

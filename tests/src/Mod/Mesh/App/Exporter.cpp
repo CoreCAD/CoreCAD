@@ -4,8 +4,10 @@
 #include <Base/FileInfo.h>
 #include <Base/Interpreter.h>
 #include <App/Document.h>
-#include <App/Part.h>
+#include <App/GeoFeatureGroupExtension.h>
+#include <App/PropertyGeo.h>
 #include <src/App/InitApplication.h>
+#include <src/App/PlacedGroup.h>
 #include <Mod/Mesh/App/Exporter.h>
 #include <Mod/Mesh/App/FeatureMeshSolid.h>
 #include <Mod/Mesh/App/Mesh.h>
@@ -132,9 +134,9 @@ TEST_F(ExporterTest, TestMeshesInPart)
 
     // add extra scope because the file will be written when destroying the exporter
     {
-        auto part = getDocument()->addObject<App::Part>("Part");
-        part->placement().setValue(plm);
-        part->addObjects(getObjects());
+        auto part = tests::addPlacedGroup(getDocument());
+        static_cast<App::PropertyPlacement*>(part->getPropertyByName("Placement"))->setValue(plm);
+        part->getExtensionByType<App::GeoFeatureGroupExtension>()->addObjects(getObjects());
         Mesh::MergeExporter exporter(getFileName(), MeshCore::MeshIO::Format::STL);
         exporter.addObject(part, 0.1F);
     }

@@ -27,7 +27,6 @@
 #include <Base/Tools.h>
 
 #include "Document.h"
-#include "GeoFeatureGroupExtension.h"
 #include "GroupExtensionPy.h"
 
 
@@ -43,6 +42,37 @@ EXTENSION_PROPERTY_SOURCE_TEMPLATE(App::GroupExtensionPython, App::GroupExtensio
 // explicit template instantiation
 template class AppExport ExtensionPythonT<GroupExtensionPythonT<GroupExtension>>;
 }  // namespace App
+
+namespace
+{
+GroupExtension* groupExtensionOf(const DocumentObject* obj)
+{
+    Extension* ext = obj->getExtension(GroupExtension::getExtensionClassTypeId(), false, true);
+    if (!ext) {
+        ext = obj->getExtension(GroupExtensionPython::getExtensionClassTypeId(), false, true);
+    }
+    return static_cast<GroupExtension*>(ext);
+}
+
+// An object sits in at most one folder, and in at most one group that records membership
+// (GroupExtension::isFolder() false: an assembly, its joints, a simulation). A folder and a
+// membership group never compete, so filing an object does not take it out of an assembly.
+std::vector<DocumentObject*> rivalsOf(const DocumentObject* obj, const GroupExtension* group)
+{
+    std::vector<DocumentObject*> rivals;
+    for (auto* in : obj->getInList()) {
+        auto* ext = groupExtensionOf(in);
+        if (!ext || ext == group || ext->isFolder() != group->isFolder()) {
+            continue;
+        }
+        const auto& grp = ext->Group.getValues();
+        if (std::find(grp.begin(), grp.end(), obj) != grp.end()) {
+            rivals.push_back(in);
+        }
+    }
+    return rivals;
+}
+}  // namespace
 
 GroupExtension::GroupExtension()
 {
@@ -95,25 +125,11 @@ std::vector<DocumentObject*> GroupExtension::addObjects(std::vector<DocumentObje
             continue;
         }
 
-        // only one group per object. Note that it is allowed to be in a group and geofeaturegroup.
-        // However, getGroupOfObject() returns only normal groups, no GeoFeatureGroups. Hence this
-        // works.
-        auto* group = App::GroupExtension::getGroupOfObject(obj);
-        if (group && group != getExtendedObject()) {
-            group->getExtensionByType<App::GroupExtension>()->removeObject(obj);
-        }
-
-        // if we are in a geofeaturegroup we need to ensure the object is too
-        auto geogrp = GeoFeatureGroupExtension::getGroupOfObject(getExtendedObject());
-        auto objgrp = GeoFeatureGroupExtension::getGroupOfObject(obj);
-        if (geogrp != objgrp) {
-            // what to do depends on if we are in  geofeature group or not
-            if (geogrp) {
-                geogrp->getExtensionByType<GeoFeatureGroupExtension>()->addObject(obj);
-            }
-            else {
-                objgrp->getExtensionByType<GeoFeatureGroupExtension>()->removeObject(obj);
-            }
+        // One folder and one membership group per object (see rivalsOf). A placed group
+        // (GeoFeatureGroup) is left alone: filing organises, it never moves an object into or
+        // out of the frame that positions it.
+        for (auto* rival : rivalsOf(obj, this)) {
+            rival->getExtensionByType<App::GroupExtension>()->removeObject(obj);
         }
 
         grp.push_back(obj);
@@ -364,21 +380,10 @@ void GroupExtension::extensionOnChanged(const Property* p)
             bool error = false;
             auto corrected = Group.getValues();
             for (auto obj : Group.getValues()) {
-
-                // we have already set the obj into the group, so in a case of multiple groups
-                // getGroupOfObject would return anyone of it and hence it is possible that we miss
-                // an error. We need a custom check
-                auto list = obj->getInList();
-                for (auto in : list) {
-                    auto ext = in->getExtension(GroupExtension::getExtensionClassTypeId(), false, true);
-                    if (ext && (in != getExtendedObject())) {
-                        auto grp = static_cast<GroupExtension*>(ext)->Group.getValues();
-                        if (std::find(grp.begin(), grp.end(), obj) != grp.end()) {
-                            error = true;
-                            corrected.erase(std::remove(corrected.begin(), corrected.end(), obj),
-                                            corrected.end());
-                        }
-                    }
+                if (!rivalsOf(obj, this).empty()) {
+                    error = true;
+                    corrected.erase(std::remove(corrected.begin(), corrected.end(), obj),
+                                    corrected.end());
                 }
             }
 

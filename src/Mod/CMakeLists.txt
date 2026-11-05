@@ -10,6 +10,19 @@ if(BUILD_BIM)
   add_subdirectory(BIM)
 endif(BUILD_BIM)
 
+# CorePart: pure-Python combined Part + PartDesign workbench (always built with GUI)
+add_subdirectory(CorePart)
+
+# CoreRibbon: clean ribbon UI (replaces FreeCAD-Ribbon when present)
+if(BUILD_CORERIBBON)
+    add_subdirectory(CoreRibbon)
+endif(BUILD_CORERIBBON)
+
+# CoreMcp: MCP bridge addon (build coordinator for corecad-mcp fork)
+if(BUILD_COREMCP)
+    add_subdirectory(CoreMcp)
+endif(BUILD_COREMCP)
+
 if(BUILD_ASSEMBLY)
   add_subdirectory(Assembly)
 endif(BUILD_ASSEMBLY)
@@ -140,46 +153,27 @@ if(BUILD_WEB)
     add_subdirectory(Web)
 endif(BUILD_WEB)
 
-# FreeCAD-Ribbon: Pure-Python ribbon UI addon (git submodule, no CMakeLists.txt of its own)
-if(BUILD_GUI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/InitGui.py")
-    install(
-        DIRECTORY FreeCAD-Ribbon/
-        DESTINATION Mod/FreeCAD-Ribbon
-        PATTERN ".git" EXCLUDE
-        PATTERN ".github" EXCLUDE
-        PATTERN ".gitignore" EXCLUDE
-        PATTERN ".pre-commit*" EXCLUDE
-    )
-    # Copy to build tree so the module is available without installing.
-    # Use add_custom_command so the copy re-runs on build when source files change,
-    # not only at cmake configure time.
-    file(GLOB_RECURSE _ribbon_sources
-        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.json"
-        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.qss"
-        "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/*.ui"
-    )
-    set(_ribbon_stamp "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon/.copy_stamp")
-    add_custom_command(
-        OUTPUT "${_ribbon_stamp}"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon"
-            "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon"
-        # Stamp RibbonStructure.json from CreateStructure.txt on every build so
-        # the build directory never drifts from the committed template. CoreCAD
-        # locks the ribbon layout at build time; user-written JSON is unwanted.
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/CreateStructure.txt"
-            "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon/RibbonStructure.json"
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/CreateStructure.txt"
-            "${CMAKE_BINARY_DIR}/Mod/FreeCAD-Ribbon/RibbonStructure_default.json"
-        COMMAND ${CMAKE_COMMAND} -E touch "${_ribbon_stamp}"
-        DEPENDS ${_ribbon_sources}
-            "${CMAKE_CURRENT_SOURCE_DIR}/FreeCAD-Ribbon/CreateStructure.txt"
-        COMMENT "Syncing FreeCAD-Ribbon to build directory"
-    )
-    add_custom_target(FreeCAD_Ribbon_sync ALL
-        DEPENDS "${_ribbon_stamp}"
-    )
-endif()
+# ── Prune the build tree of what this configuration no longer produces ───────
+# Switching a module off stops it compiling, but its earlier output in
+# build/<cfg>/Mod stays live: Init.py still loads, the workbench still shows,
+# its test suite still registers. Likewise a deleted script leaves a dangling
+# symlink behind (INSTALL_PREFER_SYMLINKS). Remove both on every configure.
+get_directory_property(_corecad_added_mods SUBDIRECTORIES)
+file(GLOB _corecad_src_mods LIST_DIRECTORIES true "${CMAKE_CURRENT_SOURCE_DIR}/*")
+foreach(_mod_src ${_corecad_src_mods})
+    if(IS_DIRECTORY "${_mod_src}" AND NOT _mod_src IN_LIST _corecad_added_mods)
+        get_filename_component(_mod_name "${_mod_src}" NAME)
+        set(_mod_out "${CMAKE_BINARY_DIR}/Mod/${_mod_name}")
+        if(EXISTS "${_mod_out}")
+            message(STATUS "Removing build output of excluded module: ${_mod_out}")
+            file(REMOVE_RECURSE "${_mod_out}")
+        endif()
+    endif()
+endforeach()
+file(GLOB_RECURSE _corecad_mod_links LIST_DIRECTORIES false "${CMAKE_BINARY_DIR}/Mod/*")
+foreach(_link ${_corecad_mod_links})
+    if(IS_SYMLINK "${_link}" AND NOT EXISTS "${_link}")
+        message(STATUS "Removing dangling symlink: ${_link}")
+        file(REMOVE "${_link}")
+    endif()
+endforeach()

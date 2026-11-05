@@ -3,13 +3,22 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include "Base/Console.h"
 #include "Base/Quantity.h"
+#include "Base/Reader.h"
+#include "Base/Uuid.h"
+#include "Base/Writer.h"
 
 #include "App/Application.h"
 #include "App/Document.h"
 #include "App/DocumentObject.h"
 #include "App/Expression.h"
 #include "App/ExpressionParser.h"
+#include "App/ObjectIdentifier.h"
+#include "App/PropertyStandard.h"
+
+#include <set>
+#include <sstream>
 
 #include "src/App/InitApplication.h"
 
@@ -57,6 +66,49 @@ void PrintTo(const boost::any& e, std::ostream* os)
 
 namespace App::ExpressionParser::Test
 {
+
+/// Collects what the console was told while it is in scope, so a test can assert that a
+/// load reported what it could not do rather than only that it carried on.
+class CapturedWarnings: public Base::ILogger
+{
+public:
+    CapturedWarnings()
+    {
+        Base::Console().attachObserver(this);
+    }
+    ~CapturedWarnings() override
+    {
+        Base::Console().detachObserver(this);
+    }
+    CapturedWarnings(const CapturedWarnings&) = delete;
+    CapturedWarnings& operator=(const CapturedWarnings&) = delete;
+
+    void sendLog(
+        const std::string&,
+        const std::string& msg,
+        Base::LogStyle level,
+        Base::IntendedRecipient,
+        Base::ContentType
+    ) override
+    {
+        if (level == Base::LogStyle::Warning || level == Base::LogStyle::Error) {
+            said += msg;
+        }
+    }
+
+    const char* name() override
+    {
+        return "CapturedWarnings";
+    }
+
+    const std::string& text() const
+    {
+        return said;
+    }
+
+private:
+    std::string said;
+};
 
 class ExpressionParserTest: public ::testing::Test
 {
@@ -325,6 +377,478 @@ TEST_F(ExpressionParserTest, canParseProperties)
     this_obj()->addDynamicProperty("App::PropertyQuantity", "Bar");
     EXPECT_THAT(parseExpr("Sketch.Bar"), IsQuantity(Base::Quantity()))
         << "PropertyQuantity on object";
+}
+
+// Amendment 3, Clause 3.8 (Step E): the object component of an ObjectIdentifier
+// binds by durable UUID when one is present; the name is only the authoring /
+// display surface and a fallback. Proven by binding a deliberately WRONG name
+// with the right UUID and confirming it still resolves the correct object.
+TEST_F(ExpressionParserTest, objectIdentifierBindsObjectByUuid)
+{
+    // Arrange: a target object in the same document, and a property to path to.
+    auto* target = this_doc()->addObject("App::DocumentObjectGroup", "Target");
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Foo");
+
+    // An identifier whose object component names a bogus object but carries the
+    // target's durable UUID.
+    ObjectIdentifier withUuid(this_obj());
+    ObjectIdentifier::String objName("ZZZ_WRONG_NAME", false, true);
+    objName.setUuid(target->Uid.getValueStr());
+    withUuid.setDocumentObjectName(std::move(objName), true);
+    withUuid << ObjectIdentifier::SimpleComponent("Foo");
+
+    // Act / Assert: the UUID resolves the object despite the wrong name.
+    EXPECT_EQ(withUuid.getDocumentObject(), target)
+        << "object component resolves through its durable UUID, not the wrong name";
+
+    // Control: same bogus name, NO uuid -> the name cannot resolve anything.
+    ObjectIdentifier nameOnly(this_obj());
+    nameOnly.setDocumentObjectName(ObjectIdentifier::String("ZZZ_WRONG_NAME", false, true), true);
+    nameOnly << ObjectIdentifier::SimpleComponent("Foo");
+    EXPECT_EQ(nameOnly.getDocumentObject(), nullptr)
+        << "without a UUID the bogus name resolves to nothing";
+
+    // The UUID binding is stable across a rename of the target.
+    target->Label.setValue("RenamedTarget");
+    EXPECT_EQ(withUuid.getDocumentObject(), target)
+        << "UUID binding survives a rename of the target";
+}
+
+// Amendment 3, Clause 3.8 (Step F): the object component's rendered name is
+// re-derived from its durable UUID at toString() time, so it always reflects the
+// bound object's CURRENT name/label -- independent of whatever name text was
+// stored, and with no name-rewriting pass. Proven by rendering an identifier
+// whose stored name is deliberately wrong.
+TEST_F(ExpressionParserTest, objectIdentifierRendersNameFromUuid)
+{
+    // Arrange: a target object carrying the property we path to.
+    auto* target = this_doc()->addObject("App::DocumentObjectGroup", "Target");
+    target->addDynamicProperty("App::PropertyFloat", "Bar");
+
+    // Internal-name style: stored name is bogus, UUID is the target's.
+    ObjectIdentifier byName(this_obj());
+    ObjectIdentifier::String wrongName("ZZZ_WRONG_NAME", false, true);
+    wrongName.setUuid(target->Uid.getValueStr());
+    byName.setDocumentObjectName(std::move(wrongName), true);
+    byName << ObjectIdentifier::SimpleComponent("Bar");
+
+    EXPECT_EQ(byName.toString(), "Target.Bar")
+        << "render re-derives the current internal name from the UUID, not the stored wrong name";
+
+    // Label style: stored label is bogus, UUID is the target's. Render must
+    // follow the object's CURRENT label, including across a rename -- with no
+    // rewriting pass touching this hand-built identifier.
+    ObjectIdentifier byLabel(this_obj());
+    ObjectIdentifier::String wrongLabel("ZZZ_WRONG_LABEL", true);
+    wrongLabel.setUuid(target->Uid.getValueStr());
+    byLabel.setDocumentObjectName(std::move(wrongLabel), true);
+    byLabel << ObjectIdentifier::SimpleComponent("Bar");
+
+    target->Label.setValue("Alpha");
+    EXPECT_EQ(byLabel.toString(), "<<Alpha>>.Bar")
+        << "render re-derives the current label from the UUID";
+
+    target->Label.setValue("Beta");
+    EXPECT_EQ(byLabel.toString(), "<<Beta>>.Bar")
+        << "a later rename shows through the re-render with no rewriting pass";
+}
+
+// Amendment 3, Clause 3.8, Step G: a saved formula names each object it reads by its durable
+// UUID, as every other link in the file does, and rebinds by UUID on reload -- so a formula
+// keeps pointing at the object it was authored against even when the NAME it was authored
+// under has since moved to a different object.
+TEST_F(ExpressionParserTest, expressionEnginePersistsObjectUuidAcrossReload)
+{
+    // Src is the real target, addressed by the label it carries today.
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    src->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alfa>>.Bar * 2"))
+    );
+
+    // Save the engine and confirm the durable UUID rode along on disk.
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+    EXPECT_NE(xml.find("&lt;&lt;" + src->Uid.getValueStr() + "&gt;&gt;.Bar"), std::string::npos)
+        << "the formula does not name Src by its durable UUID: " << xml;
+    EXPECT_EQ(xml.find("Alfa"), std::string::npos) << "the formula was saved by name: " << xml;
+
+    // While that file sat on disk the label moved: Src is renamed, and a decoy takes the
+    // name the formula was written under. Nothing in the file changed -- only the document
+    // it is read back into, which is the ordinary way a stored name goes stale.
+    src->Label.setValue("Gamma");
+    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
+    dcy->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
+
+    // Restore into the same-container engine and finish the load.
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    // The reference must resolve to Src by UUID, never to the decoy that now holds the name.
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the stored expression failed to restore";
+    auto ids = info.expression->getIdentifiers();
+    ASSERT_EQ(ids.size(), 1U);
+    EXPECT_EQ(ids.begin()->first.getDocumentObject(), src)
+        << "reference bound by the stored name (decoy) instead of the durable UUID";
+    EXPECT_NE(ids.begin()->first.getDocumentObject(), dcy);
+}
+
+// The document is a plain-text recipe a person is invited to read and edit (Amendment 18), so a
+// formula gains a term at the front -- by hand, or by a textual merge landing one there -- and
+// every later part shifts along. The references nobody touched must still read the objects they
+// read before.
+TEST_F(ExpressionParserTest, aTermAddedAheadOfAReferenceLeavesItBound)
+{
+    auto valued = [&](const char* name, double value) {
+        auto* obj = this_doc()->addObject("App::DocumentObjectGroup", name);
+        freecad_cast<PropertyFloat*>(obj->addDynamicProperty("App::PropertyFloat", "Bar"))
+            ->setValue(value);
+        return obj;
+    };
+    auto* alfa = valued("Alfa", 10.0);
+    auto* bravo = valued("Bravo", 1.0);
+    auto* extra = valued("Extra", 100.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "Alfa.Bar + Bravo.Bar"))
+    );
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    // The edit: a term added at the FRONT of the formula, the way anyone would edit a text
+    // file. No bookkeeping is written by hand, so the stored references stand as they were.
+    auto pos = xml.find("&lt;&lt;" + alfa->Uid.getValueStr());
+    ASSERT_NE(pos, std::string::npos);
+    xml.insert(pos, "Extra.Bar + ");
+
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the edited expression failed to restore";
+
+    // The formula names three objects; those three are what it must be bound to.
+    std::set<const DocumentObject*> bound;
+    for (const auto& id : info.expression->getIdentifiers()) {
+        bound.insert(id.first.getDocumentObject());
+    }
+    EXPECT_THAT(bound, UnorderedElementsAre(extra, alfa, bravo))
+        << "the added term shifted the stored bindings onto their neighbours";
+
+    // 100 + 10 + 1. Shifted by one, the same formula quietly computes 10 + 1 + 1.
+    EXPECT_EQ(info.expression->eval()->toString(), "111")
+        << "the formula computed from objects nobody chose";
+}
+
+// A formula may name the same thing twice. Each naming must come back bound to that object; one
+// left to its stale name picks up whatever holds that name now -- the wrong object, in the same
+// formula as the right one.
+TEST_F(ExpressionParserTest, aPathNamedTwiceIsBoundTwice)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    src->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alfa>>.Bar + <<Alfa>>.Bar"))
+    );
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    // The label moves to another object while the file sits on disk.
+    src->Label.setValue("Gamma");
+    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
+    dcy->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
+
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the stored expression failed to restore";
+
+    // 10 + 10. One naming left behind picks up the decoy and computes 109.
+    EXPECT_EQ(info.expression->eval()->toString(), "20")
+        << "a repeated naming was left bound to whatever the stale label now resolves to";
+}
+
+// A person opens the file and retargets a formula by typing a name in place of what it read. The
+// text is what they read and edit (Amendment 18), so their edit stands.
+TEST_F(ExpressionParserTest, handRetargetedFormulaKeepsThePersonsEdit)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+    auto* dcy = this_doc()->addObject("App::DocumentObjectGroup", "Dcy");
+    freecad_cast<PropertyFloat*>(dcy->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(99.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(resultPath, std::shared_ptr<Expression>(parse(this_obj(), "Src.Bar * 2")));
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    const std::string stated = "&lt;&lt;" + src->Uid.getValueStr() + "&gt;&gt;.Bar";
+    auto pos = xml.find(stated);
+    ASSERT_NE(pos, std::string::npos) << xml;
+    xml.replace(pos, stated.size(), "Dcy.Bar");
+
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the edited expression failed to restore";
+    auto ids = info.expression->getIdentifiers();
+    ASSERT_EQ(ids.size(), 1U);
+    EXPECT_EQ(ids.begin()->first.getDocumentObject(), dcy)
+        << "the edit a person made in the file did not stand";
+}
+
+// A formula that reads an object the document no longer holds -- deleted on another branch, or
+// mistyped by hand -- is said, never dropped (Amendment 19, Clause 19.1).
+TEST_F(ExpressionParserTest, aFormulaReadingAnObjectNotInTheDocumentSaysSo)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(resultPath, std::shared_ptr<Expression>(parse(this_obj(), "Src.Bar * 2")));
+
+    Base::StringWriter writer;
+    this_obj()->ExpressionEngine.Save(writer);
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n";
+    xml += writer.getString();
+    xml += "</root>\n";
+
+    const std::string gone = Base::Uuid::createUuid();
+    auto pos = xml.find(src->Uid.getValueStr());
+    ASSERT_NE(pos, std::string::npos) << xml;
+    xml.replace(pos, src->Uid.getValueStr().size(), gone);
+
+    CapturedWarnings warnings;
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+
+    EXPECT_THAT(warnings.text(), HasSubstr(gone)) << "a formula reading nothing went unreported";
+    auto info = this_obj()->getExpression(resultPath);
+    ASSERT_TRUE(info.expression) << "the formula was dropped";
+    EXPECT_THAT(info.expression->toString(), HasSubstr(gone));
+}
+
+// The saved formula names what it reads by UUID, so a rename leaves it word for word as it was:
+// the name is only what a person sees, and the app shows the current one.
+TEST_F(ExpressionParserTest, aRenameLeavesTheSavedFormulaUnchanged)
+{
+    auto* src = this_doc()->addObject("App::DocumentObjectGroup", "Src");
+    src->Label.setValue("Alfa");
+    freecad_cast<PropertyFloat*>(src->addDynamicProperty("App::PropertyFloat", "Bar"))->setValue(10.0);
+
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alfa>>.Bar * 2"))
+    );
+    const auto saved = [this]() {
+        Base::StringWriter writer;
+        this_obj()->ExpressionEngine.Save(writer);
+        return writer.getString();
+    };
+    const std::string before = saved();
+
+    src->Label.setValue("Gamma");
+
+    EXPECT_EQ(saved(), before);
+
+    std::string xml = "<?xml version='1.0' encoding='utf-8'?>\n<root>\n" + before + "</root>\n";
+    std::stringstream data(xml);
+    Base::XMLReader reader("Document.xml", data);
+    reader.readElement("root");
+    this_obj()->ExpressionEngine.Restore(reader);
+    this_obj()->ExpressionEngine.afterRestore();
+    EXPECT_EQ(this_obj()->getExpression(resultPath).expression->toString(), "<<Gamma>>.Bar * 2");
+}
+
+// Amendment 3, Clause 3.8, Step H: object references no longer depend on the
+// rename-rewriting pass. Renaming a referenced object -- and even handing its old
+// name to a *different* object -- leaves a live expression bound to the original by
+// UUID and re-rendered to the new name, with renameObjectIdentifiers never invoked.
+// (The pass itself survives only for the deferred inner-grain renames -- property,
+// alias, cell -- which are out of scope here per Clause 3.8 sec 0.1 / issue #10.)
+TEST_F(ExpressionParserTest, objectRenameNeedsNoRewritingPass)
+{
+    // A referenced object with the property we path to.
+    auto* target = this_doc()->addObject("App::DocumentObjectGroup", "Target");
+    target->Label.setValue("Alpha");
+    freecad_cast<PropertyFloat*>(target->addDynamicProperty("App::PropertyFloat", "Width"))
+        ->setValue(5.0);
+
+    // Author a live expression by the normal path (parse + setExpression), addressing
+    // the target by its current label. This stamps the durable UUID under the label.
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Result");
+    ObjectIdentifier resultPath(this_obj());
+    resultPath << ObjectIdentifier::SimpleComponent("Result");
+    this_obj()->setExpression(
+        resultPath,
+        std::shared_ptr<Expression>(parse(this_obj(), "<<Alpha>>.Width * 2"))
+    );
+
+    auto ref = [&]() {
+        return this_obj()->getExpression(resultPath).expression->getIdentifiers().begin()->first;
+    };
+    ASSERT_EQ(ref().getDocumentObject(), target) << "authored reference binds the target";
+    EXPECT_EQ(ref().toString(), "<<Alpha>>.Width");
+
+    // Rename the target. We call ONLY Label.setValue -- never renameObjectIdentifiers.
+    target->Label.setValue("Gamma");
+
+    // Collision: hand the old label to a brand-new object carrying the same property.
+    auto* decoy = this_doc()->addObject("App::DocumentObjectGroup", "Decoy");
+    decoy->Label.setValue("Alpha");
+    decoy->addDynamicProperty("App::PropertyFloat", "Width");
+
+    // The reference still binds the original by UUID -- not the decoy that now owns the
+    // old name -- and re-renders to the target's current label with no rewriting pass.
+    EXPECT_EQ(ref().getDocumentObject(), target)
+        << "binding follows the durable UUID, not the reused label";
+    EXPECT_NE(ref().getDocumentObject(), decoy);
+    EXPECT_EQ(ref().toString(), "<<Gamma>>.Width")
+        << "render re-derives the current label from the UUID, no renameObjectIdentifiers needed";
+}
+
+// P7 -- Robustness Through Honesty. A plain number arriving at a property that carries a
+// dimension is ambiguous: two of *what*? The engine used to settle it silently by reading the
+// bare number as the internal unit, so a sheet authored in inches drove a part twenty-five times
+// too small and said nothing about it. It now stops and says what was expected.
+//
+// The helper binds an expression and returns the complaint, or an empty string if it was allowed
+// through, so each case reads as accepted-or-refused rather than as exception plumbing.
+class BareNumberBindingTest: public ExpressionParserTest
+{
+protected:
+    std::string bindAndReport(const char* property, const char* expressionText)
+    {
+        ObjectIdentifier path(this_obj());
+        std::istringstream steps(property);
+        std::string step;
+        while (std::getline(steps, step, '.')) {
+            path << ObjectIdentifier::SimpleComponent(step);
+        }
+        this_obj()->setExpression(path, std::shared_ptr<Expression>(parse(this_obj(), expressionText)));
+        try {
+            this_obj()->ExpressionEngine.execute();
+            return {};
+        }
+        catch (const Base::Exception& e) {
+            return e.what();
+        }
+    }
+};
+
+// The case the rule exists for, and the control beside it: the very same value, said with its
+// unit, goes straight through. A check that refused both would be no check at all.
+TEST_F(BareNumberBindingTest, aPlainNumberIsRefusedWhereADimensionIsExpected)
+{
+    this_obj()->addDynamicProperty("App::PropertyLength", "Thickness");
+
+    const std::string refused = bindAndReport("Thickness", "2");
+    EXPECT_NE(refused.find("Length was expected"), std::string::npos) << refused;
+    EXPECT_NE(refused.find("2 mm"), std::string::npos)
+        << "the complaint has to show how to say it: " << refused;
+
+    EXPECT_EQ(bindAndReport("Thickness", "2 mm"), "") << "the same value, with its unit, is fine";
+    EXPECT_EQ(bindAndReport("Thickness", "2 in"), "") << "and so is the author's own unit";
+}
+
+// A bare number given its dimension inside the expression is exactly how a count or a ratio is
+// meant to be used. If this were refused the rule would be noise and people would learn to
+// ignore it.
+TEST_F(BareNumberBindingTest, aPlainNumberMadeDimensionedInTheExpressionIsFine)
+{
+    this_obj()->addDynamicProperty("App::PropertyLength", "Spacing");
+    EXPECT_EQ(bindAndReport("Spacing", "3 * 10mm"), "");
+}
+
+// P7 governs *ambiguity*. Zero is the same value in every unit, so there is nothing to guess and
+// nothing worth stopping a person for.
+TEST_F(BareNumberBindingTest, zeroPassesBecauseItIsTheSameInEveryUnit)
+{
+    this_obj()->addDynamicProperty("App::PropertyLength", "Offset");
+    EXPECT_EQ(bindAndReport("Offset", "0"), "");
+}
+
+// A property with no dimension wants a plain number, and must keep getting one.
+TEST_F(BareNumberBindingTest, aPropertyWithNoDimensionStillTakesAPlainNumber)
+{
+    this_obj()->addDynamicProperty("App::PropertyFloat", "Ratio");
+    EXPECT_EQ(bindAndReport("Ratio", "2"), "");
+}
+
+// The target's dimension is read from the value already at the path, not from the property's own
+// type, so a sub-path is covered too: Placement.Base.x is a length even though the property it
+// lives on is a placement. Without that, the rule would guard Length and miss half the model.
+TEST_F(BareNumberBindingTest, aSubPathCarriesItsOwnDimension)
+{
+    const std::string refused = bindAndReport("Placement.Base.x", "2");
+    EXPECT_NE(refused.find("Length was expected"), std::string::npos) << refused;
+}
+
+// The complaint reads as English. It is the entire point of the rule, so "An Angle", never
+// "A Angle".
+TEST_F(BareNumberBindingTest, theComplaintNamesTheDimensionItWanted)
+{
+    const std::string refused = bindAndReport("Placement.Rotation.Angle", "2");
+    EXPECT_NE(refused.find("An Angle was expected"), std::string::npos) << refused;
+    EXPECT_NE(refused.find("2 deg"), std::string::npos) << refused;
 }
 
 }  // namespace App::ExpressionParser::Test

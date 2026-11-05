@@ -23,19 +23,21 @@
 
 #include "ExportInfo.h"
 
+#include <string>
+
 namespace App
 {
 class Document;
 
-struct AppExport RecoverySnapshotSaveOptions
-{
-    bool compressed {true};
-    bool saveBinaryBrep {true};
-    bool saveThumbnail {false};
-};
+/** Write a snapshot of `doc` into its transient directory, as the record's own writer writes it.
+ *
+ * A snapshot can become the record: recovery binds what it reads to the original document's path,
+ * and an ordinary save then writes it there. So it is written AS the document, in the record's own
+ * form -- anything else is a second record, and every duty the law places on the record would
+ * reach only the first (Amendment 19 Clause 19.5).
+ */
+AppExport bool writeRecoverySnapshotToTransientDir(const Document& doc);
 
-AppExport bool writeRecoverySnapshotToTransientDir(
-    const Document& doc,
-    const RecoverySnapshotSaveOptions& options
-);
+/// Where a snapshot of `doc` is written, and where recovery reads it from.
+AppExport std::string recoverySnapshotPath(const Document& doc);
 }  // namespace App

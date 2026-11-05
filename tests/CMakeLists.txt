@@ -111,6 +111,9 @@ endif()
 if(BUILD_ASSEMBLY)
     list (APPEND TestExecutables Assembly_tests_run)
 endif(BUILD_ASSEMBLY)
+if(BUILD_IMPORT)
+    list (APPEND TestExecutables Import_tests_run)
+endif(BUILD_IMPORT)
 if(BUILD_MATERIAL)
     list (APPEND TestExecutables Material_tests_run)
 endif(BUILD_MATERIAL)
@@ -200,3 +203,131 @@ foreach (exe ${TestExecutables})
         gtest_discover_tests(${exe})
     endif()
 endforeach()
+
+# -------------------------------------------------------------------------------------------
+# The Python test suites
+# -------------------------------------------------------------------------------------------
+#
+# These are the modules under src/Mod that register themselves in FreeCAD.__unit_test__ and run
+# through `FreeCADCmd -t <name>`. Until now nothing here ran them: ctest knew only about the C++
+# tests, so a Python suite could fail for weeks without anything saying so -- which is how a
+# document that saved and would not reopen sat unnoticed.
+#
+# One ctest entry per suite, never one for all of them, because `-t 0` stops at the first suite
+# that aborts and takes the rest of the run with it: a single entry would report one failure and
+# hide however many suites came after it.
+#
+# PYTHON_TEST_SUITES is the list ctest runs. It is written by hand and compared with the list the
+# program actually registers by the PythonSuites entry below, so the two cannot drift apart
+# quietly.
+set(PYTHON_TEST_SUITES
+    BaseTests
+    Document
+    DocumentDuplicate
+    Metadata
+    MeshTestsApp
+    StringHasher
+    TestAssemblyWorkbench
+    TestCoinNodeSnapshots
+    TestDraft
+    TestImport
+    TestMaterialsApp
+    TestPartApp
+    TestPartDesignApp
+    TestPythonSyntax
+    TestSketcherApp
+    TestSpreadsheet
+    TestSurfaceApp
+    TestTechDrawApp
+    UnicodeTests
+    UnitTests
+)
+
+# Suites that do not pass today. They are registered here rather than left out, so that every run
+# of ctest lists them as not run instead of saying nothing at all, and so the day one of them is
+# fixed it is one line that leaves this list. The list is empty: every registered suite passes.
+set(PYTHON_TEST_SUITES_FAILING
+)
+
+foreach(_suite ${PYTHON_TEST_SUITES})
+    add_test(NAME Python_${_suite} COMMAND $<TARGET_FILE:FreeCADMainCmd> -t ${_suite})
+    if(WIN32)
+        set_tests_properties(Python_${_suite} PROPERTIES
+            ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+    endif()
+    if(${_suite} IN_LIST PYTHON_TEST_SUITES_FAILING)
+        set_tests_properties(Python_${_suite} PROPERTIES DISABLED TRUE)
+    endif()
+endforeach()
+
+string(REPLACE ";" "\;" _python_suites_for_env "${PYTHON_TEST_SUITES}")
+add_test(NAME Python_SuiteRegistry
+         COMMAND $<TARGET_FILE:FreeCADMainCmd> ${CMAKE_CURRENT_SOURCE_DIR}/PythonSuites.py)
+set_tests_properties(Python_SuiteRegistry PROPERTIES
+    ENVIRONMENT "CRUTH_PYTHON_TEST_SUITES=${_python_suites_for_env}")
+if(WIN32)
+    set_tests_properties(Python_SuiteRegistry PROPERTIES
+        ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+endif()
+
+# -------------------------------------------------------------------------------------------
+# The Python GUI test suites
+# -------------------------------------------------------------------------------------------
+#
+# The same idea for the suites a module registers from its InitGui.py. They run in the GUI
+# program on Qt's offscreen platform, so no display is needed, and each reads a user.cfg of its
+# own that is deleted before the run: a preference persisted by an earlier session would
+# otherwise decide what the test sees.
+#
+# PYTHON_GUI_TEST_SUITES holds only what the GUI adds. Python_GuiSuiteRegistry compares both
+# lists together with what a GUI session registers.
+if(BUILD_GUI)
+    set(PYTHON_GUI_TEST_SUITES
+        GuiDocument
+        Menu
+        Menu.MenuCreateCases
+        Menu.MenuDeleteCases
+        MeshTestsGui
+        TestAssemblyWorkbenchGui
+        TestDraftGui
+        TestImportGui
+        TestMaterialsGui
+        TestPartDesignGui
+        TestPartGui
+        TestSketcherGui
+        TestTechDrawGui
+        Workbench
+    )
+
+    set(_gui_cfg_dir ${CMAKE_BINARY_DIR}/tests/gui-user-cfg)
+    add_test(NAME Python_GuiCleanConfig COMMAND ${CMAKE_COMMAND} -E rm -rf ${_gui_cfg_dir})
+    set_tests_properties(Python_GuiCleanConfig PROPERTIES FIXTURES_SETUP PythonGuiConfig)
+
+    foreach(_suite ${PYTHON_GUI_TEST_SUITES})
+        add_test(NAME Python_${_suite}
+                 COMMAND $<TARGET_FILE:FreeCADMain>
+                         --user-cfg ${_gui_cfg_dir}/${_suite}.cfg -t ${_suite})
+        set_tests_properties(Python_${_suite} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+            FIXTURES_REQUIRED PythonGuiConfig
+            TIMEOUT 300)
+        if(WIN32)
+            set_tests_properties(Python_${_suite} PROPERTIES
+                ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+        endif()
+    endforeach()
+
+    set(_all_python_suites ${PYTHON_TEST_SUITES} ${PYTHON_GUI_TEST_SUITES})
+    string(REPLACE ";" "\;" _all_python_suites_for_env "${_all_python_suites}")
+    add_test(NAME Python_GuiSuiteRegistry
+             COMMAND $<TARGET_FILE:FreeCADMain> --user-cfg ${_gui_cfg_dir}/SuiteRegistry.cfg
+                     ${CMAKE_CURRENT_SOURCE_DIR}/PythonSuites.py)
+    set_tests_properties(Python_GuiSuiteRegistry PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;CRUTH_PYTHON_TEST_SUITES=${_all_python_suites_for_env}"
+        FIXTURES_REQUIRED PythonGuiConfig
+        TIMEOUT 300)
+    if(WIN32)
+        set_tests_properties(Python_GuiSuiteRegistry PROPERTIES
+            ENVIRONMENT_MODIFICATION "${_test_env_mod}")
+    endif()
+endif()

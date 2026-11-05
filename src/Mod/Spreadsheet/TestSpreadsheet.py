@@ -1081,6 +1081,156 @@ class SpreadsheetCases(unittest.TestCase):
         sheet.insertRows("2", 1)
         self.assertEqual(sheet.getContents("B4"), "=B3")
 
+    def testInsertRowsMovesAnotherSheetsReferenceToAnEmptyCell(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        other.set("A1", "=Spreadsheet.A5")
+        sheet.insertRows("2", 2)
+        self.assertEqual(other.getContents("A1"), "=Spreadsheet.A7")
+
+    def testRemoveRowsMovesAnotherSheetsReferenceToAnEmptyCell(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        other.set("A1", "=Spreadsheet.C5")
+        sheet.removeRows("2", 2)
+        self.assertEqual(other.getContents("A1"), "=Spreadsheet.C3")
+
+    def testRemoveRowsMakesAReferenceToARemovedCellMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A3", "5")
+        sheet.set("A4", "9")
+        sheet.set("A1", "=A3 + 1")
+        sheet.removeRows("3", 1)
+        self.doc.recompute()
+        self.assertEqual(sheet.getContents("A1"), "=#REF! + 1")
+        self.assertTrue(sheet.A1.startswith("ERR: Missing reference"))
+
+    def testRemoveRowsMakesAReferenceToTheLastRemovedRowMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "=A4")
+        sheet.set("A2", "=A5")
+        sheet.removeRows("3", 2)
+        self.assertEqual(sheet.getContents("A1"), "=#REF!")
+        self.assertEqual(sheet.getContents("A2"), "=A3")
+
+    def testRemoveColumnsMakesAQualifiedReferenceInTheSameSheetMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "=Spreadsheet.C1")
+        sheet.set("A2", "=Spreadsheet.D1")
+        sheet.removeColumns("C", 1)
+        self.assertEqual(sheet.getContents("A1"), "=#REF!")
+        self.assertEqual(sheet.getContents("A2"), "=C1")
+
+    def testRemoveRowsShrinksARangeAndMakesARemovedRangeMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        for row in range(2, 7):
+            sheet.set(f"A{row}", str(row))
+        sheet.set("B1", "=sum(A2:A5)")
+        sheet.set("C1", "=sum(A3:A4)")
+        sheet.removeRows("3", 2)
+        self.doc.recompute()
+        self.assertEqual(sheet.getContents("B1"), "=sum(A2:A3)")
+        self.assertEqual(sheet.B1, 2 + 5)
+        self.assertEqual(sheet.getContents("C1"), "=sum(#REF!)")
+        self.assertTrue(sheet.C1.startswith("ERR: Missing reference"))
+
+    def testRemoveRowsMakesAnotherSheetsReferenceMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        sheet.set("C4", "7")
+        other.set("A1", "=Spreadsheet.C3")
+        other.set("A2", "=Spreadsheet.C4")
+        sheet.removeRows("3", 1)
+        self.doc.recompute()
+        self.assertEqual(other.getContents("A1"), "=#REF!")
+        self.assertEqual(other.getContents("A2"), "=Spreadsheet.C3")
+        self.assertEqual(other.A2, 7)
+
+    def testRemoveColumnsMakesAPropertyFormulaOnAnotherObjectMissing(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("B2", "7")
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyFloat", "Value")
+        feature.setExpression("Value", "Spreadsheet.B2 * 2")
+        self.doc.recompute()
+        sheet.removeColumns("B", 1)
+        self.doc.recompute()
+        self.assertEqual(feature.ExpressionEngine[0][1], "#REF! * 2")
+        self.assertIn("Invalid", feature.State)
+
+    def testAMissingReferenceSurvivesSaveAndReopen(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("A1", "=#REF! + 1")
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyFloat", "Value")
+        feature.setExpression("Value", "#REF!")
+        path = os.path.join(tempfile.gettempdir(), "MissingReference.FCStd")
+        self.doc.saveAs(path)
+        name = self.doc.Name
+        FreeCAD.closeDocument(name)
+        self.doc = FreeCAD.openDocument(path)
+        self.doc.recompute()
+        sheet = self.doc.getObject("Spreadsheet")
+        self.assertEqual(sheet.getContents("A1"), "=#REF! + 1")
+        self.assertTrue(sheet.A1.startswith("ERR: Missing reference"))
+        self.assertEqual(self.doc.getObject("Feature").ExpressionEngine[0][1], "#REF!")
+
+    def testIndexReadsTheKthCellOfARange(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        for row, value in ((2, "4"), (3, "5"), (4, "6")):
+            sheet.set(f"A{row}", value)
+        sheet.set("B1", "=index(A2:A4; 2)")
+        sheet.set("B2", "=index(list(7; 8; 9); 3)")
+        sheet.set("B3", "=index(A2:A4; 4)")
+        sheet.set("B4", "=index(A2:A5; 4)")
+        self.doc.recompute()
+        self.assertEqual(sheet.B1, 5)
+        self.assertEqual(sheet.B2, 9)
+        self.assertIn("outside the range's 3 cells", sheet.B3)
+        self.assertIn("A5, which is empty", sheet.B4)
+
+    def testAFormulaReadsARangeOnAnotherSheet(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        for row, value in ((2, "4 mm"), (3, "5 mm"), (4, "6 mm")):
+            sheet.set(f"A{row}", value)
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyInteger", "Row")
+        feature.addProperty("App::PropertyLength", "Picked")
+        feature.addProperty("App::PropertyLength", "Total")
+        feature.Row = 2
+        feature.setExpression("Picked", "index(Spreadsheet.A2:A4; Row)")
+        feature.setExpression("Total", "sum(Spreadsheet.A2:A4)")
+        self.doc.recompute()
+        self.assertEqual(feature.Picked.Value, 5)
+        self.assertEqual(feature.Total.Value, 15)
+        self.assertIn(sheet, feature.OutList)
+        sheet.set("A3", "8 mm")
+        self.doc.recompute()
+        self.assertEqual(feature.Picked.Value, 8)
+
+    def testARangeOnAnotherSheetFollowsRowEdits(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        other = self.doc.addObject("Spreadsheet::Sheet", "Other")
+        other.set("A1", "=sum(Spreadsheet.C2:C5)")
+        sheet.insertRows("1", 2)
+        self.assertEqual(other.getContents("A1"), "=sum(Spreadsheet.C4:C7)")
+        sheet.removeRows("5", 1)
+        self.assertEqual(other.getContents("A1"), "=sum(Spreadsheet.C4:C6)")
+        sheet.removeRows("4", 3)
+        self.assertEqual(other.getContents("A1"), "=sum(#REF!)")
+
+    def testInsertColumnsMovesAPropertyFormulaOnAnotherObject(self):
+        sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
+        sheet.set("B2", "7")
+        feature = self.doc.addObject("App::FeaturePython", "Feature")
+        feature.addProperty("App::PropertyFloat", "Value")
+        feature.setExpression("Value", "Spreadsheet.B2")
+        self.doc.recompute()
+        sheet.insertColumns("A", 1)
+        self.doc.recompute()
+        self.assertEqual(feature.ExpressionEngine[0][1], "Spreadsheet.C2")
+        self.assertEqual(feature.Value, 7)
+
     def testRenameAlias(self):
         """Test renaming of alias1 to alias2 in a spreadsheet"""
         sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
@@ -1188,7 +1338,9 @@ class SpreadsheetCases(unittest.TestCase):
         sketch = self.doc.addObject("Sketcher::SketchObject", "Sketch")
         sketch.addGeometry(Part.LineSegment(v(0, 0, 0), v(10, 10, 0)), False)
         sketch.addConstraint(Sketcher.Constraint("Distance", 0, 65.285388))
-        sketch.setExpression("Constraints[0]", "InvoluteGear.NumberOfTeeth")
+        # A count is a number, and a distance is a length: the expression says which
+        # length a tooth count stands for, because nothing else can say it for it.
+        sketch.setExpression("Constraints[0]", "InvoluteGear.NumberOfTeeth * 1mm")
         self.doc.recompute()
         self.assertIn("Up-to-date", sketch.State)
 
@@ -1198,7 +1350,9 @@ class SpreadsheetCases(unittest.TestCase):
         sheet = self.doc.addObject("Spreadsheet::Sheet", "Spreadsheet")
         sheet.setAlias("A1", "Length")
         self.doc.recompute()
-        sheet.set("A1", "47,11")
+        # The cell holds a length, stated as one: a bare number does not become a
+        # dimension on its way into a constraint.
+        sheet.set("A1", "47,11 mm")
         self.doc.recompute()
 
         index = sketch.addGeometry(Part.LineSegment(v(0, 0, 0), v(10, 10, 0)), False)
@@ -1576,10 +1730,11 @@ class SpreadsheetCases(unittest.TestCase):
         sheet.set("x", "42mm")
         base.recompute()
 
-        square = FreeCAD.newDocument("square")
+        # A Part document, because a Body sits in a world frame the document owns.
+        square = FreeCAD.newDocument("square", type="Part")
         body = square.addObject("PartDesign::Body", "Body")
         box = square.addObject("PartDesign::AdditiveBox", "Box")
-        body.addObject(box)
+        body.addFeature(box)
         box.Length = 10.00
         box.Width = 10.00
         box.Height = 10.00

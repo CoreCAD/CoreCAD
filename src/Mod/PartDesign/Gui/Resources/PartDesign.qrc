@@ -1,6 +1,7 @@
 <RCC>
     <qresource>
         <file>icons/PartDesign_AdditiveBox.svg</file>
+        <file>icons/PartDesign_PanelPin.svg</file>
         <file>icons/PartDesign_AdditiveCone.svg</file>
         <file>icons/PartDesign_AdditiveCylinder.svg</file>
         <file>icons/PartDesign_AdditiveEllipsoid.svg</file>
@@ -26,23 +27,21 @@
         <file>icons/PartDesign_InternalExternalGear.svg</file>
         <file>icons/PartDesign_Line.svg</file>
         <file>icons/PartDesign_LinearPattern.svg</file>
-        <file>icons/PartDesign_Migrate.svg</file>
         <file>icons/PartDesign_Mirrored.svg</file>
         <file>icons/PartDesign_MoveFeature.svg</file>
         <file>icons/PartDesign_MoveFeatureInTree.svg</file>
-        <file>icons/PartDesign_MoveTip.svg</file>
-        <file>icons/PartDesign_MultiTransform.svg</file>
-        <file>icons/PartDesign_Overlay_Tip.svg</file>
         <file>icons/PartDesign_Pad.svg</file>
         <file>icons/PartDesign_Plane.svg</file>
         <file>icons/PartDesign_Pocket.svg</file>
         <file>icons/PartDesign_Point.svg</file>
         <file>icons/PartDesign_PolarPattern.svg</file>
+        <file>icons/PartDesign_PointPattern.svg</file>
+        <file>icons/PartDesign_CurvePattern.svg</file>
+        <file>icons/PartDesign_FillPattern.svg</file>
+        <file>icons/PartDesign_TablePattern.svg</file>
+        <file>icons/PartDesign_FormulaPattern.svg</file>
         <file>icons/PartDesign_Revolution.svg</file>
-        <file>icons/PartDesign_Scaled.svg</file>
-        <file>icons/PartDesign_ShapeBinder.svg</file>
         <file>icons/PartDesign_Sprocket.svg</file>
-        <file>icons/PartDesign_SubShapeBinder.svg</file>
         <file>icons/PartDesign_SubtractiveBox.svg</file>
         <file>icons/PartDesign_SubtractiveCone.svg</file>
         <file>icons/PartDesign_SubtractiveCylinder.svg</file>

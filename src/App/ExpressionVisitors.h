@@ -103,25 +103,23 @@ private:
 };
 
 template<class P>
-class MoveCellsExpressionVisitor: public ExpressionModifier<P>
+class ShiftCellsExpressionVisitor: public ExpressionModifier<P>
 {
 public:
-    MoveCellsExpressionVisitor(P& prop, const CellAddress& address, int rowCount, int colCount)
+    ShiftCellsExpressionVisitor(P& prop, const DocumentObject* sheet, const CellShift& shift)
         : ExpressionModifier<P>(prop)
-        , address(address)
-        , rowCount(rowCount)
-        , colCount(colCount)
+        , sheet(sheet)
+        , shift(shift)
     {}
 
     void visit(Expression& node) override
     {
-        this->moveCells(node, address, rowCount, colCount);
+        this->shiftCells(node, sheet, shift);
     }
 
 private:
-    CellAddress address;
-    int rowCount;
-    int colCount;
+    const DocumentObject* sheet;
+    CellShift shift;
 };
 
 template<class P>

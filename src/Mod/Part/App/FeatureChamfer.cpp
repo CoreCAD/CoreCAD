@@ -31,6 +31,8 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 
 
+#include <Base/Tools.h>
+
 #include <SignalException.h>
 #include "FeatureChamfer.h"
 #include "TopoShapeOpCode.h"
@@ -40,7 +42,13 @@ using namespace Part;
 
 PROPERTY_SOURCE(Part::Chamfer, Part::FilletBase)
 
-Chamfer::Chamfer() = default;
+Chamfer::Chamfer()
+{
+    // Declared here rather than on the shared base: the two numbers per edge are
+    // distances, and the file says so in this operation's own words.
+    ADD_PROPERTY(Edges, (0, 0, 0));
+    Edges.setSize(0);
+}
 
 App::DocumentObjectExecReturn* Chamfer::execute()
 {
@@ -88,15 +96,34 @@ App::DocumentObjectExecReturn* Chamfer::execute()
             //            try {
             //                edge = baseTopoShape.getSubShape(ref.c_str());
             //            }catch(...){}
-            auto id = Data::MappedName(ref.c_str()).toIndexedName().getIndex();
+            auto id = Data::IndexedName(Data::oldElementName(ref.c_str()).c_str()).getIndex();
             const TopoDS_Edge& edge = TopoDS::Edge(mapOfEdges.FindKey(id));
             if (edge.IsNull()) {
                 return new App::DocumentObjectExecReturn("Invalid edge link");
             }
-            double radius1 = info.radius1;
-            double radius2 = info.radius2;
+            // A chamfer takes a distance along each of the two faces the edge joins, or a
+            // distance and an angle. Which of the three kinds this edge takes travels with its
+            // measurements, so the numbers below are read the way the person who set them meant.
+            const double size = info.radius1;
             const TopoDS_Face& face = TopoDS::Face(mapEdgeFace.FindFromKey(edge).First());
-            mkChamfer.Add(radius1, radius2, TopoDS::Edge(edge), face);
+            switch (info.kind) {
+                case ChamferType::equalDistance:
+                    mkChamfer.Add(size, size, TopoDS::Edge(edge), face);
+                    break;
+                case ChamferType::twoDistances:
+                    mkChamfer.Add(size, info.radius2, TopoDS::Edge(edge), face);
+                    break;
+                case ChamferType::distanceAngle:
+                    if (info.angle <= 0.0 || info.angle >= 180.0) {
+                        // Said here rather than left to the kernel, which answers a nonsensical
+                        // angle with a failure that names neither the edge nor the number.
+                        return new App::DocumentObjectExecReturn(
+                            "Chamfer angle must be greater than 0 and less than 180 degrees"
+                        );
+                    }
+                    mkChamfer.AddDA(size, Base::toRadians(info.angle), TopoDS::Edge(edge), face);
+                    break;
+            }
         }
 
         if (!fullErrMsg.empty()) {

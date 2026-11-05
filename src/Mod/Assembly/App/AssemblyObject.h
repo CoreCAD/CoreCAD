@@ -28,8 +28,8 @@
 
 #include <Mod/Assembly/AssemblyGlobal.h>
 
+#include <App/DocumentObjectGroup.h>
 #include <App/FeaturePython.h>
-#include <App/Part.h>
 #include <App/PropertyLinks.h>
 
 #include <OndselSolver/enum.h>
@@ -60,6 +60,7 @@ namespace Assembly
 
 class AssemblyLink;
 class JointGroup;
+class Motion;
 class ViewGroup;
 enum class JointType;
 
@@ -70,7 +71,7 @@ struct ObjRef
     App::PropertyXLinkSub* ref;
 };
 
-class AssemblyExport AssemblyObject: public App::Part
+class AssemblyExport AssemblyObject: public App::DocumentObjectGroup
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Assembly::AssemblyObject);
 
@@ -80,10 +81,22 @@ public:
 
     PyObject* getPyObject() override;
 
+    /// Records membership, not filing: a member may also sit in a folder.
+    bool isFolder() const override
+    {
+        return false;
+    }
+
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override
     {
         return "AssemblyGui::ViewProviderAssembly";
+    }
+
+    /// An assembly is assembly-scoped content: only an Assembly document admits it.
+    App::DocumentObject::ContentScope getContentScope() const override
+    {
+        return App::DocumentObject::ContentScope::AssemblyItem;
     }
 
     App::DocumentObjectExecReturn* execute() override;
@@ -130,6 +143,11 @@ public:
     {
         std::shared_ptr<MbD::ASMTPart> part;
         Base::Placement offsetPlc;  // This is the offset within the bundled parts
+        // The global placement of the enclosing GeoFeatureGroup chain (e.g. a nested
+        // flexible AssemblyLink). The solver works in the world frame, so parts are seeded
+        // and solved globally; groupPlc is divided out to write the local Placement back.
+        // Identity for parts directly in the assembly document (no enclosing group).
+        Base::Placement groupPlc;
     };
     MbDPartData getMbDData(App::DocumentObject* part);
     std::shared_ptr<MbD::ASMTMarker> makeMbdMarker(std::string& name, Base::Placement& plc);
@@ -203,7 +221,7 @@ public:
 
     std::vector<AssemblyLink*> getSubAssemblies();
 
-    std::vector<App::DocumentObject*> getMotionsFromSimulation(App::DocumentObject* sim);
+    std::vector<Motion*> getMotionsFromSimulation(App::DocumentObject* sim);
 
     bool isMbDJointValid(App::DocumentObject* joint);
 
@@ -259,7 +277,7 @@ private:
     std::unordered_map<App::DocumentObject*, MbDPartData> objectPartMap;
     std::vector<std::pair<App::DocumentObject*, double>> objMasses;
     std::vector<App::DocumentObject*> draggedParts;
-    std::vector<App::DocumentObject*> motions;
+    std::vector<Motion*> motions;
 
     std::vector<std::pair<App::DocumentObject*, Base::Placement>> previousPositions;
 

@@ -91,6 +91,7 @@
         <file>forbidden.svg</file>
         <file>freecad-doc.png</file>
         <file>freecad-doc.svg</file>
+        <file>CoreCAD.svg</file>
         <file>freecad.svg</file>
         <file>freecadabout.png</file>
         <file>freecadaboutdev.png</file>
@@ -161,6 +162,7 @@
         <file>media-record.svg</file>
         <file>mouse_pointer.svg</file>
         <file>overlay_error.svg</file>
+        <file>overlay_notice.svg</file>
         <file>overlay_recompute.svg</file>
         <file>Param_Bool.svg</file>
         <file>Param_Float.svg</file>
@@ -197,6 +199,7 @@
         <file>Std_CoordinateSystem.svg</file>
         <file>Std_DemoMode.svg</file>
         <file>Std_DependencyGraph.svg</file>
+        <file>Std_ShowHistory.svg</file>
         <file>Std_DlgParameter.svg</file>
         <file>Std_DockOverlayToggleBottom.svg</file>
         <file>Std_DockOverlayToggleLeft.svg</file>
@@ -218,6 +221,7 @@
         <file>Std_RandomColor.svg</file>
         <file>Std_RecentFiles.svg</file>
         <file>Std_RecentMacros.svg</file>
+        <file>Std_RollBackHere.svg</file>
         <file>Std_Revert.svg</file>
         <file>Std_SaveAll.svg</file>
         <file>Std_SaveCopy.svg</file>
@@ -229,7 +233,6 @@
         <file>Std_TextureMapping.svg</file>
         <file>Std_ToggleBottomPanels.svg</file>
         <file>Std_ToggleClipPlane.svg</file>
-        <file>Std_ToggleFreeze.svg</file>
         <file>Std_ToggleNavigation.svg</file>
         <file>Std_ToggleObjects.svg</file>
         <file>Std_ToggleTransparency.svg</file>

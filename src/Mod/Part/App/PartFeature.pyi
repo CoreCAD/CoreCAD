@@ -8,8 +8,8 @@ from App.DocumentObject import DocumentObject
 from typing import List, Tuple, Union
 
 @export(
-    Twin="Feature",
-    TwinPointer="Feature",
+    Twin="ShapeFeature",
+    TwinPointer="ShapeFeature",
     Include="Mod/Part/App/PartFeature.h",
     FatherInclude="App/GeoFeaturePy.h",
 )

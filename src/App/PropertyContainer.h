@@ -26,6 +26,7 @@
 #pragma once
 
 #include <map>
+#include <utility>
 #include <vector>
 #include <string>
 #include <memory>
@@ -598,6 +599,232 @@ public:
    */
   virtual void editProperty([[maybe_unused]] const char* propName) {}
 
+  /** One target a stored record stated for a reference property: what it pointed at.
+   *
+   * Held as the durable identity rather than the target's in-document name, because a name is
+   * the document's own bookkeeping and does not survive being merged into another document.
+   */
+  struct StatedTarget
+  {
+      std::string uuid;  ///< the target object's durable identity
+      std::string sub;   ///< the sub-element named within it, empty when the whole object
+      bool noPart {false};  ///< named with no part at all, rather than with one empty part
+      std::string name;     ///< the element's full name, empty when the file gave none
+  };
+
+  /** Remember source material a stored record named and this session could not load.
+   *
+   * A property holding nothing cannot say why. "The author left it empty" and "the file that
+   * held it was not there" are different facts, and a save that re-derives the record from what
+   * is in memory writes the second one out as the first -- the name of the missing material is
+   * gone, and putting the material back can never recover the design. So the container keeps the
+   * name it was given, the writer emits it again, and the file reports the gap instead of
+   * denying it.
+   */
+  void rememberMissingSource(const char* name, const std::string& id);
+
+  /// The id a stored record gave for this property's value when that value could not be loaded.
+  std::string missingSource(const char* name) const;
+
+  /** Remember where a reference pointed, when this session could not resolve the target.
+   *
+   * A reference that resolved to nothing holds nothing, and a property holding nothing cannot
+   * say why. "The author pointed this at nothing" and "the object it named is not in this
+   * document" are different facts -- the second is ordinary when a branch deleted the target --
+   * and a save that re-derives the file from what is in memory writes the first one out. Where
+   * it pointed is then gone, and a merge sees a reference nobody ever made rather than a
+   * deletion to reconcile. So the container keeps what the file stated, the writer states it
+   * again, and the reference is honoured the moment the target comes back.
+   *
+   * The whole stated list is kept, never the part that resolved: a reference assembled from the
+   * targets that happened to be present is one nobody authored.
+   */
+  void rememberUnresolvedReference(const char* name, std::vector<StatedTarget> stated);
+
+  /// Where a stored record said this reference pointed, when this session could not resolve it.
+  const std::vector<StatedTarget>* unresolvedReference(const char* name) const;
+
+  /** Keep a property block exactly as the file stated it, because this build has no place for it.
+   *
+   * A class may simply not declare the property a file names -- an add-on version that had one
+   * more, a property renamed since, a type this build does not have. The reader used to step over
+   * it in silence and the next save wrote the object without it, so a value a person authored was
+   * gone and the file no longer said it had ever been there. What is owed is the statement itself
+   * and not this session's reading of it, so the file's own words are kept and given back
+   * unchanged.
+   *
+   * The kept words stand for that name until something supersedes them: a value set on a property
+   * of the same name discharges them like any other kept statement.
+   */
+  void rememberStatedProperty(const char* name, std::string words, std::string why);
+
+  /** A property block this build could not honour: the file's words, and what went wrong.
+   *
+   * Two different failures keep a block verbatim -- a name this build has no property for, and a
+   * value this build could not read for a property it does have -- and they send a person to
+   * different places. The reader composes the reason at the moment it knows it; keeping it beside
+   * the words is what lets the report say what actually happened instead of one guess for both
+   * (Amendment 19 Clause 19.4, §3.6).
+   */
+  struct StatedProperty
+  {
+      std::string words;  ///< the property block exactly as the file has it
+      std::string why;    ///< what could not be honoured about it, in concrete terms
+  };
+
+  /** Everything this container kept for one property, so it can be put back exactly as it was.
+   *
+   * Cruth (Amendment 19 Clause 19.1): a kept statement is part of an object's state, and undo
+   * restores state (§10.6). An edit discharges the note, which is right -- but undoing the edit
+   * has to bring it back, or the file's own statement is lost to a keystroke and the next save
+   * writes the absence over it. Measured before this: a reference to an absent target was edited
+   * and undone, and the stated uuid was gone.
+   */
+  struct KeptStatement
+  {
+      std::string missingSource;                      ///< source material named and not found
+      std::vector<StatedTarget> unresolvedTargets;    ///< where a reference said it pointed
+      std::string statedWords;                        ///< a property block kept as written
+      std::string statedReason;                       ///< why that block could not be honoured
+
+      /// True where the container was holding something for that property.
+      bool holdsAnything() const
+      {
+          return !missingSource.empty() || !unresolvedTargets.empty() || !statedWords.empty();
+      }
+  };
+
+  /// What this container is keeping for one property, if anything.
+  KeptStatement keptStatementFor(const Property* prop) const;
+
+  /** What this container is keeping under one NAME, whether or not a property of that name exists.
+   *
+   * The name form is the one that reaches everything: a statement kept because this build has no
+   * property of that name is, by definition, not reachable through a property. The property form
+   * above is a convenience for the paths that already hold one.
+   */
+  KeptStatement keptStatementFor(const std::string& name) const;
+
+  /** Put back what was kept for one property, replacing whatever is held for it now.
+   *
+   * Given an empty statement it clears instead: restoring state means arriving at exactly the
+   * state that was captured, whether or not that state held a note.
+   */
+  void restoreKeptStatement(const Property* prop, const KeptStatement& kept);
+
+  /// Put back what was kept under one name -- see the name form of keptStatementFor().
+  void restoreKeptStatement(const std::string& name, const KeptStatement& kept);
+
+  /** Drop what is kept under one name, and hand back what was dropped.
+   *
+   * The mechanism only. WHO may call it is the whole of Amendment 19 Clause 19.4: a person, and
+   * nothing else. The act lives on the document (`Document::discardStatement`), which is where
+   * the refusals and the entry in the document's history are; nothing in a save, a sweep, a
+   * recompute or a repair routine may reach either of them.
+   */
+  KeptStatement dropStatement(const std::string& name);
+
+  /// The names of the references this container states and this session could not resolve.
+  std::vector<std::string> unresolvedReferenceNames() const
+  {
+      std::vector<std::string> names;
+      names.reserve(_unresolvedReferences.size());
+      for (const auto& [name, targets] : _unresolvedReferences) {
+          names.push_back(name);
+      }
+      return names;
+  }
+
+  /// The property blocks kept as stated, by property name -- in name order, as the file has them.
+  const std::map<std::string, StatedProperty>& statedProperties() const
+  {
+      return _statedProperties;
+  }
+
+  /** What this container's file stated and this session could not honour: each name, and why.
+   *
+   * Named rather than counted, because a report that says a document is incomplete without saying
+   * what is missing cannot be acted on -- by a person or by a script reading it (P8, §3.6).
+   *
+   * This is what the container kept from its OWN block of the file, and so it is what the writer
+   * has to state again and what a person may discard. A value another object would have set here
+   * is not in it -- see statementsSetFromElsewhere().
+   */
+  std::vector<std::pair<std::string, std::string>> unhonouredStatements() const;
+
+  /** A value some OTHER object states for this one, which this session could not honour.
+   *
+   * Cruth (Amendment 19 Clause 19.6): blocking follows the value, not the file. Usually a
+   * statement sits on the object it blocks, and the three notes above carry it. Where it does not
+   * -- a configuration option or a spreadsheet driver setting a value on another object from
+   * outside the dependency graph (§3.4, §7.7) -- the object whose value it would have set is the
+   * one that must be blocked, never merely the holder. Otherwise the part rebuilds at its base
+   * value and reports success under the name of the option that failed to apply: a shape nobody
+   * designed, presented as finished.
+   *
+   * Kept apart from the three notes above on purpose. Those are this container's own words, owed
+   * back to the file and discardable by a person (Clause 19.4); this one is the holder's words,
+   * written back by the holder, and released by re-reading the holder rather than by a discard
+   * here.
+   */
+  struct StatedElsewhere
+  {
+      std::string holder;    ///< the object that states the value -- who to go to to change it
+      std::string property;  ///< the property here it would have set
+      std::string why;       ///< the kind of failure, in concrete terms (§3.6)
+  };
+
+  /** Remember that another object states a value here that this session could not honour.
+   *
+   * Replaces whatever that holder said about this property before, so re-reading a holder is the
+   * whole of the release path: what it can now honour stops blocking by simply not being stated
+   * again.
+   */
+  void rememberStatementSetFromElsewhere(StatedElsewhere stated);
+
+  /// Drop everything one holder states about this container -- it has been re-read, or is gone.
+  void forgetStatementsSetFrom(const std::string& holder);
+
+  /// What other objects state for this one and this session could not honour.
+  const std::vector<StatedElsewhere>& statementsSetFromElsewhere() const
+  {
+      return _statedElsewhere;
+  }
+
+  /** Everything that stops this object being built, from its own file and from elsewhere.
+   *
+   * The one question a blocked node answers, and the one a script asks (P8).
+   */
+  std::vector<std::pair<std::string, std::string>> whatCouldNotBeHonoured() const;
+
+  /// True while anything -- its own file or another object's statement -- blocks this one.
+  bool isBlockedByAStatement() const
+  {
+      return holdsUnhonouredStatement() || !_statedElsewhere.empty();
+  }
+
+  /// True while this container holds any statement its file made and this session could not honour.
+  bool holdsUnhonouredStatement() const
+  {
+      return !_missingSources.empty() || !_unresolvedReferences.empty()
+          || !_statedProperties.empty();
+  }
+
+  /** Discharge those notes, because the property has been given a value since.
+   *
+   * Called wherever a value is set, so a note can only ever outlive a load that nothing has
+   * superseded -- which is what lets the writer treat a remembered statement as certain rather
+   * than as a guess about an empty property.
+   *
+   * A document still being read is not something that supersedes. A load finishes itself: it
+   * binds references, migrates older forms, rebuilds what a version changed -- and those passes
+   * set values. Measured before this was guarded: a sketch keeping a constraint list it could not
+   * read had the note discharged by the migration pass that runs on every open, and the next save
+   * wrote the absence over the file's own words. Amendment 19 Clause 19.4 puts that act in one
+   * pair of hands, and a read is not a person.
+   */
+  void forgetUnhonouredStatement(const Property* prop);
+
   /**
    * @brief Get the prefix for property names.
    *
@@ -730,7 +957,13 @@ protected:
   DynamicProperty dynamicProps;
 
 private:
+  void eraseUnhonouredStatement(const Property* prop);
+
   std::string _propertyPrefix;
+  std::map<std::string, std::string> _missingSources;
+  std::map<std::string, std::vector<StatedTarget>> _unresolvedReferences;
+  std::map<std::string, StatedProperty> _statedProperties;
+  std::vector<StatedElsewhere> _statedElsewhere;
   static PropertyData propertyData;
 };
 

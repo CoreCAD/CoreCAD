@@ -52,11 +52,6 @@ class Container(object):
         container = self.Object
         if container.isDerivedFrom("App::Document"):
             return []
-        elif container.hasExtension("App::OriginGroupExtension"):
-            if container.Origin is not None:
-                return [container.Origin]
-            else:
-                return []
         elif container.isDerivedFrom("App::Origin"):
             return container.OriginFeatures
         elif container.hasExtension("App::GroupExtension"):

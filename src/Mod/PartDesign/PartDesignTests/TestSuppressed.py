@@ -51,7 +51,7 @@ from PySide import QtGui
 
 class TestSuppressed(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestSuppressed")
+        self.Doc = FreeCAD.newDocument("PartDesignTestSuppressed", type="Part")
 
     def tearDown(self):
         FreeCAD.closeDocument(self.Doc.Name)
@@ -60,16 +60,15 @@ class TestSuppressed(unittest.TestCase):
         """Create a Body with a Pad (10x10x10 box) and a Fillet."""
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
-        self.Body.addObject(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 10
         self.Doc.recompute()
         self.Fillet = self.Doc.addObject("PartDesign::Fillet", "Fillet")
-        self.Body.addObject(self.Fillet)
+        self.Body.addFeature(self.Fillet)
         self.Fillet.Base = (self.Pad, ["Edge1"])
         self.Fillet.Radius = 1.0
         self.Doc.recompute()
@@ -185,7 +184,7 @@ class TestSuppressed(unittest.TestCase):
 
         # Add a Chamfer too
         self.Chamfer = self.Doc.addObject("PartDesign::Chamfer", "Chamfer")
-        self.Body.addObject(self.Chamfer)
+        self.Body.addFeature(self.Chamfer)
         self.Chamfer.Base = (self.Fillet, ["Edge2"])
         self.Chamfer.Size = 0.5
         self.Doc.recompute()
@@ -254,7 +253,7 @@ class TestSuppressedStrikethrough(unittest.TestCase):
     def setUp(self):
         if not hasattr(FreeCADGui, "getMainWindow") or FreeCADGui.getMainWindow() is None:
             self.skipTest("Requires GUI")
-        self.Doc = FreeCAD.newDocument("TestSuppressedStrikethrough")
+        self.Doc = FreeCAD.newDocument("TestSuppressedStrikethrough", type="Part")
         FreeCADGui.activateView("Gui::View3DInventor", True)
 
     def tearDown(self):
@@ -262,9 +261,8 @@ class TestSuppressedStrikethrough(unittest.TestCase):
 
     def _createBodyWithBox(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        FreeCADGui.activeView().setActiveObject("pdbody", self.Body)
         self.Box = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
-        self.Body.addObject(self.Box)
+        self.Body.addFeature(self.Box)
         self.Box.Length = 10.0
         self.Box.Width = 10.0
         self.Box.Height = 10.0

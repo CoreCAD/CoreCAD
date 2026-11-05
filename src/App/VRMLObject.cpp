@@ -34,11 +34,12 @@
 
 using namespace App;
 
-PROPERTY_SOURCE(App::VRMLObject, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(App::VRMLObject, App::GeoFeature)
 
 
 VRMLObject::VRMLObject()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(VrmlFile, (nullptr), "", Prop_None, "Included file with the VRML definition");
     ADD_PROPERTY_TYPE(Urls,
                       (""),

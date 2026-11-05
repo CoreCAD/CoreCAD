@@ -28,17 +28,15 @@
 #pragma once
 
 #include "ViewProvider.h"
-#include <Gui/ViewProviderGeoFeatureGroupExtension.h>
 #include <Gui/Inventor/SoToggleSwitch.h>
 
 
 namespace PartDesignGui
 {
 
-class PartDesignGuiExport ViewProviderBoolean: public ViewProvider,
-                                               public Gui::ViewProviderGeoFeatureGroupExtension
+class PartDesignGuiExport ViewProviderBoolean: public ViewProvider
 {
-    PROPERTY_HEADER_WITH_EXTENSIONS(PartDesignGui::ViewProviderBoolean);
+    PROPERTY_HEADER(PartDesignGui::ViewProviderBoolean);
 
 public:
     /// constructor

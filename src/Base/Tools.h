@@ -28,6 +28,7 @@
 #include <FCGlobal.h>
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <numbers>
 #include <ostream>
 #include <string>
@@ -403,6 +404,14 @@ struct BaseExport Tools
      * @return Current time formatted as an ISO 8601 UTC timestamp, ending in 'Z'.
      */
     static std::string currentDateTimeString();
+    /**
+     * @brief dateTimeString
+     * @param t a point in time
+     * @return that time as a UTC ISO-8601 string, the same form currentDateTimeString()
+     * produces. Used where a date is *derived* from something (a file's modification time)
+     * rather than read off the clock.
+     */
+    static std::string dateTimeString(std::time_t t);
 
     static bool isCLocaleName(std::string_view localeName);
     static void setOperatingSystemNumericLocale(std::string_view localeName);

@@ -22,25 +22,18 @@ SET(Features_SRCS
     FeatureSolid.cpp
     FeatureSolid.h
     Body.cpp
+    BodyReconcile.cpp
+    BodyGestures.cpp
+    BodyMembership.cpp
+    BodyActions.cpp
+    BodyChain.h
     Body.h
     FeatureBase.h
     FeatureBase.cpp
+    FeatureBakedShape.h
+    FeatureBakedShape.cpp
 )
 SOURCE_GROUP("Features" FILES ${Features_SRCS})
-
-SET(DatumFeatures_SRCS
-    ShapeBinder.h
-    ShapeBinder.cpp
-    DatumPlane.cpp
-    DatumPlane.h
-    DatumLine.cpp
-    DatumLine.h
-    DatumPoint.cpp
-    DatumPoint.h
-    DatumCS.h
-    DatumCS.cpp
-)
-SOURCE_GROUP("DatumFeatures" FILES ${DatumFeatures_SRCS})
 
 SET(FeaturesTransformed_SRCS
     FeatureTransformed.h
@@ -51,10 +44,16 @@ SET(FeaturesTransformed_SRCS
     FeatureLinearPattern.cpp
     FeaturePolarPattern.h
     FeaturePolarPattern.cpp
-    FeatureScaled.h
-    FeatureScaled.cpp
-    FeatureMultiTransform.h
-    FeatureMultiTransform.cpp
+    FeatureCurvePattern.h
+    FeatureCurvePattern.cpp
+    FeatureFillPattern.h
+    FeatureFillPattern.cpp
+    FeatureTablePattern.h
+    FeatureTablePattern.cpp
+    FeatureFormulaPattern.h
+    FeatureFormulaPattern.cpp
+    FeaturePointPattern.h
+    FeaturePointPattern.cpp
 )
 SOURCE_GROUP("FeaturesTransformed" FILES ${FeaturesTransformed_SRCS})
 
@@ -76,6 +75,7 @@ SET(FeaturesSketchBased_SRCS
     FeatureExtrude.cpp
     FeatureExtrude.h
     FeatureSketchBased.cpp
+    FeatureSketchBasedUpTo.cpp
     FeatureSketchBased.h
     FeaturePad.cpp
     FeaturePad.h
@@ -93,6 +93,9 @@ SET(FeaturesSketchBased_SRCS
     FeatureAddSub.h
     FeatureHole.h
     FeatureHole.cpp
+    FeatureHoleCutDefinitions.cpp
+    FeatureHoleTables.cpp
+    FeatureHoleThread.cpp
     FeatureBoolean.h
     FeatureBoolean.cpp
     FeaturePrimitive.h
@@ -127,7 +130,6 @@ SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
 SET(PartDesign_SRCS
     ${Features_SRCS}
-    ${DatumFeatures_SRCS}
     ${FeaturesTransformed_SRCS}
     ${FeaturesSketchBased_SRCS}
     ${FeaturesDressUp_SRCS}

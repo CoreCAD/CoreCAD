@@ -92,18 +92,17 @@ def shapeBoundBox(obj):
 
 
 class Stock(object):
+    @staticmethod
+    def declareMaterial(obj):
+        """Stock is a solid -- a piece of material the job cuts from -- so it can say what it
+        is made of. A scripted object inherits no capability and has to ask for this one by
+        name (#121)."""
+        if not obj.hasExtension("Part::MaterialExtension"):
+            obj.addExtension("Part::MaterialExtensionPython")
+
     def onDocumentRestored(self, obj):
         if hasattr(obj, "StockType"):
             obj.setEditorMode("StockType", 2)  # hide
-
-        if hasattr(obj, "Material"):
-            obj.removeProperty("Material")
-            FreeCAD.Console.PrintWarning(
-                translate(
-                    "PathStock",
-                    "Stock Material property is deprecated. Removing the Material property. Please use native material system to assign a ShapeMaterial",
-                )
-            )
 
 
 class StockFromBase(Stock):
@@ -111,6 +110,7 @@ class StockFromBase(Stock):
 
     def __init__(self, obj, base):
         "Make stock"
+        self.declareMaterial(obj)
         obj.addProperty(
             "App::PropertyLink",
             "Base",
@@ -235,6 +235,7 @@ class StockCreateBox(Stock):
     MinExtent = 0.001
 
     def __init__(self, obj):
+        self.declareMaterial(obj)
         obj.addProperty(
             "App::PropertyLength",
             "Length",
@@ -287,6 +288,7 @@ class StockCreateCylinder(Stock):
     MinExtent = 0.001
 
     def __init__(self, obj):
+        self.declareMaterial(obj)
         obj.addProperty(
             "App::PropertyLength",
             "Radius",

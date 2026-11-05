@@ -113,7 +113,6 @@ private:
     void tryStartCutting();
     void setAutoColoringChecked(bool on);
     void setSlidersEnabled(bool on);
-    void setSlidersToolTip(const QString& text);
     void setGroupsDisabled();
     void setAutoColor(const QColor& color);
     void setAutoTransparency(int value);
@@ -123,7 +122,7 @@ private:
     void noDocumentActions();
     void startCutting(bool isInitial = false);
     void startObjectCutting(bool isInitial);
-    bool findObjects(std::vector<App::DocumentObject*>& objects);
+    void findObjects(std::vector<App::DocumentObject*>& objects);
     void filterObjects(std::vector<App::DocumentObject*>& objects);
     void throwMissingObjectsError(bool isInitial);
     bool isCuttingEnabled() const;

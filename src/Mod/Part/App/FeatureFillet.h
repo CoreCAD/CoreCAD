@@ -27,6 +27,7 @@
 #include <Mod/Part/PartGlobal.h>
 
 #include "PartFeature.h"
+#include "PropertyTopoShape.h"
 
 
 namespace Part
@@ -38,6 +39,14 @@ class PartExport Fillet: public Part::FilletBase
 
 public:
     Fillet();
+
+    /// The radius the fillet takes on each edge, at each end of it.
+    PropertyFilletEdges Edges;
+
+    PropertyFilletEdges& edgeMeasurements() override
+    {
+        return Edges;
+    }
 
     /** @name methods override feature */
     //@{

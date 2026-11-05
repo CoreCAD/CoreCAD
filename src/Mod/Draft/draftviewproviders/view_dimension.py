@@ -533,11 +533,10 @@ class ViewProviderLinearDimension(ViewProviderDimensionBase):
         if hasattr(vobj, "UnitOverride"):
             unit = vobj.UnitOverride
 
-        # Special representation if we use 'Building US' scheme
-        doc = obj.Document
-        if (not unit and doc.UnitSystem == doc.getEnumerationsOfProperty("UnitSystem")[5]) or (
-            unit == "arch"
-        ):
+        # Special representation if we use 'Building US' scheme. Cruth: the scheme is the
+        # user's preference; a document does not carry one (ARCHITECTURE.md 7.3).
+        scheme = params.get_param("UserSchema", path="Units")
+        if (not unit and scheme == App.Units.Scheme.ImperialBuilding) or unit == "arch":
             self.string = App.Units.Quantity(length, App.Units.Length).UserString
             if self.string.count('"') > 1:
                 # multiple inch tokens

@@ -283,6 +283,8 @@ PyObject* CommandPy::getAction(PyObject* args)
 
     Command* cmd = this->getCommandPtr();
     if (cmd) {
+        // Cruth: a command placed on no menu or toolbar has no action until asked for one.
+        cmd->initAction();
         Action* action = cmd->getAction();
         auto* group = qobject_cast<ActionGroup*>(action);
 

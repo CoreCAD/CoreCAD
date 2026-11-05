@@ -23,7 +23,10 @@
 
 #pragma once
 
+#include <map>
+#include <set>
 #include <unordered_map>
+#include <QColor>
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QStyledItemDelegate>
@@ -57,6 +60,10 @@ GuiExport bool isTreeViewDragging();
 /** Tree view that allows drag & drop of document objects.
  * @author Werner Mayer
  */
+/// The steps whose Bodies column names @p body as referenced, in timeline order: what the swatch
+/// menu and the Body panel list as "Used by".
+GuiExport std::vector<App::DocumentObject*> stepsUsingBody(App::DocumentObject* body);
+
 class TreeWidget: public QTreeWidget, public SelectionObserver
 {
     Q_OBJECT
@@ -100,6 +107,8 @@ public:
 
     static const int DocumentType;
     static const int ObjectType;
+    static const int StopRowType;
+    static const int ProjectType;
 
     void markItem(const App::DocumentObject* Obj, bool mark);
     void syncView(ViewProviderDocumentObject* vp);
@@ -145,6 +154,7 @@ protected:
     void onSelectionChanged(const SelectionChanges& msg) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
     void drawRow(QPainter*, const QStyleOptionViewItem&, const QModelIndex&) const override;
+    void drawRowBody(QPainter*, const QStyleOptionViewItem&, const QModelIndex&) const;
     /** @name Drag and drop */
     //@{
     void startDrag(Qt::DropActions supportedActions) override;
@@ -184,6 +194,16 @@ private:
         App::DocumentObject* target
     );
     void sortDroppedObjects(TargetItemInfo& targetInfo, std::vector<App::DocumentObject*> draggedObjects);
+    /// The document's top-level rows in the order a drop at @p targetInfo would leave them.
+    std::vector<App::DocumentObject*> rootOrderAfterDrop(
+        const TargetItemInfo& targetInfo,
+        const std::vector<App::DocumentObject*>& draggedObjects
+    ) const;
+    /// False when the drop would put a step above a step it is built from.
+    bool dropKeepsInputsFirst(
+        const TargetItemInfo& targetInfo,
+        const std::vector<App::DocumentObject*>& draggedObjects
+    ) const;
     //@}
 
 protected:
@@ -191,6 +211,8 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
     void showEvent(QShowEvent* ev) override;
     void hideEvent(QHideEvent* ev) override;
@@ -198,6 +220,23 @@ protected:
 
 private:
     void _updateStatus(bool delay = true);
+    /// Tint the row of every step the selected steps came from (ARCHITECTURE §8.2).
+    void updateLineage();
+    /// The bodies whose swatch is under @p pos in the Bodies column: one for a square, all of a
+    /// pattern's for its count. Empty when @p pos is on no swatch.
+    std::vector<App::DocumentObject*> bodiesAtSwatch(const QPoint& pos) const;
+    /// Whether the row under @p pos stands past the End of Model, where clicks do nothing.
+    bool isHeldBackRowAt(const QPoint& pos) const;
+    /// The menu a body's swatch offers (DESIGN_ui-surfaces §1): Rename, Hide or Show, Used by.
+    void showSwatchMenu(const std::vector<App::DocumentObject*>& bodies, const QPoint& at);
+    std::map<App::DocumentObject*, QColor> lineageTints;
+    std::set<App::DocumentObject*> lineageSelected;
+
+    /// The stop row being dragged, and the step row it would land after.
+    QTreeWidgetItem* draggedStopRow = nullptr;
+    QTreeWidgetItem* stopRowTarget = nullptr;
+    QTreeWidgetItem* stopRowTargetAt(const QPoint& pos) const;
+    void showStopRowMenu(QTreeWidgetItem* row, const QPoint& globalPos);
 
     // Helpers for the two-stage "Select All" feature
     void selectGroupItems(const QTreeWidgetItem* group, bool recursive);
@@ -288,6 +327,7 @@ private:
     DocumentObjectItem* editingItem;
     DocumentItem* currentDocItem;
     QTreeWidgetItem* rootItem;
+    QTreeWidgetItem* projectItem {nullptr};
     QTimer* statusTimer;
     QTimer* selectTimer;
     QTimer* preselectTimer;
@@ -334,6 +374,11 @@ private:
     Connection connectRelDocument;
     Connection connectShowHidden;
     Connection connectChangedViewObj;
+    fastsignals::scoped_connection connectProjectChanged;
+    fastsignals::scoped_connection connectRestoredDocument;
+
+    void placeDocumentsInProject();
+    std::vector<DocumentItem*> documentItemsInOrder() const;
 };
 
 /** The link between the tree and a document.
@@ -362,6 +407,12 @@ public:
     void selectItems(SelectionReason reason = SR_SELECT);
 
     void testStatus();
+    /// Refresh the Body column (§8.7) of every item; bodies are derived, so any change can move it.
+    void updateBodyColumn();
+    /// Put the End of Model row just after the roll-back marker's row, or last.
+    void updateStopRows();
+    /// Draw, grey and name bodies for each row by whether it stands past the roll-back marker.
+    void updateHeldBack();
     void setData(int column, int role, const QVariant& value) override;
     void populateItem(DocumentObjectItem* item, bool refresh = false, bool delayUpdate = true);
     bool populateObject(App::DocumentObject* obj);

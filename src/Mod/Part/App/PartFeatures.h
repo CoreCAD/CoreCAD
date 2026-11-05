@@ -35,7 +35,13 @@
 namespace Part
 {
 
-class PartExport RuledSurface: public Part::Feature
+/** The surface ruled between two curves.
+ *
+ * Derived, not an anchor (Amendment 4): it is stretched between the two curves
+ * it consumes, so it holds no authored placement and derives from the unplaced
+ * ShapeFeature.
+ */
+class PartExport RuledSurface: public Part::ShapeFeature
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::RuledSurface);
 
@@ -67,7 +73,13 @@ private:
     static const char* OrientationEnums[];
 };
 
-class PartExport Loft: public Part::Feature
+/** A shape lofted through a series of section profiles.
+ *
+ * Derived, not an anchor (Amendment 4): it passes through the sections it
+ * consumes and sits where they sit, so it holds no authored placement and
+ * derives from the unplaced ShapeFeature.
+ */
+class PartExport Loft: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Loft);
 
@@ -99,7 +111,12 @@ private:
     static App::PropertyIntegerConstraint::Constraints Degrees;
 };
 
-class PartExport Sweep: public Part::Feature
+/** A profile swept along a spine.
+ *
+ * Derived, not an anchor (Amendment 4): it follows the spine it consumes, so it
+ * holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class PartExport Sweep: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Sweep);
 
@@ -131,7 +148,13 @@ private:
     static const char* TransitionEnums[];
 };
 
-class PartExport Thickness: public Part::Feature
+/** A solid hollowed out to a wall thickness, opened at the chosen faces.
+ *
+ * Derived, not an anchor (Amendment 4): it sits where the solid it hollows
+ * sits, so it holds no authored placement and derives from the unplaced
+ * ShapeFeature.
+ */
+class PartExport Thickness: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Thickness);
 
@@ -144,12 +167,28 @@ public:
     App::PropertyEnumeration Join;
     App::PropertyBool Intersection;
     App::PropertyBool SelfIntersection;
+    /// Durable neutral references (Part::NRef) for the selected faces, one per sub of
+    /// @c Faces, captured on execute. Carried alongside the positional subs so the
+    /// selection can be re-bound after the base is rebuilt with different face
+    /// ordinals (a merge). Hidden: an implementation detail, not user-facing.
+    App::PropertyStringList FaceRefs;
 
     /** @name methods override feature */
     //@{
     /// recalculate the feature
     App::DocumentObjectExecReturn* execute() override;
     short mustExecute() const override;
+
+    /**
+     * Rewrite the positional sub-names in @c Faces from the durable @c FaceRefs.
+     *
+     * Resolves each stored NRef against the current base solid and replaces the
+     * matching @c Faces sub with the sub-name the reference now denotes -- the step
+     * that heals a selection gone stale because the base was rebuilt with a different
+     * face numbering. A ref that no longer resolves leaves its sub untouched (a lost
+     * face is not silently rebound to a survivor). Returns the number of subs changed.
+     */
+    int rebindFacesFromRefs();
     const char* getViewProviderName() const override
     {
         return "PartGui::ViewProviderThickness";
@@ -168,7 +207,12 @@ private:
     static const char* JoinEnums[];
 };
 
-class Refine: public Part::Feature
+/** The shape it consumes with its redundant seams removed.
+ *
+ * Derived, not an anchor (Amendment 4): refining changes no position, so it
+ * holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class Refine: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Refine);
 
@@ -188,7 +232,12 @@ public:
     //@}
 };
 
-class Reverse: public Part::Feature
+/** The shape it consumes with its orientation flipped.
+ *
+ * Derived, not an anchor (Amendment 4): reversing changes no position, so it
+ * holds no authored placement and derives from the unplaced ShapeFeature.
+ */
+class Reverse: public Part::ShapeFeature, public Part::MaterialExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Part::Reverse);
 

@@ -120,6 +120,21 @@ QDialog {
   background-color: @DialogBackgroundColor;
 }
 
+/* Every docked panel is a sheet set apart from the window by its surface and edge. */
+QWidget[class="sheet"] {
+  background-color: @PanelBackgroundColor;
+  border: 1px solid @PanelBorderColor;
+}
+
+/* The title bar is the top of the same sheet, so the title never floats apart from its panel. */
+QDockWidget > Gui--OverlayTitleBar {
+  background-color: @PanelTitleBackgroundColor;
+  color: @PanelTitleTextColor;
+  border: 1px solid @PanelBorderColor;
+  border-bottom: none;
+  font-weight: 600;
+}
+
 /* QDialog#Gui__Dialog__DlgPreferences { /*Preferences dialog her if you need it*/
   /* background-color: @ButtonTopBackgroundColor;
 }
@@ -2095,6 +2110,43 @@ QTabBar QToolButton::right-arrow:disabled, QDockWidget QTabBar QToolButton::righ
   image: url(qss:@IconsLocationFolderName/arrow-right-darkgray.svg);
 }
 
+/* Ribbon -----------------------------------------------------------------
+The ribbon sets only its shape; its colours follow the theme here.
+--------------------------------------------------------------------------- */
+#RibbonBar,
+#RibbonTitleRow,
+#RibbonTabBar,
+#RibbonTabBar::tab,
+#RibbonStack {
+  background-color: @PrimaryColor;
+  color: @TextForegroundColor;
+}
+
+#RibbonBar {
+  border-bottom: 1px solid @PanelBorderColor;
+}
+
+#RibbonTabBar::tab:hover:!selected {
+  background-color: @PanelTitleBackgroundColor;
+}
+
+#RibbonPanel {
+  background-color: @PanelBackgroundColor;
+  border: 1px solid @PanelBorderColor;
+}
+
+#PanelTitle {
+  color: @TextDisabledColor;
+}
+
+#PanelSeparator {
+  color: @PanelBorderColor;
+}
+
+#RibbonPanel QToolButton:checked {
+  background-color: @PanelTitleBackgroundColor;
+}
+
 /* QDockWiget -------------------------------------------------------------
 
 --------------------------------------------------------------------------- */
@@ -2297,6 +2349,18 @@ QTableView::item:selected,
 QTreeView::item:selected,
 QColumnView::item:selected {
   background-color: @AccentBackgroundColor;
+}
+
+/* The model tree paints its own selection, one colour across the whole row, in the family of the
+   lineage tint (Gui::TreeWidget::drawRow); the style's selection would add a second colour in the
+   cells and in the margin beside them. It must follow the QTreeView::item:selected rule above, which
+   has the same weight and would otherwise win. */
+Gui--TreeWidget {
+  show-decoration-selected: 0;
+}
+
+Gui--TreeWidget::item:selected {
+  background-color: transparent;
 }
 
 QTableView::item:hover,

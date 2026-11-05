@@ -117,6 +117,12 @@ static inline std::ostream &operator<<(std::ostream &os, const App::Expression *
     return os;
 }
 
+static const char *MissingReferenceText = "#REF!";
+
+[[noreturn]] static void throwMissingReference(const App::Expression *expr) {
+    _EXPR_THROW("Missing reference: the row or column it named was removed", expr);
+}
+
 template<typename T>
 void copy_vector(T &dst, const T& src) {
     dst.clear();
@@ -272,8 +278,8 @@ void ExpressionVisitor::collectReplacement(Expression &e,
     return e._collectReplacement(paths,parent,oldObj,newObj);
 }
 
-void ExpressionVisitor::moveCells(Expression &e, const CellAddress &address, int rowCount, int colCount) {
-    e._moveCells(address,rowCount,colCount,*this);
+void ExpressionVisitor::shiftCells(Expression &e, const DocumentObject *sheet, const CellShift &shift) {
+    e._shiftCells(sheet,shift,*this);
 }
 
 void ExpressionVisitor::offsetCells(Expression &e, int rowOffset, int colOffset) {
@@ -1715,6 +1721,7 @@ FunctionExpression::FunctionExpression(const DocumentObject *_owner, Function _f
     case VSCALEX:
     case VSCALEY:
     case VSCALEZ:
+    case INDEX:
         if (args.size() != 2)
             ARGUMENT_THROW("exactly two required.");
         break;
@@ -1979,28 +1986,35 @@ Py::Object FunctionExpression::evalAggregate(
         assert(false);
     }
 
+    auto collectCell = [&](const Property *p) {
+        const PropertyQuantity * qp;
+        const PropertyFloat * fp;
+        const PropertyInteger * ip;
+
+        if (!p)
+            return;
+
+        if ((qp = freecad_cast<const PropertyQuantity*>(p)))
+            c->collect(qp->getQuantityValue());
+        else if ((fp = freecad_cast<const PropertyFloat*>(p)))
+            c->collect(Quantity(fp->getValue()));
+        else if ((ip = freecad_cast<const PropertyInteger*>(p)))
+            c->collect(Quantity(ip->getValue()));
+        else
+            _EXPR_THROW("Invalid property type for aggregate.", owner);
+    };
+
     for (auto &arg : args) {
         if (arg->isDerivedFrom<RangeExpression>()) {
             Range range(static_cast<const RangeExpression&>(*arg).getRange());
 
             do {
-                Property * p = owner->getOwner()->getPropertyByName(range.address().c_str());
-                PropertyQuantity * qp;
-                PropertyFloat * fp;
-                PropertyInteger * ip;
-
-                if (!p)
-                    continue;
-
-                if ((qp = freecad_cast<PropertyQuantity*>(p)))
-                    c->collect(qp->getQuantityValue());
-                else if ((fp = freecad_cast<PropertyFloat*>(p)))
-                    c->collect(Quantity(fp->getValue()));
-                else if ((ip = freecad_cast<PropertyInteger*>(p)))
-                    c->collect(Quantity(ip->getValue()));
-                else
-                    _EXPR_THROW("Invalid property type for aggregate.", owner);
+                collectCell(owner->getOwner()->getPropertyByName(range.address().c_str()));
             } while (range.next());
+        }
+        else if (auto sheetRange = freecad_cast<const SheetRangeExpression*>(arg)) {
+            for (const Property *cell : sheetRange->getCells())
+                collectCell(cell);
         }
         else {
             Quantity q;
@@ -2010,6 +2024,46 @@ Py::Object FunctionExpression::evalAggregate(
     }
 
     return pyFromQuantity(c->getQuantity());
+}
+
+Py::Object FunctionExpression::evalIndex(const Expression *expr, const std::vector<Expression*> &args)
+{
+    Quantity position;
+    long k = 0;
+    if (!pyToQuantity(position, args[1]->getPyValue()) || !position.isDimensionless()
+            || !essentiallyInteger(position.getValue(), k))
+        _EXPR_THROW("index() needs a whole number for its position.", expr);
+
+    std::vector<const Property*> cells;
+    std::vector<std::string> addresses;
+    if (auto range = freecad_cast<const RangeExpression*>(args[0])) {
+        Range r(range->getRange());
+        do {
+            cells.push_back(expr->getOwner()->getPropertyByName(r.address().c_str()));
+            addresses.push_back(r.address());
+        } while (r.next());
+    }
+    else if (auto sheetRange = freecad_cast<const SheetRangeExpression*>(args[0])) {
+        cells = sheetRange->getCells(&addresses);
+    }
+    else {
+        Py::Object value = args[0]->getPyValue();
+        if (!value.isSequence())
+            _EXPR_THROW("index() needs a cell range or a list.", expr);
+        Py::Sequence items(value);
+        if (k < 1 || k > static_cast<long>(items.size()))
+            _EXPR_THROW("index() position " << k << " is outside the " << items.size()
+                        << " items.", expr);
+        return items[k - 1];
+    }
+
+    if (k < 1 || k > static_cast<long>(cells.size()))
+        _EXPR_THROW("index() position " << k << " is outside the range's " << cells.size()
+                    << " cells.", expr);
+    const Property *cell = cells[k - 1];
+    if (!cell)
+        _EXPR_THROW("index() reads cell " << addresses[k - 1] << ", which is empty.", expr);
+    return Py::asObject(const_cast<Property*>(cell)->getPyObject());
 }
 
 Base::Vector3d FunctionExpression::evaluateSecondVectorArgument(const Expression *expression, const std::vector<Expression*> &arguments)
@@ -2286,6 +2340,8 @@ Py::Object FunctionExpression::evaluate(const Expression *expr, int f, const std
     case HIDDENREF:
     case HREF:
         return args[0]->getPyValue();
+    case INDEX:
+        return evalIndex(expr, args);
     case VANGLE:
     case VCROSS:
     case VDOT:
@@ -2735,6 +2791,8 @@ void FunctionExpression::_toString(std::ostream &ss, bool persistent,int) const
         ss << "tuple("; break;;
     case VECTOR:
         ss << "vector("; break;;
+    case INDEX:
+        ss << "index("; break;;
     case HIDDENREF:
         ss << "hiddenref("; break;;
     case HREF:
@@ -2805,13 +2863,22 @@ VariableExpression::VariableExpression(const DocumentObject *_owner, const Objec
 
 VariableExpression::~VariableExpression() = default;
 
+VariableExpression* VariableExpression::missingReference(const DocumentObject* owner)
+{
+    auto expression = new VariableExpression(owner);
+    expression->missing = true;
+    return expression;
+}
+
 bool VariableExpression::isTouched() const
 {
-    return var.isTouched();
+    return !missing && var.isTouched();
 }
 
 const Property * VariableExpression::getProperty() const
 {
+    if (missing)
+        throwMissingReference(this);
     const Property * prop = var.getProperty();
 
     if (prop)
@@ -2871,11 +2938,15 @@ bool VariableExpression::_isIndexable() const {
 }
 
 Py::Object VariableExpression::_getPyValue() const {
+    if (missing)
+        throwMissingReference(this);
     return var.getPyValue(true);
 }
 
 void VariableExpression::_toString(std::ostream &ss, bool persistent,int) const {
-    if(persistent)
+    if (missing)
+        ss << MissingReferenceText;
+    else if(persistent)
         ss << var.toPersistentString();
     else
         ss << var.toString();
@@ -2888,11 +2959,15 @@ ExpressionPtr VariableExpression::simplify() const
 
 Expression *VariableExpression::_copy() const
 {
-    return new VariableExpression(owner, var);
+    auto expression = new VariableExpression(owner, var);
+    expression->missing = missing;
+    return expression;
 }
 
 void VariableExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
+    if (missing)
+        return;
     bool hidden = HiddenReference::isHidden();
     auto res = deps.insert(std::make_pair(var,hidden));
     if(!hidden || res.second)
@@ -2967,10 +3042,13 @@ void VariableExpression::_collectReplacement(
         paths[var.canonicalPath()] = std::move(path);
 }
 
-void VariableExpression::_moveCells(const CellAddress &address,
-        int rowCount, int colCount, ExpressionVisitor &v)
+void VariableExpression::_shiftCells(const DocumentObject *sheet,
+        const CellShift &shift, ExpressionVisitor &v)
 {
-    if(var.hasDocumentObjectName(true))
+    if (missing)
+        return;
+    const DocumentObject *target = var.hasDocumentObjectName(true) ? var.getDocumentObject() : owner;
+    if (target != sheet)
         return;
 
     int idx = 0;
@@ -2979,18 +3057,22 @@ void VariableExpression::_moveCells(const CellAddress &address,
     if(!addr.isValid())
         return;
 
-    int thisRow = addr.row();
-    int thisCol = addr.col();
-    if (thisRow >= address.row() || thisCol >= address.col()) {
-        v.aboutToChange();
-        addr.setRow(thisRow + rowCount);
-        addr.setCol(thisCol + colCount);
-        var.setComponent(idx,ObjectIdentifier::SimpleComponent(addr.toString()));
+    const std::optional<CellAddress> now = shift.moved(addr);
+    if (now == addr)
+        return;
+    v.aboutToChange();
+    if (now) {
+        var.setComponent(idx,ObjectIdentifier::SimpleComponent(now->toString()));
+    }
+    else {
+        missing = true;
+        var = ObjectIdentifier();
+        components.clear();
     }
 }
 
 void VariableExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisitor &v) {
-    if(var.hasDocumentObjectName(true))
+    if(missing || var.hasDocumentObjectName(true))
         return;
 
     int idx = 0;
@@ -3248,6 +3330,8 @@ RangeExpression::RangeExpression(const DocumentObject *_owner, const std::string
 
 bool RangeExpression::isTouched() const
 {
+    if (missing)
+        return false;
     Range i(getRange());
 
     do {
@@ -3273,12 +3357,17 @@ Py::Object RangeExpression::_getPyValue() const {
 
 void RangeExpression::_toString(std::ostream &ss, bool,int) const
 {
-    ss << begin << ":" << end;
+    if (missing)
+        ss << MissingReferenceText;
+    else
+        ss << begin << ":" << end;
 }
 
 Expression *RangeExpression::_copy() const
 {
-    return new RangeExpression(owner, begin, end);
+    auto expression = new RangeExpression(owner, begin, end);
+    expression->missing = missing;
+    return expression;
 }
 
 ExpressionPtr RangeExpression::simplify() const
@@ -3288,6 +3377,8 @@ ExpressionPtr RangeExpression::simplify() const
 
 void RangeExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
+    if (missing)
+        return;
     bool hidden = HiddenReference::isHidden();
 
     assert(owner);
@@ -3304,6 +3395,8 @@ void RangeExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps
 
 Range RangeExpression::getRange() const
 {
+    if (missing)
+        throwMissingReference(this);
     auto c1 = stringToAddress(begin.c_str(),true);
     auto c2 = stringToAddress(end.c_str(),true);
     if(c1.isValid() && c2.isValid())
@@ -3361,35 +3454,33 @@ bool RangeExpression::_renameObjectIdentifier(
     return touched;
 }
 
-void RangeExpression::_moveCells(const CellAddress &address,
-        int rowCount, int colCount, ExpressionVisitor &v)
+void RangeExpression::_shiftCells(const DocumentObject *sheet,
+        const CellShift &shift, ExpressionVisitor &v)
 {
-    CellAddress addr = stringToAddress(begin.c_str(),true);
-    if(addr.isValid()) {
-        int thisRow = addr.row();
-        int thisCol = addr.col();
-        if (thisRow >= address.row() || thisCol >= address.col()) {
-            v.aboutToChange();
-            addr.setRow(thisRow+rowCount);
-            addr.setCol(thisCol+colCount);
-            begin = addr.toString();
-        }
+    if (missing || owner != sheet)
+        return;
+    CellAddress from = stringToAddress(begin.c_str(),true);
+    CellAddress to = stringToAddress(end.c_str(),true);
+    if (!from.isValid() || !to.isValid())
+        return;
+
+    const auto now = shift.moved(from, to);
+    if (now && now->first == from && now->second == to)
+        return;
+    v.aboutToChange();
+    if (now) {
+        begin = now->first.toString();
+        end = now->second.toString();
     }
-    addr = stringToAddress(end.c_str(),true);
-    if(addr.isValid()) {
-        int thisRow = addr.row();
-        int thisCol = addr.col();
-        if (thisRow >= address.row() || thisCol >= address.col()) {
-            v.aboutToChange();
-            addr.setRow(thisRow + rowCount);
-            addr.setCol(thisCol + colCount);
-            end = addr.toString();
-        }
+    else {
+        missing = true;
     }
 }
 
 void RangeExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisitor &v)
 {
+    if (missing)
+        return;
     CellAddress addr = stringToAddress(begin.c_str(),true);
     if(addr.isValid() && (!addr.isAbsoluteRow() || !addr.isAbsoluteCol())) {
         v.aboutToChange();
@@ -3407,6 +3498,142 @@ void RangeExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisit
         if(!addr.isAbsoluteCol())
             addr.setCol(addr.col()+colOffset);
         end = addr.toString();
+    }
+}
+
+TYPESYSTEM_SOURCE(App::SheetRangeExpression, App::VariableExpression)
+
+SheetRangeExpression::SheetRangeExpression(const DocumentObject *_owner,
+        const ObjectIdentifier &first, const std::string &last)
+    : VariableExpression(_owner, first), last(last)
+{
+}
+
+const DocumentObject *SheetRangeExpression::sheet() const
+{
+    const DocumentObject *object = var.getDocumentObject();
+    if (!object)
+        throw Expression::Exception(var.resolveErrorString().c_str());
+    return object;
+}
+
+Range SheetRangeExpression::getRange() const
+{
+    if (missing)
+        throwMissingReference(this);
+    const std::string first = var.getPropertyComponent(0).getName();
+    auto from = stringToAddress(first.c_str(), true);
+    auto to = stringToAddress(last.c_str(), true);
+    if (!from.isValid() || !to.isValid())
+        EXPR_THROW("Invalid cell range " << first << ':' << last);
+    return Range(from, to);
+}
+
+ObjectIdentifier SheetRangeExpression::pathOf(const std::string &cell) const
+{
+    ObjectIdentifier path(var);
+    int idx = 0;
+    path.getPropertyComponent(0, &idx);
+    path.setComponent(idx, ObjectIdentifier::SimpleComponent(cell));
+    return path;
+}
+
+std::vector<const Property*> SheetRangeExpression::getCells(std::vector<std::string> *addresses) const
+{
+    const DocumentObject *object = sheet();
+    std::vector<const Property*> cells;
+    Range range(getRange());
+    do {
+        cells.push_back(object->getPropertyByName(range.address().c_str()));
+        if (addresses)
+            addresses->push_back(range.address());
+    } while (range.next());
+    return cells;
+}
+
+bool SheetRangeExpression::isTouched() const
+{
+    if (missing)
+        return false;
+    try {
+        for (const Property *cell : getCells()) {
+            if (cell && cell->isTouched())
+                return true;
+        }
+    }
+    catch (const Base::Exception &) {
+    }
+    return false;
+}
+
+ExpressionPtr SheetRangeExpression::simplify() const
+{
+    return copy();
+}
+
+Expression *SheetRangeExpression::_copy() const
+{
+    auto expression = new SheetRangeExpression(owner, var, last);
+    expression->missing = missing;
+    return expression;
+}
+
+Py::Object SheetRangeExpression::_getPyValue() const
+{
+    Py::List list;
+    for (const Property *cell : getCells()) {
+        if (cell)
+            list.append(Py::asObject(const_cast<Property*>(cell)->getPyObject()));
+        else
+            list.append(Py::None());
+    }
+    return list;
+}
+
+void SheetRangeExpression::_toString(std::ostream &ss, bool persistent, int indent) const
+{
+    VariableExpression::_toString(ss, persistent, indent);
+    if (!missing)
+        ss << ':' << last;
+}
+
+void SheetRangeExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
+{
+    if (missing)
+        return;
+    bool hidden = HiddenReference::isHidden();
+    Range range(getRange());
+    do {
+        auto res = deps.insert(std::make_pair(pathOf(range.address()), hidden));
+        if (!hidden || res.second)
+            res.first->second = hidden;
+    } while (range.next());
+}
+
+void SheetRangeExpression::_shiftCells(const DocumentObject *target,
+        const CellShift &shift, ExpressionVisitor &v)
+{
+    if (missing || var.getDocumentObject() != target)
+        return;
+    int idx = 0;
+    const std::string first = var.getPropertyComponent(0, &idx).getName();
+    CellAddress from = stringToAddress(first.c_str(), true);
+    CellAddress to = stringToAddress(last.c_str(), true);
+    if (!from.isValid() || !to.isValid())
+        return;
+
+    const auto now = shift.moved(from, to);
+    if (now && now->first == from && now->second == to)
+        return;
+    v.aboutToChange();
+    if (now) {
+        var.setComponent(idx, ObjectIdentifier::SimpleComponent(now->first.toString()));
+        last = now->second.toString();
+    }
+    else {
+        missing = true;
+        var = ObjectIdentifier();
+        components.clear();
     }
 }
 
@@ -3624,6 +3851,7 @@ static void initParser(const App::DocumentObject *owner)
         registered_functions["translationm"] = FunctionExpression::TRANSLATIONM;
         registered_functions["tuple"] = FunctionExpression::TUPLE;
         registered_functions["vector"] = FunctionExpression::VECTOR;
+        registered_functions["index"] = FunctionExpression::INDEX;
 
         registered_functions["hiddenref"] = FunctionExpression::HIDDENREF;
         registered_functions["href"] = FunctionExpression::HREF;

@@ -64,7 +64,7 @@ App::DocumentObjectExecReturn* FemMeshShapeObject::execute()
 {
     Fem::FemMesh newMesh;
 
-    Part::Feature* feat = Shape.getValue<Part::Feature*>();
+    Part::ShapeFeature* feat = Shape.getValue<Part::ShapeFeature*>();
     TopoDS_Shape shape = feat->Shape.getValue();
 
     newMesh.getSMesh()->ShapeToMesh(shape);

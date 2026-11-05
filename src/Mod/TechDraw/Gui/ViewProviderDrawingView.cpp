@@ -303,7 +303,7 @@ void ViewProviderDrawingView::onGuiRepaint(const TechDraw::DrawView* dv)
 void ViewProviderDrawingView::multiParentPaint(std::vector<TechDraw::DrawPage*>& pages)
 {
     for (auto& p : pages) {
-        std::vector<App::DocumentObject*> views = p->Views.getValues();
+        std::vector<App::DocumentObject*> views = p->getViews();
         for (auto& v: views) {
             if (v != getViewObject()) {  //should this be dv from onGuiRepaint?
                 continue;

@@ -47,6 +47,7 @@ class DocumentObject;
 class DocumentObjectExecReturn;
 class ObjectIdentifier;
 class Expression;
+struct CellShift;
 using ExpressionPtr = std::unique_ptr<Expression>;
 
 class AppExport PropertyExpressionContainer: public App::PropertyXLinkContainer
@@ -290,6 +291,8 @@ public:
     void
     renameObjectIdentifiers(const std::map<App::ObjectIdentifier, App::ObjectIdentifier>& paths);
 
+    void shiftCellReferences(const App::DocumentObject* sheet, const App::CellShift& shift);
+
     /**
      * @brief Create a canonical object identifier of the given object \a p.
      *
@@ -372,5 +375,11 @@ private:
 
     friend class AtomicPropertyChange;
 };
+
+/// A formula as a file states it: each object it reads in this document named by its durable
+/// UUID, written where the name goes (`<<uuid>>.Length`), as every other link in the file names
+/// its target. A name is only what a person sees, and a rename must not rewrite the formula.
+/// An object in another document keeps its name.
+AppExport std::string formulaStatedByUid(const Expression& expression);
 
 }  // namespace App

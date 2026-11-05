@@ -329,11 +329,11 @@ class CAMSanity:
         data["zLen"] = FreeCAD.Units.Quantity(bb.ZLength, FreeCAD.Units.Length).UserString
 
         data["material"] = "Not Specified"
-        if hasattr(obj.Stock, "ShapeMaterial"):
-            if obj.Stock.ShapeMaterial is not None:
-                data["material"] = obj.Stock.ShapeMaterial.Name
+        if hasattr(obj.Stock, "Material"):
+            if obj.Stock.Material is not None:
+                data["material"] = obj.Stock.Material.Name
 
-            props = obj.Stock.ShapeMaterial.PhysicalProperties
+            props = obj.Stock.Material.PhysicalProperties
             if "SurfaceSpeedCarbide" in props:
                 data["surfaceSpeedCarbide"] = FreeCAD.Units.Quantity(
                     props["SurfaceSpeedCarbide"]

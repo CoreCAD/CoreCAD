@@ -26,13 +26,14 @@
 #pragma once
 
 #include "GeoFeature.h"
+#include "PlacementExtension.h"
 #include "PropertyFile.h"
 
 
 namespace App
 {
 
-class AppExport VRMLObject: public GeoFeature
+class AppExport VRMLObject: public GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(App::VRMLObject);
 

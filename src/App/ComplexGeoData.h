@@ -543,6 +543,13 @@ public:
     /// Get the entire element map.
     std::vector<MappedElement> getElementMap() const;
 
+    /// The name with every string-table number replaced by the text it stands for. Those numbers
+    /// are handed out per session, so only this form means the same thing in another one.
+    MappedName fullElementName(const MappedName& name) const;
+
+    /// The element whose name reads `fullName` once written out in full, or an empty name.
+    IndexedName findByFullElementName(const MappedName& fullName) const;
+
     /// Set the entire element map.
     void setElementMap(const std::vector<MappedElement>& elements);
 

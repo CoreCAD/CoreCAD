@@ -10,17 +10,26 @@ set(AssemblyGui_LIBS
     FreeCADGui
 )
 
-PYSIDE_WRAP_RC(Assembly_QRC_SRCS Resources/Assembly.qrc)
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/Assembly"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Assembly.qrc"
+    OUTPUT_QRC    _Assembly_Icons_QRC
+)
+PYSIDE_WRAP_RC(Assembly_QRC_SRCS ${_Assembly_Icons_QRC})
 
 set (Assembly_TR_QRC ${CMAKE_CURRENT_BINARY_DIR}/Resources/Assembly_translation.qrc)
 qt_find_and_add_translation(QM_SRCS "Resources/translations/*_*.ts"
     ${CMAKE_CURRENT_BINARY_DIR}/Resources/translations)
 qt_create_resource_file(${Assembly_TR_QRC} ${QM_SRCS})
-qt_add_resources(AssemblyResource_SRCS Resources/Assembly.qrc ${Assembly_TR_QRC})
+qt_add_resources(AssemblyResource_SRCS ${_Assembly_Icons_QRC} ${Assembly_TR_QRC})
 
 SOURCE_GROUP("Resources" FILES ${AssemblyResource_SRCS})
 
 generate_from_py(ViewProviderAssembly)
+generate_from_py(ViewProviderExplodedViewStep)
+generate_from_py(ViewProviderJoint)
 
 set(AssemblyGui_UIC_SRCS
     TaskAssemblyCreateBom.ui
@@ -34,6 +43,10 @@ set(AssemblyGui_UIC_SRCS
 SET(Python_SRCS
     ViewProviderAssembly.pyi
     ViewProviderAssemblyPyImp.cpp
+    ViewProviderExplodedViewStep.pyi
+    ViewProviderExplodedViewStepPyImp.cpp
+    ViewProviderJoint.pyi
+    ViewProviderJointPyImp.cpp
 )
 SOURCE_GROUP("Python" FILES ${Python_SRCS})
 
@@ -53,6 +66,20 @@ SET(AssemblyGui_SRCS_Module
     ViewProviderBom.h
     ViewProviderBomGroup.cpp
     ViewProviderBomGroup.h
+    JcsMarker.cpp
+    JcsMarker.h
+    ViewProviderExplodedView.cpp
+    ViewProviderExplodedView.h
+    ViewProviderExplodedViewStep.cpp
+    ViewProviderExplodedViewStep.h
+    ViewProviderGroundedJoint.cpp
+    ViewProviderGroundedJoint.h
+    ViewProviderJoint.cpp
+    ViewProviderJoint.h
+    ViewProviderMotion.cpp
+    ViewProviderMotion.h
+    ViewProviderSimulation.cpp
+    ViewProviderSimulation.h
     ViewProviderJointGroup.cpp
     ViewProviderJointGroup.h
     ViewProviderViewGroup.cpp

@@ -13,10 +13,20 @@ add_executable(Gui_tests_run
         StyleParameters/ParameterManagerTest.cpp
         StyleParameters/YamlParameterSourceTest.cpp
         InputHintTest.cpp
+        TreeRules.cpp
 )
 
 # Qt tests
 setup_qt_test(QuantitySpinBox)
+setup_qt_test(Selection)
+setup_qt_test(Document)
+setup_qt_test(DocumentRecovery)
+setup_qt_test(Transaction)
+setup_qt_test(Tree)
+setup_qt_test(SelectionFilter)
+setup_qt_test(ProjectDialogs)
+setup_qt_test(ProjectPanel)
+setup_qt_test(MergeDocumentVersions)
 
 target_link_libraries(Gui_tests_run PRIVATE
     GTest::gtest_main

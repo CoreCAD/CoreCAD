@@ -27,6 +27,7 @@
 #include <Base/Stream.h>
 
 #include "Document.h"
+#include "SealedArchive.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
 #include "MergeDocuments.h"
@@ -38,6 +39,38 @@
 #include <Base/PyWrapParseTupleAndKeywords.h>
 
 using namespace App;
+
+namespace
+{
+/** Say why a write was refused, in a form the caller can act on.
+ *
+ * Cruth (Amendment 19 Clause 19.3): a write from a document that did not come back whole is
+ * refused, and a refusal a script cannot see is a refusal it cannot act on -- measured, a caller
+ * got None back and no file written, which is indistinguishable from success. P8 requires the
+ * refusal reach the API on the same terms it reaches a person, so the cost is named here along
+ * with the one way past it.
+ *
+ * Returns true when an exception has been set, false where the refusal had some other cause and
+ * the caller should say so itself.
+ */
+bool refuseTheWrite(const App::Document* doc)
+{
+    const std::vector<std::string> losing = doc->whatASaveWouldLose();
+    if (losing.empty()) {
+        return false;
+    }
+
+    std::string why = "This write was refused: '" + std::string(doc->Label.getValue())
+        + "' did not come back whole. It would lose:";
+    for (const std::string& loss : losing) {
+        why += "\n  " + loss;
+    }
+    why += "\nTo write it anyway, accept by name what it loses: "
+           "saveAcceptingLoss(doc.WhatASaveWouldLose, path).";
+    PyErr_SetString(PyExc_RuntimeError, why.c_str());
+    return true;
+}
+}  // namespace
 
 
 PyObject* DocumentPy::addProperty(PyObject* args, PyObject* kwd)
@@ -123,6 +156,95 @@ std::string DocumentPy::representation() const
     return str.str();
 }
 
+PyObject* DocumentPy::saveAcceptingLoss(PyObject* args)
+{
+    PyObject* losing = nullptr;
+    const char* path = "";
+    if (!PyArg_ParseTuple(args, "O|s", &losing, &path)) {
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        std::vector<std::string> accepted;
+        Py::Sequence items(losing);
+        for (const auto& item : items) {
+            accepted.push_back(Py::String(item).as_std_string("utf-8"));
+        }
+        if (!getDocumentPtr()->saveAcceptingLoss(accepted, path)) {
+            PyErr_SetString(PyExc_ValueError,
+                            "This write was refused: what was accepted is not what it would lose. "
+                            "Read Document.WhatASaveWouldLose and pass that.");
+            return nullptr;
+        }
+    }
+    PY_CATCH;
+
+    Py_Return;
+}
+
+Py::List DocumentPy::getWhatASaveWouldLose() const
+{
+    Py::List losing;
+    for (const std::string& loss : getDocumentPtr()->whatASaveWouldLose()) {
+        losing.append(Py::String(loss));
+    }
+    return losing;
+}
+
+Py::List DocumentPy::getHeldStatements() const
+{
+    Py::List held;
+    for (const auto& [holder, name, why] : getDocumentPtr()->heldStatements()) {
+        Py::Tuple one(3);
+        one.setItem(0, Py::String(holder));
+        one.setItem(1, Py::String(name));
+        one.setItem(2, Py::String(why));
+        held.append(one);
+    }
+    return held;
+}
+
+PyObject* DocumentPy::discardStatement(PyObject* args)
+{
+    PyObject* holder {};
+    const char* name {};
+    if (!PyArg_ParseTuple(args, "Os", &holder, &name)) {
+        return nullptr;
+    }
+    App::DocumentObject* obj {};
+    if (holder != Py_None) {
+        if (!PyObject_TypeCheck(holder, &DocumentObjectPy::Type)) {
+            PyErr_SetString(PyExc_TypeError, "first argument must be a DocumentObject or None");
+            return nullptr;
+        }
+        obj = static_cast<DocumentObjectPy*>(holder)->getDocumentObjectPtr();
+    }
+    try {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->discardStatement(obj, name)));
+    }
+    catch (const Base::Exception& e) {
+        // The refusal itself is the answer here, so it reaches the caller as one (P8).
+        e.setPyException();
+        return nullptr;
+    }
+}
+
+PyObject* DocumentPy::discardUnreadObject(PyObject* args)
+{
+    const char* uuid {};
+    if (!PyArg_ParseTuple(args, "s", &uuid)) {
+        return nullptr;
+    }
+    try {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->discardUnreadObject(uuid)));
+    }
+    catch (const Base::Exception& e) {
+        e.setPyException();
+        return nullptr;
+    }
+}
+
 PyObject* DocumentPy::save(PyObject* args)
 {
     if (!PyArg_ParseTuple(args, "")) {
@@ -132,7 +254,9 @@ PyObject* DocumentPy::save(PyObject* args)
     PY_TRY
     {
         if (!getDocumentPtr()->save()) {
-            PyErr_SetString(PyExc_ValueError, "Object attribute 'FileName' is not set");
+            if (!refuseTheWrite(getDocumentPtr())) {
+                PyErr_SetString(PyExc_ValueError, "Object attribute 'FileName' is not set");
+            }
             return nullptr;
         }
     }
@@ -160,7 +284,14 @@ PyObject* DocumentPy::saveAs(PyObject* args)
 
     PY_TRY
     {
-        getDocumentPtr()->saveAs(utf8Name.c_str());
+        if (!getDocumentPtr()->saveAs(utf8Name.c_str())) {
+            if (!refuseTheWrite(getDocumentPtr())) {
+                PyErr_Format(PyExc_IOError,
+                             "The document was not written to '%s'",
+                             utf8Name.c_str());
+            }
+            return nullptr;
+        }
         Py_Return;
     }
     PY_CATCH
@@ -175,8 +306,32 @@ PyObject* DocumentPy::saveCopy(PyObject* args)
 
     PY_TRY
     {
-        getDocumentPtr()->saveCopy(fn);
+        if (!getDocumentPtr()->saveCopy(fn)) {
+            if (!refuseTheWrite(getDocumentPtr())) {
+                PyErr_Format(PyExc_IOError, "No copy was written to '%s'", fn);
+            }
+            return nullptr;
+        }
         Py_Return;
+    }
+    PY_CATCH
+}
+
+PyObject* DocumentPy::exportSealedArchive(PyObject* args)
+{
+    char* fn;
+    if (!PyArg_ParseTuple(args, "s", &fn)) {
+        return nullptr;
+    }
+
+    PY_TRY
+    {
+        const std::set<std::string> unhonoured = App::writeSealedArchive(*getDocumentPtr(), fn);
+        Py::List carried;
+        for (const std::string& name : unhonoured) {
+            carried.append(Py::String(name));
+        }
+        return Py::new_reference_to(carried);
     }
     PY_CATCH
 }
@@ -210,6 +365,13 @@ PyObject* DocumentPy::load(PyObject* args)
     try {
         getDocumentPtr()->restore();
     }
+    catch (const DocumentMalformedError& e) {
+        // Said in full, not reduced to "reading failed". The file is there and readable; what it
+        // states cannot be determined, and where that starts is the one thing a person needs in
+        // order to repair it (Amendment 19 Clause 19.2).
+        e.setPyException();
+        return nullptr;
+    }
     catch (...) {
         PyErr_Format(PyExc_IOError, "Reading from file '%s' failed", filename);
         return nullptr;
@@ -234,6 +396,13 @@ PyObject* DocumentPy::restore(PyObject* args)
     }
     try {
         getDocumentPtr()->restore();
+    }
+    catch (const DocumentMalformedError& e) {
+        // Said in full, not reduced to "reading failed". The file is there and readable; what it
+        // states cannot be determined, and where that starts is the one thing a person needs in
+        // order to repair it (Amendment 19 Clause 19.2).
+        e.setPyException();
+        return nullptr;
     }
     catch (...) {
         PyErr_Format(PyExc_IOError, "Reading from file '%s' failed", filename);
@@ -351,7 +520,7 @@ PyObject* DocumentPy::addObject(PyObject* args, PyObject* kwd)
     }
     else {
         Base::Type type =
-            Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), true);
+            Base::Type::getTypeIfDerivedFrom(sType, DocumentObject::getClassTypeId(), false);
         if (type.isBad()) {
             std::stringstream str;
             str << "'" << sType << "' is not a document object type";
@@ -789,6 +958,42 @@ PyObject* DocumentPy::purgeTouched(PyObject* args)
     Py_Return;
 }
 
+PyObject* DocumentPy::rollBackTo(PyObject* args)
+{
+    PyObject* object = Py_None;
+    if (!PyArg_ParseTuple(args, "O", &object)) {
+        return nullptr;
+    }
+    DocumentObject* step = nullptr;
+    if (object != Py_None) {
+        if (!PyObject_TypeCheck(object, &DocumentObjectPy::Type)) {
+            PyErr_SetString(PyExc_TypeError, "Expected a document object or None");
+            return nullptr;
+        }
+        step = static_cast<DocumentObjectPy*>(object)->getDocumentObjectPtr();
+        if (step->getDocument() != getDocumentPtr()) {
+            PyErr_SetString(PyExc_ValueError, "The object belongs to another document");
+            return nullptr;
+        }
+    }
+    PY_TRY
+    {
+        getDocumentPtr()->setRollbackMarker(step);
+        Py_Return;
+    }
+    PY_CATCH;
+}
+
+PyObject* DocumentPy::isRolledBackPast(PyObject* args)
+{
+    PyObject* object = nullptr;
+    if (!PyArg_ParseTuple(args, "O!", &DocumentObjectPy::Type, &object)) {
+        return nullptr;
+    }
+    auto* obj = static_cast<DocumentObjectPy*>(object)->getDocumentObjectPtr();
+    return Py::new_reference_to(Py::Boolean(getDocumentPtr()->isRolledBackPast(obj)));
+}
+
 PyObject* DocumentPy::getObject(PyObject* args)
 {
     DocumentObject* obj = nullptr;
@@ -846,7 +1051,7 @@ PyObject* DocumentPy::findObjects(PyObject* args, PyObject* kwds)
     }
 
     Base::Type type =
-        Base::Type::getTypeIfDerivedFrom(sType, App::DocumentObject::getClassTypeId(), true);
+        Base::Type::getTypeIfDerivedFrom(sType, App::DocumentObject::getClassTypeId(), false);
     if (type.isBad()) {
         std::stringstream str;
         str << "'" << sType << "' is not a document object type";
@@ -1193,6 +1398,16 @@ PyObject* DocumentPy::getBookedTransactionID(PyObject* args)
     return Py::new_reference_to(Py::Long(tid));
 }
 
+
+Py::Boolean DocumentPy::getStatesWhatItsFileStates() const
+{
+    return {getDocumentPtr()->statesWhatItsFileStates()};
+}
+
+Py::Boolean DocumentPy::getIsWhole() const
+{
+    return {getDocumentPtr()->isWhole()};
+}
 
 Py::Boolean DocumentPy::getRestoring() const
 {

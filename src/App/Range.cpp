@@ -324,3 +324,41 @@ bool App::CellAddress::parseAbsoluteAddress(const char* address)
     }
     return false;
 }
+
+std::optional<App::CellAddress> App::CellShift::moved(CellAddress address) const
+{
+    const int at = rows ? address.row() : address.col();
+    if (at < first) {
+        return address;
+    }
+    if (at < first - count) {
+        return std::nullopt;
+    }
+    if (rows) {
+        address.setRow(at + count);
+    }
+    else {
+        address.setCol(at + count);
+    }
+    return address;
+}
+
+std::optional<std::pair<App::CellAddress, App::CellAddress>>
+App::CellShift::moved(CellAddress from, CellAddress to) const
+{
+    auto at = [&](CellAddress cell, int edge) {
+        if (rows) {
+            cell.setRow(edge);
+        }
+        else {
+            cell.setCol(edge);
+        }
+        return cell;
+    };
+    from = moved(from).value_or(at(from, first));
+    to = moved(to).value_or(at(to, first - 1));
+    if (from.row() > to.row() || from.col() > to.col()) {
+        return std::nullopt;
+    }
+    return std::make_pair(from, to);
+}

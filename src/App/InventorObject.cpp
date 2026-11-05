@@ -28,11 +28,12 @@
 
 using namespace App;
 
-PROPERTY_SOURCE(App::InventorObject, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(App::InventorObject, App::GeoFeature)
 
 
 InventorObject::InventorObject()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(Buffer, (""), "", Prop_None, "String buffer with a scene graph");
     ADD_PROPERTY_TYPE(FileName, (""), "", Prop_None, "Path to an Inventor file");
 }

@@ -6,6 +6,7 @@ add_executable(Material_tests_run
         TestMaterialProperties.cpp
         TestMaterials.cpp
         TestMaterialValue.cpp
+        TestPropertyMaterial.cpp
         TestModel.cpp
         TestModelProperties.cpp
 )

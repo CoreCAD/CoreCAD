@@ -247,7 +247,7 @@ TaskFemConstraintFluidBoundary::TaskFemConstraintFluidBoundary(
         App::Property* prop = pcMesh->getPropertyByName("Shape");  // PropertyLink
         if (prop && prop->isDerivedFrom<App::PropertyLink>()) {
             App::PropertyLink* pcLink = static_cast<App::PropertyLink*>(prop);
-            Part::Feature* pcPart = dynamic_cast<Part::Feature*>(pcLink->getValue());
+            Part::ShapeFeature* pcPart = dynamic_cast<Part::ShapeFeature*>(pcLink->getValue());
             if (pcPart) {  // deduct dimension from part_obj.Shape.ShapeType
                 const TopoDS_Shape& pShape = pcPart->Shape.getShape().getShape();
                 const TopAbs_ShapeEnum shapeType = pShape.IsNull() ? TopAbs_SHAPE
@@ -662,7 +662,7 @@ void TaskFemConstraintFluidBoundary::onButtonDirection(const bool pressed)
     Gui::SelectionObject& selectionElement = selection.at(0);
 
     // we can only handle part objects
-    if (!selectionElement.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+    if (!selectionElement.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
         QMessageBox::warning(this, tr("Wrong Selection"), tr("Selected object is not a part object!"));
         return;
     }
@@ -683,7 +683,7 @@ void TaskFemConstraintFluidBoundary::onButtonDirection(const bool pressed)
     // vector for the direction
     std::vector<std::string> direction(1, subNamesElement);
 
-    Part::Feature* feat = static_cast<Part::Feature*>(selectionElement.getObject());
+    Part::ShapeFeature* feat = static_cast<Part::ShapeFeature*>(selectionElement.getObject());
     TopoDS_Shape ref = feat->Shape.getShape().getSubShape(subNamesElement.c_str());
 
     if (subNamesElement.substr(0, 4) == "Face") {
@@ -855,7 +855,7 @@ void TaskFemConstraintFluidBoundary::addToSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
 
     for (auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }
@@ -938,7 +938,7 @@ void TaskFemConstraintFluidBoundary::removeFromSelection()
     std::vector<std::string> SubElements = pcConstraint->References.getSubValues();
     std::vector<size_t> itemsToDel;
     for (const auto& it : selection) {  // for every selected object
-        if (!it.isObjectTypeOf(Part::Feature::getClassTypeId())) {
+        if (!it.isObjectTypeOf(Part::ShapeFeature::getClassTypeId())) {
             QMessageBox::warning(this, tr("Selection Error"), tr("Selected object is not a part!"));
             return;
         }

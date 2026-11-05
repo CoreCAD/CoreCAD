@@ -78,10 +78,18 @@ class DrawProjectionGroupTest(unittest.TestCase):
         item = group.getItemByLabel(label)
         print("Item Label: " + label + " Item Name: " + item.Name)
 
+        # An item reached through the group is the item itself, not a second handle to it: a
+        # list whose entries do not compare equal to the objects they stand for cannot be used
+        # to ask whether something is in it.
+        self.assertIn(item, group.getViews())
+        self.assertIn(group, self.page.getViews())
+
         print("recomputing document")
         FreeCAD.ActiveDocument.recompute()
 
-        for v in group.Views:
+        # The group keeps no list of its items: each item names the group it belongs to,
+        # and the group derives its members from that side.
+        for v in group.getViews():
             print("View: " + v.Label + " " + v.TypeId)
             v.autoPosition()
 

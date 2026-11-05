@@ -313,6 +313,15 @@ protected:
     void changeEvent(QEvent* e) override;
 
 private:
+    /** Let go of the material the last copy left waiting, if there is any.
+     *
+     * A copy that carries an imported solid or a mesh writes it beside the rendering and puts the
+     * way there on the clipboard, so it has to outlive the selection it was taken from -- a paste
+     * an hour later still has to find it. It stops being reachable the moment the clipboard holds
+     * something else, or the program closes, and those are the two places this is called.
+     */
+    void discardWaitingMaterial();
+
     void setupDockWindows();
     bool setupTaskView();
     bool setupSelectionView();

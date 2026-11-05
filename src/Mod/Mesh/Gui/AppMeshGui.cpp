@@ -143,9 +143,16 @@ PyMOD_INIT_FUNC(MeshGui)
     }
 
     // NOLINTBEGIN
-    // try to instantiate flat-mesh commands
+    // flat-mesh commands exist only when the flatmesh module was built
     try {
-        Base::Interpreter().runString("import MeshFlatteningCommand");
+        Base::Interpreter().runString(
+            "try:\n"
+            "    import flatmesh\n"
+            "except ImportError:\n"
+            "    pass\n"
+            "else:\n"
+            "    import MeshFlatteningCommand\n"
+        );
     }
     catch (Base::PyException& err) {
         err.reportException();

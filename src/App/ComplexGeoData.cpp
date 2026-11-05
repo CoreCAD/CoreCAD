@@ -326,6 +326,71 @@ ElementMapPtr ComplexGeoData::resetElementMap(ElementMapPtr elementMap)
     return elementMap;
 }
 
+namespace
+{
+bool isHexDigit(char c)
+{
+    return std::isxdigit(static_cast<unsigned char>(c)) != 0;
+}
+
+std::string expandStringIds(const App::StringHasher& hasher, const std::string& text, int depth)
+{
+    constexpr int deepest = 64;
+    if (depth > deepest) {
+        return text;
+    }
+    std::string out;
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        if (text[pos] != '#' || pos + 1 >= text.size() || !isHexDigit(text[pos + 1])) {
+            out += text[pos++];
+            continue;
+        }
+        std::size_t end = pos + 1;
+        while (end < text.size() && isHexDigit(text[end])) {
+            ++end;
+        }
+        const long id = std::stol(text.substr(pos + 1, end - pos - 1), nullptr, 16);
+        int index = 0;
+        if (end + 1 < text.size() && text[end] == ':' && isHexDigit(text[end + 1])) {
+            std::size_t indexEnd = end + 1;
+            while (indexEnd < text.size() && isHexDigit(text[indexEnd])) {
+                ++indexEnd;
+            }
+            index = static_cast<int>(std::stol(text.substr(end + 1, indexEnd - end - 1), nullptr, 16));
+            end = indexEnd;
+        }
+        const App::StringIDRef sid = hasher.getID(id, index);
+        if (!sid || sid.isHashed() || sid.isBinary()) {
+            out.append(text, pos, end - pos);
+        }
+        else {
+            out += expandStringIds(hasher, sid.dataToText(), depth + 1);
+        }
+        pos = end;
+    }
+    return out;
+}
+}  // namespace
+
+MappedName ComplexGeoData::fullElementName(const MappedName& name) const
+{
+    if (!Hasher) {
+        return name;
+    }
+    return MappedName(expandStringIds(*Hasher, name.toString(), 0));
+}
+
+IndexedName ComplexGeoData::findByFullElementName(const MappedName& fullName) const
+{
+    for (const MappedElement& element : getElementMap()) {
+        if (fullElementName(element.name) == fullName) {
+            return element.index;
+        }
+    }
+    return IndexedName();
+}
+
 std::vector<MappedElement> ComplexGeoData::getElementMap() const
 {
     flushElementMap();

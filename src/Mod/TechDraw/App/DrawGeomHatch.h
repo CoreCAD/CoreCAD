@@ -68,6 +68,10 @@ public:
     const char* getViewProviderName() const override {
         return "TechDrawGui::ViewProviderGeomHatch";
     }
+    /// Geometric hatching is Drawing-scoped content (Amendment 8, ARCHITECTURE §7.1).
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
+    }
     PyObject *getPyObject() override;
     void setupObject() override;
     void unsetupObject() override;

@@ -167,10 +167,14 @@ class FreeCADGuiHandler(xml.sax.ContentHandler):
             t = float(attributes["transparency"])
             self.currentval = (a, d, s, e, i, t)
         elif tag == "Enum":
-            if isinstance(self.currentval, int):
-                self.currentval = [self.currentval, attributes["value"]]
+            # An enumeration states its chosen value by name. A custom one then lists the
+            # values it offers, in <Enum> elements of its own nested inside CustomEnumList.
+            if "CustomEnum" in attributes:
+                self.currentval = [attributes["value"]]
             elif isinstance(self.currentval, list):
                 self.currentval.append(attributes["value"])
+            else:
+                self.currentval = attributes["value"]
         elif tag == "Python":
             if "module" in attributes:
                 self.currentval = (
@@ -758,11 +762,12 @@ def buildGuiDocumentFromGuiData(document, guidata):
             elif prop["type"] in ["App::PropertyBool"]:
                 guidoc += '                    <Bool value="' + str(prop["value"]).lower() + '"/>\n'
             elif prop["type"] in ["App::PropertyEnumeration"]:
-                if isinstance(prop["value"], int):
-                    guidoc += '                    <Integer value="' + str(prop["value"]) + '"/>\n'
+                # The chosen value is stated by name, never by its position in the list.
+                if isinstance(prop["value"], str):
+                    guidoc += '                    <Enum value="' + prop["value"] + '"/>\n'
                 elif isinstance(prop["value"], list):
                     guidoc += (
-                        '                    <Integer value="'
+                        '                    <Enum value="'
                         + str(prop["value"][0])
                         + '" CustomEnum="true"/>\n'
                     )

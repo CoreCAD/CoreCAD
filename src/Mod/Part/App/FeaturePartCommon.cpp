@@ -62,12 +62,13 @@ BRepAlgoAPI_BooleanOperation* Common::makeOperation(const TopoDS_Shape& base, co
 
 // ----------------------------------------------------
 
-PROPERTY_SOURCE(Part::MultiCommon, Part::Feature)
+PROPERTY_SOURCE(Part::MultiCommon, Part::ShapeFeature)
 
 const char* MultiCommon::BehaviorEnums[] = {"CommonOfAllShapes", "CommonOfFirstAndRest", nullptr};
 
 MultiCommon::MultiCommon()
 {
+    Part::MaterialExtension::initExtension(this);
     ADD_PROPERTY(Shapes, (nullptr));
     Shapes.setSize(0);
     ADD_PROPERTY_TYPE(
@@ -111,7 +112,7 @@ short MultiCommon::mustExecute() const
 
 void MultiCommon::Restore(Base::XMLReader& reader)
 {
-    Feature::Restore(reader);
+    ShapeFeature::Restore(reader);
 
     // For 1.0 and 1.0 only the order was common of first and the rest due to a bug
     if (Base::getVersion(reader.ProgramVersion) == Base::Version::v1_0) {
@@ -173,8 +174,8 @@ App::DocumentObjectExecReturn* MultiCommon::execute()
     this->Shape.setValue(res);
     if (Shapes.getSize() > 0) {
         App::DocumentObject* link = Shapes.getValues()[0];
-        copyMaterial(link);
+        Part::inheritMaterial(this, link);
     }
 
-    return Part::Feature::execute();
+    return Part::ShapeFeature::execute();
 }

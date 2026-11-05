@@ -148,7 +148,7 @@ std::string StringID::dataToText(int index) const
 
     std::string res(_data.constData());
     if (index != 0) {
-        res += std::to_string(index);
+        res += QByteArray::number(index, isIndexedReference() ? 16 : 10).constData();
     }
     if (_postfix.size() != 0) {
         res += _postfix.constData();
@@ -398,6 +398,10 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
             newStringID._sids.end());
     }
 
+    // A name IndexedName rejects (e.g. "#2") still carries the number it read off its end; the
+    // lookup above ignores it, so creating the entry must too, or the first answer differs.
+    int index = indexed ? indexed.getIndex() : 0;
+
     // If the new StringID has a postfix, but is not indexed, see if the data string itself
     // contains an index.
     if ((newStringID._postfix.size() != 0) && !indexed) {
@@ -405,7 +409,7 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         StringID::IndexID res = StringID::fromString(newStringID._data);
         if (res.id > 0) {  // If the data had an index
             if (res.index != 0) {
-                indexed.setIndex(res.index);
+                index = res.index;
                 newStringID._data.resize(newStringID._data.lastIndexOf(':') + 1);
             }
             int offset = newStringID.isPostfixEncoded() ? 1 : 0;
@@ -429,7 +433,7 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
         }
     }
 
-    return {insert(newStringIDRef), indexed.getIndex()};
+    return {insert(newStringIDRef), index};
 }
 
 StringIDRef StringHasher::getID(long id, int index) const
@@ -858,6 +862,63 @@ std::map<long, StringIDRef> StringHasher::getIDMap() const
         ret.emplace_hint(ret.end(), hasher.first, StringIDRef(hasher.second));
     }
     return ret;
+}
+
+namespace
+{
+StringID::Flags storedFlags(StringID::Flags flags)
+{
+    flags.setFlag(StringID::Flag::Marked, false);
+    flags.setFlag(StringID::Flag::Persistent, false);
+    return flags;
+}
+}  // namespace
+
+bool StringHasher::adopt(const StringHasher& other)
+{
+    const auto sameString = [](const StringID& a, const StringID& b) {
+        if (a._data != b._data || a._postfix != b._postfix
+            || storedFlags(a._flags).getFlags() != storedFlags(b._flags).getFlags()
+            || a._sids.size() != b._sids.size()) {
+            return false;
+        }
+        for (int i = 0; i < a._sids.size(); ++i) {
+            if (a._sids[i].value() != b._sids[i].value()
+                || a._sids[i].getIndex() != b._sids[i].getIndex()) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    for (const auto& entry : other._hashes->right) {
+        const long id = entry.first;
+        const StringID* theirs = entry.second;
+        if (const StringIDRef mine = getID(id)) {
+            if (!sameString(mine.deref(), *theirs)) {
+                return false;
+            }
+        }
+        else if (_hashes->left.find(const_cast<StringID*>(theirs)) != _hashes->left.end()) {
+            return false;
+        }
+    }
+
+    // In number order: a string refers only to strings numbered before it.
+    for (const auto& entry : other._hashes->right) {
+        const long id = entry.first;
+        const StringID* theirs = entry.second;
+        if (getID(id)) {
+            continue;
+        }
+        StringIDRef copy(new StringID(id, theirs->_data, storedFlags(theirs->_flags)));
+        copy._sid->_postfix = theirs->_postfix;
+        for (const StringIDRef& related : theirs->_sids) {
+            copy._sid->_sids.push_back(getID(related.value(), related.getIndex()));
+        }
+        insert(copy);
+    }
+    return true;
 }
 
 void StringHasher::clearMarks() const

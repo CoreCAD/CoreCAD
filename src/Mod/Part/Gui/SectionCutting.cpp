@@ -34,9 +34,10 @@
 #include <QSlider>
 #include <QToolTip>
 
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <App/Link.h>
-#include <App/Part.h>
+#include <App/PropertyLinks.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/UnitsApi.h>
@@ -49,7 +50,6 @@
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewProviderGeometryObject.h>
-#include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/FeatureCompound.h>
 #include <Mod/Part/App/FeaturePartBox.h>
 #include <Mod/Part/App/FeaturePartCommon.h>
@@ -66,6 +66,12 @@ using namespace PartGui;
 
 namespace
 {
+std::vector<App::DocumentObject*> fragmentInputs(App::DocumentObject* fragments)
+{
+    auto objects = dynamic_cast<App::PropertyLinkList*>(fragments->getPropertyByName("Objects"));
+    return objects ? objects->getValues() : std::vector<App::DocumentObject*> {};
+}
+
 struct Refresh
 {
     static const bool notXValue = false;
@@ -283,13 +289,6 @@ void SectionCut::setSlidersEnabled(bool on)
     ui->cutZHS->setEnabled(on);
 }
 
-void SectionCut::setSlidersToolTip(const QString& text)
-{
-    ui->cutXHS->setToolTip(text);
-    ui->cutYHS->setToolTip(text);
-    ui->cutZHS->setToolTip(text);
-}
-
 void SectionCut::setGroupsDisabled()
 {
     ui->groupBoxX->blockSignals(true);
@@ -357,11 +356,11 @@ Base::BoundBox3d SectionCut::collectObjects()
             // check if this is a BooleanFragments or a Part::Compound
             // Part::Compound is the case when there was only one object
             auto pcCompoundPart = dynamic_cast<Part::Compound*>(compoundObject);
-            auto pcPartFeature = dynamic_cast<Part::Feature*>(compoundObject);
+            auto pcPartFeature = dynamic_cast<Part::ShapeFeature*>(compoundObject);
             if (!pcCompoundPart && pcPartFeature) {
                 // for more security check for validity accessing its ViewProvider
                 auto pcCompoundBF = Gui::Application::Instance->getViewProvider(pcPartFeature);
-                compoundChilds = pcCompoundBF->claimChildren();
+                compoundChilds = fragmentInputs(pcPartFeature);
                 BoundCompound = pcPartFeature->Shape.getBoundingBox();
 
                 auto pcCompoundBFGO = dynamic_cast<Gui::ViewProviderGeometryObject*>(pcCompoundBF);
@@ -570,7 +569,7 @@ void SectionCut::deleteCompound()
                 );
                 return;
             }
-            compoundChilds = pcCompoundDelBF->claimChildren();
+            compoundChilds = fragmentInputs(compoundObject);
         }
         else {
             pcCompoundDelPart->Links.getLinks(compoundChilds);
@@ -864,47 +863,32 @@ void SectionCut::startCutting(bool isInitial)
     }
 }
 
-bool SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
+void SectionCut::findObjects(std::vector<App::DocumentObject*>& objects)
 {
-    bool isLinkAssembly = false;
     for (auto& aVisObject : ObjectsListVisible) {
         App::DocumentObject* object = aVisObject.getObject();
         if (!object) {
             continue;
         }
-        // we need all Link objects in App::Part for example for Assembly 4
-        if (auto pcPart = dynamic_cast<App::Part*>(object)) {
-            // collect all its link objects
-            auto groupObjects = pcPart->Group.getValue();
-            for (auto aGroupObject : groupObjects) {
-                if (aGroupObject->getTypeId() == Base::Type::fromName("App::Link")) {
-                    objects.push_back(aGroupObject);
-                    // we assume that App::Links inside a App::Part are an assembly
-                    isLinkAssembly = true;
-                }
-            }
-        }
         // get all shapes that are also Part::Features
-        if (object->getPropertyByName("Shape") != nullptr && object->isDerivedFrom<Part::Feature>()) {
-            // sort out 2D objects, datums, App:Parts, compounds and objects that are
+        if (Part::hasShape(object)) {
+            // sort out 2D objects, datums, compounds and objects that are
             // part of a PartDesign body
-            if (!object->isDerivedFrom<Part::Part2DObject>() && !object->isDerivedFrom<Part::Datum>()
+            if (!object->isDerivedFrom<Part::Part2DObject>()
+                && !object->isDerivedFrom<App::DatumElement>()
                 && !object->isDerivedFrom(Base::Type::fromName("PartDesign::Feature"))
-                && !object->isDerivedFrom<Part::Compound>()
-                && object->getTypeId() != Base::Type::fromName("App::Part")) {
+                && !object->isDerivedFrom<Part::Compound>()) {
                 objects.push_back(object);
             }
         }
         // get Links that are derived from Part objects
         if (auto pcLink = dynamic_cast<App::Link*>(object)) {
             auto linkedObject = doc->getObject(pcLink->LinkedObject.getObjectName());
-            if (linkedObject != nullptr && linkedObject->isDerivedFrom<Part::Feature>()) {
+            if (linkedObject != nullptr && Part::hasShape(linkedObject)) {
                 objects.push_back(object);
             }
         }
     }
-
-    return isLinkAssembly;
 }
 
 void SectionCut::filterObjects(std::vector<App::DocumentObject*>& objects)
@@ -1048,19 +1032,6 @@ std::vector<App::DocumentObject*> createLinks(
         // add link to list to later add this to the compound object
         links.push_back(pcLink);
 
-        // if the object is part of an App::Part container,
-        // the link needs to get the container placement
-        if (auto parents = itCuts->getInList(); !parents.empty()) {
-            for (auto parent : parents) {
-                if (auto pcPartParent = dynamic_cast<App::Part*>(parent)) {
-                    if (auto placement
-                        = pcPartParent->getPropertyByName<App::PropertyPlacement>("Placement")) {
-                        pcLink->Placement.setValue(placement->getValue());
-                    }
-                }
-            }
-        }
-
         // hide the objects since only the cut should later be visible
         itCuts->Visibility.setValue(false);
     }
@@ -1117,14 +1088,7 @@ void SectionCut::startObjectCutting(bool isInitial)
     // ObjectsListVisible contains all visible objects of the document, but we can only cut
     // those that have a solid shape
     std::vector<App::DocumentObject*> ObjectsListCut;
-    bool isLinkAssembly = findObjects(ObjectsListCut);
-
-    if (isLinkAssembly) {
-        // we disable the sliders because for assemblies it will takes ages to do several dozen
-        // recomputes
-        setSlidersEnabled(false);
-        setSlidersToolTip(tr("Sliders are disabled for assemblies"));
-    }
+    findObjects(ObjectsListCut);
 
     filterObjects(ObjectsListCut);
 

@@ -29,26 +29,24 @@ import TestSketcherApp
 
 class TestPocket(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestPocket")
+        self.Doc = FreeCAD.newDocument("PartDesignTestPocket", type="Part")
 
     def testPocketDimensionCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "PadSketch")
-        self.Body.addObject(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 1
         self.Pad.Reversed = 1
         self.Doc.recompute()
         self.PocketSketch = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
-        self.Body.addObject(self.PocketSketch)
         TestSketcherApp.CreateRectangleSketch(self.PocketSketch, (2.5, 2.5), (5, 5))
         self.Doc.recompute()
         self.Pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
-        self.Body.addObject(self.Pocket)
+        self.Body.addFeature(self.Pocket)
         self.Pocket.Profile = self.PocketSketch
         self.Pocket.Length = 1
         self.Doc.recompute()
@@ -57,33 +55,30 @@ class TestPocket(unittest.TestCase):
     def testPocketThroughAllCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "PadSketch")
-        self.Body.addObject(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 1
         self.Pad.Reversed = 1
         self.Doc.recompute()
         self.PocketSketch = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
-        self.Body.addObject(self.PocketSketch)
         TestSketcherApp.CreateRectangleSketch(self.PocketSketch, (2.5, 2.5), (5, 5))
         self.Doc.recompute()
         self.Pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
-        self.Body.addObject(self.Pocket)
+        self.Body.addFeature(self.Pocket)
         self.Pocket.Profile = self.PocketSketch
         self.Pocket.Length = 1
         self.Doc.recompute()
         self.PocketSketch1 = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
-        self.Body.addObject(self.PocketSketch1)
         self.PocketSketch1.MapMode = "FlatFace"
         self.PocketSketch1.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         self.Doc.recompute()
         TestSketcherApp.CreateRectangleSketch(self.PocketSketch1, (2.5, -0.75), (5, 0.50))
         self.Doc.recompute()
         self.Pocket001 = self.Doc.addObject("PartDesign::Pocket", "Pocket001")
-        self.Body.addObject(self.Pocket001)
+        self.Body.addFeature(self.Pocket001)
         self.Pocket001.Profile = self.PocketSketch1
         self.Pocket001.Type = 1
         self.Doc.recompute()
@@ -92,33 +87,30 @@ class TestPocket(unittest.TestCase):
     def testPocketToFirstCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "PadSketch")
-        self.Body.addObject(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 1
         self.Pad.Reversed = 1
         self.Doc.recompute()
         self.PocketSketch = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
-        self.Body.addObject(self.PocketSketch)
         TestSketcherApp.CreateRectangleSketch(self.PocketSketch, (2.5, 2.5), (5, 5))
         self.Doc.recompute()
         self.Pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
-        self.Body.addObject(self.Pocket)
+        self.Body.addFeature(self.Pocket)
         self.Pocket.Profile = self.PocketSketch
         self.Pocket.Length = 1
         self.Doc.recompute()
         self.PocketSketch1 = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
-        self.Body.addObject(self.PocketSketch1)
         self.PocketSketch1.MapMode = "FlatFace"
         self.PocketSketch1.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         self.Doc.recompute()
         TestSketcherApp.CreateRectangleSketch(self.PocketSketch1, (2.5, -1), (5, 1))
         self.Doc.recompute()
         self.Pocket001 = self.Doc.addObject("PartDesign::Pocket", "Pocket001")
-        self.Body.addObject(self.Pocket001)
+        self.Body.addFeature(self.Pocket001)
         self.Pocket001.Profile = self.PocketSketch1
         self.Pocket001.Type = 2
         self.Doc.recompute()
@@ -127,33 +119,30 @@ class TestPocket(unittest.TestCase):
     def testPocketToFaceCase(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "PadSketch")
-        self.Body.addObject(self.PadSketch)
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
         self.Doc.recompute()
         self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
-        self.Body.addObject(self.Pad)
+        self.Body.addFeature(self.Pad)
         self.Pad.Profile = self.PadSketch
         self.Pad.Length = 1
         self.Pad.Reversed = 1
         self.Doc.recompute()
         self.PocketSketch = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
-        self.Body.addObject(self.PocketSketch)
         TestSketcherApp.CreateRectangleSketch(self.PocketSketch, (2.5, 2.5), (5, 5))
         self.Doc.recompute()
         self.Pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
-        self.Body.addObject(self.Pocket)
+        self.Body.addFeature(self.Pocket)
         self.Pocket.Profile = self.PocketSketch
         self.Pocket.Length = 1
         self.Doc.recompute()
         self.PocketSketch1 = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
-        self.Body.addObject(self.PocketSketch1)
         self.PocketSketch1.MapMode = "FlatFace"
         self.PocketSketch1.AttachmentSupport = (self.Doc.XZ_Plane, [""])
         self.Doc.recompute()
         TestSketcherApp.CreateRectangleSketch(self.PocketSketch1, (0, -1), (10, 1))
         self.Doc.recompute()
         self.Pocket001 = self.Doc.addObject("PartDesign::Pocket", "Pocket001")
-        self.Body.addObject(self.Pocket001)
+        self.Body.addFeature(self.Pocket001)
         self.Pocket001.Profile = self.PocketSketch1
         self.Pocket001.Type = 3
         # Handle face-naming inconsistency in OCC < 7

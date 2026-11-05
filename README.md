@@ -1,4 +1,4 @@
-<a href="https://freecad.org"><img src="/src/Gui/Icons/CoreCAD.svg" height="116px" width="100px"></a>
+<a href="https://freecad.org"><img src="./src/Gui/Icons/CoreCAD.svg" height="116px" width="100px"></a>
 # CoreCAD #
 *Open, focused - built on bedrock*
 

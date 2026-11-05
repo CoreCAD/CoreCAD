@@ -23,6 +23,19 @@
 
 import Assembly_rc
 
+# Init.py registered our own STEP entry so live import wins the headless File>Open.
+# Part also registers a STEP entry (re-pointed to "ImportGui" for the GUI by
+# Import/InitGui.py). Re-point that one to the live handler too, so whichever "STEP"
+# filter the user picks in the Open dialog imports as a live assembly -- no dead-geometry
+# path is reachable from the dialog. InitGui runs after all Init.py, so both source
+# names are covered regardless of load order.
+FreeCAD.changeImportModule(
+    "STEP with colors (*.step *.STEP *.stp *.STP)", "Import", "AssemblyStepImport"
+)
+FreeCAD.changeImportModule(
+    "STEP with colors (*.step *.STEP *.stp *.STP)", "ImportGui", "AssemblyStepImport"
+)
+
 
 class AssemblyCommandGroup:
     def __init__(self, cmdlist, menu, tooltip=None):
@@ -77,7 +90,9 @@ class AssemblyWorkbench(Workbench):
         # build commands list
         cmdList = [
             "Assembly_CreateAssembly",
+            "Assembly_ActivateAssembly",
             "Assembly_Insert",
+            "Assembly_InsertNewPart",
             "Assembly_SolveAssembly",
             "Assembly_CreateView",
             "Assembly_CreateSimulation",
@@ -106,7 +121,8 @@ class AssemblyWorkbench(Workbench):
             "Separator",
             "Assembly_CreateJointRackPinion",
             "Assembly_CreateJointScrew",
-            "Assembly_CreateJointGearBelt",
+            "Assembly_CreateJointGears",
+            "Assembly_CreateJointBelt",
         ]
 
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench", "Assembly"), cmdList)
@@ -295,3 +311,9 @@ class AssemblyWorkbench(Workbench):
 
 
 Gui.addWorkbench(AssemblyWorkbench())
+
+# GUI-only test unit (draw-layer / Coin scene-graph regressions). The "Gui" in the
+# name is what the CI xvfb GUI-test lane filters on to run it under a virtual
+# display; registering it here (not in Init.py) keeps it out of the headless lane
+# where it could only skip.
+FreeCAD.__unit_test__ += ["TestAssemblyWorkbenchGui"]

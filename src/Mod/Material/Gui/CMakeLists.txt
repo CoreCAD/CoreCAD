@@ -36,10 +36,8 @@ SOURCE_GROUP("Python" FILES ${Python_SRCS})
 set(MatGui_UIC_SRCS
     Array2D.ui
     Array3D.ui
-    DlgDisplayProperties.ui
     DlgInspectAppearance.ui
     DlgInspectMaterial.ui
-    DlgMaterial.ui
     DlgSettingsDefaultMaterial.ui
     DlgSettingsMaterial.ui
     ImageEdit.ui
@@ -76,18 +74,12 @@ SET(MatGui_SRCS
     BaseDelegate.cpp
     BaseDelegate.h
     Command.cpp
-    DlgDisplayPropertiesImp.cpp
-    DlgDisplayPropertiesImp.h
-    DlgDisplayProperties.ui
     DlgInspectAppearance.cpp
     DlgInspectAppearance.h
     DlgInspectAppearance.ui
     DlgInspectMaterial.cpp
     DlgInspectMaterial.h
     DlgInspectMaterial.ui
-    DlgMaterialImp.cpp
-    DlgMaterialImp.h
-    DlgMaterial.ui
     DlgSettingsDefaultMaterial.cpp
     DlgSettingsDefaultMaterial.h
     DlgSettingsDefaultMaterial.ui
@@ -123,8 +115,6 @@ SET(MatGui_SRCS
     TextEdit.ui
     Workbench.cpp
     Workbench.h
-    WorkbenchManipulator.cpp
-    WorkbenchManipulator.h
 )
 if(BUILD_MATERIAL_EXTERNAL)
     list(APPEND MatGui_SRCS

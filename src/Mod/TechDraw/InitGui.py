@@ -36,7 +36,7 @@ class TechDrawWorkbench(Workbench):
             FreeCAD.getResourceDir()
             + "Mod/TechDraw/Resources/icons/preferences-techdraw.svg"
         )
-        self.__class__.MenuText = "TechDraw"
+        self.__class__.MenuText = "Drawing"
         self.__class__.ToolTip = "Technical Drawing workbench"
 
     def Initialize(self):

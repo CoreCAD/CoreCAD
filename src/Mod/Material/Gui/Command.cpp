@@ -29,10 +29,8 @@
 #include <Gui/MainWindow.h>
 #include <Gui/Selection/Selection.h>
 
-#include "DlgDisplayPropertiesImp.h"
 #include "DlgInspectAppearance.h"
 #include "DlgInspectMaterial.h"
-#include "DlgMaterialImp.h"
 #include "MaterialSave.h"
 #include "MaterialsEditor.h"
 #include "ModelSelect.h"
@@ -51,8 +49,8 @@ CmdMaterialEdit::CmdMaterialEdit()
 {
     sAppModule = "Material";
     sGroup = QT_TR_NOOP("Material");
-    sMenuText = QT_TR_NOOP("Edit");
-    sToolTipText = QT_TR_NOOP("Edits material properties");
+    sMenuText = QT_TR_NOOP("Material Library");
+    sToolTipText = QT_TR_NOOP("Adds and changes materials in the library");
     sWhatsThis = "Material_Edit";
     sStatusTip = sToolTipText;
     sPixmap = "Material_Edit";
@@ -74,64 +72,6 @@ bool CmdMaterialEdit::isActive()
 {
     // return (hasActiveDocument() && !Gui::Control().activeDialog());
     return true;
-}
-
-//===========================================================================
-// Std_SetAppearance
-//===========================================================================
-DEF_STD_CMD_A(StdCmdSetAppearance)
-
-StdCmdSetAppearance::StdCmdSetAppearance()
-    : Command("Std_SetAppearance")
-{
-    sGroup = "Standard-View";
-    sMenuText = QT_TR_NOOP("&Appearance");
-    sToolTipText = QT_TR_NOOP("Sets the display properties of the selected object");
-    sWhatsThis = "Std_SetAppearance";
-    sStatusTip = QT_TR_NOOP("Sets the display properties of the selected object");
-    sPixmap = "Std_SetAppearance";
-    sAccel = "Ctrl+D";
-    eType = Alter3DView;
-}
-
-void StdCmdSetAppearance::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    Gui::Control().showDialog(new MatGui::TaskDisplayProperties());
-}
-
-bool StdCmdSetAppearance::isActive()
-{
-    return (Gui::Control().activeDialog() == nullptr) && (Gui::Selection().size() != 0);
-}
-
-//===========================================================================
-// Std_SetMaterial
-//===========================================================================
-DEF_STD_CMD_A(StdCmdSetMaterial)
-
-StdCmdSetMaterial::StdCmdSetMaterial()
-    : Command("Std_SetMaterial")
-{
-    sGroup = "Standard-View";
-    sMenuText = QT_TR_NOOP("&Material");
-    sToolTipText = QT_TR_NOOP("Sets the material of the selected object");
-    sWhatsThis = "Std_SetMaterial";
-    sStatusTip = QT_TR_NOOP("Sets the material of the selected object");
-    sPixmap = "Material_Edit";
-    // sAccel        = "Ctrl+D";
-    // eType = Alter3DView;
-}
-
-void StdCmdSetMaterial::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    Gui::Control().showDialog(new MatGui::TaskMaterial());
-}
-
-bool StdCmdSetMaterial::isActive()
-{
-    return (Gui::Control().activeDialog() == nullptr) && (Gui::Selection().size() != 0);
 }
 
 //===========================================================================
@@ -226,8 +166,6 @@ void CreateMaterialCommands()
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
     rcCmdMgr.addCommand(new CmdMaterialEdit());
-    rcCmdMgr.addCommand(new StdCmdSetAppearance());
-    rcCmdMgr.addCommand(new StdCmdSetMaterial());
     rcCmdMgr.addCommand(new CmdInspectAppearance());
     rcCmdMgr.addCommand(new CmdInspectMaterial());
 #if defined(BUILD_MATERIAL_EXTERNAL)

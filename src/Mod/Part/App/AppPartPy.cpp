@@ -74,6 +74,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
+#include <App/DocumentPy.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -87,6 +88,7 @@
 #include "BSplineSurfacePy.h"
 #include "edgecluster.h"
 #include "FaceMaker.h"
+#include "ShapeComparison.h"
 #include "GeometryCurvePy.h"
 #include "GeometryPy.h"
 #include "ImportIges.h"
@@ -473,6 +475,19 @@ public:
             &Module::getFacets,
             "getFacets(shape): simplified mesh generation"
         );
+        add_varargs_method(
+            "documentSolids",
+            &Module::documentSolids,
+            "documentSolids(doc) -- The solids a person sees in a document, as one compound: "
+            "every\n"
+            "object carrying a solid that no other solid-carrying object builds on."
+        );
+        add_varargs_method(
+            "compareShapes",
+            &Module::compareShapes,
+            "compareShapes(before, after) -> (shared, added, removed) -- Two shapes compared as\n"
+            "material: what both hold, what only after holds, and what only before held."
+        );
         add_keyword_method(
             "makeCompound",
             &Module::makeCompound,
@@ -486,9 +501,12 @@ public:
         add_keyword_method(
             "makeFace",
             &Module::makeFace,
-            "makeFace(list_of_shapes_or_compound, maker_class_name) -- Create a face (faces) using "
-            "facemaker class.\n"
-            "maker_class_name is a string like 'Part::FaceMakerSimple'."
+            "makeFace(list_of_shapes_or_compound, [maker_class_name, op], "
+            "*, noElementMap=False) -- "
+            "Create a face (faces) using facemaker class.\n"
+            "maker_class_name is a string like 'Part::FaceMakerSimple'.\n"
+            "Set noElementMap=True for transient geometry where stable element "
+            "naming is not needed."
         );
         add_keyword_method(
             "makeFilledSurface",
@@ -746,7 +764,8 @@ public:
         add_keyword_method(
             "getShape",
             &Module::getShape,
-            "getShape(obj,subname=None,mat=None,needSubElement=False,transform=True,retType=0):\n"
+            "getShape(obj,subname=None,mat=None,needSubElement=False,transform=True,retType=0,"
+            "noElementMap=False,refine=False):\n"
             "Obtain the TopoShape of a given object with SubName reference\n\n"
             "* obj: the input object\n"
             "* subname: dot separated sub-object reference\n"
@@ -761,6 +780,8 @@ public:
             "'subname',\n"
             "              and 'mat' is the accumulated transformation matrix of that sub-object.\n"
             "           2: same as 1, but make sure 'subObj' is resolved if it is a link.\n"
+            "* noElementMap: if True, return a shape without mapped element names. Use this for "
+            "transient geometry where stable element naming is not needed.\n"
             "* refine: refine the returned shape"
         );
         add_varargs_method(
@@ -975,9 +996,8 @@ private:
             if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
                 App::DocumentObject* obj
                     = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
-                if (obj->isDerivedFrom<Part::Feature>()) {
-                    Part::Feature* part = static_cast<Part::Feature*>(obj);
-                    const TopoDS_Shape& shape = part->Shape.getValue();
+                if (Part::hasShape(obj)) {
+                    TopoDS_Shape shape = Part::getShape(obj).getShape();
                     if (!shape.IsNull()) {
                         builder.Add(comp, shape);
                     }
@@ -1091,6 +1111,37 @@ private:
         }
         return list;
     }
+    Py::Object documentSolids(const Py::Tuple& args)
+    {
+        PyObject* doc = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &App::DocumentPy::Type, &doc)) {
+            throw Py::Exception();
+        }
+        return shape2pyshape(
+            Part::documentSolids(*static_cast<App::DocumentPy*>(doc)->getDocumentPtr())
+        );
+    }
+
+    Py::Object compareShapes(const Py::Tuple& args)
+    {
+        PyObject* before = nullptr;
+        PyObject* after = nullptr;
+        if (
+            !PyArg_ParseTuple(args.ptr(), "O!O!", &TopoShapePy::Type, &before, &TopoShapePy::Type, &after)
+        ) {
+            throw Py::Exception();
+        }
+        const ShapeComparison comparison = Part::compareShapes(
+            *static_cast<TopoShapePy*>(before)->getTopoShapePtr(),
+            *static_cast<TopoShapePy*>(after)->getTopoShapePtr()
+        );
+        Py::Tuple result(3);
+        result.setItem(0, shape2pyshape(comparison.shared));
+        result.setItem(1, shape2pyshape(comparison.added));
+        result.setItem(2, shape2pyshape(comparison.removed));
+        return result;
+    }
+
     Py::Object makeCompound(const Py::Tuple& args, const Py::Dict& kwds)
     {
         PyObject* pcObj;
@@ -1137,19 +1188,27 @@ private:
         PyObject* obj;
         const char* className = nullptr;
         const char* op = nullptr;
-        const std::array<const char*, 4> kwd_list = {"shapes", "class_name", "op", nullptr};
+        PyObject* noElementMap = Py_False;
+        const std::array<const char*, 5> kwd_list
+            = {"shapes", "class_name", "op", "noElementMap", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "O|ss",
+                "O|ss$O!",
                 kwd_list,
                 &obj,
                 &className,
-                &op
+                &op,
+                &PyBool_Type,
+                &noElementMap
             )) {
             throw Py::Exception();
         }
-        return shape2pyshape(TopoShape().makeElementFace(getPyShapes(obj), op, className));
+        auto elementMapPolicy = Base::asBoolean(noElementMap) ? ElementMapPolicy::Drop
+                                                              : ElementMapPolicy::Propagate;
+        return shape2pyshape(
+            TopoShape().makeElementFace(getPyShapes(obj), op, className, nullptr, elementMapPolicy)
+        );
     }
 
     template<class F>

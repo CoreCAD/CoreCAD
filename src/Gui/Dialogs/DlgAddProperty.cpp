@@ -511,7 +511,7 @@ bool DlgAddProperty::isTypeWithEditor(const Base::Type& type) const
 bool DlgAddProperty::isTypeWithEditor(const std::string& type) const
 {
     Base::Type propType
-        = Base::Type::getTypeIfDerivedFrom(type.c_str(), App::Property::getClassTypeId(), true);
+        = Base::Type::getTypeIfDerivedFrom(type.c_str(), App::Property::getClassTypeId(), false);
     return isTypeWithEditor(propType);
 }
 
@@ -557,7 +557,7 @@ void DlgAddProperty::initializeValue()
     std::string type = ui->comboBoxType->currentText().toStdString();
 
     Base::Type propType
-        = Base::Type::getTypeIfDerivedFrom(type.c_str(), App::Property::getClassTypeId(), true);
+        = Base::Type::getTypeIfDerivedFrom(type.c_str(), App::Property::getClassTypeId(), false);
     if (propType.isBad()) {
         return;
     }

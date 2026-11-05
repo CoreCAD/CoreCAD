@@ -98,7 +98,7 @@ public:
      *
      * If Reversed is true, the direction of transformation will be opposite
      */
-    const std::list<gp_Trsf> getTransformations(const std::vector<App::DocumentObject*>) override;
+    std::list<gp_Trsf> getTransformations() override;
 
 protected:
     void handleChangedPropertyType(

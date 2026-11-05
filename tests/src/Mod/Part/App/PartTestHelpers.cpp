@@ -70,7 +70,7 @@ std::vector<Part::FilletElement> _getFilletEdges(
 }
 
 
-void ExecutePython(const std::vector<std::string>& python)
+void executePython(const std::vector<std::string>& python)
 {
     Base::InterpreterSingleton is = Base::InterpreterSingleton();
 
@@ -92,7 +92,7 @@ void rectangle(double height, double width, const char* name)
         "F1 = Part.Face(P1)",  // Make the face or the volume calc won't work right.
         boost::str(boost::format("Part.show(F1,'%s')") % name),
     };
-    ExecutePython(rectstring);
+    executePython(rectstring);
 }
 
 std::tuple<TopoDS_Face, TopoDS_Wire, TopoDS_Edge, TopoDS_Edge, TopoDS_Edge, TopoDS_Edge> CreateRectFace(

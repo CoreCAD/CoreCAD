@@ -175,32 +175,17 @@ void ViewProviderGeometryObject::updateData(const App::Property* prop)
     }
     else if (prop->isDerivedFrom<App::PropertyPlacement>()) {
         auto geometry = getObject<App::GeoFeature>();
-        if (geometry && prop == &geometry->Placement) {
+        // Match the authored placement by name, not by member address: under Amendment 4
+        // the Placement member no longer lives on every GeoFeature, but a placed object's
+        // authored-placement property is still named "Placement" (a derived feature has none,
+        // so this branch never fires for it — its geometry is already world-placed).
+        if (geometry && std::string(prop->getName()) == "Placement") {
             const App::PropertyComplexGeoData* data = geometry->getPropertyOfGeometry();
             if (data) {
                 Base::BoundBox3d box = data->getBoundingBox();
                 pcBoundingBox->minBounds.setValue(box.MinX, box.MinY, box.MinZ);
                 pcBoundingBox->maxBounds.setValue(box.MaxX, box.MaxY, box.MaxZ);
             }
-        }
-    }
-    else if (std::string(prop->getName()) == "ShapeMaterial") {
-        // Set the appearance from the material
-        if (auto geometry = getObject<App::GeoFeature>()) {
-            /*
-             * Change the appearance only if the appearance hasn't been set explicitly. A cached
-             * material appearance is used to see if the current appearance matches the last
-             * material. It is also compared against an empty material to see if the saved
-             * material value has been initialized.
-             */
-            App::Material defaultMaterial;
-            auto material = geometry->getMaterialAppearance();
-            if ((ShapeAppearance.getSize() == 1)
-                && (ShapeAppearance[0] == defaultMaterial || ShapeAppearance[0] == materialAppearance)
-                && (material != defaultMaterial)) {
-                ShapeAppearance.setValue(material);
-            }
-            materialAppearance = material;
         }
     }
 

@@ -6,13 +6,13 @@ from typing import Final
 
 from Base.Metadata import export
 
-from App.Part import Part
+from App.GeoFeature import GeoFeature
 
 @export(
     Include="Mod/Assembly/App/AssemblyLink.h",
     Namespace="Assembly",
 )
-class AssemblyLink(Part):
+class AssemblyLink(GeoFeature):
     """
     This class handles document objects in Assembly
 

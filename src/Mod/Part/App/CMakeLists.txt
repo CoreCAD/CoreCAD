@@ -217,9 +217,21 @@ SET(Features_SRCS
     PartFeatures.cpp
     PartFeatures.h
     PartFeature.cpp
+    ShapeComparison.cpp
     PartFeature.h
+    ShapeComparison.h
     PartFeatureReference.cpp
     PartFeatureReference.h
+    NeutralRef.cpp
+    NeutralRef.h
+    PrimitiveFaceRole.cpp
+    PrimitiveFaceRole.h
+    PrimitiveFaceRoleRef.cpp
+    PrimitiveFaceRoleRef.h
+    SubShapeSignature.cpp
+    SubShapeSignature.h
+    SpatialInterference.cpp
+    SpatialInterference.h
     Part2DObject.cpp
     Part2DObject.h
     PrimitiveFeature.cpp
@@ -232,14 +244,16 @@ SET(Features_SRCS
     BodyBase.cpp
     Datums.cpp
     Datums.h
-    DatumFeature.cpp
-    DatumFeature.h
     AttachExtension.h
     AttachExtension.cpp
     PreviewExtension.cpp
     PreviewExtension.h
+    MaterialExtension.cpp
+    MaterialExtension.h
     PrismExtension.cpp
     PrismExtension.h
+    ShapeExtension.cpp
+    ShapeExtension.h
     VectorAdapter.cpp
     VectorAdapter.h
 )

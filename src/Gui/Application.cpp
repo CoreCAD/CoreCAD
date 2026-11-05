@@ -76,6 +76,7 @@
 #include "PreferencePages/DlgSettingsCacheDirectory.h"
 #include "DocumentPy.h"
 #include "DocumentRecovery.h"
+#include "DuplicateDocumentQuestion.h"
 #include "EditableDatumLabelPy.h"
 #include "EditorView.h"
 #include "ExpressionBindingPy.h"
@@ -128,11 +129,9 @@
 #include "ViewProviderMaterialObject.h"
 #include "ViewProviderCoordinateSystem.h"
 #include "ViewProviderDatum.h"
-#include "ViewProviderOriginGroup.h"
 #include "ViewProviderPlacement.h"
 #include "ViewProviderPlane.h"
 #include "ViewProviderPoint.h"
-#include "ViewProviderPart.h"
 #include "ViewProviderFeaturePython.h"
 #include "ViewProviderTextDocument.h"
 #include "ViewProviderTextureExtension.h"
@@ -151,6 +150,7 @@
 #include <OverlayManager.h>
 #include <ParamHandler.h>
 #include <Base/ServiceProvider.h>
+#include <App/Services.h>
 
 #ifdef BUILD_TRACY_FRAME_PROFILER
 # include <tracy/Tracy.hpp>
@@ -276,7 +276,7 @@ static PyObject* FreeCADGui_subgraphFromObject(PyObject* /*self*/, PyObject* arg
     std::string vp = obj->getViewProviderName();
     SoNode* node = nullptr;
     try {
-        auto base = static_cast<Base::BaseClass*>(Base::Type::createInstanceByName(vp.c_str(), true));
+        auto base = static_cast<Base::BaseClass*>(Base::Type::createInstanceByName(vp.c_str()));
         if (base && base->isDerivedFrom<Gui::ViewProviderDocumentObject>()) {
             std::unique_ptr<Gui::ViewProviderDocumentObject> vp(
                 static_cast<Gui::ViewProviderDocumentObject*>(base)
@@ -445,6 +445,28 @@ void qtInvokeOnMain(std::function<void()>&& fn, bool blocking)
 
 }  // namespace Gui
 
+namespace
+{
+
+/// Where an object's chosen appearance lives, for the file of record to carry.
+///
+/// The view provider IS the container: it is an ordinary property container, so the recipe's own
+/// writer and reader handle it without a second dialect for display values.
+class GuiDisplayState final: public App::DisplayStateProvider
+{
+public:
+    App::PropertyContainer* appearanceOf(const App::DocumentObject& object) const override
+    {
+        if (Application::Instance == nullptr) {
+            return nullptr;
+        }
+        Gui::Document* document = Application::Instance->getDocument(object.getDocument());
+        return document != nullptr ? document->getViewProvider(&object) : nullptr;
+    }
+};
+
+}  // namespace
+
 void Application::initStyleParameterManager()
 {
     static ParamHandlers handlers;
@@ -521,6 +543,11 @@ void Application::initStyleParameterManager()
     }
 
     Base::registerServiceImplementation(d->styleParameterManager);
+
+    // A colour a person chose is authored content, so the file of record carries it. That file is
+    // written in App and the state lives here, so App asks and this answers.
+    Base::registerServiceImplementation<App::DisplayStateProvider>(new GuiDisplayState);
+    Base::registerServiceImplementation<App::DuplicateDocumentQuestion>(new DuplicateDocumentQuestion);
 }
 
 // clang-format off
@@ -1350,20 +1377,9 @@ void Application::slotActiveDocument(const App::Document& Doc)
             activateWorkbench(d->activeDocument->workbench().c_str());
         }
 
-        // Update the application to show the unit change
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
-            "User parameter:BaseApp/Preferences/Units"
-        );
-        if (!hGrp->GetBool("IgnoreProjectSchema")) {
-            int userSchema = Doc.UnitSystem.getValue();
-            Base::UnitsApi::setSchema(userSchema);
-            getMainWindow()->setUserSchema(userSchema);
-            Application::Instance->onUpdate();
-        }
-        else {  // set up Unit system default
-            Base::UnitsApi::setSchema(hGrp->GetInt("UserSchema", 0));
-            Base::UnitsApi::setDecimals(hGrp->GetInt("Decimals", Base::UnitsApi::getDecimals()));
-        }
+        // Cruth: activating a document does not touch the unit schema. Units are the user's
+        // preference (ARCHITECTURE.md §7.3: a project manifest may override them, a document
+        // never does); the preference is applied once at start-up and whenever it changes.
         signalActiveDocument(*doc->second);
         updateActions();
     }
@@ -2324,10 +2340,17 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
 #endif
             break;
         case QtWarningMsg:
-            Base::Console().warning("%s\n", output.constData());
+            // Cruth: addressed to a developer, not to a person using the program. Qt's own
+            // diagnostics ("this plugin does not support raise()") mean nothing to someone
+            // drawing a part, and routing them at a person put every warning raised from inside
+            // GUI code back into the notification area -- which is how showing a notification
+            // came to raise a warning that re-entered the notification area (measured as a
+            // deadlock). They still reach the report view and the log; a developer who wants
+            // them in the notification area subscribes to developer warnings.
+            Base::Console().developerWarning("Qt", "%s\n", output.constData());
             break;
         case QtCriticalMsg:
-            Base::Console().error("%s\n", output.constData());
+            Base::Console().developerError("Qt", "%s\n", output.constData());
             break;
         case QtFatalMsg:
             Base::Console().error("%s\n", output.constData());
@@ -2425,8 +2448,6 @@ void Application::initTypes()
     Gui::ViewProviderGroupExtensionPython       ::init();
     Gui::ViewProviderGeoFeatureGroupExtension   ::init();
     Gui::ViewProviderGeoFeatureGroupExtensionPython::init();
-    Gui::ViewProviderOriginGroupExtension       ::init();
-    Gui::ViewProviderOriginGroupExtensionPython ::init();
     Gui::ViewProviderSuppressibleExtension      ::init();
     Gui::ViewProviderSuppressibleExtensionPython::init();
     Gui::ViewProviderExtern                     ::init();
@@ -2451,8 +2472,6 @@ void Application::initTypes()
     Gui::ViewProviderLine                       ::init();
     Gui::ViewProviderGeoFeatureGroup            ::init();
     Gui::ViewProviderGeoFeatureGroupPython      ::init();
-    Gui::ViewProviderOriginGroup                ::init();
-    Gui::ViewProviderPart                       ::init();
     Gui::ViewProviderCoordinateSystem           ::init();
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();

@@ -35,6 +35,7 @@
 
 #include "Control.h"
 #include "BitmapFactory.h"
+#include "HistoryPanel.h"
 #include "Tree.h"
 #include "TaskView/TaskView.h"
 
@@ -267,6 +268,10 @@ void ControlSingleton::closedDialog(App::Document* /*attachedTo*/)
             QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable
             | QDockWidget::DockWidgetFloatable
         );
+        // An empty Tasks panel has nothing to offer, so it closes with the last dialog
+        if (taskView->taskInfos.empty() && taskView->isEmpty()) {
+            dw->hide();
+        }
     }
 }
 
@@ -275,6 +280,9 @@ bool ControlSingleton::isAllowedAlterDocument(App::Document* attachedTo) const
     attachedTo = docOrDefault(attachedTo);
     if (!attachedTo) {
         return true;
+    }
+    if (HistoryPanel::isShowingPastVersion(attachedTo)) {
+        return false;
     }
     Gui::TaskView::TaskDialog* dlg = activeDialog(attachedTo);
 

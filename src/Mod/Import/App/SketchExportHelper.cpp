@@ -82,12 +82,12 @@ TopoDS_Shape SketchExportHelper::getFlatSketchXY(App::DocumentObject* obj)
 {
     // since we can't reference Sketcher module here, we will cast obj to
     // a Part::Feature instead
-    auto sketch = dynamic_cast<Part::Feature*>(obj);
+    auto sketch = dynamic_cast<Part::ShapeFeature*>(obj);
     if (!sketch || !isSketch(obj)) {
         return {};
     }
 
-    auto plm = sketch->Placement.getValue();
+    auto plm = sketch->getPlacement();
     Base::Rotation rot = plm.getRotation();
 
     // get the sketch normal

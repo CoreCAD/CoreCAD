@@ -42,7 +42,6 @@ public:
     DrawPage();
     ~DrawPage() override;
 
-    App::PropertyLinkList Views;
     App::PropertyLink Template;
     App::PropertyBool KeepUpdated;
 
@@ -63,9 +62,17 @@ public:
     int removeView(App::DocumentObject* docObj);
     short mustExecute() const override;
     fastsignals::signal<void(const DrawPage*)> signalGuiPaint;
+    /// Raised when the set of views on this page changes. Membership is derived, not stored, so
+    /// there is no list property to touch — consumers that watched Views watch this instead.
+    fastsignals::signal<void(const DrawPage*)> signalMembershipChanged;
+    void notifyMembershipChanged();
 
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override { return "TechDrawGui::ViewProviderPage"; }
+    /// A drawing page (the sheet) is Drawing-scoped content (Amendment 8, ARCHITECTURE §7.1).
+    App::DocumentObject::ContentScope getContentScope() const override {
+        return App::DocumentObject::ContentScope::DrawingView;
+    }
 
     PyObject* getPyObject() override;
 

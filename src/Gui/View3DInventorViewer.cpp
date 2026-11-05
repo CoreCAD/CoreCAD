@@ -785,6 +785,10 @@ View3DInventorViewer::~View3DInventorViewer()
     this->pcViewProviderRoot = nullptr;
     this->objectGroup->unref();
     this->objectGroup = nullptr;
+    if (this->standIn) {
+        this->standIn->unref();
+        this->standIn = nullptr;
+    }
     this->backlight->unref();
     this->backlight = nullptr;
     this->fillLight->unref();
@@ -993,6 +997,24 @@ void View3DInventorViewer::addViewProvider(ViewProvider* pcProvider)
 
     pcProvider->setOverrideMode(this->getOverrideMode());
     _ViewProviderSet.insert(pcProvider);
+}
+
+void View3DInventorViewer::setStandIn(SoNode* node)
+{
+    SoNode* drawn = standIn ? standIn : objectGroup;
+    const int index = pcViewProviderRoot->findChild(drawn);
+    if (index < 0) {
+        return;
+    }
+    pcViewProviderRoot->replaceChild(index, node ? node : objectGroup);
+    if (standIn) {
+        standIn->unref();
+    }
+    standIn = node;
+    if (standIn) {
+        standIn->ref();
+    }
+    redraw();
 }
 
 void View3DInventorViewer::removeViewProvider(ViewProvider* pcProvider)
@@ -3876,7 +3898,7 @@ void View3DInventorViewer::alignToSelection()
             elementName.oldName
         );
         const auto globalRotation = globalPlacement.getRotation()
-            * geoFeature->Placement.getValue().getRotation().inverse();
+            * geoFeature->getPlacement().getRotation().inverse();
         const auto splitSubName = Base::Tools::splitSubName(elementName.oldName);
         const auto geoFeatureSubName = !splitSubName.empty() ? splitSubName.back() : "";
 
@@ -3924,8 +3946,7 @@ void View3DInventorViewer::alignToSelection()
                     sel.pObject,
                     elementName.oldName
                 );
-                grp.globalRotation = gp.getRotation()
-                    * gf->Placement.getValue().getRotation().inverse();
+                grp.globalRotation = gp.getRotation() * gf->getPlacement().getRotation().inverse();
             }
             const auto split = Base::Tools::splitSubName(elementName.oldName);
             grp.subnames.push_back(!split.empty() ? split.back() : "");

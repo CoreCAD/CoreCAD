@@ -24,6 +24,7 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <string>
 #include <fastsignals/signal.h>
 #include <QString>
@@ -91,6 +92,7 @@ protected:
     void slotTransactionAppend(const App::DocumentObject&, App::Transaction*);
     void slotTransactionRemove(const App::DocumentObject&, App::Transaction*);
     void slotActivatedObject(const App::DocumentObject&);
+    void slotFinishSaveDocument(const App::Document&, const std::string&);
     void slotStartRestoreDocument(const App::Document&);
     void slotFinishRestoreDocument(const App::Document&);
     void slotUndoDocument(const App::Document&);
@@ -102,9 +104,15 @@ protected:
     void slotSkipRecompute(const App::Document& doc, const std::vector<App::DocumentObject*>& objs);
     void slotTouchedObject(const App::DocumentObject&);
     void slotChangePropertyEditor(const App::Document&, const App::Property&);
+    void slotCommitTransaction(const App::Document&);
     //@}
 
 public:
+    /// The model is kept matching its values: after a change, once the app is idle, whatever
+    /// went stale is rebuilt. The document's skip-recompute switch opts out.
+    void scheduleRebuild();
+    void rebuildIfStale();
+
     void addViewProvider(Gui::ViewProviderDocumentObject*);
 
     /** @name Signals of the document */
@@ -174,6 +182,14 @@ public:
     void Restore(Base::XMLReader& reader) override;
     /// This method is used to save large amounts of data to a binary file.
     void SaveDocFile(Base::Writer& writer) const override;
+    /** The stored form of the view layer, with or without the appearance a person chose.
+     *
+     * The project cache may not hold it: a colour somebody picked is authored content and the
+     * cache is deletable by design, so the file of record carries it instead. The sealed archive
+     * -- what a release or a records system hands over as one self-contained file -- must hold
+     * it. Hence a parameter rather than a deletion.
+     */
+    void saveDocFile(Base::Writer& writer, bool withAppearance) const;
     /// This method is used to restore large amounts of data from a binary file.
     void RestoreDocFile(Base::Reader& reader) override;
     void exportObjects(const std::vector<App::DocumentObject*>&, Base::Writer&);
@@ -357,6 +373,31 @@ private:
     void resetIfEditing();
     // handles the scene graph nodes to correctly group child and parents
     void handleChildren3D(ViewProvider* viewProvider, bool deleting = false);
+
+    /**
+     * Objects that more than one view provider wants to parent in 3D.
+     *
+     * Scene-graph path uniqueness: a node hangs under exactly one parent, or under the
+     * scene root. `claimChildren3D` is a per-provider answer with no knowledge of the
+     * other providers, so two of them can name the same object -- a sketch feeding two
+     * bodies is named by both. The result is one node with two parents, which makes its
+     * position and its picked path ambiguous. Nothing forbade it because the rule that
+     * used to imply it lived in a flag on the model rather than here.
+     *
+     * Contested objects are parented by nobody and stay at the scene root, which is where
+     * an unparented object already lives -- so this only ever removes an edge, never adds
+     * one, and never has to arbitrate between rival parents.
+     */
+    std::set<const App::DocumentObject*> contestedChildren3D() const;
+
+    /**
+     * Rebuild the 3D parenting of providers whose children changed status elsewhere.
+     *
+     * Contested-ness is a property of the whole document, but 3D parenting is only ever
+     * recomputed for the one object that changed. @p alreadyHandled is skipped as the
+     * caller has just done it.
+     */
+    void reconcileContested3D(ViewProvider* alreadyHandled = nullptr);
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);

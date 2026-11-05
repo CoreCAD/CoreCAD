@@ -30,7 +30,6 @@
 #include "Link.h"
 #include "Origin.h"
 #include "Datums.h"
-#include "OriginGroupExtension.h"
 
 
 using namespace App;
@@ -68,7 +67,15 @@ PropertyPlacement& GeoFeatureGroupExtension::placement()
         throw Base::RuntimeError("GeoFeatureGroupExtension was not applied to GeoFeature");
     }
 
-    return static_cast<App::GeoFeature*>(getExtendedContainer())->Placement;
+    // Amendment 4: the group's frame is now an authored placement carried via
+    // App::PlacementExtension (App::Part / LocalCoordinateSystem opt in), no
+    // longer an inherited GeoFeature member. A geo-feature group must carry it.
+    auto* prop = static_cast<App::GeoFeature*>(getExtendedContainer())->getPlacementProperty();
+    if (!prop) {
+        throw Base::RuntimeError(
+            "GeoFeatureGroup container carries no Placement (missing PlacementExtension)");
+    }
+    return *prop;
 }
 
 
@@ -86,13 +93,13 @@ DocumentObject* GeoFeatureGroupExtension::getGroupOfObject(const DocumentObject*
         return nullptr;
     }
 
-    // we will find origins, but not origin features
+    // An origin's axes and planes belong to their origin, not to a placed group.
     if (obj->isDerivedFrom<App::DatumElement>()) {
-        return OriginGroupExtension::getGroupOfObject(obj);
+        return nullptr;
     }
 
     // compared to GroupExtension we do return here all GeoFeatureGroups including all extensions
-    // derived from it like OriginGroup. That is needed as we use this function to get all local
+    // derived from it. That is needed as we use this function to get all local
     // coordinate systems. Also there is no reason to distinguish between GeoFeatuerGroups, there is
     // only between group/geofeaturegroup
     auto list = obj->getInList();

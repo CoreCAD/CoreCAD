@@ -66,11 +66,6 @@ ViewProviderFace::ViewProviderFace() = default;
 
 ViewProviderFace::~ViewProviderFace() = default;
 
-std::vector<App::DocumentObject*> ViewProviderFace::claimChildren() const
-{
-    return getObject<Part::Face>()->Sources.getValues();
-}
-
 bool ViewProviderFace::canDragObjects() const
 {
     return true;

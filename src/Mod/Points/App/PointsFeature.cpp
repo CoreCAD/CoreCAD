@@ -35,10 +35,11 @@ using namespace Points;
 // Feature
 //===========================================================================
 
-PROPERTY_SOURCE(Points::Feature, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Points::Feature, App::GeoFeature)
 
 Feature::Feature()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY(Points, (PointKernel()));
 }
 

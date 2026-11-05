@@ -55,16 +55,19 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <Base/Console.h>
+#include <Base/PlacementPy.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Mod/Part/App/ImportIges.h>
 #include <Mod/Part/App/ImportStep.h>
 #include <Mod/Part/App/Interface.h>
 #include <Mod/Part/App/OCAF/ImportExportSettings.h>
-#include <Mod/Part/App/PartFeaturePy.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/ShapeExtension.h>
 #include <Mod/Part/App/TopoShapePy.h>
 #include <Mod/Part/App/encodeFilename.h>
 
 #include "ImportOCAF2.h"
+#include "ReadAssemblyStructure.h"
 #include "ReaderGltf.h"
 #include "ReaderIges.h"
 #include "ReaderStep.h"
@@ -74,6 +77,34 @@
 
 namespace Import
 {
+
+namespace
+{
+/// Convert one read component (and, recursively, its sub-assembly children) into
+/// the Python dict shape returned by readAssemblyStructure.
+Py::Dict componentToDict(const AssemblyComponent& comp);
+
+Py::List componentsToList(const std::vector<AssemblyComponent>& components)
+{
+    Py::List list;
+    for (const auto& comp : components) {
+        list.append(componentToDict(comp));
+    }
+    return list;
+}
+
+Py::Dict componentToDict(const AssemblyComponent& comp)
+{
+    Py::Dict item;
+    item.setItem("name", Py::String(comp.name));
+    item.setItem("shape", Py::asObject(new Part::TopoShapePy(new Part::TopoShape(comp.shape))));
+    item.setItem("placement", Py::asObject(new Base::PlacementPy(new Base::Placement(comp.placement))));
+    item.setItem("prototype", Py::String(comp.prototype));
+    item.setItem("is_assembly", Py::Boolean(comp.isAssembly));
+    item.setItem("children", componentsToList(comp.children));
+    return item;
+}
+}  // namespace
 
 class Module: public Py::ExtensionModule<Module>
 {
@@ -90,6 +121,20 @@ public:
             "insert",
             &Module::importer,
             "insert(string,string) -- Insert the file into the given document."
+        );
+        add_varargs_method(
+            "readAssemblyStructure",
+            &Module::readAssemblyStructure,
+            "readAssemblyStructure(string) -> dict\n\n"
+            "Read the assembly structure of a STEP/IGES file without creating any\n"
+            "document objects. Returns {'name': str, 'components': [ {'name': str,\n"
+            "'shape': Part.Shape, 'placement': Placement, 'prototype': str,\n"
+            "'is_assembly': bool, 'children': [...]}, ... ]} where each component's\n"
+            "shape is local (prototype-frame) geometry and its placement is the instance\n"
+            "pose within the assembly. 'prototype' is a stable id of the referred part\n"
+            "definition: instances that share a prototype carry the same value. A\n"
+            "sub-assembly component carries its own direct components under 'children',\n"
+            "recursively, to full depth."
         );
         add_keyword_method(
             "export",
@@ -126,14 +171,13 @@ private:
         char* DocName = nullptr;
         PyObject* importHidden = Py_None;
         PyObject* merge = Py_None;
-        PyObject* useLinkGroup = Py_None;
         int mode = -1;
-        static const std::array<const char*, 7>
-            kwd_list {"name", "docName", "importHidden", "merge", "useLinkGroup", "mode", nullptr};
+        static const std::array<const char*, 6>
+            kwd_list {"name", "docName", "importHidden", "merge", "mode", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "et|sO!O!O!i",
+                "et|sO!O!i",
                 kwd_list,
                 "utf-8",
                 &Name,
@@ -142,8 +186,6 @@ private:
                 &importHidden,
                 &PyBool_Type,
                 &merge,
-                &PyBool_Type,
-                &useLinkGroup,
                 &mode
             )) {
             throw Py::Exception();
@@ -202,15 +244,13 @@ private:
             }
 
             ImportOCAFExt ocaf(hDoc, pcDoc, file.fileNamePure());
+            ocaf.setSourceFile(file.filePath());
             ocaf.setImportOptions(ImportOCAFExt::customImportOptions());
             if (merge != Py_None) {
                 ocaf.setMerge(Base::asBoolean(merge));
             }
             if (importHidden != Py_None) {
                 ocaf.setImportHiddenObject(Base::asBoolean(importHidden));
-            }
-            if (useLinkGroup != Py_None) {
-                ocaf.setUseLinkGroup(Base::asBoolean(useLinkGroup));
             }
             if (mode >= 0) {
                 ocaf.setMode(mode);
@@ -245,27 +285,68 @@ private:
 
         return Py::None();
     }
+    Py::Object readAssemblyStructure(const Py::Tuple& args)
+    {
+        char* Name = nullptr;
+        if (!PyArg_ParseTuple(args.ptr(), "et", "utf-8", &Name)) {
+            throw Py::Exception();
+        }
+        std::string Utf8Name = std::string(Name);
+        PyMem_Free(Name);
+
+        try {
+            Base::FileInfo file(Utf8Name.c_str());
+
+            Handle(XCAFApp_Application) hApp = XCAFApp_Application::GetApplication();
+            Handle(TDocStd_Document) hDoc;
+            hApp->NewDocument(TCollection_ExtendedString("MDTV-CAF"), hDoc);
+
+            if (file.hasExtension({"stp", "step"})) {
+                Import::ReaderStep reader(file);
+                reader.read(hDoc);
+            }
+            else if (file.hasExtension({"igs", "iges"})) {
+                Import::ReaderIges reader(file);
+                reader.read(hDoc);
+            }
+            else {
+                throw Py::Exception(PyExc_IOError, "unsupported file format for assembly structure");
+            }
+
+            Import::ReadAssemblyStructure structure(hDoc);
+            hApp->Close(hDoc);
+
+            Py::Dict result;
+            result.setItem("name", Py::String(structure.rootName()));
+            result.setItem("components", componentsToList(structure.components()));
+            return result;
+        }
+        catch (Standard_Failure& e) {
+            throw Py::Exception(Base::PyExc_FC_GeneralError, e.GetMessageString());
+        }
+        catch (const Base::Exception& e) {
+            e.setPyException();
+            throw Py::Exception();
+        }
+    }
     Py::Object exporter(const Py::Tuple& args, const Py::Dict& kwds)
     {
         PyObject* object = nullptr;
         char* Name = nullptr;
         PyObject* pyexportHidden = Py_None;
-        PyObject* pylegacy = Py_None;
         PyObject* pykeepPlacement = Py_None;
-        static const std::array<const char*, 6>
-            kwd_list {"obj", "name", "exportHidden", "legacy", "keepPlacement", nullptr};
+        static const std::array<const char*, 5>
+            kwd_list {"obj", "name", "exportHidden", "keepPlacement", nullptr};
         if (!Base::Wrapped_ParseTupleAndKeywords(
                 args.ptr(),
                 kwds.ptr(),
-                "Oet|O!O!O!",
+                "Oet|O!O!",
                 kwd_list,
                 &object,
                 "utf-8",
                 &Name,
                 &PyBool_Type,
                 &pyexportHidden,
-                &PyBool_Type,
-                &pylegacy,
                 &PyBool_Type,
                 &pykeepPlacement
             )) {
@@ -279,8 +360,6 @@ private:
         // determine export options
         Part::OCAF::ImportExportSettings settings;
 
-        bool legacyExport = (pylegacy         == Py_None ? settings.getExportLegacy()
-                                                         : Base::asBoolean(pylegacy));
         bool exportHidden = (pyexportHidden   == Py_None ? settings.getExportHiddenObject()
                                                          : Base::asBoolean(pyexportHidden));
         bool keepPlacement = (pykeepPlacement == Py_None ? settings.getExportKeepPlacement()
@@ -290,7 +369,7 @@ private:
         try {
             Py::Sequence list(object);
             std::vector<App::DocumentObject*> objs;
-            std::map<Part::Feature*, std::vector<Base::Color>> partColor;
+            std::map<App::DocumentObject*, std::vector<Base::Color>> partColor;
             for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                 PyObject* item = (*it).ptr();
                 if (PyObject_TypeCheck(item, &(App::DocumentObjectPy::Type))) {
@@ -305,10 +384,10 @@ private:
                         auto pydoc = static_cast<App::DocumentObjectPy*>(item0.ptr());
                         App::DocumentObject* obj = pydoc->getDocumentObjectPtr();
                         objs.push_back(obj);
-                        if (Part::Feature* part = dynamic_cast<Part::Feature*>(obj)) {
+                        if (Part::hasShape(obj)) {
                             App::PropertyColorList colors;
                             colors.setPyObject(item1.ptr());
-                            partColor[part] = colors.getValues();
+                            partColor[obj] = colors.getValues();
                         }
                     }
                 }
@@ -320,7 +399,7 @@ private:
 
             auto getShapeColors = [partColor](App::DocumentObject* obj, const char* subname) {
                 std::map<std::string, Base::Color> cols;
-                auto it = partColor.find(dynamic_cast<Part::Feature*>(obj));
+                auto it = partColor.find(obj);
                 if (it != partColor.end() && boost::starts_with(subname, "Face")) {
                     const auto& colors = it->second;
                     std::string face("Face");
@@ -332,19 +411,10 @@ private:
             };
 
             Import::ExportOCAF2 ocaf(hDoc, getShapeColors);
-            if (!legacyExport || !ocaf.canFallback(objs)) {
-                ocaf.setExportOptions(ExportOCAF2::customExportOptions());
-                ocaf.setExportHiddenObject(exportHidden);
-                ocaf.setKeepPlacement(keepPlacement);
-
-                ocaf.exportObjects(objs);
-            }
-            else {
-                bool keepExplicitPlacement = true;
-                ExportOCAFCmd ocaf(hDoc, keepExplicitPlacement);
-                ocaf.setPartColorsMap(partColor);
-                ocaf.exportObjects(objs);
-            }
+            ocaf.setExportOptions(ExportOCAF2::customExportOptions());
+            ocaf.setExportHiddenObject(exportHidden);
+            ocaf.setKeepPlacement(keepPlacement);
+            ocaf.exportObjects(objs);
 
             Base::FileInfo file(Utf8Name.c_str());
             if (file.hasExtension({"stp", "step"})) {
@@ -608,10 +678,13 @@ private:
                 writer.init();
                 Py::Sequence list(docObj);
                 for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
-                    if (PyObject_TypeCheck((*it).ptr(), &(Part::PartFeaturePy::Type))) {
+                    if (PyObject_TypeCheck((*it).ptr(), &(App::DocumentObjectPy::Type))) {
                         PyObject* item = (*it).ptr();
                         App::DocumentObject* obj
                             = static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr();
+                        if (!Part::hasShape(obj)) {
+                            continue;
+                        }
                         layerName = obj->getNameInDocument();
                         writer.setLayerName(layerName);
                         TopoDS_Shape shapeToExport;
@@ -621,10 +694,7 @@ private:
                             shapeToExport = SketchExportHelper::getFlatSketchXY(obj);
                         }
                         else {
-                            // do we know that obj is a Part::Feature? is this checked somewhere
-                            // before this? this should be a located shape??
-                            Part::Feature* part = static_cast<Part::Feature*>(obj);
-                            shapeToExport = part->Shape.getValue();
+                            shapeToExport = Part::getShape(obj).getShape();
                         }
                         writer.exportShape(shapeToExport);
                     }
@@ -687,11 +757,7 @@ private:
                     shapeToExport = SketchExportHelper::getFlatSketchXY(obj);
                 }
                 else {
-                    // TODO: do we know that obj is a Part::Feature? is this checked somewhere
-                    // before this?
-                    // TODO: this should be a located shape??
-                    Part::Feature* part = static_cast<Part::Feature*>(obj);
-                    shapeToExport = part->Shape.getValue();
+                    shapeToExport = Part::getShape(obj).getShape();
                 }
                 writer.exportShape(shapeToExport);
                 writer.endRun();

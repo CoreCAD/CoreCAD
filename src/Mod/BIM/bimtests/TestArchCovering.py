@@ -793,7 +793,7 @@ class TestArchCovering(TestArchBase.TestArchBase):
         self.assertGreater(res2.quantities.count_full, 10000)
 
     def test_resolveFace_indirection_suite(self):
-        """Verify face resolution through various indirection types (Links, Clones, Binders)."""
+        """Verify face resolution through various indirection types (Links, Clones)."""
         self.printTestMessage("resolveFace indirection suite...")
         box = self.document.addObject("Part::Box", "SourceBox")
         box.Length = box.Width = box.Height = 100.0
@@ -805,16 +805,12 @@ class TestArchCovering(TestArchBase.TestArchBase):
         # App::Link
         link = self.document.addObject("App::Link", "AppLink")
         link.LinkedObject = box
-        # SubShapeBinder
-        binder = self.document.addObject("PartDesign::SubShapeBinder", "Binder")
-        binder.Support = (box, ["Face1"])
         self.document.recompute()
 
         test_cases = [
             ("Draft Clone", clone),
             ("App::Link", link),
             ("LinkSub Tuple", (link, ["Face6"])),
-            ("SubShapeBinder", binder),
         ]
 
         for label, target in test_cases:

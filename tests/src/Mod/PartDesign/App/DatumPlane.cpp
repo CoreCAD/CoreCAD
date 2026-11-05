@@ -8,7 +8,7 @@
 #include <App/Origin.h>
 #include "Mod/Part/App/Attacher.h"
 #include "Mod/PartDesign/App/Body.h"
-#include "Mod/PartDesign/App/DatumPlane.h"
+#include "Mod/Part/App/Datums.h"
 
 class DatumPlaneTest: public ::testing::Test
 {
@@ -21,7 +21,7 @@ protected:
     void SetUp() override
     {
         _docName = App::GetApplication().getUniqueDocumentName("test");
-        _doc = App::GetApplication().newDocument(_docName.c_str(), "testUser");
+        _doc = App::GetApplication().newDocument(_docName.c_str(), "testUser", {.documentType = "Part"});
         _body = _doc->addObject<PartDesign::Body>();
     }
 
@@ -48,9 +48,8 @@ private:
 
 TEST_F(DatumPlaneTest, attachDatumPlane)
 {
-    auto datumPlane = getDocument()->addObject<PartDesign::Plane>("Plane");
+    auto datumPlane = getDocument()->addObject<Part::DatumPlane>("Plane");
     ASSERT_TRUE(datumPlane);
-    getBody()->addObject(datumPlane);
     auto origin = getBody()->getOrigin();
 
     App::PropertyLinkSubList support;

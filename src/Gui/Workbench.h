@@ -96,6 +96,8 @@ public:
     void removeTaskWatcher();
 
     static void createLinkMenu(MenuItem*);
+    /// Links are an Assembly-side mechanism; a Part document has none.
+    static bool hasLinks();
 
     //// Shows a list of all toolbars
     std::list<std::string> listToolbars() const;

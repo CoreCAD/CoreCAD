@@ -253,6 +253,13 @@ public:
     void addViewProvider(ViewProvider*);
     /// remove a ViewProvider
     void removeViewProvider(ViewProvider*);
+    /// Draws `node` in place of the document's objects, or the objects again when null. The
+    /// objects, and what is shown of them, are untouched.
+    void setStandIn(SoNode* node);
+    bool hasStandIn() const
+    {
+        return standIn != nullptr;
+    }
     /// get view provider by path
     ViewProvider* getViewProviderByPath(SoPath*) const;
     ViewProvider* getViewProviderByPathFromTail(SoPath*) const;
@@ -618,6 +625,7 @@ private:
     SoSeparator* pcViewProviderRoot;
     // Child group in the scene graph that contains view providers related to the physical object
     SoGroup* objectGroup;
+    SoNode* standIn = nullptr;
 
     std::unique_ptr<View3DInventorSelection> inventorSelection;
 

@@ -6,7 +6,17 @@ set(SurfaceGui_LIBS
     FreeCADGui
 )
 
-qt_add_resources(SurfaceGui_QRC_SRCS Resources/Surface.qrc)
+# Stage branding icon overrides (private corecad-assets) into the build tree.
+# SRC_DIR is Resources/ so the icons/ subdirectory structure is preserved in
+# staging and matches the QRC's "icons/Surface_..." references.
+corecad_stage_resources(
+    SRC_DIR       "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+    ASSETS_SUBDIR "src/Mod/Surface"
+    ICONS_SUBDIR  "icons"
+    QRC_FILE      "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Surface.qrc"
+    OUTPUT_QRC    _Surface_Icons_QRC
+)
+qt_add_resources(SurfaceGui_QRC_SRCS ${_Surface_Icons_QRC})
 
 SET(SurfaceGui_UIC_SRCS
     TaskFilling.ui

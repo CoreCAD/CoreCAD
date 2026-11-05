@@ -52,12 +52,11 @@ PyObject* ViewProviderGeometryObjectPy::getCustomAttributes(const char* attr) co
         return prop.getPyObject();
     }
     if (strcmp(attr, "ShapeMaterial") == 0) {
-        // Get material property of ViewProviderGeometryObject
-        auto geometry = vp->getObject<App::GeoFeature>();
-        if (geometry) {
-            auto material = geometry->getMaterialAppearance();
+        // The appearance a person authored for this view. Since #121 it is view state and
+        // nothing else: it is no longer read back out of the object's material.
+        if (vp->ShapeAppearance.getSize() > 0) {
             App::PropertyMaterial prop;
-            prop.setValue(material);
+            prop.setValue(vp->ShapeAppearance[0]);
             return prop.getPyObject();
         }
     }
@@ -83,13 +82,9 @@ int ViewProviderGeometryObjectPy::setCustomAttributes(const char* attr, PyObject
         return 1;
     }
     if (strcmp(attr, "ShapeMaterial") == 0) {
-        // Get material property of ViewProviderGeometryObject
-        auto geometry = vp->getObject<App::GeoFeature>();
-        if (geometry) {
-            App::PropertyMaterial prop;
-            prop.setPyObject(obj);
-            geometry->setMaterialAppearance(prop.getValue());
-        }
+        App::PropertyMaterial prop;
+        prop.setPyObject(obj);
+        vp->ShapeAppearance.setValue(prop.getValue());
         return 1;
     }
     return 0;

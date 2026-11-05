@@ -30,6 +30,9 @@ Tests ensure that invalid objects are gracefully skipped without causing
 AttributeError crashes.
 """
 
+import os
+import shutil
+import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -191,3 +194,39 @@ class TestCommandInsertLink(unittest.TestCase):
         result = task.accept()
         self.assertTrue(result, "accept() should return True even with empty insertion stack")
         _msg("  Successfully handled empty insertion stack")
+
+    def _savedPartFile(self):
+        tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+        part = App.newDocument("InsertFromDisk", type="Part")
+        path = os.path.join(tmpdir, "InsertFromDisk.cpart")
+        part.saveAs(path)
+        App.closeDocument(part.Name)
+        App.setActiveDocument(self.doc.Name)
+        return path
+
+    def _openDocsAt(self, path):
+        return [
+            doc
+            for doc in App.listDocuments().values()
+            if doc.FileName and os.path.realpath(doc.FileName) == os.path.realpath(path)
+        ]
+
+    @patch("FreeCADGui.PySideUic.loadUi")
+    @patch("CommandInsertLink.TaskAssemblyInsertLink.adjustTreeWidgetSize")
+    def test_open_file_accepts_a_part_file(self, _mock_adjustTreeSize, _mock_ui):
+        path = self._savedPartFile()
+        task = CommandInsertLink.TaskAssemblyInsertLink(self.assembly, MagicMock())
+
+        with patch.object(
+            CommandInsertLink.QtGui.QFileDialog, "getOpenFileNames", return_value=([path], "")
+        ):
+            task.openFiles()
+            task.openFiles()
+
+        opened = self._openDocsAt(path)
+        for doc in opened:
+            self.addCleanup(App.closeDocument, doc.Name)
+        self.assertEqual(len(opened), 1, "the chosen part file opens once, however often picked")
+        self.assertEqual(App.ActiveDocument.Name, self.doc.Name)
+        task.reject()

@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <cmath>
 #include <limits>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -313,10 +314,26 @@ void Rotation::setValue(const Vector3d& rotateFrom, const Vector3d& rotateTo)
 
 void Rotation::normalize()
 {
-    double len = sqrt(
-        this->quat[0] * this->quat[0] + this->quat[1] * this->quat[1]
-        + this->quat[2] * this->quat[2] + this->quat[3] * this->quat[3]
-    );
+    const double lengthSquared = this->quat[0] * this->quat[0] + this->quat[1] * this->quat[1]
+        + this->quat[2] * this->quat[2] + this->quat[3] * this->quat[3];
+
+    // Cruth: a quaternion that is already unit length is left exactly as it is.
+    //
+    // Measuring the length of a unit quaternion does not give back 1: for the standard XZ
+    // plane it gives 0.99999999999999989, and dividing by that moves every component one step.
+    // So normalizing an already-normalized rotation CHANGES it, and this runs on every restore
+    // -- which is why opening a document and saving it again, touching nothing, rewrote a fixed
+    // reference plane's rotation and reported a change nobody made. Version control cannot tell
+    // that from an edit, and a document under version control must not drift on being read.
+    //
+    // The window is a few steps of the last digit either side of one, so a rotation that is
+    // genuinely off unit length is still normalized as before.
+    constexpr double unitTolerance = 4 * std::numeric_limits<double>::epsilon();
+    if (std::fabs(lengthSquared - 1.0) <= unitTolerance) {
+        return;
+    }
+
+    const double len = sqrt(lengthSquared);
     if (len > 0.0) {
         this->quat[0] /= len;
         this->quat[1] /= len;

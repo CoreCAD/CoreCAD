@@ -57,7 +57,7 @@ public:
      * If MirrorPlane contains a feature and a face name, then the mirror plane will be
      * the given face, which must be planar
      */
-    const std::list<gp_Trsf> getTransformations(const std::vector<App::DocumentObject*>) override;
+    std::list<gp_Trsf> getTransformations() override;
 
 private:
     std::list<gp_Trsf> createTransformations(gp_Pnt& axbase, gp_Dir& axdir) const;

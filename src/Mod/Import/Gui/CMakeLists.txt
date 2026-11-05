@@ -12,8 +12,6 @@ SET(ImportGui_SRCS
     AppImportGui.cpp
     AppImportGuiPy.cpp
     Command.cpp
-    ExportOCAFGui.cpp
-    ExportOCAFGui.h
     dxf/ImpExpDxfGui.cpp
     dxf/ImpExpDxfGui.h
     ImportOCAFGui.cpp

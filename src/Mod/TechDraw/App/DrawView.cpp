@@ -103,6 +103,14 @@ DrawView::DrawView():
     Scale.setConstraints(&scaleRange);
 
     ADD_PROPERTY_TYPE(Caption, (""), group, App::Prop_Output, "Short text about the view");
+    ADD_PROPERTY_TYPE(Page, (nullptr), group, App::Prop_Hidden, "The page this view appears on");
+    Page.setScope(App::LinkScope::Hidden);
+    ADD_PROPERTY_TYPE(Collection, (nullptr), group, App::Prop_Hidden,
+                      "The collection this view is an item of");
+    Collection.setScope(App::LinkScope::Hidden);
+    ADD_PROPERTY_TYPE(ClipGroup, (nullptr), group, App::Prop_Hidden,
+                      "The clip group this view is clipped by");
+    ClipGroup.setScope(App::LinkScope::Hidden);
 
     setScaleAttribute();
 }
@@ -363,23 +371,19 @@ int DrawView::countParentPages() const
 //more than 1 DrawPage claims a DrawView.
 DrawPage* DrawView::findParentPage() const
 {
-    // Get Feature Page
-    DrawPage *page = nullptr;
-    DrawViewCollection *collection = nullptr;
-    std::vector<App::DocumentObject*> parentsAll = getInList();
-    for (auto& parent : parentsAll) {
-        if (parent->isDerivedFrom<DrawPage>()) {
-            page = static_cast<TechDraw::DrawPage *>(parent);
-        } else if (parent->isDerivedFrom<DrawViewCollection>()) {
-            collection = static_cast<TechDraw::DrawViewCollection *>(parent);
-            page = collection->findParentPage();
-        }
-
-        if(page)
-          break; // Found a page so leave
+    // A view names its own page.
+    if (auto* page = freecad_cast<DrawPage*>(Page.getValue())) {
+        return page;
     }
 
-    return page;
+    // A view with a parent takes its parent's page: a dimension, balloon, or leader belongs to
+    // the page its source view sits on, and an item belongs to the page of its collection.
+    // Dependents follow the view, so the edge is asked for rather than stored a second time.
+    if (auto* parent = claimParent()) {
+        return parent->findParentPage();
+    }
+
+    return nullptr;
 }
 
 
@@ -417,12 +421,7 @@ std::vector<DrawPage*> DrawView::findAllParentPages() const
 
 bool DrawView::isInClip()
 {
-    for (auto* parent : getInList()) {
-        if (parent->isDerivedFrom<DrawViewClip>()) {
-            return true;
-        }
-    }
-    return false;
+    return getClipGroup() != nullptr;
 }
 
 DrawView *DrawView::claimParent() const
@@ -461,22 +460,16 @@ std::vector<DrawView*> DrawView::getUniqueChildren() const
 
 DrawViewClip* DrawView::getClipGroup()
 {
-    for (auto* obj : getInList()) {
-        if (obj->isDerivedFrom<DrawViewClip>()) {
-            return static_cast<DrawViewClip*>(obj);
-        }
-    }
-    return nullptr;
+    // A clipped view names its clip group; the clip group stores no member list. Read the edge
+    // from the item side, mirroring getCollection()'s read of Collection.
+    return freecad_cast<DrawViewClip*>(ClipGroup.getValue());
 }
 
 DrawViewCollection *DrawView::getCollection() const
 {
-    for (auto* obj : getInList()) {
-        if (obj->isDerivedFrom<DrawViewCollection>()) {
-            return static_cast<DrawViewCollection*>(obj);
-        }
-    }
-    return nullptr;
+    // An item names its collection; the collection stores no member list. Read the edge from
+    // the item side, mirroring findParentPage()'s read of Page.
+    return freecad_cast<DrawViewCollection*>(Collection.getValue());
 }
 
 double DrawView::autoScale() const

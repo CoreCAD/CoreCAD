@@ -44,7 +44,7 @@ namespace PartDesign
 {
 extern bool getPDRefineModelParameter();
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::Boolean, PartDesign::FeatureRefine)
+PROPERTY_SOURCE(PartDesign::Boolean, PartDesign::FeatureRefine)
 
 const char* Boolean::TypeEnums[] = {"Fuse", "Cut", "Common", nullptr};
 
@@ -53,12 +53,19 @@ Boolean::Boolean()
     ADD_PROPERTY(Type, ((long)0));
     Type.setEnums(TypeEnums);
 
-    App::GeoFeatureGroupExtension::initExtension(this);
+    ADD_PROPERTY_TYPE(
+        Tools,
+        (nullptr),
+        "Boolean",
+        App::Prop_None,
+        "Tool bodies combined with this feature's base. References only — not owned."
+    );
+    Tools.setScope(App::LinkScope::Global);
 }
 
 short Boolean::mustExecute() const
 {
-    if (Group.isTouched()) {
+    if (Tools.isTouched()) {
         return 1;
     }
     return PartDesign::Feature::mustExecute();
@@ -70,7 +77,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
     std::string type = Type.getValueAsString();
 
     // Check the parameters
-    const Part::Feature* baseFeature = this->getBaseObject(/* silent = */ true);
+    App::DocumentObject* baseFeature = this->getBaseObject(/* silent = */ true);
 
     if (!baseFeature && type == "Cut") {
         return new App::DocumentObjectExecReturn(
@@ -78,7 +85,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
         );
     }
 
-    std::vector<App::DocumentObject*> tools = Group.getValues();
+    std::vector<App::DocumentObject*> tools = Tools.getValues();
     if (tools.empty()) {
         return App::DocumentObject::StdReturn;
     }
@@ -86,18 +93,18 @@ App::DocumentObjectExecReturn* Boolean::execute()
     // Get the base shape to operate on
     Part::TopoShape baseTopShape;
     if (baseFeature) {
-        baseTopShape = baseFeature->Shape.getShape();
+        baseTopShape = Part::getShape(baseFeature);
     }
     else {
         auto feature = tools.back();
-        if (!feature->isDerivedFrom<Part::Feature>()) {
+        if (!Part::hasShape(feature)) {
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
                 "Exception",
                 "Cannot do boolean with anything but Part::Feature and its derivatives"
             ));
         }
 
-        baseTopShape = static_cast<Part::Feature*>(feature)->Shape.getShape();
+        baseTopShape = Part::getShape(feature);
         tools.pop_back();
     }
 
@@ -157,14 +164,20 @@ App::DocumentObjectExecReturn* Boolean::execute()
 
     result = refineShapeIfActive(result);
 
-    if (!isSingleSolidRuleSatisfied(result.getShape())) {
-        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP(
-            "Exception",
-            "Result has multiple solids: enable 'Allow Compound' in the active body."
-        ));
+    // Cruth Amendment 5 §5.3 / P7: a PartDesign feature yields a solid or fails — it never silently
+    // emits an empty body. OCCT reports a degenerate boolean (a Common whose operands miss, or a
+    // Cut that consumes the whole base) as a *successful* empty compound rather than an exception,
+    // so the makeElementBoolean try/catch above does not see it. Guard on solid count so the
+    // emptied-body corner of a multi-body gesture fails loud instead of leaving a phantom
+    // zero-volume Tip. A legitimate severing Cut still yields >= 1 solid (a multi-solid body) and
+    // passes.
+    if (countSolids(result.getShape()) == 0) {
+        return new App::DocumentObjectExecReturn(
+            QT_TRANSLATE_NOOP("Exception", "Boolean operation produced an empty shape (no solid)")
+        );
     }
 
-    this->Shape.setValue(getSolid(result));
+    this->Shape.setValue(result);
 
     return StdReturn;
 }
@@ -172,7 +185,7 @@ App::DocumentObjectExecReturn* Boolean::execute()
 void Boolean::updatePreviewShape()
 {
     if (strcmp(Type.getValueAsString(), "Cut") == 0) {
-        TopoShape base = getBaseTopoShape(true).moved(getLocation().Inverted());
+        TopoShape base = getBaseTopoShape(true);
         TopoShape result = Shape.getShape();
 
         try {
@@ -191,14 +204,14 @@ void Boolean::updatePreviewShape()
 
     if (strcmp(Type.getValueAsString(), "Fuse") == 0) {
         // if there are no other shapes to fuse just return itself
-        if (Group.getValues().empty()) {
+        if (Tools.getValues().empty()) {
             PreviewShape.setValue(Shape.getShape());
             return;
         }
 
         std::vector<TopoShape> shapes;
 
-        for (auto& obj : Group.getValues()) {
+        for (auto& obj : Tools.getValues()) {
             shapes.push_back(
                 getTopoShape(obj, Part::ShapeOption::ResolveLink | Part::ShapeOption::Transform)
             );
@@ -217,7 +230,7 @@ void Boolean::updatePreviewShape()
 void Boolean::onChanged(const App::Property* prop)
 {
 
-    if (strcmp(prop->getName(), "Group") == 0) {
+    if (prop == &Tools) {
         touch();
     }
 
@@ -226,11 +239,13 @@ void Boolean::onChanged(const App::Property* prop)
 
 void Boolean::handleChangedPropertyName(Base::XMLReader& reader, const char* TypeName, const char* PropName)
 {
-    // The App::PropertyLinkList property was Bodies in the past
+    // The tool list has been named `Bodies` and later `Group` in previous versions;
+    // migrate both to the current `Tools` PropertyLinkList.
     Base::Type type = Base::Type::fromName(TypeName);
 
-    if (Group.getClassTypeId() == type && strcmp(PropName, "Bodies") == 0) {
-        Group.Restore(reader);
+    if (Tools.getClassTypeId() == type
+        && (strcmp(PropName, "Bodies") == 0 || strcmp(PropName, "Group") == 0)) {
+        Tools.Restore(reader);
     }
 }
 

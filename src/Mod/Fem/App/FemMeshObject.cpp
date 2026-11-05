@@ -32,11 +32,12 @@
 using namespace Fem;
 using namespace App;
 
-PROPERTY_SOURCE(Fem::FemMeshObject, App::GeoFeature)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Fem::FemMeshObject, App::GeoFeature)
 
 
 FemMeshObject::FemMeshObject()
 {
+    App::PlacementExtension::initExtension(this);
     ADD_PROPERTY_TYPE(FemMesh, (), "FEM Mesh", Prop_NoRecompute, "FEM Mesh object");
     // in the regard of recomputes see:
     // https://forum.freecad.org/viewtopic.php?f=18&t=33329#p279203

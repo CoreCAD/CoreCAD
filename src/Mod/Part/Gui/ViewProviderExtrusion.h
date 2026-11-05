@@ -42,9 +42,6 @@ public:
     ViewProviderExtrusion();
     /// destructor
     ~ViewProviderExtrusion() override;
-
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
 };
 
 }  // namespace PartGui

@@ -22,6 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <algorithm>
 #include <map>
 #include <vector>
 #include <iostream>
@@ -30,12 +31,14 @@
 #include <xercesc/sax2/Attributes.hpp>
 
 #include <locale>
+#include <sstream>
 
 #include "Reader.h"
 #include "Base64.h"
 #include "Base64Filter.h"
 #include "Console.h"
 #include "Exception.h"
+#include "FileInfo.h"
 #include "InputSource.h"
 #include "Persistence.h"
 #include "Sequencer.h"
@@ -51,6 +54,24 @@
 using namespace std;
 using namespace XERCES_CPP_NAMESPACE;
 
+
+namespace
+{
+/// What went wrong and WHERE, in one sentence.
+///
+/// A parser says both, and until now only the reason travelled: the position went to the error
+/// stream and was gone by the time anything could report it. A file that will not open has to be
+/// repairable in a text editor, and "element name expected" without a line number is not enough
+/// to find the place (Amendment 19 Clause 19.2).
+std::string reasonAndPlace(const XERCES_CPP_NAMESPACE::SAXParseException& e)
+{
+    char* message = XMLString::transcode(e.getMessage());
+    std::ostringstream what;
+    what << message << " (line " << e.getLineNumber() << ", column " << e.getColumnNumber() << ')';
+    XMLString::release(&message);
+    return what.str();
+}
+}  // namespace
 
 // ---------------------------------------------------------------------------
 //  Base::XMLReader: Constructors and Destructor
@@ -74,17 +95,18 @@ Base::XMLReader::XMLReader(const char* FileName, std::istream& str)
     }
     catch (const XMLException& toCatch) {
         char* message = XMLString::transcode(toCatch.getMessage());
-        cerr << "Exception message is: \n" << message << "\n";
+        _whyInvalid = message;
         XMLString::release(&message);
     }
     catch (const SAXParseException& toCatch) {
-        char* message = XMLString::transcode(toCatch.getMessage());
-        cerr << "Exception message is: \n" << message << "\n";
-        XMLString::release(&message);
+        // Kept, not only printed. A reader that failed on the very first element is the one case
+        // where nothing is thrown, so whoever asked for the read has no other way to learn why --
+        // and answering "it would not open" without saying where is not a diagnosis.
+        _whyInvalid = reasonAndPlace(toCatch);
     }
 #ifndef FC_DEBUG
     catch (...) {
-        cerr << "Unexpected Exception \n";
+        _whyInvalid = "unexpected XML exception";
     }
 #endif
 }
@@ -208,11 +230,7 @@ bool Base::XMLReader::read()
         throw Base::XMLBaseException(what);
     }
     catch (const SAXParseException& toCatch) {
-
-        char* message = XMLString::transcode(toCatch.getMessage());
-        std::string what = message;
-        XMLString::release(&message);
-        throw Base::XMLParseException(what);
+        throw Base::XMLParseException(reasonAndPlace(toCatch));
     }
     catch (...) {
         throw Base::XMLBaseException("Unexpected XML exception");
@@ -315,6 +333,96 @@ void Base::XMLReader::readEndElement(const char* ElementName, int level)
         }
     } while (ReadType != EndElement
              || (ElementName && (LocalName != ElementName || (level >= 0 && level != Level))));
+}
+
+namespace
+{
+/// Text with the characters XML reserves written as entities, so what comes back parses to what
+/// went in. Attribute values go through Persistence::encodeAttribute; this is the other half,
+/// for the text BETWEEN tags, which that one does not cover.
+std::string asElementText(const std::string& raw)
+{
+    std::string out;
+    out.reserve(raw.size());
+    for (const char character : raw) {
+        switch (character) {
+            case '&':
+                out += "&amp;";
+                break;
+            case '<':
+                out += "&lt;";
+                break;
+            case '>':
+                out += "&gt;";
+                break;
+            default:
+                out += character;
+        }
+    }
+    return out;
+}
+}  // namespace
+
+void Base::XMLReader::captureInto(std::ostream& out, int indent)
+{
+    // Both are overwritten by the very next read, and the next read is the first thing the body
+    // of this element does. Taken now or not at all.
+    const std::string name = LocalName;
+    const AttrMapType attributes = AttrMap;
+    const bool selfClosing = (ReadType == StartEndElement);
+
+    const std::string pad(static_cast<std::size_t>(indent) * 4, ' ');
+    std::ostringstream opening;
+    opening << pad << '<' << name;
+    for (const auto& [key, value] : attributes) {
+        opening << ' ' << key << "=\"" << Persistence::encodeAttribute(value) << '"';
+    }
+    if (selfClosing) {
+        out << opening.str() << "/>\n";
+        return;
+    }
+
+    std::ostringstream children;
+    std::string text;
+    bool nested = false;
+    while (true) {
+        read();
+        if (ReadType == EndDocument) {
+            throw Base::XMLParseException("End of document reached inside <" + name + ">");
+        }
+        if (ReadType == EndElement) {
+            break;
+        }
+        if (ReadType == StartElement || ReadType == StartEndElement) {
+            nested = true;
+            captureInto(children, indent + 1);
+        }
+        else if (ReadType == Chars) {
+            text += Characters;
+        }
+    }
+
+    out << opening.str() << '>';
+    if (nested) {
+        out << '\n' << children.str() << pad;
+    }
+    else {
+        out << asElementText(text);
+    }
+    out << "</" << name << ">\n";
+}
+
+std::string Base::XMLReader::readElementAsText()
+{
+    if (ReadType != StartElement && ReadType != StartEndElement) {
+        throw Base::XMLParseException(
+            "Nothing to take back as text: the reader is not on the start of an element"
+        );
+    }
+    endCharStream();
+    std::ostringstream out;
+    captureInto(out, 0);
+    return out.str();
 }
 
 void Base::XMLReader::readCharacters(const char* filename, CharStreamFormat format)
@@ -431,6 +539,34 @@ void Base::XMLReader::readBinFile(const char* filename)
 
     to << Base::base64_decode(Characters);
     to.close();
+}
+
+/// Read the registered files from a directory.
+///
+/// The archive form above walks the entries of a zip and matches them against what was
+/// registered. A directory has no order to walk, so this asks for each registered file by name
+/// -- and a file that is not there is simply absent, which is the normal case for a cache: it
+/// can be deleted at any time and everything it held is rebuilt.
+void Base::XMLReader::readFiles(const std::string& directory) const
+{
+    for (const FileEntry& entry : FileList) {
+        Base::FileInfo fi(directory + "/" + entry.FileName);
+        if (!fi.exists() || entry.Object == nullptr) {
+            continue;
+        }
+        try {
+            Base::ifstream file(fi, std::ios::in | std::ios::binary);
+            Base::Reader reader(file, entry.FileName, FileVersion);
+            entry.Object->RestoreDocFile(reader);
+            if (reader.getLocalReader()) {
+                reader.getLocalReader()->readFiles(directory);
+            }
+        }
+        catch (...) {
+            Base::Console().error("Reading failed from cached file: %s\n", entry.FileName.c_str());
+            FailedFiles.push_back(entry.FileName);
+        }
+    }
 }
 
 void Base::XMLReader::readFiles(zipios::ZipInputStream& zipstream) const
@@ -669,6 +805,18 @@ bool Base::XMLReader::testStatus(ReaderStatus pos) const
 void Base::XMLReader::setStatus(ReaderStatus pos, bool on)
 {
     StatusBits.set(static_cast<size_t>(pos), on);
+}
+
+void Base::XMLReader::recordUnreadStatement(std::string said)
+{
+    if (said.empty()) {
+        return;
+    }
+    // Said once. A file may state the same thing on many objects, and a cost a person has to read
+    // through repetitions of is a cost they stop reading.
+    if (std::find(UnreadStatements.begin(), UnreadStatements.end(), said) == UnreadStatements.end()) {
+        UnreadStatements.push_back(std::move(said));
+    }
 }
 
 void Base::XMLReader::setPartialRestore(bool on)

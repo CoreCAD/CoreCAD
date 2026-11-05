@@ -78,9 +78,10 @@ extern int yydebug;
     DOCUMENT = 276,                /* DOCUMENT  */
     OBJECT = 277,                  /* OBJECT  */
     EXPONENT = 278,                /* EXPONENT  */
-    NUM_AND_UNIT = 279,            /* NUM_AND_UNIT  */
-    NEG = 280,                     /* NEG  */
-    POS = 281                      /* POS  */
+    MISSINGREF = 279,              /* MISSINGREF  */
+    NUM_AND_UNIT = 280,            /* NUM_AND_UNIT  */
+    NEG = 281,                     /* NEG  */
+    POS = 282                      /* POS  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif

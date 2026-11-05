@@ -26,10 +26,10 @@
      inkscape:pagecheckerboard="true"
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="px"
-     showguides="false"
-     inkscape:zoom="1.3969662"
-     inkscape:cx="249.82708"
-     inkscape:cy="288.12436"
+     showguides="true"
+     inkscape:zoom="1.4142136"
+     inkscape:cx="88.034794"
+     inkscape:cy="291.68155"
      inkscape:window-width="1920"
      inkscape:window-height="1056"
      inkscape:window-x="1920"
@@ -43,14 +43,14 @@
        id="guide1"
        inkscape:locked="false" />
     <sodipodi:guide
-       position="66.019636,76.256162"
+       position="66.020137,76.233191"
        orientation="0.5,0.8660254"
        id="guide4"
        inkscape:locked="false"
        inkscape:label=""
        inkscape:color="rgb(0,134,229)" />
     <sodipodi:guide
-       position="66.019636,76.256172"
+       position="66.019636,76.232902"
        orientation="-0.5,0.8660254"
        id="guide6"
        inkscape:locked="false"
@@ -62,17 +62,17 @@
        id="guide23"
        inkscape:locked="false" />
     <sodipodi:guide
-       position="132.03926,76.451496"
-       orientation="0,-1"
-       id="guide24"
-       inkscape:locked="false" />
-    <sodipodi:guide
        position="145.39463,76.451501"
        orientation="-1,0"
        id="guide25"
        inkscape:locked="false"
        inkscape:label=""
        inkscape:color="rgb(0,134,229)" />
+    <sodipodi:guide
+       position="132.03926,76.232902"
+       orientation="0,-1"
+       id="guide2"
+       inkscape:locked="false" />
   </sodipodi:namedview>
   <defs
      id="defs1">
@@ -116,7 +116,7 @@
        sodipodi:nodetypes="ccccc" />
     <path
        style="fill:#cccccc;stroke:none;stroke-width:3.175;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1"
-       d="M -59.53125,-34.370512 0,-68.741023 59.53125,-34.370512 -0.22724212,0.10792914 Z"
+       d="M -59.53125,-34.370512 0,-68.741023 59.53125,-34.370512 10e-7,3.8543634e-7 Z"
        id="path16"
        sodipodi:nodetypes="ccccc" />
     <path

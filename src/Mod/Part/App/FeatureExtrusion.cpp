@@ -51,7 +51,7 @@
 
 using namespace Part;
 
-PROPERTY_SOURCE(Part::Extrusion, Part::Feature)
+PROPERTY_SOURCE(Part::Extrusion, Part::ShapeFeature)
 
 const char* Extrusion::eDirModeStrings[] = {"Custom", "Edge", "Normal", nullptr};
 const char* Extrusion::eInnerWireTaperStrings[] = {"Inverted", "SameAsOuter", nullptr};
@@ -108,6 +108,7 @@ void restoreFaceMakerMode(Extrusion* self)
 
 Extrusion::Extrusion()
 {
+    Part::MaterialExtension::initExtension(this);
     // clang-format off
     ADD_PROPERTY_TYPE(Base, (nullptr), "Extrude", App::Prop_None,
                       "Shape to extrude");
@@ -484,7 +485,7 @@ void FaceMakerExtrusion::Build()
 
 void Part::Extrusion::setupObject()
 {
-    Part::Feature::setupObject();
+    Part::ShapeFeature::setupObject();
     // default for newly created features
     this->FaceMakerMode.setValue(MakerEnums.at(3).c_str());
     this->FaceMakerClass.setValue("Part::FaceMakerBullseye");
@@ -497,7 +498,7 @@ void Extrusion::onDocumentRestored()
 
 void Extrusion::Restore(Base::XMLReader& reader)
 {
-    Part::Feature::Restore(reader);
+    Part::ShapeFeature::Restore(reader);
 
     // for 1.0 the inner wire taper was not inverted due to a bug
     if (Base::getVersion(reader.ProgramVersion) == Base::Version::v1_0) {
@@ -513,5 +514,5 @@ void Part::Extrusion::onChanged(const App::Property* prop)
         }
     }
 
-    Part::Feature::onChanged(prop);
+    Part::ShapeFeature::onChanged(prop);
 }

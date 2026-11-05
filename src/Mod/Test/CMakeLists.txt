@@ -6,6 +6,14 @@ SET(Test_SRCS
     AutoSaverStress.py
     RunAutoSaverStress.py
     Document.py
+    DocumentGroupTests.py
+    DocumentObjectTests.py
+    DocumentObserverTests.py
+    DocumentRecomputeTests.py
+    DocumentStorageTests.py
+    DocumentTestSupport.py
+    DocumentTransactionTests.py
+    DocumentDuplicate.py
     GuiDocument.py
     Metadata.py
     StringHasher.py

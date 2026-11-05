@@ -57,7 +57,10 @@ PyObject* DrawProjGroupPy::addProjection(PyObject* args)
         return nullptr;
     }
 
-    return new DrawProjGroupItemPy(newProj);
+    // The item itself, not a second handle to it: two handles to one object do not compare
+    // equal, so a script that keeps this one cannot find it again in any list of the group's
+    // items.
+    return newProj->getPyObject();
 }
 
 PyObject* DrawProjGroupPy::removeProjection(PyObject* args)
@@ -98,7 +101,7 @@ PyObject* DrawProjGroupPy::getItemByLabel(PyObject* args)
         return nullptr;
     }
 
-    return new DrawProjGroupItemPy(newProj);
+    return newProj->getPyObject();
 }
 
 PyObject* DrawProjGroupPy::getXYPosition(PyObject* args)

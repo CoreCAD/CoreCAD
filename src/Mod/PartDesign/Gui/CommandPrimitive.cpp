@@ -37,9 +37,7 @@
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeaturePrimitive.h>
 
-#include "DlgActiveBody.h"
 #include "Utils.h"
-#include "WorkflowManager.h"
 
 using namespace std;
 
@@ -85,56 +83,35 @@ void CmdPrimtiveCompAdditive::activated(int iMsg)
 {
     App::Document* doc = getDocument();
 
-    // We need either an active Body, or for there to be no Body objects
-    // (in which case, just make one) to make a new additive shape.
-
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(/* messageIfNot = */ false);
-
-    auto shouldMakeBody(false);
-    if (!pcActiveBody) {
-        if (doc->getObjectsOfType(PartDesign::Body::getClassTypeId()).empty()) {
-            shouldMakeBody = true;
-        }
-        else {
-            PartDesignGui::DlgActiveBody dia(Gui::getMainWindow(), doc);
-            if (dia.exec() == QDialog::DialogCode::Accepted) {
-                pcActiveBody = dia.getActiveBody();
-            }
-            if (!pcActiveBody) {
-                return;
-            }
-        }
-    }
-
     Gui::ActionGroup* pcAction = qobject_cast<Gui::ActionGroup*>(_pcAction);
     pcAction->setIcon(pcAction->actions().at(iMsg)->icon());
 
     std::string shapeType(primitiveIntToName(iMsg));
 
     openCommand("Make additive " + shapeType);
-    if (shouldMakeBody) {
-        pcActiveBody = PartDesignGui::makeBody(doc);
-    }
 
+    // Cruth §8.5: an additive primitive is a *generator* feature — it has no input to walk an
+    // anchor chain through, so its BaseShape is unset and it always spawns a new Body (§4.8).
+    // It does not consult an active body: §4.6 keeps no active body, in the model or as session
+    // state. Extending an existing Body instead is the Merge Result override at feature time,
+    // not a decision taken here. The spawn happens INSIDE the transaction just opened, so
+    // cancelling the primitive removes the Body with it and leaves no empty Body behind.
+    PartDesign::Body* pcActiveBody = PartDesign::Body::spawnAutoBody(doc);
     if (!pcActiveBody) {
+        abortCommand();
         return;
     }
 
     auto FeatName(getUniqueObjectName(shapeType.c_str(), pcActiveBody));
 
-    FCMD_OBJ_DOC_CMD(
-        pcActiveBody,
-        "addObject('PartDesign::Additive" << shapeType << "','" << FeatName << "')"
-    );
-
+    const std::string featType = std::string("PartDesign::Additive") + shapeType;
     auto* prm = static_cast<PartDesign::FeaturePrimitive*>(
-        pcActiveBody->getDocument()->getObject(FeatName.c_str())
+        PartDesignGui::createFeature(pcActiveBody, featType.c_str(), FeatName)
     );
 
     if (!prm) {
         return;
     }
-    FCMD_OBJ_CMD(pcActiveBody, "addObject(" << getObjectCmd(prm) << ")");
     Gui::Command::updateActive();
 
     auto base = prm->BaseFeature.getValue();
@@ -291,9 +268,11 @@ CmdPrimtiveCompSubtractive::CmdPrimtiveCompSubtractive()
 
 void CmdPrimtiveCompSubtractive::activated(int iMsg)
 {
-    PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
+    // Cruth §8.5/§4.6: a subtractive primitive is a combinator — it must be told which solid
+    // it cuts, resolved from the selection, never silently taken from an active body.
+    PartDesign::Body* targetBody = PartDesignGui::resolveTargetBody(this);
 
-    if (!pcActiveBody) {
+    if (!targetBody) {
         return;
     }
 
@@ -302,7 +281,7 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
 
     // check if we already have a feature as subtractive ones work only if we have
     // something to subtract from.
-    App::DocumentObject* prevSolid = pcActiveBody->Tip.getValue();
+    App::DocumentObject* prevSolid = targetBody->shownStep();
     if (!prevSolid) {
         QMessageBox::warning(
             Gui::getMainWindow(),
@@ -313,16 +292,12 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
     }
 
     auto shapeType(primitiveIntToName(iMsg));
-    auto FeatName(getUniqueObjectName(shapeType, pcActiveBody));
+    auto FeatName(getUniqueObjectName(shapeType, targetBody));
 
     openCommand(std::string("Make subtractive ") + shapeType);
-    FCMD_OBJ_CMD(
-        pcActiveBody,
-        "newObject('PartDesign::Subtractive" << shapeType << "','" << FeatName << "')"
-    );
+    const std::string featType = std::string("PartDesign::Subtractive") + shapeType;
+    auto Feat = PartDesignGui::createFeature(targetBody, featType.c_str(), FeatName);
     Gui::Command::updateActive();
-
-    auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
     copyVisual(Feat, "ShapeAppearance", prevSolid);
     copyVisual(Feat, "LineColor", prevSolid);
     copyVisual(Feat, "PointColor", prevSolid);
@@ -334,7 +309,7 @@ void CmdPrimtiveCompSubtractive::activated(int iMsg)
         FCMD_OBJ_HIDE(prevSolid);
     }
 
-    PartDesignGui::setEdit(Feat, pcActiveBody);
+    PartDesignGui::setEdit(Feat, targetBody);
 }
 
 Gui::Action* CmdPrimtiveCompSubtractive::createAction()

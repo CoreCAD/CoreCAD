@@ -40,7 +40,6 @@
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/Part/App/DatumFeature.h>
 
 #include "AssemblyObject.h"
 #include "AssemblyUtils.h"
@@ -55,10 +54,13 @@ using namespace Assembly;
 
 // ================================ Assembly Object ============================
 
-PROPERTY_SOURCE(Assembly::AssemblyLink, App::Part)
+PROPERTY_SOURCE_WITH_EXTENSIONS(Assembly::AssemblyLink, App::GeoFeature)
 
 AssemblyLink::AssemblyLink()
 {
+    App::GroupExtension::initExtension(this);
+    App::PlacementExtension::initExtension(this);
+
     ADD_PROPERTY_TYPE(
         Rigid,
         (true),
@@ -92,13 +94,45 @@ App::DocumentObjectExecReturn* AssemblyLink::execute()
 {
     updateContents();
 
-    return App::Part::execute();
+    return App::GeoFeature::execute();
+}
+
+App::DocumentObject* AssemblyLink::getSubObject(
+    const char* subname,
+    PyObject** pyObj,
+    Base::Matrix4D* mat,
+    bool transform,
+    int depth
+) const
+{
+    // Flexible sub-assemblies still own a proxy graph (#63); defer to the base container.
+    if (!isRigid()) {
+        return App::GeoFeature::getSubObject(subname, pyObj, mat, transform, depth);
+    }
+
+    // Rigid: apply our own instance placement, then resolve the remainder across the
+    // document boundary into the linked assembly. Nothing is owned locally.
+    if (mat && transform) {
+        *mat *= Placement.getValue().toMatrix();
+    }
+
+    if (!subname || *subname == '\0') {
+        return const_cast<AssemblyLink*>(this);
+    }
+
+    AssemblyObject* linked = getLinkedAssembly();
+    if (!linked) {
+        return nullptr;
+    }
+    // Delegate with transform=true so the linked assembly composes its own (root) placement
+    // and resolves the named component within its group.
+    return linked->getSubObject(subname, pyObj, mat, true, depth + 1);
 }
 
 void AssemblyLink::onChanged(const App::Property* prop)
 {
     if (App::GetApplication().isRestoring()) {
-        App::Part::onChanged(prop);
+        App::GeoFeature::onChanged(prop);
         return;
     }
 
@@ -163,66 +197,42 @@ void AssemblyLink::onChanged(const App::Property* prop)
         updateContents();
 
         auto* propPlc = dynamic_cast<App::PropertyPlacement*>(getPropertyByName("Placement"));
-        if (!propPlc) {
-            return;
-        }
 
-        if (!Rigid.getValue()) {
-            // when the assemblyLink becomes flexible, we need to make sure its placement is
-            // identity or it's going to mess up moving parts placement within.
-            Base::Placement plc = propPlc->getValue();
-            if (!plc.isIdentity()) {
-                propPlc->setValue(Base::Placement());
-
-                // We need to apply the placement of the assembly link to the children or they will
-                // move.
-                std::vector<App::DocumentObject*> group = Group.getValues();
-                for (auto* obj : group) {
-                    if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-                        && !obj->isDerivedFrom<App::Link>()) {
-                        continue;
-                    }
-
-                    if (obj->isLinkGroup()) {
-                        auto* srcLink = static_cast<App::Link*>(obj);
-                        const std::vector<App::DocumentObject*> srcElements
-                            = srcLink->ElementList.getValues();
-
-                        for (auto elt : srcElements) {
-                            if (!elt) {
-                                continue;
-                            }
-
-                            auto* prop = dynamic_cast<App::PropertyPlacement*>(
-                                elt->getPropertyByName("Placement")
-                            );
-                            if (prop) {
-                                prop->setValue(plc * prop->getValue());
-                            }
-                        }
-                    }
-                    else {
-                        auto* prop = dynamic_cast<App::PropertyPlacement*>(
-                            obj->getPropertyByName("Placement")
-                        );
-                        if (prop) {
-                            prop->setValue(plc * prop->getValue());
-                        }
-                    }
-                }
-
-                AssemblyObject::redrawJointPlacements(getJoints());
-            }
-        }
-        else {
+        // A flexible sub-assembly carries its instance transform on the link itself. Because
+        // AssemblyLink is a GeoFeatureGroup, the kernel composes that transform onto the owned
+        // proxy children whenever a pose is resolved (render, getGlobalPlacement, solve). Keeping
+        // the transform on the link -- instead of the old convention of zeroing Placement and
+        // baking the offset into every child -- is what lets nested sub-assemblies compose
+        // depth-independently: each level contributes one group transform, exactly the recursion
+        // rigid links already had. (The prior smear intentionally forced identity so the solver,
+        // which reads/writes child *local* placements, saw an identity group; making the solver
+        // group-aware is the paired follow-up.)
+        //
+        // Rigid retained transitionally until rigid support is removed.
+        if (propPlc && Rigid.getValue()) {
             // For the assemblylink not to move to origin, we need to update its placement.
             if (!movePlc.isIdentity()) {
                 propPlc->setValue(movePlc);
             }
         }
+
+        // Forward to the base so the change is signalled to observers -- notably the view
+        // provider, which rebuilds the sub-assembly's render for the new rigid/flexible state.
+        // Returning early (as this used to) left a flexible sub-assembly showing both its owned
+        // proxy geometry and the stale through-reference render (issue #77). But suppress the
+        // touch while doing so: a Rigid change applies its whole effect synchronously above
+        // (updateContents + placement), and letting it also mark the object for recompute makes
+        // Document::recompute re-enter the solver on a freshly built rigid tree and never settle
+        // (an unbounded recompute). No-touch keeps the pre-#77 invariant "a Rigid change does not
+        // schedule a recompute" while still emitting the signal #77 needs.
+        Base::ObjectStatusLocker<App::ObjectStatus, App::DocumentObject> noTouch(
+            App::ObjectStatus::NoTouch,
+            this
+        );
+        App::GeoFeature::onChanged(prop);
         return;
     }
-    App::Part::onChanged(prop);
+    App::GeoFeature::onChanged(prop);
 }
 
 void AssemblyLink::updateParentJoints()
@@ -322,6 +332,20 @@ void AssemblyLink::synchronizeComponents()
 
     objLinkMap.clear();
 
+    if (isRigid()) {
+        // Rigid sub-assemblies own nothing: child geometry is resolved through the reference
+        // (see getSubObject) and the whole is folded as a single rigid body at solve time. So
+        // we build no local proxies, and tear down any that a prior flexible state left behind.
+        // Flexible sub-assemblies still materialise an owned proxy graph (#63).
+        for (auto* obj : Group.getValues()) {
+            if (obj->isDerivedFrom<PartApp::Feature>() || obj->isDerivedFrom<App::Link>()
+                || obj->isDerivedFrom<AssemblyLink>()) {
+                doc->removeObject(obj->getNameInDocument());
+            }
+        }
+        return;
+    }
+
     std::vector<App::DocumentObject*> assemblyGroup = assembly->Group.getValues();
     std::vector<App::DocumentObject*> assemblyLinkGroup = Group.getValues();
 
@@ -360,8 +384,8 @@ void AssemblyLink::synchronizeComponents()
 
     // We check if a component needs to be added to the AssemblyLink
     for (auto* obj : topLevelComponents) {
-        if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-            && !obj->isDerivedFrom<App::Link>()) {
+        if (!obj->isDerivedFrom<PartApp::Feature>() && !obj->isDerivedFrom<App::Link>()
+            && !obj->isDerivedFrom<AssemblyLink>()) {
             continue;
         }
 
@@ -430,6 +454,11 @@ void AssemblyLink::synchronizeComponents()
                 subAsmLink->Rigid.setValue(asmLink->Rigid.getValue());
                 subAsmLink->Label.setValue(obj->Label.getValue());
                 addObject(subAsmLink);
+                // Carry the source sub-assembly's instance transform onto the proxy link, just
+                // as the leaf branches do for their proxies. The group then composes it onto the
+                // proxy's own children, so a sub-assembly nested inside a sub-assembly places its
+                // leaves at the right world pose without depending on a re-solve.
+                syncPlacements(obj, subAsmLink);
                 link = subAsmLink;
             }
             else if (obj->isDerivedFrom<App::Link>() && obj->isLinkGroup()) {
@@ -463,18 +492,18 @@ void AssemblyLink::synchronizeComponents()
                 newLink->LinkedObject.setValue(obj);
                 newLink->Label.setValue(obj->Label.getValue());
                 addObject(newLink);
+                // Bake the component's own pose (its placement inside the sub-assembly) into
+                // the proxy, exactly as the link-group branch above does for its elements. The
+                // flexible-flip in onChanged then premultiplies the link's instance placement,
+                // yielding the correct world pose. Without this the proxy starts at identity and
+                // renders the geometry at only the instance offset, dropping the internal pose --
+                // parts of a sub-assembly whose frame is far from its origin then fly apart.
+                syncPlacements(obj, newLink);
                 link = newLink;
             }
         }
 
         objLinkMap[obj] = link;
-    }
-
-    // If the assemblyLink is rigid, then we keep all placements synchronized.
-    if (isRigid()) {
-        for (const auto& [sourceObj, linkObj] : objLinkMap) {
-            syncPlacements(sourceObj, linkObj);
-        }
     }
 
     // We check if a component needs to be removed from the AssemblyLink
@@ -487,8 +516,8 @@ void AssemblyLink::synchronizeComponents()
     for (auto* obj : assemblyLinkGroup) {
         // We don't need to update assemblyLinkGroup after the addition since we're not removing
         // something we just added.
-        if (!obj->isDerivedFrom<App::Part>() && !obj->isDerivedFrom<PartApp::Feature>()
-            && !obj->isDerivedFrom<App::Link>()) {
+        if (!obj->isDerivedFrom<PartApp::Feature>() && !obj->isDerivedFrom<App::Link>()
+            && !obj->isDerivedFrom<AssemblyLink>()) {
             continue;
         }
         if (validLinks.find(obj) == validLinks.end()) {

@@ -30,14 +30,13 @@ App = FreeCAD
 
 class TestDatumPoint(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPoint")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPoint", type="Part")
 
     def testOriginDatumPoint(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        self.DatumPoint = self.Doc.addObject("PartDesign::Point", "DatumPoint")
+        self.DatumPoint = self.Doc.addObject("Part::DatumPoint", "DatumPoint")
         self.DatumPoint.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumPoint.MapMode = "ObjectOrigin"
-        self.Body.addObject(self.DatumPoint)
         self.Doc.recompute()
         self.assertEqual(self.DatumPoint.AttachmentOffset.Base, App.Vector(0))
 
@@ -49,14 +48,13 @@ class TestDatumPoint(unittest.TestCase):
 
 class TestDatumLine(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDatumLine")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDatumLine", type="Part")
 
     def testXAxisDatumLine(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        self.DatumLine = self.Doc.addObject("PartDesign::Line", "DatumLine")
+        self.DatumLine = self.Doc.addObject("Part::DatumLine", "DatumLine")
         self.DatumLine.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumLine.MapMode = "ObjectX"
-        self.Body.addObject(self.DatumLine)
         self.Doc.recompute()
         self.assertNotIn("Invalid", self.DatumLine.State)
 
@@ -68,14 +66,13 @@ class TestDatumLine(unittest.TestCase):
 
 class TestDatumPlane(unittest.TestCase):
     def setUp(self):
-        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane")
+        self.Doc = FreeCAD.newDocument("PartDesignTestDatumPlane", type="Part")
 
     def testXYDatumPlane(self):
         self.Body = self.Doc.addObject("PartDesign::Body", "Body")
-        self.DatumPlane = self.Doc.addObject("PartDesign::Plane", "DatumPlane")
+        self.DatumPlane = self.Doc.addObject("Part::DatumPlane", "DatumPlane")
         self.DatumPlane.AttachmentSupport = [(self.Doc.XY_Plane, "")]
         self.DatumPlane.MapMode = "FlatFace"
-        self.Body.addObject(self.DatumPlane)
         self.Doc.recompute()
         self.DatumPlaneNormal = self.DatumPlane.Shape.Surface.Axis
         self.assertEqual(abs(self.DatumPlaneNormal.dot(App.Vector(0, 0, 1))), 1)

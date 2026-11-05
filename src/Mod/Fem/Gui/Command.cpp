@@ -195,13 +195,13 @@ void CmdFemAddPart::activated(int)
         return;
     }
 
-    if (!selection[0].isObjectTypeOf(Part::Feature::getClassTypeId())){
+    if (!selection[0].isObjectTypeOf(Part::ShapeFeature::getClassTypeId())){
         QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong object type"),
             QObject::tr("Fillet works only on parts"));
         return;
     }
 
-    Part::Feature *base = static_cast<Part::Feature*>(selection[0].getObject());
+    Part::Feature *base = static_cast<Part::ShapeFeature*>(selection[0].getObject());
 
     std::string AnalysisName = getUniqueObjectName("FemAnalysis");
     std::string MeshName = getUniqueObjectName((std::string(base->getNameInDocument())

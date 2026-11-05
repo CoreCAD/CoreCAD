@@ -48,6 +48,7 @@ public:
     ~ViewProviderLine() override = default;
 
     bool doubleClicked() override;
+    TreeBodyColumn getTreeBodyColumn() const override;
 };
 
 class PartGuiExport ViewProviderPlane: public Gui::ViewProviderPlane,
@@ -60,6 +61,7 @@ public:
     ~ViewProviderPlane() override = default;
 
     bool doubleClicked() override;
+    TreeBodyColumn getTreeBodyColumn() const override;
 };
 
 class PartGuiExport ViewProviderPoint: public Gui::ViewProviderPoint,
@@ -72,6 +74,7 @@ public:
     ~ViewProviderPoint() override = default;
 
     bool doubleClicked() override;
+    TreeBodyColumn getTreeBodyColumn() const override;
 };
 
 class PartGuiExport ViewProviderLCS: public Gui::ViewProviderCoordinateSystem,
@@ -84,6 +87,7 @@ public:
     ~ViewProviderLCS() override = default;
 
     bool doubleClicked() override;
+    TreeBodyColumn getTreeBodyColumn() const override;
 };
 
 }  // namespace PartGui

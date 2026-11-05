@@ -72,8 +72,7 @@ public:
     ~ViewProviderHole() override;
     bool onDelete(const std::vector<std::string>& arg) override;
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
+    std::vector<App::DocumentObject*> consumedProfiles() const override;
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
     SoSeparator* createThreadTextureSeparator();
     bool isHoleThreadVisible() const;

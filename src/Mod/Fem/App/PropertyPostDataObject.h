@@ -40,6 +40,12 @@ class FemExport PropertyPostDataObject: public App::Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Kept beside the record: a solver result field, sized by the mesh that produced it.
+    bool holdsOpaqueBulk() const override
+    {
+        return true;
+    }
+
     PropertyPostDataObject();
     ~PropertyPostDataObject() override;
 

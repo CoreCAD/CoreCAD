@@ -164,6 +164,52 @@ public:
     /// Clear internal label references registration
     void unregisterLabelReferences();
 
+    /** One end of a reference: the object pointed at, and the part of it that was picked.
+     *
+     *  A sub-element string ("Face6") names a position in a computed shape, not an identity, so
+     *  it can never be what a reference binds by -- it rides alongside the target, exactly as the
+     *  document archive already carries a name and a position side by side.
+     */
+    struct Pointing
+    {
+        App::DocumentObject* target {nullptr};
+        std::string sub;
+        /// The target is named with no part at all, which is not the same as naming one empty
+        /// part: a link's list of parts can be empty or hold "" and the two mean different things.
+        bool noPart {false};
+        /// The element's full name, which is what the reference is to (§4.7); `sub` is only where
+        /// that element sat when last computed. Empty when the target has no name for it.
+        std::string name;
+    };
+
+    /** Everything this reference points at, target by target.
+     *
+     *  A link property knows what it points at, and nothing outside it should have to know which
+     *  of a dozen link classes it is in order to ask. A reader that tries each class in turn is a
+     *  reader that says nothing at all about the one class nobody remembered to add to the list --
+     *  and the list was written out twice over, once to state a reference in the file of record
+     *  and once to point it again on the way back in.
+     *
+     *  Answering false means "this kind of reference cannot say where it points in these terms",
+     *  which is a different fact from pointing at nothing and is treated as one.
+     */
+    virtual bool statesWhereItPoints(std::vector<Pointing>& pointing) const
+    {
+        (void)pointing;
+        return false;
+    }
+
+    /** Point this reference at these targets again, each with the part of it that was picked.
+     *
+     *  The other half of statesWhereItPoints(), and the same rule: false means this kind of
+     *  reference cannot be set in these terms, never that it was set to nothing.
+     */
+    virtual bool pointAt(const std::vector<Pointing>& pointing)
+    {
+        (void)pointing;
+        return false;
+    }
+
     /// Test if the element reference has changed after restore
     virtual bool referenceChanged() const
     {
@@ -668,6 +714,10 @@ class AppExport PropertyLink: public PropertyLinkBase
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Where this reference points, and how to point it there again -- see PropertyLinkBase.
+    bool statesWhereItPoints(std::vector<Pointing>& pointing) const override;
+    bool pointAt(const std::vector<Pointing>& pointing) override;
+
     /**
      * A constructor.
      * A more elaborate description of the constructor.
@@ -801,6 +851,10 @@ class AppExport PropertyLinkList
         PropertyListsT<DocumentObject*, std::vector<DocumentObject*>, PropertyLinkListBase>;
 
 public:
+    /// Where this reference points, and how to point it there again -- see PropertyLinkBase.
+    bool statesWhereItPoints(std::vector<Pointing>& pointing) const override;
+    bool pointAt(const std::vector<Pointing>& pointing) override;
+
     /**
      * A constructor.
      * A more elaborate description of the constructor.
@@ -914,6 +968,10 @@ class AppExport PropertyLinkSub: public PropertyLinkBase
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Where this reference points, and how to point it there again -- see PropertyLinkBase.
+    bool statesWhereItPoints(std::vector<Pointing>& pointing) const override;
+    bool pointAt(const std::vector<Pointing>& pointing) override;
+
     /**
      * A constructor.
      * A more elaborate description of the constructor.
@@ -1073,6 +1131,10 @@ class AppExport PropertyLinkSubList: public PropertyLinkBase
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Where this reference points, and how to point it there again -- see PropertyLinkBase.
+    bool statesWhereItPoints(std::vector<Pointing>& pointing) const override;
+    bool pointAt(const std::vector<Pointing>& pointing) override;
+
     using SubSet = std::pair<DocumentObject*, std::vector<std::string>>;
     /**
      * A constructor.
@@ -1261,6 +1323,10 @@ class AppExport PropertyXLink: public PropertyLinkGlobal
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Where this reference points, and how to point it there again -- see PropertyLinkBase.
+    bool statesWhereItPoints(std::vector<Pointing>& pointing) const override;
+    bool pointAt(const std::vector<Pointing>& pointing) override;
+
     explicit PropertyXLink(bool allowPartial = false, PropertyLinkBase* parent = nullptr);
 
     ~PropertyXLink() override;
@@ -1278,6 +1344,8 @@ public:
 
     void setValue(std::string&& filePath,
                   std::string&& objectName,
+                  std::string&& documentUuid,
+                  std::string&& objectUuid,
                   std::vector<std::string>&& SubList,
                   std::vector<ShadowSub>&& ShadowSubList = {});
 
@@ -1308,6 +1376,14 @@ public:
 
     void Save(Base::Writer& writer) const override;
     void Restore(Base::XMLReader& reader) override;
+
+    /** Read this link from the element the reader is already on.
+     *
+     * A list of links steps its children by level rather than by a declared length, which
+     * leaves the reader standing on each child; Restore() above is the same read for a caller
+     * that has not moved yet.
+     */
+    void restoreFromCurrentElement(Base::XMLReader& reader);
 
     Property* Copy() const override;
     void Paste(const Property& from) override;
@@ -1400,6 +1476,9 @@ protected:
     std::string filePath;
     std::string docName;
     std::string objectName;
+    // Durable target-document UUID (Clause 3.7): the real binding for the
+    // external document; filePath is a locator hint validated against this.
+    std::string docUuid;
     std::string stamp;
     std::vector<std::string> _SubList;
     std::vector<ShadowSub> _ShadowSubList;
@@ -1451,6 +1530,10 @@ class AppExport PropertyXLinkSubList: public PropertyLinkBase,
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    /// Where this reference points, and how to point it there again -- see PropertyLinkBase.
+    bool statesWhereItPoints(std::vector<Pointing>& pointing) const override;
+    bool pointAt(const std::vector<Pointing>& pointing) override;
+
     using atomic_change =
         typename AtomicPropertyChangeInterface<PropertyXLinkSubList>::AtomicPropertyChange;
     friend atomic_change;

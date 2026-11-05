@@ -1,0 +1,486 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-FileCopyrightText: 2026 Cruth contributors
+
+#include <gtest/gtest.h>
+
+#include <filesystem>
+#include <iterator>
+#include <sstream>
+#include <string>
+
+#include <BRepPrimAPI_MakeBox.hxx>
+
+#include <App/Application.h>
+#include <Base/FileInfo.h>
+#include <Base/Stream.h>
+#include <App/Document.h>
+#include <App/StoredRecipe.h>
+#include <App/PropertyPythonObject.h>
+#include <Base/Interpreter.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/FeatureFillet.h>
+#include <Mod/Part/App/FeaturePartBox.h>
+#include <Mod/Part/App/PropertyTopoShapeList.h>
+#include <src/App/InitApplication.h>
+
+// NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
+
+/// What the stored recipe does with a solid, which depends entirely on where the solid came from.
+///
+/// A feature's shape is the OUTPUT of the recipe and is rebuilt from it, so storing it would put
+/// the answer next to the question and let the file disagree with itself. An imported solid is
+/// the opposite case: nothing in the document can produce it, so it is the authored input itself
+/// and a file that dropped it would be describing a part that cannot be rebuilt.
+class StoredRecipeGeometryTest: public ::testing::Test
+{
+protected:
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+
+    void SetUp() override
+    {
+        _doc = App::GetApplication().newDocument("StoredRecipeGeometry_test", "testUser");
+    }
+
+    void TearDown() override
+    {
+        if (_rebuilt != nullptr) {
+            App::GetApplication().closeDocument(_rebuilt->getName());
+        }
+        App::GetApplication().closeDocument(_doc->getName());
+    }
+
+    App::Document* readBack(const std::string& written)
+    {
+        _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+        std::istringstream text(written);
+        App::restoreStoredRecipe(*_rebuilt, text);
+        _rebuilt->recompute();
+        return _rebuilt;
+    }
+
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+    App::Document* _doc = nullptr;
+    App::Document* _rebuilt = nullptr;
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
+};
+
+// An imported solid IS the authored content: no property of the document produces it, so a recipe
+// that left it out would rebuild an empty document and call that the same part.
+TEST_F(StoredRecipeGeometryTest, anImportedSolidIsCarriedBecauseNothingCanRebuildIt)
+{
+    // Arrange -- exactly what an import leaves behind: a plain feature holding a shape.
+    auto* imported = _doc->addObject<Part::Feature>("Imported");
+    imported->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    _doc->recompute();
+    const Base::BoundBox3d expected = imported->Shape.getShape().getBoundBox();
+
+    // Act
+    App::Document* rebuilt = readBack(App::formatStoredRecipe(*_doc));
+
+    // Assert
+    auto* returned = dynamic_cast<Part::Feature*>(rebuilt->getObject("Imported"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_FALSE(returned->Shape.getShape().isNull());
+    const Base::BoundBox3d built = returned->Shape.getShape().getBoundBox();
+    EXPECT_NEAR(built.MaxX, expected.MaxX, 1e-7);
+    EXPECT_NEAR(built.MaxY, expected.MaxY, 1e-7);
+    EXPECT_NEAR(built.MaxZ, expected.MaxZ, 1e-7);
+}
+
+// A primitive builds its own solid from the sizes it was given, so the solid is output and stays
+// out of the file -- and the part still comes back, because the recipe is enough to rebuild it.
+TEST_F(StoredRecipeGeometryTest, aBuiltSolidStaysOutOfTheFileAndIsRebuilt)
+{
+    // Arrange
+    auto* box = _doc->addObject<Part::Box>("Block");  // NOLINT
+    box->Length.setValue(10.0);
+    box->Width.setValue(20.0);
+    box->Height.setValue(30.0);
+    _doc->recompute();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc);
+    App::Document* rebuilt = readBack(written);
+
+    // Assert -- the sizes are in the file, the solid they produce is not.
+    EXPECT_NE(written.find("\"Length\""), std::string::npos);
+    EXPECT_EQ(written.find("<Part "), std::string::npos);
+    auto* returned = dynamic_cast<Part::Box*>(rebuilt->getObject("Block"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_FALSE(returned->Shape.getShape().isNull());
+    EXPECT_NEAR(returned->Shape.getShape().getBoundBox().MaxZ, 30.0, 1e-7);
+}
+
+// Handed-in geometry does not belong inside the recipe: it is source material, not a
+// description of anything, and thousands of lines of coordinates in the middle of the file
+// would defeat the one property the file exists for. It goes to the project's own folder, named
+// by what it holds, and the recipe names it.
+TEST_F(StoredRecipeGeometryTest, anImportedSolidIsKeptBesideTheRecipeNotInsideIt)
+{
+    // Arrange
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* first = _doc->addObject<Part::Feature>("First");
+    first->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    // The same body a second time: one import used twice is one thing, and the file it is kept
+    // in is named after its contents, so it is stored once.
+    auto* second = _doc->addObject<Part::Feature>("Second");
+    second->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    _doc->recompute();
+    const Base::BoundBox3d expected = first->Shape.getShape().getBoundBox();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- the recipe names the geometry and does not contain it.
+    EXPECT_EQ(written.find("DBRep_DrawableShape"), std::string::npos);
+    EXPECT_NE(written.find("asset=\""), std::string::npos);
+    EXPECT_EQ(
+        std::distance(
+            std::filesystem::directory_iterator(assets),
+            std::filesystem::directory_iterator {}
+        ),
+        1
+    );
+
+    // And it comes back.
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+    _rebuilt->recompute();
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("First"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_FALSE(returned->Shape.getShape().isNull());
+    EXPECT_NEAR(returned->Shape.getShape().getBoundBox().MaxZ, expected.MaxZ, 1e-7);
+
+    std::filesystem::remove_all(assets);
+}
+
+// A handed-in shape carries the names of its faces, and those names are the whole basis on which a
+// later feature says which face it was attached to. Nothing can rebuild them -- unlike a built
+// shape's, which come back with the rebuild -- so losing them on the way to the source store is the
+// exact failure durable identity exists to prevent. Measured before the fix: 26 names in, 0 back.
+TEST_F(StoredRecipeGeometryTest, handedInGeometryKeepsTheNamesOfItsFaces)
+{
+    // Arrange -- a shape that carries mapped element names, handed to a plain feature, which is
+    // what a copy and a bake leave behind.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* box = _doc->addObject<Part::Box>("Block");  // NOLINT
+    box->Length.setValue(10.0);
+    box->Width.setValue(20.0);
+    box->Height.setValue(30.0);
+    _doc->recompute();
+    auto* handed = _doc->addObject<Part::Feature>("Handed");
+    handed->Shape.setValue(box->Shape.getShape());
+    _doc->recompute();
+    const size_t named = handed->Shape.getShape().getElementMapSize();
+    ASSERT_GT(named, 0U) << "the arrangement itself is wrong if there are no names to lose";
+    const Data::MappedName first = handed->Shape.getShape().getMappedName(Data::IndexedName("Face", 1));
+    ASSERT_FALSE(first.empty());
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+
+    // Assert -- the same count and the same name, not merely a shape of the right size.
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("Handed"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_EQ(returned->Shape.getShape().getElementMapSize(), named);
+    EXPECT_EQ(
+        returned->Shape.getShape().getMappedName(Data::IndexedName("Face", 1)).toString(),
+        first.toString()
+    );
+
+    std::filesystem::remove_all(assets);
+}
+
+// A save that changed nothing must write nothing new. The source store names an entry by what it
+// holds, so the same body has to reach the same name every time -- otherwise a document nobody
+// edited is stored twice, the line in the recipe that names it changes, and two people who saved
+// the identical part get a conflicting diff on a line that means the same thing. Measured before
+// the fix: one document, two saves, two entries.
+TEST_F(StoredRecipeGeometryTest, aSaveThatChangedNothingWritesNothingNew)
+{
+    // Arrange -- a handed-in shape carrying mapped names, which is what brings a hasher table with
+    // it, and the hasher table is what was being written once and then left out.
+    const std::string folder = Base::FileInfo::getTempFileName();
+    Base::FileInfo(folder).createDirectory();
+    const std::string file = folder + "/Part.FCStd";
+    auto* box = _doc->addObject<Part::Box>("Block");  // NOLINT
+    box->Length.setValue(10.0);
+    box->Width.setValue(20.0);
+    box->Height.setValue(30.0);
+    _doc->recompute();
+    auto* handed = _doc->addObject<Part::Feature>("Handed");
+    handed->Shape.setValue(box->Shape.getShape());
+    _doc->recompute();
+    ASSERT_GT(handed->Shape.getShape().getElementMapSize(), 0U);
+
+    // Act -- saved twice, with nothing changed in between.
+    _doc->saveAs(file.c_str());
+    _doc->save();
+
+    // Assert
+    const std::filesystem::path assets = std::filesystem::path(folder) / "assets";
+    ASSERT_TRUE(std::filesystem::is_directory(assets));
+    EXPECT_EQ(
+        std::distance(
+            std::filesystem::directory_iterator(assets),
+            std::filesystem::directory_iterator {}
+        ),
+        1
+    );
+
+    std::filesystem::remove_all(folder);
+}
+
+// A record that names source material it cannot find KEEPS the name and reports the gap. The
+// alternative is what this replaces: the save re-derived the record from what was in memory, a
+// property holding nothing produced nothing to store, and the file came back saying a plain shape
+// holder was authored empty -- with the digest that named the body gone, so putting the folder
+// back could never recover the design. Loading failure and authored emptiness are different facts.
+TEST_F(StoredRecipeGeometryTest, aRecordKeepsTheNameOfSourceMaterialItCannotFind)
+{
+    // Arrange -- a part built from a handed-in body, then carried away from its source folder,
+    // which is what emailing one file or dragging it in a file manager does.
+    const std::string home = Base::FileInfo::getTempFileName();
+    Base::FileInfo(home).createDirectory();
+    const std::string file = home + "/Part.FCStd";
+    auto* box = _doc->addObject<Part::Box>("Block");  // NOLINT
+    box->Length.setValue(10.0);
+    box->Width.setValue(20.0);
+    box->Height.setValue(30.0);
+    _doc->recompute();
+    auto* handed = _doc->addObject<Part::Feature>("Handed");
+    handed->Shape.setValue(box->Shape.getShape());
+    _doc->recompute();
+    _doc->saveAs(file.c_str());
+
+    const auto textOf = [](const std::string& path) {
+        Base::ifstream stream(Base::FileInfo(path), std::ios::in | std::ios::binary);
+        return std::string {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    };
+    const std::string saved = textOf(file);
+    const std::string::size_type names = saved.find("asset=\"");
+    ASSERT_NE(names, std::string::npos) << "the arrangement is wrong if nothing was stored";
+    const std::string::size_type from = names + std::string("asset=\"").size();
+    const std::string id = saved.substr(from, saved.find('"', from) - from);
+
+    const std::string elsewhere = Base::FileInfo::getTempFileName();
+    Base::FileInfo(elsewhere).createDirectory();
+    const std::string moved = elsewhere + "/Part.FCStd";
+    std::filesystem::copy_file(file, moved);
+
+    // Act -- opened where its source material is not, and saved again.
+    App::DocumentInitFlags relocated;
+    relocated.duplicate = App::DuplicateAnswer::SamePart;
+    App::Document* away = App::GetApplication().openDocument(moved.c_str(), relocated);
+    ASSERT_NE(away, nullptr);
+    auto* orphaned = dynamic_cast<Part::Feature*>(away->getObject("Handed"));
+    ASSERT_NE(orphaned, nullptr);
+    ASSERT_TRUE(orphaned->Shape.getShape().isNull()) << "the material was supposed to be missing";
+    away->save();
+    const std::string rewritten = textOf(moved);
+    App::GetApplication().closeDocument(away->getName());
+
+    // Assert -- the name survived the round trip, and the file says the value is not there.
+    EXPECT_NE(rewritten.find("asset=\"" + id + "\""), std::string::npos)
+        << "the record must not overwrite the name of its source material with its absence";
+    EXPECT_NE(rewritten.find("<Unrecorded"), std::string::npos);
+    const std::string::size_type gap = rewritten.find("<Unrecorded");
+    EXPECT_NE(rewritten.find(id, gap), std::string::npos)
+        << "the gap must be reported, not silently claimed to be nothing";
+
+    // And the document is still repairable: put the source material back and the body returns.
+    std::filesystem::copy(
+        std::filesystem::path(home) / "assets",
+        std::filesystem::path(elsewhere) / "assets",
+        std::filesystem::copy_options::recursive
+    );
+    App::Document* repaired = App::GetApplication().openDocument(moved.c_str(), relocated);
+    ASSERT_NE(repaired, nullptr);
+    auto* returned = dynamic_cast<Part::Feature*>(repaired->getObject("Handed"));
+    ASSERT_NE(returned, nullptr);
+    EXPECT_FALSE(returned->Shape.getShape().isNull())
+        << "reuniting the file with its source folder must recover the design";
+    App::GetApplication().closeDocument(repaired->getName());
+
+    std::filesystem::remove_all(home);
+    std::filesystem::remove_all(elsewhere);
+}
+
+// Where geometry lives is decided by what PRODUCED it, and the object answers -- never its class.
+// A scripted object is the case that proves it: the same class parks a shape it was handed when
+// its script has no execute, and computes one when it has. Deciding by exact type dropped every
+// shape a script ever parked, silently, because a scripted object is a subclass of the plain
+// holder rather than the holder itself.
+TEST_F(StoredRecipeGeometryTest, aShapeParkedOnAScriptedFeatureIsCarried)
+{
+    // Arrange -- a scripted object with no execute: nothing will ever produce this shape again.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    App::DocumentObject* parked = _doc->addObject("Part::FeaturePython", "Parked");
+    ASSERT_NE(parked, nullptr);
+    auto* holder = dynamic_cast<Part::Feature*>(parked);
+    ASSERT_NE(holder, nullptr);
+    holder->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    _doc->recompute();
+    const Base::BoundBox3d expected = holder->Shape.getShape().getBoundBox();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- carried, and it comes back.
+    EXPECT_NE(written.find("asset=\""), std::string::npos)
+        << "a shape nothing rebuilds is the authored content and may not be dropped";
+
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+    _rebuilt->recompute();
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("Parked"));
+    ASSERT_NE(returned, nullptr);
+    ASSERT_FALSE(returned->Shape.getShape().isNull());
+    EXPECT_NEAR(returned->Shape.getShape().getBoundBox().MaxZ, expected.MaxZ, 1e-7);
+
+    std::filesystem::remove_all(assets);
+}
+
+// The other side of the same question. A script that supplies an execute rebuilds the shape from
+// the recipe, so the shape is output: keeping it would put the answer next to the question and
+// let the file disagree with itself.
+TEST_F(StoredRecipeGeometryTest, aShapeAScriptRebuildsStaysOutOfTheFile)
+{
+    // Arrange
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    App::DocumentObject* scripted = _doc->addObject("Part::FeaturePython", "Scripted");
+    ASSERT_NE(scripted, nullptr);
+    auto* proxy = dynamic_cast<App::PropertyPythonObject*>(scripted->getPropertyByName("Proxy"));
+    ASSERT_NE(proxy, nullptr);
+    proxy->setValue(
+        Base::Interpreter().runStringObject(
+            "type('Rebuilds', (object,), {'execute': lambda self, obj: None})()"
+        )
+    );
+    auto* holder = dynamic_cast<Part::Feature*>(scripted);
+    ASSERT_NE(holder, nullptr);
+    holder->Shape.setValue(BRepPrimAPI_MakeBox(10.0, 20.0, 30.0).Shape());
+    _doc->recompute();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- nothing stored, and nothing inlined either.
+    EXPECT_EQ(written.find("asset=\""), std::string::npos)
+        << "a shape the script rebuilds is output, not source material";
+    EXPECT_EQ(written.find("DBRep_DrawableShape"), std::string::npos);
+
+    std::filesystem::remove_all(assets);
+}
+
+// Which edges a person rounded, and how far, is a design decision -- it is not derivable from
+// anything else in the document, and nothing rebuilds it. It had no text form at all, so it was
+// declared bulk and went to the source store: the record named a file for a handful of numbers a
+// person chose. Measured before the fix: the recipe stated no fillet and the store held a file.
+TEST_F(StoredRecipeGeometryTest, theEdgesAPersonRoundedAreStatedInTheRecipe)
+{
+    // Arrange -- a rounded box. The box itself is BUILT, so nothing else is competing for the
+    // store and an empty folder means exactly one thing.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* box = _doc->addObject<Part::Box>("Box");
+    auto* fillet = _doc->addObject<Part::Fillet>("Fillet");
+    fillet->Base.setValue(box);
+    // Two radii that differ, because a fillet may open out along the edge: they are two values,
+    // not one value said twice, and a form that carried only the first would pass a test using
+    // equal ones.
+    fillet->Edges.setValues({Part::FilletElement(1, 1.5, 2.5), Part::FilletElement(3, 0.5, 0.5)});
+    _doc->recompute();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+
+    // Assert -- said in the record, and nothing filed away.
+    EXPECT_NE(written.find("<Fillet edge=\"1\""), std::string::npos)
+        << "the recipe does not state which edges were rounded";
+    EXPECT_EQ(written.find("asset=\""), std::string::npos)
+        << "an authored value was filed beside the record instead of stated in it";
+    EXPECT_EQ(
+        std::distance(
+            std::filesystem::directory_iterator(assets),
+            std::filesystem::directory_iterator {}
+        ),
+        0
+    );
+
+    // And it comes back, both radii intact.
+    App::Document* rebuilt = readBack(written);
+    auto* returned = dynamic_cast<Part::Fillet*>(rebuilt->getObject("Fillet"));
+    ASSERT_NE(returned, nullptr);
+    const std::vector<Part::FilletElement>& back = returned->Edges.getValues();
+    ASSERT_EQ(back.size(), 2U) << "a stored fillet came back with a different number of edges";
+    EXPECT_EQ(back[0].edgeid, 1);
+    EXPECT_DOUBLE_EQ(back[0].radius1, 1.5);
+    EXPECT_DOUBLE_EQ(back[0].radius2, 2.5);
+    EXPECT_EQ(back[1].edgeid, 3);
+    EXPECT_DOUBLE_EQ(back[1].radius1, 0.5);
+    EXPECT_DOUBLE_EQ(back[1].radius2, 0.5);
+
+    std::filesystem::remove_all(assets);
+}
+
+// A property that keeps SEVERAL shapes keeps each of them in a file of its own, and every one of
+// those files has to say which shape of the list it holds. It used to say so by its name -- shape
+// 2 went to a file called ".2.brp" -- and the name is the one thing that does not survive the
+// trip: the project's source store renames what it is handed, on purpose, so that an entry is
+// named by the content it holds and not by the object that wrote it. Every file in the list then
+// read back as shape 0. Measured before the fix: three shapes in, one shape and two empties back.
+TEST_F(StoredRecipeGeometryTest, everyShapeOfAStoredListComesBack)
+{
+    // Arrange -- three handed-in solids of different heights, so a shape that lands in the wrong
+    // place cannot pass for the right one.
+    const std::string assets = Base::FileInfo::getTempFileName();
+    Base::FileInfo(assets).createDirectory();
+    auto* holder = _doc->addObject<Part::Feature>("Holder");
+    auto* shapes = dynamic_cast<Part::PropertyTopoShapeList*>(
+        holder->addDynamicProperty("Part::PropertyTopoShapeList", "Shapes")
+    );
+    ASSERT_NE(shapes, nullptr);
+    shapes->setValues(
+        {Part::TopoShape(BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape()),
+         Part::TopoShape(BRepPrimAPI_MakeBox(10.0, 10.0, 20.0).Shape()),
+         Part::TopoShape(BRepPrimAPI_MakeBox(10.0, 10.0, 30.0).Shape())}
+    );
+    _doc->recompute();
+
+    // Act
+    const std::string written = App::formatStoredRecipe(*_doc, assets);
+    _rebuilt = App::GetApplication().newDocument("StoredRecipeGeometry_rebuilt", "testUser");
+    std::istringstream text(written);
+    App::restoreStoredRecipe(*_rebuilt, text, /*finish=*/true, assets);
+
+    // Assert -- all three, each the one it was, in the order they were given.
+    auto* returned = dynamic_cast<Part::Feature*>(_rebuilt->getObject("Holder"));
+    ASSERT_NE(returned, nullptr);
+    auto* back = dynamic_cast<Part::PropertyTopoShapeList*>(returned->getPropertyByName("Shapes"));
+    ASSERT_NE(back, nullptr);
+    ASSERT_EQ(back->getSize(), 3);
+    const std::vector<double> expected {10.0, 20.0, 30.0};
+    for (int i = 0; i < back->getSize(); ++i) {
+        const Part::TopoShape& shape = (*back)[i];
+        ASSERT_FALSE(shape.isNull()) << "shape " << i << " of the list came back empty";
+        EXPECT_NEAR(shape.getBoundBox().MaxZ, expected[i], 1e-7)
+            << "shape " << i << " of the list came back as a different shape";
+    }
+
+    std::filesystem::remove_all(assets);
+}
+
+// NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

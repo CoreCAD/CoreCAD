@@ -37,6 +37,7 @@
 #include <Base/Writer.h>
 
 #include "Expression.h"
+#include "Range.h"
 #include "Application.h"
 #include "ElementNamingUtils.h"
 #include "Document.h"
@@ -74,6 +75,14 @@ DocumentObject::DocumentObject()
     ADD_PROPERTY_TYPE(ExpressionEngine, (), "Base", Prop_Hidden, "Property expressions");
 
     ADD_PROPERTY(Visibility, (true));
+
+    // Mint the durable identity once, here at construction. On restore the saved
+    // value overwrites this, so an object keeps the same id across save/load; a
+    // freshly created object gets a brand-new one. Output+Hidden: it must never
+    // touch/recompute the object and it is machinery, not a user-facing field.
+    ADD_PROPERTY_TYPE(Uid, (Base::Uuid::createUuid()), "Base", Prop_Output, "Durable object identity");
+    Uid.setStatus(Property::Hidden, true);
+    Uid.setStatus(Property::NoModify, true);
 
     // default set Visibility status to hidden and output (no touch) for
     // compatibitily reason. We use setStatus instead of PropertyType to
@@ -152,6 +161,18 @@ void DocumentObject::printInvalidLinks() const
 
 App::DocumentObjectExecReturn* DocumentObject::recompute()
 {
+    // Cruth (Amendment 19 Clause 19.6): a blocked node is not executed, and it is blocked by what
+    // it HOLDS rather than by who asked. The document's own rebuild refuses first and says why,
+    // but not every rebuild goes through the document -- a primitive rebuilds itself the moment a
+    // size changes -- and a refusal only the document enforced would be walked straight past by an
+    // ordinary edit. Executing the step from the part of the input that happened to be legible
+    // produces a shape nobody designed.
+    if (isBlockedByAStatement()) {
+        return new DocumentObjectExecReturn(
+            "Blocked: this build could not honour what the file states here.",
+            this);
+    }
+
     // check if the links are valid before making the recompute
     if (!GeoFeatureGroupExtension::areLinksValid(this)) {
         printInvalidLinks();
@@ -215,45 +236,6 @@ void DocumentObject::touch(bool noRecompute)
     }
 }
 
-void DocumentObject::freeze()
-{
-    StatusBits.set(ObjectStatus::Freeze);
-
-    // store read-only property names
-    this->readOnlyProperties.clear();
-    std::vector<std::pair<const char*, Property*>> list;
-    static_cast<App::PropertyContainer*>(this)->getPropertyNamedList(list);
-    for (auto pair: list){
-        if (pair.second->isReadOnly()){
-            this->readOnlyProperties.push_back(pair.first);
-        } else {
-            pair.second->setReadOnly(true);
-        }
-    }
-
-    // use the signalTouchedObject to refresh the Gui
-    if (_pDoc) {
-        _pDoc->signalTouchedObject(*this);
-    }
-}
-
-void DocumentObject::unfreeze(bool noRecompute)
-{
-    StatusBits.reset(ObjectStatus::Freeze);
-
-    // reset read-only property status
-    std::vector<std::pair<const char*, Property*>> list;
-    static_cast<App::PropertyContainer*>(this)->getPropertyNamedList(list);
-
-    for (auto pair: list){
-        if (! std::count(readOnlyProperties.begin(), readOnlyProperties.end(), pair.first)){
-            pair.second->setReadOnly(false);
-        }
-    }
-
-    touch(noRecompute);
-}
-
 bool DocumentObject::isTouched() const
 {
     return ExpressionEngine.isTouched() || StatusBits.test(ObjectStatus::Touch);
@@ -266,15 +248,30 @@ void DocumentObject::enforceRecompute()
 
 bool DocumentObject::mustRecompute() const
 {
-    if (StatusBits.test(ObjectStatus::Freeze)) {
-        return false;
-    }
-
     if (StatusBits.test(ObjectStatus::Enforce)) {
         return true;
     }
 
     return mustExecute() > 0;
+}
+
+bool DocumentObject::producesContentOf(const Property& prop) const
+{
+    // Nothing, unless the object or one of its extensions says so. An object that holds content
+    // is far more often handed it than producing it -- and the one kind that is produced in bulk,
+    // a feature's shape, is declared by the capability that carries it.
+    for (const auto* ext : getExtensionsDerivedFromType<App::DocumentObjectExtension>()) {
+        if (ext->extensionProducesContentOf(prop)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DocumentObject::linkOrderMatters(const Property& link) const
+{
+    (void)link;
+    return true;
 }
 
 short DocumentObject::mustExecute() const
@@ -299,9 +296,6 @@ const char* DocumentObject::getStatusString() const
     if (isError()) {
         const char* text = getDocument()->getErrorDescription(this);
         return text ? text : "Error";
-    }
-    else if (isFreezed()){
-        return "Freezed";
     }
     else if (isTouched()) {
         return "Touched";
@@ -754,10 +748,6 @@ App::Property* DocumentObject::addDynamicProperty(const char* type,
 
 void DocumentObject::onBeforeChange(const Property* prop)
 {
-    if (isFreezed() && prop != &Visibility) {
-        return;
-    }
-
     // Store current name in oldLabel, to be able to easily retrieve old name of document object later
     // when renaming expressions.
     if (prop == &Label)
@@ -829,15 +819,15 @@ DocumentObject::onProposedLabelChange(std::string& newLabel)
         // See PropertyLinkBase::restoreLabelReference() for more details.
         return {};
     }
+
+    // Remove the old label to free it up for future use.
+    doc->unregisterLabel(oldLabel);
+    
     return PropertyLinkBase::updateLabelReferences(this, newLabel.c_str());
 }
 
 void DocumentObject::onEarlyChange(const Property* prop)
 {
-    if (isFreezed() && prop != &Visibility) {
-        return;
-    }
-
     if (GetApplication().isClosingAll()) {
         return;
     }
@@ -861,10 +851,6 @@ void DocumentObject::onChanged(const Property* prop)
     if (prop == &Label && _pDoc && _pDoc->containsObject(this) && oldLabel != Label.getStrValue()) {
         _pDoc->unregisterLabel(oldLabel);
         _pDoc->registerLabel(Label.getStrValue());
-    }
-
-    if (isFreezed() && prop != &Visibility) {
-        return;
     }
 
     if (GetApplication().isClosingAll()) {
@@ -1203,6 +1189,41 @@ void DocumentObject::renameObjectIdentifiers(
     ExpressionEngine.renameObjectIdentifiers(paths);
 }
 
+void DocumentObject::shiftCellReferences(const DocumentObject* sheet, const CellShift& shift)
+{
+    ExpressionEngine.shiftCellReferences(sheet, shift);
+}
+
+void DocumentObject::mintDurableIdentity()
+{
+    Uid.setValue(Base::Uuid::createUuid());
+
+    // The externally-facing object UUID, where one is in use, records where the
+    // duplicate came from before taking an identity of its own.
+    if (const auto propUUID = freecad_cast<PropertyUUID*>(getPropertyByName("_ObjectUUID"))) {
+        auto propSource = freecad_cast<PropertyUUID*>(getPropertyByName("_SourceUUID"));
+        if (!propSource) {
+            propSource = static_cast<PropertyUUID*>(addDynamicProperty("App::PropertyUUID",
+                                                                      "_SourceUUID",
+                                                                      nullptr,
+                                                                      nullptr,
+                                                                      Prop_Output | Prop_Hidden));
+        }
+        if (propSource) {
+            propSource->setValue(propUUID->getValue());
+        }
+        propUUID->setValue(Base::Uuid::createUuid());
+    }
+
+    // A container's contents are duplicated along with it, so anything inside
+    // that carries an identity of its own is reborn too.
+    std::vector<Property*> props;
+    getPropertyList(props);
+    for (auto prop : props) {
+        prop->mintDurableIdentity();
+    }
+}
+
 void DocumentObject::onDocumentRestored()
 {
     // call all extensions
@@ -1213,6 +1234,15 @@ void DocumentObject::onDocumentRestored()
     if (Visibility.testStatus(Property::Output)) {
         Visibility.setStatus(Property::NoModify, true);
     }
+}
+
+void DocumentObject::restoreFromStream(std::istream& stream)
+{
+    // An object read back from its own dump is mid-restore exactly as it is on a file load: its
+    // properties arrive one at a time, and one that reacts to the others before they are all
+    // read sees an object no file describes.
+    Base::ObjectStatusLocker<ObjectStatus, DocumentObject> restoring(ObjectStatus::Restore, this);
+    PropertyContainer::restoreFromStream(stream);
 }
 
 void DocumentObject::restoreFinished()

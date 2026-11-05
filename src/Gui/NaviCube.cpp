@@ -106,6 +106,7 @@ public:
     void setSize(int size);
     SoNode* getCoinNode() const;
     void requestRedraw(bool touchNode = true);
+    QRect area() const;
 
 private:
     struct LabelTexture
@@ -207,6 +208,11 @@ private:
 };
 
 int NaviCubeImplementation::m_CubeWidgetSize = 132;
+
+QRect NaviCube::area() const
+{
+    return m_NaviCubeImplementation->area();
+}
 
 int NaviCube::getNaviCubeSize()
 {
@@ -787,6 +793,27 @@ void NaviCubeImplementation::handleResize(const SbVec2s& viewSize)
         m_PosAreaSize[1] = viewSize[1] - 2 * m_PosAreaBase[1];
         m_ViewSize = viewSize;
     }
+}
+
+// Repeats the placement in handleResize and drawNaviCube from the viewport's current size, so it
+// is right before the next draw too.
+QRect NaviCubeImplementation::area() const
+{
+    QWidget* viewport = m_View3DInventorViewer->viewport();
+    if (!viewport) {
+        return {};
+    }
+    const qreal ratio = viewport->devicePixelRatioF();
+    const qreal side = m_CubeWidgetSize * ratio;
+    const int width = static_cast<int>(viewport->width() * ratio);
+    const int height = static_cast<int>(viewport->height() * ratio);
+    const int baseX = std::min(static_cast<int>(m_PosOffset[0] + side * 0.55), width / 2);
+    const int baseY = std::min(static_cast<int>(m_PosOffset[1] + side * 0.55), height / 2);
+    const qreal centreX = m_RelPos[0] * (width - 2 * baseX) + baseX;
+    const qreal centreYFromBottom = m_RelPos[1] * (height - 2 * baseY) + baseY;
+    const qreal left = centreX - side / 2;
+    const qreal top = height - centreYFromBottom - side / 2;
+    return QRectF(left / ratio, top / ratio, side / ratio, side / ratio).toAlignedRect();
 }
 
 bool NaviCubeImplementation::isFramebufferValid() const

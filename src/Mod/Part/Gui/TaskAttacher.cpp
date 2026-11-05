@@ -41,7 +41,6 @@
 #include <App/ElementNamingUtils.h>
 #include <App/ObjectIdentifier.h>
 #include <App/Datums.h>
-#include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/CommandT.h>
@@ -56,7 +55,7 @@
 #include <Gui/ViewProvider.h>
 #include <Base/Tools.h>
 #include <Mod/Part/App/AttachExtension.h>
-#include <Mod/Part/App/DatumFeature.h>
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/Gui/AttacherTexts.h>
 #include <Mod/Part/Gui/TaskAttacher.h>
 
@@ -83,7 +82,7 @@ const QString makeRefString(const App::DocumentObject* obj, const std::string& s
         return QObject::tr("No reference selected");
     }
 
-    if (obj->isDerivedFrom<App::DatumElement>() || obj->isDerivedFrom<Part::Datum>()) {
+    if (obj->isDerivedFrom<App::DatumElement>()) {
         return QString::fromLatin1(obj->getNameInDocument());
     }
 
@@ -138,6 +137,8 @@ TaskAttacher::TaskAttacher(
     if (!ViewProvider->getObject()->hasExtension(Part::AttachExtension::getExtensionClassTypeId())) {
         throw Base::RuntimeError("Object has no Part::AttachExtension");
     }
+
+    setObjectName(QStringLiteral("TaskAttacher"));
 
     // we need a separate container widget to add all controls to
     proxy = new QWidget(this);
@@ -343,6 +344,7 @@ void TaskAttacher::objectDeleted(const Gui::ViewProviderDocumentObject& view)
 void TaskAttacher::documentDeleted(const Gui::Document&)
 {
     ViewProvider = nullptr;
+    overrides.clear();
     this->setDisabled(true);
 }
 
@@ -518,16 +520,9 @@ void TaskAttacher::findCorrectObjAndSubInThisContext(App::DocumentObject*& rootO
     for (size_t i = 0; i < names.size(); ++i) {
         App::DocumentObject* obj = doc->getObject(names[i].c_str());
         if (!obj) {
-            Base::Console().translatedUserError(
-                "TaskAttacher",
-                "Unsuitable selection: '%s' cannot be attached to '%s' from within it's group "
-                "'%s'.\n",
-                attachingObj->getFullLabel(),
-                subObj->getFullLabel(),
-                group->getFullLabel()
-            );
-            rootObj = nullptr;
-            return;
+            // Names past this point are sub-element identifiers (e.g. "Face1"), not document
+            // objects. Stop the traversal here and let the sibling-group check below decide.
+            break;
         }
 
         if (groupPassed) {
@@ -565,6 +560,41 @@ void TaskAttacher::findCorrectObjAndSubInThisContext(App::DocumentObject*& rootO
     // - - Part3
     // - - - Sketch
     // In this case the selection is not acceptable.
+
+    // CoreCAD Phase 2: allow sibling-group references (e.g. two Bodies inside the same Part).
+    // Walk the names path to find the sibling body — the first element whose direct parent group
+    // equals the attaching object's group's parent (groupParent). Strip it and everything before
+    // it, leaving the feature inside the sibling body as the new rootObj. This converts:
+    //   (Body,  "Pad.Face1")     → (Pad, "Face1")  — Body is the selection root
+    //   (Part, "Body.Pad.Face1") → (Pad, "Face1")  — Part is the selection root
+    auto* groupParent = App::GeoFeatureGroupExtension::getGroupOfObject(group);
+    if (groupParent) {
+        for (size_t i = 0; i < names.size(); ++i) {
+            App::DocumentObject* obj = doc->getObject(names[i].c_str());
+            if (!obj) {
+                break;
+            }
+            auto* objGroup = App::GeoFeatureGroupExtension::getGroupOfObject(obj);
+            if (objGroup == groupParent && obj != group) {
+                // obj is a sibling of our attaching group — strip it and everything before it.
+                if (i + 1 < names.size()) {
+                    App::DocumentObject* newRoot = doc->getObject(names[i + 1].c_str());
+                    if (newRoot) {
+                        rootObj = newRoot;
+                        sub = "";
+                        for (size_t j = i + 2; j < names.size(); ++j) {
+                            sub += names[j];
+                            if (j != names.size() - 1) {
+                                sub += ".";
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+        }
+    }
+
     rootObj = nullptr;
 }
 
@@ -632,7 +662,7 @@ void TaskAttacher::addToReference(const std::vector<SubAndObjName>& pairs)
         }
 
         // Remove subname for planes and datum features
-        if (selObj->isDerivedFrom<App::DatumElement>() || selObj->isDerivedFrom<Part::Datum>()) {
+        if (selObj->isDerivedFrom<App::DatumElement>()) {
             subname = "";
         }
 
@@ -662,6 +692,9 @@ void TaskAttacher::addToReference(const std::vector<SubAndObjName>& pairs)
             refnames.push_back(subname);
         }
 
+        // A face pick on a Body's solid resolves to the Body marker; re-anchor it to the
+        // Tip feature so the attachment references the feature, not the tip-tracking Body (§8).
+        Part::BodyBase::rebaseBodySubReferencesToTip(refs, refnames);
         pcAttach->AttachmentSupport.setValues(refs, refnames);
 
         QLineEdit* line = getLine(iActiveRef);
@@ -905,7 +938,7 @@ void TaskAttacher::onRefName(const QString& text, unsigned idx)
     if (parts.length() < 2) {
         parts.push_back(QStringLiteral(""));
     }
-    // Check whether this is the name of an App::Plane or Part::Datum feature
+    // Check whether this is the name of an App::Plane / App::Line datum feature
     App::DocumentObject* obj = ViewProvider->getObject()->getDocument()->getObject(parts[0].toLatin1());
     if (!obj) {
         return;
@@ -921,9 +954,6 @@ void TaskAttacher::onRefName(const QString& text, unsigned idx)
     else if (obj->isDerivedFrom<App::Line>()) {
         // everything is OK (we assume a Part can only have exactly 3 App::Line objects located at
         // the base of the feature tree)
-        subElement.clear();
-    }
-    else if (obj->isDerivedFrom<Part::Datum>()) {
         subElement.clear();
     }
     else {
@@ -1367,7 +1397,7 @@ void TaskAttacher::visibilityAutomation(bool opening_not_closing)
                       "tvObj = %1\n"
                       "dep_features = _tv_%4.get_all_dependent(%2, '%3')\n"
                       "dep_features = [o for o in dep_features if not isAContainer(o)]\n"
-                      "if tvObj.isDerivedFrom('PartDesign::CoordinateSystem'):\n"
+                      "if tvObj.isDerivedFrom('Part::LocalCoordinateSystem'):\n"
                       "\tvisible_features = [feat for feat in tvObj.InList if "
                       "feat.isDerivedFrom('PartDesign::FeaturePrimitive')]\n"
                       "\tdep_features = [feat for feat in dep_features if feat not in "
@@ -1375,7 +1405,7 @@ void TaskAttacher::visibilityAutomation(bool opening_not_closing)
                       "\tdel(visible_features)\n"
                       "_tv_%4.hide(dep_features)\n"
                       "del(dep_features)\n"
-                      "if not tvObj.isDerivedFrom('PartDesign::CoordinateSystem'):\n"
+                      "if not tvObj.isDerivedFrom('Part::LocalCoordinateSystem'):\n"
                       "\t\tif len(tvObj.AttachmentSupport) > 0:\n"
                       "\t\t\t_tv_%4.show([lnk[0] for lnk in tvObj.AttachmentSupport])\n"
                       "del(tvObj)"

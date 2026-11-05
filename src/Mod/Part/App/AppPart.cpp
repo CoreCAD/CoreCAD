@@ -63,7 +63,6 @@
 #include "CustomFeature.h"
 #include "CylinderPy.h"
 #include "Datums.h"
-#include "DatumFeature.h"
 #include "EllipsePy.h"
 #include "FaceMaker.h"
 #include "FaceMakerBullseye.h"
@@ -103,6 +102,7 @@
 #include "GeometryIntExtensionPy.h"
 #include "GeometryMigrationExtension.h"
 #include "GeometryStringExtensionPy.h"
+#include "MaterialExtension.h"
 #include "PreviewExtension.h"
 #include "HyperbolaPy.h"
 #include "ImportStep.h"
@@ -136,6 +136,7 @@
 #include "OCCError.h"
 #include "OCCTMessagePrinter.h"
 #include "PrismExtension.h"
+#include "ShapeExtension.h"
 #include "PropertyGeometryList.h"
 #include "PropertyTopoShapeList.h"
 
@@ -424,6 +425,7 @@ PyMOD_INIT_FUNC(Part)
     Part::PropertyGeometryList  ::init();
     Part::PropertyShapeHistory  ::init();
     Part::PropertyFilletEdges   ::init();
+    Part::PropertyChamferEdges  ::init();
     Part::PropertyShapeCache    ::init();
     Part::PropertyTopoShapeList ::init();
 
@@ -445,8 +447,12 @@ PyMOD_INIT_FUNC(Part)
     Part::AttachExtension       ::init();
     Part::AttachExtensionPython ::init();
     Part::PreviewExtension      ::init();
+    Part::MaterialExtension     ::init();
+    Part::MaterialExtensionPython::init();
     Part::PrismExtension        ::init();
+    Part::ShapeExtension        ::init();
 
+    Part::ShapeFeature          ::init();
     Part::Feature               ::init();
     Part::FeatureExt            ::init();
     Part::BodyBase              ::init();
@@ -549,7 +555,6 @@ PyMOD_INIT_FUNC(Part)
     Part::GeomTrimmedSurface      	::init();
     Part::GeomSurfaceOfRevolution 	::init();
     Part::GeomSurfaceOfExtrusion  	::init();
-    Part::Datum                   	::init();
     Part::DatumPlane             	::init();
     Part::DatumLine                	::init();
     Part::DatumPoint               	::init();

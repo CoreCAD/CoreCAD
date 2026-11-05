@@ -45,8 +45,7 @@ public:
     /// destructor
     ~ViewProviderSketchBased() override;
 
-    /// grouping handling
-    std::vector<App::DocumentObject*> claimChildren() const override;
+    std::vector<App::DocumentObject*> consumedProfiles() const override;
 
     void attach(App::DocumentObject* pcObject) override;
 

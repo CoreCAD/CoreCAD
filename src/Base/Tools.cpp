@@ -287,11 +287,8 @@ std::string Base::Tools::joinList(const std::vector<std::string>& vec, const std
     return str.str();
 }
 
-std::string Base::Tools::currentDateTimeString()
+std::string Base::Tools::dateTimeString(std::time_t t)
 {
-    const auto now = std::chrono::system_clock::now();
-    const std::time_t t = std::chrono::system_clock::to_time_t(now);
-
     std::tm tmUtc {};
 #if defined(_WIN32)
     gmtime_s(&tmUtc, &t);
@@ -302,6 +299,12 @@ std::string Base::Tools::currentDateTimeString()
     std::ostringstream out;
     out << std::put_time(&tmUtc, "%Y-%m-%dT%H:%M:%SZ");
     return out.str();
+}
+
+std::string Base::Tools::currentDateTimeString()
+{
+    const auto now = std::chrono::system_clock::now();
+    return dateTimeString(std::chrono::system_clock::to_time_t(now));
 }
 
 bool Base::Tools::isCLocaleName(std::string_view localeName)

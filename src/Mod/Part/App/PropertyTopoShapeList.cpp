@@ -26,6 +26,8 @@
 #include <BRepBuilderAPI_Copy.hxx>
 
 #include <Base/Console.h>
+#include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 
@@ -158,6 +160,7 @@ void PropertyTopoShapeList::Save(Writer& writer) const
 {
     writer.Stream() << writer.ind() << "<ShapeList count=\"" << getSize() << "\">" << endl;
     writer.incInd();
+    m_savedFiles.clear();
     for (int i = 0; i < getSize(); i++) {
         bool binary = writer.getMode("BinaryBrep");
         writer.Stream() << writer.ind() << "<TopoShape";
@@ -173,8 +176,12 @@ void PropertyTopoShapeList::Save(Writer& writer) const
             else {
                 ext += ".brp";
             }
-            writer.Stream() << writer.ind() << " file=\""
-                            << writer.addFile(getFileName(ext.c_str()).c_str(), this) << "\"/>\n";
+            // The name asked for and the name given are not the same thing: whatever the writer
+            // assigns is what comes back to SaveDocFile, so which shape it holds is recorded
+            // against that name rather than read out of it.
+            const std::string given = writer.addFile(getFileName(ext.c_str()).c_str(), this);
+            m_savedFiles[given] = SideFile {i, binary};
+            writer.Stream() << writer.ind() << " file=\"" << given << "\"/>\n";
         }
         else if (binary) {
             writer.Stream() << " binary=\"1\">\n";
@@ -193,9 +200,18 @@ void PropertyTopoShapeList::Save(Writer& writer) const
 
 void PropertyTopoShapeList::SaveDocFile(Base::Writer& writer) const
 {
-    Base::FileInfo finfo(writer.ObjectName);
-    bool binary = finfo.hasExtension("bin");
-    int index = atoi(Base::FileInfo(finfo.fileNamePure()).extension().c_str());
+    const auto stated = m_savedFiles.find(writer.ObjectName);
+    if (stated == m_savedFiles.end()) {
+        // A file this property never asked for. Refused rather than written as shape 0: a file
+        // that holds the wrong shape reads exactly like one that holds the right one.
+        throw Base::RuntimeError(
+            "PropertyTopoShapeList was asked to write a file it did not "
+            "register: "
+            + writer.ObjectName
+        );
+    }
+    const int index = stated->second.index;
+    const bool binary = stated->second.binary;
     if (index < 0 || index >= static_cast<int>(_lValueList.size())) {
         return;
     }
@@ -215,11 +231,15 @@ void PropertyTopoShapeList::Restore(Base::XMLReader& reader)
     int count = reader.getAttribute<long>("count");
     m_restorePointers.clear();  // just in case
     m_restorePointers.reserve(count);
+    m_restoredFiles.clear();
     for (int i = 0; i < count; i++) {
         auto newShape = std::make_shared<TopoShape>();
         reader.readElement("TopoShape");
         std::string file(reader.getAttribute<const char*>("file"));
         if (!file.empty()) {
+            // Which shape this file holds is its position in the list, which the file states by
+            // where it puts the element -- not by what the file is called.
+            m_restoredFiles[file] = SideFile {i, Base::FileInfo(file).hasExtension("bin")};
             reader.addFile(file.c_str(), this);
         }
         else if (reader.hasAttribute("binary") && reader.getAttribute<bool>("binary")) {
@@ -235,9 +255,18 @@ void PropertyTopoShapeList::Restore(Base::XMLReader& reader)
 
 void PropertyTopoShapeList::RestoreDocFile(Base::Reader& reader)
 {
-    Base::FileInfo finfo(reader.getFileName());
-    bool binary = finfo.hasExtension("bin");
-    int index = atoi(Base::FileInfo(finfo.fileNamePure()).extension().c_str());
+    const auto stated = m_restoredFiles.find(reader.getFileName());
+    if (stated == m_restoredFiles.end()) {
+        // A file the record never named. Refused rather than read into shape 0, which would put
+        // one shape where another belongs and leave the rest of the list empty.
+        throw Base::RuntimeError(
+            "PropertyTopoShapeList was handed a file the record does not "
+            "name: "
+            + reader.getFileName()
+        );
+    }
+    const int index = stated->second.index;
+    const bool binary = stated->second.binary;
     if (index < 0 || index >= static_cast<int>(m_restorePointers.size())) {
         return;
     }

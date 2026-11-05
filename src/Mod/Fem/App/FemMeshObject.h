@@ -24,6 +24,7 @@
 
 #include <App/FeaturePython.h>
 #include <App/GeoFeature.h>
+#include <App/PlacementExtension.h>
 #include <App/SuppressibleExtension.h>
 
 #include "FemMesh.h"
@@ -33,7 +34,7 @@
 namespace Fem
 {
 
-class FemExport FemMeshObject: public App::GeoFeature
+class FemExport FemMeshObject: public App::GeoFeature, public App::PlacementExtension
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Fem::FemMeshObject);
 

@@ -57,10 +57,9 @@ ViewProviderViewClip::~ViewProviderViewClip()
 
 std::vector<App::DocumentObject*> ViewProviderViewClip::claimChildren() const
 {
-    // Collect any child views
-    // for Clip, valid children are any View in Views
-    const std::vector<App::DocumentObject *> &views = getObject()->Views.getValues();
-    return views;
+    // Collect any child views. For a clip, valid children are the views naming it, derived
+    // from the item side rather than read off a stored list.
+    return getObject()->getViews();
 }
 
 void ViewProviderViewClip::show()
@@ -69,10 +68,11 @@ void ViewProviderViewClip::show()
     App::DocumentObject* obj = getObject();
     if (!obj || obj->isRestoring())
         return;
-    if (obj->isDerivedFrom<TechDraw::DrawViewClip>()) {
-        std::vector<App::DocumentObject*> inp = obj->getInList();
-        for (std::vector<App::DocumentObject*>::iterator it = inp.begin(); it != inp.end(); ++it)
-            (*it)->touch();
+    if (auto* clip = freecad_cast<TechDraw::DrawViewClip*>(obj)) {
+        // Touch the clipped views so they redraw. Membership is derived now, not the InList.
+        for (auto* view : clip->getViews()) {
+            view->touch();
+        }
     }
     ViewProviderDrawingView::show();
 
@@ -84,10 +84,11 @@ void ViewProviderViewClip::hide()
     App::DocumentObject* obj = getObject();
     if (!obj || obj->isRestoring())
         return;
-    if (obj->isDerivedFrom<TechDraw::DrawViewClip>()) {
-        std::vector<App::DocumentObject*> inp = obj->getInList();
-        for (std::vector<App::DocumentObject*>::iterator it = inp.begin(); it != inp.end(); ++it)
-            (*it)->touch();
+    if (auto* clip = freecad_cast<TechDraw::DrawViewClip*>(obj)) {
+        // Touch the clipped views so they redraw. Membership is derived now, not the InList.
+        for (auto* view : clip->getViews()) {
+            view->touch();
+        }
     }
     ViewProviderDrawingView::hide();
 }

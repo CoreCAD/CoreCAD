@@ -10,7 +10,3 @@
 [submodule "src/Mod/AddonManager"]
 	path = src/Mod/AddonManager
 	url = https://github.com/FreeCAD/AddonManager.git
-[submodule "src/Mod/FreeCAD-Ribbon"]
-	path = src/Mod/FreeCAD-Ribbon
-	url = https://github.com/CoreCAD/FreeCAD-Ribbon.git
-	branch = develop

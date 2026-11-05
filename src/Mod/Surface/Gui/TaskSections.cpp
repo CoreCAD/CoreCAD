@@ -40,6 +40,7 @@
 #include <Gui/Tools.h>
 #include <Gui/Widgets.h>
 #include <Mod/Part/Gui/ViewProvider.h>
+#include <Mod/Part/App/ShapeExtension.h>
 
 #include "TaskSections.h"
 
@@ -109,7 +110,7 @@ QIcon ViewProviderSections::getIcon() const
 void ViewProviderSections::highlightReferences(ShapeType type, const References& refs, bool on)
 {
     for (const auto& it : refs) {
-        Part::Feature* base = dynamic_cast<Part::Feature*>(it.first);
+        App::GeoFeature* base = Part::shapeCarrier(it.first);
         if (base) {
             PartGui::ViewProviderPartExt* svp = dynamic_cast<PartGui::ViewProviderPartExt*>(
                 Gui::Application::Instance->getViewProvider(base)
@@ -120,7 +121,7 @@ void ViewProviderSections::highlightReferences(ShapeType type, const References&
                         if (on) {
                             std::vector<Base::Color> colors;
                             TopTools_IndexedMapOfShape vMap;
-                            TopExp::MapShapes(base->Shape.getValue(), TopAbs_VERTEX, vMap);
+                            TopExp::MapShapes(Part::getShape(base).getShape(), TopAbs_VERTEX, vMap);
                             colors.resize(vMap.Extent(), svp->PointColor.getValue());
 
                             for (const auto& jt : it.second) {
@@ -142,7 +143,7 @@ void ViewProviderSections::highlightReferences(ShapeType type, const References&
                         if (on) {
                             std::vector<Base::Color> colors;
                             TopTools_IndexedMapOfShape eMap;
-                            TopExp::MapShapes(base->Shape.getValue(), TopAbs_EDGE, eMap);
+                            TopExp::MapShapes(Part::getShape(base).getShape(), TopAbs_EDGE, eMap);
                             colors.resize(eMap.Extent(), svp->LineColor.getValue());
 
                             for (const auto& jt : it.second) {
@@ -164,7 +165,7 @@ void ViewProviderSections::highlightReferences(ShapeType type, const References&
                         if (on) {
                             std::vector<App::Material> materials;
                             TopTools_IndexedMapOfShape fMap;
-                            TopExp::MapShapes(base->Shape.getValue(), TopAbs_FACE, fMap);
+                            TopExp::MapShapes(Part::getShape(base).getShape(), TopAbs_FACE, fMap);
                             materials.resize(fMap.Extent(), svp->ShapeAppearance[0]);
 
                             for (const auto& jt : it.second) {
@@ -210,7 +211,7 @@ public:
         if (pObj == editedObject) {
             return false;
         }
-        if (!pObj->isDerivedFrom<Part::Feature>()) {
+        if (!Part::hasShape(pObj)) {
             return false;
         }
 

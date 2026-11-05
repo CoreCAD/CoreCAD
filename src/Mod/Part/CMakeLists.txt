@@ -75,8 +75,10 @@ set(Part_tests
     parttests/part_test_objects.py
     parttests/regression_tests.py
     parttests/TopoShapeListTest.py
+    parttests/AppearancePanelTest.py
     parttests/ColorPerFaceTest.py
     parttests/ColorTransparencyTest.py
+    parttests/VersionComparisonTest.py
     parttests/TopoShapeTest.py
     parttests/TestTangentMode3-0.21.FCStd
     parttests/TestPartMirror.py
