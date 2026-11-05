@@ -86,6 +86,7 @@
 #include "SealedArchive.h"
 #include "StoredRecipe.h"
 #include "Transactions.h"
+#include "VersionHistory.h"
 
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
@@ -1184,7 +1185,9 @@ bool Document::saveToFile(const char* filename) const
         bool backup = GetApplication()
                           .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")
                           ->GetBool("CreateBackupFiles", true);
-        if (!backup) {
+        // A part kept in a project already has every committed version; a backup beside it would
+        // only show up in git as one more file nobody made.
+        if (!backup || isKeptInHistory(nativePath)) {
             count_bak = -1;
         }
         bool useFCBakExtension =
