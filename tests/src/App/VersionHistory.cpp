@@ -316,6 +316,37 @@ TEST_F(VersionHistoryTest, aPastVersionOpensAndComparesWithTheOpenDocument)
     EXPECT_EQ(App::GetApplication().getDocumentByUuid(live->Uid.getValue()), live);
 }
 
+TEST_F(VersionHistoryTest, savingAPartInAProjectLeavesNoBackupBesideIt)
+{
+    const fs::path file = _folder / "Widget.cpart";
+    auto* live = track(
+        App::GetApplication()
+            .newDocument(App::GetApplication().getUniqueDocumentName("live").c_str(), "Widget")
+    );
+    live->addObject("Part::Box", "Box");
+    const auto backups = [this] {
+        int found = 0;
+        for (const fs::directory_entry& entry : fs::directory_iterator(_folder)) {
+            found += entry.path().extension() == ".FCBak" ? 1 : 0;
+        }
+        return found;
+    };
+
+    live->saveAs(file.string().c_str());
+    live->save();
+    ASSERT_EQ(backups(), 1) << "outside a project a save keeps a backup";
+    for (const fs::directory_entry& entry : fs::directory_iterator(_folder)) {
+        if (entry.path().extension() == ".FCBak") {
+            fs::remove(entry.path());
+        }
+    }
+
+    ScratchRepository repository(_folder);
+    live->save();
+    live->save();
+    EXPECT_EQ(backups(), 0);
+}
+
 // Each version needs a document of its own; two read into one would be compared with itself.
 TEST_F(VersionHistoryTest, twoVersionsOpenSideBySide)
 {
